@@ -517,7 +517,12 @@ impl Normalizer {
 
     /// Converts backwards, from a clause to a value.
     /// The resulting value may have skolem atoms in it.
-    pub fn denormalize(&self, clause: &Clause) -> AcornValue {
+    /// If arbitrary_names is provided, replace all free variables with constants.
+    pub fn denormalize(
+        &self,
+        clause: &Clause,
+        _arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
+    ) -> AcornValue {
         let mut var_types = vec![];
         let mut denormalized_literals = vec![];
         for literal in &clause.literals {
@@ -566,7 +571,7 @@ impl Normalizer {
     /// When you denormalize and renormalize a clause, you should get the same thing.
     #[cfg(test)]
     fn check_denormalize_renormalize(&mut self, clause: &Clause) {
-        let denormalized = self.denormalize(clause);
+        let denormalized = self.denormalize(clause, None);
         denormalized
             .validate()
             .expect("denormalized clause should validate");

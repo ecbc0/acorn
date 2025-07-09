@@ -121,7 +121,7 @@ impl<'a> ProofNode<'a> {
     fn to_code(&self, normalizer: &Normalizer, bindings: &BindingMap) -> Result<String, Error> {
         match &self.value {
             NodeValue::Clause(clause) => {
-                let mut value = normalizer.denormalize(clause);
+                let mut value = normalizer.denormalize(clause, None);
                 if self.negated {
                     value = value.pretty_negate();
                 }
@@ -707,7 +707,8 @@ impl<'a> Proof<'a> {
             if step.rule.is_assumption() && !step.clause.has_any_variable() {
                 if let Some(clauses) = concrete_clauses.remove(&self.id_map[id]) {
                     for clause in clauses {
-                        let codes = generator.clause_to_code(&clause, false, self.normalizer)?;
+                        let codes =
+                            generator.concrete_clause_to_code(&clause, false, self.normalizer)?;
                         for code in codes {
                             skip_code.insert(code);
                         }
@@ -728,7 +729,8 @@ impl<'a> Proof<'a> {
                 continue;
             };
             for clause in clauses.into_iter().rev() {
-                let codes = generator.clause_to_code(&clause, !is_true, self.normalizer)?;
+                let codes =
+                    generator.concrete_clause_to_code(&clause, !is_true, self.normalizer)?;
                 for code in codes {
                     if !skip_code.contains(&code) && !direct.contains(&code) {
                         direct.push(code);
@@ -752,7 +754,7 @@ impl<'a> Proof<'a> {
                 continue;
             };
             for clause in clauses.into_iter().rev() {
-                let codes = generator.clause_to_code(&clause, false, self.normalizer)?;
+                let codes = generator.concrete_clause_to_code(&clause, false, self.normalizer)?;
                 for code in codes {
                     if !direct.contains(&code) && !indirect.contains(&code) {
                         indirect.push(code);

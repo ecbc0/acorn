@@ -38,7 +38,7 @@ pub struct CodeGenerator<'a> {
     skolem_names: HashMap<AtomId, String>,
 
     /// The names for whenever we need an arbitrary member of a type.
-    arbitrary_names: HashMap<TypeId, String>,
+    arbitrary_names: HashMap<TypeId, ConstantName>,
 }
 
 impl CodeGenerator<'_> {
@@ -149,13 +149,14 @@ impl CodeGenerator<'_> {
 
     /// Convert to a clause to code strings.
     /// This will generate skolem definitions if necessary.
-    pub fn clause_to_code(
+    pub fn concrete_clause_to_code(
         &mut self,
         clause: &Clause,
         negate: bool,
         normalizer: &Normalizer,
     ) -> Result<Vec<String>> {
-        let mut value = normalizer.denormalize(&clause);
+        let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names));
+
         if negate {
             value = value.pretty_negate();
         }
@@ -194,7 +195,7 @@ impl CodeGenerator<'_> {
             // Create code for the condition
             let mut cond_parts = vec![];
             for clause in &info.clauses {
-                let val = normalizer.denormalize(&clause);
+                let val = normalizer.denormalize(&clause, None);
                 let cond_part = self.value_to_code(&val)?;
                 cond_parts.push(cond_part);
             }
@@ -222,9 +223,10 @@ impl CodeGenerator<'_> {
         if term.is_variable() {
             let type_id = term.head_type;
             if !self.arbitrary_names.contains_key(&type_id) {
-                // Generate a name for this arbitrary variable
+                // Generate a name for this arbitrary value
                 let name = self.bindings.next_indexed_var('s', &mut self.next_s);
-                self.arbitrary_names.insert(type_id, name);
+                let cname = ConstantName::Unqualified(self.bindings.module_id(), name);
+                self.arbitrary_names.insert(type_id, cname);
             }
         }
         for arg in &term.args {

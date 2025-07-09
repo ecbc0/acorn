@@ -742,7 +742,7 @@ impl Prover {
 
     /// Attempts to convert this clause to code, but shows the clause form if that's all we can.
     fn clause_to_code(&self, bindings: &BindingMap, clause: &Clause) -> String {
-        let denormalized = self.normalizer.denormalize(clause);
+        let denormalized = self.normalizer.denormalize(clause, None);
         match CodeGenerator::new(bindings).value_to_code(&denormalized) {
             Ok(code) => return code,
             Err(Error::Skolem(_)) => {
