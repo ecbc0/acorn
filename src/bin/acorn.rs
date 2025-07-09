@@ -27,7 +27,7 @@ struct Args {
     /// Target module or file to verify (can be a filename or module name)
     #[clap(
         value_name = "TARGET",
-        help = "Module or filename to verify. If not provided, verifies all files in the library."
+        help = "Module or filename to verify. If not provided, verifies all files in the library. If \"-\" is provided, it reads from stdin."
     )]
     target: Option<String>,
 
@@ -62,6 +62,10 @@ struct Args {
         value_name = "DIR"
     )]
     doc_root: Option<String>,
+
+    // Appends input to a file (can only be used if target is \"-\")
+    #[clap(long, help = "Appends input to a file (can only be used if target is \"-\")")]
+    append_to: Option<String>,
 }
 
 #[tokio::main]
@@ -133,6 +137,33 @@ async fn main() {
         if let Err(e) = searcher.run() {
             println!("{}", e);
             std::process::exit(1);
+        }
+        return;
+    }
+
+    // Run the verifier with input appended to a file.
+    if let Some(append) = args.append_to {
+        let Some(target) = args.target else {
+            println!("Error: --append_to requires a target module or file to be specified.");
+            std::process::exit(1);
+        };
+        if target != "-" {
+            println!("Error: target is required to be \"-\".");
+            std::process::exit(1);
+        }
+        let new_target = target + ":" + &append;
+        let verifier = Verifier::new(current_dir, mode, Some(new_target), args.dataset);
+        match verifier.run() {
+            Err(e) => {
+                println!("{}", e);
+                std::process::exit(1);
+            }
+            Ok(output) => {
+                if !output.is_success() {
+                    // Make sure CI-type environments fail.
+                    std::process::exit(1);
+                }
+            }
         }
         return;
     }
