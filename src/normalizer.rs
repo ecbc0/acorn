@@ -454,6 +454,7 @@ impl Normalizer {
         atom_type: TypeId,
         atom: &Atom,
         var_types: &mut Vec<AcornType>,
+        _arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
         let acorn_type = self.normalization_map.get_type(atom_type).clone();
         match atom {
@@ -488,18 +489,28 @@ impl Normalizer {
         }
     }
 
-    fn denormalize_term(&self, term: &Term, var_types: &mut Vec<AcornType>) -> AcornValue {
-        let head = self.denormalize_atom(term.head_type, &term.head, var_types);
+    fn denormalize_term(
+        &self,
+        term: &Term,
+        var_types: &mut Vec<AcornType>,
+        arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
+    ) -> AcornValue {
+        let head = self.denormalize_atom(term.head_type, &term.head, var_types, arbitrary_names);
         let args: Vec<_> = term
             .args
             .iter()
-            .map(|t| self.denormalize_term(t, var_types))
+            .map(|t| self.denormalize_term(t, var_types, arbitrary_names))
             .collect();
         AcornValue::apply(head, args)
     }
 
-    fn denormalize_literal(&self, literal: &Literal, var_types: &mut Vec<AcornType>) -> AcornValue {
-        let left = self.denormalize_term(&literal.left, var_types);
+    fn denormalize_literal(
+        &self,
+        literal: &Literal,
+        var_types: &mut Vec<AcornType>,
+        arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
+    ) -> AcornValue {
+        let left = self.denormalize_term(&literal.left, var_types, arbitrary_names);
         if literal.right.is_true() {
             if literal.positive {
                 return left;
@@ -507,7 +518,7 @@ impl Normalizer {
                 return AcornValue::Not(Box::new(left));
             }
         }
-        let right = self.denormalize_term(&literal.right, var_types);
+        let right = self.denormalize_term(&literal.right, var_types, arbitrary_names);
         if literal.positive {
             AcornValue::equals(left, right)
         } else {
@@ -521,12 +532,16 @@ impl Normalizer {
     pub fn denormalize(
         &self,
         clause: &Clause,
-        _arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
+        arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
         let mut var_types = vec![];
         let mut denormalized_literals = vec![];
         for literal in &clause.literals {
-            denormalized_literals.push(self.denormalize_literal(literal, &mut var_types));
+            denormalized_literals.push(self.denormalize_literal(
+                literal,
+                &mut var_types,
+                arbitrary_names,
+            ));
         }
         let mut answer = denormalized_literals.pop().unwrap();
         for subvalue in denormalized_literals.into_iter().rev() {
