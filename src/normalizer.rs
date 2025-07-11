@@ -449,12 +449,14 @@ impl Normalizer {
     }
 
     /// Variables are left unbound. Their types are accumulated.
+    /// If arbitrary names are provided, any free variables of the keyed types are converted
+    /// to constants.
     fn denormalize_atom(
         &self,
         atom_type: TypeId,
         atom: &Atom,
         var_types: &mut Vec<AcornType>,
-        _arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
+        arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
         let acorn_type = self.normalization_map.get_type(atom_type).clone();
         match atom {
@@ -478,6 +480,11 @@ impl Normalizer {
                     var_types.push(acorn_type.clone());
                 } else {
                     panic!("variable index out of order");
+                }
+                if let Some(map) = arbitrary_names {
+                    if let Some(name) = map.get(&atom_type) {
+                        return AcornValue::constant(name.clone(), vec![], acorn_type);
+                    }
                 }
                 AcornValue::Variable(*i, acorn_type)
             }
