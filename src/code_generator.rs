@@ -155,6 +155,7 @@ impl CodeGenerator<'_> {
         negate: bool,
         normalizer: &Normalizer,
     ) -> Result<Vec<String>> {
+        self.add_arbitrary_for_clause(clause);
         let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names));
 
         if negate {
@@ -235,7 +236,7 @@ impl CodeGenerator<'_> {
     }
 
     /// For any variables in this clause, add an arbitrary variable.
-    pub fn add_arbitrary_for_clause(&mut self, clause: &Clause) {
+    fn add_arbitrary_for_clause(&mut self, clause: &Clause) {
         for literal in &clause.literals {
             for term in [&literal.left, &literal.right] {
                 self.add_arbitrary_for_term(term);

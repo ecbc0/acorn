@@ -554,7 +554,11 @@ impl Normalizer {
         for subvalue in denormalized_literals.into_iter().rev() {
             answer = AcornValue::or(subvalue, answer);
         }
-        AcornValue::forall(var_types, answer)
+        if arbitrary_names.is_some() {
+            answer
+        } else {
+            AcornValue::forall(var_types, answer)
+        }
     }
 
     /// Given a list of atom ids for skolems that we need to define, find a set
