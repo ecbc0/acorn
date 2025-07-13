@@ -561,6 +561,10 @@ impl Normalizer {
         }
     }
 
+    pub fn denormalize_type(&self, type_id: TypeId) -> AcornType {
+        self.normalization_map.get_type(type_id).clone()
+    }
+
     /// Given a list of atom ids for skolems that we need to define, find a set
     /// of skolem information that covers them.
     /// The output may have skolems that aren't used in the input.

@@ -163,6 +163,13 @@ impl CodeGenerator<'_> {
         }
         let mut codes = vec![];
 
+        // Define the arbitrary variables.
+        for (ty, name) in self.arbitrary_names.clone() {
+            let ty_code = self.type_to_code(&normalizer.denormalize_type(ty))?;
+            let decl = format!("let {}: {} satisfy {{ true }}", name, ty_code);
+            codes.push(decl);
+        }
+
         // Create a name and definition for each skolem variable.
         let skolem_ids = value.find_skolems();
         let infos = normalizer.find_skolem_info(&skolem_ids);
