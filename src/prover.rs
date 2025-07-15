@@ -20,7 +20,7 @@ use crate::module::ModuleId;
 use crate::normalizer::Normalizer;
 use crate::passive_set::PassiveSet;
 use crate::project::Project;
-use crate::proof::{Difficulty, Proof};
+use crate::proof::{ConcreteProof, Difficulty, Proof};
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
 use crate::term::Term;
 use crate::term_graph::TermGraphContradiction;
@@ -466,6 +466,12 @@ impl Prover {
         let mut proof = self.get_uncondensed_proof(false)?;
         proof.condense();
         Some(proof)
+    }
+
+    /// Use the checker to check a proof that we just generated.
+    /// This does mutate the checker itself, so if you do anything else afterwards it'll be weird.
+    pub fn check_proof(&mut self, _proof: &ConcreteProof) -> Result<(), Error> {
+        todo!();
     }
 
     fn report_term_graph_contradiction(&mut self, contradiction: TermGraphContradiction) {
