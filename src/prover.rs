@@ -8,6 +8,7 @@ use tower_lsp::lsp_types::Url;
 use crate::acorn_value::AcornValue;
 use crate::active_set::ActiveSet;
 use crate::binding_map::BindingMap;
+use crate::checker::Checker;
 use crate::clause::Clause;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::display::DisplayClause;
@@ -36,6 +37,10 @@ pub struct Prover {
     /// The "passive" clauses are a queue of pending clauses that
     /// we will add to the active clauses in the future.
     passive_set: PassiveSet,
+
+    /// The "checker" is used to quickly check if a clause can be proven
+    /// in a single step from the known clauses.
+    checker: Checker,
 
     /// A verbose prover prints out a lot of stuff.
     pub verbose: bool,
@@ -120,6 +125,7 @@ impl Prover {
             normalizer: Normalizer::new(),
             active_set: ActiveSet::new(),
             passive_set: PassiveSet::new(),
+            checker: Checker::new(),
             verbose,
             final_step: None,
             stop_flags: vec![project.build_stopped.clone()],
@@ -142,6 +148,9 @@ impl Prover {
                 return;
             }
         };
+        for step in &steps {
+            self.checker.add_clause(&step.clause);
+        }
         self.passive_set.push_batch(steps);
     }
 
