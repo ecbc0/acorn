@@ -1,19 +1,33 @@
 use crate::clause::Clause;
+use crate::term_graph::{StepId, TermGraph};
 
 /// The checker quickly checks if a clause can be proven in a single step from known clauses.
 #[derive(Clone)]
-pub struct Checker {}
+pub struct Checker {
+    term_graph: TermGraph,
+    next_step_id: usize,
+}
 
 impl Checker {
     pub fn new() -> Self {
-        Checker {}
+        Checker {
+            term_graph: TermGraph::new(),
+            next_step_id: 0,
+        }
     }
 
-    pub fn add_clause(&mut self, _clause: &Clause) {
-        // TODO: use the clause
+    pub fn add_clause(&mut self, clause: &Clause) {
+        self.term_graph.insert_clause(clause, StepId(self.next_step_id));
+        self.next_step_id += 1;
     }
 
-    pub fn check_clause(&self, _clause: &Clause) -> bool {
-        todo!()
+    pub fn check_clause(&self, clause: &Clause) -> bool {
+        if clause.literals.len() == 1 {
+            if self.term_graph.evaluate_literal(&clause.literals[0]) == Some(true) {
+                return true;
+            }
+        }
+        // We can't evaluate
+        false
     }
 }
