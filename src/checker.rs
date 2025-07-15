@@ -16,11 +16,17 @@ impl Checker {
         }
     }
 
+    /// Adds a true clause to the checker.
     pub fn add_clause(&mut self, clause: &Clause) {
-        self.term_graph.insert_clause(clause, StepId(self.next_step_id));
-        self.next_step_id += 1;
+        // Only add the clause to the term graph if it has no variables
+        if !clause.has_any_variable() {
+            self.term_graph
+                .insert_clause(clause, StepId(self.next_step_id));
+            self.next_step_id += 1;
+        }
     }
 
+    /// Returns true if the clause can be proven in a single step from the known clauses.
     pub fn check_clause(&self, clause: &Clause) -> bool {
         if clause.literals.len() == 1 {
             if self.term_graph.evaluate_literal(&clause.literals[0]) == Some(true) {
