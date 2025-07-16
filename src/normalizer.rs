@@ -392,7 +392,7 @@ impl Normalizer {
     /// Logically, this is an "and of ors". Each Clause is an "or" of its literals.
     /// "true" is represented by an empty list, which is always satisfied.
     /// "false" is represented by a single impossible clause.
-    fn normalize_value(&mut self, value: &AcornValue, local: bool) -> Result<Vec<Clause>> {
+    pub fn normalize_value(&mut self, value: &AcornValue, local: bool) -> Result<Vec<Clause>> {
         if let Err(e) = value.validate() {
             return Err(format!(
                 "validation error: {} while normalizing: {}",

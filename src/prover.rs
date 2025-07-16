@@ -482,8 +482,10 @@ impl Prover {
         let mut evaluator = Evaluator::new(bindings, project, None);
         for code in &proof.direct {
             let expr = Expression::parse_value_string(&code)?;
-            let _value = evaluator.evaluate_value(&expr, Some(&AcornType::Bool))?;
-            // TODO: use the expression
+            let value = evaluator.evaluate_value(&expr, Some(&AcornType::Bool))?;
+            let _clauses = self.normalizer.normalize_value(&value, true)?;
+
+            // TODO: check the clauses
         }
 
         // TODO: use the indirect steps

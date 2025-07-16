@@ -738,6 +738,12 @@ impl From<crate::compilation::Error> for Error {
     }
 }
 
+impl From<String> for Error {
+    fn from(err: String) -> Self {
+        Error::GeneratedInvalidCode(err)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::project::Project;
