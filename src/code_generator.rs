@@ -665,6 +665,9 @@ pub enum Error {
     // When you try to generate code but there is no proof
     NoProof,
 
+    // Generated code that failed to parse
+    GeneratedInvalidCode(String),
+
     // Something went wrong, it's our fault, and we can't figure out what it is
     InternalError(String),
 }
@@ -690,6 +693,7 @@ impl Error {
             Error::UnhandledValue(_) => "UnhandledValue",
             Error::ExplicitGoal => "ExplicitGoal",
             Error::NoProof => "NoProof",
+            Error::GeneratedInvalidCode(_) => "GeneratedInvalidCode",
             Error::InternalError(_) => "InternalError",
         }
     }
@@ -718,6 +722,9 @@ impl fmt::Display for Error {
                 write!(f, "could not isolate the goal at the end of the proof")
             }
             Error::NoProof => write!(f, "no proof"),
+            Error::GeneratedInvalidCode(s) => {
+                write!(f, "generated invalid code: {}", s)
+            }
             Error::InternalError(s) => {
                 write!(f, "internal error: {}", s)
             }

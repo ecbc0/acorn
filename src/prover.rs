@@ -12,6 +12,8 @@ use crate::checker::Checker;
 use crate::clause::Clause;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::display::DisplayClause;
+use crate::evaluator::Evaluator;
+use crate::expression::Expression;
 use crate::fact::Fact;
 use crate::goal::{Goal, GoalContext};
 use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
@@ -470,8 +472,22 @@ impl Prover {
 
     /// Use the checker to check a proof that we just generated.
     /// This does mutate the checker itself, so if you do anything else afterwards it'll be weird.
-    pub fn check_proof(&mut self, _proof: &ConcreteProof) -> Result<(), Error> {
-        todo!();
+    pub fn check_proof(
+        &mut self,
+        proof: &ConcreteProof,
+        project: &Project,
+        bindings: &BindingMap,
+    ) -> Result<(), Error> {
+        let _evaluator = Evaluator::new(bindings, project, None);
+        for code in &proof.direct {
+            let _expr = Expression::parse_value_string(&code)
+                .map_err(|e| Error::GeneratedInvalidCode(e.to_string()))?;
+
+            // TODO: use the expression
+        }
+
+        // TODO: use the indirect steps
+        todo!("proof fails checking");
     }
 
     fn report_term_graph_contradiction(&mut self, contradiction: TermGraphContradiction) {
