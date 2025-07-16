@@ -36,4 +36,9 @@ impl Checker {
         // We can't evaluate
         false
     }
+
+    /// Returns true if the checker has encountered a contradiction.
+    pub fn has_contradiction(&self) -> bool {
+        self.term_graph.has_contradiction()
+    }
 }
