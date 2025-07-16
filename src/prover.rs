@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use tower_lsp::lsp_types::Url;
 
+use crate::acorn_type::AcornType;
 use crate::acorn_value::AcornValue;
 use crate::active_set::ActiveSet;
 use crate::binding_map::BindingMap;
@@ -478,11 +479,10 @@ impl Prover {
         project: &Project,
         bindings: &BindingMap,
     ) -> Result<(), Error> {
-        let _evaluator = Evaluator::new(bindings, project, None);
+        let mut evaluator = Evaluator::new(bindings, project, None);
         for code in &proof.direct {
-            let _expr = Expression::parse_value_string(&code)
-                .map_err(|e| Error::GeneratedInvalidCode(e.to_string()))?;
-
+            let expr = Expression::parse_value_string(&code)?;
+            let _value = evaluator.evaluate_value(&expr, Some(&AcornType::Bool))?;
             // TODO: use the expression
         }
 

@@ -732,6 +732,12 @@ impl fmt::Display for Error {
     }
 }
 
+impl From<crate::compilation::Error> for Error {
+    fn from(err: crate::compilation::Error) -> Self {
+        Error::GeneratedInvalidCode(err.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::project::Project;
