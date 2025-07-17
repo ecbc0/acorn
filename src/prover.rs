@@ -483,13 +483,25 @@ impl Prover {
         for code in &proof.direct {
             let expr = Expression::parse_value_string(&code)?;
             let value = evaluator.evaluate_value(&expr, Some(&AcornType::Bool))?;
-            let _clauses = self.normalizer.normalize_value(&value, true)?;
+            let clauses = self.normalizer.normalize_value(&value, true)?;
 
-            // TODO: check the clauses
+            for clause in clauses {
+                if self.checker.evaluate_clause(&clause) != Some(true) {
+                    return Err(Error::GeneratedBadCode(format!(
+                        "The clause {} is not known to be true",
+                        self.display(&clause)
+                    )));
+                }
+                self.checker.insert_clause(&clause);
+            }
         }
 
-        // TODO: use the indirect steps
-        todo!("proof fails checking");
+        if proof.indirect.is_empty() {
+            // We just need to check the final conclusion
+            todo!("check the final conclusion");
+        } else {
+            todo!("use the indirect steps");
+        }
     }
 
     fn report_term_graph_contradiction(&mut self, contradiction: TermGraphContradiction) {

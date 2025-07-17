@@ -665,8 +665,8 @@ pub enum Error {
     // When you try to generate code but there is no proof
     NoProof,
 
-    // Generated code that failed to parse
-    GeneratedInvalidCode(String),
+    // Generated code that failed checking
+    GeneratedBadCode(String),
 
     // Something went wrong, it's our fault, and we can't figure out what it is
     InternalError(String),
@@ -693,7 +693,7 @@ impl Error {
             Error::UnhandledValue(_) => "UnhandledValue",
             Error::ExplicitGoal => "ExplicitGoal",
             Error::NoProof => "NoProof",
-            Error::GeneratedInvalidCode(_) => "GeneratedInvalidCode",
+            Error::GeneratedBadCode(_) => "GeneratedInvalidCode",
             Error::InternalError(_) => "InternalError",
         }
     }
@@ -722,7 +722,7 @@ impl fmt::Display for Error {
                 write!(f, "could not isolate the goal at the end of the proof")
             }
             Error::NoProof => write!(f, "no proof"),
-            Error::GeneratedInvalidCode(s) => {
+            Error::GeneratedBadCode(s) => {
                 write!(f, "generated invalid code: {}", s)
             }
             Error::InternalError(s) => {
@@ -734,13 +734,13 @@ impl fmt::Display for Error {
 
 impl From<crate::compilation::Error> for Error {
     fn from(err: crate::compilation::Error) -> Self {
-        Error::GeneratedInvalidCode(err.to_string())
+        Error::GeneratedBadCode(err.to_string())
     }
 }
 
 impl From<String> for Error {
     fn from(err: String) -> Self {
-        Error::GeneratedInvalidCode(err)
+        Error::GeneratedBadCode(err)
     }
 }
 
