@@ -152,7 +152,7 @@ impl Prover {
             }
         };
         for step in &steps {
-            self.checker.add_clause(&step.clause);
+            self.checker.insert_clause(&step.clause);
         }
         self.passive_set.push_batch(steps);
     }

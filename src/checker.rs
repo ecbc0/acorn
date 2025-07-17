@@ -17,7 +17,7 @@ impl Checker {
     }
 
     /// Adds a true clause to the checker.
-    pub fn add_clause(&mut self, clause: &Clause) {
+    pub fn insert_clause(&mut self, clause: &Clause) {
         // Only add the clause to the term graph if it has no variables
         if !clause.has_any_variable() {
             self.term_graph
@@ -26,15 +26,10 @@ impl Checker {
         }
     }
 
-    /// Returns true if the clause can be proven in a single step from the known clauses.
-    pub fn check_clause(&self, clause: &Clause) -> bool {
-        if clause.literals.len() == 1 {
-            if self.term_graph.evaluate_literal(&clause.literals[0]) == Some(true) {
-                return true;
-            }
-        }
-        // We can't evaluate
-        false
+    /// Returns Some(true) if the clause is known to be true, Some(false) if known false,
+    /// and None if we can't tell whether it's true or false.
+    pub fn evaluate_clause(&self, clause: &Clause) -> Option<bool> {
+        self.term_graph.evaluate_clause(clause)
     }
 
     /// Returns true if the checker has encountered a contradiction.
