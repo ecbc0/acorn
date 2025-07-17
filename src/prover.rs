@@ -479,6 +479,15 @@ impl Prover {
         project: &Project,
         bindings: &BindingMap,
     ) -> Result<(), Error> {
+        let negated_goal = match &self.goal {
+            Some(NormalizedGoal::ProveNegated(negated_goal, _)) => negated_goal,
+            _ => {
+                return Err(Error::InternalError(
+                    "cannot check proof without a goal".to_string(),
+                ))
+            }
+        };
+
         let mut evaluator = Evaluator::new(bindings, project, None);
         for code in &proof.direct {
             let expr = Expression::parse_value_string(&code)?;
@@ -488,7 +497,7 @@ impl Prover {
             for clause in clauses {
                 if self.checker.evaluate_clause(&clause) != Some(true) {
                     return Err(Error::GeneratedBadCode(format!(
-                        "The clause {} is not known to be true",
+                        "The clause {} is not obviously true",
                         self.display(&clause)
                     )));
                 }
@@ -496,9 +505,19 @@ impl Prover {
             }
         }
 
+        let negated_goal_clauses = self.normalizer.normalize_value(negated_goal, true)?;
+
         if proof.indirect.is_empty() {
-            // We just need to check the final conclusion
-            todo!("check the final conclusion");
+            // We just need to check the goal
+            for clause in negated_goal_clauses {
+                if self.checker.evaluate_clause(&clause) == Some(false) {
+                    return Ok(());
+                }
+            }
+            Err(Error::GeneratedBadCode(format!(
+                "The negated goal {} is not obviously false",
+                negated_goal
+            )))
         } else {
             todo!("use the indirect steps");
         }
