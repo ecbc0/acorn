@@ -313,6 +313,9 @@ pub struct TermGraph {
     // When set, this indicates that the provided step sets these terms to be unequal.
     // But there is a chain of rewrites that proves that they are equal. This is a contradiction.
     contradiction_info: Option<(TermId, TermId, StepId)>,
+
+    // When verbose is set, we print out a bunch of debugging information.
+    pub verbose: bool,
 }
 
 impl TermGraph {
@@ -327,6 +330,7 @@ impl TermGraph {
             pending: Vec::new(),
             has_contradiction: false,
             contradiction_info: None,
+            verbose: false,
         }
     }
 
@@ -523,6 +527,10 @@ impl TermGraph {
     /// The clause is indexed by all groups that appear in its literals.
     /// Don't insert clauses with no literals.
     pub fn insert_clause(&mut self, clause: &Clause, step: StepId) {
+        if self.verbose {
+            println!("Inserting clause: {}", clause);
+        }
+
         // First, insert all terms and collect their IDs
         let mut literal_infos = Vec::new();
         for literal in &clause.literals {
