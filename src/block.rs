@@ -756,6 +756,23 @@ impl<'a> NodeCursor<'a> {
         }
     }
 
+    /// Gets the environment for the goal at the current node.
+    pub fn goal_env(&self) -> Result<&Environment, String> {
+        let node = self.node();
+        if let Node::Structural(_) = node {
+            return Err(format!(
+                "node {} does not need a proof, so it has no goal environment",
+                self
+            ));
+        }
+
+        if let Some(block) = &node.get_block() {
+            Ok(&block.env)
+        } else {
+            Ok(self.env())
+        }
+    }
+
     /// Does a postorder traversal of everything with a goal, at and below this node
     pub fn find_goals(&mut self, output: &mut Vec<NodeCursor<'a>>) {
         // Check if the current node is a todo block

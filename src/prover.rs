@@ -488,6 +488,8 @@ impl Prover {
             }
         };
 
+        let negated_goal_clauses = self.normalizer.normalize_value(negated_goal, true)?;
+
         let mut evaluator = Evaluator::new(bindings, project, None);
         for code in &proof.direct {
             let expr = Expression::parse_value_string(&code)?;
@@ -504,8 +506,6 @@ impl Prover {
                 self.checker.insert_clause(&clause);
             }
         }
-
-        let negated_goal_clauses = self.normalizer.normalize_value(negated_goal, true)?;
 
         if proof.indirect.is_empty() {
             // We just need to check the goal
