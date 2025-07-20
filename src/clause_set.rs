@@ -8,6 +8,7 @@ use crate::term::Term;
 
 /// The ClauseSet stores general clauses in a way that allows us to quickly check whether
 /// a new clause is a specialization of an existing one.
+#[derive(Clone)]
 pub struct ClauseSet {
     /// Stores an id for each clause.
     tree: PatternTree<usize>,
