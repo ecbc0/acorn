@@ -37,7 +37,17 @@ impl Checker {
     /// Returns Some(true) if the clause is known to be true, Some(false) if known false,
     /// and None if we can't tell whether it's true or false.
     pub fn evaluate_clause(&self, clause: &Clause) -> Option<bool> {
-        self.term_graph.evaluate_clause(clause)
+        // First check the term graph for concrete evaluation
+        if let Some(result) = self.term_graph.evaluate_clause(clause) {
+            return Some(result);
+        }
+        
+        // If not found in term graph, check if there's a generalization in the clause set
+        if self.clause_set.find_generalization(clause.clone()).is_some() {
+            return Some(true);
+        }
+        
+        None
     }
 
     /// Returns true if the checker has encountered a contradiction.
