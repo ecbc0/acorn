@@ -334,6 +334,12 @@ impl TermGraph {
         }
     }
 
+    pub fn new_verbose() -> TermGraph {
+        let mut graph = TermGraph::new();
+        graph.verbose = true;
+        graph
+    }
+
     /// Returns None if this term isn't in the graph.
     pub fn get_term_id(&self, term: &Term) -> Option<TermId> {
         // Look up the head
@@ -429,6 +435,9 @@ impl TermGraph {
         });
         self.groups.push(group_info);
         self.decompositions.insert(key, term_id);
+        if self.verbose {
+            println!("TG: t{} := {}", term_id, term.head);
+        }
         term_id
     }
 
@@ -459,6 +468,9 @@ impl TermGraph {
         });
         self.groups.push(group_info);
         self.decompositions.insert(key, term_id);
+        if self.verbose {
+            println!("TG: t{} := {}", term_id, term);
+        }
         term_id
     }
 
@@ -528,7 +540,7 @@ impl TermGraph {
     /// Don't insert clauses with no literals.
     pub fn insert_clause(&mut self, clause: &Clause, step: StepId) {
         if self.verbose {
-            println!("Inserting clause: {}", clause);
+            println!("TG: Inserting clause: {}", clause);
         }
 
         // First, insert all terms and collect their IDs

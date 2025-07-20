@@ -515,7 +515,7 @@ impl Prover {
                 }
             }
             Err(Error::GeneratedBadCode(format!(
-                "The negated goal {} is not obviously false",
+                "The negated goal '{}' is not obviously false",
                 negated_goal
             )))
         } else {

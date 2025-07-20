@@ -901,31 +901,27 @@ fn test_concrete_proof_term_graph_only() {
         r#"
         inductive Foo {
           foo
+          bar
+          baz
         }
             
-        let f: Foo -> Bool = axiom
-        let g: Foo -> Bool = axiom
-        let h: Foo -> Bool = axiom
+        let f: Foo -> Foo = axiom
 
         axiom rule1 {
-          f(Foo.foo)
+          f(Foo.foo) = f(Foo.bar)
         }
 
-        axiom rule2(x: Foo) {
-          f(Foo.foo) implies g(Foo.foo)
-        }
-
-        axiom rule3(x: Foo) {
-          g(Foo.foo) implies h(Foo.foo)
+        axiom rule2 {
+          f(Foo.bar) = f(Foo.baz)
         }
             
-        theorem goal(y: Foo) {
-          h(Foo.foo)
+        theorem goal {
+          f(Foo.foo) = f(Foo.baz)
         }
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", false);
+    let c = prove_concrete(&mut p, "main", "goal", true);
     assert_eq!(c.direct, Vec::<String>::new());
     assert_eq!(c.indirect, Vec::<String>::new());
 }
