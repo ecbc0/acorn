@@ -894,7 +894,7 @@ fn test_useful_fact_extraction() {
 }
 
 #[test]
-fn test_concrete_proof_term_graph_only() {
+fn test_concrete_proof_rewrite_only() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -917,6 +917,39 @@ fn test_concrete_proof_term_graph_only() {
             
         theorem goal {
           f(Foo.foo) = f(Foo.baz)
+        }
+        "#,
+    );
+
+    let c = prove_concrete(&mut p, "main", "goal", true);
+    assert_eq!(c.direct, Vec::<String>::new());
+    assert_eq!(c.indirect, Vec::<String>::new());
+}
+
+#[test]
+fn test_concrete_proof_modus_ponens_only() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        inductive Foo {
+          foo
+          bar
+          baz
+        }
+            
+        let f: Foo -> Bool = axiom
+
+        axiom rule1 {
+          f(Foo.foo) implies f(Foo.bar)
+        }
+
+        axiom rule2 {
+          f(Foo.bar) implies f(Foo.baz)
+        }
+            
+        theorem goal {
+          f(Foo.foo) implies f(Foo.baz)
         }
         "#,
     );
