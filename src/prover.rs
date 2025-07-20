@@ -519,6 +519,9 @@ impl Prover {
                 negated_goal
             )))
         } else {
+            for _clause in negated_goal_clauses {
+                todo!("add the negated goal clauses");
+            }
             todo!("use the indirect steps");
         }
     }
