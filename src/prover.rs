@@ -513,23 +513,27 @@ impl Prover {
             // Check the goal
             let goal_value = negated_goal.clone().pretty_negate();
             let goal_clauses = self.normalizer.normalize_value(&goal_value, true)?;
+            let mut ok = true;
             for clause in goal_clauses {
                 if self.checker.evaluate_clause(&clause) != Some(true) {
-                    return Err(Error::GeneratedBadCode(format!(
-                        "The goal clause '{}' is not obviously true",
-                        clause
-                    )));
+                    ok = false;
+                    break;
                 }
             }
-            Ok(())
-        } else {
-            // Add the negated goal
-            let negated_goal_clauses = self.normalizer.normalize_value(negated_goal, true)?;
-            for _clause in negated_goal_clauses {
-                todo!("add the negated goal clauses");
+            if ok {
+                return Ok(());
             }
-            todo!("use the indirect steps");
         }
+
+        // Try a proof by contradiction.
+        // In theory we could avoid mutating the checker if we finished before this part, so
+        // we might want to separate it out later.
+        // Add the negated goal
+        let negated_goal_clauses = self.normalizer.normalize_value(negated_goal, true)?;
+        for _clause in negated_goal_clauses {
+            todo!("add the negated goal clauses");
+        }
+        todo!("complete checking the proof by contradiction");
     }
 
     fn report_term_graph_contradiction(&mut self, contradiction: TermGraphContradiction) {
