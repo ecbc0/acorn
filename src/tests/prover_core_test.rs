@@ -989,6 +989,35 @@ fn test_concrete_proof_with_active_resolution() {
 }
 
 #[test]
+fn test_concrete_proof_exact_clause_match() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        inductive Foo {
+          foo
+        }
+            
+        let f: Foo -> Bool = axiom
+        let g: Foo -> Bool = axiom
+        let h: Foo -> Bool = axiom
+            
+        axiom rule {
+          f(Foo.foo) or g(Foo.foo) or h(Foo.foo)
+        }
+            
+        theorem goal {
+          f(Foo.foo) or g(Foo.foo) or h(Foo.foo)
+        }
+        "#,
+    );
+
+    let c = prove_concrete(&mut p, "main", "goal", false);
+    assert_eq!(c.direct, Vec::<String>::new());
+    assert_eq!(c.indirect, Vec::<String>::new());
+}
+
+#[test]
 fn test_concrete_proof_removes_duplicates() {
     let mut p = Project::new_mock();
     p.mock(
