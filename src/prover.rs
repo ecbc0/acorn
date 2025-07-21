@@ -488,8 +488,6 @@ impl Prover {
             }
         };
 
-        let negated_goal_clauses = self.normalizer.normalize_value(negated_goal, true)?;
-
         let mut evaluator = Evaluator::new(bindings, project, None);
         for code in &proof.direct {
             let expr = Expression::parse_value_string(&code)?;
@@ -508,17 +506,21 @@ impl Prover {
         }
 
         if proof.indirect.is_empty() {
-            // We just need to check the goal
-            for clause in negated_goal_clauses {
-                if self.checker.evaluate_clause(&clause) == Some(false) {
-                    return Ok(());
+            // Check the goal
+            let goal_value = negated_goal.clone().pretty_negate();
+            let goal_clauses = self.normalizer.normalize_value(&goal_value, true)?;
+            for clause in goal_clauses {
+                if self.checker.evaluate_clause(&clause) != Some(true) {
+                    return Err(Error::GeneratedBadCode(format!(
+                        "The goal clause '{}' is not obviously true",
+                        clause
+                    )));
                 }
             }
-            Err(Error::GeneratedBadCode(format!(
-                "The negated goal '{}' is not obviously false",
-                negated_goal
-            )))
+            Ok(())
         } else {
+            // Add the negated goal
+            let negated_goal_clauses = self.normalizer.normalize_value(negated_goal, true)?;
             for _clause in negated_goal_clauses {
                 todo!("add the negated goal clauses");
             }
