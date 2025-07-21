@@ -23,11 +23,10 @@ impl Checker {
     pub fn insert_clause(&mut self, clause: &Clause) {
         let step_id = self.next_step_id;
         self.next_step_id += 1;
-        
+
         if !clause.has_any_variable() {
             // Add concrete clauses to the term graph for fast evaluation
-            self.term_graph
-                .insert_clause(clause, StepId(step_id));
+            self.term_graph.insert_clause(clause, StepId(step_id));
         } else {
             // Add clauses with variables to the clause set
             self.clause_set.insert(clause.clone(), step_id);
@@ -41,12 +40,16 @@ impl Checker {
         if let Some(result) = self.term_graph.evaluate_clause(clause) {
             return Some(result);
         }
-        
+
         // If not found in term graph, check if there's a generalization in the clause set
-        if self.clause_set.find_generalization(clause.clone()).is_some() {
+        if self
+            .clause_set
+            .find_generalization(clause.clone())
+            .is_some()
+        {
             return Some(true);
         }
-        
+
         None
     }
 

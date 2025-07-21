@@ -25,6 +25,7 @@ use crate::passive_set::PassiveSet;
 use crate::project::Project;
 use crate::proof::{ConcreteProof, Difficulty, Proof};
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
+use crate::source::SourceType;
 use crate::term::Term;
 use crate::term_graph::TermGraphContradiction;
 
@@ -144,6 +145,7 @@ impl Prover {
     /// The fact can be either polymorphic or monomorphic.
     pub fn add_fact(&mut self, fact: Fact) {
         let mut steps = vec![];
+        let from_negated_goal = fact.source().source_type == SourceType::NegatedGoal;
         match self.normalizer.normalize_fact(fact, &mut steps) {
             Ok(()) => {}
             Err(s) => {
@@ -151,8 +153,10 @@ impl Prover {
                 return;
             }
         };
-        for step in &steps {
-            self.checker.insert_clause(&step.clause);
+        if !from_negated_goal {
+            for step in &steps {
+                self.checker.insert_clause(&step.clause);
+            }
         }
         self.passive_set.push_batch(steps);
     }

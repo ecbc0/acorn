@@ -610,6 +610,9 @@ impl TermGraph {
         new_group: GroupId,
         source: Option<RewriteSource>,
     ) {
+        if self.verbose {
+            println!("TG: identifying t{} = t{}", old_term, new_term);
+        }
         let old_info = self.groups[old_group.0 as usize]
             .take()
             .expect("group is remapped");
@@ -934,6 +937,9 @@ impl TermGraph {
     // Set two terms to be not equal.
     // Doesn't repeat to find the logical closure.
     fn set_terms_not_equal_once(&mut self, term1: TermId, term2: TermId, step: StepId) {
+        if self.verbose {
+            println!("TG: setting t{} != t{} at step {}", term1, term2, step);
+        }
         let group1 = self.get_group_id(term1);
         let group2 = self.get_group_id(term2);
         if group1 == group2 {
