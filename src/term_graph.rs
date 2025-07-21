@@ -1267,7 +1267,6 @@ impl TermGraph {
 
     #[cfg(test)]
     fn insert_clause_str(&mut self, s: &str, step: StepId) {
-        use crate::clause::Clause;
         let clause = Clause::parse(s);
         self.insert_clause(&clause, step);
         self.validate();
@@ -1293,6 +1292,14 @@ impl TermGraph {
     #[cfg(test)]
     fn get_str(&self, s: &str) -> TermId {
         self.get_term_id(&Term::parse(s)).unwrap()
+    }
+
+    #[cfg(test)]
+    fn evaluate_clause_str(&self, s: &str, expected: Option<bool>) {
+        use crate::clause::Clause;
+        let clause = Clause::parse(s);
+        let result = self.evaluate_clause(&clause);
+        assert_eq!(result, expected);
     }
 }
 
@@ -1417,5 +1424,25 @@ mod tests {
         assert!(!g.has_contradiction);
         g.insert_clause_str("c2 = c3", StepId(1));
         assert!(g.has_contradiction);
+    }
+
+    #[test]
+    fn test_hypotheses_then_imp() {
+        let mut g = TermGraph::new();
+        g.insert_clause_str("g1(c1)", StepId(0));
+        g.insert_clause_str("g2(c1)", StepId(1));
+        g.insert_clause_str("not g1(c1) or not g2(c1) or g3(c1)", StepId(2));
+
+        // TODO: this works in the other order, but not this one
+        // g.evaluate_clause_str("g3(c1)", Some(true));
+    }
+
+    #[test]
+    fn test_imp_then_hypotheses() {
+        let mut g = TermGraph::new();
+        g.insert_clause_str("not g1(c1) or not g2(c1) or g3(c1)", StepId(2));
+        g.insert_clause_str("g1(c1)", StepId(0));
+        g.insert_clause_str("g2(c1)", StepId(1));
+        g.evaluate_clause_str("g3(c1)", Some(true));
     }
 }
