@@ -574,6 +574,25 @@ impl TermGraph {
         let clause_id = ClauseId(self.clauses.len());
         self.clauses.push(Some(clause_info));
 
+        // Check if any literal can already be evaluated
+        let mut needs_reduction = false;
+        for literal_info in &literal_infos {
+            let left_group = self.get_group_id(literal_info.left);
+            let right_group = self.get_group_id(literal_info.right);
+            
+            // Check if the literal can be evaluated
+            if left_group == right_group {
+                // The terms are equal
+                needs_reduction = true;
+            } else {
+                let left_group_info = self.get_group_info(left_group);
+                if left_group_info.inequalities.contains_key(&right_group) {
+                    // The terms are known to be not equal
+                    needs_reduction = true;
+                }
+            }
+        }
+
         // For each literal, add the clause to both groups involved
         for literal_info in &literal_infos {
             let left_group = self.get_group_id(literal_info.left);
@@ -596,6 +615,11 @@ impl TermGraph {
                     .or_insert_with(HashSet::new)
                     .insert(clause_id);
             }
+        }
+
+        // If any literal can be evaluated, schedule a reduction
+        if needs_reduction {
+            self.pending.push(SemanticOperation::ClauseReduction(clause_id));
         }
 
         self.process_pending();
@@ -1432,9 +1456,7 @@ mod tests {
         g.insert_clause_str("g1(c1)", StepId(0));
         g.insert_clause_str("g2(c1)", StepId(1));
         g.insert_clause_str("not g1(c1) or not g2(c1) or g3(c1)", StepId(2));
-
-        // TODO: this works in the other order, but not this one
-        // g.evaluate_clause_str("g3(c1)", Some(true));
+        g.evaluate_clause_str("g3(c1)", Some(true));
     }
 
     #[test]
