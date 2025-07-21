@@ -983,7 +983,7 @@ fn test_concrete_proof_with_active_resolution() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", false);
+    let c = prove_concrete(&mut p, "main", "goal", true);
     assert_eq!(c.direct, vec!["not g(y) or not f(y) or h(y)"]);
     assert_eq!(c.indirect, Vec::<String>::new());
 }
