@@ -530,10 +530,11 @@ impl Prover {
         // we might want to separate it out later.
         // Add the negated goal
         let negated_goal_clauses = self.normalizer.normalize_value(negated_goal, true)?;
-        for _clause in negated_goal_clauses {
-            todo!("add the negated goal clauses");
+        for clause in negated_goal_clauses {
+            self.checker.insert_clause(&clause);
         }
-        todo!("complete checking the proof by contradiction");
+
+        todo!("add the indirect clauses");
     }
 
     fn report_term_graph_contradiction(&mut self, contradiction: TermGraphContradiction) {
