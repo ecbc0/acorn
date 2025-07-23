@@ -534,7 +534,18 @@ impl Prover {
             self.checker.insert_clause(&clause);
         }
 
-        todo!("add the indirect clauses");
+        for _code in &proof.indirect {
+            todo!("add the indirect clauses");
+        }
+
+        // We should have a contradiction
+        if self.checker.has_contradiction() {
+            Ok(())
+        } else {
+            Err(Error::GeneratedBadCode(
+                "The proof does not lead to a contradiction".to_string(),
+            ))
+        }
     }
 
     fn report_term_graph_contradiction(&mut self, contradiction: TermGraphContradiction) {
