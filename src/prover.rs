@@ -534,8 +534,20 @@ impl Prover {
             self.checker.insert_clause(&clause);
         }
 
-        for _code in &proof.indirect {
-            todo!("add the indirect clauses");
+        for code in &proof.indirect {
+            let expr = Expression::parse_value_string(&code)?;
+            let value = evaluator.evaluate_value(&expr, Some(&AcornType::Bool))?;
+            let clauses = self.normalizer.normalize_value(&value, true)?;
+
+            for clause in clauses {
+                if self.checker.evaluate_clause(&clause) != Some(true) {
+                    return Err(Error::GeneratedBadCode(format!(
+                        "The clause {} is not obviously true",
+                        self.display(&clause)
+                    )));
+                }
+                self.checker.insert_clause(&clause);
+            }
         }
 
         // We should have a contradiction
