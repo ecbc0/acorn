@@ -1012,7 +1012,7 @@ fn test_concrete_proof_exact_clause_match() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", false);
+    let c = prove_concrete(&mut p, "main", "goal", true);
     assert_eq!(c.direct, Vec::<String>::new());
     assert_eq!(c.indirect, Vec::<String>::new());
 }
