@@ -1044,7 +1044,7 @@ fn test_concrete_proof_removes_duplicates() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", false);
+    let c = prove_concrete(&mut p, "main", "goal", true);
     assert_eq!(c.direct, vec!["not f(y) or g(y)", "f(y)"]);
     assert_eq!(c.indirect, Vec::<String>::new());
 }
