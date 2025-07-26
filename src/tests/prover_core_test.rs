@@ -1081,7 +1081,7 @@ fn test_concrete_proof_with_passive_resolution() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", false);
+    let c = prove_concrete(&mut p, "main", "goal", true);
     assert_eq!(
         c.direct,
         vec![
