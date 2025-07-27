@@ -1119,7 +1119,7 @@ fn test_concrete_proof_activating_rewrite_pattern() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", false);
+    let c = prove_concrete(&mut p, "main", "goal", true);
     assert_eq!(c.direct, vec!["g(y) = f(y)"]);
     assert_eq!(c.indirect, Vec::<String>::new());
 }
