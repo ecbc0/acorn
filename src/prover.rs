@@ -475,6 +475,44 @@ impl Prover {
         Some(proof)
     }
 
+    /// Helper method to check a single line of code in a proof.
+    fn check_code(
+        &mut self,
+        code: &str,
+        evaluator: &mut Evaluator,
+    ) -> Result<(), Error> {
+        // Parse as a statement with in_block=true to allow bare expressions
+        let statement = Statement::parse_str_with_options(&code, true)?;
+        
+        let expr = match statement.statement {
+            StatementInfo::VariableSatisfy(_) => {
+                todo!("Handle let...satisfy statements in concrete proof validation");
+            }
+            StatementInfo::Claim(claim) => {
+                claim.claim
+            }
+            _ => {
+                return Err(Error::GeneratedBadCode(format!(
+                    "Expected a claim or let...satisfy statement, got: {}",
+                    code
+                )));
+            }
+        };
+        let value = evaluator.evaluate_value(&expr, Some(&AcornType::Bool))?;
+        let clauses = self.normalizer.normalize_value(&value, true)?;
+
+        for clause in clauses {
+            if self.checker.evaluate_clause(&clause) != Some(true) {
+                return Err(Error::GeneratedBadCode(format!(
+                    "The clause {} is not obviously true",
+                    self.display(&clause)
+                )));
+            }
+            self.checker.insert_clause(&clause);
+        }
+        Ok(())
+    }
+
     /// Use the checker to check a proof that we just generated.
     /// This does mutate the checker itself, so if you do anything else afterwards it'll be weird.
     pub fn check_proof(
@@ -484,7 +522,7 @@ impl Prover {
         bindings: &BindingMap,
     ) -> Result<(), Error> {
         let negated_goal = match &self.goal {
-            Some(NormalizedGoal::ProveNegated(negated_goal, _)) => negated_goal,
+            Some(NormalizedGoal::ProveNegated(negated_goal, _)) => negated_goal.clone(),
             _ => {
                 return Err(Error::InternalError(
                     "cannot check proof without a goal".to_string(),
@@ -494,35 +532,7 @@ impl Prover {
 
         let mut evaluator = Evaluator::new(bindings, project, None);
         for code in &proof.direct {
-            // Parse as a statement with in_block=true to allow bare expressions
-            let statement = Statement::parse_str_with_options(&code, true)?;
-            
-            let expr = match statement.statement {
-                StatementInfo::VariableSatisfy(_) => {
-                    todo!("Handle let...satisfy statements in concrete proof validation");
-                }
-                StatementInfo::Claim(claim) => {
-                    claim.claim
-                }
-                _ => {
-                    return Err(Error::GeneratedBadCode(format!(
-                        "Expected a claim or let...satisfy statement, got: {}",
-                        code
-                    )));
-                }
-            };
-            let value = evaluator.evaluate_value(&expr, Some(&AcornType::Bool))?;
-            let clauses = self.normalizer.normalize_value(&value, true)?;
-
-            for clause in clauses {
-                if self.checker.evaluate_clause(&clause) != Some(true) {
-                    return Err(Error::GeneratedBadCode(format!(
-                        "The clause {} is not obviously true",
-                        self.display(&clause)
-                    )));
-                }
-                self.checker.insert_clause(&clause);
-            }
+            self.check_code(code, &mut evaluator)?;
         }
 
         if proof.indirect.is_empty() {
@@ -545,41 +555,13 @@ impl Prover {
         // In theory we could avoid mutating the checker if we finished before this part, so
         // we might want to separate it out later.
         // Add the negated goal
-        let negated_goal_clauses = self.normalizer.normalize_value(negated_goal, true)?;
+        let negated_goal_clauses = self.normalizer.normalize_value(&negated_goal, true)?;
         for clause in negated_goal_clauses {
             self.checker.insert_clause(&clause);
         }
 
         for code in &proof.indirect {
-            // Parse as a statement with in_block=true to allow bare expressions
-            let statement = Statement::parse_str_with_options(&code, true)?;
-            
-            let expr = match statement.statement {
-                StatementInfo::VariableSatisfy(_) => {
-                    todo!("Handle let...satisfy statements in concrete proof validation");
-                }
-                StatementInfo::Claim(claim) => {
-                    claim.claim
-                }
-                _ => {
-                    return Err(Error::GeneratedBadCode(format!(
-                        "Expected a claim or let...satisfy statement, got: {}",
-                        code
-                    )));
-                }
-            };
-            let value = evaluator.evaluate_value(&expr, Some(&AcornType::Bool))?;
-            let clauses = self.normalizer.normalize_value(&value, true)?;
-
-            for clause in clauses {
-                if self.checker.evaluate_clause(&clause) != Some(true) {
-                    return Err(Error::GeneratedBadCode(format!(
-                        "The clause {} is not obviously true",
-                        self.display(&clause)
-                    )));
-                }
-                self.checker.insert_clause(&clause);
-            }
+            self.check_code(code, &mut evaluator)?;
         }
 
         // We should have a contradiction
