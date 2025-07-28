@@ -1385,33 +1385,40 @@ impl Project {
 
         let path = self.path_from_descriptor(descriptor)?;
         let mut text = String::new();
-        let Some(stringPath) = path.to_str() else {
-            println!("error: path cannot be empty");
-            std::process::exit(1);
-        };
-        if stringPath == "<stdin>" {
-            if io::stdin().is_terminal() {
-                // Throws an error if it is in a terminal
-                return Err(ImportError::NotFound(String::from("cannot read stdin in an active terminal")));
-            }
-            let _ = io::stdin().lock();
-            for line in io::stdin().lines() {
-                text.push_str(&line.unwrap());
-                text.push('\n');
-            }
-        } else if stringPath.starts_with("-:"){
-            if io::stdin().is_terminal() {
-                // Throws an error if it is in a terminal
-                return Err(ImportError::NotFound(String::from("cannot read stdin in an active terminal")));
-            }
-            let path2 = &stringPath[2..];
-            text = self
-                .read_file(&PathBuf::from(path2))
-                .map_err(|e| ImportError::NotFound(e.to_string()))?;
-            let _ = io::stdin().lock();
-            for line in io::stdin().lines() {
-                text.push_str(&line.unwrap());
-                text.push('\n');
+        if let Some(path_string) = path.to_str() {
+            if path_string == "<stdin>" {
+                if io::stdin().is_terminal() {
+                    // Throws an error if it is in a terminal
+                    return Err(ImportError::NotFound(String::from("cannot read stdin in an active terminal")));
+                }
+                let _ = io::stdin().lock();
+                for line in io::stdin().lines() {
+                    text.push_str(&line.unwrap());
+                    text.push('\n');
+                }
+            } else if path_string.starts_with("-:") {
+                let Some(string_path) = path.to_str() else {
+                    println!("error: path cannot be empty");
+                    std::process::exit(1);
+                };
+                if io::stdin().is_terminal() {
+                    // Throws an error if it is in a terminal
+                    return Err(ImportError::NotFound(String::from("cannot read stdin in an active terminal")));
+                }
+                let path2 = &string_path[2..];
+                println!("Path: {}", path2);
+                text = self
+                    .read_file(&PathBuf::from(path2))
+                    .map_err(|e| ImportError::NotFound(e.to_string()))?;
+                let _ = io::stdin().lock();
+                for line in io::stdin().lines() {
+                    text.push_str(&line.unwrap());
+                    text.push('\n');
+                }
+            } else {     
+                text = self
+                    .read_file(&path)
+                    .map_err(|e| ImportError::NotFound(e.to_string()))?;
             }
         } else {
             text = self

@@ -144,7 +144,7 @@ async fn main() {
     // Run the verifier with input appended to a file.
     if let Some(append) = args.append_to {
         let Some(target) = args.target else {
-            println!("Error: --append_to requires a target module or file to be specified.");
+            println!("Error: --append_to requires a target file to be specified.");
             std::process::exit(1);
         };
         if target != "-" {
