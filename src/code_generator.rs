@@ -155,7 +155,7 @@ impl CodeGenerator<'_> {
         normalizer: &Normalizer,
         codes: &mut Vec<String>,
     ) -> Result<()> {
-        let infos = normalizer.find_skolem_info(&skolem_ids);
+        let infos = normalizer.find_covering_skolem_info(&skolem_ids);
         for info in &infos {
             let mut decl = vec![];
             for id in &info.ids {

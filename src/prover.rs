@@ -476,20 +476,29 @@ impl Prover {
     }
 
     /// Helper method to check a single line of code in a proof.
-    fn check_code(
-        &mut self,
-        code: &str,
-        evaluator: &mut Evaluator,
-    ) -> Result<(), Error> {
+    fn check_code(&mut self, code: &str, evaluator: &mut Evaluator) -> Result<(), Error> {
         // Parse as a statement with in_block=true to allow bare expressions
         let statement = Statement::parse_str_with_options(&code, true)?;
-        
-        let expr = match statement.statement {
+
+        match statement.statement {
             StatementInfo::VariableSatisfy(_) => {
                 todo!("Handle let...satisfy statements in concrete proof validation");
             }
             StatementInfo::Claim(claim) => {
-                claim.claim
+                let value = evaluator.evaluate_value(&claim.claim, Some(&AcornType::Bool))?;
+                let clauses = self.normalizer.normalize_value(&value, true)?;
+
+                for clause in clauses {
+                    if self.checker.evaluate_clause(&clause) != Some(true) {
+                        return Err(Error::GeneratedBadCode(format!(
+                            "The clause {} is not obviously true",
+                            self.display(&clause)
+                        )));
+                    }
+                    self.checker.insert_clause(&clause);
+                }
+
+                Ok(())
             }
             _ => {
                 return Err(Error::GeneratedBadCode(format!(
@@ -497,20 +506,7 @@ impl Prover {
                     code
                 )));
             }
-        };
-        let value = evaluator.evaluate_value(&expr, Some(&AcornType::Bool))?;
-        let clauses = self.normalizer.normalize_value(&value, true)?;
-
-        for clause in clauses {
-            if self.checker.evaluate_clause(&clause) != Some(true) {
-                return Err(Error::GeneratedBadCode(format!(
-                    "The clause {} is not obviously true",
-                    self.display(&clause)
-                )));
-            }
-            self.checker.insert_clause(&clause);
         }
-        Ok(())
     }
 
     /// Use the checker to check a proof that we just generated.

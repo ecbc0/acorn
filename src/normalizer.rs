@@ -569,7 +569,7 @@ impl Normalizer {
     /// of skolem information that covers them.
     /// The output may have skolems that aren't used in the input.
     /// The input doesn't have to be in order and may contain duplicates.
-    pub fn find_skolem_info(&self, ids: &[AtomId]) -> Vec<Arc<SkolemInfo>> {
+    pub fn find_covering_skolem_info(&self, ids: &[AtomId]) -> Vec<Arc<SkolemInfo>> {
         let mut covered = HashSet::new();
         let mut output = vec![];
         for id in ids {
