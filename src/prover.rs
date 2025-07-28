@@ -14,7 +14,6 @@ use crate::clause::Clause;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::display::DisplayClause;
 use crate::evaluator::Evaluator;
-use crate::expression::Expression;
 use crate::fact::Fact;
 use crate::goal::{Goal, GoalContext};
 use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
@@ -26,6 +25,7 @@ use crate::project::Project;
 use crate::proof::{ConcreteProof, Difficulty, Proof};
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
 use crate::source::SourceType;
+use crate::statement::{Statement, StatementInfo};
 use crate::term::Term;
 use crate::term_graph::TermGraphContradiction;
 
@@ -494,7 +494,23 @@ impl Prover {
 
         let mut evaluator = Evaluator::new(bindings, project, None);
         for code in &proof.direct {
-            let expr = Expression::parse_value_string(&code)?;
+            // Parse as a statement with in_block=true to allow bare expressions
+            let statement = Statement::parse_str_with_options(&code, true)?;
+            
+            let expr = match statement.statement {
+                StatementInfo::VariableSatisfy(_) => {
+                    todo!("Handle let...satisfy statements in concrete proof validation");
+                }
+                StatementInfo::Claim(claim) => {
+                    claim.claim
+                }
+                _ => {
+                    return Err(Error::GeneratedBadCode(format!(
+                        "Expected a claim or let...satisfy statement, got: {}",
+                        code
+                    )));
+                }
+            };
             let value = evaluator.evaluate_value(&expr, Some(&AcornType::Bool))?;
             let clauses = self.normalizer.normalize_value(&value, true)?;
 
@@ -535,7 +551,23 @@ impl Prover {
         }
 
         for code in &proof.indirect {
-            let expr = Expression::parse_value_string(&code)?;
+            // Parse as a statement with in_block=true to allow bare expressions
+            let statement = Statement::parse_str_with_options(&code, true)?;
+            
+            let expr = match statement.statement {
+                StatementInfo::VariableSatisfy(_) => {
+                    todo!("Handle let...satisfy statements in concrete proof validation");
+                }
+                StatementInfo::Claim(claim) => {
+                    claim.claim
+                }
+                _ => {
+                    return Err(Error::GeneratedBadCode(format!(
+                        "Expected a claim or let...satisfy statement, got: {}",
+                        code
+                    )));
+                }
+            };
             let value = evaluator.evaluate_value(&expr, Some(&AcornType::Bool))?;
             let clauses = self.normalizer.normalize_value(&value, true)?;
 

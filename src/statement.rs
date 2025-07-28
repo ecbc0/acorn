@@ -1438,9 +1438,13 @@ impl Statement {
     }
 
     pub fn parse_str(input: &str) -> Result<Statement> {
+        Statement::parse_str_with_options(input, false)
+    }
+
+    pub fn parse_str_with_options(input: &str, in_block: bool) -> Result<Statement> {
         let tokens = Token::scan(input);
         let mut tokens = TokenIter::new(tokens);
-        match Statement::parse(&mut tokens, false)? {
+        match Statement::parse(&mut tokens, in_block)? {
             (Some(statement), _) => Ok(statement),
             _ => panic!("expected statement, got EOF"),
         }
