@@ -147,31 +147,14 @@ impl CodeGenerator<'_> {
         Ok(expr.to_string())
     }
 
-    /// Convert to a clause to code strings.
-    /// This will generate skolem definitions if necessary.
-    pub fn concrete_clause_to_code(
+    /// Generates definitions for the given Skolem IDs and appends them to codes.
+    /// Updates self.skolem_names with names for all provided Skolem IDs.
+    fn define_skolems(
         &mut self,
-        clause: &Clause,
-        negate: bool,
+        skolem_ids: Vec<AtomId>,
         normalizer: &Normalizer,
-    ) -> Result<Vec<String>> {
-        self.add_arbitrary_for_clause(clause);
-        let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names));
-
-        if negate {
-            value = value.pretty_negate();
-        }
-        let mut codes = vec![];
-
-        // Define the arbitrary variables.
-        for (ty, name) in self.arbitrary_names.clone() {
-            let ty_code = self.type_to_code(&normalizer.denormalize_type(ty))?;
-            let decl = format!("let {}: {} satisfy {{ true }}", name, ty_code);
-            codes.push(decl);
-        }
-
-        // Create a name and definition for each skolem variable.
-        let skolem_ids = value.find_skolems();
+        codes: &mut Vec<String>,
+    ) -> Result<()> {
         let infos = normalizer.find_skolem_info(&skolem_ids);
         for info in &infos {
             let mut decl = vec![];
@@ -212,6 +195,35 @@ impl CodeGenerator<'_> {
             let let_statement = format!("let {} satisfy {{ {} }}", decl, cond);
             codes.push(let_statement);
         }
+        Ok(())
+    }
+
+    /// Convert to a clause to code strings.
+    /// This will generate skolem definitions if necessary.
+    pub fn concrete_clause_to_code(
+        &mut self,
+        clause: &Clause,
+        negate: bool,
+        normalizer: &Normalizer,
+    ) -> Result<Vec<String>> {
+        self.add_arbitrary_for_clause(clause);
+        let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names));
+
+        if negate {
+            value = value.pretty_negate();
+        }
+        let mut codes = vec![];
+
+        // Define the arbitrary variables.
+        for (ty, name) in self.arbitrary_names.clone() {
+            let ty_code = self.type_to_code(&normalizer.denormalize_type(ty))?;
+            let decl = format!("let {}: {} satisfy {{ true }}", name, ty_code);
+            codes.push(decl);
+        }
+
+        // Create a name and definition for each skolem variable.
+        let skolem_ids = value.find_skolems();
+        self.define_skolems(skolem_ids, normalizer, &mut codes)?;
 
         let mut subvalues = vec![];
         value = value.replace_skolems(self.bindings.module_id(), &self.skolem_names);
