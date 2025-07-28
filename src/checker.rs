@@ -30,6 +30,12 @@ impl Checker {
         } else {
             // Add clauses with variables to the clause set
             self.clause_set.insert(clause.clone(), step_id);
+            
+            // Also add all equality resolution clauses
+            let resolutions = clause.equality_resolutions();
+            for resolution in resolutions {
+                self.insert_clause(&resolution);
+            }
         }
     }
 
