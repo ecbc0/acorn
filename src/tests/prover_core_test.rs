@@ -1018,6 +1018,39 @@ fn test_concrete_proof_exact_clause_match() {
 }
 
 #[test]
+fn test_concrete_proof_proving_an_or() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        inductive Foo {
+          foo
+        }
+            
+        let f: Foo -> Bool = axiom
+        let g: Foo -> Bool = axiom
+        let h: Foo -> Bool = axiom
+            
+        axiom rule1 {
+          f(Foo.foo) or g(Foo.foo) or h(Foo.foo)
+        }
+
+        axiom rule2 {
+          not f(Foo.foo)
+        }
+            
+        theorem goal {
+          g(Foo.foo) or h(Foo.foo)
+        }
+        "#,
+    );
+
+    let c = prove_concrete(&mut p, "main", "goal", true);
+    assert_eq!(c.direct, Vec::<String>::new());
+    assert_eq!(c.indirect, Vec::<String>::new());
+}
+
+#[test]
 fn test_concrete_proof_removes_duplicates() {
     let mut p = Project::new_mock();
     p.mock(
