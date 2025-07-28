@@ -5,12 +5,16 @@ use std::sync::Arc;
 
 use tower_lsp::lsp_types::Url;
 
+use crate::acorn_type::AcornType;
 use crate::acorn_value::AcornValue;
 use crate::active_set::ActiveSet;
 use crate::binding_map::BindingMap;
+use crate::checker::Checker;
 use crate::clause::Clause;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::display::DisplayClause;
+use crate::evaluator::Evaluator;
+use crate::expression::Expression;
 use crate::fact::Fact;
 use crate::goal::{Goal, GoalContext};
 use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
@@ -19,8 +23,9 @@ use crate::module::ModuleId;
 use crate::normalizer::Normalizer;
 use crate::passive_set::PassiveSet;
 use crate::project::Project;
-use crate::proof::{Difficulty, Proof};
+use crate::proof::{ConcreteProof, Difficulty, Proof};
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
+use crate::source::SourceType;
 use crate::term::Term;
 use crate::term_graph::TermGraphContradiction;
 
@@ -36,6 +41,10 @@ pub struct Prover {
     /// The "passive" clauses are a queue of pending clauses that
     /// we will add to the active clauses in the future.
     passive_set: PassiveSet,
+
+    /// The "checker" is used to quickly check if a clause can be proven
+    /// in a single step from the known clauses.
+    checker: Checker,
 
     /// A verbose prover prints out a lot of stuff.
     pub verbose: bool,
@@ -120,6 +129,7 @@ impl Prover {
             normalizer: Normalizer::new(),
             active_set: ActiveSet::new(),
             passive_set: PassiveSet::new(),
+            checker: Checker::new(),
             verbose,
             final_step: None,
             stop_flags: vec![project.build_stopped.clone()],
@@ -135,6 +145,7 @@ impl Prover {
     /// The fact can be either polymorphic or monomorphic.
     pub fn add_fact(&mut self, fact: Fact) {
         let mut steps = vec![];
+        let from_negated_goal = fact.source().source_type == SourceType::NegatedGoal;
         match self.normalizer.normalize_fact(fact, &mut steps) {
             Ok(()) => {}
             Err(s) => {
@@ -142,6 +153,11 @@ impl Prover {
                 return;
             }
         };
+        if !from_negated_goal {
+            for step in &steps {
+                self.checker.insert_clause(&step.clause);
+            }
+        }
         self.passive_set.push_batch(steps);
     }
 
@@ -459,6 +475,91 @@ impl Prover {
         Some(proof)
     }
 
+    /// Use the checker to check a proof that we just generated.
+    /// This does mutate the checker itself, so if you do anything else afterwards it'll be weird.
+    pub fn check_proof(
+        &mut self,
+        proof: &ConcreteProof,
+        project: &Project,
+        bindings: &BindingMap,
+    ) -> Result<(), Error> {
+        let negated_goal = match &self.goal {
+            Some(NormalizedGoal::ProveNegated(negated_goal, _)) => negated_goal,
+            _ => {
+                return Err(Error::InternalError(
+                    "cannot check proof without a goal".to_string(),
+                ))
+            }
+        };
+
+        let mut evaluator = Evaluator::new(bindings, project, None);
+        for code in &proof.direct {
+            let expr = Expression::parse_value_string(&code)?;
+            let value = evaluator.evaluate_value(&expr, Some(&AcornType::Bool))?;
+            let clauses = self.normalizer.normalize_value(&value, true)?;
+
+            for clause in clauses {
+                if self.checker.evaluate_clause(&clause) != Some(true) {
+                    return Err(Error::GeneratedBadCode(format!(
+                        "The clause {} is not obviously true",
+                        self.display(&clause)
+                    )));
+                }
+                self.checker.insert_clause(&clause);
+            }
+        }
+
+        if proof.indirect.is_empty() {
+            // Check the goal
+            let goal_value = negated_goal.clone().pretty_negate();
+            let goal_clauses = self.normalizer.normalize_value(&goal_value, true)?;
+            let mut ok = true;
+            for clause in goal_clauses {
+                if self.checker.evaluate_clause(&clause) != Some(true) {
+                    ok = false;
+                    break;
+                }
+            }
+            if ok {
+                return Ok(());
+            }
+        }
+
+        // Try a proof by contradiction.
+        // In theory we could avoid mutating the checker if we finished before this part, so
+        // we might want to separate it out later.
+        // Add the negated goal
+        let negated_goal_clauses = self.normalizer.normalize_value(negated_goal, true)?;
+        for clause in negated_goal_clauses {
+            self.checker.insert_clause(&clause);
+        }
+
+        for code in &proof.indirect {
+            let expr = Expression::parse_value_string(&code)?;
+            let value = evaluator.evaluate_value(&expr, Some(&AcornType::Bool))?;
+            let clauses = self.normalizer.normalize_value(&value, true)?;
+
+            for clause in clauses {
+                if self.checker.evaluate_clause(&clause) != Some(true) {
+                    return Err(Error::GeneratedBadCode(format!(
+                        "The clause {} is not obviously true",
+                        self.display(&clause)
+                    )));
+                }
+                self.checker.insert_clause(&clause);
+            }
+        }
+
+        // We should have a contradiction
+        if self.checker.has_contradiction() {
+            Ok(())
+        } else {
+            Err(Error::GeneratedBadCode(
+                "The proof does not lead to a contradiction".to_string(),
+            ))
+        }
+    }
+
     fn report_term_graph_contradiction(&mut self, contradiction: TermGraphContradiction) {
         let mut active_ids = vec![];
         let mut passive_ids = vec![];
@@ -742,11 +843,11 @@ impl Prover {
 
     /// Attempts to convert this clause to code, but shows the clause form if that's all we can.
     fn clause_to_code(&self, bindings: &BindingMap, clause: &Clause) -> String {
-        let denormalized = self.normalizer.denormalize(clause);
+        let denormalized = self.normalizer.denormalize(clause, None);
         match CodeGenerator::new(bindings).value_to_code(&denormalized) {
             Ok(code) => return code,
             Err(Error::Skolem(_)) => {
-                // This is a known problem - our code generator doesn't handle skolems.
+                // TODO: is this fixed now? We at least sometimes generate skolems.
             }
             Err(e) => {
                 // We shouldn't run into these sorts of errors in testing.

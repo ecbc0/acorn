@@ -53,17 +53,32 @@ pub fn prove_with_code(
 }
 
 /// Expects the proof to succeed, and a concrete proof to be generated.
-pub fn prove_concrete(project: &mut Project, module_name: &str, goal_name: &str) -> ConcreteProof {
-    let (project, env, prover, outcome) = prove(project, module_name, goal_name);
+pub fn prove_concrete(
+    project: &mut Project,
+    module_name: &str,
+    goal_name: &str,
+    check_proof: bool,
+) -> ConcreteProof {
+    let (project, base_env, mut prover, outcome) = prove(project, module_name, goal_name);
     assert_eq!(outcome, Outcome::Success);
     let mut proof = match prover.get_uncondensed_proof(false) {
         Some(proof) => proof,
         None => panic!("no proof"),
     };
+    let node = base_env.get_node_by_description(goal_name);
+    let env = node.goal_env().unwrap();
     prover.print_proof(project, &env.bindings, &proof);
-    proof
+    let concrete_proof = proof
         .make_concrete(&env.bindings)
-        .expect("make_concrete failed")
+        .expect("make_concrete failed");
+
+    if check_proof {
+        prover
+            .check_proof(&concrete_proof, project, &env.bindings)
+            .expect("proof check failed");
+    }
+
+    concrete_proof
 }
 
 pub fn prove_as_main(text: &str, goal_name: &str) -> (Prover, Outcome, Result<Vec<String>, Error>) {

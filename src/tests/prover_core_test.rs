@@ -894,6 +894,72 @@ fn test_useful_fact_extraction() {
 }
 
 #[test]
+fn test_concrete_proof_rewrite_only() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        inductive Foo {
+          foo
+          bar
+          baz
+        }
+            
+        let f: Foo -> Foo = axiom
+
+        axiom rule1 {
+          f(Foo.foo) = f(Foo.bar)
+        }
+
+        axiom rule2 {
+          f(Foo.bar) = f(Foo.baz)
+        }
+            
+        theorem goal {
+          f(Foo.foo) = f(Foo.baz)
+        }
+        "#,
+    );
+
+    let c = prove_concrete(&mut p, "main", "goal", true);
+    assert_eq!(c.direct, Vec::<String>::new());
+    assert_eq!(c.indirect, Vec::<String>::new());
+}
+
+#[test]
+fn test_concrete_proof_modus_ponens_only() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        inductive Foo {
+          foo
+          bar
+          baz
+        }
+            
+        let f: Foo -> Bool = axiom
+
+        axiom rule1 {
+          f(Foo.foo) implies f(Foo.bar)
+        }
+
+        axiom rule2 {
+          f(Foo.bar) implies f(Foo.baz)
+        }
+            
+        theorem goal {
+          f(Foo.foo) implies f(Foo.baz)
+        }
+        "#,
+    );
+
+    let c = prove_concrete(&mut p, "main", "goal", true);
+    assert_eq!(c.direct, Vec::<String>::new());
+    assert_eq!(c.indirect, Vec::<String>::new());
+}
+
+#[test]
 fn test_concrete_proof_with_active_resolution() {
     let mut p = Project::new_mock();
     p.mock(
@@ -917,8 +983,37 @@ fn test_concrete_proof_with_active_resolution() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal");
+    let c = prove_concrete(&mut p, "main", "goal", true);
     assert_eq!(c.direct, vec!["not g(y) or not f(y) or h(y)"]);
+    assert_eq!(c.indirect, Vec::<String>::new());
+}
+
+#[test]
+fn test_concrete_proof_exact_clause_match() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        inductive Foo {
+          foo
+        }
+            
+        let f: Foo -> Bool = axiom
+        let g: Foo -> Bool = axiom
+        let h: Foo -> Bool = axiom
+            
+        axiom rule {
+          f(Foo.foo) or g(Foo.foo) or h(Foo.foo)
+        }
+            
+        theorem goal {
+          f(Foo.foo) or g(Foo.foo) or h(Foo.foo)
+        }
+        "#,
+    );
+
+    let c = prove_concrete(&mut p, "main", "goal", true);
+    assert_eq!(c.direct, Vec::<String>::new());
     assert_eq!(c.indirect, Vec::<String>::new());
 }
 
@@ -949,7 +1044,7 @@ fn test_concrete_proof_removes_duplicates() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal");
+    let c = prove_concrete(&mut p, "main", "goal", true);
     assert_eq!(c.direct, vec!["not f(y) or g(y)", "f(y)"]);
     assert_eq!(c.indirect, Vec::<String>::new());
 }
@@ -986,7 +1081,7 @@ fn test_concrete_proof_with_passive_resolution() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal");
+    let c = prove_concrete(&mut p, "main", "goal", true);
     assert_eq!(
         c.direct,
         vec![
@@ -1024,7 +1119,7 @@ fn test_concrete_proof_activating_rewrite_pattern() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal");
+    let c = prove_concrete(&mut p, "main", "goal", true);
     assert_eq!(c.direct, vec!["g(y) = f(y)"]);
     assert_eq!(c.indirect, Vec::<String>::new());
 }
@@ -1054,7 +1149,7 @@ fn test_concrete_proof_with_passive_contradiction() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal");
+    let c = prove_concrete(&mut p, "main", "goal", false);
     assert_eq!(c.direct, vec!["f(Foo.foo) = g(Foo.foo)"]);
     assert_eq!(c.indirect, Vec::<String>::new());
 }
@@ -1083,7 +1178,7 @@ fn test_concrete_proof_with_multiple_rewrite() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal");
+    let c = prove_concrete(&mut p, "main", "goal", false);
     assert_eq!(
         c.direct,
         vec![
@@ -1121,7 +1216,7 @@ fn test_concrete_proof_random_bug() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal");
+    let c = prove_concrete(&mut p, "main", "goal", false);
     assert_eq!(c.direct, vec!["h(y) = f(y) or g(y) = f(y) or f(y) = z"]);
     assert_eq!(c.indirect, vec!["g(y) != f(y)"]);
 }
@@ -1155,7 +1250,7 @@ fn test_concrete_proof_with_equality_factoring() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal");
+    let c = prove_concrete(&mut p, "main", "goal", false);
     assert_eq!(c.direct, vec!["g(y) = h(y)", "h(y) != f(y)"]);
     assert_eq!(c.indirect, Vec::<String>::new());
 }
@@ -1191,7 +1286,7 @@ fn test_concrete_proof_with_equality_factoring_mixed_forwards() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal");
+    let c = prove_concrete(&mut p, "main", "goal", false);
     assert_eq!(c.direct, vec!["g(y) = h(y)", "f(y) != h(y)"]);
     assert_eq!(c.indirect, Vec::<String>::new());
 }
@@ -1224,7 +1319,7 @@ fn test_concrete_proof_with_equality_resolution() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal");
+    let c = prove_concrete(&mut p, "main", "goal", false);
     assert_eq!(
         c.direct,
         vec![
@@ -1261,7 +1356,7 @@ fn test_concrete_proof_with_function_elimination() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal");
+    let c = prove_concrete(&mut p, "main", "goal", false);
     assert_eq!(c.direct, Vec::<String>::new());
     assert_eq!(c.indirect, Vec::<String>::new());
 }
@@ -1294,7 +1389,47 @@ fn test_concrete_proof_with_skolem() {
         "#,
     );
 
-    // let _c = prove_concrete(&mut p, "main", "goal");
-    // assert_eq!(c.direct, Vec::<String>::new());
-    // assert_eq!(c.indirect, Vec::<String>::new());
+    let c = prove_concrete(&mut p, "main", "goal", false);
+    assert_eq!(
+        c.direct,
+        vec![
+            "let s0: Foo -> Foo satisfy { forall(x0: Foo) { not f(x0) or g(x0, s0(x0)) } }",
+            "not f(x) or g(x, s0(x))",
+            "g(x, s0(x))"
+        ]
+    );
+    assert_eq!(c.indirect, Vec::<String>::new());
+}
+
+#[test]
+fn test_concrete_proof_with_free_variable() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        inductive Foo {
+            foo
+            bar
+        }
+            
+        let f: Foo -> Bool = axiom
+        let g: Bool = axiom
+
+        axiom rule1(x: Foo) {
+            f(x)
+        }
+
+        axiom rule2(x: Foo) {
+            f(x) implies g
+        }
+            
+        theorem goal {
+            g
+        }
+        "#,
+    );
+
+    let c = prove_concrete(&mut p, "main", "goal", false);
+    assert_eq!(c.direct, &["let s0: Foo satisfy { true }", "f(s0)"]);
+    assert_eq!(c.indirect, Vec::<String>::new());
 }

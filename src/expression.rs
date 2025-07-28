@@ -590,6 +590,17 @@ impl Expression {
         answer
     }
 
+    pub fn parse_value_string(input: &str) -> Result<Expression> {
+        let tokens = Token::scan(input);
+        let mut tokens = TokenIter::new(tokens);
+        let (expr, _) = Expression::parse(
+            &mut tokens,
+            ExpressionType::Value,
+            Terminator::Is(TokenType::NewLine),
+        )?;
+        Ok(expr)
+    }
+
     fn expect_parse(input: &str, expected_type: ExpressionType) -> Expression {
         let tokens = Token::scan(input);
         let mut tokens = TokenIter::new(tokens);
@@ -1243,12 +1254,7 @@ impl Expression {
                         .append(pat.pretty_ref(allocator))
                         .append(allocator.space())
                         .append(allocator.text("{"))
-                        .append(
-                            allocator
-                                .line()
-                                .append(exp.pretty_ref(allocator))
-                                .nest(4),
-                        )
+                        .append(allocator.line().append(exp.pretty_ref(allocator)).nest(4))
                         .append(allocator.line())
                         .append(allocator.text("}"));
                 }

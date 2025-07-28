@@ -90,7 +90,6 @@ impl Environment {
     }
 
     /// Create a child environment.
-    /// theorem_name is provided if this is the newly-created environment for proving a theorem.
     pub fn create_child(&self, first_line: u32, implicit: bool) -> Self {
         Environment {
             module_id: self.module_id,

@@ -121,7 +121,7 @@ impl<'a> ProofNode<'a> {
     fn to_code(&self, normalizer: &Normalizer, bindings: &BindingMap) -> Result<String, Error> {
         match &self.value {
             NodeValue::Clause(clause) => {
-                let mut value = normalizer.denormalize(clause);
+                let mut value = normalizer.denormalize(clause, None);
                 if self.negated {
                     value = value.pretty_negate();
                 }
@@ -664,6 +664,8 @@ pub struct ConcreteProof {
 impl<'a> Proof<'a> {
     /// Create the concrete proof.
     pub fn make_concrete(&mut self, bindings: &BindingMap) -> Result<ConcreteProof, Error> {
+        let mut generator = CodeGenerator::new(&bindings);
+
         // First, reconstruct all the steps, working backwards.
         let mut var_map_map: HashMap<ProofStepId, HashSet<VariableMap>> = HashMap::new();
         var_map_map
@@ -687,8 +689,9 @@ impl<'a> Proof<'a> {
             if id == ProofStepId::Final {
                 continue;
             }
-            for var_map in var_maps {
+            for mut var_map in var_maps {
                 let generic = self.get_clause(id)?;
+                var_map.keep_unmapped_in_clause(&generic);
                 let concrete = var_map.specialize_clause(generic);
                 let node_id = *self.id_map.get(&id).unwrap();
                 concrete_clauses
@@ -704,9 +707,11 @@ impl<'a> Proof<'a> {
             if step.rule.is_assumption() && !step.clause.has_any_variable() {
                 if let Some(clauses) = concrete_clauses.remove(&self.id_map[id]) {
                     for clause in clauses {
-                        let value = self.normalizer.denormalize(&clause);
-                        let code = CodeGenerator::new(&bindings).value_to_code(&value)?;
-                        skip_code.insert(code);
+                        let codes =
+                            generator.concrete_clause_to_code(&clause, false, self.normalizer)?;
+                        for code in codes {
+                            skip_code.insert(code);
+                        }
                     }
                 }
             }
@@ -724,8 +729,8 @@ impl<'a> Proof<'a> {
                 continue;
             };
             for clause in clauses.into_iter().rev() {
-                let value = self.normalizer.denormalize(&clause);
-                let codes = CodeGenerator::new(&bindings).value_to_codes(value, !is_true)?;
+                let codes =
+                    generator.concrete_clause_to_code(&clause, !is_true, self.normalizer)?;
                 for code in codes {
                     if !skip_code.contains(&code) && !direct.contains(&code) {
                         direct.push(code);
@@ -749,10 +754,11 @@ impl<'a> Proof<'a> {
                 continue;
             };
             for clause in clauses.into_iter().rev() {
-                let value = self.normalizer.denormalize(&clause);
-                let code = CodeGenerator::new(&bindings).value_to_code(&value)?;
-                if !indirect.contains(&code) {
-                    indirect.push(code);
+                let codes = generator.concrete_clause_to_code(&clause, false, self.normalizer)?;
+                for code in codes {
+                    if !direct.contains(&code) && !indirect.contains(&code) {
+                        indirect.push(code);
+                    }
                 }
             }
         }

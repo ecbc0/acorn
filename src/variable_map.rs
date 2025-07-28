@@ -165,6 +165,29 @@ impl VariableMap {
         Clause::new(specialized_literals)
     }
 
+    fn keep_unmapped_in_term(&mut self, term: &Term) {
+        if let Some(i) = term.atomic_variable() {
+            if !self.has_mapping(i) {
+                self.set(i, term.clone());
+            }
+        } else {
+            for arg in &term.args {
+                self.keep_unmapped_in_term(arg);
+            }
+        }
+    }
+
+    fn keep_unmapped_in_literal(&mut self, literal: &Literal) {
+        self.keep_unmapped_in_term(&literal.left);
+        self.keep_unmapped_in_term(&literal.right);
+    }
+
+    pub fn keep_unmapped_in_clause(&mut self, clause: &Clause) {
+        for literal in &clause.literals {
+            self.keep_unmapped_in_literal(literal);
+        }
+    }
+
     pub fn output_has_any_variable(&self) -> bool {
         for term in &self.map {
             if let Some(term) = term {

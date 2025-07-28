@@ -1,3 +1,6 @@
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
 use crate::acorn_type::AcornType;
 use crate::acorn_value::{AcornValue, BinaryOp, FunctionApplication};
 use crate::atom::{Atom, AtomId};
@@ -13,42 +16,6 @@ use crate::term::{Term, TypeId};
 
 type Result<T> = std::result::Result<T, String>;
 
-/// Returns an error if a type is not normalized.
-fn check_normalized_type(acorn_type: &AcornType) -> Result<()> {
-    match acorn_type {
-        AcornType::Function(function_type) => {
-            if function_type.arg_types.len() == 0 {
-                return Err(format!("Function type {} has no arguments", function_type));
-            }
-            for arg_type in &function_type.arg_types {
-                check_normalized_type(&arg_type)?;
-            }
-            if function_type.return_type.is_functional() {
-                return Err(format!(
-                    "Function type has a functional return type: {}",
-                    function_type
-                ));
-            }
-            check_normalized_type(&function_type.return_type)
-        }
-        AcornType::Bool => Ok(()),
-        AcornType::Data(_, params) => {
-            for param in params {
-                check_normalized_type(&param)?;
-            }
-            Ok(())
-        }
-        AcornType::Variable(..) => {
-            return Err(format!(
-                "Type variables should be monomorphized before normalization: {}",
-                acorn_type
-            ));
-        }
-        AcornType::Empty => Ok(()),
-        AcornType::Arbitrary(..) => Ok(()),
-    }
-}
-
 #[derive(Clone)]
 pub struct Normalizer {
     monomorphizer: Monomorphizer,
@@ -57,13 +24,23 @@ pub struct Normalizer {
     /// Some of them are just constants, so we store an AcornType rather than a FunctionType
     skolem_types: Vec<AcornType>,
 
+    /// skolem_info[id] contains the information about why this skolem function was created.
+    skolem_info: Vec<Arc<SkolemInfo>>,
+
+    /// Same information as `skolem_info`, but indexed by SkolemKey.
+    /// This is used to avoid creating the same skolem function multiple times.
+    skolem_map: HashMap<SkolemKey, Arc<SkolemInfo>>,
+
     normalization_map: NormalizationMap,
 }
 
 /// A normalized representation of an existential statement that we skolemized.
 /// This lets us look up to see if we have skolemized an exact value before.
+#[derive(Hash, Eq, PartialEq, Debug, Clone)]
 struct SkolemKey {
     /// CNF form of the proposition that we skolemized.
+    /// Here, the skolem constants have been turned into variables.
+    /// This lets us to a lookup when we want to check if any skolem ids match.
     clauses: Vec<Clause>,
 
     /// The first `num_existential` variables in the clauses are existential.
@@ -72,16 +49,14 @@ struct SkolemKey {
 
 /// Information about a particular skolem function that we created.
 /// We will need to look this up both by skolem key, and by atom id.
-struct SkolemInfo {
-    /// The type of the skolem function.
-    /// Usually a function, but it could be a constant.
-    atom_type: AcornType,
-
+pub struct SkolemInfo {
     /// CNF form of the proposition that we skolemized.
-    clauses: Vec<Clause>,
+    /// Here, the skolem constants exist in the clauses.
+    pub clauses: Vec<Clause>,
 
-    /// Which skolem atoms were created along with this one.
-    ids: Vec<AtomId>,
+    /// Which skolem atoms were created in this skolemization.
+    /// Each of these should be present in clauses.
+    pub ids: Vec<AtomId>,
 }
 
 impl Normalizer {
@@ -89,12 +64,18 @@ impl Normalizer {
         Normalizer {
             monomorphizer: Monomorphizer::new(),
             skolem_types: vec![],
+            skolem_info: vec![],
+            skolem_map: HashMap::new(),
             normalization_map: NormalizationMap::new(),
         }
     }
 
     pub fn is_skolem(&self, atom: &Atom) -> bool {
         matches!(atom, Atom::Skolem(_))
+    }
+
+    pub fn get_skolem_type(&self, id: AtomId) -> &AcornType {
+        &self.skolem_types[id as usize]
     }
 
     /// The input should already have negations moved inwards.
@@ -367,7 +348,7 @@ impl Normalizer {
         let value = value.move_negation_inwards(true, false);
 
         // println!("pre-skolemize: {}", value);
-        let mut next_skolem_id = self.skolem_types.len() as AtomId;
+        let mut next_skolem_id = self.skolem_info.len() as AtomId;
         let mut created = vec![];
         let value = self.skolemize(&vec![], value, &mut next_skolem_id, &mut created)?;
         // println!("post-skolemize: {}", value);
@@ -376,18 +357,31 @@ impl Normalizer {
 
         if !created.is_empty() {
             let mut skolem_atoms = vec![];
+            let mut ids = vec![];
             for (skolem_id, skolem_type) in created {
                 self.skolem_types.push(skolem_type);
                 skolem_atoms.push(Atom::Skolem(skolem_id));
+                ids.push(skolem_id);
             }
 
             // The first skolem_atom.len() variables are existential, the rest universal.
             // This is implicit, though, because the list of clauses doesn't itself differentiate.
-            let _generic: Vec<_> = clauses
+            let generic: Vec<_> = clauses
                 .iter()
                 .map(|c| c.convert_to_variable(&skolem_atoms))
                 .collect();
-            // TODO: track the genericized form of the clause that we skolemized.
+            let key = SkolemKey {
+                clauses: generic.clone(),
+                num_existential: skolem_atoms.len(),
+            };
+            let info = Arc::new(SkolemInfo {
+                clauses: clauses.clone(),
+                ids,
+            });
+            for _ in &skolem_atoms {
+                self.skolem_info.push(info.clone());
+            }
+            self.skolem_map.insert(key, info);
         }
 
         Ok(clauses)
@@ -398,7 +392,7 @@ impl Normalizer {
     /// Logically, this is an "and of ors". Each Clause is an "or" of its literals.
     /// "true" is represented by an empty list, which is always satisfied.
     /// "false" is represented by a single impossible clause.
-    fn normalize_value(&mut self, value: &AcornValue, local: bool) -> Result<Vec<Clause>> {
+    pub fn normalize_value(&mut self, value: &AcornValue, local: bool) -> Result<Vec<Clause>> {
         if let Err(e) = value.validate() {
             return Err(format!(
                 "validation error: {} while normalizing: {}",
@@ -455,11 +449,14 @@ impl Normalizer {
     }
 
     /// Variables are left unbound. Their types are accumulated.
+    /// If arbitrary names are provided, any free variables of the keyed types are converted
+    /// to constants.
     fn denormalize_atom(
         &self,
         atom_type: TypeId,
         atom: &Atom,
         var_types: &mut Vec<AcornType>,
+        arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
         let acorn_type = self.normalization_map.get_type(atom_type).clone();
         match atom {
@@ -484,6 +481,11 @@ impl Normalizer {
                 } else {
                     panic!("variable index out of order");
                 }
+                if let Some(map) = arbitrary_names {
+                    if let Some(name) = map.get(&atom_type) {
+                        return AcornValue::constant(name.clone(), vec![], acorn_type);
+                    }
+                }
                 AcornValue::Variable(*i, acorn_type)
             }
             Atom::Skolem(i) => {
@@ -494,18 +496,28 @@ impl Normalizer {
         }
     }
 
-    fn denormalize_term(&self, term: &Term, var_types: &mut Vec<AcornType>) -> AcornValue {
-        let head = self.denormalize_atom(term.head_type, &term.head, var_types);
+    fn denormalize_term(
+        &self,
+        term: &Term,
+        var_types: &mut Vec<AcornType>,
+        arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
+    ) -> AcornValue {
+        let head = self.denormalize_atom(term.head_type, &term.head, var_types, arbitrary_names);
         let args: Vec<_> = term
             .args
             .iter()
-            .map(|t| self.denormalize_term(t, var_types))
+            .map(|t| self.denormalize_term(t, var_types, arbitrary_names))
             .collect();
         AcornValue::apply(head, args)
     }
 
-    fn denormalize_literal(&self, literal: &Literal, var_types: &mut Vec<AcornType>) -> AcornValue {
-        let left = self.denormalize_term(&literal.left, var_types);
+    fn denormalize_literal(
+        &self,
+        literal: &Literal,
+        var_types: &mut Vec<AcornType>,
+        arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
+    ) -> AcornValue {
+        let left = self.denormalize_term(&literal.left, var_types, arbitrary_names);
         if literal.right.is_true() {
             if literal.positive {
                 return left;
@@ -513,7 +525,7 @@ impl Normalizer {
                 return AcornValue::Not(Box::new(left));
             }
         }
-        let right = self.denormalize_term(&literal.right, var_types);
+        let right = self.denormalize_term(&literal.right, var_types, arbitrary_names);
         if literal.positive {
             AcornValue::equals(left, right)
         } else {
@@ -522,18 +534,55 @@ impl Normalizer {
     }
 
     /// Converts backwards, from a clause to a value.
-    /// This will panic on a skolem.
-    pub fn denormalize(&self, clause: &Clause) -> AcornValue {
+    /// The resulting value may have skolem atoms in it.
+    /// If arbitrary_names is provided, replace all free variables with constants.
+    pub fn denormalize(
+        &self,
+        clause: &Clause,
+        arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
+    ) -> AcornValue {
         let mut var_types = vec![];
         let mut denormalized_literals = vec![];
         for literal in &clause.literals {
-            denormalized_literals.push(self.denormalize_literal(literal, &mut var_types));
+            denormalized_literals.push(self.denormalize_literal(
+                literal,
+                &mut var_types,
+                arbitrary_names,
+            ));
         }
         let mut answer = denormalized_literals.pop().unwrap();
         for subvalue in denormalized_literals.into_iter().rev() {
             answer = AcornValue::or(subvalue, answer);
         }
-        AcornValue::forall(var_types, answer)
+        if arbitrary_names.is_some() {
+            answer
+        } else {
+            AcornValue::forall(var_types, answer)
+        }
+    }
+
+    pub fn denormalize_type(&self, type_id: TypeId) -> AcornType {
+        self.normalization_map.get_type(type_id).clone()
+    }
+
+    /// Given a list of atom ids for skolems that we need to define, find a set
+    /// of skolem information that covers them.
+    /// The output may have skolems that aren't used in the input.
+    /// The input doesn't have to be in order and may contain duplicates.
+    pub fn find_skolem_info(&self, ids: &[AtomId]) -> Vec<Arc<SkolemInfo>> {
+        let mut covered = HashSet::new();
+        let mut output = vec![];
+        for id in ids {
+            if covered.contains(id) {
+                continue;
+            }
+            let info = self.skolem_info[*id as usize].clone();
+            for skolem_id in &info.ids {
+                covered.insert(*skolem_id);
+            }
+            output.push(info);
+        }
+        output
     }
 
     pub fn atom_str(&self, atom: &Atom) -> String {
@@ -552,7 +601,7 @@ impl Normalizer {
     /// When you denormalize and renormalize a clause, you should get the same thing.
     #[cfg(test)]
     fn check_denormalize_renormalize(&mut self, clause: &Clause) {
-        let denormalized = self.denormalize(clause);
+        let denormalized = self.denormalize(clause, None);
         denormalized
             .validate()
             .expect("denormalized clause should validate");
@@ -610,6 +659,42 @@ impl Normalizer {
             }
         }
         panic!("no theorem named {}", name);
+    }
+}
+
+/// Returns an error if a type is not normalized.
+fn check_normalized_type(acorn_type: &AcornType) -> Result<()> {
+    match acorn_type {
+        AcornType::Function(function_type) => {
+            if function_type.arg_types.len() == 0 {
+                return Err(format!("Function type {} has no arguments", function_type));
+            }
+            for arg_type in &function_type.arg_types {
+                check_normalized_type(&arg_type)?;
+            }
+            if function_type.return_type.is_functional() {
+                return Err(format!(
+                    "Function type has a functional return type: {}",
+                    function_type
+                ));
+            }
+            check_normalized_type(&function_type.return_type)
+        }
+        AcornType::Bool => Ok(()),
+        AcornType::Data(_, params) => {
+            for param in params {
+                check_normalized_type(&param)?;
+            }
+            Ok(())
+        }
+        AcornType::Variable(..) => {
+            return Err(format!(
+                "Type variables should be monomorphized before normalization: {}",
+                acorn_type
+            ));
+        }
+        AcornType::Empty => Ok(()),
+        AcornType::Arbitrary(..) => Ok(()),
     }
 }
 
@@ -815,6 +900,9 @@ mod tests {
         );
         let mut norm = Normalizer::new();
         norm.check(&env, "goal", &["addx(s0, zero) = one"]);
+        assert_eq!(norm.skolem_types.len(), 1);
+        assert_eq!(norm.skolem_info.len(), 1);
+        assert_eq!(norm.skolem_map.len(), 1);
     }
 
     #[test]

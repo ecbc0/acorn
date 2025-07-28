@@ -313,6 +313,9 @@ pub struct TermGraph {
     // When set, this indicates that the provided step sets these terms to be unequal.
     // But there is a chain of rewrites that proves that they are equal. This is a contradiction.
     contradiction_info: Option<(TermId, TermId, StepId)>,
+
+    // When verbose is set, we print out a bunch of debugging information.
+    pub verbose: bool,
 }
 
 impl TermGraph {
@@ -327,7 +330,14 @@ impl TermGraph {
             pending: Vec::new(),
             has_contradiction: false,
             contradiction_info: None,
+            verbose: false,
         }
+    }
+
+    pub fn new_verbose() -> TermGraph {
+        let mut graph = TermGraph::new();
+        graph.verbose = true;
+        graph
     }
 
     /// Returns None if this term isn't in the graph.
@@ -425,6 +435,9 @@ impl TermGraph {
         });
         self.groups.push(group_info);
         self.decompositions.insert(key, term_id);
+        if self.verbose {
+            println!("TG: t{} := {}", term_id, term.head);
+        }
         term_id
     }
 
@@ -455,6 +468,9 @@ impl TermGraph {
         });
         self.groups.push(group_info);
         self.decompositions.insert(key, term_id);
+        if self.verbose {
+            println!("TG: t{} := {}", term_id, term);
+        }
         term_id
     }
 
@@ -523,6 +539,10 @@ impl TermGraph {
     /// The clause is indexed by all groups that appear in its literals.
     /// Don't insert clauses with no literals.
     pub fn insert_clause(&mut self, clause: &Clause, step: StepId) {
+        if self.verbose {
+            println!("TG: Inserting clause: {}", clause);
+        }
+
         // First, insert all terms and collect their IDs
         let mut literal_infos = Vec::new();
         for literal in &clause.literals {
@@ -554,6 +574,25 @@ impl TermGraph {
         let clause_id = ClauseId(self.clauses.len());
         self.clauses.push(Some(clause_info));
 
+        // Check if any literal can already be evaluated
+        let mut needs_reduction = false;
+        for literal_info in &literal_infos {
+            let left_group = self.get_group_id(literal_info.left);
+            let right_group = self.get_group_id(literal_info.right);
+            
+            // Check if the literal can be evaluated
+            if left_group == right_group {
+                // The terms are equal
+                needs_reduction = true;
+            } else {
+                let left_group_info = self.get_group_info(left_group);
+                if left_group_info.inequalities.contains_key(&right_group) {
+                    // The terms are known to be not equal
+                    needs_reduction = true;
+                }
+            }
+        }
+
         // For each literal, add the clause to both groups involved
         for literal_info in &literal_infos {
             let left_group = self.get_group_id(literal_info.left);
@@ -578,6 +617,11 @@ impl TermGraph {
             }
         }
 
+        // If any literal can be evaluated, schedule a reduction
+        if needs_reduction {
+            self.pending.push(SemanticOperation::ClauseReduction(clause_id));
+        }
+
         self.process_pending();
     }
 
@@ -590,6 +634,9 @@ impl TermGraph {
         new_group: GroupId,
         source: Option<RewriteSource>,
     ) {
+        if self.verbose {
+            println!("TG: identifying t{} = t{}", old_term, new_term);
+        }
         let old_info = self.groups[old_group.0 as usize]
             .take()
             .expect("group is remapped");
@@ -914,6 +961,9 @@ impl TermGraph {
     // Set two terms to be not equal.
     // Doesn't repeat to find the logical closure.
     fn set_terms_not_equal_once(&mut self, term1: TermId, term2: TermId, step: StepId) {
+        if self.verbose {
+            println!("TG: setting t{} != t{} at step {}", term1, term2, step);
+        }
         let group1 = self.get_group_id(term1);
         let group2 = self.get_group_id(term2);
         if group1 == group2 {
@@ -1241,7 +1291,6 @@ impl TermGraph {
 
     #[cfg(test)]
     fn insert_clause_str(&mut self, s: &str, step: StepId) {
-        use crate::clause::Clause;
         let clause = Clause::parse(s);
         self.insert_clause(&clause, step);
         self.validate();
@@ -1267,6 +1316,14 @@ impl TermGraph {
     #[cfg(test)]
     fn get_str(&self, s: &str) -> TermId {
         self.get_term_id(&Term::parse(s)).unwrap()
+    }
+
+    #[cfg(test)]
+    fn evaluate_clause_str(&self, s: &str, expected: Option<bool>) {
+        use crate::clause::Clause;
+        let clause = Clause::parse(s);
+        let result = self.evaluate_clause(&clause);
+        assert_eq!(result, expected);
     }
 }
 
@@ -1391,5 +1448,23 @@ mod tests {
         assert!(!g.has_contradiction);
         g.insert_clause_str("c2 = c3", StepId(1));
         assert!(g.has_contradiction);
+    }
+
+    #[test]
+    fn test_hypotheses_then_imp() {
+        let mut g = TermGraph::new();
+        g.insert_clause_str("g1(c1)", StepId(0));
+        g.insert_clause_str("g2(c1)", StepId(1));
+        g.insert_clause_str("not g1(c1) or not g2(c1) or g3(c1)", StepId(2));
+        g.evaluate_clause_str("g3(c1)", Some(true));
+    }
+
+    #[test]
+    fn test_imp_then_hypotheses() {
+        let mut g = TermGraph::new();
+        g.insert_clause_str("not g1(c1) or not g2(c1) or g3(c1)", StepId(2));
+        g.insert_clause_str("g1(c1)", StepId(0));
+        g.insert_clause_str("g2(c1)", StepId(1));
+        g.evaluate_clause_str("g3(c1)", Some(true));
     }
 }

@@ -1,13 +1,18 @@
+use std::collections::HashMap;
 use std::fmt;
 
 use tower_lsp::lsp_types::{LanguageString, MarkedString};
 
 use crate::acorn_type::{AcornType, Datatype, PotentialType, Typeclass};
 use crate::acorn_value::{AcornValue, ConstantInstance};
+use crate::atom::AtomId;
 use crate::binding_map::BindingMap;
+use crate::clause::Clause;
 use crate::expression::{Declaration, Expression};
 use crate::module::ModuleId;
 use crate::names::{ConstantName, DefinedName};
+use crate::normalizer::Normalizer;
+use crate::term::{Term, TypeId};
 use crate::token::TokenType;
 use crate::type_unifier::TypeclassRegistry;
 
@@ -23,8 +28,17 @@ pub struct CodeGenerator<'a> {
     /// We use variables named k0, k1, k2, etc for existential variables.
     next_k: u32,
 
-    /// The names we have assigned to indexed variables so far.
+    /// We use variables named s0, s1, s2, etc for skolem variables.
+    next_s: u32,
+
+    /// The names we have assigned to stack variables so far.
     var_names: Vec<String>,
+
+    /// The names we have assigned to skolem variables so far.
+    skolem_names: HashMap<AtomId, String>,
+
+    /// The names for whenever we need an arbitrary member of a type.
+    arbitrary_names: HashMap<TypeId, ConstantName>,
 }
 
 impl CodeGenerator<'_> {
@@ -34,7 +48,10 @@ impl CodeGenerator<'_> {
             bindings,
             next_x: 0,
             next_k: 0,
+            next_s: 0,
             var_names: vec![],
+            skolem_names: HashMap::new(),
+            arbitrary_names: HashMap::new(),
         }
     }
 
@@ -130,14 +147,75 @@ impl CodeGenerator<'_> {
         Ok(expr.to_string())
     }
 
-    /// Convert to a string, but if this is an "and" node, convert it to multiple strings.
-    pub fn value_to_codes(&mut self, mut value: AcornValue, negate: bool) -> Result<Vec<String>> {
+    /// Convert to a clause to code strings.
+    /// This will generate skolem definitions if necessary.
+    pub fn concrete_clause_to_code(
+        &mut self,
+        clause: &Clause,
+        negate: bool,
+        normalizer: &Normalizer,
+    ) -> Result<Vec<String>> {
+        self.add_arbitrary_for_clause(clause);
+        let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names));
+
         if negate {
             value = value.pretty_negate();
         }
-        let mut subvalues = vec![];
-        value.into_and(&mut subvalues);
         let mut codes = vec![];
+
+        // Define the arbitrary variables.
+        for (ty, name) in self.arbitrary_names.clone() {
+            let ty_code = self.type_to_code(&normalizer.denormalize_type(ty))?;
+            let decl = format!("let {}: {} satisfy {{ true }}", name, ty_code);
+            codes.push(decl);
+        }
+
+        // Create a name and definition for each skolem variable.
+        let skolem_ids = value.find_skolems();
+        let infos = normalizer.find_skolem_info(&skolem_ids);
+        for info in &infos {
+            let mut decl = vec![];
+            for id in &info.ids {
+                if self.skolem_names.contains_key(id) {
+                    // We already have a name for this skolem
+                    continue;
+                }
+                let name = self.bindings.next_indexed_var('s', &mut self.next_s);
+                self.skolem_names.insert(*id, name.clone());
+                decl.push((name, normalizer.get_skolem_type(*id).clone()));
+            }
+            if decl.is_empty() {
+                continue;
+            }
+
+            // Create code for the declaration
+            let mut decl_parts = vec![];
+            for (name, ty) in decl {
+                let ty_code = self.type_to_code(&ty)?;
+                decl_parts.push(format!("{}: {}", name, ty_code));
+            }
+            let decl = if decl_parts.len() > 1 {
+                format!("({})", decl_parts.join(", "))
+            } else {
+                decl_parts.join("")
+            };
+
+            // Create code for the condition
+            let mut cond_parts = vec![];
+            for clause in &info.clauses {
+                let val = normalizer.denormalize(&clause, None);
+                let cond_part = self.value_to_code(&val)?;
+                cond_parts.push(cond_part);
+            }
+            let cond = cond_parts.join(" and ");
+
+            let let_statement = format!("let {} satisfy {{ {} }}", decl, cond);
+            codes.push(let_statement);
+        }
+
+        let mut subvalues = vec![];
+        value = value.replace_skolems(self.bindings.module_id(), &self.skolem_names);
+        value.into_and(&mut subvalues);
         for subvalue in subvalues {
             codes.push(self.value_to_code(&subvalue)?);
         }
@@ -147,6 +225,30 @@ impl CodeGenerator<'_> {
     fn type_to_code(&mut self, acorn_type: &AcornType) -> Result<String> {
         let expr = self.type_to_expr(acorn_type)?;
         Ok(expr.to_string())
+    }
+
+    fn add_arbitrary_for_term(&mut self, term: &Term) {
+        if term.is_variable() {
+            let type_id = term.head_type;
+            if !self.arbitrary_names.contains_key(&type_id) {
+                // Generate a name for this arbitrary value
+                let name = self.bindings.next_indexed_var('s', &mut self.next_s);
+                let cname = ConstantName::Unqualified(self.bindings.module_id(), name);
+                self.arbitrary_names.insert(type_id, cname);
+            }
+        }
+        for arg in &term.args {
+            self.add_arbitrary_for_term(arg);
+        }
+    }
+
+    /// For any variables in this clause, add an arbitrary variable.
+    fn add_arbitrary_for_clause(&mut self, clause: &Clause) {
+        for literal in &clause.literals {
+            for term in [&literal.left, &literal.right] {
+                self.add_arbitrary_for_term(term);
+            }
+        }
     }
 
     /// Create a marked-up string to display information for this value.
@@ -167,6 +269,11 @@ impl CodeGenerator<'_> {
     /// This does *not* include the parameters.
     fn const_to_expr(&self, ci: &ConstantInstance) -> Result<Expression> {
         if ci.name.is_skolem() {
+            if let Some(id) = ci.name.skolem_id() {
+                if let Some(skolem_name) = self.skolem_names.get(&id) {
+                    return Ok(Expression::generate_identifier(skolem_name));
+                }
+            }
             return Err(Error::skolem(&ci.name.to_string()));
         }
 
@@ -558,6 +665,9 @@ pub enum Error {
     // When you try to generate code but there is no proof
     NoProof,
 
+    // Generated code that failed checking
+    GeneratedBadCode(String),
+
     // Something went wrong, it's our fault, and we can't figure out what it is
     InternalError(String),
 }
@@ -583,6 +693,7 @@ impl Error {
             Error::UnhandledValue(_) => "UnhandledValue",
             Error::ExplicitGoal => "ExplicitGoal",
             Error::NoProof => "NoProof",
+            Error::GeneratedBadCode(_) => "GeneratedInvalidCode",
             Error::InternalError(_) => "InternalError",
         }
     }
@@ -611,10 +722,25 @@ impl fmt::Display for Error {
                 write!(f, "could not isolate the goal at the end of the proof")
             }
             Error::NoProof => write!(f, "no proof"),
+            Error::GeneratedBadCode(s) => {
+                write!(f, "generated invalid code: {}", s)
+            }
             Error::InternalError(s) => {
                 write!(f, "internal error: {}", s)
             }
         }
+    }
+}
+
+impl From<crate::compilation::Error> for Error {
+    fn from(err: crate::compilation::Error) -> Self {
+        Error::GeneratedBadCode(err.to_string())
+    }
+}
+
+impl From<String> for Error {
+    fn from(err: String) -> Self {
+        Error::GeneratedBadCode(err)
     }
 }
 
