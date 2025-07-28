@@ -2,6 +2,7 @@ use std::fmt;
 
 use crate::atom::{Atom, AtomId};
 use crate::literal::Literal;
+use crate::unifier::{Scope, Unifier};
 
 // A record of what happened to a single literal during a single proof step.
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -298,5 +299,55 @@ impl Clause {
         Clause {
             literals: new_literals,
         }
+    }
+
+    /// Finds all possible equality resolutions for this clause.
+    /// Returns a vector of tuples containing:
+    /// - The index of the literal that was resolved
+    /// - The resulting literals after applying the unifier
+    /// - The flipped flags for each literal
+    pub fn find_equality_resolutions(&self) -> Vec<(usize, Vec<Literal>, Vec<bool>)> {
+        let mut results = vec![];
+
+        for i in 0..self.literals.len() {
+            let literal = &self.literals[i];
+            if literal.positive {
+                // Negative literals come before positive ones, so we're done
+                break;
+            }
+
+            // The variables are in the same scope, which we will call "left".
+            let mut unifier = Unifier::new(3);
+            if !unifier.unify(Scope::LEFT, &literal.left, Scope::LEFT, &literal.right) {
+                continue;
+            }
+
+            // We can do equality resolution
+            let mut new_literals = vec![];
+            let mut flipped = vec![];
+            for (j, lit) in self.literals.iter().enumerate() {
+                if j != i {
+                    let (new_lit, j_flipped) = unifier.apply_to_literal(Scope::LEFT, lit);
+                    new_literals.push(new_lit);
+                    flipped.push(j_flipped);
+                }
+            }
+
+            // Return the raw literals without checking for tautology
+            // The ActiveSet::equality_resolution will handle that after normalization
+            results.push((i, new_literals, flipped));
+        }
+
+        results
+    }
+
+    /// Generates all clauses that can be derived from this clause using equality resolution.
+    /// This is a convenience method that returns just the normalized clauses.
+    pub fn equality_resolutions(&self) -> Vec<Clause> {
+        self.find_equality_resolutions()
+            .into_iter()
+            .map(|(_, literals, _)| Clause::new(literals))
+            .filter(|clause| !clause.is_tautology())
+            .collect()
     }
 }

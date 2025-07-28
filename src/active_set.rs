@@ -480,39 +480,19 @@ impl ActiveSet {
         let clause = &activated_step.clause;
         let mut answer = vec![];
 
-        for i in 0..clause.literals.len() {
-            // See if we can eliminate the ith literal.
-            let literal = &clause.literals[i];
-            if literal.positive {
-                // Negative literals come before positive ones so we're done
-                break;
-            }
-
-            // The variables are in the same scope, which we will call "left".
-            let mut unifier = Unifier::new(3);
-            if !unifier.unify(Scope::LEFT, &literal.left, Scope::LEFT, &literal.right) {
-                continue;
-            }
-
-            // We can do equality resolution
-            let mut new_literals = vec![];
-            let mut flipped = vec![];
-            for (j, lit) in clause.literals.iter().enumerate() {
-                if j != i {
-                    let (new_lit, j_flipped) = unifier.apply_to_literal(Scope::LEFT, lit);
-                    new_literals.push(new_lit);
-                    flipped.push(j_flipped);
-                }
-            }
+        // Use the new method to find all possible equality resolutions
+        for (index, new_literals, flipped) in clause.find_equality_resolutions() {
             let literals = new_literals.clone();
             let (new_clause, trace) = Clause::normalize_with_trace(new_literals);
+            
+            // Check if normalization resulted in a tautology
             if !new_clause.is_tautology() {
                 let step = ProofStep::direct(
                     activated_id,
                     activated_step,
                     Rule::EqualityResolution(EqualityResolutionInfo {
                         id: activated_id,
-                        index: i,
+                        index,
                         literals,
                         flipped,
                     }),

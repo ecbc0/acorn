@@ -7,6 +7,10 @@ Primarily for the use of the Claude Code tool.
 - The Rust test suite: `cargo test -q`
 - Run a single Rust test: `cargo test -q test_name`
 
+- The slow and extensive global reverify:
+  `cargo run --release -- --filtered`
+  This generally doesn't have to be run, but if the user asks for it we can.
+
 ## Code Style Guidelines
 
 - Use Rust 2021 edition idioms
