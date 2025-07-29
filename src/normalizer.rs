@@ -78,6 +78,37 @@ impl Normalizer {
         &self.skolem_types[id as usize]
     }
 
+    /// Checks if there's an exact match for a skolem for the given value.
+    /// The value should be of the form "exists ___ forall ____ (stuff)".
+    /// Returns the SkolemInfo if this exact skolemization has been performed before.
+    pub fn find_exact_skolem_info(&mut self, value: &AcornValue) -> Option<&Arc<SkolemInfo>> {
+        // Remove exists quantifiers if present
+        let (num_existential, after_exists) = match value {
+            AcornValue::Exists(quants, subvalue) => (quants.len(), subvalue.as_ref().clone()),
+            _ => (0, value.clone()),
+        };
+        
+        // Remove forall quantifiers using the same logic as normalize_cnf
+        let mut universal = vec![];
+        let body = after_exists.remove_forall(&mut universal);
+        
+        // Convert to CNF
+        match self.into_literal_lists(&body, false) {
+            Ok(Some(lists)) => {
+                let clauses = self.normalize_literal_lists(lists);
+                
+                // Create the key
+                let key = SkolemKey {
+                    clauses,
+                    num_existential,
+                };
+                
+                self.skolem_map.get(&key)
+            }
+            _ => None, // Any error or contradiction returns None
+        }
+    }
+
     /// The input should already have negations moved inwards.
     /// The stack must be entirely universal quantifiers.
     /// Outputs the new skolem atoms that were created.
