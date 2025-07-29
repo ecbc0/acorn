@@ -14,6 +14,7 @@ use crate::clause::Clause;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::display::DisplayClause;
 use crate::evaluator::Evaluator;
+use crate::expression::Declaration;
 use crate::fact::Fact;
 use crate::goal::{Goal, GoalContext};
 use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
@@ -481,8 +482,38 @@ impl Prover {
         let statement = Statement::parse_str_with_options(&code, true)?;
 
         match statement.statement {
-            StatementInfo::VariableSatisfy(_) => {
-                todo!("Handle let...satisfy statements in concrete proof validation");
+            StatementInfo::VariableSatisfy(vss) => {
+                // Create an exists value from the let...satisfy statement
+                // The declarations become the existential quantifiers
+                let mut types = vec![];
+                for decl in &vss.declarations {
+                    match decl {
+                        Declaration::Typed(_, type_expr) => {
+                            let acorn_type = evaluator.evaluate_type(type_expr)?;
+                            types.push(acorn_type);
+                        }
+                        Declaration::SelfToken(_) => {
+                            return Err(Error::GeneratedBadCode(
+                                "Unexpected 'self' in let...satisfy statement".to_string()
+                            ));
+                        }
+                    }
+                }
+                
+                // Evaluate the condition with the declared variables on the stack
+                let condition_value = evaluator.evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
+                
+                // Create an exists value
+                let exists_value = AcornValue::exists(types, condition_value);
+                
+                // Check if this matches any existing skolem
+                if let Some(_skolem_info) = self.normalizer.find_exact_skolem_info(&exists_value) {
+                    todo!("Found matching skolem info - need to handle validation")
+                } else {
+                    return Err(Error::GeneratedBadCode(
+                        "let...satisfy statement does not match any skolem definition".to_string()
+                    ));
+                }
             }
             StatementInfo::Claim(claim) => {
                 let value = evaluator.evaluate_value(&claim.claim, Some(&AcornType::Bool))?;
