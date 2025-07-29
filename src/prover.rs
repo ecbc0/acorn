@@ -15,7 +15,7 @@ use crate::clause::Clause;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::display::DisplayClause;
 use crate::evaluator::Evaluator;
-use crate::expression::{Declaration, Expression};
+use crate::expression::Declaration;
 use crate::fact::Fact;
 use crate::goal::{Goal, GoalContext};
 use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
@@ -545,13 +545,33 @@ impl Prover {
                         None,
                         String::new(),
                     );
-                    println!("DEBUG: Successfully added '{}' to bindings", name);
                 }
 
                 // Re-parse the expression with the newly defined variables
-                self.check_expr(&vss.condition, project, bindings)
+                let mut evaluator = Evaluator::new(project, bindings, None);
+                let value = evaluator.evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
+                let clauses = self.normalizer.normalize_value(&value, true)?;
+                for clause in clauses {
+                    self.checker.insert_clause(&clause);
+                }
+                Ok(())
             }
-            StatementInfo::Claim(claim) => self.check_expr(&claim.claim, project, bindings),
+            StatementInfo::Claim(claim) => {
+                let value = evaluator.evaluate_value(&claim.claim, Some(&AcornType::Bool))?;
+                let clauses = self.normalizer.normalize_value(&value, true)?;
+
+                for clause in clauses {
+                    if self.checker.evaluate_clause(&clause) != Some(true) {
+                        return Err(Error::GeneratedBadCode(format!(
+                            "The clause '{}' is not obviously true",
+                            self.display(&clause)
+                        )));
+                    }
+                    self.checker.insert_clause(&clause);
+                }
+
+                Ok(())
+            }
             _ => {
                 return Err(Error::GeneratedBadCode(format!(
                     "Expected a claim or let...satisfy statement, got: {}",
@@ -559,33 +579,6 @@ impl Prover {
                 )));
             }
         }
-    }
-
-    /// Helper method to check an expression (must be boolean type).
-    /// Inserts the resulting clauses into the checker, erroring if they do not check.
-    fn check_expr(
-        &mut self,
-        expr: &Expression,
-        project: &Project,
-        bindings: &Cow<BindingMap>,
-    ) -> Result<(), Error> {
-        // Create a new evaluator for this check
-        let mut evaluator = Evaluator::new(project, bindings, None);
-
-        let value = evaluator.evaluate_value(expr, Some(&AcornType::Bool))?;
-        let clauses = self.normalizer.normalize_value(&value, true)?;
-
-        for clause in clauses {
-            if self.checker.evaluate_clause(&clause) != Some(true) {
-                return Err(Error::GeneratedBadCode(format!(
-                    "The clause '{}' is not obviously true",
-                    self.display(&clause)
-                )));
-            }
-            self.checker.insert_clause(&clause);
-        }
-
-        Ok(())
     }
 
     /// Use the checker to check a proof that we just generated.
