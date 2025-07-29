@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
 use std::sync::atomic::AtomicBool;
@@ -477,10 +478,15 @@ impl Prover {
     }
 
     /// Helper method to check a single line of code in a proof.
-    fn check_code(&mut self, code: &str, project: &Project, bindings: &BindingMap) -> Result<(), Error> {
+    fn check_code(
+        &mut self,
+        code: &str,
+        project: &Project,
+        bindings: &mut Cow<BindingMap>,
+    ) -> Result<(), Error> {
         // Parse as a statement with in_block=true to allow bare expressions
         let statement = Statement::parse_str_with_options(&code, true)?;
-        
+
         // Create a new evaluator for this check
         let mut evaluator = Evaluator::new(project, bindings, None);
 
@@ -488,12 +494,13 @@ impl Prover {
             StatementInfo::VariableSatisfy(vss) => {
                 // Create an exists value from the let...satisfy statement
                 // The declarations become the existential quantifiers
-                let mut types = vec![];
+                let mut decls = vec![];
                 for decl in &vss.declarations {
                     match decl {
-                        Declaration::Typed(_, type_expr) => {
+                        Declaration::Typed(name_token, type_expr) => {
+                            let name = name_token.text().to_string();
                             let acorn_type = evaluator.evaluate_type(type_expr)?;
-                            types.push(acorn_type);
+                            decls.push((name, acorn_type));
                         }
                         Declaration::SelfToken(_) => {
                             return Err(Error::GeneratedBadCode(
@@ -508,6 +515,7 @@ impl Prover {
                     evaluator.evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
 
                 // Create an exists value
+                let types = decls.into_iter().map(|(_, ty)| ty).collect();
                 let exists_value = AcornValue::exists(types, condition_value);
 
                 // Check if this matches any existing skolem
@@ -550,7 +558,7 @@ impl Prover {
         &mut self,
         proof: &ConcreteProof,
         project: &Project,
-        bindings: &BindingMap,
+        bindings: &mut Cow<BindingMap>,
     ) -> Result<(), Error> {
         let negated_goal = match &self.goal {
             Some(NormalizedGoal::ProveNegated(negated_goal, _)) => negated_goal.clone(),

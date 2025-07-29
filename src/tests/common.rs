@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::code_generator::Error;
 use crate::environment::Environment;
 use crate::module::LoadState;
@@ -74,7 +76,7 @@ pub fn prove_concrete(
 
     if check_proof {
         prover
-            .check_proof(&concrete_proof, project, &env.bindings)
+            .check_proof(&concrete_proof, project, &mut Cow::Borrowed(&env.bindings))
             .expect("proof check failed");
     }
 
