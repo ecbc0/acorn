@@ -87,14 +87,7 @@ impl Clause {
     /// Removes any duplicate or impossible literals.
     /// An empty clause indicates an impossible clause.
     pub fn new(literals: Vec<Literal>) -> Clause {
-        let mut literals = literals
-            .into_iter()
-            .filter(|x| !x.is_impossible())
-            .collect::<Vec<_>>();
-        literals.sort();
-        literals.dedup();
-
-        let mut c = Clause { literals };
+        let mut c = Clause::new_without_normalizing_ids(literals);
         c.normalize_var_ids();
         c
     }
