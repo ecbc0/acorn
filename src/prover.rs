@@ -27,6 +27,7 @@ use crate::project::Project;
 use crate::proof::{ConcreteProof, Difficulty, Proof};
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
 use crate::source::SourceType;
+use crate::stack::Stack;
 use crate::statement::{Statement, StatementInfo};
 use crate::term::Term;
 use crate::term_graph::TermGraphContradiction;
@@ -510,9 +511,16 @@ impl Prover {
                     }
                 }
 
+                // Bind the declared variables to the stack
+                let mut stack = Stack::new();
+                evaluator.bind_args(&mut stack, &vss.declarations, None)?;
+
                 // Evaluate the condition with the declared variables on the stack
-                let condition_value =
-                    evaluator.evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
+                let condition_value = evaluator.evaluate_value_with_stack(
+                    &mut stack,
+                    &vss.condition,
+                    Some(&AcornType::Bool),
+                )?;
 
                 // Create an exists value
                 let types = decls.iter().map(|(_, ty)| ty.clone()).collect();
@@ -537,6 +545,7 @@ impl Prover {
                         None,
                         String::new(),
                     );
+                    println!("DEBUG: Successfully added '{}' to bindings", name);
                 }
 
                 // Re-parse the expression with the newly defined variables
@@ -569,7 +578,7 @@ impl Prover {
         for clause in clauses {
             if self.checker.evaluate_clause(&clause) != Some(true) {
                 return Err(Error::GeneratedBadCode(format!(
-                    "The clause {} is not obviously true",
+                    "The clause '{}' is not obviously true",
                     self.display(&clause)
                 )));
             }

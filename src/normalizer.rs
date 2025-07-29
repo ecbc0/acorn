@@ -47,6 +47,19 @@ struct SkolemKey {
     num_existential: usize,
 }
 
+impl std::fmt::Display for SkolemKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Join all the clauses with "and"
+        let clauses_str: Vec<String> = self.clauses.iter().map(|c| c.to_string()).collect();
+        let clauses = clauses_str.join(" and ");
+        write!(
+            f,
+            "SkolemKey(num_existential: {}, clauses: {})",
+            self.num_existential, clauses
+        )
+    }
+}
+
 /// Information about a particular skolem function that we created.
 /// We will need to look this up both by skolem key, and by atom id.
 pub struct SkolemInfo {
@@ -87,22 +100,26 @@ impl Normalizer {
             AcornValue::Exists(quants, subvalue) => (quants.len(), subvalue.as_ref().clone()),
             _ => (0, value.clone()),
         };
-        
+
         // Remove forall quantifiers using the same logic as normalize_cnf
         let mut universal = vec![];
         let body = after_exists.remove_forall(&mut universal);
-        
+
         // Convert to CNF
         match self.into_literal_lists(&body, false) {
             Ok(Some(lists)) => {
-                let clauses = self.normalize_literal_lists(lists);
-                
+                let mut clauses = vec![];
+                for list in lists {
+                    let clause = Clause::new_without_normalizing_ids(list);
+                    clauses.push(clause);
+                }
+
                 // Create the key
                 let key = SkolemKey {
                     clauses,
                     num_existential,
                 };
-                
+
                 self.skolem_map.get(&key)
             }
             _ => None, // Any error or contradiction returns None
@@ -382,7 +399,6 @@ impl Normalizer {
         let mut next_skolem_id = self.skolem_info.len() as AtomId;
         let mut created = vec![];
         let value = self.skolemize(&vec![], value, &mut next_skolem_id, &mut created)?;
-        // println!("post-skolemize: {}", value);
 
         let clauses = self.normalize_cnf(value, local)?;
 

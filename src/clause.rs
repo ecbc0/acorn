@@ -99,6 +99,16 @@ impl Clause {
         c
     }
 
+    pub fn new_without_normalizing_ids(literals: Vec<Literal>) -> Clause {
+        let mut literals = literals
+            .into_iter()
+            .filter(|x| !x.is_impossible())
+            .collect::<Vec<_>>();
+        literals.sort();
+        literals.dedup();
+        Clause { literals }
+    }
+
     /// Normalizes literals into a clause, creating a trace of where each one is sent.
     /// Note that this doesn't flip any literals. It only creates the "Output" and "Impossible"
     /// type traces.

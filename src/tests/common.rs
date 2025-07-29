@@ -75,9 +75,11 @@ pub fn prove_concrete(
         .expect("make_concrete failed");
 
     if check_proof {
-        prover
-            .check_proof(&concrete_proof, project, &mut Cow::Borrowed(&env.bindings))
-            .expect("proof check failed");
+        if let Err(e) =
+            prover.check_proof(&concrete_proof, project, &mut Cow::Borrowed(&env.bindings))
+        {
+            panic!("proof check failed: {}", e);
+        }
     }
 
     concrete_proof
