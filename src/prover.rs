@@ -477,9 +477,12 @@ impl Prover {
     }
 
     /// Helper method to check a single line of code in a proof.
-    fn check_code(&mut self, code: &str, evaluator: &mut Evaluator) -> Result<(), Error> {
+    fn check_code(&mut self, code: &str, project: &Project, bindings: &BindingMap) -> Result<(), Error> {
         // Parse as a statement with in_block=true to allow bare expressions
         let statement = Statement::parse_str_with_options(&code, true)?;
+        
+        // Create a new evaluator for this check
+        let mut evaluator = Evaluator::new(project, bindings, None);
 
         match statement.statement {
             StatementInfo::VariableSatisfy(vss) => {
@@ -558,9 +561,8 @@ impl Prover {
             }
         };
 
-        let mut evaluator = Evaluator::new(project, bindings, None);
         for code in &proof.direct {
-            self.check_code(code, &mut evaluator)?;
+            self.check_code(code, project, bindings)?;
         }
 
         if proof.indirect.is_empty() {
@@ -589,7 +591,7 @@ impl Prover {
         }
 
         for code in &proof.indirect {
-            self.check_code(code, &mut evaluator)?;
+            self.check_code(code, project, bindings)?;
         }
 
         // We should have a contradiction
