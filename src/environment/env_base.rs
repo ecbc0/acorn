@@ -162,7 +162,7 @@ impl Environment {
 
     /// Returns an evaluator that modifies the token map.
     pub fn evaluator<'a>(&'a mut self, project: &'a Project) -> Evaluator<'a> {
-        Evaluator::new(&self.bindings, project, Some(&mut self.token_map))
+        Evaluator::new(project, &self.bindings, Some(&mut self.token_map))
     }
 
     /// Adds a node to represent the definition of the provided

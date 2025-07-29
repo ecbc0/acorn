@@ -558,7 +558,7 @@ impl Prover {
             }
         };
 
-        let mut evaluator = Evaluator::new(bindings, project, None);
+        let mut evaluator = Evaluator::new(project, bindings, None);
         for code in &proof.direct {
             self.check_code(code, &mut evaluator)?;
         }

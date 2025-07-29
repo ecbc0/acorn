@@ -1597,7 +1597,7 @@ impl Project {
         let expression = Expression::expect_value(input);
         let env = self.get_env_by_id(module_id).expect("no env");
         let value =
-            match Evaluator::new(&env.bindings, self, None).evaluate_value(&expression, None) {
+            match Evaluator::new(self, &env.bindings, None).evaluate_value(&expression, None) {
                 Ok(value) => value,
                 Err(e) => panic!("evaluation error: {}", e),
             };
