@@ -515,7 +515,7 @@ impl Prover {
                     evaluator.evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
 
                 // Create an exists value
-                let types = decls.into_iter().map(|(_, ty)| ty).collect();
+                let types = decls.iter().map(|(_, ty)| ty.clone()).collect();
                 let exists_value = AcornValue::exists(types, condition_value);
 
                 // Check if this matches any existing skolem
@@ -524,6 +524,20 @@ impl Prover {
                         "let...satisfy statement does not match any skolem definition".to_string(),
                     ));
                 };
+
+                // Add all the variables in decls to the bindings
+                for (name, acorn_type) in decls {
+                    bindings.to_mut().add_unqualified_constant(
+                        &name,
+                        vec![],
+                        acorn_type,
+                        None,
+                        None,
+                        vec![],
+                        None,
+                        String::new(),
+                    );
+                }
 
                 todo!("Found matching skolem info - need to do something with it");
             }
