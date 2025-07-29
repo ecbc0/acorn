@@ -1395,6 +1395,38 @@ fn test_concrete_proof_with_function_elimination() {
 }
 
 #[test]
+fn test_concrete_proof_of_existence() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        inductive Foo {
+            foo
+            bar
+        }
+            
+        let f: Foo -> Bool = axiom
+
+        axiom rule {
+            exists(x: Foo) {
+                f(x)
+            }
+        }
+            
+        theorem goal {
+            exists(x: Foo) {
+                f(x)
+            }
+        }
+        "#,
+    );
+
+    let c = prove_concrete(&mut p, "main", "goal", false);
+    assert_eq!(c.direct, Vec::<String>::new());
+    assert_eq!(c.indirect, Vec::<String>::new());
+}
+
+#[test]
 fn test_concrete_proof_with_skolem() {
     let mut p = Project::new_mock();
     p.mock(
