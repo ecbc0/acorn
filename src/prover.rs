@@ -494,26 +494,27 @@ impl Prover {
                         }
                         Declaration::SelfToken(_) => {
                             return Err(Error::GeneratedBadCode(
-                                "Unexpected 'self' in let...satisfy statement".to_string()
+                                "Unexpected 'self' in let...satisfy statement".to_string(),
                             ));
                         }
                     }
                 }
-                
+
                 // Evaluate the condition with the declared variables on the stack
-                let condition_value = evaluator.evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
-                
+                let condition_value =
+                    evaluator.evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
+
                 // Create an exists value
                 let exists_value = AcornValue::exists(types, condition_value);
-                
+
                 // Check if this matches any existing skolem
-                if let Some(_skolem_info) = self.normalizer.find_exact_skolem_info(&exists_value) {
-                    todo!("Found matching skolem info - need to handle validation")
-                } else {
+                let Some(_info) = self.normalizer.find_exact_skolem_info(&exists_value) else {
                     return Err(Error::GeneratedBadCode(
-                        "let...satisfy statement does not match any skolem definition".to_string()
+                        "let...satisfy statement does not match any skolem definition".to_string(),
                     ));
-                }
+                };
+
+                todo!("Found matching skolem info - need to do something with it");
             }
             StatementInfo::Claim(claim) => {
                 let value = evaluator.evaluate_value(&claim.claim, Some(&AcornType::Bool))?;
