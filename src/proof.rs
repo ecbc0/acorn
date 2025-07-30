@@ -661,20 +661,34 @@ pub struct ConcreteProof {
     pub indirect: Vec<String>,
 }
 
+// Each step in the ConcreteProof is associated with a ConcreteStepId.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum ConcreteStepId {
+    // This step matches the output of a proof step.
+    ProofStep(ProofStepId),
+
+    // This concrete step matches an initial assumption.
+    // The assumption is a proof step, but its output is simplified, and this represents
+    // the original assumption.
+    #[allow(dead_code)]
+    Assumption(ProofStepId),
+}
+
 impl<'a> Proof<'a> {
     /// Create the concrete proof.
     pub fn make_concrete(&mut self, bindings: &BindingMap) -> Result<ConcreteProof, Error> {
         let mut generator = CodeGenerator::new(&bindings);
 
         // First, reconstruct all the steps, working backwards.
-        let mut var_map_map: HashMap<ProofStepId, HashSet<VariableMap>> = HashMap::new();
+        let mut var_map_map: HashMap<ConcreteStepId, HashSet<VariableMap>> = HashMap::new();
         var_map_map
-            .entry(ProofStepId::Final)
+            .entry(ConcreteStepId::ProofStep(ProofStepId::Final))
             .or_default()
             .insert(VariableMap::new());
         for (id, step) in self.all_steps.iter().rev() {
             // Multiple concrete instantiations are possible
-            let var_maps: Vec<_> = match var_map_map.get(id) {
+            let concrete_id = ConcreteStepId::ProofStep(id.clone());
+            let var_maps: Vec<_> = match var_map_map.get(&concrete_id) {
                 Some(items) => items.iter().cloned().collect(),
                 None => continue,
             };
@@ -685,7 +699,10 @@ impl<'a> Proof<'a> {
 
         // Construct the concrete clauses
         let mut concrete_clauses: HashMap<NodeId, BTreeSet<Clause>> = HashMap::new();
-        for (id, var_maps) in var_map_map {
+        for (concrete_id, var_maps) in var_map_map {
+            let ConcreteStepId::ProofStep(id) = concrete_id else {
+                continue;
+            };
             if id == ProofStepId::Final {
                 continue;
             }
@@ -846,7 +863,7 @@ impl<'a> Proof<'a> {
         &self,
         step: &ProofStep,
         conclusion_map: VariableMap,
-        input_maps: &mut HashMap<ProofStepId, HashSet<VariableMap>>,
+        input_maps: &mut HashMap<ConcreteStepId, HashSet<VariableMap>>,
     ) -> Result<(), Error> {
         // Some rules we can handle without the traces.
         match &step.rule {
@@ -861,7 +878,8 @@ impl<'a> Proof<'a> {
                 // reconstruction logic.
                 for id in step.rule.premises() {
                     let map = VariableMap::new();
-                    input_maps.entry(id).or_default().insert(map);
+                    let concrete_id = ConcreteStepId::ProofStep(id);
+                    input_maps.entry(concrete_id).or_default().insert(map);
                 }
                 return Ok(());
             }
@@ -920,12 +938,18 @@ impl<'a> Proof<'a> {
 
                     // Report the concrete pattern
                     let map = unifier.into_one_map(pattern_scope);
-                    input_maps.entry(pattern_id).or_default().insert(map);
+                    input_maps
+                        .entry(ConcreteStepId::ProofStep(pattern_id))
+                        .or_default()
+                        .insert(map);
                 }
 
                 // The target is already concrete
                 let map = VariableMap::new();
-                input_maps.entry(target_id).or_default().insert(map);
+                input_maps
+                    .entry(ConcreteStepId::ProofStep(target_id))
+                    .or_default()
+                    .insert(map);
             }
             Rule::EqualityFactoring(info) => {
                 // For EF, the trace applies to the stored literals.
@@ -963,7 +987,10 @@ impl<'a> Proof<'a> {
 
                     // Report the concrete base
                     let map = unifier.into_one_map(base_scope);
-                    input_maps.entry(base_id).or_default().insert(map);
+                    input_maps
+                        .entry(ConcreteStepId::ProofStep(base_id))
+                        .or_default()
+                        .insert(map);
                 }
             }
             Rule::EqualityResolution(info) => {
@@ -1009,7 +1036,10 @@ impl<'a> Proof<'a> {
 
                     // Report the concrete base
                     let map = unifier.into_one_map(base_scope);
-                    input_maps.entry(base_id).or_default().insert(map);
+                    input_maps
+                        .entry(ConcreteStepId::ProofStep(base_id))
+                        .or_default()
+                        .insert(map);
                 }
             }
             Rule::FunctionElimination(info) => {
@@ -1062,7 +1092,10 @@ impl<'a> Proof<'a> {
 
                     // Report the concrete base
                     let map = unifier.into_one_map(base_scope);
-                    input_maps.entry(base_id).or_default().insert(map);
+                    input_maps
+                        .entry(ConcreteStepId::ProofStep(base_id))
+                        .or_default()
+                        .insert(map);
                 }
             }
             Rule::Resolution(info) => {
@@ -1076,7 +1109,10 @@ impl<'a> Proof<'a> {
                     input_maps,
                 )?;
                 for map in var_maps {
-                    input_maps.entry(long_id).or_default().insert(map);
+                    input_maps
+                        .entry(ConcreteStepId::ProofStep(long_id))
+                        .or_default()
+                        .insert(map);
                 }
             }
             Rule::Specialization(info) => {
@@ -1090,7 +1126,10 @@ impl<'a> Proof<'a> {
                     input_maps,
                 )?;
                 for map in var_maps {
-                    input_maps.entry(pattern_id).or_default().insert(map);
+                    input_maps
+                        .entry(ConcreteStepId::ProofStep(pattern_id))
+                        .or_default()
+                        .insert(map);
                 }
             }
             rule => {
@@ -1116,7 +1155,7 @@ impl<'a> Proof<'a> {
         traces: &[LiteralTrace],
         conclusion: &Clause,
         conc_map: VariableMap,
-        simp_maps: &mut HashMap<ProofStepId, HashSet<VariableMap>>,
+        simp_maps: &mut HashMap<ConcreteStepId, HashSet<VariableMap>>,
     ) -> Result<HashSet<VariableMap>, Error> {
         // The unifier will figure out the concrete clauses.
         // The base and conclusion get their own scope.
@@ -1189,7 +1228,8 @@ impl<'a> Proof<'a> {
                     scope
                 ))
             })?;
-            simp_maps.entry(*step_id).or_default().insert(map);
+            let concrete_id = ConcreteStepId::ProofStep(*step_id);
+            simp_maps.entry(concrete_id).or_default().insert(map);
         }
 
         Ok(answer)
