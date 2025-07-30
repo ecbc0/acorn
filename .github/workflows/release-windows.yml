@@ -7,7 +7,7 @@ on:
       - "v[0-9]+.[0-9]+.[0-9]+*"
 
 env:
-  ONNXRUNTIME_VERSION: main
+  ONNXRUNTIME_VERSION: 0699df66382d7316287725501ef65dac95f97fb2
   ORT_LIB_LOCATION: ${{ github.workspace }}\onnxruntime\build\Windows\Release
   TAG: ${{ github.ref }}
 
