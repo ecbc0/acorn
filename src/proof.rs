@@ -867,12 +867,6 @@ impl<'a> Proof<'a> {
     ) -> Result<(), Error> {
         // Some rules we can handle without the traces.
         match &step.rule {
-            Rule::Assumption(_) => {
-                // We don't reconstruct assumptions.
-                // But we should, because assumptions can be simplified in a way that we
-                // need to reconstruct.
-                return Ok(());
-            }
             Rule::PassiveContradiction(_) | Rule::MultipleRewrite(_) => {
                 // These rules always use concrete premises, so we can track them without
                 // reconstruction logic.
@@ -895,6 +889,12 @@ impl<'a> Proof<'a> {
         };
 
         match &step.rule {
+            Rule::Assumption(_) => {
+                // We don't reconstruct assumptions.
+                // But we should, because assumptions can be simplified in a way that we
+                // need to reconstruct.
+                return Ok(());
+            }
             Rule::Rewrite(info) => {
                 // For rewrites, the trace applies to the rewritten clause.
                 let var_maps = self.reconstruct_trace(

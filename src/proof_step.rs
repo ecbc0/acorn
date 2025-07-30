@@ -368,6 +368,20 @@ impl ProofStep {
             source,
             defined_atom,
         });
+        
+        // Create traces to indicate that no literals have been moved around
+        let traces = Some(
+            clause
+                .literals
+                .iter()
+                .enumerate()
+                .map(|(i, _)| LiteralTrace::Output {
+                    index: i,
+                    flipped: false,
+                })
+                .collect(),
+        );
+        
         ProofStep {
             clause,
             truthiness: proposition.source.truthiness(),
@@ -376,7 +390,7 @@ impl ProofStep {
             proof_size: 0,
             depth: 0,
             printable: false,
-            traces: None,
+            traces,
         }
     }
 
