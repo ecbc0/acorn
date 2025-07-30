@@ -1108,7 +1108,7 @@ impl<'a> Proof<'a> {
     fn reconstruct_trace(
         &self,
         base_literals: &[Literal],
-        base_id: usize,
+        _base_id: usize,
         traces: &[LiteralTrace],
         conclusion: &Clause,
         conc_map: VariableMap,
@@ -1121,7 +1121,8 @@ impl<'a> Proof<'a> {
         // ...and so do all the inputs.
         let base_scope = unifier.add_scope();
         let mut scopes: HashMap<ProofStepId, Scope> = HashMap::new();
-        scopes.insert(ProofStepId::Active(base_id), base_scope);
+        let fake_id = ProofStepId::Active(usize::MAX);
+        scopes.insert(fake_id, base_scope);
 
         if traces.len() != base_literals.len() {
             return Err(Error::InternalError(
@@ -1175,7 +1176,7 @@ impl<'a> Proof<'a> {
             }
 
             let id = ids.get(&scope).unwrap();
-            if *id == ProofStepId::Active(base_id) {
+            if *id == fake_id {
                 // This is the base clause, so we return it.
                 answer.insert(map);
             } else {
