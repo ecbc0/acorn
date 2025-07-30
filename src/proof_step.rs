@@ -131,6 +131,9 @@ pub struct AssumptionInfo {
 
     /// If this assumption is the definition of a particular atom, this is the atom.
     pub defined_atom: Option<Atom>,
+    
+    /// The literals of the assumption before any simplification.
+    pub literals: Vec<Literal>,
 }
 
 /// Information about what happens to a term during equality factoring.
@@ -364,9 +367,11 @@ impl ProofStep {
         defined_atom: Option<Atom>,
     ) -> ProofStep {
         let source = proposition.source.clone();
+        let literals = clause.literals.clone();
         let rule = Rule::Assumption(AssumptionInfo {
             source,
             defined_atom,
+            literals,
         });
         
         // Create traces to indicate that no literals have been moved around
@@ -640,9 +645,11 @@ impl ProofStep {
 
     pub fn mock_from_clause(clause: Clause) -> ProofStep {
         let truthiness = Truthiness::Factual;
+        let literals = clause.literals.clone();
         let rule = Rule::Assumption(AssumptionInfo {
             source: Source::mock(),
             defined_atom: None,
+            literals,
         });
         ProofStep {
             clause,
