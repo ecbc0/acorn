@@ -645,7 +645,16 @@ impl<'a> NodeCursor<'a> {
     /// A node requires verification if it has a goal itself, or if it might have a goal
     /// in its children.
     pub fn requires_verification(&self) -> bool {
-        self.node().has_goal() || self.num_children() > 0
+        match self.node() {
+            Node::Block(block, _o) => {
+                if block.is_todo {
+                    return false;
+                }else{
+                    return self.node().has_goal() || self.num_children() > 0
+                }
+            },
+            _ => return self.node().has_goal() || self.num_children() > 0
+        }
     }
 
     /// child_index must be less than num_children
