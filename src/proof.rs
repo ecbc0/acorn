@@ -670,7 +670,6 @@ enum ConcreteStepId {
     // This concrete step matches an initial assumption.
     // The assumption is a proof step, but its output is simplified, and this represents
     // the original assumption.
-    #[allow(dead_code)]
     Assumption(ProofStepId),
 }
 
@@ -693,7 +692,7 @@ impl<'a> Proof<'a> {
                 None => continue,
             };
             for var_map in var_maps {
-                self.reconstruct_step(step, var_map, &mut var_map_map)?;
+                self.reconstruct_step(*id, step, var_map, &mut var_map_map)?;
             }
         }
 
@@ -859,6 +858,7 @@ impl<'a> Proof<'a> {
     // If the step cannot be reconstructed, we return an error.
     fn reconstruct_step(
         &self,
+        id: ProofStepId,
         step: &ProofStep,
         conclusion_map: VariableMap,
         input_maps: &mut HashMap<ConcreteStepId, HashSet<VariableMap>>,
@@ -887,11 +887,20 @@ impl<'a> Proof<'a> {
         };
 
         match &step.rule {
-            Rule::Assumption(_) => {
-                // We don't reconstruct assumptions.
-                // But we should, because assumptions can be simplified in a way that we
-                // need to reconstruct.
-                return Ok(());
+            Rule::Assumption(info) => {
+                // We need to reconstruct assumptions because assumptions can be simplified in
+                // a way that we need to reconstruct.
+                let var_maps = self.reconstruct_trace(
+                    &info.literals,
+                    traces,
+                    &step.clause,
+                    conclusion_map,
+                    input_maps,
+                )?;
+                let assumption_id = ConcreteStepId::Assumption(id);
+                for var_map in var_maps {
+                    input_maps.entry(assumption_id).or_default().insert(var_map);
+                }
             }
             Rule::Rewrite(info) => {
                 // For rewrites, the trace applies to the rewritten clause.

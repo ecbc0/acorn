@@ -1455,7 +1455,7 @@ fn test_concrete_proof_of_existence() {
     );
 
     let c = prove_concrete(&mut p, "main", "goal", false);
-    assert_eq!(c.direct, Vec::<String>::new());
+    assert_eq!(c.direct, vec!["let s0: Foo satisfy { f(s0) }", "f(s0)"]);
     assert_eq!(c.indirect, Vec::<String>::new());
 }
 
