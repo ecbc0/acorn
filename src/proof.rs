@@ -850,14 +850,12 @@ impl<'a> Proof<'a> {
         (answer, ordered_answer)
     }
 
-    // Given a concrete conclusion of a proof step, reconstruct concrete inputs.
-    // The concrete conclusion is provided as a VariableMap that specializes the clause in the
-    // ProofStep to something concrete.
+    // Given a varmap for the conclusion of a proof step, reconstruct varmaps for
+    // all of its inputs.
+    // The varmaps represent a concrete clause, in the sense that they provide a mapping to specialize
+    // the clause into something concrete.
     //
-    // When we reconstruct the inputs, we store them in two forms.
-    // Form 1 is as a variable map in input_maps. The base generic clause is implicit.
-    // Form 2 is as a concrete clause.
-    //
+    // Reconstructed varmaps are stored in input_maps.
     // If the step cannot be reconstructed, we return an error.
     fn reconstruct_step(
         &self,
