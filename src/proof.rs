@@ -876,8 +876,6 @@ impl<'a> Proof<'a> {
             )));
         };
 
-        // The original clause represents the start of the proof step.
-        let original_clause = self.get_clause(ProofStepId::Active(trace.base_id))?;
         match &step.rule {
             Rule::Rewrite(info) => {
                 // For rewrites, the trace applies to the rewritten clause.
@@ -940,7 +938,7 @@ impl<'a> Proof<'a> {
                 )?;
 
                 // Unify the pre-EF and post-EF literals.
-                let base_id = ProofStepId::Active(trace.base_id);
+                let base_id = ProofStepId::Active(info.id);
                 let base_clause = &self.get_clause(base_id)?;
                 assert!(base_clause.literals.len() == info.literals.len());
 
@@ -979,7 +977,7 @@ impl<'a> Proof<'a> {
                 )?;
 
                 // Unify the pre-ER and post-ER literals.
-                let base_id = ProofStepId::Active(trace.base_id);
+                let base_id = ProofStepId::Active(info.id);
                 let base_clause = &self.get_clause(base_id)?;
                 assert!(base_clause.literals.len() == info.literals.len() + 1);
 
@@ -1025,7 +1023,7 @@ impl<'a> Proof<'a> {
                 )?;
 
                 // Unify the pre-FE and post-FE literals.
-                let base_id = ProofStepId::Active(trace.base_id);
+                let base_id = ProofStepId::Active(info.id);
                 let base_clause = &self.get_clause(base_id)?;
                 assert!(base_clause.literals.len() == info.literals.len());
 
@@ -1067,20 +1065,32 @@ impl<'a> Proof<'a> {
                     input_maps.entry(base_id).or_default().insert(map);
                 }
             }
-            Rule::Resolution(_) | Rule::Specialization(_) => {
-                // For these rules, the trace applies directly to the original clause.
+            Rule::Resolution(info) => {
+                let long_id = ProofStepId::Active(info.long_id);
+                let long_clause = self.get_clause(long_id)?;
                 let var_maps = self.reconstruct_trace(
-                    &original_clause.literals,
+                    &long_clause.literals,
                     &trace.literals,
                     &step.clause,
                     conclusion_map,
                     input_maps,
                 )?;
                 for map in var_maps {
-                    input_maps
-                        .entry(ProofStepId::Active(trace.base_id))
-                        .or_default()
-                        .insert(map);
+                    input_maps.entry(long_id).or_default().insert(map);
+                }
+            }
+            Rule::Specialization(info) => {
+                let pattern_id = ProofStepId::Active(info.pattern_id);
+                let pattern_clause = self.get_clause(pattern_id)?;
+                let var_maps = self.reconstruct_trace(
+                    &pattern_clause.literals,
+                    &trace.literals,
+                    &step.clause,
+                    conclusion_map,
+                    input_maps,
+                )?;
+                for map in var_maps {
+                    input_maps.entry(pattern_id).or_default().insert(map);
                 }
             }
             rule => {
