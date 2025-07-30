@@ -1395,6 +1395,39 @@ fn test_concrete_proof_with_function_elimination() {
 }
 
 #[test]
+fn test_concrete_proof_multiple_simplifying() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        inductive Foo {
+            foo
+            bar
+        }
+            
+        let f: Foo -> Bool = axiom
+        let g: Foo -> Bool = axiom
+
+        axiom rule1(x: Foo) {
+            f(x)
+        }
+
+        axiom rule2 {
+            f(Foo.foo) and f(Foo.bar) implies g(Foo.foo)
+        }
+            
+        theorem goal {
+            g(Foo.foo)
+        }
+        "#,
+    );
+
+    // let c = prove_concrete(&mut p, "main", "goal", false);
+    // assert_eq!(c.direct, Vec::<String>::new());
+    // assert_eq!(c.indirect, Vec::<String>::new());
+}
+
+#[test]
 fn test_concrete_proof_of_existence() {
     let mut p = Project::new_mock();
     p.mock(
