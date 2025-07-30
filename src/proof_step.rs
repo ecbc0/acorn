@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::atom::Atom;
-use crate::clause::{Clause, ClauseTrace};
+use crate::clause::{Clause, LiteralTrace};
 use crate::literal::Literal;
 use crate::proposition::MonomorphicProposition;
 use crate::source::{Source, SourceType};
@@ -346,7 +346,7 @@ pub struct ProofStep {
     pub printable: bool,
 
     /// Information about this step that will let us reconstruct the variable mappings.
-    pub trace: Option<ClauseTrace>,
+    pub traces: Option<Vec<LiteralTrace>>,
 }
 
 impl fmt::Display for ProofStep {
@@ -376,7 +376,7 @@ impl ProofStep {
             proof_size: 0,
             depth: 0,
             printable: false,
-            trace: None,
+            traces: None,
         }
     }
 
@@ -393,10 +393,6 @@ impl ProofStep {
         let depth = activated_step.depth;
         let printable = clause.is_printable();
         
-        let trace = ClauseTrace {
-            literals: literal_traces,
-        };
-        
         ProofStep {
             clause,
             truthiness: activated_step.truthiness,
@@ -405,7 +401,7 @@ impl ProofStep {
             proof_size: activated_step.proof_size + 1,
             depth,
             printable,
-            trace: Some(trace),
+            traces: Some(literal_traces),
         }
     }
 
@@ -415,7 +411,7 @@ impl ProofStep {
         inspiration_id: usize,
         pattern_step: &ProofStep,
         clause: Clause,
-        trace: ClauseTrace,
+        traces: Vec<LiteralTrace>,
     ) -> ProofStep {
         let info = SpecializationInfo {
             pattern_id,
@@ -429,7 +425,7 @@ impl ProofStep {
             proof_size: pattern_step.proof_size + 1,
             depth: pattern_step.depth,
             printable: true,
-            trace: Some(trace),
+            traces: Some(traces),
         }
     }
 
@@ -471,7 +467,7 @@ impl ProofStep {
             proof_size,
             depth,
             printable,
-            trace: None,
+            traces: None,
         }
     }
 
@@ -481,7 +477,7 @@ impl ProofStep {
         long_step: ProofStep,
         short_steps: &[(usize, &ProofStep)],
         clause: Clause,
-        trace: Option<ClauseTrace>,
+        traces: Option<Vec<LiteralTrace>>,
     ) -> ProofStep {
         let mut truthiness = long_step.truthiness;
         let mut simplification_rules = long_step.simplification_rules;
@@ -504,7 +500,7 @@ impl ProofStep {
             proof_size,
             depth,
             printable,
-            trace,
+            traces,
         }
     }
 
@@ -534,7 +530,7 @@ impl ProofStep {
             target_literal.replace_at_path(target_left, path, new_subterm.clone());
 
         let simplifying = new_literal.extended_kbo_cmp(&target_literal) == Ordering::Less;
-        let (clause, trace) = Clause::from_literal(new_literal, false);
+        let (clause, traces) = Clause::from_literal(new_literal, false);
 
         let truthiness = pattern_step.truthiness.combine(target_step.truthiness);
 
@@ -567,7 +563,7 @@ impl ProofStep {
             proof_size,
             depth,
             printable,
-            trace: Some(trace),
+            traces: Some(traces),
         }
     }
 
@@ -594,7 +590,7 @@ impl ProofStep {
             proof_size: 0,
             depth,
             printable: true,
-            trace: None,
+            traces: None,
         }
     }
 
@@ -618,7 +614,7 @@ impl ProofStep {
             proof_size,
             depth,
             printable: true,
-            trace: None,
+            traces: None,
         }
     }
 
@@ -642,7 +638,7 @@ impl ProofStep {
             proof_size: 0,
             depth: 0,
             printable: true,
-            trace: None,
+            traces: None,
         }
     }
 

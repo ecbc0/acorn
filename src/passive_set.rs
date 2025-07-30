@@ -1,4 +1,4 @@
-use crate::clause::{Clause, ClauseTrace, LiteralTrace};
+use crate::clause::{Clause, LiteralTrace};
 use crate::features::Features;
 use crate::fingerprint::FingerprintSpecializer;
 use crate::literal::Literal;
@@ -73,8 +73,8 @@ fn make_simplified(
     flipped: bool,
     index: usize,
     literals: Vec<Literal>,
-    trace: Option<ClauseTrace>,
-) -> Option<(Clause, Option<ClauseTrace>)> {
+    traces: Option<Vec<LiteralTrace>>,
+) -> Option<(Clause, Option<Vec<LiteralTrace>>)> {
     if literals[index].positive == positive {
         return None;
     }
@@ -116,7 +116,7 @@ fn make_simplified(
     }
     Some(Clause::new_composing_traces(
         new_literals,
-        trace,
+        traces,
         &incremental_trace,
     ))
 }
@@ -249,7 +249,7 @@ impl PassiveSet {
                 // So it's just redundant. We can forget about it.
                 continue;
             }
-            let Some((new_clause, trace)) = make_simplified(
+            let Some((new_clause, traces)) = make_simplified(
                 activated_id,
                 left,
                 right,
@@ -257,12 +257,12 @@ impl PassiveSet {
                 flipped,
                 literal_index,
                 std::mem::take(&mut step.clause.literals),
-                std::mem::take(&mut step.trace),
+                std::mem::take(&mut step.traces),
             ) else {
                 continue;
             };
             let short_steps = &[(activated_id, activated_step)];
-            new_steps.push(ProofStep::simplified(step, short_steps, new_clause, trace));
+            new_steps.push(ProofStep::simplified(step, short_steps, new_clause, traces));
         }
 
         self.push_batch(new_steps);

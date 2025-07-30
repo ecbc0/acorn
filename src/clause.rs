@@ -49,13 +49,6 @@ fn compose_traces(first: &mut Vec<LiteralTrace>, second: &Vec<LiteralTrace>) {
     }
 }
 
-/// A record of how a clause was constructed.
-/// These operations are logically after any rewrite that occurred.
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub struct ClauseTrace {
-    /// What happened to each literal in the base clause.
-    pub literals: Vec<LiteralTrace>,
-}
 
 /// A clause is a disjunction (an "or") of literals, universally quantified over some variables.
 /// We include the types of the universal variables it is quantified over.
@@ -151,33 +144,29 @@ impl Clause {
     /// trace of how they were created.
     pub fn new_with_trace(
         literals: Vec<Literal>,
-        mut trace: Vec<LiteralTrace>,
-    ) -> (Clause, ClauseTrace) {
+        mut traces: Vec<LiteralTrace>,
+    ) -> (Clause, Vec<LiteralTrace>) {
         let (c, incremental_trace) = Clause::normalize_with_trace(literals);
-        compose_traces(&mut trace, &incremental_trace);
-
-        let trace = ClauseTrace {
-            literals: trace,
-        };
-        (c, trace)
+        compose_traces(&mut traces, &incremental_trace);
+        (c, traces)
     }
 
     /// Creates a new clause. If a trace is provided, we compose the traces.
     /// The base_trace should be applicable to the provided literals.
     pub fn new_composing_traces(
         literals: Vec<Literal>,
-        base_trace: Option<ClauseTrace>,
+        base_traces: Option<Vec<LiteralTrace>>,
         incremental_trace: &Vec<LiteralTrace>,
-    ) -> (Clause, Option<ClauseTrace>) {
-        let Some(mut base_trace) = base_trace else {
+    ) -> (Clause, Option<Vec<LiteralTrace>>) {
+        let Some(mut base_traces) = base_traces else {
             return (Clause::new(literals), None);
         };
-        compose_traces(&mut base_trace.literals, incremental_trace);
-        let (c, trace) = Clause::new_with_trace(literals, base_trace.literals);
-        (c, Some(trace))
+        compose_traces(&mut base_traces, incremental_trace);
+        let (c, traces) = Clause::new_with_trace(literals, base_traces);
+        (c, Some(traces))
     }
 
-    pub fn from_literal(literal: Literal, flipped: bool) -> (Clause, ClauseTrace) {
+    pub fn from_literal(literal: Literal, flipped: bool) -> (Clause, Vec<LiteralTrace>) {
         Clause::new_with_trace(
             vec![literal],
             vec![LiteralTrace::Output { index: 0, flipped }],

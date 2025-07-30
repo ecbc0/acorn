@@ -292,9 +292,9 @@ impl ActiveSet {
         }
 
         // Gather the output data
-        let (clause, trace) = Clause::new_with_trace(literals, incremental_trace);
+        let (clause, traces) = Clause::new_with_trace(literals, incremental_trace);
         let mut step = ProofStep::resolution(long_id, long_step, short_id, short_step, clause);
-        step.trace = Some(trace);
+        step.traces = Some(traces);
         Some(step)
     }
 
@@ -483,7 +483,7 @@ impl ActiveSet {
         // Use the new method to find all possible equality resolutions
         for (index, new_literals, flipped) in clause.find_equality_resolutions() {
             let literals = new_literals.clone();
-            let (new_clause, trace) = Clause::normalize_with_trace(new_literals);
+            let (new_clause, traces) = Clause::normalize_with_trace(new_literals);
             
             // Check if normalization resulted in a tautology
             if !new_clause.is_tautology() {
@@ -497,7 +497,7 @@ impl ActiveSet {
                         flipped,
                     }),
                     new_clause,
-                    trace,
+                    traces,
                 );
                 answer.push(step);
             }
@@ -556,13 +556,13 @@ impl ActiveSet {
                     literals: literals.clone(),
                     flipped,
                 };
-                let (clause, trace) = Clause::normalize_with_trace(literals);
+                let (clause, traces) = Clause::normalize_with_trace(literals);
                 let step = ProofStep::direct(
                     activated_id,
                     activated_step,
                     Rule::FunctionElimination(info),
                     clause,
-                    trace,
+                    traces,
                 );
                 answer.push(step);
             }
@@ -659,7 +659,7 @@ impl ActiveSet {
                     let literals_before_normalization = literals.clone();
 
                     // Create the new clause with trace
-                    let (new_clause, normalization_trace) = Clause::normalize_with_trace(literals);
+                    let (new_clause, normalization_traces) = Clause::normalize_with_trace(literals);
 
                     let step = ProofStep::direct(
                         activated_id,
@@ -670,7 +670,7 @@ impl ActiveSet {
                             ef_trace,
                         }),
                         new_clause,
-                        normalization_trace,
+                        normalization_traces,
                     );
                     answer.push(step);
                 }
@@ -771,15 +771,15 @@ impl ActiveSet {
             return Some(step);
         }
 
-        let (clause, trace) =
-            Clause::new_composing_traces(output_literals, step.trace.clone(), &incremental_trace);
+        let (clause, traces) =
+            Clause::new_composing_traces(output_literals, step.traces.clone(), &incremental_trace);
         if clause.is_tautology() {
             return None;
         }
         if self.is_known_long_clause(&clause) {
             return None;
         }
-        Some(ProofStep::simplified(step, &new_rules, clause, trace))
+        Some(ProofStep::simplified(step, &new_rules, clause, traces))
     }
 
     fn add_resolution_targets(

@@ -668,7 +668,7 @@ impl Prover {
             // specific equality used by this rewrite.
             let (literal, flipped) =
                 Literal::new_with_flip(true, step.input_term, step.output_term);
-            let (clause, trace) = Clause::from_literal(literal, flipped);
+            let (clause, traces) = Clause::from_literal(literal, flipped);
             if new_clauses.contains(&clause) {
                 // We already created a step for this equality
                 // TODO: is it really okay to not insert any sort of id here?
@@ -680,7 +680,7 @@ impl Prover {
                 inspiration_id,
                 rewrite_step,
                 clause,
-                trace,
+                traces,
             );
             max_depth = max_depth.max(step.depth);
             let passive_id = self.useful_passive.len() as u32;

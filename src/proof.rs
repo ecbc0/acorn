@@ -868,7 +868,7 @@ impl<'a> Proof<'a> {
             _ => {}
         }
 
-        let Some(trace) = step.trace.as_ref() else {
+        let Some(traces) = step.traces.as_ref() else {
             return Err(Error::InternalError(format!(
                 "no trace for {}: {}",
                 step.rule.name(),
@@ -881,7 +881,7 @@ impl<'a> Proof<'a> {
                 // For rewrites, the trace applies to the rewritten clause.
                 let var_maps = self.reconstruct_trace(
                     &info.rewritten.literals,
-                    &trace.literals,
+                    traces,
                     &step.clause,
                     conclusion_map,
                     input_maps,
@@ -931,7 +931,7 @@ impl<'a> Proof<'a> {
                 // For EF, the trace applies to the stored literals.
                 let var_maps = self.reconstruct_trace(
                     &info.literals,
-                    &trace.literals,
+                    traces,
                     &step.clause,
                     conclusion_map,
                     input_maps,
@@ -970,7 +970,7 @@ impl<'a> Proof<'a> {
                 // For ER, the trace applies to the stored literals.
                 let var_maps = self.reconstruct_trace(
                     &info.literals,
-                    &trace.literals,
+                    traces,
                     &step.clause,
                     conclusion_map,
                     input_maps,
@@ -1016,7 +1016,7 @@ impl<'a> Proof<'a> {
                 // For FE, the trace applies to the stored literals.
                 let var_maps = self.reconstruct_trace(
                     &info.literals,
-                    &trace.literals,
+                    traces,
                     &step.clause,
                     conclusion_map,
                     input_maps,
@@ -1070,7 +1070,7 @@ impl<'a> Proof<'a> {
                 let long_clause = self.get_clause(long_id)?;
                 let var_maps = self.reconstruct_trace(
                     &long_clause.literals,
-                    &trace.literals,
+                    traces,
                     &step.clause,
                     conclusion_map,
                     input_maps,
@@ -1084,7 +1084,7 @@ impl<'a> Proof<'a> {
                 let pattern_clause = self.get_clause(pattern_id)?;
                 let var_maps = self.reconstruct_trace(
                     &pattern_clause.literals,
-                    &trace.literals,
+                    traces,
                     &step.clause,
                     conclusion_map,
                     input_maps,
