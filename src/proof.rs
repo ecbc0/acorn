@@ -883,7 +883,6 @@ impl<'a> Proof<'a> {
                 // For rewrites, the trace applies to the rewritten clause.
                 let var_maps = self.reconstruct_trace(
                     &info.rewritten.literals,
-                    trace.base_id,
                     &trace.literals,
                     &step.clause,
                     conclusion_map,
@@ -934,7 +933,6 @@ impl<'a> Proof<'a> {
                 // For EF, the trace applies to the stored literals.
                 let var_maps = self.reconstruct_trace(
                     &info.literals,
-                    trace.base_id,
                     &trace.literals,
                     &step.clause,
                     conclusion_map,
@@ -974,7 +972,6 @@ impl<'a> Proof<'a> {
                 // For ER, the trace applies to the stored literals.
                 let var_maps = self.reconstruct_trace(
                     &info.literals,
-                    trace.base_id,
                     &trace.literals,
                     &step.clause,
                     conclusion_map,
@@ -1021,7 +1018,6 @@ impl<'a> Proof<'a> {
                 // For FE, the trace applies to the stored literals.
                 let var_maps = self.reconstruct_trace(
                     &info.literals,
-                    trace.base_id,
                     &trace.literals,
                     &step.clause,
                     conclusion_map,
@@ -1075,7 +1071,6 @@ impl<'a> Proof<'a> {
                 // For these rules, the trace applies directly to the original clause.
                 let var_maps = self.reconstruct_trace(
                     &original_clause.literals,
-                    trace.base_id,
                     &trace.literals,
                     &step.clause,
                     conclusion_map,
@@ -1108,7 +1103,6 @@ impl<'a> Proof<'a> {
     fn reconstruct_trace(
         &self,
         base_literals: &[Literal],
-        _base_id: usize,
         traces: &[LiteralTrace],
         conclusion: &Clause,
         conc_map: VariableMap,
