@@ -243,14 +243,37 @@ impl Normalizer {
     /// The "local" flag here and elsewhere controls whether any newly discovered variables
     /// are local variables, ie, whether they are represented as a local or global Atom.
     pub fn term_from_value(&mut self, value: &AcornValue, local: bool) -> Result<Term> {
+        let (t, negated) = self.maybe_negated_term_from_value(value, local)?;
+        if negated {
+            Err(format!(
+                "Cannot convert {} to term because it is negated",
+                value
+            ))
+        } else {
+            Ok(t)
+        }
+    }
+
+    /// Constructs a new term or negated term from an AcornValue
+    /// Returns an error if it's inconvertible.
+    /// The "local" flag here and elsewhere controls whether any newly discovered variables
+    /// are local variables, ie, whether they are represented as a local or global Atom.
+    fn maybe_negated_term_from_value(
+        &mut self,
+        value: &AcornValue,
+        local: bool,
+    ) -> Result<(Term, bool)> {
         match value {
             AcornValue::Variable(i, var_type) => {
                 check_normalized_type(var_type)?;
                 let type_id = self.normalization_map.add_type(var_type);
-                Ok(Term::new(type_id, type_id, Atom::Variable(*i), vec![]))
+                Ok((
+                    Term::new(type_id, type_id, Atom::Variable(*i), vec![]),
+                    false,
+                ))
             }
             AcornValue::Application(application) => {
-                Ok(self.term_from_application(application, local)?)
+                Ok((self.term_from_application(application, local)?, false))
             }
             AcornValue::Constant(c) => {
                 if c.params.is_empty() {
@@ -260,15 +283,20 @@ impl Normalizer {
                         ConstantName::Skolem(i) => Atom::Skolem(*i),
                         _ => self.normalization_map.add_constant(c.name.clone(), local),
                     };
-                    Ok(Term::new(type_id, type_id, constant_atom, vec![]))
+                    Ok((Term::new(type_id, type_id, constant_atom, vec![]), false))
                 } else {
-                    Ok(self.normalization_map.term_from_monomorph(&c))
+                    Ok((self.normalization_map.term_from_monomorph(&c), false))
                 }
             }
-            AcornValue::Bool(true) => Ok(Term::new_true()),
+            AcornValue::Bool(v) => Ok((Term::new_true(), !v)),
+            AcornValue::Not(subvalue) => {
+                let (term, negated) = self.maybe_negated_term_from_value(&*subvalue, local)?;
+                Ok((term, !negated))
+            }
             _ => Err(format!("Cannot convert {} to term", value)),
         }
     }
+
     /// Panics if this value cannot be converted to a literal.
     /// Swaps left and right if needed, to sort.
     /// Normalizes literals to <larger> = <smaller>, because that's the logical direction
@@ -282,14 +310,20 @@ impl Normalizer {
                 Ok(Literal::positive(self.term_from_application(app, local)?))
             }
             AcornValue::Binary(BinaryOp::Equals, left, right) => {
-                let left_term = self.term_from_value(&*left, local)?;
-                let right_term = self.term_from_value(&*right, local)?;
-                Ok(Literal::equals(left_term, right_term))
+                let (left_term, left_negated) =
+                    self.maybe_negated_term_from_value(&*left, local)?;
+                let (right_term, right_negated) =
+                    self.maybe_negated_term_from_value(&*right, local)?;
+                let negated = left_negated ^ right_negated;
+                Ok(Literal::new(!negated, left_term, right_term))
             }
             AcornValue::Binary(BinaryOp::NotEquals, left, right) => {
-                let left_term = self.term_from_value(&*left, local)?;
-                let right_term = self.term_from_value(&*right, local)?;
-                Ok(Literal::not_equals(left_term, right_term))
+                let (left_term, left_negated) =
+                    self.maybe_negated_term_from_value(&*left, local)?;
+                let (right_term, right_negated) =
+                    self.maybe_negated_term_from_value(&*right, local)?;
+                let negated = left_negated ^ right_negated;
+                Ok(Literal::new(negated, left_term, right_term))
             }
             AcornValue::Not(subvalue) => {
                 Ok(Literal::negative(self.term_from_value(subvalue, local)?))
