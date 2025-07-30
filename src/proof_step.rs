@@ -383,7 +383,7 @@ impl ProofStep {
     /// Construct a new ProofStep that is a direct implication of a single activated step,
     /// not requiring any other clauses.
     pub fn direct(
-        activated_id: usize,
+        _activated_id: usize,
         activated_step: &ProofStep,
         rule: Rule,
         clause: Clause,
@@ -394,7 +394,6 @@ impl ProofStep {
         let printable = clause.is_printable();
         
         let trace = ClauseTrace {
-            base_id: activated_id,
             literals: literal_traces,
         };
         
@@ -535,9 +534,7 @@ impl ProofStep {
             target_literal.replace_at_path(target_left, path, new_subterm.clone());
 
         let simplifying = new_literal.extended_kbo_cmp(&target_literal) == Ordering::Less;
-        // It's not really accurate to call target_id the base id. It's a placeholder that we'll
-        // swap out during reconstruction. So it would be nice to clean this up.
-        let (clause, trace) = Clause::from_literal(new_literal, target_id, false);
+        let (clause, trace) = Clause::from_literal(new_literal, false);
 
         let truthiness = pattern_step.truthiness.combine(target_step.truthiness);
 

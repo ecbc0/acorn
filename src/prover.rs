@@ -668,7 +668,7 @@ impl Prover {
             // specific equality used by this rewrite.
             let (literal, flipped) =
                 Literal::new_with_flip(true, step.input_term, step.output_term);
-            let (clause, trace) = Clause::from_literal(literal, pattern_id, flipped);
+            let (clause, trace) = Clause::from_literal(literal, flipped);
             if new_clauses.contains(&clause) {
                 // We already created a step for this equality
                 // TODO: is it really okay to not insert any sort of id here?

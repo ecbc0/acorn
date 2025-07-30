@@ -53,9 +53,6 @@ fn compose_traces(first: &mut Vec<LiteralTrace>, second: &Vec<LiteralTrace>) {
 /// These operations are logically after any rewrite that occurred.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct ClauseTrace {
-    /// The ID of the base clause that this trace is based on.
-    pub base_id: usize,
-
     /// What happened to each literal in the base clause.
     pub literals: Vec<LiteralTrace>,
 }
@@ -154,14 +151,12 @@ impl Clause {
     /// trace of how they were created.
     pub fn new_with_trace(
         literals: Vec<Literal>,
-        base_id: usize,
         mut trace: Vec<LiteralTrace>,
     ) -> (Clause, ClauseTrace) {
         let (c, incremental_trace) = Clause::normalize_with_trace(literals);
         compose_traces(&mut trace, &incremental_trace);
 
         let trace = ClauseTrace {
-            base_id,
             literals: trace,
         };
         (c, trace)
@@ -178,14 +173,13 @@ impl Clause {
             return (Clause::new(literals), None);
         };
         compose_traces(&mut base_trace.literals, incremental_trace);
-        let (c, trace) = Clause::new_with_trace(literals, base_trace.base_id, base_trace.literals);
+        let (c, trace) = Clause::new_with_trace(literals, base_trace.literals);
         (c, Some(trace))
     }
 
-    pub fn from_literal(literal: Literal, base_id: usize, flipped: bool) -> (Clause, ClauseTrace) {
+    pub fn from_literal(literal: Literal, flipped: bool) -> (Clause, ClauseTrace) {
         Clause::new_with_trace(
             vec![literal],
-            base_id,
             vec![LiteralTrace::Output { index: 0, flipped }],
         )
     }
