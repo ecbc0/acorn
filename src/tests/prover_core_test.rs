@@ -1427,6 +1427,39 @@ fn test_concrete_proof_of_existence() {
 }
 
 #[test]
+fn test_concrete_proof_of_conjunction_existence() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        inductive Foo {
+            foo
+            bar
+        }
+            
+        let f: Foo -> Bool = axiom
+        let g: Foo -> Bool = axiom
+
+        axiom rule {
+            exists(x: Foo) {
+                f(x) and g(x)
+            }
+        }
+            
+        theorem goal {
+            exists(x: Foo) {
+                f(x) and g(x)
+            }
+        }
+        "#,
+    );
+
+    let c = prove_concrete(&mut p, "main", "goal", false);
+    assert_eq!(c.direct, Vec::<String>::new());
+    assert_eq!(c.indirect, Vec::<String>::new());
+}
+
+#[test]
 fn test_concrete_proof_with_skolem() {
     let mut p = Project::new_mock();
     p.mock(

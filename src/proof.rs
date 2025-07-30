@@ -851,7 +851,9 @@ impl<'a> Proof<'a> {
         // Some rules we can handle without the traces.
         match &step.rule {
             Rule::Assumption(_) => {
-                // We don't need to reconstruct assumptions.
+                // We don't reconstruct assumptions.
+                // But we should, because assumptions can be simplified in a way that we
+                // need to reconstruct.
                 return Ok(());
             }
             Rule::PassiveContradiction(_) | Rule::MultipleRewrite(_) => {
