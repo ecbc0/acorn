@@ -5,6 +5,7 @@ use crate::literal::Literal;
 use crate::unifier::{Scope, Unifier};
 
 // A record of what happened to a single literal during a single proof step.
+// This includes simplification and resolution, but not every sort of deduction.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum LiteralTrace {
     // This literal is in the output clause.

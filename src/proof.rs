@@ -3,7 +3,7 @@ use std::fmt;
 
 use crate::acorn_value::AcornValue;
 use crate::binding_map::BindingMap;
-use crate::clause::{Clause, ClauseTrace, LiteralTrace};
+use crate::clause::{Clause, LiteralTrace};
 use crate::code_generator::{CodeGenerator, Error};
 use crate::display::DisplayClause;
 use crate::literal::Literal;
@@ -883,7 +883,8 @@ impl<'a> Proof<'a> {
                 // For rewrites, the trace applies to the rewritten clause.
                 self.reconstruct_trace(
                     &info.rewritten.literals,
-                    trace,
+                    trace.base_id,
+                    &trace.literals,
                     &step.clause,
                     conclusion_map,
                     input_maps,
@@ -938,7 +939,8 @@ impl<'a> Proof<'a> {
                 // For EF, the trace applies to the stored literals.
                 self.reconstruct_trace(
                     &info.literals,
-                    trace,
+                    trace.base_id,
+                    &trace.literals,
                     &step.clause,
                     conclusion_map,
                     input_maps,
@@ -981,7 +983,8 @@ impl<'a> Proof<'a> {
                 // For ER, the trace applies to the stored literals.
                 self.reconstruct_trace(
                     &info.literals,
-                    trace,
+                    trace.base_id,
+                    &trace.literals,
                     &step.clause,
                     conclusion_map,
                     input_maps,
@@ -1031,7 +1034,8 @@ impl<'a> Proof<'a> {
                 // For FE, the trace applies to the stored literals.
                 self.reconstruct_trace(
                     &info.literals,
-                    trace,
+                    trace.base_id,
+                    &trace.literals,
                     &step.clause,
                     conclusion_map,
                     input_maps,
@@ -1088,7 +1092,8 @@ impl<'a> Proof<'a> {
                 // For these rules, the trace applies directly to the original clause.
                 return self.reconstruct_trace(
                     &original_clause.literals,
-                    trace,
+                    trace.base_id,
+                    &trace.literals,
                     &step.clause,
                     conclusion_map,
                     input_maps,
@@ -1114,7 +1119,8 @@ impl<'a> Proof<'a> {
     fn reconstruct_trace(
         &self,
         base_literals: &[Literal],
-        trace: &ClauseTrace,
+        base_id: usize,
+        traces: &[LiteralTrace],
         conclusion: &Clause,
         conc_map: VariableMap,
         input_maps: &mut HashMap<ProofStepId, HashSet<VariableMap>>,
@@ -1126,16 +1132,16 @@ impl<'a> Proof<'a> {
         // ...and so do all the inputs.
         let base_scope = unifier.add_scope();
         let mut scopes: HashMap<ProofStepId, Scope> = HashMap::new();
-        scopes.insert(ProofStepId::Active(trace.base_id), base_scope);
+        scopes.insert(ProofStepId::Active(base_id), base_scope);
 
-        if trace.literals.len() != base_literals.len() {
+        if traces.len() != base_literals.len() {
             return Err(Error::InternalError(
                 "trace with wrong number of literals".to_string(),
             ));
         }
 
         // Do the multi-way unification according to the trace.
-        for (base_literal, trace) in base_literals.iter().zip(&trace.literals) {
+        for (base_literal, trace) in base_literals.iter().zip(traces) {
             let (scope, literal, flipped) = match trace {
                 LiteralTrace::Eliminated { step, flipped } => {
                     // This matches a one-literal clause.
