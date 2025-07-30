@@ -1422,9 +1422,9 @@ fn test_concrete_proof_multiple_simplifying() {
         "#,
     );
 
-    // let c = prove_concrete(&mut p, "main", "goal", false);
-    // assert_eq!(c.direct, Vec::<String>::new());
-    // assert_eq!(c.indirect, Vec::<String>::new());
+    let c = prove_concrete(&mut p, "main", "goal", true);
+    assert_eq!(c.direct, vec!["f(Foo.bar)", "f(Foo.foo)"]);
+    assert_eq!(c.indirect, Vec::<String>::new());
 }
 
 #[test]

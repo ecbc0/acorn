@@ -1109,14 +1109,13 @@ impl<'a> Proof<'a> {
         simp_maps: &mut HashMap<ProofStepId, HashSet<VariableMap>>,
     ) -> Result<HashSet<VariableMap>, Error> {
         // The unifier will figure out the concrete clauses.
-        // The conclusion gets its own scope...
+        // The base and conclusion get their own scope.
         let (mut unifier, conc_scope) = Unifier::with_map(conc_map);
-
-        // ...and so do all the inputs.
         let base_scope = unifier.add_scope();
-        let mut scopes: HashMap<ProofStepId, Scope> = HashMap::new();
-        let fake_id = ProofStepId::Active(usize::MAX);
-        scopes.insert(fake_id, base_scope);
+
+        // Each simplification gets its own scope.
+        // A proof step gets multiple scopes if it is used for multiple simplifications.
+        let mut simp_scopes: HashMap<Scope, ProofStepId> = HashMap::new();
 
         if traces.len() != base_literals.len() {
             return Err(Error::InternalError(
@@ -1130,7 +1129,8 @@ impl<'a> Proof<'a> {
                 LiteralTrace::Eliminated { step, flipped } => {
                     // This matches a one-literal clause.
                     let step_id = ProofStepId::Active(*step);
-                    let scope = scopes.entry(step_id).or_insert_with(|| unifier.add_scope());
+                    let scope = unifier.add_scope();
+                    simp_scopes.insert(scope, step_id);
                     let clause = self.get_clause(step_id)?;
                     if clause.literals.len() != 1 {
                         return Err(Error::InternalError(format!(
@@ -1138,7 +1138,7 @@ impl<'a> Proof<'a> {
                             step
                         )));
                     }
-                    (*scope, &clause.literals[0], *flipped)
+                    (scope, &clause.literals[0], *flipped)
                 }
                 LiteralTrace::Output { index, flipped } => {
                     // The output literal is in the conclusion scope.
@@ -1157,10 +1157,7 @@ impl<'a> Proof<'a> {
             }
         }
 
-        // Now that we've unified, get the concrete clauses.
-        let ids: HashMap<Scope, ProofStepId> =
-            scopes.into_iter().map(|(id, scope)| (scope, id)).collect();
-
+        // Now that we've unified, get the var maps.
         let mut answer = HashSet::new();
 
         for (scope, map) in unifier.into_maps() {
@@ -1169,14 +1166,20 @@ impl<'a> Proof<'a> {
                 continue;
             }
 
-            let id = ids.get(&scope).unwrap();
-            if *id == fake_id {
+            if scope == base_scope {
                 // This is the base clause, so we return it.
                 answer.insert(map);
-            } else {
-                // This is a simplification, so we store it in simp_maps.
-                simp_maps.entry(*id).or_default().insert(map);
+                continue;
             }
+
+            // This is a simplification, so we store it in simp_maps.
+            let step_id = simp_scopes.get(&scope).ok_or_else(|| {
+                Error::InternalError(format!(
+                    "no proof step id for scope {:?} in reconstruct_trace",
+                    scope
+                ))
+            })?;
+            simp_maps.entry(*step_id).or_default().insert(map);
         }
 
         Ok(answer)
