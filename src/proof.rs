@@ -881,7 +881,7 @@ impl<'a> Proof<'a> {
         match &step.rule {
             Rule::Rewrite(info) => {
                 // For rewrites, the trace applies to the rewritten clause.
-                self.reconstruct_trace(
+                let var_maps = self.reconstruct_trace(
                     &info.rewritten.literals,
                     trace.base_id,
                     &trace.literals,
@@ -889,11 +889,6 @@ impl<'a> Proof<'a> {
                     conclusion_map,
                     input_maps,
                 )?;
-
-                // The data in trace.base_id is wrong, though.
-                // We just want to extract the variable maps for the rewritten clause.
-                let base_id = ProofStepId::Active(trace.base_id);
-                let var_maps = input_maps.remove(&base_id).unwrap();
 
                 // The target is already concrete, and the conclusion has been made concrete through
                 // its variable map. We need to unify the pattern.
@@ -937,7 +932,7 @@ impl<'a> Proof<'a> {
             }
             Rule::EqualityFactoring(info) => {
                 // For EF, the trace applies to the stored literals.
-                self.reconstruct_trace(
+                let var_maps = self.reconstruct_trace(
                     &info.literals,
                     trace.base_id,
                     &trace.literals,
@@ -946,12 +941,8 @@ impl<'a> Proof<'a> {
                     input_maps,
                 )?;
 
-                // The data in trace.base_id is wrong, though.
-                // We just want to extract the variable maps for the rewritten clause.
-                let base_id = ProofStepId::Active(trace.base_id);
-                let var_maps = input_maps.remove(&base_id).unwrap();
-
                 // Unify the pre-EF and post-EF literals.
+                let base_id = ProofStepId::Active(trace.base_id);
                 let base_clause = &self.get_clause(base_id)?;
                 assert!(base_clause.literals.len() == info.literals.len());
 
@@ -981,7 +972,7 @@ impl<'a> Proof<'a> {
             }
             Rule::EqualityResolution(info) => {
                 // For ER, the trace applies to the stored literals.
-                self.reconstruct_trace(
+                let var_maps = self.reconstruct_trace(
                     &info.literals,
                     trace.base_id,
                     &trace.literals,
@@ -990,12 +981,8 @@ impl<'a> Proof<'a> {
                     input_maps,
                 )?;
 
-                // The data in trace.base_id is wrong, though.
-                // We just want to extract the variable maps for the info.literals.
-                let base_id = ProofStepId::Active(trace.base_id);
-                let var_maps = input_maps.remove(&base_id).unwrap();
-
                 // Unify the pre-ER and post-ER literals.
+                let base_id = ProofStepId::Active(trace.base_id);
                 let base_clause = &self.get_clause(base_id)?;
                 assert!(base_clause.literals.len() == info.literals.len() + 1);
 
@@ -1032,7 +1019,7 @@ impl<'a> Proof<'a> {
             }
             Rule::FunctionElimination(info) => {
                 // For FE, the trace applies to the stored literals.
-                self.reconstruct_trace(
+                let var_maps = self.reconstruct_trace(
                     &info.literals,
                     trace.base_id,
                     &trace.literals,
@@ -1041,12 +1028,8 @@ impl<'a> Proof<'a> {
                     input_maps,
                 )?;
 
-                // The data in trace.base_id is wrong, though.
-                // We just want to extract the variable maps for the info.literals.
-                let base_id = ProofStepId::Active(trace.base_id);
-                let var_maps = input_maps.remove(&base_id).unwrap();
-
                 // Unify the pre-FE and post-FE literals.
+                let base_id = ProofStepId::Active(trace.base_id);
                 let base_clause = &self.get_clause(base_id)?;
                 assert!(base_clause.literals.len() == info.literals.len());
 
@@ -1090,14 +1073,20 @@ impl<'a> Proof<'a> {
             }
             Rule::Resolution(_) | Rule::Specialization(_) => {
                 // For these rules, the trace applies directly to the original clause.
-                return self.reconstruct_trace(
+                let var_maps = self.reconstruct_trace(
                     &original_clause.literals,
                     trace.base_id,
                     &trace.literals,
                     &step.clause,
                     conclusion_map,
                     input_maps,
-                );
+                )?;
+                for map in var_maps {
+                    input_maps
+                        .entry(ProofStepId::Active(trace.base_id))
+                        .or_default()
+                        .insert(map);
+                }
             }
             rule => {
                 return Err(Error::InternalError(format!(
@@ -1109,11 +1098,11 @@ impl<'a> Proof<'a> {
         Ok(())
     }
 
-    // Reconstructs inputs given a base clause and trace.
+    // Reconstructs input var maps given a base, conclusion, and trace.
     //
-    // When we reconstruct the inputs, we store them in two forms.
-    // Form 1 is as a variable map in input_maps. The base generic clause is implicit.
-    // Form 2 is as a concrete clause.
+    // There are two sorts of input: the base clause, and simplifications.
+    // When we reconstruct a simplification, we add the appropriate variable map to simp_maps.
+    // The base clause is always reconstructed, and we return its var map as the result.
     //
     // If the step cannot be reconstructed, we return an error.
     fn reconstruct_trace(
@@ -1123,8 +1112,8 @@ impl<'a> Proof<'a> {
         traces: &[LiteralTrace],
         conclusion: &Clause,
         conc_map: VariableMap,
-        input_maps: &mut HashMap<ProofStepId, HashSet<VariableMap>>,
-    ) -> Result<(), Error> {
+        simp_maps: &mut HashMap<ProofStepId, HashSet<VariableMap>>,
+    ) -> Result<HashSet<VariableMap>, Error> {
         // The unifier will figure out the concrete clauses.
         // The conclusion gets its own scope...
         let (mut unifier, conc_scope) = Unifier::with_map(conc_map);
@@ -1177,6 +1166,8 @@ impl<'a> Proof<'a> {
         let ids: HashMap<Scope, ProofStepId> =
             scopes.into_iter().map(|(id, scope)| (scope, id)).collect();
 
+        let mut answer = HashSet::new();
+
         for (scope, map) in unifier.into_maps() {
             if scope == Scope::OUTPUT || scope == conc_scope {
                 // We only need to store the scopes for inputs.
@@ -1184,9 +1175,15 @@ impl<'a> Proof<'a> {
             }
 
             let id = ids.get(&scope).unwrap();
-            input_maps.entry(*id).or_default().insert(map);
+            if *id == ProofStepId::Active(base_id) {
+                // This is the base clause, so we return it.
+                answer.insert(map);
+            } else {
+                // This is a simplification, so we store it in simp_maps.
+                simp_maps.entry(*id).or_default().insert(map);
+            }
         }
 
-        Ok(())
+        Ok(answer)
     }
 }
