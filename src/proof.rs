@@ -697,7 +697,7 @@ impl<'a> Proof<'a> {
         }
 
         // Construct the concrete clauses
-        let mut concrete_clauses: HashMap<NodeId, BTreeSet<Clause>> = HashMap::new();
+        let mut concrete_clauses: HashMap<ProofStepId, BTreeSet<Clause>> = HashMap::new();
         for (concrete_id, var_maps) in var_map_map {
             let ConcreteStepId::ProofStep(id) = concrete_id else {
                 continue;
@@ -709,9 +709,8 @@ impl<'a> Proof<'a> {
                 let generic = self.get_clause(id)?;
                 var_map.keep_unmapped_in_clause(&generic);
                 let concrete = var_map.specialize_clause(generic);
-                let node_id = *self.id_map.get(&id).unwrap();
                 concrete_clauses
-                    .entry(node_id)
+                    .entry(id)
                     .or_default()
                     .insert(concrete);
             }
@@ -721,7 +720,7 @@ impl<'a> Proof<'a> {
         for (id, step) in &self.all_steps {
             // We don't need proof steps for concrete assumptions
             if step.rule.is_assumption() && !step.clause.has_any_variable() {
-                if let Some(clauses) = concrete_clauses.remove(&self.id_map[id]) {
+                if let Some(clauses) = concrete_clauses.remove(id) {
                     for clause in clauses {
                         let codes =
                             generator.concrete_clause_to_code(&clause, false, self.normalizer)?;
@@ -736,12 +735,15 @@ impl<'a> Proof<'a> {
         // Generate code for the direct steps.
         let mut direct = vec![];
         let (direct_map, ordered_direct) = self.find_direct();
-        for (node_id, is_true) in ordered_direct {
-            let node = &self.nodes[node_id as usize];
+        for (proof_step_id, is_true) in ordered_direct {
+            let Some(node_id) = self.id_map.get(&proof_step_id) else {
+                continue;
+            };
+            let node = &self.nodes[*node_id as usize];
             if node.is_negated_goal() {
                 continue;
             }
-            let Some(clauses) = concrete_clauses.remove(&node_id) else {
+            let Some(clauses) = concrete_clauses.remove(&proof_step_id) else {
                 continue;
             };
             for clause in clauses.into_iter().rev() {
@@ -759,14 +761,14 @@ impl<'a> Proof<'a> {
         let mut indirect = vec![];
         for (step_id, _) in &self.all_steps {
             let node_id = *self.id_map.get(&step_id).unwrap();
-            if direct_map.contains_key(&node_id) {
+            if direct_map.contains_key(&step_id) {
                 continue;
             }
             let node = &self.nodes[node_id as usize];
             if node.is_contradiction() || node.is_negated_goal() {
                 continue;
             }
-            let Some(clauses) = concrete_clauses.remove(&node_id) else {
+            let Some(clauses) = concrete_clauses.remove(&step_id) else {
                 continue;
             };
             for clause in clauses.into_iter().rev() {
@@ -784,7 +786,7 @@ impl<'a> Proof<'a> {
     // Find all the proof steps that can either be proved directly from assumptions, or
     // their negation can be proved directly from assumptions.
     // The boolean flag is whether the step is true.
-    fn find_direct(&self) -> (HashMap<NodeId, bool>, Vec<(NodeId, bool)>) {
+    fn find_direct(&self) -> (HashMap<ProofStepId, bool>, Vec<(ProofStepId, bool)>) {
         assert!(!self.condensed);
 
         // We put a node in here whenever we use its deduction.
@@ -856,7 +858,23 @@ impl<'a> Proof<'a> {
             }
         }
 
-        (answer, ordered_answer)
+        // Convert the results from NodeId to ProofStepId
+        let mut proof_step_answer: HashMap<ProofStepId, bool> = HashMap::new();
+        let mut proof_step_ordered: Vec<(ProofStepId, bool)> = vec![];
+        
+        for (node_id, is_true) in answer {
+            if let Some(proof_step_id) = reverse_id_map.get(&node_id) {
+                proof_step_answer.insert(proof_step_id.clone(), is_true);
+            }
+        }
+        
+        for (node_id, is_true) in ordered_answer {
+            if let Some(proof_step_id) = reverse_id_map.get(&node_id) {
+                proof_step_ordered.push((proof_step_id.clone(), is_true));
+            }
+        }
+
+        (proof_step_answer, proof_step_ordered)
     }
 
     // Given a varmap for the conclusion of a proof step, reconstruct varmaps for
