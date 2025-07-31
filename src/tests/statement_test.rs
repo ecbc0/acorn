@@ -646,4 +646,15 @@ mod tests {
             }
         }"});
     }
+
+    #[test]
+    fn test_function_must_have_arguments() {
+        fail_with(
+            indoc! {"
+            define foo<T> -> Bool {
+                true
+            }"},
+            "must have at least one argument",
+        );
+    }
 }

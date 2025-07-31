@@ -406,24 +406,3 @@ fn test_todo_statement() {
     env.bindings.expect_good_code("a");
     env.bindings.expect_good_code("b");
 }
-
-// #[test]
-// fn test_exists_a_function() {
-//     let mut env = Environment::test();
-//     env.add(
-//         r#"
-//         inductive TwoType {
-//             first
-//             second
-//         }
-
-//         define two_iso<T> -> Bool {
-//             exists(f: T -> TwoType) {
-//                 forall(x: T, y: T) {
-//                     f(x) = f(y) implies x = y
-//                 }
-//             }
-//         }
-//         "#,
-//     );
-// }
