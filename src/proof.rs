@@ -752,13 +752,6 @@ impl<'a> Proof<'a> {
         let (direct_map, ordered_direct) = self.find_direct();
         for (ps_id, is_true) in ordered_direct {
             let concrete_id = ConcreteStepId::ProofStep(ps_id);
-            let Some(node_id) = self.id_map.get(&ps_id) else {
-                continue;
-            };
-            let node = &self.nodes[*node_id as usize];
-            if node.is_negated_goal() {
-                continue;
-            }
             let Some(clauses) = concrete_clauses.remove(&concrete_id) else {
                 continue;
             };
