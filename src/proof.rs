@@ -697,27 +697,32 @@ impl<'a> Proof<'a> {
         }
 
         // Construct the concrete clauses
-        let mut concrete_clauses: HashMap<ProofStepId, BTreeSet<Clause>> = HashMap::new();
+        let mut concrete_clauses: HashMap<ConcreteStepId, BTreeSet<Clause>> = HashMap::new();
         for (concrete_id, var_maps) in var_map_map {
-            let ConcreteStepId::ProofStep(id) = concrete_id else {
+            let ConcreteStepId::ProofStep(ps_id) = concrete_id else {
                 continue;
             };
-            if id == ProofStepId::Final {
+            if ps_id == ProofStepId::Final {
                 continue;
             }
+            let generic = self.get_clause(ps_id)?;
+
             for mut var_map in var_maps {
-                let generic = self.get_clause(id)?;
                 var_map.keep_unmapped_in_clause(&generic);
                 let concrete = var_map.specialize_clause(generic);
-                concrete_clauses.entry(id).or_default().insert(concrete);
+                concrete_clauses
+                    .entry(concrete_id)
+                    .or_default()
+                    .insert(concrete);
             }
         }
 
         let mut skip_code = HashSet::new();
-        for (id, step) in &self.all_steps {
+        for (ps_id, step) in &self.all_steps {
+            let concrete_id = ConcreteStepId::ProofStep(*ps_id);
             // We don't need proof steps for concrete assumptions
             if step.rule.is_assumption() && !step.clause.has_any_variable() {
-                if let Some(clauses) = concrete_clauses.remove(id) {
+                if let Some(clauses) = concrete_clauses.remove(&concrete_id) {
                     for clause in clauses {
                         let codes =
                             generator.concrete_clause_to_code(&clause, false, self.normalizer)?;
@@ -732,15 +737,16 @@ impl<'a> Proof<'a> {
         // Generate code for the direct steps.
         let mut direct = vec![];
         let (direct_map, ordered_direct) = self.find_direct();
-        for (proof_step_id, is_true) in ordered_direct {
-            let Some(node_id) = self.id_map.get(&proof_step_id) else {
+        for (ps_id, is_true) in ordered_direct {
+            let concrete_id = ConcreteStepId::ProofStep(ps_id);
+            let Some(node_id) = self.id_map.get(&ps_id) else {
                 continue;
             };
             let node = &self.nodes[*node_id as usize];
             if node.is_negated_goal() {
                 continue;
             }
-            let Some(clauses) = concrete_clauses.remove(&proof_step_id) else {
+            let Some(clauses) = concrete_clauses.remove(&concrete_id) else {
                 continue;
             };
             for clause in clauses.into_iter().rev() {
@@ -756,16 +762,17 @@ impl<'a> Proof<'a> {
 
         // Generate code for the indirect steps.
         let mut indirect = vec![];
-        for (step_id, _) in &self.all_steps {
-            let node_id = *self.id_map.get(&step_id).unwrap();
-            if direct_map.contains_key(&step_id) {
+        for (ps_id, _) in &self.all_steps {
+            let node_id = *self.id_map.get(&ps_id).unwrap();
+            if direct_map.contains_key(&ps_id) {
                 continue;
             }
             let node = &self.nodes[node_id as usize];
             if node.is_contradiction() || node.is_negated_goal() {
                 continue;
             }
-            let Some(clauses) = concrete_clauses.remove(&step_id) else {
+            let concrete_id = ConcreteStepId::ProofStep(*ps_id);
+            let Some(clauses) = concrete_clauses.remove(&concrete_id) else {
                 continue;
             };
             for clause in clauses.into_iter().rev() {
