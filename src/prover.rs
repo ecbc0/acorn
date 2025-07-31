@@ -24,7 +24,7 @@ use crate::module::ModuleId;
 use crate::normalizer::Normalizer;
 use crate::passive_set::PassiveSet;
 use crate::project::Project;
-use crate::proof::{ConcreteProof, Difficulty, Proof};
+use crate::proof::{Difficulty, Proof};
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
 use crate::source::SourceType;
 use crate::stack::Stack;
@@ -561,7 +561,7 @@ impl Prover {
                 let clauses = self.normalizer.normalize_value(&value, true)?;
 
                 for clause in clauses {
-                    if self.checker.evaluate_clause(&clause) != Some(true) {
+                    if !self.checker.check_clause(&clause) {
                         return Err(Error::GeneratedBadCode(format!(
                             "The clause '{}' is not obviously true",
                             self.display(&clause)
@@ -585,53 +585,26 @@ impl Prover {
     /// This does mutate the checker itself, so if you do anything else afterwards it'll be weird.
     pub fn check_proof(
         &mut self,
-        proof: &ConcreteProof,
+        codes: &[String],
         project: &Project,
         bindings: &mut Cow<BindingMap>,
     ) -> Result<(), Error> {
         let negated_goal = match &self.goal {
             Some(NormalizedGoal::ProveNegated(negated_goal, _)) => negated_goal.clone(),
-            _ => {
-                return Err(Error::internal(
-                    "cannot check proof without a goal",
-                ))
-            }
+            _ => return Err(Error::internal("cannot check proof without a goal")),
         };
-
-        for code in &proof.direct {
-            self.check_code(code, project, bindings)?;
-        }
-
-        if proof.indirect.is_empty() {
-            // Check the goal
-            let goal_value = negated_goal.clone().pretty_negate();
-            let goal_clauses = self.normalizer.normalize_value(&goal_value, true)?;
-            let mut ok = true;
-            for clause in goal_clauses {
-                if self.checker.evaluate_clause(&clause) != Some(true) {
-                    ok = false;
-                    break;
-                }
-            }
-            if ok {
-                return Ok(());
-            }
-        }
-
-        // Try a proof by contradiction.
-        // In theory we could avoid mutating the checker if we finished before this part, so
-        // we might want to separate it out later.
-        // Add the negated goal
         let negated_goal_clauses = self.normalizer.normalize_value(&negated_goal, true)?;
         for clause in negated_goal_clauses {
             self.checker.insert_clause(&clause);
         }
 
-        for code in &proof.indirect {
+        for code in codes {
+            if self.checker.has_contradiction() {
+                return Ok(());
+            }
             self.check_code(code, project, bindings)?;
         }
 
-        // We should have a contradiction
         if self.checker.has_contradiction() {
             Ok(())
         } else {

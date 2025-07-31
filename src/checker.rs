@@ -39,12 +39,11 @@ impl Checker {
         }
     }
 
-    /// Returns Some(true) if the clause is known to be true, Some(false) if known false,
-    /// and None if we can't tell whether it's true or false.
-    pub fn evaluate_clause(&self, clause: &Clause) -> Option<bool> {
+    /// Returns true if the clause is known to be true.
+    pub fn check_clause(&self, clause: &Clause) -> bool {
         // First check the term graph for concrete evaluation
-        if let Some(result) = self.term_graph.evaluate_clause(clause) {
-            return Some(result);
+        if self.term_graph.evaluate_clause(clause) == Some(true) {
+            return true;
         }
 
         // If not found in term graph, check if there's a generalization in the clause set
@@ -53,13 +52,20 @@ impl Checker {
             .find_generalization(clause.clone())
             .is_some()
         {
-            return Some(true);
+            return true;
         }
 
-        None
+        false
     }
 
     /// Returns true if the checker has encountered a contradiction.
+    ///
+    /// It is possible that both a clause and its negation are known to be true, and yet
+    /// has_contradiction returns false.
+    /// This is because we do not unify all terms we ever encounter.
+    ///
+    /// We do guarantee that if you insert both a term and its negation then
+    /// has_contradiction will return true.
     pub fn has_contradiction(&self) -> bool {
         self.term_graph.has_contradiction()
     }

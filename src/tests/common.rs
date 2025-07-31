@@ -4,7 +4,6 @@ use crate::code_generator::Error;
 use crate::environment::Environment;
 use crate::module::LoadState;
 use crate::project::Project;
-use crate::proof::ConcreteProof;
 use crate::prover::{Outcome, Prover};
 
 // Helper to do a proof for a particular goal.
@@ -60,7 +59,7 @@ pub fn prove_concrete(
     module_name: &str,
     goal_name: &str,
     check_proof: bool,
-) -> ConcreteProof {
+) -> Vec<String> {
     let (project, base_env, mut prover, outcome) = prove(project, module_name, goal_name);
     assert_eq!(outcome, Outcome::Success);
     let mut proof = match prover.get_uncondensed_proof(false) {

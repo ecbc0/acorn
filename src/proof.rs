@@ -104,14 +104,6 @@ impl<'a> ProofNode<'a> {
             && self.sources.is_empty()
     }
 
-    fn is_negated_goal(&self) -> bool {
-        matches!(self.value, NodeValue::NegatedGoal(_))
-    }
-
-    fn is_contradiction(&self) -> bool {
-        matches!(self.value, NodeValue::Contradiction)
-    }
-
     /// Instead of removing nodes from the graph, we isolate them by removing all premises and
     /// consequences.
     fn is_isolated(&self) -> bool {
@@ -647,16 +639,6 @@ impl<'a> Proof<'a> {
     }
 }
 
-/// The ConcreteProof is a series of concrete clauses, in string form, that can be checked
-/// with the checker.
-pub struct ConcreteProof {
-    /// The direct clauses are true based on the existing environment, in this order.
-    pub direct: Vec<String>,
-
-    /// The indirect clauses are true if we first assume the negated goal.
-    pub indirect: Vec<String>,
-}
-
 // Each step in the ConcreteProof is associated with a ConcreteStepId.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ConcreteStepId {
@@ -678,7 +660,7 @@ fn concrete_ids_for(ps_id: ProofStepId) -> [ConcreteStepId; 2] {
 
 impl<'a> Proof<'a> {
     /// Create the concrete proof.
-    pub fn make_concrete(&mut self, bindings: &BindingMap) -> Result<ConcreteProof, Error> {
+    pub fn make_concrete(&mut self, bindings: &BindingMap) -> Result<Vec<String>, Error> {
         let mut generator = CodeGenerator::new(&bindings);
 
         // First, reconstruct all the steps, working backwards.
@@ -756,32 +738,8 @@ impl<'a> Proof<'a> {
             }
         }
 
-        // Generate code for the direct steps.
-        let mut direct = vec![];
-        let (direct_map, ordered_direct) = self.find_direct();
-        for (ps_id, is_true) in ordered_direct {
-            for concrete_id in concrete_ids_for(ps_id) {
-                let Some(clauses) = concrete_clauses.remove(&concrete_id) else {
-                    continue;
-                };
-                for clause in clauses.into_iter().rev() {
-                    let codes =
-                        generator.concrete_clause_to_code(&clause, !is_true, self.normalizer)?;
-                    for code in codes {
-                        if !skip_code.contains(&code) && !direct.contains(&code) {
-                            direct.push(code);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Generate code for the indirect steps.
-        let mut indirect = vec![];
+        let mut answer = vec![];
         for (ps_id, _) in &self.all_steps {
-            if direct_map.contains_key(&ps_id) {
-                continue;
-            }
             for concrete_id in concrete_ids_for(*ps_id) {
                 let Some(clauses) = concrete_clauses.remove(&concrete_id) else {
                     continue;
@@ -790,101 +748,14 @@ impl<'a> Proof<'a> {
                     let codes =
                         generator.concrete_clause_to_code(&clause, false, self.normalizer)?;
                     for code in codes {
-                        if !direct.contains(&code) && !indirect.contains(&code) {
-                            indirect.push(code);
+                        if !answer.contains(&code) {
+                            answer.push(code);
                         }
                     }
                 }
             }
         }
-        Ok(ConcreteProof { direct, indirect })
-    }
-
-    // Find all the proof steps that can either be proved directly from assumptions, or
-    // their negation can be proved directly from assumptions.
-    // The boolean flag is whether the step is true.
-    fn find_direct(&self) -> (HashMap<ProofStepId, bool>, Vec<(ProofStepId, bool)>) {
-        assert!(!self.condensed);
-
-        // We put a node in here whenever we use its deduction.
-        let mut used: HashSet<NodeId> = HashSet::new();
-
-        // We put a node in here whenever we can prove it directly.
-        // This can be different from using its deduction, because when we
-        // prove backwards, we use other nodes' deductions.
-        let mut answer: HashMap<ProofStepId, bool> = HashMap::new();
-
-        // Just like answer but we keep things in a logically sound order.
-        let mut ordered_answer: Vec<(ProofStepId, bool)> = vec![];
-
-        // Create a reverse mapping from NodeId to ProofStepId
-        let mut reverse_id_map: HashMap<NodeId, ProofStepId> = HashMap::new();
-        for (proof_step_id, node_id) in &self.id_map {
-            reverse_id_map.insert(*node_id, proof_step_id.clone());
-        }
-
-        // The pending queue is the nodes to see if we can use the deduction.
-        // Let's be deterministic to aid debugging.
-        let mut pending: Vec<(NodeId, ProofStepId)> = reverse_id_map
-            .iter()
-            .map(|(node_id, proof_step_id)| (*node_id, proof_step_id.clone()))
-            .collect();
-        pending.sort_by_key(|(node_id, _)| *node_id);
-        pending.reverse();
-
-        while let Some((node_id, proof_step_id)) = pending.pop() {
-            if used.contains(&node_id) {
-                // We already used this node, so we can skip it.
-                continue;
-            }
-
-            let node = &self.nodes[node_id as usize];
-            if node.is_negated_goal() {
-                // We don't use this, that's the whole point.
-                continue;
-            }
-
-            let mut num_true_premises = 0;
-            let mut non_true_premise = None;
-            for premise_id in &node.premises {
-                if let Some(premise_proof_id) = reverse_id_map.get(premise_id) {
-                    if answer.get(premise_proof_id) == Some(&true) {
-                        num_true_premises += 1;
-                    } else {
-                        non_true_premise = Some(*premise_id);
-                    }
-                } else {
-                    // This premise doesn't have a ProofStepId.
-                    // Thus, it's the negated goal, and it's not true.
-                    non_true_premise = Some(*premise_id);
-                }
-            }
-
-            if node.is_contradiction() || answer.get(&proof_step_id) == Some(&false) {
-                if num_true_premises + 1 == node.premises.len() {
-                    // Backward reasoning, the last premise must be false.
-                    let false_id = non_true_premise.unwrap();
-                    if let Some(false_proof_id) = reverse_id_map.get(&false_id) {
-                        answer.insert(false_proof_id.clone(), false);
-                        ordered_answer.push((false_proof_id.clone(), false));
-                        used.insert(node_id);
-                        pending.push((false_id, false_proof_id.clone()));
-                    }
-                }
-            } else if num_true_premises == node.premises.len() {
-                // Forward reasoning, this node is true.
-                answer.insert(proof_step_id.clone(), true);
-                ordered_answer.push((proof_step_id, true));
-                used.insert(node_id);
-                for consequence_id in &node.consequences {
-                    if let Some(proof_step_id) = reverse_id_map.get(consequence_id) {
-                        pending.push((*consequence_id, proof_step_id.clone()));
-                    }
-                }
-            }
-        }
-
-        (answer, ordered_answer)
+        Ok(answer)
     }
 
     // Given a varmap for the conclusion of a proof step, reconstruct varmaps for
