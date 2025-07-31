@@ -592,8 +592,8 @@ impl Prover {
         let negated_goal = match &self.goal {
             Some(NormalizedGoal::ProveNegated(negated_goal, _)) => negated_goal.clone(),
             _ => {
-                return Err(Error::InternalError(
-                    "cannot check proof without a goal".to_string(),
+                return Err(Error::internal(
+                    "cannot check proof without a goal",
                 ))
             }
         };

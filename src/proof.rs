@@ -477,7 +477,7 @@ impl<'a> Proof<'a> {
 
     fn get_clause(&self, id: ProofStepId) -> Result<&Clause, Error> {
         let node_id = self.id_map.get(&id).ok_or_else(|| {
-            Error::InternalError(format!(
+            Error::internal(format!(
                 "no node found for proof step {:?} in proof graph",
                 id
             ))
@@ -485,7 +485,7 @@ impl<'a> Proof<'a> {
         if let NodeValue::Clause(clause) = &self.nodes[*node_id as usize].value {
             Ok(clause)
         } else {
-            Err(Error::InternalError(format!(
+            Err(Error::internal(format!(
                 "no clause found for proof step {:?}",
                 id
             )))
@@ -599,8 +599,8 @@ impl<'a> Proof<'a> {
             let contradiction = match self.find_contradiction(node_id) {
                 Some(id) => id,
                 None => {
-                    return Err(Error::InternalError(
-                        "lost the conclusion of the proof".to_string(),
+                    return Err(Error::internal(
+                        "lost the conclusion of the proof",
                     ))
                 }
             };
@@ -714,13 +714,13 @@ impl<'a> Proof<'a> {
                         .find(|(id, _)| *id == ps_id)
                         .map(|(_, step)| step)
                     else {
-                        return Err(Error::InternalError(format!(
+                        return Err(Error::internal(
                             "could not find step for assumption",
-                        )));
+                        ));
                     };
 
                     let Rule::Assumption(info) = &assumption_step.rule else {
-                        return Err(Error::InternalError(format!("assumption has wrong rule",)));
+                        return Err(Error::internal("assumption has wrong rule"));
                     };
                     Clause::new(info.literals.clone())
                 }
@@ -923,7 +923,7 @@ impl<'a> Proof<'a> {
         }
 
         let Some(traces) = step.traces.as_ref() else {
-            return Err(Error::InternalError(format!(
+            return Err(Error::internal(format!(
                 "no trace for {}: {}",
                 step.rule.name(),
                 &step.clause
@@ -1184,7 +1184,7 @@ impl<'a> Proof<'a> {
                 }
             }
             rule => {
-                return Err(Error::InternalError(format!(
+                return Err(Error::internal(format!(
                     "missing reconstruction method for rule {}",
                     rule.name()
                 )));
@@ -1218,8 +1218,8 @@ impl<'a> Proof<'a> {
         let mut simp_scopes: HashMap<Scope, ProofStepId> = HashMap::new();
 
         if traces.len() != base_literals.len() {
-            return Err(Error::InternalError(
-                "trace with wrong number of literals".to_string(),
+            return Err(Error::internal(
+                "trace with wrong number of literals",
             ));
         }
 
@@ -1233,7 +1233,7 @@ impl<'a> Proof<'a> {
                     simp_scopes.insert(scope, step_id);
                     let clause = self.get_clause(step_id)?;
                     if clause.literals.len() != 1 {
-                        return Err(Error::InternalError(format!(
+                        return Err(Error::internal(format!(
                             "elimination step {} is not single-literal",
                             step
                         )));
@@ -1250,7 +1250,7 @@ impl<'a> Proof<'a> {
             };
 
             if !unifier.unify_literals(base_scope, base_literal, scope, literal, flipped) {
-                return Err(Error::InternalError(format!(
+                return Err(Error::internal(format!(
                     "failed to unify base literal {} with trace literal {}",
                     base_literal, literal
                 )));
@@ -1274,7 +1274,7 @@ impl<'a> Proof<'a> {
 
             // This is a simplification, so we store it in simp_maps.
             let step_id = simp_scopes.get(&scope).ok_or_else(|| {
-                Error::InternalError(format!(
+                Error::internal(format!(
                     "no proof step id for scope {:?} in reconstruct_trace",
                     scope
                 ))

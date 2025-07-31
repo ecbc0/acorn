@@ -121,8 +121,8 @@ impl CodeGenerator<'_> {
                     Box::new(rhs),
                 ))
             }
-            AcornType::Empty => Err(Error::InternalError("empty type generated".to_string())),
-            AcornType::Bool => Err(Error::InternalError("Bool unbound".to_string())),
+            AcornType::Empty => Err(Error::internal("empty type generated")),
+            AcornType::Bool => Err(Error::internal("Bool unbound")),
         }
     }
 
@@ -695,6 +695,10 @@ impl Error {
 
     pub fn unhandled_value(s: &str) -> Error {
         Error::UnhandledValue(s.to_string())
+    }
+
+    pub fn internal<T: Into<String>>(s: T) -> Error {
+        Error::InternalError(s.into())
     }
 
     pub fn error_type(&self) -> &'static str {
