@@ -782,15 +782,17 @@ impl<'a> Proof<'a> {
             if direct_map.contains_key(&ps_id) {
                 continue;
             }
-            let concrete_id = ConcreteStepId::ProofStep(*ps_id);
-            let Some(clauses) = concrete_clauses.remove(&concrete_id) else {
-                continue;
-            };
-            for clause in clauses.into_iter().rev() {
-                let codes = generator.concrete_clause_to_code(&clause, false, self.normalizer)?;
-                for code in codes {
-                    if !direct.contains(&code) && !indirect.contains(&code) {
-                        indirect.push(code);
+            for concrete_id in concrete_ids_for(*ps_id) {
+                let Some(clauses) = concrete_clauses.remove(&concrete_id) else {
+                    continue;
+                };
+                for clause in clauses.into_iter().rev() {
+                    let codes =
+                        generator.concrete_clause_to_code(&clause, false, self.normalizer)?;
+                    for code in codes {
+                        if !direct.contains(&code) && !indirect.contains(&code) {
+                            indirect.push(code);
+                        }
                     }
                 }
             }
