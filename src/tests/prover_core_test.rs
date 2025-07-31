@@ -1308,7 +1308,7 @@ fn test_concrete_proof_with_equality_factoring_mixed_forwards() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", false);
+    let c = prove_concrete(&mut p, "main", "goal", true);
     assert_eq!(
         c,
         vec!["g(y) != h(y) or f(y) = h(y)", "g(y) = h(y)", "f(y) != h(y)"]
@@ -1442,7 +1442,7 @@ fn test_concrete_proof_of_existence() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", false);
+    let c = prove_concrete(&mut p, "main", "goal", true);
     assert_eq!(c, vec!["let s0: Foo satisfy { f(s0) }", "not f(s0)"]);
 }
 
