@@ -669,6 +669,13 @@ enum ConcreteStepId {
     Assumption(ProofStepId),
 }
 
+// In the order that they are logically deduced
+fn concrete_ids_for(ps_id: ProofStepId) -> [ConcreteStepId; 2] {
+    let assumption_id = ConcreteStepId::Assumption(ps_id);
+    let concrete_id = ConcreteStepId::ProofStep(ps_id);
+    [concrete_id, assumption_id]
+}
+
 impl<'a> Proof<'a> {
     /// Create the concrete proof.
     pub fn make_concrete(&mut self, bindings: &BindingMap) -> Result<ConcreteProof, Error> {
@@ -730,10 +737,12 @@ impl<'a> Proof<'a> {
             }
         }
 
+        // Skip the code that comes from concrete assumptions, because we don't need it
+        // TODO: should we actually be skipping the original assumptions rather than
+        // the simplified versions?
         let mut skip_code = HashSet::new();
         for (ps_id, step) in &self.all_steps {
             let concrete_id = ConcreteStepId::ProofStep(*ps_id);
-            // We don't need proof steps for concrete assumptions
             if step.rule.is_assumption() && !step.clause.has_any_variable() {
                 if let Some(clauses) = concrete_clauses.remove(&concrete_id) {
                     for clause in clauses {
@@ -751,16 +760,17 @@ impl<'a> Proof<'a> {
         let mut direct = vec![];
         let (direct_map, ordered_direct) = self.find_direct();
         for (ps_id, is_true) in ordered_direct {
-            let concrete_id = ConcreteStepId::ProofStep(ps_id);
-            let Some(clauses) = concrete_clauses.remove(&concrete_id) else {
-                continue;
-            };
-            for clause in clauses.into_iter().rev() {
-                let codes =
-                    generator.concrete_clause_to_code(&clause, !is_true, self.normalizer)?;
-                for code in codes {
-                    if !skip_code.contains(&code) && !direct.contains(&code) {
-                        direct.push(code);
+            for concrete_id in concrete_ids_for(ps_id) {
+                let Some(clauses) = concrete_clauses.remove(&concrete_id) else {
+                    continue;
+                };
+                for clause in clauses.into_iter().rev() {
+                    let codes =
+                        generator.concrete_clause_to_code(&clause, !is_true, self.normalizer)?;
+                    for code in codes {
+                        if !skip_code.contains(&code) && !direct.contains(&code) {
+                            direct.push(code);
+                        }
                     }
                 }
             }
