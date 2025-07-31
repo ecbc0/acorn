@@ -779,12 +779,7 @@ impl<'a> Proof<'a> {
         // Generate code for the indirect steps.
         let mut indirect = vec![];
         for (ps_id, _) in &self.all_steps {
-            let node_id = *self.id_map.get(&ps_id).unwrap();
             if direct_map.contains_key(&ps_id) {
-                continue;
-            }
-            let node = &self.nodes[node_id as usize];
-            if node.is_contradiction() || node.is_negated_goal() {
                 continue;
             }
             let concrete_id = ConcreteStepId::ProofStep(*ps_id);
