@@ -798,13 +798,19 @@ impl<'a> Proof<'a> {
         // Just like answer but we keep things in a logically sound order.
         let mut ordered_answer: Vec<(NodeId, bool)> = vec![];
 
+        // Create a reverse mapping from NodeId to ProofStepId
+        let mut reverse_id_map: HashMap<NodeId, ProofStepId> = HashMap::new();
+        for (proof_step_id, node_id) in &self.id_map {
+            reverse_id_map.insert(*node_id, proof_step_id.clone());
+        }
+
         // The pending queue is the nodes to see if we can use the deduction.
         // Let's be deterministic to aid debugging.
-        let mut pending: Vec<NodeId> = self.id_map.values().cloned().collect();
-        pending.sort();
+        let mut pending: Vec<(NodeId, ProofStepId)> = reverse_id_map.iter().map(|(node_id, proof_step_id)| (*node_id, proof_step_id.clone())).collect();
+        pending.sort_by_key(|(node_id, _)| *node_id);
         pending.reverse();
 
-        while let Some(node_id) = pending.pop() {
+        while let Some((node_id, _proof_step_id)) = pending.pop() {
             if used.contains(&node_id) {
                 // We already used this node, so we can skip it.
                 continue;
@@ -833,7 +839,9 @@ impl<'a> Proof<'a> {
                     answer.insert(false_id, false);
                     ordered_answer.push((false_id, false));
                     used.insert(node_id);
-                    pending.push(false_id);
+                    if let Some(proof_step_id) = reverse_id_map.get(&false_id) {
+                        pending.push((false_id, proof_step_id.clone()));
+                    }
                 }
             } else if num_true_premises == node.premises.len() {
                 // Forward reasoning, this node is true.
@@ -841,7 +849,9 @@ impl<'a> Proof<'a> {
                 ordered_answer.push((node_id, true));
                 used.insert(node_id);
                 for consequence_id in &node.consequences {
-                    pending.push(*consequence_id);
+                    if let Some(proof_step_id) = reverse_id_map.get(consequence_id) {
+                        pending.push((*consequence_id, proof_step_id.clone()));
+                    }
                 }
             }
         }
