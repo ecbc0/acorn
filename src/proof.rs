@@ -699,13 +699,15 @@ impl<'a> Proof<'a> {
         // Construct the concrete clauses
         let mut concrete_clauses: HashMap<ConcreteStepId, BTreeSet<Clause>> = HashMap::new();
         for (concrete_id, var_maps) in var_map_map {
-            let ConcreteStepId::ProofStep(ps_id) = concrete_id else {
-                continue;
+            let generic = match concrete_id {
+                ConcreteStepId::ProofStep(ps_id) => {
+                    if ps_id == ProofStepId::Final {
+                        continue;
+                    }
+                    self.get_clause(ps_id)?
+                }
+                ConcreteStepId::Assumption(_ps_id) => continue,
             };
-            if ps_id == ProofStepId::Final {
-                continue;
-            }
-            let generic = self.get_clause(ps_id)?;
 
             for mut var_map in var_maps {
                 var_map.keep_unmapped_in_clause(&generic);
