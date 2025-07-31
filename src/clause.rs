@@ -2,6 +2,7 @@ use std::fmt;
 
 use crate::atom::{Atom, AtomId};
 use crate::literal::Literal;
+use crate::proof_step::{EFLiteralTrace, EFTermTrace};
 use crate::unifier::{Scope, Unifier};
 
 // A record of what happened to a single literal during a single proof step.
@@ -336,5 +337,94 @@ impl Clause {
             .map(|(_, literals, _)| Clause::new(literals))
             .filter(|clause| !clause.is_tautology())
             .collect()
+    }
+
+    /// Finds all possible equality factorings for this clause.
+    /// Returns a vector of (literals, ef_trace) pairs.
+    /// The literals are the result of factoring before normalization.
+    /// The ef_trace tracks how the literals were transformed.
+    pub fn find_equality_factorings(&self) -> Vec<(Vec<Literal>, Vec<EFLiteralTrace>)> {
+        let mut results = vec![];
+        
+        // The first literal must be positive for equality factoring
+        if self.literals.is_empty() || !self.literals[0].positive {
+            return results;
+        }
+        
+        let st_literal = &self.literals[0];
+        
+        for (st_forwards, s, t) in st_literal.both_term_pairs() {
+            for i in 1..self.literals.len() {
+                let uv_literal = &self.literals[i];
+                if !uv_literal.positive {
+                    continue;
+                }
+                
+                for (uv_forwards, u, v) in uv_literal.both_term_pairs() {
+                    let mut unifier = Unifier::new(3);
+                    if !unifier.unify(Scope::LEFT, s, Scope::LEFT, u) {
+                        continue;
+                    }
+                    
+                    // Create the factored terms.
+                    let mut literals = vec![];
+                    let mut ef_trace = vec![];
+                    let (tv_lit, tv_flip) = Literal::new_with_flip(
+                        false,
+                        unifier.apply(Scope::LEFT, t),
+                        unifier.apply(Scope::LEFT, v),
+                    );
+                    let (uv_out, uv_out_flip) = Literal::new_with_flip(
+                        true,
+                        unifier.apply(Scope::LEFT, u),
+                        unifier.apply(Scope::LEFT, v),
+                    );
+                    
+                    literals.push(tv_lit);
+                    literals.push(uv_out);
+                    
+                    // Figure out where the factored terms went.
+                    // The output has two literals:
+                    // literals[0] = t != v (the new inequality)
+                    // literals[1] = u = v (the preserved equality, with s unified to u)
+                    
+                    // s and u both go to the left of u = v (they were unified)
+                    let s_out = EFTermTrace {
+                        index: 1,
+                        left: !uv_out_flip,
+                    };
+                    // t goes to the left of t != v
+                    let t_out = EFTermTrace {
+                        index: 0,
+                        left: !tv_flip,
+                    };
+                    // u goes to the same place as s
+                    let u_out = s_out;
+                    // v goes to the right of t != v
+                    let v_out = EFTermTrace {
+                        index: 0,
+                        left: tv_flip,
+                    };
+                    
+                    ef_trace.push(EFLiteralTrace::to_out(s_out, t_out, !st_forwards));
+                    
+                    for j in 1..self.literals.len() {
+                        if i == j {
+                            ef_trace.push(EFLiteralTrace::to_out(u_out, v_out, !uv_forwards));
+                        } else {
+                            let (new_lit, j_flipped) =
+                                unifier.apply_to_literal(Scope::LEFT, &self.literals[j]);
+                            let index = literals.len();
+                            ef_trace.push(EFLiteralTrace::to_index(index, j_flipped));
+                            literals.push(new_lit);
+                        }
+                    }
+                    
+                    results.push((literals, ef_trace));
+                }
+            }
+        }
+        
+        results
     }
 }

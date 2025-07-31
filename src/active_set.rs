@@ -5,7 +5,7 @@ use crate::fingerprint::FingerprintUnifier;
 use crate::literal::Literal;
 use crate::pattern_tree::LiteralSet;
 use crate::proof_step::{
-    EFLiteralTrace, EFTermTrace, EqualityFactoringInfo, EqualityResolutionInfo,
+    EqualityFactoringInfo, EqualityResolutionInfo,
     FunctionEliminationInfo, ProofStep, Rule, Truthiness,
 };
 use crate::rewrite_tree::{Rewrite, RewriteTree};
@@ -584,98 +584,31 @@ impl ActiveSet {
     pub fn equality_factoring(activated_id: usize, activated_step: &ProofStep) -> Vec<ProofStep> {
         let clause = &activated_step.clause;
         let mut answer = vec![];
-        let st_literal = &clause.literals[0];
-        if !st_literal.positive {
-            return answer;
+        
+        // Use the clause's helper method to find all factorings
+        let factorings = clause.find_equality_factorings();
+        
+        for (literals, ef_trace) in factorings {
+            // Capture the literals before normalization
+            let literals_before_normalization = literals.clone();
+
+            // Create the new clause with trace
+            let (new_clause, normalization_traces) = Clause::normalize_with_trace(literals);
+
+            let step = ProofStep::direct(
+                activated_id,
+                activated_step,
+                Rule::EqualityFactoring(EqualityFactoringInfo {
+                    id: activated_id,
+                    literals: literals_before_normalization,
+                    ef_trace,
+                }),
+                new_clause,
+                normalization_traces,
+            );
+            answer.push(step);
         }
-        for (st_forwards, s, t) in st_literal.both_term_pairs() {
-            for i in 1..clause.literals.len() {
-                let uv_literal = &clause.literals[i];
-                if !uv_literal.positive {
-                    continue;
-                }
-
-                for (uv_forwards, u, v) in uv_literal.both_term_pairs() {
-                    let mut unifier = Unifier::new(3);
-                    if !unifier.unify(Scope::LEFT, s, Scope::LEFT, u) {
-                        continue;
-                    }
-
-                    // Create the factored terms.
-                    let mut literals = vec![];
-                    let mut ef_trace = vec![];
-                    let (tv_lit, tv_flip) = Literal::new_with_flip(
-                        false,
-                        unifier.apply(Scope::LEFT, t),
-                        unifier.apply(Scope::LEFT, v),
-                    );
-                    let (uv_out, uv_out_flip) = Literal::new_with_flip(
-                        true,
-                        unifier.apply(Scope::LEFT, u),
-                        unifier.apply(Scope::LEFT, v),
-                    );
-
-                    literals.push(tv_lit);
-                    literals.push(uv_out);
-
-                    // Figure out where the factored terms went.
-                    // The output has two literals:
-                    // literals[0] = t != v (the new inequality)
-                    // literals[1] = u = v (the preserved equality, with s unified to u)
-
-                    // s and u both go to the left of u = v (they were unified)
-                    let s_out = EFTermTrace {
-                        index: 1,
-                        left: !uv_out_flip,
-                    };
-                    // t goes to the left of t != v
-                    let t_out = EFTermTrace {
-                        index: 0,
-                        left: !tv_flip,
-                    };
-                    // u goes to the same place as s
-                    let u_out = s_out;
-                    // v goes to the right of t != v
-                    let v_out = EFTermTrace {
-                        index: 0,
-                        left: tv_flip,
-                    };
-
-                    ef_trace.push(EFLiteralTrace::to_out(s_out, t_out, !st_forwards));
-
-                    for j in 1..clause.literals.len() {
-                        if i == j {
-                            ef_trace.push(EFLiteralTrace::to_out(u_out, v_out, !uv_forwards));
-                        } else {
-                            let (new_lit, j_flipped) =
-                                unifier.apply_to_literal(Scope::LEFT, &clause.literals[j]);
-                            let index = literals.len();
-                            ef_trace.push(EFLiteralTrace::to_index(index, j_flipped));
-                            literals.push(new_lit);
-                        }
-                    }
-
-                    // Capture the literals before normalization
-                    let literals_before_normalization = literals.clone();
-
-                    // Create the new clause with trace
-                    let (new_clause, normalization_traces) = Clause::normalize_with_trace(literals);
-
-                    let step = ProofStep::direct(
-                        activated_id,
-                        activated_step,
-                        Rule::EqualityFactoring(EqualityFactoringInfo {
-                            id: activated_id,
-                            literals: literals_before_normalization,
-                            ef_trace,
-                        }),
-                        new_clause,
-                        normalization_traces,
-                    );
-                    answer.push(step);
-                }
-            }
-        }
+        
         answer
     }
 
