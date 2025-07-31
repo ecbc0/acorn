@@ -598,11 +598,7 @@ impl<'a> Proof<'a> {
             output.push(format!("{}if {} {{", "\t".repeat(tab_level), condition));
             let contradiction = match self.find_contradiction(node_id) {
                 Some(id) => id,
-                None => {
-                    return Err(Error::internal(
-                        "lost the conclusion of the proof",
-                    ))
-                }
+                None => return Err(Error::internal("lost the conclusion of the proof")),
             };
             self.to_code_helper(
                 normalizer,
@@ -714,9 +710,7 @@ impl<'a> Proof<'a> {
                         .find(|(id, _)| *id == ps_id)
                         .map(|(_, step)| step)
                     else {
-                        return Err(Error::internal(
-                            "could not find step for assumption",
-                        ));
+                        return Err(Error::internal("could not find step for assumption"));
                     };
 
                     let Rule::Assumption(info) = &assumption_step.rule else {
@@ -1218,9 +1212,7 @@ impl<'a> Proof<'a> {
         let mut simp_scopes: HashMap<Scope, ProofStepId> = HashMap::new();
 
         if traces.len() != base_literals.len() {
-            return Err(Error::internal(
-                "trace with wrong number of literals",
-            ));
+            return Err(Error::internal("trace with wrong number of literals"));
         }
 
         // Do the multi-way unification according to the trace.
