@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::clause::Clause;
 use crate::clause_set::ClauseSet;
 use crate::term_graph::{StepId, TermGraph};
@@ -6,7 +8,13 @@ use crate::term_graph::{StepId, TermGraph};
 #[derive(Clone)]
 pub struct Checker {
     term_graph: TermGraph,
+
+    /// For looking up specializations of clauses with free variables.
     clause_set: ClauseSet,
+
+    /// For looking up concrete clauses that are known exactly.
+    concrete_long_clauses: HashSet<Clause>,
+
     next_step_id: usize,
 }
 
@@ -15,6 +23,7 @@ impl Checker {
         Checker {
             term_graph: TermGraph::new(),
             clause_set: ClauseSet::new(),
+            concrete_long_clauses: HashSet::new(),
             next_step_id: 0,
         }
     }
@@ -24,24 +33,42 @@ impl Checker {
         let step_id = self.next_step_id;
         self.next_step_id += 1;
 
-        if !clause.has_any_variable() {
-            // Add concrete clauses to the term graph for fast evaluation
-            self.term_graph.insert_clause(clause, StepId(step_id));
-        } else {
-            // Add clauses with variables to the clause set
+        if clause.has_any_variable() {
+            // The clause has free variables.
+
+            // The clause set is used to look up specializations.
             self.clause_set.insert(clause.clone(), step_id);
 
-            // Also add all equality resolution clauses
-            let resolutions = clause.equality_resolutions();
-            for resolution in resolutions {
+            // We only need to do equality resolution for clauses with free variables,
+            // because resolvable concrete literals would already have been simplified out.
+            for resolution in clause.equality_resolutions() {
                 self.insert_clause(&resolution);
             }
+        } else {
+            // The clause is concrete.
+
+            // Track concrete long clauses exactly
+            if clause.len() > 1 {
+                self.concrete_long_clauses.insert(clause.clone());
+            }
+
+            // The term graph does all sorts of stuff but only for concrete clauses.
+            self.term_graph.insert_clause(clause, StepId(step_id));
+        }
+
+        for factoring in clause.equality_factorings() {
+            self.insert_clause(&factoring);
         }
     }
 
     /// Returns true if the clause is known to be true.
     pub fn check_clause(&self, clause: &Clause) -> bool {
-        // First check the term graph for concrete evaluation
+        if clause.len() > 1 && self.concrete_long_clauses.contains(clause) {
+            // We've seen this clause exactly
+            return true;
+        }
+
+        // Check the term graph for concrete evaluation
         if self.term_graph.evaluate_clause(clause) == Some(true) {
             return true;
         }
