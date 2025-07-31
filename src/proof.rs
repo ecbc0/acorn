@@ -699,19 +699,36 @@ impl<'a> Proof<'a> {
         // Construct the concrete clauses
         let mut concrete_clauses: HashMap<ConcreteStepId, BTreeSet<Clause>> = HashMap::new();
         for (concrete_id, var_maps) in var_map_map {
-            let generic = match concrete_id {
+            let generic_clause = match concrete_id {
                 ConcreteStepId::ProofStep(ps_id) => {
                     if ps_id == ProofStepId::Final {
                         continue;
                     }
-                    self.get_clause(ps_id)?
+                    self.get_clause(ps_id)?.clone()
                 }
-                ConcreteStepId::Assumption(_ps_id) => continue,
+                ConcreteStepId::Assumption(ps_id) => {
+                    // Find the assumption info for this proof step
+                    let Some(assumption_step) = self
+                        .all_steps
+                        .iter()
+                        .find(|(id, _)| *id == ps_id)
+                        .map(|(_, step)| step)
+                    else {
+                        return Err(Error::InternalError(format!(
+                            "could not find step for assumption",
+                        )));
+                    };
+
+                    let Rule::Assumption(info) = &assumption_step.rule else {
+                        return Err(Error::InternalError(format!("assumption has wrong rule",)));
+                    };
+                    Clause::new(info.literals.clone())
+                }
             };
 
             for mut var_map in var_maps {
-                var_map.keep_unmapped_in_clause(&generic);
-                let concrete = var_map.specialize_clause(generic);
+                var_map.keep_unmapped_in_clause(&generic_clause);
+                let concrete = var_map.specialize_clause(&generic_clause);
                 concrete_clauses
                     .entry(concrete_id)
                     .or_default()
