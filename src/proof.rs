@@ -709,10 +709,7 @@ impl<'a> Proof<'a> {
                 let generic = self.get_clause(id)?;
                 var_map.keep_unmapped_in_clause(&generic);
                 let concrete = var_map.specialize_clause(generic);
-                concrete_clauses
-                    .entry(id)
-                    .or_default()
-                    .insert(concrete);
+                concrete_clauses.entry(id).or_default().insert(concrete);
             }
         }
 
@@ -795,10 +792,10 @@ impl<'a> Proof<'a> {
         // We put a node in here whenever we can prove it directly.
         // This can be different from using its deduction, because when we
         // prove backwards, we use other nodes' deductions.
-        let mut answer: HashMap<NodeId, bool> = HashMap::new();
+        let mut answer: HashMap<ProofStepId, bool> = HashMap::new();
 
         // Just like answer but we keep things in a logically sound order.
-        let mut ordered_answer: Vec<(NodeId, bool)> = vec![];
+        let mut ordered_answer: Vec<(ProofStepId, bool)> = vec![];
 
         // Create a reverse mapping from NodeId to ProofStepId
         let mut reverse_id_map: HashMap<NodeId, ProofStepId> = HashMap::new();
@@ -808,11 +805,14 @@ impl<'a> Proof<'a> {
 
         // The pending queue is the nodes to see if we can use the deduction.
         // Let's be deterministic to aid debugging.
-        let mut pending: Vec<(NodeId, ProofStepId)> = reverse_id_map.iter().map(|(node_id, proof_step_id)| (*node_id, proof_step_id.clone())).collect();
+        let mut pending: Vec<(NodeId, ProofStepId)> = reverse_id_map
+            .iter()
+            .map(|(node_id, proof_step_id)| (*node_id, proof_step_id.clone()))
+            .collect();
         pending.sort_by_key(|(node_id, _)| *node_id);
         pending.reverse();
 
-        while let Some((node_id, _proof_step_id)) = pending.pop() {
+        while let Some((node_id, proof_step_id)) = pending.pop() {
             if used.contains(&node_id) {
                 // We already used this node, so we can skip it.
                 continue;
@@ -827,28 +827,34 @@ impl<'a> Proof<'a> {
             let mut num_true_premises = 0;
             let mut non_true_premise = None;
             for premise_id in &node.premises {
-                if answer.get(premise_id) == Some(&true) {
-                    num_true_premises += 1;
+                if let Some(premise_proof_id) = reverse_id_map.get(premise_id) {
+                    if answer.get(premise_proof_id) == Some(&true) {
+                        num_true_premises += 1;
+                    } else {
+                        non_true_premise = Some(*premise_id);
+                    }
                 } else {
+                    // This premise doesn't have a ProofStepId.
+                    // Thus, it's the negated goal, and it's not true.
                     non_true_premise = Some(*premise_id);
                 }
             }
 
-            if node.is_contradiction() || answer.get(&node_id) == Some(&false) {
+            if node.is_contradiction() || answer.get(&proof_step_id) == Some(&false) {
                 if num_true_premises + 1 == node.premises.len() {
                     // Backward reasoning, the last premise must be false.
                     let false_id = non_true_premise.unwrap();
-                    answer.insert(false_id, false);
-                    ordered_answer.push((false_id, false));
-                    used.insert(node_id);
-                    if let Some(proof_step_id) = reverse_id_map.get(&false_id) {
-                        pending.push((false_id, proof_step_id.clone()));
+                    if let Some(false_proof_id) = reverse_id_map.get(&false_id) {
+                        answer.insert(false_proof_id.clone(), false);
+                        ordered_answer.push((false_proof_id.clone(), false));
+                        used.insert(node_id);
+                        pending.push((false_id, false_proof_id.clone()));
                     }
                 }
             } else if num_true_premises == node.premises.len() {
                 // Forward reasoning, this node is true.
-                answer.insert(node_id, true);
-                ordered_answer.push((node_id, true));
+                answer.insert(proof_step_id.clone(), true);
+                ordered_answer.push((proof_step_id, true));
                 used.insert(node_id);
                 for consequence_id in &node.consequences {
                     if let Some(proof_step_id) = reverse_id_map.get(consequence_id) {
@@ -858,23 +864,7 @@ impl<'a> Proof<'a> {
             }
         }
 
-        // Convert the results from NodeId to ProofStepId
-        let mut proof_step_answer: HashMap<ProofStepId, bool> = HashMap::new();
-        let mut proof_step_ordered: Vec<(ProofStepId, bool)> = vec![];
-        
-        for (node_id, is_true) in answer {
-            if let Some(proof_step_id) = reverse_id_map.get(&node_id) {
-                proof_step_answer.insert(proof_step_id.clone(), is_true);
-            }
-        }
-        
-        for (node_id, is_true) in ordered_answer {
-            if let Some(proof_step_id) = reverse_id_map.get(&node_id) {
-                proof_step_ordered.push((proof_step_id.clone(), is_true));
-            }
-        }
-
-        (proof_step_answer, proof_step_ordered)
+        (answer, ordered_answer)
     }
 
     // Given a varmap for the conclusion of a proof step, reconstruct varmaps for
