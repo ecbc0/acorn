@@ -427,4 +427,14 @@ impl Clause {
         
         results
     }
+
+    /// Generates all clauses that can be derived from this clause using equality factoring.
+    /// This is a convenience method that returns just the normalized clauses.
+    pub fn equality_factorings(&self) -> Vec<Clause> {
+        self.find_equality_factorings()
+            .into_iter()
+            .map(|(literals, _)| Clause::new(literals))
+            .filter(|clause| !clause.is_tautology())
+            .collect()
+    }
 }
