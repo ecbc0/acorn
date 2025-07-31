@@ -937,6 +937,10 @@ impl<'a> Proof<'a> {
                 )?;
                 let assumption_id = ConcreteStepId::Assumption(id);
                 for var_map in var_maps {
+                    if var_map.len() == 0 {
+                        // We don't need to track exact concrete assumptions.
+                        continue;
+                    }
                     input_maps.entry(assumption_id).or_default().insert(var_map);
                 }
             }
