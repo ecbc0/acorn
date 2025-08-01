@@ -35,6 +35,10 @@ struct Args {
     #[clap(long, help = "Create a dataset from the prover logs.")]
     dataset: bool,
 
+    /// Check concrete proofs
+    #[clap(long, help = "Check concrete proofs.")]
+    concrete: bool,
+
     /// Ignore the cache and do a full reverify
     #[clap(long, help = "Ignore the cache and do a full reverify.")]
     full: bool,
@@ -152,7 +156,7 @@ async fn main() {
             std::process::exit(1);
         }
         let new_target = target + ":" + &append;
-        let verifier = Verifier::new(current_dir, mode, Some(new_target), args.dataset);
+        let verifier = Verifier::new(current_dir, mode, Some(new_target), args.dataset, args.concrete);
         match verifier.run() {
             Err(e) => {
                 println!("{}", e);
@@ -169,7 +173,7 @@ async fn main() {
     }
 
     // Run the verifier.
-    let verifier = Verifier::new(current_dir, mode, args.target, args.dataset);
+    let verifier = Verifier::new(current_dir, mode, args.target, args.dataset, args.concrete);
     match verifier.run() {
         Err(e) => {
             println!("{}", e);

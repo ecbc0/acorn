@@ -56,7 +56,7 @@ async fn main() {
         }
     };
     
-    let verifier = Verifier::new(current_dir, mode, args.target, args.dataset);
+    let verifier = Verifier::new(current_dir, mode, args.target, args.dataset, false);
     if let Err(e) = verifier.run() {
         println!("{}", e);
         std::process::exit(1);

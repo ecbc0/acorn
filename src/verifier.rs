@@ -53,6 +53,9 @@ pub struct Verifier {
     /// If true, a dataset is created, for training.
     create_dataset: bool,
 
+    /// If true, check concrete proofs.
+    check_concrete: bool,
+
     /// The starting path to find the acorn library from.
     start_path: PathBuf,
 }
@@ -63,11 +66,13 @@ impl Verifier {
         mode: ProverMode,
         target: Option<String>,
         create_dataset: bool,
+        check_concrete: bool,
     ) -> Self {
         Self {
             mode,
             target,
             create_dataset,
+            check_concrete,
             start_path,
         }
     }
@@ -78,6 +83,10 @@ impl Verifier {
             Ok(p) => p,
             Err(e) => return Err(format!("Error: {}", e)),
         };
+        
+        if self.check_concrete {
+            project.check_concrete = true;
+        }
 
         if let Some(target) = &self.target {
             if target == "-" {
@@ -215,6 +224,7 @@ mod tests {
             ProverMode::Standard,
             Some("foo".to_string()),
             false,
+            false,
         );
 
         // Test that the verifier was created successfully with the right parameters
@@ -266,6 +276,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             ProverMode::Standard,
             Some("foo".to_string()),
+            false,
             false,
         );
 
@@ -333,6 +344,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             ProverMode::Standard,
             Some("foo.bar".to_string()),
+            false,
             false,
         );
 
@@ -422,6 +434,7 @@ mod tests {
             ProverMode::Standard,
             Some("main".to_string()),
             false,
+            false,
         );
         assert!(verifier1.run().is_ok(), "Verifier should run successfully");
 
@@ -429,6 +442,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             ProverMode::Filtered,
             Some("main".to_string()),
+            false,
             false,
         );
         let output = verifier2.run().unwrap();
@@ -474,6 +488,7 @@ mod tests {
             ProverMode::Standard,
             Some("main".to_string()),
             false,
+            false,
         );
         let output = verifier1.run().unwrap();
         assert_eq!(output.num_verified(), 5);
@@ -482,6 +497,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             ProverMode::Filtered,
             Some("main".to_string()),
+            false,
             false,
         );
         let output = verifier2.run().unwrap();
@@ -503,6 +519,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             ProverMode::Standard,
             Some("foo".to_string()),
+            false,
             false,
         );
 
@@ -546,6 +563,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             ProverMode::Standard,
             Some("main".to_string()),
+            false,
             false,
         );
 

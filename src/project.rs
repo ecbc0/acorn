@@ -68,6 +68,10 @@ pub struct Project {
     // Whether we skip goals that match hashes in the cache.
     // Defaults to true.
     pub check_hashes: bool,
+
+    // Whether to check concrete proofs.
+    // Defaults to false.
+    pub check_concrete: bool,
 }
 
 // General project-level errors (file operations, setup, etc.)
@@ -165,6 +169,7 @@ impl Project {
             build_cache,
             build_stopped: Arc::new(AtomicBool::new(false)),
             check_hashes: true,
+            check_concrete: false,
         }
     }
 
