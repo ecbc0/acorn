@@ -319,32 +319,33 @@ impl<'a> Builder<'a> {
         self.metrics.clauses_sum_square_activated += (clauses_activated * clauses_activated) as u64;
 
         match outcome {
-            Outcome::Success => match prover.get_condensed_proof() {
-                None => self.log_proving_warning(&goal_context, "had a missing proof"),
-                Some(proof) => {
-                    if proof.needs_simplification() {
-                        self.log_proving_warning(&goal_context, "needs simplification");
-                    } else {
-                        // Both of these count as a search success.
-                        self.metrics.goals_success += 1;
-                        self.metrics.searches_success += 1;
-                        if self.log_when_slow && elapsed_f64 > 0.1 {
-                            self.log_proving_info(&goal_context, &format!("took {}", elapsed_str));
-                        } else {
-                            self.log_verified(goal_context.first_line, goal_context.last_line);
-                        }
-                    }
+            Outcome::Success => {
+                let Some(proof) = prover.get_condensed_proof() else {
+                    self.log_proving_warning(&goal_context, "had a missing proof");
+                    return;
+                };
+                if proof.needs_simplification() {
+                    self.log_proving_warning(&goal_context, "needs simplification");
+                    return;
+                }
 
-                    // As long as we have a proof, we can collect data for our dataset.
-                    if let Some(ref mut dataset) = self.dataset {
-                        for (id, step) in prover.iter_active_steps() {
-                            let features = Features::new(step);
-                            let label = proof.has_active_id(id);
-                            dataset.add(features, label);
-                        }
+                if let Some(ref mut dataset) = self.dataset {
+                    // Collect data for the dataset.
+                    for (id, step) in prover.iter_active_steps() {
+                        let features = Features::new(step);
+                        let label = proof.has_active_id(id);
+                        dataset.add(features, label);
                     }
                 }
-            },
+
+                // The search was a success.
+                self.metrics.goals_success += 1;
+                self.metrics.searches_success += 1;
+                if self.log_when_slow && elapsed_f64 > 0.1 {
+                    self.log_proving_info(&goal_context, &format!("took {}", elapsed_str));
+                }
+                self.log_verified(goal_context.first_line, goal_context.last_line);
+            }
             Outcome::Exhausted => {
                 self.log_proving_warning(&goal_context, "could not be verified (exhaustion)")
             }
