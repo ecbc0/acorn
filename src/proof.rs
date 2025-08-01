@@ -651,11 +651,11 @@ enum ConcreteStepId {
     Assumption(ProofStepId),
 }
 
-// In the order that they are logically deduced
+// In the order that they are logically deduced, because the assumption comes first.
 fn concrete_ids_for(ps_id: ProofStepId) -> [ConcreteStepId; 2] {
     let assumption_id = ConcreteStepId::Assumption(ps_id);
     let concrete_id = ConcreteStepId::ProofStep(ps_id);
-    [concrete_id, assumption_id]
+    [assumption_id, concrete_id]
 }
 
 impl<'a> Proof<'a> {

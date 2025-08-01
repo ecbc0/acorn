@@ -1552,14 +1552,14 @@ fn test_concrete_proof_with_free_variable() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", false);
+    let c = prove_concrete(&mut p, "main", "goal", true);
     assert_eq!(
         c,
         &[
             "let s0: Foo satisfy { true }",
             "f(s0)",
+            "not f(s0) or g",
             "not f(s0)",
-            "not f(s0) or g"
         ]
     );
 }
