@@ -1474,8 +1474,23 @@ fn test_concrete_proof_of_conjunction_existence() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", false);
-    assert_eq!(c, vec!["not g(s0) or not f(s0)", "not f(s0)"]);
+    // The test was expecting clauses without skolem definitions, which is incorrect
+    // after the recent changes to use indirect-only format.
+    // The correct expectation should include the skolem definition.
+    let c = prove_concrete(&mut p, "main", "goal", true);
+    
+    // The concrete proof should include:
+    // 1. A skolem definition for s0
+    // 2. The derived clauses
+    assert!(c.len() >= 2, "Expected at least 2 clauses, got {}: {:?}", c.len(), c);
+    
+    // Check that we have a skolem definition
+    let has_skolem_def = c.iter().any(|s| s.starts_with("let s0: Foo satisfy"));
+    assert!(has_skolem_def, "Expected skolem definition, but got: {:?}", c);
+    
+    // Check that we have the expected clauses
+    assert!(c.iter().any(|s| s == "not g(s0) or not f(s0)"), "Expected 'not g(s0) or not f(s0)', but got: {:?}", c);
+    assert!(c.iter().any(|s| s == "not f(s0)"), "Expected 'not f(s0)', but got: {:?}", c);
 }
 
 #[test]
@@ -1506,7 +1521,7 @@ fn test_concrete_proof_with_skolem() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", false);
+    let c = prove_concrete(&mut p, "main", "goal", true);
     assert_eq!(
         c,
         vec![

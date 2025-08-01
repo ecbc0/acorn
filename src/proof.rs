@@ -723,6 +723,7 @@ impl<'a> Proof<'a> {
         // TODO: should we actually be skipping the original assumptions rather than
         // the simplified versions?
         let mut skip_code = HashSet::new();
+        let mut skolem_definitions = Vec::new();
         for (ps_id, step) in &self.all_steps {
             let concrete_id = ConcreteStepId::ProofStep(*ps_id);
             if step.rule.is_assumption() && !step.clause.has_any_variable() {
@@ -731,14 +732,20 @@ impl<'a> Proof<'a> {
                         let codes =
                             generator.concrete_clause_to_code(&clause, false, self.normalizer)?;
                         for code in codes {
-                            skip_code.insert(code);
+                            // Don't skip skolem definitions - they might be needed later
+                            if !code.starts_with("let ") || !code.contains(" satisfy ") {
+                                skip_code.insert(code);
+                            } else {
+                                skolem_definitions.push(code);
+                            }
                         }
                     }
                 }
             }
         }
 
-        let mut answer = vec![];
+        // Start with skolem definitions
+        let mut answer = skolem_definitions;
         for (ps_id, _) in &self.all_steps {
             for concrete_id in concrete_ids_for(*ps_id) {
                 let Some(clauses) = concrete_clauses.remove(&concrete_id) else {
@@ -748,7 +755,7 @@ impl<'a> Proof<'a> {
                     let codes =
                         generator.concrete_clause_to_code(&clause, false, self.normalizer)?;
                     for code in codes {
-                        if !answer.contains(&code) {
+                        if !answer.contains(&code) && !skip_code.contains(&code) {
                             answer.push(code);
                         }
                     }
