@@ -618,6 +618,29 @@ impl Prover {
         }
     }
 
+    /// Generate a concrete proof, check it, and return it.
+    pub fn check_concrete(
+        &mut self,
+        project: &Project,
+        bindings: &BindingMap,
+        print: bool,
+    ) -> Result<Vec<String>, Error> {
+        let mut proof = match self.get_uncondensed_proof(false) {
+            Some(proof) => proof,
+            None => return Err(Error::internal("no proof available")),
+        };
+
+        if print {
+            self.print_proof(project, bindings, &proof);
+        }
+
+        let concrete_proof = proof.make_concrete(bindings)?;
+
+        self.check_proof(&concrete_proof, project, &mut Cow::Borrowed(bindings))?;
+
+        Ok(concrete_proof)
+    }
+
     fn report_term_graph_contradiction(&mut self, contradiction: TermGraphContradiction) {
         let mut active_ids = vec![];
         let mut passive_ids = vec![];

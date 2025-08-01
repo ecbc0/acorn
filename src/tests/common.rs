@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use crate::code_generator::Error;
 use crate::environment::Environment;
 use crate::module::LoadState;
@@ -61,24 +59,13 @@ pub fn prove_concrete(
 ) -> Vec<String> {
     let (project, base_env, mut prover, outcome) = prove(project, module_name, goal_name);
     assert_eq!(outcome, Outcome::Success);
-    let mut proof = match prover.get_uncondensed_proof(false) {
-        Some(proof) => proof,
-        None => panic!("no proof"),
-    };
     let node = base_env.get_node_by_description(goal_name);
     let env = node.goal_env().unwrap();
-    prover.print_proof(project, &env.bindings, &proof);
-    let concrete_proof = proof
-        .make_concrete(&env.bindings)
-        .expect("make_concrete failed");
-
-    if let Err(e) =
-        prover.check_proof(&concrete_proof, project, &mut Cow::Borrowed(&env.bindings))
-    {
-        panic!("proof check failed: {}", e);
+    
+    match prover.check_concrete(project, &env.bindings, true) {
+        Ok(concrete_proof) => concrete_proof,
+        Err(e) => panic!("concrete proof check failed: {}", e),
     }
-
-    concrete_proof
 }
 
 pub fn prove_as_main(text: &str, goal_name: &str) -> (Prover, Outcome, Result<Vec<String>, Error>) {
