@@ -200,38 +200,41 @@ impl CodeGenerator<'_> {
 
     /// Convert to a clause to code strings.
     /// This will generate skolem definitions if necessary.
+    /// Returns (definitions, code) where definitions are let statements that define
+    /// arbitrary variables and skolems, and code is the actual clause content.
     pub fn concrete_clause_to_code(
         &mut self,
         clause: &Clause,
         negate: bool,
         normalizer: &Normalizer,
-    ) -> Result<Vec<String>> {
+    ) -> Result<(Vec<String>, Vec<String>)> {
         self.add_arbitrary_for_clause(clause);
         let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names));
 
         if negate {
             value = value.pretty_negate();
         }
-        let mut codes = vec![];
+        let mut definitions = vec![];
 
         // Define the arbitrary variables.
         for (ty, name) in self.arbitrary_names.clone() {
             let ty_code = self.type_to_code(&normalizer.denormalize_type(ty))?;
             let decl = format!("let {}: {} satisfy {{ true }}", name, ty_code);
-            codes.push(decl);
+            definitions.push(decl);
         }
 
         // Create a name and definition for each skolem variable.
         let skolem_ids = value.find_skolems();
-        self.define_skolems(skolem_ids, normalizer, &mut codes)?;
+        self.define_skolems(skolem_ids, normalizer, &mut definitions)?;
 
+        let mut codes = vec![];
         let mut subvalues = vec![];
         value = value.replace_skolems(self.bindings.module_id(), &self.skolem_names);
         value.into_and(&mut subvalues);
         for subvalue in subvalues {
             codes.push(self.value_to_code(&subvalue)?);
         }
-        Ok(codes)
+        Ok((definitions, codes))
     }
 
     fn type_to_code(&mut self, acorn_type: &AcornType) -> Result<String> {

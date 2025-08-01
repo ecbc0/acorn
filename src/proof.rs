@@ -729,15 +729,17 @@ impl<'a> Proof<'a> {
             if step.rule.is_assumption() && !step.clause.has_any_variable() {
                 if let Some(clauses) = concrete_clauses.remove(&concrete_id) {
                     for clause in clauses {
-                        let codes =
+                        let (definitions, codes) =
                             generator.concrete_clause_to_code(&clause, false, self.normalizer)?;
-                        for code in codes {
-                            // Don't skip skolem definitions - they might be needed later
-                            if !code.starts_with("let ") || !code.contains(" satisfy ") {
-                                skip_code.insert(code);
-                            } else {
-                                skolem_definitions.push(code);
+                        // Collect all skolem definitions
+                        for def in definitions {
+                            if !skolem_definitions.contains(&def) {
+                                skolem_definitions.push(def);
                             }
+                        }
+                        // Skip the actual clause codes from concrete assumptions
+                        for code in codes {
+                            skip_code.insert(code);
                         }
                     }
                 }
@@ -752,8 +754,15 @@ impl<'a> Proof<'a> {
                     continue;
                 };
                 for clause in clauses.into_iter().rev() {
-                    let codes =
+                    let (definitions, codes) =
                         generator.concrete_clause_to_code(&clause, false, self.normalizer)?;
+                    // Add any new definitions
+                    for def in definitions {
+                        if !answer.contains(&def) {
+                            answer.push(def);
+                        }
+                    }
+                    // Add the clause codes if not skipped
                     for code in codes {
                         if !answer.contains(&code) && !skip_code.contains(&code) {
                             answer.push(code);
