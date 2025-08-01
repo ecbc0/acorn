@@ -58,7 +58,6 @@ pub fn prove_concrete(
     project: &mut Project,
     module_name: &str,
     goal_name: &str,
-    check_proof: bool,
 ) -> Vec<String> {
     let (project, base_env, mut prover, outcome) = prove(project, module_name, goal_name);
     assert_eq!(outcome, Outcome::Success);
@@ -73,12 +72,10 @@ pub fn prove_concrete(
         .make_concrete(&env.bindings)
         .expect("make_concrete failed");
 
-    if check_proof {
-        if let Err(e) =
-            prover.check_proof(&concrete_proof, project, &mut Cow::Borrowed(&env.bindings))
-        {
-            panic!("proof check failed: {}", e);
-        }
+    if let Err(e) =
+        prover.check_proof(&concrete_proof, project, &mut Cow::Borrowed(&env.bindings))
+    {
+        panic!("proof check failed: {}", e);
     }
 
     concrete_proof

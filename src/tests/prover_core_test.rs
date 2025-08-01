@@ -921,7 +921,7 @@ fn test_concrete_proof_rewrite_only() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(c, vec!["f(Foo.foo) != f(Foo.bar)"]);
 }
 
@@ -953,7 +953,7 @@ fn test_concrete_proof_modus_ponens_only() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(c, Vec::<String>::new());
 }
 
@@ -981,7 +981,7 @@ fn test_concrete_proof_with_active_resolution() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(c, vec!["not g(y) or not f(y) or h(y)"]);
 }
 
@@ -1009,7 +1009,7 @@ fn test_concrete_proof_exact_clause_match() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(c, Vec::<String>::new());
 }
 
@@ -1041,7 +1041,7 @@ fn test_concrete_proof_proving_an_or() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(c, Vec::<String>::new());
 }
 
@@ -1072,7 +1072,7 @@ fn test_concrete_proof_removes_duplicates() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(c, vec!["not f(y) or g(y)", "not f(y)", "f(y)"]);
 }
 
@@ -1108,7 +1108,7 @@ fn test_concrete_proof_with_passive_resolution() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(
         c,
         vec!["not h(y) or f(y)", "f(y)", "not f(y) or not g(y)", "g(y)"]
@@ -1140,7 +1140,7 @@ fn test_concrete_proof_activating_rewrite_pattern() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(c, vec!["g(y) = f(y)"]);
 }
 
@@ -1169,7 +1169,7 @@ fn test_concrete_proof_with_passive_contradiction() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(c, vec!["f(Foo.foo) = g(Foo.foo)", "not h(f(Foo.foo))"]);
 }
 
@@ -1197,7 +1197,7 @@ fn test_concrete_proof_with_multiple_rewrite() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(
         c,
         vec![
@@ -1234,7 +1234,7 @@ fn test_concrete_proof_random_bug() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(
         c,
         vec!["g(y) != f(y)", "h(y) = f(y) or g(y) = f(y) or f(y) = z"]
@@ -1270,7 +1270,7 @@ fn test_concrete_proof_with_equality_factoring_basic() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(
         c,
         vec!["g(y) != h(y) or h(y) = f(y)", "g(y) = h(y)", "h(y) != f(y)"]
@@ -1308,7 +1308,7 @@ fn test_concrete_proof_with_equality_factoring_mixed_forwards() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(
         c,
         vec!["g(y) != h(y) or f(y) = h(y)", "g(y) = h(y)", "f(y) != h(y)"]
@@ -1343,7 +1343,7 @@ fn test_concrete_proof_with_equality_resolution() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(
         c,
         vec![
@@ -1379,7 +1379,7 @@ fn test_concrete_proof_with_function_elimination() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(c, Vec::<String>::new());
 }
 
@@ -1411,7 +1411,7 @@ fn test_concrete_proof_multiple_simplifying() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(c, vec!["f(Foo.bar)", "f(Foo.foo)"]);
 }
 
@@ -1442,7 +1442,7 @@ fn test_concrete_proof_of_existence() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(c, vec!["let s0: Foo satisfy { f(s0) }", "not f(s0)"]);
 }
 
@@ -1474,7 +1474,7 @@ fn test_concrete_proof_of_conjunction_existence() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(
         c,
         vec![
@@ -1513,7 +1513,7 @@ fn test_concrete_proof_with_skolem() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(
         c,
         vec![
@@ -1552,7 +1552,7 @@ fn test_concrete_proof_with_free_variable() {
         "#,
     );
 
-    let c = prove_concrete(&mut p, "main", "goal", true);
+    let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(
         c,
         &[
