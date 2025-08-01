@@ -773,7 +773,7 @@ impl Project {
             let start = std::time::Instant::now();
             let outcome = filtered_prover.verification_search();
             if outcome == Outcome::Success {
-                builder.search_finished(&filtered_prover, goal_context, outcome, start.elapsed(), env);
+                builder.search_finished(&filtered_prover, goal_context, outcome, start.elapsed(), env, self.check_concrete);
                 return filtered_prover;
             }
             builder.metrics.searches_fallback += 1;
@@ -784,7 +784,7 @@ impl Project {
         full_prover.set_goal(goal_context);
         let start = std::time::Instant::now();
         let outcome = full_prover.verification_search();
-        builder.search_finished(&full_prover, goal_context, outcome, start.elapsed(), env);
+        builder.search_finished(&full_prover, goal_context, outcome, start.elapsed(), env, self.check_concrete);
         full_prover
     }
 

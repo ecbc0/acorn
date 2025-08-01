@@ -301,6 +301,7 @@ impl<'a> Builder<'a> {
         outcome: Outcome,
         elapsed: Duration,
         _env: &Environment,
+        _check_concrete: bool,
     ) {
         // Time conversion
         let secs = elapsed.as_secs() as f64;
