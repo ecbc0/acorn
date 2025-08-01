@@ -300,6 +300,7 @@ impl<'a> Builder<'a> {
         goal_context: &GoalContext,
         outcome: Outcome,
         elapsed: Duration,
+        _env: &Environment,
     ) {
         // Time conversion
         let secs = elapsed.as_secs() as f64;
