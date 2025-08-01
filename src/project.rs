@@ -641,6 +641,7 @@ impl Project {
                         &mut cursor,
                         &mut new_premises,
                         builder,
+                        env,
                     );
                     if builder.status.is_error() {
                         return;
@@ -701,6 +702,7 @@ impl Project {
         cursor: &mut NodeCursor,
         new_premises: &mut HashSet<(ModuleId, String)>,
         builder: &mut Builder,
+        env: &Environment,
     ) {
         if !cursor.requires_verification() {
             return;
@@ -718,6 +720,7 @@ impl Project {
                     cursor,
                     new_premises,
                     builder,
+                    env,
                 );
                 if builder.status.is_error() {
                     return;
@@ -742,7 +745,7 @@ impl Project {
         if cursor.node().has_goal() {
             let goal_context = cursor.goal_context().unwrap();
             let prover =
-                self.verify_with_fallback(full_prover, filtered_prover, &goal_context, builder);
+                self.verify_with_fallback(full_prover, filtered_prover, &goal_context, builder, env);
             if builder.status.is_error() {
                 return;
             }
@@ -761,6 +764,7 @@ impl Project {
         filtered_prover: Option<Prover>,
         goal_context: &GoalContext,
         builder: &mut Builder,
+        _env: &Environment,
     ) -> Prover {
         // Try the filtered prover
         if let Some(mut filtered_prover) = filtered_prover {
@@ -1394,7 +1398,9 @@ impl Project {
             if path_string == "<stdin>" {
                 if io::stdin().is_terminal() {
                     // Throws an error if it is in a terminal
-                    return Err(ImportError::NotFound(String::from("cannot read stdin in an active terminal")));
+                    return Err(ImportError::NotFound(String::from(
+                        "cannot read stdin in an active terminal",
+                    )));
                 }
                 let _ = io::stdin().lock();
                 for line in io::stdin().lines() {
@@ -1408,7 +1414,9 @@ impl Project {
                 };
                 if io::stdin().is_terminal() {
                     // Throws an error if it is in a terminal
-                    return Err(ImportError::NotFound(String::from("cannot read stdin in an active terminal")));
+                    return Err(ImportError::NotFound(String::from(
+                        "cannot read stdin in an active terminal",
+                    )));
                 }
                 let path2 = &string_path[2..];
                 println!("Path: {}", path2);
@@ -1420,7 +1428,7 @@ impl Project {
                     text.push_str(&line.unwrap());
                     text.push('\n');
                 }
-            } else {     
+            } else {
                 text = self
                     .read_file(&path)
                     .map_err(|e| ImportError::NotFound(e.to_string()))?;
