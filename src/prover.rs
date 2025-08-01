@@ -524,14 +524,18 @@ impl Prover {
 
                 // Create an exists value
                 let types = decls.iter().map(|(_, ty)| ty.clone()).collect();
-                let exists_value = AcornValue::exists(types, condition_value);
 
-                // Check if this matches any existing skolem
-                let Some(_info) = self.normalizer.find_exact_skolem_info(&exists_value) else {
-                    return Err(Error::GeneratedBadCode(
-                        "let...satisfy statement does not match any skolem definition".to_string(),
-                    ));
-                };
+                if condition_value != AcornValue::Bool(true) {
+                    let exists_value = AcornValue::exists(types, condition_value);
+
+                    // Check if this matches any existing skolem
+                    let Some(_info) = self.normalizer.find_exact_skolem_info(&exists_value) else {
+                        return Err(Error::GeneratedBadCode(
+                            "let...satisfy statement does not match any skolem definition"
+                                .to_string(),
+                        ));
+                    };
+                }
 
                 // Add all the variables in decls to the bindings
                 for (name, acorn_type) in decls {
