@@ -301,7 +301,7 @@ impl<'a> Builder<'a> {
         outcome: Outcome,
         elapsed: Duration,
         _env: &Environment,
-        _check_concrete: bool,
+        check_concrete: bool,
     ) {
         // Time conversion
         let secs = elapsed.as_secs() as f64;
@@ -321,21 +321,25 @@ impl<'a> Builder<'a> {
 
         match outcome {
             Outcome::Success => {
-                let Some(proof) = prover.get_condensed_proof() else {
-                    self.log_proving_warning(&goal_context, "had a missing proof");
-                    return;
-                };
-                if proof.needs_simplification() {
-                    self.log_proving_warning(&goal_context, "needs simplification");
-                    return;
-                }
+                if check_concrete {
+                    todo!("handle check_concrete flag");
+                } else {
+                    let Some(proof) = prover.get_condensed_proof() else {
+                        self.log_proving_warning(&goal_context, "had a missing proof");
+                        return;
+                    };
+                    if proof.needs_simplification() {
+                        self.log_proving_warning(&goal_context, "needs simplification");
+                        return;
+                    }
 
-                if let Some(ref mut dataset) = self.dataset {
-                    // Collect data for the dataset.
-                    for (id, step) in prover.iter_active_steps() {
-                        let features = Features::new(step);
-                        let label = proof.has_active_id(id);
-                        dataset.add(features, label);
+                    if let Some(ref mut dataset) = self.dataset {
+                        // Collect data for the dataset.
+                        for (id, step) in prover.iter_active_steps() {
+                            let features = Features::new(step);
+                            let label = proof.has_active_id(id);
+                            dataset.add(features, label);
+                        }
                     }
                 }
 
