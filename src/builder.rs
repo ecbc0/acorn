@@ -10,6 +10,7 @@ use crate::environment::Environment;
 use crate::features::Features;
 use crate::goal::GoalContext;
 use crate::module::ModuleDescriptor;
+use crate::project::Project;
 use crate::prover::{Outcome, Prover};
 
 static NEXT_BUILD_ID: AtomicU32 = AtomicU32::new(1);
@@ -300,8 +301,8 @@ impl<'a> Builder<'a> {
         goal_context: &GoalContext,
         outcome: Outcome,
         elapsed: Duration,
+        project: &Project,
         _env: &Environment,
-        check_concrete: bool,
     ) {
         // Time conversion
         let secs = elapsed.as_secs() as f64;
@@ -321,7 +322,7 @@ impl<'a> Builder<'a> {
 
         match outcome {
             Outcome::Success => {
-                if check_concrete {
+                if project.check_concrete {
                     todo!("handle check_concrete flag");
                 } else {
                     let Some(proof) = prover.get_condensed_proof() else {
