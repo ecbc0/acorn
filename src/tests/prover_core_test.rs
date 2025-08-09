@@ -1608,6 +1608,6 @@ fn test_concrete_proof_with_inheritance() {
         "#,
     );
 
-    // let c = prove_concrete(&mut p, "main", "goal");
-    // assert_eq!(c, Vec::<String>::new());
+    let c = prove_concrete(&mut p, "main", "goal");
+    assert_eq!(c, Vec::<String>::new());
 }

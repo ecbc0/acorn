@@ -148,7 +148,6 @@ impl Prover {
     /// The fact can be either polymorphic or monomorphic.
     pub fn add_fact(&mut self, fact: Fact) {
         let mut steps = vec![];
-        let from_negated_goal = fact.source().source_type == SourceType::NegatedGoal;
         match self.normalizer.normalize_fact(fact, &mut steps) {
             Ok(()) => {}
             Err(s) => {
@@ -156,8 +155,13 @@ impl Prover {
                 return;
             }
         };
-        if !from_negated_goal {
-            for step in &steps {
+        for step in &steps {
+            // Add to checker if it's not from the negated goal source
+            let is_negated_goal_source = match &step.rule {
+                Rule::Assumption(info) => info.source.source_type == SourceType::NegatedGoal,
+                _ => false,
+            };
+            if !is_negated_goal_source {
                 self.checker.insert_clause(&step.clause);
             }
         }
