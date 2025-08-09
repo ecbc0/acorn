@@ -446,8 +446,8 @@ mod tests {
             false,
         );
         let output = verifier2.run().unwrap();
-        assert_eq!(output.status, BuildStatus::Good,);
-        assert_eq!(output.metrics.searches_fallback, 0,);
+        assert_eq!(output.status, BuildStatus::Good);
+        assert_eq!(output.metrics.searches_fallback, 0);
 
         acornlib.close().unwrap();
     }
