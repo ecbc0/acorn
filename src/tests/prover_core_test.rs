@@ -1646,3 +1646,37 @@ fn test_concrete_proof_with_theorem_arg() {
         ]
     );
 }
+
+#[test]
+fn test_concrete_proof_with_type_param() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        inductive List<T> {
+            nil
+            cons(T, List<T>)
+        }
+
+        attributes List<T> {
+            define add(self, other: List<T>) -> List<T> {
+                match self {
+                    List.nil {
+                        other
+                    }
+                    List.cons(head, tail) {
+                        List.cons(head, tail.add(other))
+                    }
+                }
+            }
+        }
+
+        theorem goal<T>(list: List<T>) {
+            list + List.nil<T> = list
+        }
+        "#,
+    );
+
+    // let c = prove_concrete(&mut p, "main", "goal");
+    // assert_eq!(c, vec!["todo",]);
+}
