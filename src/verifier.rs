@@ -224,7 +224,7 @@ mod tests {
             ProverMode::Standard,
             Some("foo".to_string()),
             false,
-            false,
+            true,
         );
 
         // Test that the verifier was created successfully with the right parameters
