@@ -1611,3 +1611,38 @@ fn test_concrete_proof_with_inheritance() {
     let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(c, Vec::<String>::new());
 }
+
+#[test]
+fn test_concrete_proof_with_theorem_arg() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        typeclass T: Thing {
+            add: (T, T) -> T
+
+            add_comm(x: T, y: T) {
+                x + y = y + x
+            }
+
+            add_assoc(x: T, y: T, z: T) {
+                x + y + z = x + (y + z)
+            }
+        }
+
+        theorem goal<T: Thing>(a: T, b: T, c: T) {
+            a + b + c = b + c + a
+        }
+        "#,
+    );
+
+    let c = prove_concrete(&mut p, "main", "goal");
+    assert_eq!(
+        c,
+        vec![
+            "a + b + c = a + (b + c)",
+            "b + c + a != a + (b + c)",
+            "b + c + a = a + (b + c)"
+        ]
+    );
+}
