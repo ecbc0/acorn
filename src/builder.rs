@@ -297,12 +297,12 @@ impl<'a> Builder<'a> {
     /// Statistics are tracked here.
     pub fn search_finished(
         &mut self,
-        prover: &Prover,
+        prover: &mut Prover,
         goal_context: &GoalContext,
         outcome: Outcome,
         elapsed: Duration,
         project: &Project,
-        _env: &Environment,
+        env: &Environment,
     ) {
         // Time conversion
         let secs = elapsed.as_secs() as f64;
@@ -323,7 +323,13 @@ impl<'a> Builder<'a> {
         match outcome {
             Outcome::Success => {
                 if project.check_concrete {
-                    todo!("handle check_concrete flag");
+                    if let Err(e) = prover.check_concrete(project, &env.bindings, false) {
+                        self.log_proving_error(
+                            &goal_context,
+                            &format!("concrete proof check failed: {}", e),
+                        );
+                        return;
+                    }
                 } else {
                     let Some(proof) = prover.get_condensed_proof() else {
                         self.log_proving_warning(&goal_context, "had a missing proof");
