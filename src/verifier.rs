@@ -277,7 +277,7 @@ mod tests {
             ProverMode::Standard,
             Some("foo".to_string()),
             false,
-            false,
+            true,
         );
 
         // Test that the verifier can run successfully on our theorem in the src directory
@@ -345,7 +345,7 @@ mod tests {
             ProverMode::Standard,
             Some("foo.bar".to_string()),
             false,
-            false,
+            true,
         );
 
         // Run the verifier the first time
@@ -434,7 +434,7 @@ mod tests {
             ProverMode::Standard,
             Some("main".to_string()),
             false,
-            false,
+            true,
         );
         assert!(verifier1.run().is_ok(), "Verifier should run successfully");
 
