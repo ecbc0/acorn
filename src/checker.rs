@@ -16,6 +16,9 @@ pub struct Checker {
     concrete_long_clauses: HashSet<Clause>,
 
     next_step_id: usize,
+
+    /// Whether a contradiction was directly inserted into the checker.
+    direct_contradiction: bool,
 }
 
 impl Checker {
@@ -25,11 +28,17 @@ impl Checker {
             clause_set: ClauseSet::new(),
             concrete_long_clauses: HashSet::new(),
             next_step_id: 0,
+            direct_contradiction: false,
         }
     }
 
     /// Adds a true clause to the checker.
     pub fn insert_clause(&mut self, clause: &Clause) {
+        if clause.is_impossible() {
+            self.direct_contradiction = true;
+            return;
+        }
+
         let step_id = self.next_step_id;
         self.next_step_id += 1;
 
@@ -94,6 +103,6 @@ impl Checker {
     /// We do guarantee that if you insert both a term and its negation then
     /// has_contradiction will return true.
     pub fn has_contradiction(&self) -> bool {
-        self.term_graph.has_contradiction()
+        self.direct_contradiction || self.term_graph.has_contradiction()
     }
 }

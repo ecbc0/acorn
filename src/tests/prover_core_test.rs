@@ -1563,3 +1563,19 @@ fn test_concrete_proof_with_free_variable() {
         ]
     );
 }
+
+#[test]
+fn test_concrete_proof_plain_true() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"     
+        theorem goal {
+            true
+        }
+        "#,
+    );
+
+    let c = prove_concrete(&mut p, "main", "goal");
+    assert_eq!(c, Vec::<String>::new());
+}

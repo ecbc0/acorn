@@ -83,7 +83,7 @@ impl Verifier {
             Ok(p) => p,
             Err(e) => return Err(format!("Error: {}", e)),
         };
-        
+
         if self.check_concrete {
             project.check_concrete = true;
         }
