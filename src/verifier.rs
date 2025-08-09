@@ -434,7 +434,7 @@ mod tests {
             ProverMode::Standard,
             Some("main".to_string()),
             false,
-            false,
+            true,
         );
         let output = verifier1.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
@@ -444,7 +444,7 @@ mod tests {
             ProverMode::Filtered,
             Some("main".to_string()),
             false,
-            false,
+            true,
         );
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
@@ -489,7 +489,7 @@ mod tests {
             ProverMode::Standard,
             Some("main".to_string()),
             false,
-            false,
+            true,
         );
         let output = verifier1.run().unwrap();
         assert_eq!(output.num_verified(), 5);
@@ -499,7 +499,7 @@ mod tests {
             ProverMode::Filtered,
             Some("main".to_string()),
             false,
-            false,
+            true,
         );
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good,);
@@ -521,7 +521,7 @@ mod tests {
             ProverMode::Standard,
             Some("foo".to_string()),
             false,
-            false,
+            true,
         );
 
         let result = verifier.run();
@@ -565,7 +565,7 @@ mod tests {
             ProverMode::Standard,
             Some("main".to_string()),
             false,
-            false,
+            true,
         );
 
         let result = verifier.run();
