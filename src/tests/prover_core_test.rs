@@ -1579,3 +1579,35 @@ fn test_concrete_proof_plain_true() {
     let c = prove_concrete(&mut p, "main", "goal");
     assert_eq!(c, Vec::<String>::new());
 }
+
+#[test]
+fn test_concrete_proof_with_inheritance() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        typeclass F: Foo {
+            foo_property: Bool
+        }
+
+        typeclass B: Bar extends Foo {
+            bar_property: Bool
+        }
+
+        axiom bar_has_foo_property<B: Bar> {
+            B.foo_property
+        }
+
+        typeclass Baz extends Bar {
+            baz_property: Bool
+        }
+
+        theorem goal<B: Baz> {
+            B.foo_property
+        }
+        "#,
+    );
+
+    // let c = prove_concrete(&mut p, "main", "goal");
+    // assert_eq!(c, Vec::<String>::new());
+}
