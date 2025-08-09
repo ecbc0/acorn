@@ -434,9 +434,10 @@ mod tests {
             ProverMode::Standard,
             Some("main".to_string()),
             false,
-            true,
+            false,
         );
-        assert!(verifier1.run().is_ok(), "Verifier should run successfully");
+        let output = verifier1.run().unwrap();
+        assert_eq!(output.status, BuildStatus::Good);
 
         let verifier2 = Verifier::new(
             acornlib.path().to_path_buf(),
