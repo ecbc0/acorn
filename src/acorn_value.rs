@@ -1322,6 +1322,23 @@ impl AcornValue {
         }
     }
 
+    /// Removes all "and" nodes, collecting the conjuncts into a vector.
+    pub fn remove_and(&self) -> Vec<AcornValue> {
+        let mut output = vec![];
+        self.remove_and_helper(&mut output);
+        output
+    }
+
+    fn remove_and_helper(&self, output: &mut Vec<AcornValue>) {
+        match self {
+            AcornValue::Binary(BinaryOp::And, left, right) => {
+                left.remove_and_helper(output);
+                right.remove_and_helper(output);
+            }
+            _ => output.push(self.clone()),
+        }
+    }
+
     /// Replaces some constants in this value with other values.
     /// 'replacer' tells us what value a constant should be replaced with, or None to not replace it.
     /// This function doesn't alter any types. Replacer should always return something of
