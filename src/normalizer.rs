@@ -34,6 +34,15 @@ pub struct Normalizer {
     normalization_map: NormalizationMap,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum NewConstantType {
+    Global,
+    Local,
+
+    /// No making new constants.
+    Disallowed,
+}
+
 /// A normalized representation of an existential statement that we skolemized.
 /// This lets us look up to see if we have skolemized an exact value before.
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
@@ -92,7 +101,7 @@ impl Normalizer {
     }
 
     /// Checks if there's an exact match for a skolem for the given value.
-    /// The value should be of the form "exists ___ forall ____ (stuff)".
+    /// The value should be of the form "exists ___ (forall x and forall y and ...)".
     /// Returns the SkolemInfo if this exact skolemization has been performed before.
     pub fn find_exact_skolem_info(&mut self, value: &AcornValue) -> Option<&Arc<SkolemInfo>> {
         // Remove exists quantifiers if present
@@ -106,7 +115,8 @@ impl Normalizer {
         let body = after_exists.remove_forall(&mut universal);
 
         // Convert to CNF
-        match self.into_literal_lists(&body, false) {
+        // TODO: should this really be global?
+        match self.into_literal_lists(&body, NewConstantType::Global) {
             Ok(Some(lists)) => {
                 let mut clauses = vec![];
                 for list in lists {
@@ -223,27 +233,27 @@ impl Normalizer {
     fn term_from_application(
         &mut self,
         application: &FunctionApplication,
-        local: bool,
+        ctype: NewConstantType,
     ) -> Result<Term> {
         let application_type = application.get_type();
         check_normalized_type(&application_type)?;
         let term_type = self.normalization_map.add_type(&application_type);
-        let func_term = self.term_from_value(&application.function, local)?;
+        let func_term = self.term_from_value(&application.function, ctype)?;
         let head = func_term.head;
         let head_type = func_term.head_type;
         let mut args = func_term.args;
         for arg in &application.args {
-            args.push(self.term_from_value(arg, local)?);
+            args.push(self.term_from_value(arg, ctype)?);
         }
         Ok(Term::new(term_type, head_type, head, args))
     }
 
     /// Constructs a new term from an AcornValue
     /// Returns an error if it's inconvertible.
-    /// The "local" flag here and elsewhere controls whether any newly discovered variables
-    /// are local variables, ie, whether they are represented as a local or global Atom.
-    pub fn term_from_value(&mut self, value: &AcornValue, local: bool) -> Result<Term> {
-        let (t, negated) = self.maybe_negated_term_from_value(value, local)?;
+    /// The "ctype" parameter controls whether any newly discovered constants
+    /// are local, global, or disallowed.
+    pub fn term_from_value(&mut self, value: &AcornValue, ctype: NewConstantType) -> Result<Term> {
+        let (t, negated) = self.maybe_negated_term_from_value(value, ctype)?;
         if negated {
             Err(format!(
                 "Cannot convert {} to term because it is negated",
@@ -256,12 +266,12 @@ impl Normalizer {
 
     /// Constructs a new term or negated term from an AcornValue
     /// Returns an error if it's inconvertible.
-    /// The "local" flag here and elsewhere controls whether any newly discovered variables
-    /// are local variables, ie, whether they are represented as a local or global Atom.
+    /// The "ctype" parameter controls whether any newly discovered constants
+    /// are local, global, or disallowed.
     fn maybe_negated_term_from_value(
         &mut self,
         value: &AcornValue,
-        local: bool,
+        ctype: NewConstantType,
     ) -> Result<(Term, bool)> {
         match value {
             AcornValue::Variable(i, var_type) => {
@@ -273,12 +283,19 @@ impl Normalizer {
                 ))
             }
             AcornValue::Application(application) => {
-                Ok((self.term_from_application(application, local)?, false))
+                Ok((self.term_from_application(application, ctype)?, false))
             }
             AcornValue::Constant(c) => {
                 if c.params.is_empty() {
                     check_normalized_type(&c.instance_type)?;
                     let type_id = self.normalization_map.add_type(&c.instance_type);
+                    let local = match ctype {
+                        NewConstantType::Global => false,
+                        NewConstantType::Local => true,
+                        NewConstantType::Disallowed => {
+                            return Err("cannot create new constants here".to_string())
+                        }
+                    };
                     let constant_atom = match &c.name {
                         ConstantName::Skolem(i) => Atom::Skolem(*i),
                         _ => self.normalization_map.add_constant(c.name.clone(), local),
@@ -290,7 +307,7 @@ impl Normalizer {
             }
             AcornValue::Bool(v) => Ok((Term::new_true(), !v)),
             AcornValue::Not(subvalue) => {
-                let (term, negated) = self.maybe_negated_term_from_value(&*subvalue, local)?;
+                let (term, negated) = self.maybe_negated_term_from_value(&*subvalue, ctype)?;
                 Ok((term, !negated))
             }
             _ => Err(format!("Cannot convert {} to term", value)),
@@ -301,32 +318,36 @@ impl Normalizer {
     /// Swaps left and right if needed, to sort.
     /// Normalizes literals to <larger> = <smaller>, because that's the logical direction
     /// to do rewrite-type lookups, on the larger literal first.
-    fn literal_from_value(&mut self, value: &AcornValue, local: bool) -> Result<Literal> {
+    fn literal_from_value(
+        &mut self,
+        value: &AcornValue,
+        ctype: NewConstantType,
+    ) -> Result<Literal> {
         match value {
             AcornValue::Variable(_, _) | AcornValue::Constant(_) => {
-                Ok(Literal::positive(self.term_from_value(value, local)?))
+                Ok(Literal::positive(self.term_from_value(value, ctype)?))
             }
             AcornValue::Application(app) => {
-                Ok(Literal::positive(self.term_from_application(app, local)?))
+                Ok(Literal::positive(self.term_from_application(app, ctype)?))
             }
             AcornValue::Binary(BinaryOp::Equals, left, right) => {
                 let (left_term, left_negated) =
-                    self.maybe_negated_term_from_value(&*left, local)?;
+                    self.maybe_negated_term_from_value(&*left, ctype)?;
                 let (right_term, right_negated) =
-                    self.maybe_negated_term_from_value(&*right, local)?;
+                    self.maybe_negated_term_from_value(&*right, ctype)?;
                 let negated = left_negated ^ right_negated;
                 Ok(Literal::new(!negated, left_term, right_term))
             }
             AcornValue::Binary(BinaryOp::NotEquals, left, right) => {
                 let (left_term, left_negated) =
-                    self.maybe_negated_term_from_value(&*left, local)?;
+                    self.maybe_negated_term_from_value(&*left, ctype)?;
                 let (right_term, right_negated) =
-                    self.maybe_negated_term_from_value(&*right, local)?;
+                    self.maybe_negated_term_from_value(&*right, ctype)?;
                 let negated = left_negated ^ right_negated;
                 Ok(Literal::new(negated, left_term, right_term))
             }
             AcornValue::Not(subvalue) => {
-                Ok(Literal::negative(self.term_from_value(subvalue, local)?))
+                Ok(Literal::negative(self.term_from_value(subvalue, ctype)?))
             }
             _ => Err(format!("Cannot convert {} to literal", value)),
         }
@@ -341,15 +362,15 @@ impl Normalizer {
     fn into_literal_lists(
         &mut self,
         value: &AcornValue,
-        local: bool,
+        ctype: NewConstantType,
     ) -> Result<Option<Vec<Vec<Literal>>>> {
         match value {
             AcornValue::Binary(BinaryOp::And, left, right) => {
-                let mut left = match self.into_literal_lists(left, local)? {
+                let mut left = match self.into_literal_lists(left, ctype)? {
                     Some(left) => left,
                     None => return Ok(None),
                 };
-                let right = match self.into_literal_lists(right, local)? {
+                let right = match self.into_literal_lists(right, ctype)? {
                     Some(right) => right,
                     None => return Ok(None),
                 };
@@ -357,8 +378,8 @@ impl Normalizer {
                 Ok(Some(left))
             }
             AcornValue::Binary(BinaryOp::Or, left, right) => {
-                let left = self.into_literal_lists(left, local)?;
-                let right = self.into_literal_lists(right, local)?;
+                let left = self.into_literal_lists(left, ctype)?;
+                let right = self.into_literal_lists(right, ctype)?;
                 match (left, right) {
                     (None, None) => Ok(None),
                     (Some(result), None) | (None, Some(result)) => Ok(Some(result)),
@@ -378,7 +399,7 @@ impl Normalizer {
             AcornValue::Bool(true) => Ok(Some(vec![])),
             AcornValue::Bool(false) => Ok(None),
             _ => {
-                let literal = self.literal_from_value(&value, local)?;
+                let literal = self.literal_from_value(&value, ctype)?;
                 if literal.is_tautology() {
                     Ok(Some(vec![]))
                 } else {
@@ -390,10 +411,10 @@ impl Normalizer {
 
     /// Converts AcornValue to Vec<Clause> without changing the tree structure.
     /// The tree structure should already be manipulated before calling this.
-    fn normalize_cnf(&mut self, value: AcornValue, local: bool) -> Result<Vec<Clause>> {
+    fn normalize_cnf(&mut self, value: AcornValue, ctype: NewConstantType) -> Result<Vec<Clause>> {
         let mut universal = vec![];
         let value = value.remove_forall(&mut universal);
-        match self.into_literal_lists(&value, local) {
+        match self.into_literal_lists(&value, ctype) {
             Ok(Some(lists)) => Ok(self.normalize_literal_lists(lists)),
             Ok(None) => Ok(vec![Clause::impossible()]),
             Err(s) => {
@@ -421,7 +442,11 @@ impl Normalizer {
 
     /// Converts a value to CNF, then to Vec<Clause>.
     /// Does not handle the "definition" sorts of values.
-    fn convert_then_normalize(&mut self, value: &AcornValue, local: bool) -> Result<Vec<Clause>> {
+    fn convert_then_normalize(
+        &mut self,
+        value: &AcornValue,
+        ctype: NewConstantType,
+    ) -> Result<Vec<Clause>> {
         // println!("\nnormalizing: {}", value);
         let value = value.replace_function_equality(0);
         let value = value.expand_lambdas(0);
@@ -434,7 +459,7 @@ impl Normalizer {
         let mut created = vec![];
         let value = self.skolemize(&vec![], value, &mut next_skolem_id, &mut created)?;
 
-        let clauses = self.normalize_cnf(value, local)?;
+        let clauses = self.normalize_cnf(value, ctype)?;
 
         if !created.is_empty() {
             let mut skolem_atoms = vec![];
@@ -473,7 +498,11 @@ impl Normalizer {
     /// Logically, this is an "and of ors". Each Clause is an "or" of its literals.
     /// "true" is represented by an empty list, which is always satisfied.
     /// "false" is represented by a single impossible clause.
-    pub fn normalize_value(&mut self, value: &AcornValue, local: bool) -> Result<Vec<Clause>> {
+    pub fn normalize_value(
+        &mut self,
+        value: &AcornValue,
+        ctype: NewConstantType,
+    ) -> Result<Vec<Clause>> {
         if let Err(e) = value.validate() {
             return Err(format!(
                 "validation error: {} while normalizing: {}",
@@ -489,14 +518,14 @@ impl Normalizer {
                 // One as an equality between functions, another as an equality between
                 // primitive types, after applying the functions.
                 // If we handled functional types better in unification we might not need this.
-                let mut functional = self.normalize_cnf(value.clone(), local)?;
-                let mut primitive = self.convert_then_normalize(value, local)?;
+                let mut functional = self.normalize_cnf(value.clone(), ctype)?;
+                let mut primitive = self.convert_then_normalize(value, ctype)?;
                 functional.append(&mut primitive);
                 return Ok(functional);
             }
         }
 
-        self.convert_then_normalize(value, local)
+        self.convert_then_normalize(value, ctype)
     }
 
     /// A single fact can turn into a bunch of proof steps.
@@ -512,15 +541,19 @@ impl Normalizer {
 
         self.monomorphizer.add_fact(fact);
         for proposition in self.monomorphizer.take_output() {
-            let local = proposition.source.truthiness() != Truthiness::Factual;
+            let ctype = if proposition.source.truthiness() == Truthiness::Factual {
+                NewConstantType::Global
+            } else {
+                NewConstantType::Local
+            };
             let defined = match &proposition.source.source_type {
                 SourceType::ConstantDefinition(value, _) => {
-                    let term = self.term_from_value(&value, local)?;
+                    let term = self.term_from_value(&value, ctype)?;
                     Some(term.get_head().clone())
                 }
                 _ => None,
             };
-            let clauses = self.normalize_value(&proposition.value, local)?;
+            let clauses = self.normalize_value(&proposition.value, ctype)?;
             for clause in clauses {
                 let step = ProofStep::assumption(&proposition, clause, defined);
                 steps.push(step);
@@ -686,7 +719,9 @@ impl Normalizer {
         denormalized
             .validate()
             .expect("denormalized clause should validate");
-        let renormalized = self.normalize_value(&denormalized, true).unwrap();
+        let renormalized = self
+            .normalize_value(&denormalized, NewConstantType::Local)
+            .unwrap();
         if renormalized.len() != 1 {
             println!("original clause: {}", clause);
             println!("denormalized: {}", denormalized);
@@ -702,7 +737,7 @@ impl Normalizer {
     fn check_value(&mut self, value: &AcornValue, expected: &[&str]) {
         use crate::display::DisplayClause;
 
-        let actual = self.normalize_value(value, true).unwrap();
+        let actual = self.normalize_value(value, NewConstantType::Local).unwrap();
         if actual.len() != expected.len() {
             panic!(
                 "expected {} clauses, got {}:\n{}",
