@@ -681,7 +681,7 @@ impl Prover {
             // Create a new proof step, without activating it, to express the
             // specific equality used by this rewrite.
             let (literal, flipped) =
-                Literal::new_with_flip(true, step.input_term, step.output_term);
+                Literal::new_with_flip(true, step.left_term().clone(), step.right_term().clone());
             let (clause, traces) = Clause::from_literal(literal, flipped);
             if new_clauses.contains(&clause) {
                 // We already created a step for this equality

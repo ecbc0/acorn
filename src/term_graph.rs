@@ -70,6 +70,24 @@ pub struct RewriteStep {
     pub forwards: bool,
 }
 
+impl RewriteStep {
+    pub fn left_term(&self) -> &Term {
+        if self.forwards {
+            &self.input_term
+        } else {
+            &self.output_term
+        }
+    }
+
+    pub fn right_term(&self) -> &Term {
+        if self.forwards {
+            &self.output_term
+        } else {
+            &self.input_term
+        }
+    }
+}
+
 /// The goal of the TermGraph is to find a contradiction.
 /// When we do, we need to explain to the outside world why this is actually a contradiction.
 /// The TermGraphContradiction encodes this.
@@ -579,7 +597,7 @@ impl TermGraph {
         for literal_info in &literal_infos {
             let left_group = self.get_group_id(literal_info.left);
             let right_group = self.get_group_id(literal_info.right);
-            
+
             // Check if the literal can be evaluated
             if left_group == right_group {
                 // The terms are equal
@@ -619,7 +637,8 @@ impl TermGraph {
 
         // If any literal can be evaluated, schedule a reduction
         if needs_reduction {
-            self.pending.push(SemanticOperation::ClauseReduction(clause_id));
+            self.pending
+                .push(SemanticOperation::ClauseReduction(clause_id));
         }
 
         self.process_pending();
