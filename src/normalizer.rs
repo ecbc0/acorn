@@ -353,6 +353,33 @@ impl Normalizer {
         }
     }
 
+    /// Converts a value into a Vec<Literal> if possible.
+    /// Ignores leading "forall" since the Clause leaves those implicit.
+    /// Does not change variable ids.
+    /// TODO: this shouldn't mutate self, but the helper functions do when called with
+    /// different arguments, so the signature is mut.
+    fn literals_from_value(&mut self, value: &AcornValue) -> Result<Vec<Literal>> {
+        match value {
+            AcornValue::ForAll(_, subvalue) => self.literals_from_value(subvalue),
+            AcornValue::Binary(BinaryOp::Or, left_v, right_v) => {
+                let mut lits = self.literals_from_value(left_v)?;
+                let right_lits = self.literals_from_value(right_v)?;
+                lits.extend(right_lits);
+                Ok(lits)
+            }
+            _ => {
+                let lit = self.literal_from_value(value, NewConstantType::Disallowed)?;
+                Ok(vec![lit])
+            }
+        }
+    }
+
+    /// Does not change variable ids.
+    pub fn clause_from_value(&mut self, value: &AcornValue) -> Result<Clause> {
+        let literals = self.literals_from_value(value)?;
+        Ok(Clause::new_without_normalizing_ids(literals))
+    }
+
     /// Converts a value that is already in CNF into lists of literals.
     /// Each Vec<Literal> is a conjunction, an "or" node.
     /// The CNF form is expressing that each of these conjunctions are true.
