@@ -52,16 +52,12 @@ pub fn prove_with_code(
 }
 
 /// Expects the proof to succeed, and a concrete proof to be generated.
-pub fn prove_concrete(
-    project: &mut Project,
-    module_name: &str,
-    goal_name: &str,
-) -> Vec<String> {
+pub fn prove_concrete(project: &mut Project, module_name: &str, goal_name: &str) -> Vec<String> {
     let (project, base_env, mut prover, outcome) = prove(project, module_name, goal_name);
     assert_eq!(outcome, Outcome::Success);
-    let node = base_env.get_node_by_description(goal_name);
-    let env = node.goal_env().unwrap();
-    
+    let cursor = base_env.get_node_by_description(goal_name);
+    let env = cursor.goal_env().unwrap();
+
     match prover.check_concrete(project, &env.bindings, true) {
         Ok(concrete_proof) => concrete_proof,
         Err(e) => panic!("concrete proof check failed: {}", e),

@@ -641,7 +641,6 @@ impl Project {
                         &mut cursor,
                         &mut new_premises,
                         builder,
-                        env,
                     );
                     if builder.status.is_error() {
                         return;
@@ -702,7 +701,6 @@ impl Project {
         cursor: &mut NodeCursor,
         new_premises: &mut HashSet<(ModuleId, String)>,
         builder: &mut Builder,
-        env: &Environment,
     ) {
         if !cursor.requires_verification() {
             return;
@@ -720,7 +718,6 @@ impl Project {
                     cursor,
                     new_premises,
                     builder,
-                    env,
                 );
                 if builder.status.is_error() {
                     return;
@@ -749,7 +746,7 @@ impl Project {
                 filtered_prover,
                 &goal_context,
                 builder,
-                env,
+                cursor.goal_env().unwrap(),
             );
             if builder.status.is_error() {
                 return;
@@ -762,6 +759,7 @@ impl Project {
 
     // Tries to use the filtered prover to verify this goal, but falls back to the full prover
     // if that doesn't work.
+    // env should be the environment that the proof happens in.
     // Returns the prover that was used.
     fn verify_with_fallback(
         &self,

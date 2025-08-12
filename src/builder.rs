@@ -295,6 +295,7 @@ impl<'a> Builder<'a> {
 
     /// Called when a single proof search completes.
     /// Statistics are tracked here.
+    /// env should be the environment that the proof happened in.
     pub fn search_finished(
         &mut self,
         prover: &mut Prover,

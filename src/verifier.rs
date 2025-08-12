@@ -636,7 +636,7 @@ mod tests {
             false,
             true,
         );
-        let _output = verifier1.run().unwrap();
-        // assert_eq!(output.status, BuildStatus::Good);
+        let output = verifier1.run().unwrap();
+        assert_eq!(output.status, BuildStatus::Good);
     }
 }
