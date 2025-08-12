@@ -81,6 +81,15 @@ pub struct SkolemInfo {
     pub ids: Vec<AtomId>,
 }
 
+impl std::fmt::Display for SkolemInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Join all the clauses with "and"
+        let clauses_str: Vec<String> = self.clauses.iter().map(|c| c.to_string()).collect();
+        let clauses = clauses_str.join(" and ");
+        write!(f, "SkolemInfo(ids: {:?}, clauses: {})", self.ids, clauses)
+    }
+}
+
 impl Normalizer {
     pub fn new() -> Normalizer {
         Normalizer {
@@ -110,30 +119,18 @@ impl Normalizer {
             _ => (0, value.clone()),
         };
 
-        // Remove forall quantifiers using the same logic as normalize_cnf
-        let mut universal = vec![];
-        let body = after_exists.remove_forall(&mut universal);
-
-        // Convert to CNF
-        // TODO: should this really be global?
-        match self.into_literal_lists(&body, NewConstantType::Global) {
-            Ok(Some(lists)) => {
-                let mut clauses = vec![];
-                for list in lists {
-                    let clause = Clause::new_without_normalizing_ids(list);
-                    clauses.push(clause);
-                }
-
-                // Create the key
-                let key = SkolemKey {
-                    clauses,
-                    num_existential,
-                };
-
-                self.skolem_map.get(&key)
-            }
-            _ => None, // Any error or contradiction returns None
+        let mut clauses = vec![];
+        let subvalues = after_exists.remove_and();
+        for subvalue in subvalues {
+            let clause = self.clause_from_value(&subvalue).ok()?;
+            clauses.push(clause);
         }
+
+        let key = SkolemKey {
+            clauses,
+            num_existential,
+        };
+        self.skolem_map.get(&key)
     }
 
     /// The input should already have negations moved inwards.
@@ -289,16 +286,17 @@ impl Normalizer {
                 if c.params.is_empty() {
                     check_normalized_type(&c.instance_type)?;
                     let type_id = self.normalization_map.add_type(&c.instance_type);
-                    let local = match ctype {
-                        NewConstantType::Global => false,
-                        NewConstantType::Local => true,
-                        NewConstantType::Disallowed => {
-                            return Err("cannot create new constants here".to_string())
-                        }
-                    };
                     let constant_atom = match &c.name {
                         ConstantName::Skolem(i) => Atom::Skolem(*i),
-                        _ => self.normalization_map.add_constant(c.name.clone(), local),
+                        _ => {
+                            // TODO: handle disallowed better
+                            let local = match ctype {
+                                NewConstantType::Global => false,
+                                NewConstantType::Local => true,
+                                NewConstantType::Disallowed => true,
+                            };
+                            self.normalization_map.add_constant(c.name.clone(), local)
+                        }
                     };
                     Ok((Term::new(type_id, type_id, constant_atom, vec![]), false))
                 } else {
