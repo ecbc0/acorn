@@ -1677,6 +1677,5 @@ fn test_concrete_proof_with_type_param() {
         "#,
     );
 
-    let _c = prove_concrete(&mut p, "main", "goal");
-    // assert_eq!(c, vec!["todo",]);
+    prove_concrete(&mut p, "main", "goal");
 }
