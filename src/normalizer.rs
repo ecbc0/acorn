@@ -352,7 +352,7 @@ impl Normalizer {
 
     /// Converts a value into a Vec<Literal> if possible.
     /// Ignores leading "forall" since the Clause leaves those implicit.
-    /// Does not change variable ids.
+    /// Does not change variable ids or reorder literals.
     /// TODO: this shouldn't mutate self, but the helper functions do when called with
     /// different arguments, so the signature is mut.
     fn literals_from_value(&mut self, value: &AcornValue) -> Result<Vec<Literal>> {
@@ -371,10 +371,10 @@ impl Normalizer {
         }
     }
 
-    /// Does not change variable ids.
+    /// Does not change variable ids or reorder literals.
     pub fn clause_from_value(&mut self, value: &AcornValue) -> Result<Clause> {
         let literals = self.literals_from_value(value)?;
-        Ok(Clause::new_without_normalizing_ids(literals))
+        Ok(Clause { literals })
     }
 
     /// Converts a value that is already in CNF into lists of literals.
