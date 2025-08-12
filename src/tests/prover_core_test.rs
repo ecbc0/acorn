@@ -1383,6 +1383,34 @@ fn test_concrete_proof_with_function_elimination() {
     assert_eq!(c, Vec::<String>::new());
 }
 
+// #[test]
+// fn test_concrete_proof_with_deep_rewrite() {
+//     let mut p = Project::new_mock();
+//     p.mock(
+//         "/mock/main.ac",
+//         r#"
+//         inductive Foo {
+//             foo
+//             bar
+//         }
+
+//         let f: Foo -> Foo = axiom
+//         let g: Foo -> Foo = axiom
+
+//         axiom rule1(x: Foo, y: Foo) {
+//             f(f(g(Foo.foo))) != f(f(g(Foo.bar)))
+//         }
+
+//         theorem goal {
+//             g(Foo.foo) != g(Foo.bar)
+//         }
+//         "#,
+//     );
+
+//     let c = prove_concrete(&mut p, "main", "goal");
+//     assert_eq!(c, Vec::<String>::new());
+// }
+
 #[test]
 fn test_concrete_proof_multiple_simplifying() {
     let mut p = Project::new_mock();
