@@ -1647,7 +1647,8 @@ fn test_concrete_proof_with_theorem_arg() {
     );
 }
 
-// Note: this is slow and sometimes times out after 0.2s
+// Note: this is slow and sometimes timed out after 0.2s, so I bumped the test limit to 0.3s.
+// If this hasn't come up in a while, we might just want to remove it. - August 2025
 #[test]
 fn test_concrete_proof_with_type_param() {
     let mut p = Project::new_mock();

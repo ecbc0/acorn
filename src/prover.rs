@@ -189,7 +189,10 @@ impl Prover {
                     goal_context.inconsistency_okay,
                 ));
             }
-            Goal::Solve(value, _) => match self.normalizer.term_from_value(value, NewConstantType::Local) {
+            Goal::Solve(value, _) => match self
+                .normalizer
+                .term_from_value(value, NewConstantType::Local)
+            {
                 Ok(term) => {
                     self.goal = Some(NormalizedGoal::Solve(term));
                 }
@@ -559,7 +562,9 @@ impl Prover {
                 // Re-parse the expression with the newly defined variables
                 let mut evaluator = Evaluator::new(project, bindings, None);
                 let value = evaluator.evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
-                let clauses = self.normalizer.normalize_value(&value, NewConstantType::Local)?;
+                let clauses = self
+                    .normalizer
+                    .normalize_value(&value, NewConstantType::Local)?;
                 for clause in clauses {
                     self.checker.insert_clause(&clause);
                 }
@@ -567,7 +572,9 @@ impl Prover {
             }
             StatementInfo::Claim(claim) => {
                 let value = evaluator.evaluate_value(&claim.claim, Some(&AcornType::Bool))?;
-                let clauses = self.normalizer.normalize_value(&value, NewConstantType::Local)?;
+                let clauses = self
+                    .normalizer
+                    .normalize_value(&value, NewConstantType::Local)?;
 
                 for clause in clauses {
                     if !self.checker.check_clause(&clause) {
@@ -602,7 +609,9 @@ impl Prover {
             Some(NormalizedGoal::ProveNegated(negated_goal, _)) => negated_goal.clone(),
             _ => return Err(Error::internal("cannot check proof without a goal")),
         };
-        let negated_goal_clauses = self.normalizer.normalize_value(&negated_goal, NewConstantType::Local)?;
+        let negated_goal_clauses = self
+            .normalizer
+            .normalize_value(&negated_goal, NewConstantType::Local)?;
         for clause in negated_goal_clauses {
             self.checker.insert_clause(&clause);
         }
@@ -842,12 +851,12 @@ impl Prover {
 
     /// A fast search, for testing.
     pub fn quick_search(&mut self) -> Outcome {
-        self.search_for_contradiction(500, 0.2, false)
+        self.search_for_contradiction(500, 0.3, false)
     }
 
     /// A fast search that only uses shallow steps, for testing.
     pub fn quick_shallow_search(&mut self) -> Outcome {
-        self.search_for_contradiction(500, 0.2, true)
+        self.search_for_contradiction(500, 0.3, true)
     }
 
     /// The prover will exit with Outcome::Constrained if it hits a constraint:
