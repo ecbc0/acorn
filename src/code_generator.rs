@@ -4,7 +4,7 @@ use std::fmt;
 use tower_lsp::lsp_types::{LanguageString, MarkedString};
 
 use crate::acorn_type::{AcornType, Datatype, PotentialType, Typeclass};
-use crate::acorn_value::{AcornValue, ConstantInstance};
+use crate::acorn_value::{AcornValue, BinaryOp, ConstantInstance};
 use crate::atom::AtomId;
 use crate::binding_map::BindingMap;
 use crate::clause::Clause;
@@ -186,11 +186,11 @@ impl CodeGenerator<'_> {
             // Create code for the condition
             let mut cond_parts = vec![];
             for clause in &info.clauses {
-                let val = normalizer.denormalize(&clause, None);
-                let cond_part = self.value_to_code(&val)?;
-                cond_parts.push(cond_part);
+                let part = normalizer.denormalize(&clause, None);
+                cond_parts.push(part);
             }
-            let cond = cond_parts.join(" and ");
+            let cond_val = AcornValue::reduce(BinaryOp::And, cond_parts);
+            let cond = self.value_to_code(&cond_val)?;
 
             let let_statement = format!("let {} satisfy {{ {} }}", decl, cond);
             codes.push(let_statement);
