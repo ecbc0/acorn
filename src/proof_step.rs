@@ -104,9 +104,9 @@ pub struct RewriteInfo {
     /// A forwards rewrite rewrites the left side of the pattern into the right.
     pub forwards: bool,
 
-    /// The single-clause literal initially created by the rewrite.
+    /// The literal initially created by the rewrite.
     /// This is usually redundant, but not always, because the output clause can get simplified.
-    pub rewritten: Clause,
+    pub rewritten: Literal,
 
     /// Whether the literal was flipped during normalization
     pub flipped: bool,
@@ -131,7 +131,7 @@ pub struct AssumptionInfo {
 
     /// If this assumption is the definition of a particular atom, this is the atom.
     pub defined_atom: Option<Atom>,
-    
+
     /// The literals of the assumption before any simplification.
     pub literals: Vec<Literal>,
 }
@@ -373,7 +373,7 @@ impl ProofStep {
             defined_atom,
             literals,
         });
-        
+
         // Create traces to indicate that no literals have been moved around
         let traces = Some(
             clause
@@ -386,7 +386,7 @@ impl ProofStep {
                 })
                 .collect(),
         );
-        
+
         ProofStep {
             clause,
             truthiness: proposition.source.truthiness(),
@@ -406,12 +406,12 @@ impl ProofStep {
         activated_step: &ProofStep,
         rule: Rule,
         clause: Clause,
-        literal_traces: Vec<crate::clause::LiteralTrace>,
+        literal_traces: Vec<LiteralTrace>,
     ) -> ProofStep {
         // Direct implication does not add to depth.
         let depth = activated_step.depth;
         let printable = clause.is_printable();
-        
+
         ProofStep {
             clause,
             truthiness: activated_step.truthiness,
@@ -547,6 +547,7 @@ impl ProofStep {
         let target_literal = &target_step.clause.literals[0];
         let (new_literal, flipped) =
             target_literal.replace_at_path(target_left, path, new_subterm.clone());
+        let rewritten = new_literal.clone();
 
         let simplifying = new_literal.extended_kbo_cmp(&target_literal) == Ordering::Less;
         let (clause, traces) = Clause::from_literal(new_literal, false);
@@ -559,7 +560,7 @@ impl ProofStep {
             target_left,
             path: path.to_vec(),
             forwards,
-            rewritten: clause.clone(),
+            rewritten,
             flipped,
         });
 

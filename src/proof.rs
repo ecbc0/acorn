@@ -833,8 +833,9 @@ impl<'a> Proof<'a> {
             }
             Rule::Rewrite(info) => {
                 // For rewrites, the trace applies to the rewritten clause.
+                let literals = vec![info.rewritten.clone()];
                 let var_maps = self.reconstruct_trace(
-                    &info.rewritten.literals,
+                    &literals,
                     traces,
                     &step.clause,
                     conclusion_map,
@@ -861,9 +862,9 @@ impl<'a> Proof<'a> {
                 };
                 let target_subterm = target_term.get_term_at_path(&info.path).unwrap();
                 let rewritten_term = if info.target_left ^ info.flipped {
-                    &info.rewritten.literals[0].left
+                    &info.rewritten.left
                 } else {
-                    &info.rewritten.literals[0].right
+                    &info.rewritten.right
                 };
                 let rewritten_subterm = rewritten_term.get_term_at_path(&info.path).unwrap();
                 for conc_map in var_maps {

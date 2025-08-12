@@ -50,7 +50,6 @@ fn compose_traces(first: &mut Vec<LiteralTrace>, second: &Vec<LiteralTrace>) {
     }
 }
 
-
 /// A clause is a disjunction (an "or") of literals, universally quantified over some variables.
 /// We include the types of the universal variables it is quantified over.
 /// It cannot contain existential quantifiers.
@@ -345,27 +344,27 @@ impl Clause {
     /// The ef_trace tracks how the literals were transformed.
     pub fn find_equality_factorings(&self) -> Vec<(Vec<Literal>, Vec<EFLiteralTrace>)> {
         let mut results = vec![];
-        
+
         // The first literal must be positive for equality factoring
         if self.literals.is_empty() || !self.literals[0].positive {
             return results;
         }
-        
+
         let st_literal = &self.literals[0];
-        
+
         for (st_forwards, s, t) in st_literal.both_term_pairs() {
             for i in 1..self.literals.len() {
                 let uv_literal = &self.literals[i];
                 if !uv_literal.positive {
                     continue;
                 }
-                
+
                 for (uv_forwards, u, v) in uv_literal.both_term_pairs() {
                     let mut unifier = Unifier::new(3);
                     if !unifier.unify(Scope::LEFT, s, Scope::LEFT, u) {
                         continue;
                     }
-                    
+
                     // Create the factored terms.
                     let mut literals = vec![];
                     let mut ef_trace = vec![];
@@ -379,15 +378,15 @@ impl Clause {
                         unifier.apply(Scope::LEFT, u),
                         unifier.apply(Scope::LEFT, v),
                     );
-                    
+
                     literals.push(tv_lit);
                     literals.push(uv_out);
-                    
+
                     // Figure out where the factored terms went.
                     // The output has two literals:
                     // literals[0] = t != v (the new inequality)
                     // literals[1] = u = v (the preserved equality, with s unified to u)
-                    
+
                     // s and u both go to the left of u = v (they were unified)
                     let s_out = EFTermTrace {
                         index: 1,
@@ -405,9 +404,9 @@ impl Clause {
                         index: 0,
                         left: tv_flip,
                     };
-                    
+
                     ef_trace.push(EFLiteralTrace::to_out(s_out, t_out, !st_forwards));
-                    
+
                     for j in 1..self.literals.len() {
                         if i == j {
                             ef_trace.push(EFLiteralTrace::to_out(u_out, v_out, !uv_forwards));
@@ -419,12 +418,12 @@ impl Clause {
                             literals.push(new_lit);
                         }
                     }
-                    
+
                     results.push((literals, ef_trace));
                 }
             }
         }
-        
+
         results
     }
 
