@@ -109,19 +109,9 @@ impl Searcher {
             match outcome {
                 Outcome::Success => {
                     println!("success!");
-
-                    prover.get_and_print_proof(&project, &env.bindings);
-                    let proof = prover.get_condensed_proof().unwrap();
-                    match proof.to_code(&env.bindings) {
-                        Ok(code) => {
-                            println!("generated code:\n");
-                            for line in &code {
-                                println!("{}", line);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("\nerror generating code: {}", e);
-                        }
+                    let env = cursor.goal_env().unwrap();
+                    if let Err(e) = prover.check_concrete(&project, &env.bindings, true) {
+                        println!("Error generating concrete proof: {}", e);
                     }
                 }
                 Outcome::Inconsistent => {

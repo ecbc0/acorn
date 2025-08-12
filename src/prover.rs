@@ -633,6 +633,7 @@ impl Prover {
     }
 
     /// Generate a concrete proof, check it, and return it.
+    /// This will also print the proof if `print` is true.
     pub fn check_concrete(
         &mut self,
         project: &Project,
@@ -649,6 +650,12 @@ impl Prover {
         }
 
         let concrete_proof = proof.make_concrete(bindings)?;
+        if print {
+            println!("concrete proof:");
+            for line in &concrete_proof {
+                println!("  {}", line);
+            }
+        }
 
         self.check_proof(&concrete_proof, project, &mut Cow::Borrowed(bindings))?;
 
