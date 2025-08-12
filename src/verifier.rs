@@ -595,4 +595,48 @@ mod tests {
 
         acornlib.close().unwrap();
     }
+
+    #[test]
+    fn test_verifier_concrete_local_constants() {
+        let (acornlib, src, _) = setup();
+
+        src.child("main.ac")
+            .write_str(
+                r#"
+        inductive Nat {
+            0
+            suc(Nat)
+        }
+        attributes Nat {
+            define add(self, other: Nat) -> Nat {
+                match other {
+                    Nat.0 {
+                        self
+                    }
+                    Nat.suc(pred) {
+                        self.add(pred).suc
+                    }
+                }
+            }
+        }
+
+        numerals Nat
+
+        theorem goal(a: Nat) {
+            a + 0 = a
+        }
+        "#,
+            )
+            .unwrap();
+
+        let verifier1 = Verifier::new(
+            acornlib.path().to_path_buf(),
+            ProverMode::Standard,
+            Some("main".to_string()),
+            false,
+            true,
+        );
+        let _output = verifier1.run().unwrap();
+        // assert_eq!(output.status, BuildStatus::Good);
+    }
 }

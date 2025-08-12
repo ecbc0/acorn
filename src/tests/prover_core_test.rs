@@ -1647,6 +1647,7 @@ fn test_concrete_proof_with_theorem_arg() {
     );
 }
 
+// Note: this is slow and sometimes times out after 0.2s
 #[test]
 fn test_concrete_proof_with_type_param() {
     let mut p = Project::new_mock();
