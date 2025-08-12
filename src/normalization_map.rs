@@ -6,6 +6,15 @@ use crate::atom::{Atom, AtomId};
 use crate::names::ConstantName;
 use crate::term::{Term, TypeId};
 
+#[derive(Clone, Copy, Debug)]
+pub enum NewConstantType {
+    Global,
+    Local,
+
+    /// No making new constants.
+    Disallowed,
+}
+
 /// In the Acorn language, constants and types have names, scoped by modules. They can be rich values
 /// with internal structure, like polymorphic parameters or complex types.
 /// The prover, on the other hand, operates in simply typed higher order logic.

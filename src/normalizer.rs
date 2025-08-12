@@ -9,7 +9,7 @@ use crate::fact::Fact;
 use crate::literal::Literal;
 use crate::monomorphizer::Monomorphizer;
 use crate::names::ConstantName;
-use crate::normalization_map::NormalizationMap;
+use crate::normalization_map::{NewConstantType, NormalizationMap};
 use crate::proof_step::{ProofStep, Truthiness};
 use crate::source::SourceType;
 use crate::term::{Term, TypeId};
@@ -32,15 +32,6 @@ pub struct Normalizer {
     skolem_map: HashMap<SkolemKey, Arc<SkolemInfo>>,
 
     normalization_map: NormalizationMap,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum NewConstantType {
-    Global,
-    Local,
-
-    /// No making new constants.
-    Disallowed,
 }
 
 /// A normalized representation of an existential statement that we skolemized.
