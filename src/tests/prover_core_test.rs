@@ -1364,17 +1364,27 @@ fn test_concrete_proof_with_function_elimination() {
         inductive Foo {
             foo
             bar
+            baz
         }
             
         let f: Foo -> Foo = axiom
         let g: Foo -> Foo = axiom
+        let h: Bool = axiom
 
         axiom rule1(x: Foo, y: Foo) {
             f(g(Foo.foo)) != f(g(Foo.bar))
         }
-            
+
+        axiom rule2(x: Foo, y: Foo) {
+            f(g(Foo.foo)) != f(g(Foo.baz))
+        }
+
+        axiom rule3(x: Foo, y: Foo) {
+            g(Foo.foo) = g(Foo.bar) or g(Foo.foo) = g(Foo.baz) or h
+        }
+
         theorem goal {
-            g(Foo.foo) != g(Foo.bar)
+            h
         }
         "#,
     );
