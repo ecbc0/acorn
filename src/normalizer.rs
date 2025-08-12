@@ -252,10 +252,29 @@ impl Normalizer {
         }
     }
 
+    fn atom_from_name(&mut self, name: &ConstantName, ctype: NewConstantType) -> Result<Atom> {
+        if let ConstantName::Skolem(i) = name {
+            return Ok(Atom::Skolem(*i));
+        };
+
+        if let Some(atom) = self.normalization_map.get_atom(name) {
+            return Ok(atom);
+        }
+
+        // We have to create a new atom
+        let local = match ctype {
+            NewConstantType::Global => false,
+            NewConstantType::Local => true,
+            NewConstantType::Disallowed => return Err(format!("unrecognized name: {}", name)),
+        };
+        Ok(self.normalization_map.add_constant(name.clone(), local))
+    }
+
     /// Constructs a new term or negated term from an AcornValue
     /// Returns an error if it's inconvertible.
     /// The "ctype" parameter controls whether any newly discovered constants
     /// are local, global, or disallowed.
+    /// The flag returned is whether the term is negated.
     fn maybe_negated_term_from_value(
         &mut self,
         value: &AcornValue,
@@ -277,18 +296,7 @@ impl Normalizer {
                 if c.params.is_empty() {
                     check_normalized_type(&c.instance_type)?;
                     let type_id = self.normalization_map.add_type(&c.instance_type);
-                    let constant_atom = match &c.name {
-                        ConstantName::Skolem(i) => Atom::Skolem(*i),
-                        _ => {
-                            // TODO: handle disallowed better
-                            let local = match ctype {
-                                NewConstantType::Global => false,
-                                NewConstantType::Local => true,
-                                NewConstantType::Disallowed => true,
-                            };
-                            self.normalization_map.add_constant(c.name.clone(), local)
-                        }
-                    };
+                    let constant_atom = self.atom_from_name(&c.name, ctype)?;
                     Ok((Term::new(type_id, type_id, constant_atom, vec![]), false))
                 } else {
                     Ok((self.normalization_map.term_from_monomorph(&c), false))

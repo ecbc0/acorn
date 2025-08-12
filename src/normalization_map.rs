@@ -66,6 +66,10 @@ impl NormalizationMap {
         map
     }
 
+    pub fn get_atom(&self, name: &ConstantName) -> Option<Atom> {
+        self.name_to_atom.get(name).cloned()
+    }
+
     /// Assigns an id to this (module, name) pair if it doesn't already have one.
     /// local determines whether the constant will be represented as a local or global atom.
     pub fn add_constant(&mut self, name: ConstantName, local: bool) -> Atom {
