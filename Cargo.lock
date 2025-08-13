@@ -23,6 +23,7 @@ dependencies = [
  "qp-trie",
  "regex",
  "serde",
+ "serde_json",
  "serde_yaml",
  "tempfile",
  "tokio",

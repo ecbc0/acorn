@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::fmt;
+use serde::{Deserialize, Serialize};
 
 use crate::atom::{Atom, AtomId};
 use crate::term::{Term, TypeId};
@@ -8,7 +9,7 @@ use crate::term::{Term, TypeId};
 // In normalized form, left is the "larger" term.
 // Literals like "foo(a, b, c)" are treated as equalities having both
 // a left and a right side, by making a right side equal to the special constant "true".
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Literal {
     pub positive: bool,
     pub left: Term,
