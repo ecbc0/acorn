@@ -110,13 +110,7 @@ impl Normalizer {
             _ => (0, value.clone()),
         };
 
-        let mut clauses = vec![];
-        let subvalues = after_exists.remove_and();
-        for subvalue in subvalues {
-            let clause = self.clause_from_value(&subvalue).ok()?;
-            clauses.push(clause);
-        }
-
+        let clauses = self.clauses_from_value(&after_exists).ok()?;
         let key = SkolemKey {
             clauses,
             num_existential,
@@ -376,6 +370,15 @@ impl Normalizer {
     pub fn clause_from_value(&mut self, value: &AcornValue) -> Result<Clause> {
         let literals = self.literals_from_value(value)?;
         Ok(Clause { literals })
+    }
+
+    /// Does not normalize the clauses.
+    pub fn clauses_from_value(&mut self, value: &AcornValue) -> Result<Vec<Clause>> {
+        let subvalues = value.remove_and();
+        subvalues
+            .into_iter()
+            .map(|subvalue| self.clause_from_value(&subvalue))
+            .collect()
     }
 
     /// Converts a value that is already in CNF into lists of literals.
