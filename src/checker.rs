@@ -87,7 +87,7 @@ impl Checker {
         }
 
         // Check the term graph for concrete evaluation
-        if self.term_graph.evaluate_clause(clause) == Some(true) {
+        if self.term_graph.check_clause(clause) {
             return true;
         }
 
