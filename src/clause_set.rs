@@ -52,6 +52,9 @@ fn sub_invariant_literal_cmp(lit1: &Literal, lit2: &Literal) -> Option<Ordering>
 }
 
 /// Stable under variable substitution, like KBO, but hopefully closer to total in practice.
+/// Specifically, if two terms are comparable, they must stay comparable under substitution.
+/// If two terms are not comparable, anything goes under substitution.
+///
 /// Returns Greater if self > other.
 /// Returns Less if other > self.
 /// Returns None if they are not comparable.
