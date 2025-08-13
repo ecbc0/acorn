@@ -1724,6 +1724,39 @@ fn test_concrete_proof_with_duplicate_literals() {
     );
 }
 
+#[test]
+fn test_concrete_proof_with_long_skolem_definition() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        inductive Foo {
+            foo
+            bar
+        }
+            
+        let f: Foo -> Bool = axiom
+        let g: Foo -> Bool = axiom
+        let h: Foo -> Bool = axiom
+
+        axiom rule {
+            exists(y: Foo) {
+                f(y) implies g(y) and h(y)
+            }
+        }
+            
+        theorem goal(x: Foo) {
+            exists(y: Foo) {
+                f(y) implies g(y) and h(y)
+            } 
+        }
+        "#,
+    );
+
+    let c = prove_concrete(&mut p, "main", "goal");
+    assert_eq!(c, vec!["todo",]);
+}
+
 // Note: this is slow and sometimes timed out after 0.2s, so I bumped the test limit to 0.3s.
 // If this hasn't come up in a while, we might just want to remove it. - August 2025
 #[test]
