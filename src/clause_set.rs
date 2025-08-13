@@ -442,4 +442,13 @@ mod tests {
         let wrong = Clause::parse("c0(c2) or c1(c2)"); // Missing "not"
         assert_eq!(clause_set.find_generalization(wrong), None);
     }
+
+    #[test]
+    fn test_clause_set_compound_generalization() {
+        let mut clause_set = ClauseSet::new();
+        let general = Clause::parse("g2(g1, x0) = x0");
+        clause_set.insert(general, 1);
+        let special = Clause::parse("g2(g1, g2(c2, c3)) = g2(c2, c3)");
+        assert_eq!(clause_set.find_generalization(special), Some(1));
+    }
 }
