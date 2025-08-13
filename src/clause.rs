@@ -1,5 +1,5 @@
-use std::fmt;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 use crate::atom::{Atom, AtomId};
 use crate::literal::Literal;
@@ -75,23 +75,21 @@ impl fmt::Display for Clause {
 }
 
 impl Clause {
-    /// Sorts literals.
-    /// Removes any duplicate or impossible literals.
-    /// An empty clause indicates an impossible clause.
+    /// Creates a new normalized clause.
     pub fn new(literals: Vec<Literal>) -> Clause {
-        let mut c = Clause::new_without_normalizing_ids(literals);
-        c.normalize_var_ids();
+        let mut c = Clause { literals };
+        c.normalize();
         c
     }
 
-    pub fn new_without_normalizing_ids(literals: Vec<Literal>) -> Clause {
-        let mut literals = literals
-            .into_iter()
-            .filter(|x| !x.is_impossible())
-            .collect::<Vec<_>>();
-        literals.sort();
-        literals.dedup();
-        Clause { literals }
+    /// Sorts literals.
+    /// Removes any duplicate or impossible literals.
+    /// An empty clause indicates an impossible clause.
+    pub fn normalize(&mut self) {
+        self.literals.retain(|lit| !lit.is_impossible());
+        self.literals.sort();
+        self.literals.dedup();
+        self.normalize_var_ids();
     }
 
     /// Normalizes literals into a clause, creating a trace of where each one is sent.

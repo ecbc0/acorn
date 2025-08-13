@@ -371,7 +371,8 @@ impl Normalizer {
         }
     }
 
-    /// Does not change variable ids or reorder literals.
+    /// Does not normalize the clause itself.
+    /// Ie, it does not change variable ids, reorder literals, or remove redundant literals.
     pub fn clause_from_value(&mut self, value: &AcornValue) -> Result<Clause> {
         let literals = self.literals_from_value(value)?;
         Ok(Clause { literals })
