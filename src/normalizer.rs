@@ -702,14 +702,11 @@ impl Normalizer {
                 arbitrary_names,
             ));
         }
-        let mut answer = denormalized_literals.pop().unwrap();
-        for subvalue in denormalized_literals.into_iter().rev() {
-            answer = AcornValue::or(subvalue, answer);
-        }
+        let disjunction = AcornValue::reduce(BinaryOp::Or, denormalized_literals);
         if arbitrary_names.is_some() {
-            answer
+            disjunction
         } else {
-            AcornValue::forall(var_types, answer)
+            AcornValue::forall(var_types, disjunction)
         }
     }
 

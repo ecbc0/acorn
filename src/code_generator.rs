@@ -558,10 +558,39 @@ impl CodeGenerator<'_> {
                 ))
             }
             AcornValue::Binary(op, left, right) => {
-                let left = self.value_to_expr(left, false)?;
-                let right = self.value_to_expr(right, false)?;
+                let mut left_expr = self.value_to_expr(left, false)?;
+                let mut right_expr = self.value_to_expr(right, false)?;
                 let token = op.token_type().generate();
-                Ok(Expression::Binary(Box::new(left), token, Box::new(right)))
+
+                if let AcornValue::Binary(left_op, _, _) = left.as_ref() {
+                    if left_op.token_type().binary_precedence()
+                        < op.token_type().binary_precedence()
+                    {
+                        // We want the left op to happen first, but its precedence is lower.
+                        // So we wrap the left expression in parentheses.
+                        let open = TokenType::LeftParen.generate();
+                        let close = TokenType::RightParen.generate();
+                        left_expr = Expression::Grouping(open, Box::new(left_expr), close);
+                    }
+                }
+
+                if let AcornValue::Binary(right_op, _, _) = right.as_ref() {
+                    if right_op.token_type().binary_precedence()
+                        <= op.token_type().binary_precedence()
+                    {
+                        // We want the right op to happen first, but its precedence is not higher.
+                        // So we wrap the right expression in parentheses.
+                        let open = TokenType::LeftParen.generate();
+                        let close = TokenType::RightParen.generate();
+                        right_expr = Expression::Grouping(open, Box::new(right_expr), close);
+                    }
+                }
+
+                Ok(Expression::Binary(
+                    Box::new(left_expr),
+                    token,
+                    Box::new(right_expr),
+                ))
             }
             AcornValue::Not(x) => {
                 let x = self.value_to_expr(x, false)?;
