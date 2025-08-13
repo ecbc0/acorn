@@ -1486,4 +1486,20 @@ mod tests {
         g.insert_clause_str("g2(c1)", StepId(1));
         g.evaluate_clause_str("g3(c1)", Some(true));
     }
+
+    #[test]
+    fn test_term_graph_rewriting_equality() {
+        let mut g = TermGraph::new();
+        g.insert_clause_str("g1(c1, g2(c2, c3)) = c4", StepId(1));
+        g.insert_clause_str("g2(c2, c3) = g2(c3, c2)", StepId(2));
+        g.evaluate_clause_str("g1(c1, g2(c3, c2)) = c4", Some(true));
+    }
+
+    #[test]
+    fn test_term_graph_rewriting_inequality() {
+        let mut g = TermGraph::new();
+        g.insert_clause_str("g1(c1, g2(c2, c3)) != c4", StepId(1));
+        g.insert_clause_str("g2(c2, c3) = g2(c3, c2)", StepId(2));
+        g.evaluate_clause_str("g1(c1, g2(c3, c2)) != c4", Some(true));
+    }
 }
