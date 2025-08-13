@@ -75,7 +75,12 @@ impl Checker {
     }
 
     /// Returns true if the clause is known to be true.
+    /// If we have found any contradiction, we can degenerately conclude the clause is true.
     pub fn check_clause(&mut self, clause: &Clause) -> bool {
+        if self.has_contradiction() {
+            return true;
+        }
+
         if clause.len() > 1 && self.concrete_long_clauses.contains(clause) {
             // We've seen this clause exactly
             return true;
