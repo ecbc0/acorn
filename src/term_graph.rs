@@ -909,10 +909,16 @@ impl TermGraph {
             };
             if literal.positive == sides_equal {
                 // This literal is true, so the whole clause is redundant.
-                // Remove clause from all groups
-                for group_id in old_groups {
-                    if let Some(group_info) = self.groups[group_id.0 as usize].as_mut() {
-                        for (_, clause_ids) in group_info.clauses.iter_mut() {
+                // Remove clause from all group pairs
+                let group_pairs: Vec<(GroupId, GroupId)> = old_groups
+                    .iter()
+                    .flat_map(|&g1| old_groups.iter().map(move |&g2| (g1, g2)))
+                    .filter(|(g1, g2)| g1 != g2)
+                    .collect();
+                
+                for (group1, group2) in group_pairs {
+                    if let Some(group_info) = self.groups[group1.0 as usize].as_mut() {
+                        if let Some(clause_ids) = group_info.clauses.get_mut(&group2) {
                             clause_ids.remove(&clause_id);
                         }
                     }
@@ -930,10 +936,21 @@ impl TermGraph {
             }
 
             // Remove clause from groups that are no longer involved
-            for group_id in old_groups.difference(&new_groups) {
-                if let Some(group_info) = self.groups[group_id.0 as usize].as_mut() {
-                    for (_, clause_ids) in group_info.clauses.iter_mut() {
-                        clause_ids.remove(&clause_id);
+            for &removed_group in old_groups.difference(&new_groups) {
+                // Remove this clause from removed_group's indexing of all other old groups
+                for &other_group in &old_groups {
+                    if removed_group != other_group {
+                        if let Some(group_info) = self.groups[removed_group.0 as usize].as_mut() {
+                            if let Some(clause_ids) = group_info.clauses.get_mut(&other_group) {
+                                clause_ids.remove(&clause_id);
+                            }
+                        }
+                        // Also remove from the other direction
+                        if let Some(group_info) = self.groups[other_group.0 as usize].as_mut() {
+                            if let Some(clause_ids) = group_info.clauses.get_mut(&removed_group) {
+                                clause_ids.remove(&clause_id);
+                            }
+                        }
                     }
                 }
             }
@@ -945,10 +962,16 @@ impl TermGraph {
 
         // This clause is toast, but now what?
 
-        // Remove clause from all groups since it's being deleted
-        for group_id in old_groups {
-            if let Some(group_info) = self.groups[group_id.0 as usize].as_mut() {
-                for (_, clause_ids) in group_info.clauses.iter_mut() {
+        // Remove clause from all group pairs since it's being deleted
+        let group_pairs: Vec<(GroupId, GroupId)> = old_groups
+            .iter()
+            .flat_map(|&g1| old_groups.iter().map(move |&g2| (g1, g2)))
+            .filter(|(g1, g2)| g1 != g2)
+            .collect();
+        
+        for (group1, group2) in group_pairs {
+            if let Some(group_info) = self.groups[group1.0 as usize].as_mut() {
+                if let Some(clause_ids) = group_info.clauses.get_mut(&group2) {
                     clause_ids.remove(&clause_id);
                 }
             }
@@ -1647,11 +1670,11 @@ mod tests {
         g.check_clause_str("g3(g6, g6)");
     }
 
-    // #[test]
-    // fn test_term_graph_shortening_long_clause() {
-    //     let mut g =
-    //         TermGraph::with_clauses(&["not g0(c2, c3)", "not g1(c2, c3) or g0(c2, c3) or c3 = c2"]);
+    #[test]
+    fn test_term_graph_shortening_long_clause() {
+        let mut g =
+            TermGraph::with_clauses(&["not g0(c2, c3)", "not g1(c2, c3) or g0(c2, c3) or c3 = c2"]);
 
-    //     g.check_clause_str("not g1(c2, c3) or c3 = c2");
-    // }
+        g.check_clause_str("not g1(c2, c3) or c3 = c2");
+    }
 }
