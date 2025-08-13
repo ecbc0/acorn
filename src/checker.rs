@@ -68,6 +68,10 @@ impl Checker {
         for factoring in clause.equality_factorings() {
             self.insert_clause(&factoring);
         }
+
+        for elim in clause.function_eliminations() {
+            self.insert_clause(&elim);
+        }
     }
 
     /// Returns true if the clause is known to be true.

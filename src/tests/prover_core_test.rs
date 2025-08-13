@@ -1366,7 +1366,7 @@ fn test_concrete_proof_with_function_elimination() {
             bar
             baz
         }
-            
+
         let f: Foo -> Foo = axiom
         let g: Foo -> Foo = axiom
         let h: Bool = axiom
@@ -1390,7 +1390,14 @@ fn test_concrete_proof_with_function_elimination() {
     );
 
     let c = prove_concrete(&mut p, "main", "goal");
-    assert_eq!(c, Vec::<String>::new());
+    assert_eq!(
+        c,
+        vec![
+            "g(Foo.foo) != g(Foo.bar)",
+            "g(Foo.baz) != g(Foo.foo)",
+            "g(Foo.baz) = g(Foo.foo)"
+        ]
+    );
 }
 
 #[test]

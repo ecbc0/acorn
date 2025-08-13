@@ -515,57 +515,23 @@ impl ActiveSet {
         let clause = &activated_step.clause;
         let mut answer = vec![];
 
-        for (i, target) in clause.literals.iter().enumerate() {
-            // Check if we can eliminate the functions from the ith literal.
-            if target.positive {
-                // Negative literals come before positive ones so we're done
-                break;
-            }
-            if target.left.head != target.right.head {
-                continue;
-            }
-            if target.left.num_args() != target.right.num_args() {
-                continue;
-            }
-
-            // We can do function elimination when precisely one of the arguments is different.
-            let mut different_index = None;
-            for (j, arg) in target.left.args.iter().enumerate() {
-                if arg != &target.right.args[j] {
-                    if different_index.is_some() {
-                        different_index = None;
-                        break;
-                    }
-                    different_index = Some(j);
-                }
-            }
-
-            if let Some(j) = different_index {
-                // Looks like we can eliminate the functions from this literal
-                let mut literals = clause.literals.clone();
-                let (new_literal, flipped) = Literal::new_with_flip(
-                    false,
-                    target.left.args[j].clone(),
-                    target.right.args[j].clone(),
-                );
-                literals[i] = new_literal;
-                let info = FunctionEliminationInfo {
-                    id: activated_id,
-                    index: i,
-                    arg: j,
-                    literals: literals.clone(),
-                    flipped,
-                };
-                let (clause, traces) = Clause::normalize_with_trace(literals);
-                let step = ProofStep::direct(
-                    activated_id,
-                    activated_step,
-                    Rule::FunctionElimination(info),
-                    clause,
-                    traces,
-                );
-                answer.push(step);
-            }
+        for (index, arg, literals, flipped) in clause.find_function_eliminations() {
+            let info = FunctionEliminationInfo {
+                id: activated_id,
+                index,
+                arg,
+                literals: literals.clone(),
+                flipped,
+            };
+            let (clause, traces) = Clause::normalize_with_trace(literals);
+            let step = ProofStep::direct(
+                activated_id,
+                activated_step,
+                Rule::FunctionElimination(info),
+                clause,
+                traces,
+            );
+            answer.push(step);
         }
 
         answer

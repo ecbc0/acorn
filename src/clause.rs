@@ -436,4 +436,64 @@ impl Clause {
             .filter(|clause| !clause.is_tautology())
             .collect()
     }
+
+    /// Finds all possible function eliminations for this clause.
+    /// Returns a vector of (index, arg_index, literals, flipped) tuples.
+    /// - index: the literal index where function elimination can be applied
+    /// - arg_index: which argument position differs
+    /// - literals: the resulting literals after function elimination
+    /// - flipped: whether the resulting literal was flipped
+    pub fn find_function_eliminations(&self) -> Vec<(usize, usize, Vec<Literal>, bool)> {
+        let mut results = vec![];
+
+        for (i, target) in self.literals.iter().enumerate() {
+            // Check if we can eliminate the functions from the ith literal.
+            if target.positive {
+                // Negative literals come before positive ones so we're done
+                break;
+            }
+            if target.left.head != target.right.head {
+                continue;
+            }
+            if target.left.num_args() != target.right.num_args() {
+                continue;
+            }
+
+            // We can do function elimination when precisely one of the arguments is different.
+            let mut different_index = None;
+            for (j, arg) in target.left.args.iter().enumerate() {
+                if arg != &target.right.args[j] {
+                    if different_index.is_some() {
+                        different_index = None;
+                        break;
+                    }
+                    different_index = Some(j);
+                }
+            }
+
+            if let Some(j) = different_index {
+                // Looks like we can eliminate the functions from this literal
+                let mut literals = self.literals.clone();
+                let (new_literal, flipped) = Literal::new_with_flip(
+                    false,
+                    target.left.args[j].clone(),
+                    target.right.args[j].clone(),
+                );
+                literals[i] = new_literal;
+                results.push((i, j, literals, flipped));
+            }
+        }
+
+        results
+    }
+
+    /// Generates all clauses that can be derived from this clause using function elimination.
+    /// This is a convenience method that returns just the normalized clauses.
+    pub fn function_eliminations(&self) -> Vec<Clause> {
+        self.find_function_eliminations()
+            .into_iter()
+            .map(|(_, _, literals, _)| Clause::new(literals))
+            .filter(|clause| !clause.is_tautology())
+            .collect()
+    }
 }
