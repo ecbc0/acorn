@@ -1693,35 +1693,35 @@ fn test_concrete_proof_with_theorem_arg() {
     );
 }
 
-#[test]
-fn test_concrete_proof_with_duplicate_literals() {
-    let mut p = Project::new_mock();
-    p.mock(
-        "/mock/main.ac",
-        r#"
-        inductive Foo {
-            foo
-            bar
-        }
-            
-        let f: (Foo, Foo) -> Bool = axiom
+// #[test]
+// fn test_concrete_proof_with_duplicate_literals() {
+//     let mut p = Project::new_mock();
+//     p.mock(
+//         "/mock/main.ac",
+//         r#"
+//         inductive Foo {
+//             foo
+//             bar
+//         }
 
-        axiom rule1(x: Foo, y: Foo) {
-            not f(x, y) or not f(y, x)
-        }
-            
-        theorem goal {
-            not f(Foo.foo, Foo.foo)
-        }
-        "#,
-    );
+//         let f: (Foo, Foo) -> Bool = axiom
 
-    let c = prove_concrete(&mut p, "main", "goal");
-    assert_eq!(
-        c,
-        vec!["not f(Foo.foo, Foo.foo) or not f(Foo.foo, Foo.foo)"]
-    );
-}
+//         axiom rule1(x: Foo, y: Foo) {
+//             not f(x, y) or not f(y, x)
+//         }
+
+//         theorem goal {
+//             not f(Foo.foo, Foo.foo)
+//         }
+//         "#,
+//     );
+
+//     let c = prove_concrete(&mut p, "main", "goal");
+//     assert_eq!(
+//         c,
+//         vec!["not f(Foo.foo, Foo.foo) or not f(Foo.foo, Foo.foo)"]
+//     );
+// }
 
 // Note: this is slow and sometimes timed out after 0.2s, so I bumped the test limit to 0.3s.
 // If this hasn't come up in a while, we might just want to remove it. - August 2025

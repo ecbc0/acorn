@@ -21,6 +21,7 @@ use crate::goal::{Goal, GoalContext};
 use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
 use crate::literal::Literal;
 use crate::module::ModuleId;
+use crate::names::ConstantName;
 use crate::normalization_map::NewConstantType;
 use crate::normalizer::Normalizer;
 use crate::passive_set::PassiveSet;
@@ -545,8 +546,9 @@ impl Prover {
                     };
                 }
 
-                // Add all the variables in decls to the bindings
+                // Add all the variables in decls to the bindings and the normalizer
                 for (name, acorn_type) in decls {
+                    let cname = ConstantName::unqualified(bindings.module_id(), &name);
                     bindings.to_mut().add_unqualified_constant(
                         &name,
                         vec![],
@@ -557,6 +559,7 @@ impl Prover {
                         None,
                         String::new(),
                     );
+                    self.normalizer.add_local_constant(cname);
                 }
 
                 // Re-parse the expression with the newly defined variables
@@ -564,7 +567,7 @@ impl Prover {
                 let value = evaluator.evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
                 let clauses = self
                     .normalizer
-                    .normalize_value(&value, NewConstantType::Local)?;
+                    .normalize_value(&value, NewConstantType::Disallowed)?;
                 for clause in clauses {
                     self.checker.insert_clause(&clause);
                 }
@@ -574,7 +577,7 @@ impl Prover {
                 let value = evaluator.evaluate_value(&claim.claim, Some(&AcornType::Bool))?;
                 let clauses = self
                     .normalizer
-                    .normalize_value(&value, NewConstantType::Local)?;
+                    .normalize_value(&value, NewConstantType::Disallowed)?;
 
                 for clause in clauses {
                     if !self.checker.check_clause(&clause) {

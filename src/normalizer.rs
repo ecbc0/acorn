@@ -381,6 +381,10 @@ impl Normalizer {
             .collect()
     }
 
+    pub fn add_local_constant(&mut self, cname: ConstantName) -> Atom {
+        self.normalization_map.add_constant(cname, true)
+    }
+
     /// Converts a value that is already in CNF into lists of literals.
     /// Each Vec<Literal> is a conjunction, an "or" node.
     /// The CNF form is expressing that each of these conjunctions are true.
