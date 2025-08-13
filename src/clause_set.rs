@@ -460,7 +460,7 @@ mod tests {
     fn test_clause_set_exact_bug() {
         // Taken from a failing example.
         let mut clause_set = ClauseSet::new();
-        let general_json = r#"{"literals":[{"positive":true,"left":{"term_type":2,"head_type":6,"head":{"GlobalConstant":12},"args":[{"term_type":2,"head_type":2,"head":{"GlobalConstant":1},"args":[]},{"term_type":2,"head_type":2,"head":{"LocalConstant":2},"args":[]}]},"right":{"term_type":2,"head_type":2,"head":{"LocalConstant":2},"args":[]}}]}"#;
+        let general_json = r#"{"literals":[{"positive":true,"left":{"term_type":2,"head_type":6,"head":{"GlobalConstant":12},"args":[{"term_type":2,"head_type":2,"head":{"GlobalConstant":1},"args":[]},{"term_type":2,"head_type":2,"head":{"Variable":0},"args":[]}]},"right":{"term_type":2,"head_type":2,"head":{"Variable":0},"args":[]}}]}"#;
         let general = serde_json::from_str::<Clause>(general_json).unwrap();
         clause_set.insert(general, 1);
         let special_json = r#"{"literals":[{"positive":true,"left":{"term_type":2,"head_type":6,"head":{"GlobalConstant":12},"args":[{"term_type":2,"head_type":2,"head":{"GlobalConstant":1},"args":[]},{"term_type":2,"head_type":6,"head":{"GlobalConstant":12},"args":[{"term_type":2,"head_type":2,"head":{"LocalConstant":2},"args":[]},{"term_type":2,"head_type":2,"head":{"LocalConstant":3},"args":[]}]}]},"right":{"term_type":2,"head_type":6,"head":{"GlobalConstant":12},"args":[{"term_type":2,"head_type":2,"head":{"LocalConstant":2},"args":[]},{"term_type":2,"head_type":2,"head":{"LocalConstant":3},"args":[]}]}}]}"#;
