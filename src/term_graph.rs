@@ -1024,11 +1024,11 @@ impl TermGraph {
     }
 
     /// Returns the truth value of this literal, or None if it cannot be evaluated.
-    pub fn evaluate_literal(&self, literal: &Literal) -> Option<bool> {
+    pub fn evaluate_literal(&mut self, literal: &Literal) -> Option<bool> {
         // If the literal is positive, we check if the terms are equal.
         // If the literal is negative, we check if the terms are not equal.
-        let left_id = self.get_term_id(&literal.left)?;
-        let right_id = self.get_term_id(&literal.right)?;
+        let left_id = self.insert_term(&literal.left);
+        let right_id = self.insert_term(&literal.right);
 
         let left_group = self.get_group_id(left_id);
         let right_group = self.get_group_id(right_id);
@@ -1046,7 +1046,7 @@ impl TermGraph {
     }
 
     /// Returns the truth value of this clause, or None if it cannot be evaluated.
-    pub fn evaluate_clause(&self, clause: &Clause) -> Option<bool> {
+    pub fn evaluate_clause(&mut self, clause: &Clause) -> Option<bool> {
         let mut answer = Some(false);
         for literal in &clause.literals {
             match self.evaluate_literal(literal) {
@@ -1338,8 +1338,7 @@ impl TermGraph {
     }
 
     #[cfg(test)]
-    fn evaluate_clause_str(&self, s: &str, expected: Option<bool>) {
-        use crate::clause::Clause;
+    fn evaluate_clause_str(&mut self, s: &str, expected: Option<bool>) {
         let clause = Clause::parse(s);
         let result = self.evaluate_clause(&clause);
         assert_eq!(result, expected);

@@ -75,7 +75,7 @@ impl Checker {
     }
 
     /// Returns true if the clause is known to be true.
-    pub fn check_clause(&self, clause: &Clause) -> bool {
+    pub fn check_clause(&mut self, clause: &Clause) -> bool {
         if clause.len() > 1 && self.concrete_long_clauses.contains(clause) {
             // We've seen this clause exactly
             return true;
