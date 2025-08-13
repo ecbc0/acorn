@@ -1501,4 +1501,12 @@ mod tests {
         g.insert_clause_str("g2(c2, c3) = g2(c3, c2)", StepId(2));
         g.evaluate_clause_str("g1(c1, g2(c3, c2)) != c4", Some(true));
     }
+
+    #[test]
+    fn test_term_graph_deduction() {
+        let mut g = TermGraph::new();
+        g.insert_clause_str("g1(c1, c1) or g2(c1, c1)", StepId(0));
+        g.insert_clause_str("not g1(c1, c1)", StepId(1));
+        g.evaluate_clause_str("g2(c1, c1)", Some(true));
+    }
 }
