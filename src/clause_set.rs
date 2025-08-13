@@ -32,7 +32,8 @@ impl ClauseSet {
 
     pub fn find_generalization(&self, clause: Clause) -> Option<usize> {
         let special = specialized_form(clause);
-        self.tree.find_clause(&special).map(|id| *id)
+        let answer = self.tree.find_clause(&special).map(|id| *id);
+        answer
     }
 }
 
@@ -453,40 +454,14 @@ mod tests {
     }
 
     #[test]
-    fn test_clause_set_many_inserts() {
+    fn test_clause_set_exact_bug() {
         // Taken from a failing example.
         let mut clause_set = ClauseSet::new();
-        let clauses = vec![
-            "g1 != g0(x0)",
-            "g0(s0(x0)) = x0 or g1 = x0",
-            "g0(s0(x0)) != g1 or g1 = x0",
-            "g0(x0) != g0(x1) or x0 = x1",
-            "not x0(g1) or x0(s1(x0)) or x0(x1)",
-            "not x0(g0(s1(x0))) or not x0(g1) or x0(x1)",
-            "g1 != x0 or g12(x1, x0) = x1",
-            "g12(x0, g1) = x0",
-            "g0(x0) != x1 or g0(g12(x2, x0)) = g12(x2, x1)",
-            "g12(x0, g0(x1)) = g0(g12(x0, x1))",
-            "g12(x0, g1) = x0",
-            "g12(g1, x0) = x0",
-            "g12(x0, g0(x1)) = g0(g12(x0, x1))",
-            "g12(g0(x0), x1) = g0(g12(x0, x1))",
-            "g12(x0, g2) = g0(x0)",
-            "g12(g2, x0) = g0(x0)",
-            "g0(x0) != x0",
-            "g0(g0(x0)) != x0",
-            "g12(x0, x1) = g12(x1, x0)",
-            "not c0(x0, x1, x2) or g12(x0, g12(x1, x2)) = g12(g12(x0, x1), x2)",
-            "g12(x0, g12(x1, x2)) != g12(g12(x0, x1), x2) or c0(x0, x1, x2)",
-            "c0(x0, c2, c3) = c1(x0)",
-            "not c1(x0) or c1(g0(x0))",
-        ];
-        for (i, clause) in clauses.into_iter().enumerate() {
-            clause_set.insert(Clause::parse(clause), i);
-        }
-
-        // This should be a specialization of g12(g1, x0) = x0
-        let special = Clause::parse("g12(g1, g12(c2, c3)) = g12(c2, c3)");
-        assert!(clause_set.find_generalization(special).is_some());
+        let general_json = r#"{"literals":[{"positive":true,"left":{"term_type":2,"head_type":6,"head":{"GlobalConstant":12},"args":[{"term_type":2,"head_type":2,"head":{"GlobalConstant":1},"args":[]},{"term_type":2,"head_type":2,"head":{"LocalConstant":2},"args":[]}]},"right":{"term_type":2,"head_type":2,"head":{"LocalConstant":2},"args":[]}}]}"#;
+        let general = serde_json::from_str::<Clause>(general_json).unwrap();
+        clause_set.insert(general, 1);
+        let special_json = r#"{"literals":[{"positive":true,"left":{"term_type":2,"head_type":6,"head":{"GlobalConstant":12},"args":[{"term_type":2,"head_type":2,"head":{"GlobalConstant":1},"args":[]},{"term_type":2,"head_type":6,"head":{"GlobalConstant":12},"args":[{"term_type":2,"head_type":2,"head":{"LocalConstant":2},"args":[]},{"term_type":2,"head_type":2,"head":{"LocalConstant":3},"args":[]}]}]},"right":{"term_type":2,"head_type":6,"head":{"GlobalConstant":12},"args":[{"term_type":2,"head_type":2,"head":{"LocalConstant":2},"args":[]},{"term_type":2,"head_type":2,"head":{"LocalConstant":3},"args":[]}]}}]}"#;
+        let special = serde_json::from_str::<Clause>(special_json).unwrap();
+        assert_eq!(clause_set.find_generalization(special), Some(1));
     }
 }
