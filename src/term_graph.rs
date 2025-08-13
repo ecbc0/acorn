@@ -1412,6 +1412,15 @@ impl TermGraph {
     }
 
     #[cfg(test)]
+    fn with_clauses(clauses: &[&str]) -> TermGraph {
+        let mut g = TermGraph::new();
+        for (i, s) in clauses.iter().enumerate() {
+            g.insert_clause_str(s, StepId(i));
+        }
+        g
+    }
+
+    #[cfg(test)]
     fn set_eq(&mut self, t1: TermId, t2: TermId, pattern_id: StepId) {
         self.set_terms_equal(t1, t2, pattern_id, None);
         self.validate();
@@ -1596,17 +1605,13 @@ mod tests {
 
     #[test]
     fn test_term_graph_concluding_opposing_literals() {
-        let mut g = TermGraph::new();
-        let strs = vec![
+        let mut g = TermGraph::with_clauses(&[
             "not g4(g6, g5(c1, g0))",
             "g4(g6, g6) or g3(g6, g6)",
             "not g3(g6, g6) or g4(g6, g6)",
             "g5(c1, g0) = g6",
             "not g4(g6, g6)",
-        ];
-        for (i, s) in strs.iter().enumerate() {
-            g.insert_clause_str(s, StepId(i));
-        }
+        ]);
 
         g.check_clause_str("g3(g6, g6)");
     }
