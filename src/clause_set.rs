@@ -455,7 +455,7 @@ mod tests {
     }
 
     #[test]
-    fn test_clause_set_exact_bug() {
+    fn test_clause_set_literal_with_indeterminate_ordering() {
         // Taken from a failing example.
         let mut clause_set = ClauseSet::new();
         let general_json = r#"{"literals":[{"positive":true,"left":{"term_type":2,"head_type":6,"head":{"GlobalConstant":12},"args":[{"term_type":2,"head_type":2,"head":{"GlobalConstant":1},"args":[]},{"term_type":2,"head_type":2,"head":{"Variable":0},"args":[]}]},"right":{"term_type":2,"head_type":2,"head":{"Variable":0},"args":[]}}]}"#;
