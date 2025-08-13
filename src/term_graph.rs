@@ -1342,7 +1342,9 @@ impl TermGraph {
     #[cfg(test)]
     fn check_clause_str(&mut self, s: &str) {
         let clause = Clause::parse(s);
-        assert!(self.check_clause(&clause));
+        if !self.check_clause(&clause) {
+            panic!("check_clause_str(\"{}\") failed", s);
+        }
     }
 }
 
@@ -1507,12 +1509,8 @@ mod tests {
     // fn test_term_graph_concluding_opposing_literals() {
     //     let mut g = TermGraph::new();
     //     let strs = vec![
-    //         "c1 != g0",
-    //         "not c2(g0)",
-    //         "g4(g6, g5(c1, g0)) = c2(g0)",
     //         "not g4(g6, g5(c1, g0))",
     //         "g4(g6, g6) or g3(g6, g6)",
-    //         "g4(g6, g6) != g3(g6, g6) or g3(g6, g6)",
     //         "not g3(g6, g6) or g4(g6, g6)",
     //         "g5(c1, g0) = g6",
     //         "not g4(g6, g6)",
