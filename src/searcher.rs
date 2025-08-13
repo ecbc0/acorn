@@ -64,7 +64,7 @@ impl Searcher {
 
         println!("proving {} ...", goal_context.description);
 
-        let verbose = true;
+        let verbose = false;
         let mut prover = if self.mode == ProverMode::Filtered {
             // Try to use the filtered prover if we're in filtered mode
             let module_descriptor = project
