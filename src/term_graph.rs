@@ -1571,35 +1571,39 @@ mod tests {
 
     #[test]
     fn test_hypotheses_then_imp() {
-        let mut g = TermGraph::new();
-        g.insert_clause_str("g1(c1)", StepId(0));
-        g.insert_clause_str("g2(c1)", StepId(1));
-        g.insert_clause_str("not g1(c1) or not g2(c1) or g3(c1)", StepId(2));
+        let mut g = TermGraph::with_clauses(&[
+            "g1(c1)",
+            "g2(c1)",
+            "not g1(c1) or not g2(c1) or g3(c1)",
+        ]);
         g.check_clause_str("g3(c1)");
     }
 
     #[test]
     fn test_imp_then_hypotheses() {
-        let mut g = TermGraph::new();
-        g.insert_clause_str("not g1(c1) or not g2(c1) or g3(c1)", StepId(2));
-        g.insert_clause_str("g1(c1)", StepId(0));
-        g.insert_clause_str("g2(c1)", StepId(1));
+        let mut g = TermGraph::with_clauses(&[
+            "not g1(c1) or not g2(c1) or g3(c1)",
+            "g1(c1)",
+            "g2(c1)",
+        ]);
         g.check_clause_str("g3(c1)");
     }
 
     #[test]
     fn test_term_graph_rewriting_equality() {
-        let mut g = TermGraph::new();
-        g.insert_clause_str("g1(c1, g2(c2, c3)) = c4", StepId(1));
-        g.insert_clause_str("g2(c2, c3) = g2(c3, c2)", StepId(2));
+        let mut g = TermGraph::with_clauses(&[
+            "g1(c1, g2(c2, c3)) = c4",
+            "g2(c2, c3) = g2(c3, c2)",
+        ]);
         g.check_clause_str("g1(c1, g2(c3, c2)) = c4");
     }
 
     #[test]
     fn test_term_graph_rewriting_inequality() {
-        let mut g = TermGraph::new();
-        g.insert_clause_str("g1(c1, g2(c2, c3)) != c4", StepId(1));
-        g.insert_clause_str("g2(c2, c3) = g2(c3, c2)", StepId(2));
+        let mut g = TermGraph::with_clauses(&[
+            "g1(c1, g2(c2, c3)) != c4",
+            "g2(c2, c3) = g2(c3, c2)",
+        ]);
         g.check_clause_str("g1(c1, g2(c3, c2)) != c4");
     }
 
