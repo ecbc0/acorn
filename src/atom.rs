@@ -60,6 +60,8 @@ impl Atom {
             'g' => Some(Atom::GlobalConstant(rest.parse().unwrap())),
             'c' => Some(Atom::LocalConstant(rest.parse().unwrap())),
             'x' => Some(Atom::Variable(rest.parse().unwrap())),
+            'm' => Some(Atom::Monomorph(rest.parse().unwrap())),
+            's' => Some(Atom::Skolem(rest.parse().unwrap())),
             _ => None,
         }
     }

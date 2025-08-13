@@ -451,4 +451,42 @@ mod tests {
         let special = Clause::parse("g2(g1, g2(c2, c3)) = g2(c2, c3)");
         assert_eq!(clause_set.find_generalization(special), Some(1));
     }
+
+    #[test]
+    fn test_clause_set_many_inserts() {
+        // Taken from a failing example.
+        let mut clause_set = ClauseSet::new();
+        let clauses = vec![
+            "g1 != g0(x0)",
+            "g0(s0(x0)) = x0 or g1 = x0",
+            "g0(s0(x0)) != g1 or g1 = x0",
+            "g0(x0) != g0(x1) or x0 = x1",
+            "not x0(g1) or x0(s1(x0)) or x0(x1)",
+            "not x0(g0(s1(x0))) or not x0(g1) or x0(x1)",
+            "g1 != x0 or g12(x1, x0) = x1",
+            "g12(x0, g1) = x0",
+            "g0(x0) != x1 or g0(g12(x2, x0)) = g12(x2, x1)",
+            "g12(x0, g0(x1)) = g0(g12(x0, x1))",
+            "g12(x0, g1) = x0",
+            "g12(g1, x0) = x0",
+            "g12(x0, g0(x1)) = g0(g12(x0, x1))",
+            "g12(g0(x0), x1) = g0(g12(x0, x1))",
+            "g12(x0, g2) = g0(x0)",
+            "g12(g2, x0) = g0(x0)",
+            "g0(x0) != x0",
+            "g0(g0(x0)) != x0",
+            "g12(x0, x1) = g12(x1, x0)",
+            "not c0(x0, x1, x2) or g12(x0, g12(x1, x2)) = g12(g12(x0, x1), x2)",
+            "g12(x0, g12(x1, x2)) != g12(g12(x0, x1), x2) or c0(x0, x1, x2)",
+            "c0(x0, c2, c3) = c1(x0)",
+            "not c1(x0) or c1(g0(x0))",
+        ];
+        for (i, clause) in clauses.into_iter().enumerate() {
+            clause_set.insert(Clause::parse(clause), i);
+        }
+
+        // This should be a specialization of g12(g1, x0) = x0
+        let special = Clause::parse("g12(g1, g12(c2, c3)) = g12(c2, c3)");
+        assert!(clause_set.find_generalization(special).is_some());
+    }
 }
