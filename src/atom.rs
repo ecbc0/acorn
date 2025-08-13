@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 pub type AtomId = u16;
@@ -50,7 +51,10 @@ impl fmt::Display for Atom {
 
 impl Atom {
     pub fn new(s: &str) -> Atom {
-        Atom::parse(s).unwrap()
+        match Atom::parse(s) {
+            Some(atom) => atom,
+            None => panic!("failed to parse atom: '{}'", s),
+        }
     }
 
     pub fn parse(s: &str) -> Option<Atom> {
@@ -58,11 +62,11 @@ impl Atom {
         let first = chars.next()?;
         let rest = chars.as_str();
         match first {
-            'g' => Some(Atom::GlobalConstant(rest.parse().unwrap())),
-            'c' => Some(Atom::LocalConstant(rest.parse().unwrap())),
-            'x' => Some(Atom::Variable(rest.parse().unwrap())),
-            'm' => Some(Atom::Monomorph(rest.parse().unwrap())),
-            's' => Some(Atom::Skolem(rest.parse().unwrap())),
+            'g' => Some(Atom::GlobalConstant(rest.parse().ok()?)),
+            'c' => Some(Atom::LocalConstant(rest.parse().ok()?)),
+            'x' => Some(Atom::Variable(rest.parse().ok()?)),
+            'm' => Some(Atom::Monomorph(rest.parse().ok()?)),
+            's' => Some(Atom::Skolem(rest.parse().ok()?)),
             _ => None,
         }
     }

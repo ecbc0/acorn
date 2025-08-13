@@ -1503,10 +1503,23 @@ mod tests {
     }
 
     #[test]
-    fn test_term_graph_deduction() {
+    fn test_term_graph_concluding_opposing_literals() {
         let mut g = TermGraph::new();
-        g.insert_clause_str("g1(c1, c1) or g2(c1, c1)", StepId(0));
-        g.insert_clause_str("not g1(c1, c1)", StepId(1));
-        g.evaluate_clause_str("g2(c1, c1)", Some(true));
+        let strs = vec![
+            "c1 != g0",
+            "not c2(g0)",
+            "g4(g6, g5(c1, g0)) = c2(g0)",
+            "not g4(g6, g5(c1, g0))",
+            "g4(g6, g6) or g3(g6, g6)",
+            "g4(g6, g6) != g3(g6, g6) or g3(g6, g6)",
+            "not g3(g6, g6) or g4(g6, g6)",
+            "g5(c1, g0) = g6",
+            "not g4(g6, g6)",
+        ];
+        for (i, s) in strs.iter().enumerate() {
+            g.insert_clause_str(s, StepId(i));
+        }
+
+        g.evaluate_clause_str("g3(g6, g6)", Some(true));
     }
 }
