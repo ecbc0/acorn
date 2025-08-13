@@ -679,6 +679,9 @@ impl Normalizer {
         clause: &Clause,
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
+        if clause.literals.is_empty() {
+            return AcornValue::Bool(false);
+        }
         let mut var_types = vec![];
         let mut denormalized_literals = vec![];
         for literal in &clause.literals {
