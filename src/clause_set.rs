@@ -67,14 +67,7 @@ pub fn sub_invariant_term_cmp(
     right: &Term,
     right_neg: bool,
 ) -> Option<Ordering> {
-    // First, compare the head types.
-    // I think this is actually more indicative of complexity than the type itself.
-    let head_type_cmp = left.head_type.cmp(&right.head_type);
-    if head_type_cmp != Ordering::Equal {
-        return Some(head_type_cmp);
-    }
-
-    // Next, compare the types.
+    // Compare the types, because these won't be changed by substitution.
     let type_cmp = left.term_type.cmp(&right.term_type);
     if type_cmp != Ordering::Equal {
         return Some(type_cmp);
@@ -86,10 +79,15 @@ pub fn sub_invariant_term_cmp(
         return Some(neg_cmp);
     }
 
-    // Then, compare the heads.
+    // If either term is a variable, we can't compare them in a substitution-invariant way.
     if left.head.is_variable() || right.head.is_variable() {
-        // There's no way to compare these things in a substitution-invariant way.
         return None;
+    }
+
+    // Compare the head types.
+    let head_type_cmp = left.head_type.cmp(&right.head_type);
+    if head_type_cmp != Ordering::Equal {
+        return Some(head_type_cmp);
     }
 
     // If heads are different atoms, we can compare them
