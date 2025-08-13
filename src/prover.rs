@@ -565,27 +565,25 @@ impl Prover {
                 // Re-parse the expression with the newly defined variables
                 let mut evaluator = Evaluator::new(project, bindings, None);
                 let value = evaluator.evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
-                let clauses = self
-                    .normalizer
-                    .normalize_value(&value, NewConstantType::Disallowed)?;
-                for clause in clauses {
+                let clauses = self.normalizer.clauses_from_value(&value)?;
+                for mut clause in clauses {
+                    clause.normalize();
                     self.checker.insert_clause(&clause);
                 }
                 Ok(())
             }
             StatementInfo::Claim(claim) => {
                 let value = evaluator.evaluate_value(&claim.claim, Some(&AcornType::Bool))?;
-                let clauses = self
-                    .normalizer
-                    .normalize_value(&value, NewConstantType::Disallowed)?;
+                let clauses = self.normalizer.clauses_from_value(&value)?;
 
-                for clause in clauses {
+                for mut clause in clauses {
                     if !self.checker.check_clause(&clause) {
                         return Err(Error::GeneratedBadCode(format!(
                             "The clause '{}' is not obviously true",
                             self.display(&clause)
                         )));
                     }
+                    clause.normalize();
                     self.checker.insert_clause(&clause);
                 }
 

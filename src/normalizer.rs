@@ -374,6 +374,9 @@ impl Normalizer {
 
     /// Does not normalize the clauses.
     pub fn clauses_from_value(&mut self, value: &AcornValue) -> Result<Vec<Clause>> {
+        if *value == AcornValue::Bool(true) {
+            return Ok(vec![]);
+        }
         let subvalues = value.remove_and();
         subvalues
             .into_iter()
