@@ -156,14 +156,14 @@ impl VariableMap {
         )
     }
 
-    /// TODO: make this *not* normalize the clause.
+    /// This does not normalize the clause.
     pub fn specialize_clause(&self, clause: &Clause) -> Clause {
         let literals = clause
             .literals
             .iter()
             .map(|lit| self.specialize_literal(lit))
             .collect();
-        Clause::new(literals) // TODO: replace with Clause { literals }
+        Clause { literals }
     }
 
     fn keep_unmapped_in_term(&mut self, term: &Term) {
