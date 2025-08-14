@@ -676,6 +676,21 @@ impl Default for ConcreteStep {
     }
 }
 
+impl ConcreteStep {
+    fn clauses(&self) -> Vec<Clause> {
+        let Some(generic) = &self.generic else {
+            return Vec::new();
+        };
+        let mut answer = Vec::new();
+        for var_map in &self.var_maps {
+            let specialized = var_map.specialize_clause(generic);
+            answer.push(specialized);
+        }
+        answer.sort();
+        answer
+    }
+}
+
 impl<'a> Proof<'a> {
     /// Create the concrete proof.
     pub fn make_concrete(&self, bindings: &BindingMap) -> Result<Vec<String>, Error> {
@@ -747,20 +762,21 @@ impl<'a> Proof<'a> {
         for (ps_id, step) in &self.all_steps {
             let concrete_id = ConcreteStepId::ProofStep(*ps_id);
             if step.rule.is_assumption() && !step.clause.has_any_variable() {
-                if let Some(clauses) = concrete_clauses.remove(&concrete_id) {
-                    for clause in clauses {
-                        let (definitions, codes) =
-                            generator.concrete_clause_to_code(&clause, self.normalizer)?;
-                        // Collect all skolem definitions
-                        for def in definitions {
-                            if !skolem_definitions.contains(&def) {
-                                skolem_definitions.push(def);
-                            }
+                let Some(clauses) = concrete_clauses.remove(&concrete_id) else {
+                    continue;
+                };
+                for clause in clauses {
+                    let (definitions, codes) =
+                        generator.concrete_clause_to_code(&clause, self.normalizer)?;
+                    // Collect all skolem definitions
+                    for def in definitions {
+                        if !skolem_definitions.contains(&def) {
+                            skolem_definitions.push(def);
                         }
-                        // Skip the actual clause codes from concrete assumptions
-                        for code in codes {
-                            skip_code.insert(code);
-                        }
+                    }
+                    // Skip the actual clause codes from concrete assumptions
+                    for code in codes {
+                        skip_code.insert(code);
                     }
                 }
             }
