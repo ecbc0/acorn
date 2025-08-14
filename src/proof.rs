@@ -705,12 +705,11 @@ impl<'a> Proof<'a> {
 
         // First, reconstruct all the steps, working backwards.
         let mut concrete_steps: HashMap<ConcreteStepId, ConcreteStep> = HashMap::new();
-        concrete_steps
-            .entry(ConcreteStepId::ProofStep(ProofStepId::Final))
-            .or_default()
-            .var_maps
-            .insert(VariableMap::new());
         for (id, step) in self.all_steps.iter().rev() {
+            if *id == ProofStepId::Final {
+                self.reconstruct_step(*id, step, VariableMap::new(), &mut concrete_steps)?;
+                continue;
+            }
             // Multiple concrete instantiations are possible
             let concrete_id = ConcreteStepId::ProofStep(id.clone());
             let var_maps: Vec<_> = match concrete_steps.get(&concrete_id) {
