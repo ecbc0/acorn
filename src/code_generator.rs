@@ -252,23 +252,6 @@ impl CodeGenerator<'_> {
         Ok(())
     }
 
-    /// Returns (definitions, code) where definitions are let statements that define
-    /// arbitrary variables and skolems, and code is the actual clause content.
-    pub fn concrete_clauses_to_code(
-        &mut self,
-        clauses: &[Clause],
-        normalizer: &Normalizer,
-    ) -> Result<(Vec<String>, Vec<String>)> {
-        let mut defs = vec![];
-        let mut codes = vec![];
-        for clause in clauses {
-            self.concrete_clause_to_code(clause, normalizer, &mut defs, &mut codes)?;
-        }
-        defs.sort();
-        codes.sort();
-        Ok((defs, codes))
-    }
-
     /// Converts a ConcreteStep to code.
     /// Returns (definitions, code) where definitions are let statements that define
     /// arbitrary variables and skolems, and code is the actual clause content.
@@ -277,7 +260,14 @@ impl CodeGenerator<'_> {
         step: &crate::proof::ConcreteStep,
         normalizer: &Normalizer,
     ) -> Result<(Vec<String>, Vec<String>)> {
-        self.concrete_clauses_to_code(&step.clauses(), normalizer)
+        let mut defs = vec![];
+        let mut codes = vec![];
+        for clause in step.clauses() {
+            self.concrete_clause_to_code(&clause, normalizer, &mut defs, &mut codes)?;
+        }
+        defs.sort();
+        codes.sort();
+        Ok((defs, codes))
     }
 
     fn type_to_code(&mut self, acorn_type: &AcornType) -> Result<String> {
