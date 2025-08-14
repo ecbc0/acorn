@@ -1871,6 +1871,8 @@ fn test_concrete_proof_using_unimported_function() {
     );
 }
 
+// This relies on matching a partial function application with a variable in a general clause,
+// which doesn't work yet.
 // #[test]
 // fn test_concrete_proof_list_contains() {
 //     let mut p = Project::new_mock();
