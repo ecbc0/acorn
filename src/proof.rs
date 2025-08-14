@@ -658,22 +658,31 @@ fn concrete_ids_for(ps_id: ProofStepId) -> [ConcreteStepId; 2] {
     [assumption_id, concrete_id]
 }
 
+// A concrete version of the proof step that has been reconstructed from the proof.
+struct ConcreteStep {
+    // All of the ways to map the generic variables to concrete ones.
+    var_maps: HashSet<VariableMap>,
+}
+
 impl<'a> Proof<'a> {
     /// Create the concrete proof.
     pub fn make_concrete(&self, bindings: &BindingMap) -> Result<Vec<String>, Error> {
         let mut generator = CodeGenerator::new(&bindings);
 
         // First, reconstruct all the steps, working backwards.
-        let mut var_map_map: HashMap<ConcreteStepId, HashSet<VariableMap>> = HashMap::new();
+        let mut var_map_map: HashMap<ConcreteStepId, ConcreteStep> = HashMap::new();
         var_map_map
             .entry(ConcreteStepId::ProofStep(ProofStepId::Final))
-            .or_default()
+            .or_insert(ConcreteStep {
+                var_maps: HashSet::new(),
+            })
+            .var_maps
             .insert(VariableMap::new());
         for (id, step) in self.all_steps.iter().rev() {
             // Multiple concrete instantiations are possible
             let concrete_id = ConcreteStepId::ProofStep(id.clone());
             let var_maps: Vec<_> = match var_map_map.get(&concrete_id) {
-                Some(items) => items.iter().cloned().collect(),
+                Some(concrete_step) => concrete_step.var_maps.iter().cloned().collect(),
                 None => continue,
             };
             for var_map in var_maps {
@@ -683,7 +692,7 @@ impl<'a> Proof<'a> {
 
         // Construct the concrete clauses
         let mut concrete_clauses: HashMap<ConcreteStepId, BTreeSet<Clause>> = HashMap::new();
-        for (concrete_id, var_maps) in var_map_map {
+        for (concrete_id, concrete_step) in var_map_map {
             let generic_clause = match concrete_id {
                 ConcreteStepId::ProofStep(ps_id) => {
                     if ps_id == ProofStepId::Final {
@@ -709,7 +718,7 @@ impl<'a> Proof<'a> {
                 }
             };
 
-            for mut var_map in var_maps {
+            for mut var_map in concrete_step.var_maps {
                 var_map.keep_unmapped_in_clause(&generic_clause);
                 let concrete = var_map.specialize_clause(&generic_clause);
                 concrete_clauses
@@ -786,7 +795,7 @@ impl<'a> Proof<'a> {
         id: ProofStepId,
         step: &ProofStep,
         conclusion_map: VariableMap,
-        input_maps: &mut HashMap<ConcreteStepId, HashSet<VariableMap>>,
+        input_maps: &mut HashMap<ConcreteStepId, ConcreteStep>,
     ) -> Result<(), Error> {
         // Some rules we can handle without the traces.
         match &step.rule {
@@ -796,7 +805,13 @@ impl<'a> Proof<'a> {
                 for id in step.rule.premises() {
                     let map = VariableMap::new();
                     let concrete_id = ConcreteStepId::ProofStep(id);
-                    input_maps.entry(concrete_id).or_default().insert(map);
+                    input_maps
+                        .entry(concrete_id)
+                        .or_insert(ConcreteStep {
+                            var_maps: HashSet::new(),
+                        })
+                        .var_maps
+                        .insert(map);
                 }
                 return Ok(());
             }
@@ -828,7 +843,13 @@ impl<'a> Proof<'a> {
                         // We don't need to track exact concrete assumptions.
                         continue;
                     }
-                    input_maps.entry(assumption_id).or_default().insert(var_map);
+                    input_maps
+                        .entry(assumption_id)
+                        .or_insert(ConcreteStep {
+                            var_maps: HashSet::new(),
+                        })
+                        .var_maps
+                        .insert(var_map);
                 }
             }
             Rule::Rewrite(info) => {
@@ -877,7 +898,10 @@ impl<'a> Proof<'a> {
                     let map = unifier.into_one_map(pattern_scope);
                     input_maps
                         .entry(ConcreteStepId::ProofStep(pattern_id))
-                        .or_default()
+                        .or_insert(ConcreteStep {
+                            var_maps: HashSet::new(),
+                        })
+                        .var_maps
                         .insert(map);
                 }
 
@@ -885,7 +909,10 @@ impl<'a> Proof<'a> {
                 let map = VariableMap::new();
                 input_maps
                     .entry(ConcreteStepId::ProofStep(target_id))
-                    .or_default()
+                    .or_insert(ConcreteStep {
+                        var_maps: HashSet::new(),
+                    })
+                    .var_maps
                     .insert(map);
             }
             Rule::EqualityFactoring(info) => {
@@ -926,7 +953,10 @@ impl<'a> Proof<'a> {
                     let map = unifier.into_one_map(base_scope);
                     input_maps
                         .entry(ConcreteStepId::ProofStep(base_id))
-                        .or_default()
+                        .or_insert(ConcreteStep {
+                            var_maps: HashSet::new(),
+                        })
+                        .var_maps
                         .insert(map);
                 }
             }
@@ -975,7 +1005,10 @@ impl<'a> Proof<'a> {
                     let map = unifier.into_one_map(base_scope);
                     input_maps
                         .entry(ConcreteStepId::ProofStep(base_id))
-                        .or_default()
+                        .or_insert(ConcreteStep {
+                            var_maps: HashSet::new(),
+                        })
+                        .var_maps
                         .insert(map);
                 }
             }
@@ -1031,7 +1064,10 @@ impl<'a> Proof<'a> {
                     let map = unifier.into_one_map(base_scope);
                     input_maps
                         .entry(ConcreteStepId::ProofStep(base_id))
-                        .or_default()
+                        .or_insert(ConcreteStep {
+                            var_maps: HashSet::new(),
+                        })
+                        .var_maps
                         .insert(map);
                 }
             }
@@ -1048,7 +1084,10 @@ impl<'a> Proof<'a> {
                 for map in var_maps {
                     input_maps
                         .entry(ConcreteStepId::ProofStep(long_id))
-                        .or_default()
+                        .or_insert(ConcreteStep {
+                            var_maps: HashSet::new(),
+                        })
+                        .var_maps
                         .insert(map);
                 }
             }
@@ -1065,7 +1104,10 @@ impl<'a> Proof<'a> {
                 for map in var_maps {
                     input_maps
                         .entry(ConcreteStepId::ProofStep(pattern_id))
-                        .or_default()
+                        .or_insert(ConcreteStep {
+                            var_maps: HashSet::new(),
+                        })
+                        .var_maps
                         .insert(map);
                 }
             }
@@ -1092,7 +1134,7 @@ impl<'a> Proof<'a> {
         traces: &[LiteralTrace],
         conclusion: &Clause,
         conc_map: VariableMap,
-        simp_maps: &mut HashMap<ConcreteStepId, HashSet<VariableMap>>,
+        simp_maps: &mut HashMap<ConcreteStepId, ConcreteStep>,
     ) -> Result<HashSet<VariableMap>, Error> {
         // The unifier will figure out the concrete clauses.
         // The base and conclusion get their own scope.
@@ -1164,7 +1206,13 @@ impl<'a> Proof<'a> {
                 ))
             })?;
             let concrete_id = ConcreteStepId::ProofStep(*step_id);
-            simp_maps.entry(concrete_id).or_default().insert(map);
+            simp_maps
+                .entry(concrete_id)
+                .or_insert(ConcreteStep {
+                    var_maps: HashSet::new(),
+                })
+                .var_maps
+                .insert(map);
         }
 
         Ok(answer)
