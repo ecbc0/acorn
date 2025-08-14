@@ -220,16 +220,17 @@ impl CodeGenerator<'_> {
 
     /// Convert to a clause to code strings.
     /// This will generate skolem definitions if necessary.
-    /// Returns (definitions, code) where definitions are let statements that define
-    /// arbitrary variables and skolems, and code is the actual clause content.
+    /// Appends let statements that define arbitrary variables and skolems to definitions,
+    /// and appends the actual clause content to codes.
     fn concrete_clause_to_code(
         &mut self,
         clause: &Clause,
         normalizer: &Normalizer,
-    ) -> Result<(Vec<String>, Vec<String>)> {
+        definitions: &mut Vec<String>,
+        codes: &mut Vec<String>,
+    ) -> Result<()> {
         self.add_arbitrary_for_clause(clause);
         let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names));
-        let mut definitions = vec![];
 
         // Define the arbitrary variables.
         for (ty, name) in self.arbitrary_names.clone() {
@@ -240,16 +241,15 @@ impl CodeGenerator<'_> {
 
         // Create a name and definition for each skolem variable.
         let skolem_ids = value.find_skolems();
-        self.define_skolems(skolem_ids, normalizer, &mut definitions)?;
+        self.define_skolems(skolem_ids, normalizer, definitions)?;
 
-        let mut codes = vec![];
         let mut subvalues = vec![];
         value = value.replace_skolems(self.bindings.module_id(), &self.skolem_names);
         value.into_and(&mut subvalues);
         for subvalue in subvalues {
             codes.push(self.value_to_code(&subvalue)?);
         }
-        Ok((definitions, codes))
+        Ok(())
     }
 
     /// Returns (definitions, code) where definitions are let statements that define
@@ -262,9 +262,7 @@ impl CodeGenerator<'_> {
         let mut defs = vec![];
         let mut codes = vec![];
         for clause in clauses {
-            let (subdefs, subcodes) = self.concrete_clause_to_code(clause, normalizer)?;
-            defs.extend(subdefs);
-            codes.extend(subcodes);
+            self.concrete_clause_to_code(clause, normalizer, &mut defs, &mut codes)?;
         }
         defs.sort();
         codes.sort();
