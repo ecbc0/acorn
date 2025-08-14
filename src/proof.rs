@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use crate::acorn_value::AcornValue;
@@ -715,8 +715,7 @@ impl<'a> Proof<'a> {
             }
         }
 
-        // Construct the concrete clauses
-        let mut concrete_clauses: HashMap<ConcreteStepId, BTreeSet<Clause>> = HashMap::new();
+        // Find the generic clauses
         for (concrete_id, concrete_step) in concrete_steps.iter_mut() {
             let generic_clause = match concrete_id {
                 ConcreteStepId::ProofStep(ps_id) => {
@@ -742,15 +741,6 @@ impl<'a> Proof<'a> {
                     Clause::new(info.literals.clone())
                 }
             };
-
-            // TODO: stop it
-            for var_map in concrete_step.var_maps.clone() {
-                let concrete = var_map.specialize_clause(&generic_clause);
-                concrete_clauses
-                    .entry(*concrete_id)
-                    .or_default()
-                    .insert(concrete);
-            }
 
             concrete_step.generic = Some(generic_clause);
         }
