@@ -724,12 +724,7 @@ impl<'a> Proof<'a> {
         // Find the generic clauses
         for (concrete_id, concrete_step) in concrete_steps.iter_mut() {
             let generic_clause = match concrete_id {
-                ConcreteStepId::ProofStep(ps_id) => {
-                    if *ps_id == ProofStepId::Final {
-                        continue;
-                    }
-                    self.get_clause(*ps_id)?.clone()
-                }
+                ConcreteStepId::ProofStep(ps_id) => self.get_clause(*ps_id)?.clone(),
                 ConcreteStepId::Assumption(ps_id) => {
                     // Find the assumption info for this proof step
                     let Some(assumption_step) = self
