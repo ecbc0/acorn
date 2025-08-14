@@ -307,6 +307,46 @@ impl Unifier {
         false
     }
 
+    // Helper method to try unifying a variable head term with a partial application
+    // Returns true if successful, false otherwise
+    fn try_unify_partial_application(
+        &mut self,
+        var_term: &Term,
+        var_scope: Scope,
+        full_term: &Term,
+        full_scope: Scope,
+    ) -> Option<bool> {
+        // Check if var_term has a variable head with exactly one argument
+        if let Atom::Variable(var_id) = var_term.head {
+            if var_term.args.len() == 1 && full_term.args.len() > 1 {
+                // We want to unify x0(arg) with f(a1, a2, ...)
+                // This means x0 should map to f(a1, a2, ..., an-1) and arg should unify with an
+                
+                // Build the partial application: all of full_term except the last arg
+                let n = full_term.args.len();
+                let partial_args = full_term.args[0..n-1].to_vec();
+                
+                // Create the partial application term
+                // Use the head_type of var_term (the variable's type) as the term_type
+                let partial = Term {
+                    term_type: var_term.head_type,
+                    head_type: full_term.head_type,
+                    head: full_term.head,
+                    args: partial_args,
+                };
+                
+                // Unify the variable with the partial application
+                if !self.unify_variable(var_scope, var_id, full_scope, &partial) {
+                    return Some(false);
+                }
+                
+                // Unify the argument with the last argument of full_term
+                return Some(self.unify(var_scope, &var_term.args[0], full_scope, &full_term.args[n-1]));
+            }
+        }
+        None
+    }
+
     // Unify two terms, which may be in different scopes.
     pub fn unify(&mut self, scope1: Scope, term1: &Term, scope2: Scope, term2: &Term) -> bool {
         if term1.term_type != term2.term_type {
@@ -319,6 +359,16 @@ impl Unifier {
         }
         if let Some(i) = term2.atomic_variable() {
             return self.unify_variable(scope2, i, scope1, term1);
+        }
+
+        // Try to unify term1 (if it has a variable head) with a partial application of term2
+        if let Some(result) = self.try_unify_partial_application(term1, scope1, term2, scope2) {
+            return result;
+        }
+        
+        // Try the symmetric case: term2 with a partial application of term1
+        if let Some(result) = self.try_unify_partial_application(term2, scope2, term1, scope1) {
+            return result;
         }
 
         // These checks mean we won't unify higher-order functions whose head types don't match.
@@ -580,6 +630,90 @@ mod tests {
 
     #[test]
     fn test_nested_functional_superpose() {
+        let s = Term::parse("x0(x0(x1))");
+        let u_subterm = Term::parse("c1(x0(x1))");
+        let t = Term::parse("c2(x0, x1, c1(c1(c0)))");
+        let pm_clause = Clause::parse("c2(x0, x1, c1(c1(c0))) = x0(x0(x1))");
+        let target_path = &[0];
+        let resolution_clause =
+            Clause::parse("c1(c1(x0(x1))) != c1(x2(x3)) or c1(x0(x1)) = x2(x3)");
+        let mut u = Unifier::new(3);
+        u.assert_unify(Scope::LEFT, &s, Scope::RIGHT, &u_subterm);
+        u.print();
+        let _literals =
+            u.superpose_clauses(&t, &pm_clause, 0, target_path, &resolution_clause, 0, true);
+    }
+
+    #[test]
+    fn test_higher_order_partial_application_unification() {
+        // This test reproduces the issue from test_concrete_proof_list_contains
+        // We need to unify x0(s5(x0, x1)) with m2(c0, s5(m2(c0), x0))
+        // where x0 should map to m2(c0) (a partial application)
+        
+        // Create terms with proper types
+        // For simplicity, let's use type 11 for functions and type 4 for the result
+        let x0_var = Term::atom(11, Atom::Variable(0));
+        let x1_var = Term::atom(2, Atom::Variable(1));
+        
+        // s5 is a skolem function that takes two arguments
+        let s5_left = Term {
+            term_type: 4,
+            head_type: 14,
+            head: Atom::Skolem(5),
+            args: vec![x0_var.clone(), x1_var.clone()],
+        };
+        
+        // Left side: x0(s5(x0, x1))
+        let left_term = Term {
+            term_type: 4,
+            head_type: 11,
+            head: Atom::Variable(0),
+            args: vec![s5_left],
+        };
+        
+        // Right side: m2(c0, s5(m2(c0), x0))
+        let c0 = Term::atom(2, Atom::LocalConstant(0));
+        let m2_c0 = Term {
+            term_type: 11,
+            head_type: 10,
+            head: Atom::Monomorph(2),
+            args: vec![c0.clone()],
+        };
+        
+        let s5_right = Term {
+            term_type: 4,
+            head_type: 14,
+            head: Atom::Skolem(5),
+            args: vec![m2_c0.clone(), Term::atom(2, Atom::Variable(0))],
+        };
+        
+        let right_term = Term {
+            term_type: 4,
+            head_type: 10,
+            head: Atom::Monomorph(2),
+            args: vec![c0.clone(), s5_right],
+        };
+        
+        // Try to unify these terms
+        let mut u = Unifier::new(3);
+        
+        
+        let result = u.unify(Scope::LEFT, &left_term, Scope::RIGHT, &right_term);
+        
+        // This should succeed, with x0 mapping to m2(c0)
+        assert!(result, "Should be able to unify x0(s5(x0, x1)) with m2(c0, s5(m2(c0), x0))");
+        
+        // Check that x0 maps to m2(c0)
+        if result {
+            let x0_mapping = u.get_mapping(Scope::LEFT, 0);
+            assert!(x0_mapping.is_some(), "x0 should have a mapping");
+            // The mapping should be m2(c0) which is a partial application
+            println!("x0 maps to: {:?}", x0_mapping);
+        }
+    }
+
+    #[test]
+    fn test_original_superpose() {
         let s = Term::parse("x0(x0(x1))");
         let u_subterm = Term::parse("c1(x0(x1))");
         let t = Term::parse("c2(x0, x1, c1(c1(c0)))");
