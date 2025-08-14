@@ -778,20 +778,18 @@ impl<'a> Proof<'a> {
                 let Some(cs) = concrete_steps.remove(&concrete_id) else {
                     continue;
                 };
-                for clause in cs.clauses().into_iter().rev() {
-                    let (definitions, codes) =
-                        generator.concrete_clause_to_code(&clause, self.normalizer)?;
-                    // Add any new definitions
-                    for def in definitions {
-                        if !answer.contains(&def) {
-                            answer.push(def);
-                        }
+                let (definitions, codes) =
+                    generator.concrete_clauses_to_code(&cs.clauses(), self.normalizer)?;
+                // Add any new definitions
+                for def in definitions {
+                    if !answer.contains(&def) {
+                        answer.push(def);
                     }
-                    // Add the clause codes if not skipped
-                    for code in codes {
-                        if !answer.contains(&code) && !skip_code.contains(&code) {
-                            answer.push(code);
-                        }
+                }
+                // Add the clause codes if not skipped
+                for code in codes {
+                    if !answer.contains(&code) && !skip_code.contains(&code) {
+                        answer.push(code);
                     }
                 }
             }

@@ -1226,9 +1226,9 @@ fn test_concrete_proof_with_multiple_rewrite() {
     assert_eq!(
         c,
         vec![
-            "g(y) = f(y)",
+            "g(g(g(y))) = f(g(g(y)))",
             "g(g(y)) = f(g(y))",
-            "g(g(g(y))) = f(g(g(y)))"
+            "g(y) = f(y)"
         ]
     );
 }
@@ -1372,8 +1372,8 @@ fn test_concrete_proof_with_equality_resolution() {
     assert_eq!(
         c,
         vec![
-            "not f(x, x) or f(g(x), x)",
             "not f(g(x), x) or f(g(g(x)), x)",
+            "not f(x, x) or f(g(x), x)",
             "not f(g(x), x)",
             "g(x) != g(x) or f(x, x)",
             "f(x, x)"

@@ -222,7 +222,7 @@ impl CodeGenerator<'_> {
     /// This will generate skolem definitions if necessary.
     /// Returns (definitions, code) where definitions are let statements that define
     /// arbitrary variables and skolems, and code is the actual clause content.
-    pub fn concrete_clause_to_code(
+    fn concrete_clause_to_code(
         &mut self,
         clause: &Clause,
         normalizer: &Normalizer,
