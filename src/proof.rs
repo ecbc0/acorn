@@ -931,20 +931,12 @@ impl<'a> Proof<'a> {
 
                     // Report the concrete pattern
                     let map = unifier.into_one_map(pattern_scope);
-                    concrete_steps
-                        .entry(ConcreteStepId::ProofStep(pattern_id))
-                        .or_default()
-                        .var_maps
-                        .insert(map);
+                    self.add_var_map(pattern_id, map, concrete_steps);
                 }
 
                 // The target is already concrete
                 let map = VariableMap::new();
-                concrete_steps
-                    .entry(ConcreteStepId::ProofStep(target_id))
-                    .or_default()
-                    .var_maps
-                    .insert(map);
+                self.add_var_map(target_id, map, concrete_steps);
             }
             Rule::EqualityFactoring(info) => {
                 // For EF, the trace applies to the stored literals.
@@ -982,11 +974,7 @@ impl<'a> Proof<'a> {
 
                     // Report the concrete base
                     let map = unifier.into_one_map(base_scope);
-                    concrete_steps
-                        .entry(ConcreteStepId::ProofStep(base_id))
-                        .or_default()
-                        .var_maps
-                        .insert(map);
+                    self.add_var_map(base_id, map, concrete_steps);
                 }
             }
             Rule::EqualityResolution(info) => {
@@ -1032,11 +1020,7 @@ impl<'a> Proof<'a> {
 
                     // Report the concrete base
                     let map = unifier.into_one_map(base_scope);
-                    concrete_steps
-                        .entry(ConcreteStepId::ProofStep(base_id))
-                        .or_default()
-                        .var_maps
-                        .insert(map);
+                    self.add_var_map(base_id, map, concrete_steps);
                 }
             }
             Rule::FunctionElimination(info) => {
@@ -1089,11 +1073,7 @@ impl<'a> Proof<'a> {
 
                     // Report the concrete base
                     let map = unifier.into_one_map(base_scope);
-                    concrete_steps
-                        .entry(ConcreteStepId::ProofStep(base_id))
-                        .or_default()
-                        .var_maps
-                        .insert(map);
+                    self.add_var_map(base_id, map, concrete_steps);
                 }
             }
             Rule::Resolution(info) => {
@@ -1107,11 +1087,7 @@ impl<'a> Proof<'a> {
                     concrete_steps,
                 )?;
                 for map in var_maps {
-                    concrete_steps
-                        .entry(ConcreteStepId::ProofStep(long_id))
-                        .or_default()
-                        .var_maps
-                        .insert(map);
+                    self.add_var_map(long_id, map, concrete_steps);
                 }
             }
             Rule::Specialization(info) => {
@@ -1125,11 +1101,7 @@ impl<'a> Proof<'a> {
                     concrete_steps,
                 )?;
                 for map in var_maps {
-                    concrete_steps
-                        .entry(ConcreteStepId::ProofStep(pattern_id))
-                        .or_default()
-                        .var_maps
-                        .insert(map);
+                    self.add_var_map(pattern_id, map, concrete_steps);
                 }
             }
             rule => {
