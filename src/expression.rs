@@ -781,7 +781,7 @@ fn parse_partial_expressions(
                 partials.push_back(PartialExpression::Expression(group));
             }
 
-            TokenType::Identifier | TokenType::Axiom => {
+            TokenType::Identifier | TokenType::Axiom | TokenType::Lib => {
                 partials.push_back(PartialExpression::Expression(Expression::Singleton(token)));
             }
             TokenType::Numeral | TokenType::True | TokenType::False | TokenType::SelfToken => {

@@ -68,6 +68,7 @@ pub enum TokenType {
     Instance,
     Extends,
     DocComment,
+    Lib,
 }
 
 // Add a new token here if there's an alphabetical name for it.
@@ -110,6 +111,7 @@ pub fn keyword_map() -> &'static BTreeMap<&'static str, TokenType> {
             ("instance", TokenType::Instance),
             ("extends", TokenType::Extends),
             ("iff", TokenType::Iff),
+            ("lib", TokenType::Lib),
         ])
     })
 }
@@ -376,6 +378,7 @@ impl TokenType {
             TokenType::Instance => "instance",
             TokenType::Extends => "extends",
             TokenType::DocComment => "///",
+            TokenType::Lib => "lib",
         }
     }
 
@@ -566,7 +569,8 @@ impl Token {
             | TokenType::Implies
             | TokenType::Typeclass
             | TokenType::Instance
-            | TokenType::Extends => Some(SemanticTokenType::KEYWORD),
+            | TokenType::Extends
+            | TokenType::Lib => Some(SemanticTokenType::KEYWORD),
 
             TokenType::NewLine => {
                 // Regular comments are encoded as newlines because they act like newlines.

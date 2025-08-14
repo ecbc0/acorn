@@ -1318,6 +1318,11 @@ impl BindingMap {
                     let display_type = ut.to_display_type();
                     return self.get_type_attr_completions(&display_type, partial);
                 }
+                NamedEntity::LibNamespace => {
+                    // For lib namespace, we could return module completions
+                    // but for now just return empty
+                    return Some(vec![]);
+                }
             }
         }
 
@@ -1456,6 +1461,9 @@ impl BindingMap {
             NamedEntity::UnresolvedType(u) => {
                 self.add_type_alias(&name, PotentialType::Unresolved(u.clone()));
                 Ok(entity)
+            }
+            NamedEntity::LibNamespace => {
+                Err(name_token.error("cannot import 'lib' directly"))
             }
         }
     }

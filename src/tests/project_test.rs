@@ -346,7 +346,7 @@ fn test_completions() {
 #[test]
 fn test_build_cache() {
     let mut p = Project::new_mock();
-    let lib_text = r#"
+    let foo_text = r#"
     let thing1: Bool = axiom
     let thing2: Bool = thing1
 
@@ -355,12 +355,12 @@ fn test_build_cache() {
     }
     "#;
     let main_text = r#"
-    import lib
+    import foo
     theorem two {
-        lib.thing1 = lib.thing2
+        foo.thing1 = foo.thing2
     }
     "#;
-    p.mock("/mock/lib.ac", lib_text);
+    p.mock("/mock/foo.ac", foo_text);
     p.mock("/mock/main.ac", main_text);
     let num_success = p.expect_build_ok();
     assert_eq!(num_success, 2);
@@ -377,9 +377,9 @@ fn test_build_cache() {
     let num_success = p.expect_build_ok();
     assert_eq!(num_success, 1);
 
-    // If we change lib, we should have to rebuild both
-    let touched_lib = format!("// Touch\n{}", lib_text);
-    p.update_file(PathBuf::from("/mock/lib.ac"), &touched_lib, 1)
+    // If we change foo, we should have to rebuild both
+    let touched_foo = format!("// Touch\n{}", foo_text);
+    p.update_file(PathBuf::from("/mock/foo.ac"), &touched_foo, 1)
         .expect("update failed");
     let num_success = p.expect_build_ok();
     assert_eq!(num_success, 2);

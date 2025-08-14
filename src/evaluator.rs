@@ -540,6 +540,14 @@ impl<'a> Evaluator<'a> {
                     PotentialValue::Unresolved(u) => NamedEntity::UnresolvedValue(u),
                 }
             }
+            Some(NamedEntity::LibNamespace) => {
+                // When accessing lib.foo, foo should be a module name
+                // We look for the module by its name in already loaded modules
+                match self.project.get_module_id_by_name(name) {
+                    Some(module_id) => NamedEntity::Module(module_id),
+                    None => return Err(name_token.error(&format!("module '{}' not found", name))),
+                }
+            }
             None => {
                 match name_token.token_type {
                     TokenType::Identifier => {
@@ -593,6 +601,10 @@ impl<'a> Evaluator<'a> {
                         } else {
                             return Err(name_token.error("unexpected location for 'self'"));
                         }
+                    }
+                    TokenType::Lib => {
+                        // "lib" is a special namespace that allows accessing any module
+                        NamedEntity::LibNamespace
                     }
                     t => return Err(name_token.error(&format!("unexpected {:?} token", t))),
                 }
@@ -743,7 +755,8 @@ impl<'a> Evaluator<'a> {
                         NamedEntity::Type(_)
                         | NamedEntity::Module(_)
                         | NamedEntity::Typeclass(_)
-                        | NamedEntity::UnresolvedType(_) => {
+                        | NamedEntity::UnresolvedType(_)
+                        | NamedEntity::LibNamespace => {
                             return Err(token.error("expected a value"));
                         }
                         NamedEntity::UnresolvedValue(u) => {

@@ -850,7 +850,7 @@ impl Project {
         }
     }
 
-    fn get_module_id_by_name(&self, module_name: &str) -> Option<ModuleId> {
+    pub fn get_module_id_by_name(&self, module_name: &str) -> Option<ModuleId> {
         self.module_map
             .get(&ModuleDescriptor::Name(module_name.to_string()))
             .copied()
@@ -1007,6 +1007,9 @@ impl Project {
                     .unwrap_or("__module__");
                 CodeGenerator::marked(name.to_string())
             }
+            NamedEntity::LibNamespace => {
+                CodeGenerator::marked("lib (module namespace)".to_string())
+            }
         };
         parts.push(main_content);
 
@@ -1034,6 +1037,7 @@ impl Project {
             }
             NamedEntity::Typeclass(typeclass) => self.get_typeclass_definition_string(typeclass),
             NamedEntity::Module(_) => None,
+            NamedEntity::LibNamespace => None,
         };
 
         // Add definition string if we have one and it's different from the main content
@@ -1087,6 +1091,7 @@ impl Project {
                     None
                 }
             }
+            NamedEntity::LibNamespace => None,
         };
 
         // Add doc comments if we have them
@@ -1173,6 +1178,10 @@ impl Project {
             }
             NamedEntity::Module(_) => {
                 // Modules don't have a specific definition location we can link to
+                return None;
+            }
+            NamedEntity::LibNamespace => {
+                // LibNamespace doesn't have a specific definition location
                 return None;
             }
         };
