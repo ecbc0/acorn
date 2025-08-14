@@ -98,11 +98,11 @@ impl BuildCache {
         };
 
         // Iterate over inner
-        if let ModuleDescriptor::Name(name) = descriptor {
-            let mut parts = name.split(".").collect::<Vec<_>>();
+        if let ModuleDescriptor::Name(parts) = descriptor {
             if parts.is_empty() {
                 return Ok(());
             }
+            let mut parts = parts.clone();
             let last = parts.pop().unwrap();
             let mut path = directory.clone();
             for part in parts {

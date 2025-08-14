@@ -67,9 +67,9 @@ impl Module {
         self.hash = Some(hash);
     }
 
-    pub fn name(&self) -> Option<&str> {
+    pub fn name(&self) -> Option<String> {
         match &self.descriptor {
-            ModuleDescriptor::Name(name) => Some(name),
+            ModuleDescriptor::Name(parts) => Some(parts.join(".")),
             _ => None,
         }
     }
@@ -98,7 +98,7 @@ pub enum ModuleDescriptor {
 
     // An import chain like foo.bar.baz
     // This sort of module can be either loaded by a project, or referred to in code.
-    Name(String),
+    Name(Vec<String>),
 
     // A filename.
     // This sort of module can be loaded by a project, but not referred to in code.
@@ -106,22 +106,27 @@ pub enum ModuleDescriptor {
 }
 
 impl ModuleDescriptor {
+    /// Helper to create a Name descriptor by splitting a string on dots
+    pub fn name(s: &str) -> Self {
+        ModuleDescriptor::Name(s.split('.').map(|part| part.to_string()).collect())
+    }
+
     /// Returns true if this is a top-level module that can be imported with just "import x".
-    /// These are Name descriptors with no dots in the name.
+    /// These are Name descriptors with a single part.
     pub fn is_top_level(&self) -> bool {
         match self {
-            ModuleDescriptor::Name(name) => !name.contains('.'),
+            ModuleDescriptor::Name(parts) => parts.len() == 1,
             _ => false,
         }
     }
 
     /// Returns true if this module has an authoritative name for the given type or typeclass name.
-    /// A module is authoritative if its name (stripped of underscores and dots) matches
+    /// A module is authoritative if its name (stripped of underscores) matches
     /// the lowercased type or typeclass name.
     pub fn is_authoritative_name(&self, name: &str) -> bool {
         match self {
-            ModuleDescriptor::Name(module_name) => {
-                let cleaned_module = module_name.replace('_', "").replace('.', "");
+            ModuleDescriptor::Name(parts) => {
+                let cleaned_module = parts.join("").replace('_', "");
                 let cleaned_name = name.to_lowercase();
                 cleaned_module == cleaned_name
             }
@@ -134,7 +139,7 @@ impl fmt::Display for ModuleDescriptor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
             ModuleDescriptor::Anonymous => write!(f, "<anonymous>"),
-            ModuleDescriptor::Name(name) => write!(f, "{}", name),
+            ModuleDescriptor::Name(parts) => write!(f, "{}", parts.join(".")),
             ModuleDescriptor::File(path) => write!(f, "{}", path.display()),
         }
     }

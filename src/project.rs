@@ -296,7 +296,7 @@ impl Project {
 
     // Returns Ok(()) if the module loaded successfully, or an ImportError if not.
     pub fn add_target_by_name(&mut self, module_name: &str) -> Result<(), ImportError> {
-        self.add_target_by_descriptor(&ModuleDescriptor::Name(module_name.to_string()))
+        self.add_target_by_descriptor(&ModuleDescriptor::name(module_name))
     }
 
     // Returns Ok(()) if the module loaded successfully, or an ImportError if not.
@@ -843,7 +843,7 @@ impl Project {
         }
     }
 
-    pub fn get_module_name_by_id(&self, module_id: ModuleId) -> Option<&str> {
+    pub fn get_module_name_by_id(&self, module_id: ModuleId) -> Option<String> {
         match self.modules.get(module_id.get() as usize) {
             Some(module) => module.name(),
             None => None,
@@ -852,7 +852,7 @@ impl Project {
 
     pub fn get_module_id_by_name(&self, module_name: &str) -> Option<ModuleId> {
         self.module_map
-            .get(&ModuleDescriptor::Name(module_name.to_string()))
+            .get(&ModuleDescriptor::name(module_name))
             .copied()
     }
 
@@ -1004,8 +1004,8 @@ impl Project {
             NamedEntity::Module(module_id) => {
                 let name = self
                     .get_module_name_by_id(*module_id)
-                    .unwrap_or("__module__");
-                CodeGenerator::marked(name.to_string())
+                    .unwrap_or("__module__".to_string());
+                CodeGenerator::marked(name)
             }
             NamedEntity::LibNamespace => {
                 CodeGenerator::marked("lib (module namespace)".to_string())
@@ -1263,7 +1263,7 @@ impl Project {
             .components()
             .map(|comp| comp.as_os_str().to_string_lossy())
             .collect();
-        let mut name = String::new();
+        let mut parts = Vec::new();
         for (i, component) in components.iter().enumerate() {
             let part = if i + 1 == components.len() {
                 if !component.ends_with(".ac") {
@@ -1275,21 +1275,23 @@ impl Project {
                 // Handle the special case of default.ac
                 if component == "default.ac" && i > 0 {
                     // The module name should be the parent directory
-                    // We've already added it to name, so we're done
+                    // We've already added it to parts, so we're done
                     break;
                 }
                 component[..component.len() - 3].to_string()
             } else {
                 component.to_string()
             };
-            if i > 0 {
-                name.push('.');
-            }
-            name.push_str(&part);
-            check_valid_module_part(&part, &name)?;
+            let name_so_far = if parts.is_empty() {
+                part.clone()
+            } else {
+                format!("{}.{}", parts.join("."), part)
+            };
+            check_valid_module_part(&part, &name_so_far)?;
+            parts.push(part);
         }
 
-        Ok(ModuleDescriptor::Name(name))
+        Ok(ModuleDescriptor::Name(parts))
     }
 
     pub fn path_from_module_name(&self, module_name: &str) -> Result<PathBuf, ImportError> {
@@ -1343,7 +1345,7 @@ impl Project {
         descriptor: &ModuleDescriptor,
     ) -> Result<PathBuf, ImportError> {
         let name = match descriptor {
-            ModuleDescriptor::Name(name) => name,
+            ModuleDescriptor::Name(parts) => parts.join("."),
             ModuleDescriptor::File(path) => return Ok(path.clone()),
             ModuleDescriptor::Anonymous => {
                 return Err(ImportError::NotFound("anonymous module".to_string()))
@@ -1495,7 +1497,7 @@ impl Project {
     }
 
     pub fn load_module_by_name(&mut self, module_name: &str) -> Result<ModuleId, ImportError> {
-        let descriptor = ModuleDescriptor::Name(module_name.to_string());
+        let descriptor = ModuleDescriptor::name(module_name);
         self.load_module(&descriptor)
     }
 
@@ -1571,7 +1573,7 @@ impl Project {
             // We are in a "from X import Y" statement.
             let name = parts[1];
             let partial = parts[3];
-            let descriptor = ModuleDescriptor::Name(name.to_string());
+            let descriptor = ModuleDescriptor::name(name);
             let env = match self.get_env(&descriptor) {
                 Some(env) => env,
                 None => {

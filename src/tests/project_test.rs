@@ -212,7 +212,7 @@ fn test_repeated_verification() {
         "#;
     p.mock("/mock/main.ac", main_text);
 
-    let main_descriptor = ModuleDescriptor::Name("main".to_string());
+    let main_descriptor = ModuleDescriptor::name("main");
     let env = p.get_env(&main_descriptor).unwrap();
     let goal_count = env.iter_goals().count() as i32;
     assert_eq!(goal_count, 5);
@@ -302,7 +302,7 @@ fn test_completions() {
         "#,
     );
     let env = p
-        .get_env(&ModuleDescriptor::Name("main".to_string()))
+        .get_env(&ModuleDescriptor::name("main"))
         .unwrap();
 
     // Make sure the indexes are what we expect
@@ -816,7 +816,7 @@ fn test_hover_basic() {
     "#},
     );
     p.expect_ok("main");
-    let desc = ModuleDescriptor::Name("main".to_string());
+    let desc = ModuleDescriptor::name("main");
     let env = p.get_env(&desc).expect("no env for main");
     assert!(p.hover(&env, 6, 9).is_some()); // Nat
     assert!(p.hover(&env, 6, 19).is_some()); // suc
@@ -895,7 +895,7 @@ fn test_hover_with_imports() {
         from foo import Foo, bar         // line 1
         "#},
     );
-    let desc = ModuleDescriptor::Name("main".to_string());
+    let desc = ModuleDescriptor::name("main");
     let env = p.get_env(&desc).expect("no env for main");
     assert!(p.hover(&env, 1, 2).is_none()); // from
     assert!(p.hover(&env, 1, 7).is_some()); // foo
@@ -1130,7 +1130,7 @@ fn test_hover_method_call() {
     "#},
     );
     p.expect_ok("main");
-    let desc = ModuleDescriptor::Name("main".to_string());
+    let desc = ModuleDescriptor::name("main");
     let env = p.get_env(&desc).expect("no env for main");
 
     // Test hovering over the method name in method call
@@ -1198,7 +1198,7 @@ fn test_hover_typeclass_method_with_doc_comment() {
     "#},
     );
     p.expect_ok("main");
-    let desc = ModuleDescriptor::Name("main".to_string());
+    let desc = ModuleDescriptor::name("main");
     let env = p.get_env(&desc).expect("no env for main");
 
     // Test hovering over the typeclass method name in method call
@@ -1301,7 +1301,7 @@ fn test_doc_comment_lookup() {
     p.expect_ok("main");
 
     // Get the main environment
-    let main_descriptor = crate::module::ModuleDescriptor::Name("main".to_string());
+    let main_descriptor = crate::module::ModuleDescriptor::name("main");
     let main_env = p.get_env(&main_descriptor).unwrap();
 
     // Check Foo
