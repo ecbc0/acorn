@@ -252,6 +252,25 @@ impl CodeGenerator<'_> {
         Ok((definitions, codes))
     }
 
+    /// Returns (definitions, code) where definitions are let statements that define
+    /// arbitrary variables and skolems, and code is the actual clause content.
+    pub fn concrete_clauses_to_code(
+        &mut self,
+        clauses: &[Clause],
+        normalizer: &Normalizer,
+    ) -> Result<(Vec<String>, Vec<String>)> {
+        let mut defs = vec![];
+        let mut codes = vec![];
+        for clause in clauses {
+            let (subdefs, subcodes) = self.concrete_clause_to_code(clause, normalizer)?;
+            defs.extend(subdefs);
+            codes.extend(subcodes);
+        }
+        defs.sort();
+        codes.sort();
+        Ok((defs, codes))
+    }
+
     fn type_to_code(&mut self, acorn_type: &AcornType) -> Result<String> {
         let expr = self.type_to_expr(acorn_type)?;
         Ok(expr.to_string())

@@ -756,19 +756,17 @@ impl<'a> Proof<'a> {
                 let Some(cs) = concrete_steps.remove(&concrete_id) else {
                     continue;
                 };
-                for clause in cs.clauses() {
-                    let (definitions, codes) =
-                        generator.concrete_clause_to_code(&clause, self.normalizer)?;
-                    // Collect all skolem definitions
-                    for def in definitions {
-                        if !skolem_definitions.contains(&def) {
-                            skolem_definitions.push(def);
-                        }
+                let (definitions, codes) =
+                    generator.concrete_clauses_to_code(&cs.clauses(), self.normalizer)?;
+                // Collect all skolem definitions
+                for def in definitions {
+                    if !skolem_definitions.contains(&def) {
+                        skolem_definitions.push(def);
                     }
-                    // Skip the actual clause codes from concrete assumptions
-                    for code in codes {
-                        skip_code.insert(code);
-                    }
+                }
+                // Skip the actual clause codes from concrete assumptions
+                for code in codes {
+                    skip_code.insert(code);
                 }
             }
         }
