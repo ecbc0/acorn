@@ -32,7 +32,7 @@
       "name": "keyword.constant"
     },
     {
-      "match": "\\bself\\b",
+      "match": "\\b(self|lib)\\b",
       "name": "variable.language"
     },
     {
