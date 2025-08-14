@@ -280,7 +280,7 @@ impl CodeGenerator<'_> {
         Ok(Self::marked(format!("type {}", code)))
     }
 
-    /// Given a constant instance, find an expression that refers to it.
+    /// Given a constant instance, create an expression that refers to it.
     /// This does *not* include the parameters.
     fn const_to_expr(&self, ci: &ConstantInstance) -> Result<Expression> {
         if ci.name.is_skolem() {
@@ -328,7 +328,7 @@ impl CodeGenerator<'_> {
                     Expression::generate_identifier(&tc.name),
                     Expression::generate_identifier(attr),
                 ),
-                ConstantName::Skolem(i) => Expression::generate_identifier(&format!("s{}", i)),
+                ConstantName::Skolem(_) => panic!("control should not get here"),
             });
         }
 
@@ -370,18 +370,12 @@ impl CodeGenerator<'_> {
                 match &ci.name {
                     ConstantName::Unqualified(_, name) => Ok(module.add_dot_str(name)),
                     ConstantName::DatatypeAttribute(datatype, attr) => {
-                        let parts: Vec<&str> = vec![module_name, &datatype.name, attr];
-                        Ok(Expression::generate_identifier_chain(&parts))
+                        Ok(module.add_dot_str(&datatype.name).add_dot_str(attr))
                     }
                     ConstantName::TypeclassAttribute(tc, attr) => {
-                        let parts: Vec<&str> = vec![module_name, &tc.name, attr];
-                        Ok(Expression::generate_identifier_chain(&parts))
+                        Ok(module.add_dot_str(&tc.name).add_dot_str(attr))
                     }
-                    ConstantName::Skolem(i) => {
-                        let skolem_name = format!("s{}", i);
-                        let parts: Vec<&str> = vec![module_name, &skolem_name];
-                        Ok(Expression::generate_identifier_chain(&parts))
-                    }
+                    ConstantName::Skolem(_) => panic!("control should not get here"),
                 }
             }
             None => Err(Error::UnimportedModule(
