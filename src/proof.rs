@@ -717,20 +717,20 @@ impl<'a> Proof<'a> {
 
         // Construct the concrete clauses
         let mut concrete_clauses: HashMap<ConcreteStepId, BTreeSet<Clause>> = HashMap::new();
-        for (concrete_id, mut concrete_step) in concrete_steps {
+        for (concrete_id, concrete_step) in concrete_steps.iter_mut() {
             let generic_clause = match concrete_id {
                 ConcreteStepId::ProofStep(ps_id) => {
-                    if ps_id == ProofStepId::Final {
+                    if *ps_id == ProofStepId::Final {
                         continue;
                     }
-                    self.get_clause(ps_id)?.clone()
+                    self.get_clause(*ps_id)?.clone()
                 }
                 ConcreteStepId::Assumption(ps_id) => {
                     // Find the assumption info for this proof step
                     let Some(assumption_step) = self
                         .all_steps
                         .iter()
-                        .find(|(id, _)| *id == ps_id)
+                        .find(|(id, _)| *id == *ps_id)
                         .map(|(_, step)| step)
                     else {
                         return Err(Error::internal("could not find step for assumption"));
@@ -743,10 +743,11 @@ impl<'a> Proof<'a> {
                 }
             };
 
-            for var_map in concrete_step.var_maps {
+            // TODO: stop it
+            for var_map in concrete_step.var_maps.clone() {
                 let concrete = var_map.specialize_clause(&generic_clause);
                 concrete_clauses
-                    .entry(concrete_id)
+                    .entry(*concrete_id)
                     .or_default()
                     .insert(concrete);
             }
@@ -762,10 +763,10 @@ impl<'a> Proof<'a> {
         for (ps_id, step) in &self.all_steps {
             let concrete_id = ConcreteStepId::ProofStep(*ps_id);
             if step.rule.is_assumption() && !step.clause.has_any_variable() {
-                let Some(clauses) = concrete_clauses.remove(&concrete_id) else {
+                let Some(cs) = concrete_steps.remove(&concrete_id) else {
                     continue;
                 };
-                for clause in clauses {
+                for clause in cs.clauses() {
                     let (definitions, codes) =
                         generator.concrete_clause_to_code(&clause, self.normalizer)?;
                     // Collect all skolem definitions
@@ -786,10 +787,10 @@ impl<'a> Proof<'a> {
         let mut answer = skolem_definitions;
         for (ps_id, _) in &self.all_steps {
             for concrete_id in concrete_ids_for(*ps_id) {
-                let Some(clauses) = concrete_clauses.remove(&concrete_id) else {
+                let Some(cs) = concrete_steps.remove(&concrete_id) else {
                     continue;
                 };
-                for clause in clauses.into_iter().rev() {
+                for clause in cs.clauses().into_iter().rev() {
                     let (definitions, codes) =
                         generator.concrete_clause_to_code(&clause, self.normalizer)?;
                     // Add any new definitions
