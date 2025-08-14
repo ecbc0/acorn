@@ -73,11 +73,13 @@ impl CodeGenerator<'_> {
         }
 
         // Reference this type via referencing the imported module
-        if let Some(module_name) = self.bindings.get_local_name_for_module_id(datatype.module_id) {
-            return Ok(Expression::generate_identifier_chain(&[
-                module_name,
-                &datatype.name,
-            ]));
+        if let Some(module_info) = self.bindings.get_module_info(datatype.module_id) {
+            if let Some(module_name) = &module_info.local_name {
+                return Ok(Expression::generate_identifier_chain(&[
+                    module_name,
+                    &datatype.name,
+                ]));
+            }
         }
         Err(Error::unnamed_type(&datatype))
     }
@@ -360,7 +362,7 @@ impl CodeGenerator<'_> {
         }
 
         // Refer to this constant using its module
-        match self.bindings.get_local_name_for_module_id(ci.name.module_id()) {
+        match self.bindings.get_module_info(ci.name.module_id()).and_then(|info| info.local_name.as_ref()) {
             Some(module_name) => {
                 let module = Expression::generate_identifier(module_name);
                 match &ci.name {

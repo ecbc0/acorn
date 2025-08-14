@@ -272,14 +272,8 @@ impl BindingMap {
         self.name_to_module.get(name).copied()
     }
 
-    pub fn get_local_name_for_module_id(&self, module_id: ModuleId) -> Option<&String> {
-        self.module_info
-            .get(&module_id)
-            .and_then(|info| info.local_name.as_ref())
-    }
-
-    pub fn get_full_name_for_module_id(&self, module_id: ModuleId) -> Option<&Vec<String>> {
-        self.module_info.get(&module_id).map(|info| &info.full_name)
+    pub fn get_module_info(&self, module_id: ModuleId) -> Option<&ModuleInfo> {
+        self.module_info.get(&module_id)
     }
 
     /// Just use this for testing.
