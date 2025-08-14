@@ -1870,3 +1870,55 @@ fn test_concrete_proof_using_unimported_function() {
         ]
     );
 }
+
+#[test]
+fn test_concrete_proof_list_contains() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/list.ac",
+        r#"
+        inductive List<T> {
+            nil
+            cons(T, List<T>)
+        }
+
+        attributes List<T> {
+            define contains(self, elem: T) -> Bool {
+                match self {
+                    List.nil {
+                        false
+                    }
+                    List.cons(head, tail) {
+                        if head = elem {
+                            true
+                        } else {
+                            tail.contains(elem)
+                        }
+                    }
+                }
+            }
+        }
+        "#,
+    );
+
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        from list import List
+
+        define finite_constraint<T>(contains: T -> Bool) -> Bool {
+            exists(superset: List<T>) {
+                forall(x: T) {
+                    contains(x) implies superset.contains(x)
+                }
+            }
+        }
+
+        theorem goal<T>(ts: List<T>) {
+            finite_constraint(ts.contains)
+        }
+        "#,
+    );
+
+    prove_concrete(&mut p, "main", "goal");
+}
