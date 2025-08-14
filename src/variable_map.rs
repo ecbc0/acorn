@@ -120,6 +120,8 @@ impl VariableMap {
         self.map.push(None);
     }
 
+    /// This does not normalize.
+    /// Unmapped variables are kept as-is.
     fn specialize_term(&self, term: &Term) -> Term {
         // First apply to the head
         let mut answer = match &term.head {
@@ -148,6 +150,8 @@ impl VariableMap {
         answer
     }
 
+    /// This does not normalize.
+    /// Unmapped variables are kept as-is.
     fn specialize_literal(&self, literal: &Literal) -> Literal {
         Literal::new(
             literal.positive,
@@ -156,7 +160,8 @@ impl VariableMap {
         )
     }
 
-    /// This does not normalize the clause.
+    /// This does not normalize.
+    /// Unmapped variables are kept as-is.
     pub fn specialize_clause(&self, clause: &Clause) -> Clause {
         let literals = clause
             .literals
