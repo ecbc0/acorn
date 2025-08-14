@@ -677,6 +677,13 @@ impl Default for ConcreteStep {
 }
 
 impl ConcreteStep {
+    fn new(generic: Clause, var_map: VariableMap) -> Self {
+        ConcreteStep {
+            generic: Some(generic),
+            var_maps: HashSet::from([var_map]),
+        }
+    }
+
     fn clauses(&self) -> Vec<Clause> {
         let Some(generic) = &self.generic else {
             return Vec::new();
@@ -742,6 +749,15 @@ impl<'a> Proof<'a> {
                 }
             };
 
+            if let Some(existing) = &concrete_step.generic {
+                // TODO: stop doing this
+                if existing != &generic_clause {
+                    return Err(Error::internal(format!(
+                        "conflicting generic clauses for {:?}: {} vs {}",
+                        concrete_id, existing, generic_clause
+                    )));
+                }
+            }
             concrete_step.generic = Some(generic_clause);
         }
 
@@ -797,6 +813,26 @@ impl<'a> Proof<'a> {
         Ok(answer)
     }
 
+    // Adds a var map for a non-assumption proof step.
+    fn add_var_map(
+        &self,
+        id: ProofStepId,
+        var_map: VariableMap,
+        concrete_steps: &mut HashMap<ConcreteStepId, ConcreteStep>,
+    ) {
+        let generic = self.get_clause(id).unwrap();
+        match concrete_steps.entry(ConcreteStepId::ProofStep(id)) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                let concrete_step = entry.get_mut();
+                concrete_step.var_maps.insert(var_map);
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                let concrete_step = ConcreteStep::new(generic.clone(), var_map);
+                entry.insert(concrete_step);
+            }
+        }
+    }
+
     // Given a varmap for the conclusion of a proof step, reconstruct varmaps for
     // all of its inputs.
     // The varmaps represent a concrete clause, in the sense that they provide a mapping to specialize
@@ -818,12 +854,7 @@ impl<'a> Proof<'a> {
                 // reconstruction logic.
                 for id in step.rule.premises() {
                     let map = VariableMap::new();
-                    let concrete_id = ConcreteStepId::ProofStep(id);
-                    concrete_steps
-                        .entry(concrete_id)
-                        .or_default()
-                        .var_maps
-                        .insert(map);
+                    self.add_var_map(id, map, concrete_steps);
                 }
                 return Ok(());
             }
