@@ -320,14 +320,12 @@ impl CodeGenerator<'_> {
         if ci.name.module_id() == self.bindings.module_id() {
             return Ok(match &ci.name {
                 ConstantName::Unqualified(_, word) => Expression::generate_identifier(word),
-                ConstantName::DatatypeAttribute(datatype, attr) => Expression::generate_dot(
-                    Expression::generate_identifier(&datatype.name),
-                    Expression::generate_identifier(attr),
-                ),
-                ConstantName::TypeclassAttribute(tc, attr) => Expression::generate_dot(
-                    Expression::generate_identifier(&tc.name),
-                    Expression::generate_identifier(attr),
-                ),
+                ConstantName::DatatypeAttribute(datatype, attr) => {
+                    Expression::generate_identifier(&datatype.name).add_dot_str(attr)
+                }
+                ConstantName::TypeclassAttribute(tc, attr) => {
+                    Expression::generate_identifier(&tc.name).add_dot_str(attr)
+                }
                 ConstantName::Skolem(_) => panic!("control should not get here"),
             });
         }
@@ -347,8 +345,7 @@ impl CodeGenerator<'_> {
             };
             if let Some(alias) = self.bindings.datatype_alias(&datatype) {
                 let lhs = Expression::generate_identifier(alias);
-                let rhs = Expression::generate_identifier(attr);
-                return Ok(Expression::generate_dot(lhs, rhs));
+                return Ok(lhs.add_dot_str(attr));
             }
 
             // Check if this is a typeclass attribute
@@ -358,8 +355,7 @@ impl CodeGenerator<'_> {
             };
             if let Some(alias) = self.bindings.typeclass_alias(&typeclass) {
                 let lhs = Expression::generate_identifier(alias);
-                let rhs = Expression::generate_identifier(attr);
-                return Ok(Expression::generate_dot(lhs, rhs));
+                return Ok(lhs.add_dot_str(attr));
             }
         }
 
