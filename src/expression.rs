@@ -339,6 +339,10 @@ impl Expression {
         Expression::Singleton(TokenType::Identifier.new_token(s))
     }
 
+    pub fn generate_lib() -> Expression {
+        Expression::Singleton(TokenType::Lib.new_token("lib"))
+    }
+
     /// Adds ".name"  to an expression.
     pub fn add_dot_str(self, name: &str) -> Expression {
         Expression::generate_dot(self, Expression::generate_identifier(name))

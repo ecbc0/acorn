@@ -63,12 +63,19 @@ impl CodeGenerator<'_> {
     }
 
     /// Converts a ModuleId to an Expression representing that module.
-    /// For now, this only handles modules with local names.
     fn module_to_expr(&self, module_id: ModuleId) -> Result<Expression> {
-        match self.bindings.get_module_info(module_id).and_then(|info| info.local_name.as_ref()) {
-            Some(local_name) => Ok(Expression::generate_identifier(local_name)),
-            None => Err(Error::UnimportedModule(module_id, format!("module {}", module_id))),
+        let Some(info) = self.bindings.get_module_info(module_id) else {
+            return Err(Error::internal("reference to unreferenceable module"));
+        };
+        if let Some(local_name) = &info.local_name {
+            return Ok(Expression::generate_identifier(local_name));
+        };
+
+        let mut answer = Expression::generate_lib();
+        for part in &info.full_name {
+            answer = answer.add_dot_str(part);
         }
+        Ok(answer)
     }
 
     fn datatype_to_expr(&self, datatype: &Datatype) -> Result<Expression> {

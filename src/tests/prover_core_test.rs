@@ -1817,51 +1817,51 @@ fn test_concrete_proof_with_type_param() {
     prove_concrete(&mut p, "main", "goal");
 }
 
-// #[test]
-// fn test_concrete_proof_using_unimported_function() {
-//     let mut p = Project::new_mock();
-//     p.mock(
-//         "/mock/foo.ac",
-//         r#"
-//         inductive Foo {
-//             foo
-//             bar
-//         }
+#[test]
+fn test_concrete_proof_using_unimported_function() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/foo.ac",
+        r#"
+        inductive Foo {
+            foo
+            bar
+        }
 
-//         let f: Foo -> Bool = axiom
-//         let g: Foo -> Bool = axiom
-//         let h: Foo -> Bool = axiom
+        let f: Foo -> Bool = axiom
+        let g: Foo -> Bool = axiom
+        let h: Foo -> Bool = axiom
 
-//         axiom rule1(x: Foo) {
-//             f(x) implies g(x)
-//         }
+        axiom rule1(x: Foo) {
+            f(x) implies g(x)
+        }
 
-//         axiom rule2(x: Foo) {
-//             g(x) implies h(x)
-//         }
-//         "#,
-//     );
+        axiom rule2(x: Foo) {
+            g(x) implies h(x)
+        }
+        "#,
+    );
 
-//     p.mock(
-//         "/mock/bar.ac",
-//         r#"
-//         from foo import Foo, f, h
-//         "#,
-//     );
+    p.mock(
+        "/mock/bar.ac",
+        r#"
+        from foo import Foo, f, h
+        "#,
+    );
 
-//     p.mock(
-//         "/mock/main.ac",
-//         r#"
-//         from bar import Foo, f, h
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        from bar import Foo, f, h
 
-//         theorem goal {
-//             f(Foo.foo) implies h(Foo.foo)
-//         }
-//         "#,
-//     );
+        theorem goal {
+            f(Foo.foo) implies h(Foo.foo)
+        }
+        "#,
+    );
 
-//     let _c = prove_concrete(&mut p, "main", "goal");
+    let _c = prove_concrete(&mut p, "main", "goal");
 
-//     // TODO: make this be the correct output
-//     // assert_eq!(c, vec!["todo"]);
-// }
+    // TODO: make this be the correct output
+    // assert_eq!(c, vec!["todo"]);
+}
