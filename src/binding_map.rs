@@ -1462,9 +1462,7 @@ impl BindingMap {
                 self.add_type_alias(&name, PotentialType::Unresolved(u.clone()));
                 Ok(entity)
             }
-            NamedEntity::LibNamespace => {
-                Err(name_token.error("cannot import 'lib' directly"))
-            }
+            NamedEntity::LibNamespace => Err(name_token.error("cannot import 'lib' directly")),
         }
     }
 
