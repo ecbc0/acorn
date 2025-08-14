@@ -661,7 +661,7 @@ fn concrete_ids_for(ps_id: ProofStepId) -> [ConcreteStepId; 2] {
 // A concrete version of the proof step that has been reconstructed from the proof.
 struct ConcreteStep {
     // The generic clause for this proof step.
-    generic: Option<Clause>,
+    generic: Clause,
 
     // All of the ways to map the generic variables to concrete ones.
     var_maps: HashSet<VariableMap>,
@@ -670,18 +670,15 @@ struct ConcreteStep {
 impl ConcreteStep {
     fn new(generic: Clause, var_map: VariableMap) -> Self {
         ConcreteStep {
-            generic: Some(generic),
+            generic,
             var_maps: HashSet::from([var_map]),
         }
     }
 
     fn clauses(&self) -> Vec<Clause> {
-        let Some(generic) = &self.generic else {
-            return Vec::new();
-        };
         let mut answer = Vec::new();
         for var_map in &self.var_maps {
-            let specialized = var_map.specialize_clause(generic);
+            let specialized = var_map.specialize_clause(&self.generic);
             answer.push(specialized);
         }
         answer.sort();
@@ -710,40 +707,6 @@ impl<'a> Proof<'a> {
             for var_map in var_maps {
                 self.reconstruct_step(*id, step, var_map, &mut concrete_steps)?;
             }
-        }
-
-        // Find the generic clauses
-        for (concrete_id, concrete_step) in concrete_steps.iter_mut() {
-            let generic_clause = match concrete_id {
-                ConcreteStepId::ProofStep(ps_id) => self.get_clause(*ps_id)?.clone(),
-                ConcreteStepId::Assumption(ps_id) => {
-                    // Find the assumption info for this proof step
-                    let Some(assumption_step) = self
-                        .all_steps
-                        .iter()
-                        .find(|(id, _)| *id == *ps_id)
-                        .map(|(_, step)| step)
-                    else {
-                        return Err(Error::internal("could not find step for assumption"));
-                    };
-
-                    let Rule::Assumption(info) = &assumption_step.rule else {
-                        return Err(Error::internal("assumption has wrong rule"));
-                    };
-                    Clause::new(info.literals.clone())
-                }
-            };
-
-            if let Some(existing) = &concrete_step.generic {
-                // TODO: stop doing this
-                if existing != &generic_clause {
-                    return Err(Error::internal(format!(
-                        "conflicting generic clauses for {:?}: {} vs {}",
-                        concrete_id, existing, generic_clause
-                    )));
-                }
-            }
-            concrete_step.generic = Some(generic_clause);
         }
 
         // Skip the code that comes from concrete assumptions, because we don't need it
