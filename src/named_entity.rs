@@ -20,9 +20,6 @@ pub enum NamedEntity {
 
     // A generic type that we don't know the instantiated type of yet.
     UnresolvedType(UnresolvedType),
-
-    // A special namespace for accessing modules via lib(modulename)
-    LibNamespace,
 }
 
 impl NamedEntity {
@@ -58,7 +55,6 @@ impl NamedEntity {
                 // TODO: should we typecheck?
                 Ok(PotentialValue::Unresolved(u))
             }
-            NamedEntity::LibNamespace => Err(source.error("lib is a namespace, not a value")),
         }
     }
 
@@ -82,7 +78,6 @@ impl NamedEntity {
             NamedEntity::UnresolvedValue(_) => {
                 Err(source.error("name refers to an unresolved value but we expected a type"))
             }
-            NamedEntity::LibNamespace => Err(source.error("lib is a namespace, not a type")),
         }
     }
 }
@@ -107,7 +102,6 @@ impl fmt::Display for NamedEntity {
             NamedEntity::Typeclass(typeclass) => write!(f, "{:?}", typeclass),
             NamedEntity::UnresolvedValue(unresolved) => write!(f, "{:?}", unresolved),
             NamedEntity::UnresolvedType(unresolved) => write!(f, "{:?}", unresolved),
-            NamedEntity::LibNamespace => write!(f, "lib"),
         }
     }
 }

@@ -1975,3 +1975,16 @@ fn test_partial_application() {
     env.add("let add00: Nat -> Nat = add3(zero, zero)");
     env.add("let add00_alt: Nat -> Nat = add0(zero)");
 }
+
+#[test]
+fn test_standalone_lib_is_error() {
+    let mut env = Environment::test();
+    // lib must be used with parentheses
+    env.bad("let x = lib");
+    env.bad("let t: lib = axiom");
+    env.bad("theorem foo { lib }");
+    
+    // lib(foo) would also fail because module foo doesn't exist
+    env.bad("let y = lib(foo)");
+    env.bad("let z = lib(foo).bar");
+}
