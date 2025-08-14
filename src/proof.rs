@@ -802,14 +802,14 @@ impl<'a> Proof<'a> {
     // The varmaps represent a concrete clause, in the sense that they provide a mapping to specialize
     // the clause into something concrete.
     //
-    // Reconstructed varmaps are stored in input_maps.
+    // Reconstructed varmaps are added to concrete_steps.
     // If the step cannot be reconstructed, we return an error.
     fn reconstruct_step(
         &self,
         id: ProofStepId,
         step: &ProofStep,
         conclusion_map: VariableMap,
-        input_maps: &mut HashMap<ConcreteStepId, ConcreteStep>,
+        concrete_steps: &mut HashMap<ConcreteStepId, ConcreteStep>,
     ) -> Result<(), Error> {
         // Some rules we can handle without the traces.
         match &step.rule {
@@ -819,7 +819,7 @@ impl<'a> Proof<'a> {
                 for id in step.rule.premises() {
                     let map = VariableMap::new();
                     let concrete_id = ConcreteStepId::ProofStep(id);
-                    input_maps
+                    concrete_steps
                         .entry(concrete_id)
                         .or_default()
                         .var_maps
@@ -847,7 +847,7 @@ impl<'a> Proof<'a> {
                     traces,
                     &step.clause,
                     conclusion_map,
-                    input_maps,
+                    concrete_steps,
                 )?;
                 let assumption_id = ConcreteStepId::Assumption(id);
                 for var_map in var_maps {
@@ -855,7 +855,7 @@ impl<'a> Proof<'a> {
                         // We don't need to track exact concrete assumptions.
                         continue;
                     }
-                    input_maps
+                    concrete_steps
                         .entry(assumption_id)
                         .or_default()
                         .var_maps
@@ -870,7 +870,7 @@ impl<'a> Proof<'a> {
                     traces,
                     &step.clause,
                     conclusion_map,
-                    input_maps,
+                    concrete_steps,
                 )?;
 
                 // The target is already concrete, and the conclusion has been made concrete through
@@ -906,7 +906,7 @@ impl<'a> Proof<'a> {
 
                     // Report the concrete pattern
                     let map = unifier.into_one_map(pattern_scope);
-                    input_maps
+                    concrete_steps
                         .entry(ConcreteStepId::ProofStep(pattern_id))
                         .or_default()
                         .var_maps
@@ -915,7 +915,7 @@ impl<'a> Proof<'a> {
 
                 // The target is already concrete
                 let map = VariableMap::new();
-                input_maps
+                concrete_steps
                     .entry(ConcreteStepId::ProofStep(target_id))
                     .or_default()
                     .var_maps
@@ -928,7 +928,7 @@ impl<'a> Proof<'a> {
                     traces,
                     &step.clause,
                     conclusion_map,
-                    input_maps,
+                    concrete_steps,
                 )?;
 
                 // Unify the pre-EF and post-EF literals.
@@ -957,7 +957,7 @@ impl<'a> Proof<'a> {
 
                     // Report the concrete base
                     let map = unifier.into_one_map(base_scope);
-                    input_maps
+                    concrete_steps
                         .entry(ConcreteStepId::ProofStep(base_id))
                         .or_default()
                         .var_maps
@@ -971,7 +971,7 @@ impl<'a> Proof<'a> {
                     traces,
                     &step.clause,
                     conclusion_map,
-                    input_maps,
+                    concrete_steps,
                 )?;
 
                 // Unify the pre-ER and post-ER literals.
@@ -1007,7 +1007,7 @@ impl<'a> Proof<'a> {
 
                     // Report the concrete base
                     let map = unifier.into_one_map(base_scope);
-                    input_maps
+                    concrete_steps
                         .entry(ConcreteStepId::ProofStep(base_id))
                         .or_default()
                         .var_maps
@@ -1021,7 +1021,7 @@ impl<'a> Proof<'a> {
                     traces,
                     &step.clause,
                     conclusion_map,
-                    input_maps,
+                    concrete_steps,
                 )?;
 
                 // Unify the pre-FE and post-FE literals.
@@ -1064,7 +1064,7 @@ impl<'a> Proof<'a> {
 
                     // Report the concrete base
                     let map = unifier.into_one_map(base_scope);
-                    input_maps
+                    concrete_steps
                         .entry(ConcreteStepId::ProofStep(base_id))
                         .or_default()
                         .var_maps
@@ -1079,10 +1079,10 @@ impl<'a> Proof<'a> {
                     traces,
                     &step.clause,
                     conclusion_map,
-                    input_maps,
+                    concrete_steps,
                 )?;
                 for map in var_maps {
-                    input_maps
+                    concrete_steps
                         .entry(ConcreteStepId::ProofStep(long_id))
                         .or_default()
                         .var_maps
@@ -1097,10 +1097,10 @@ impl<'a> Proof<'a> {
                     traces,
                     &step.clause,
                     conclusion_map,
-                    input_maps,
+                    concrete_steps,
                 )?;
                 for map in var_maps {
-                    input_maps
+                    concrete_steps
                         .entry(ConcreteStepId::ProofStep(pattern_id))
                         .or_default()
                         .var_maps
