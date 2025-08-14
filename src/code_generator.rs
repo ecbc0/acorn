@@ -269,6 +269,17 @@ impl CodeGenerator<'_> {
         Ok((defs, codes))
     }
 
+    /// Converts a ConcreteStep to code.
+    /// Returns (definitions, code) where definitions are let statements that define
+    /// arbitrary variables and skolems, and code is the actual clause content.
+    pub fn concrete_step_to_code(
+        &mut self,
+        step: &crate::proof::ConcreteStep,
+        normalizer: &Normalizer,
+    ) -> Result<(Vec<String>, Vec<String>)> {
+        self.concrete_clauses_to_code(&step.clauses(), normalizer)
+    }
+
     fn type_to_code(&mut self, acorn_type: &AcornType) -> Result<String> {
         let expr = self.type_to_expr(acorn_type)?;
         Ok(expr.to_string())

@@ -659,12 +659,12 @@ fn concrete_ids_for(ps_id: ProofStepId) -> [ConcreteStepId; 2] {
 }
 
 // A concrete version of the proof step that has been reconstructed from the proof.
-struct ConcreteStep {
+pub struct ConcreteStep {
     // The generic clause for this proof step.
-    generic: Clause,
+    pub generic: Clause,
 
     // All of the ways to map the generic variables to concrete ones.
-    var_maps: HashSet<VariableMap>,
+    pub var_maps: HashSet<VariableMap>,
 }
 
 impl ConcreteStep {
@@ -675,7 +675,7 @@ impl ConcreteStep {
         }
     }
 
-    fn clauses(&self) -> Vec<Clause> {
+    pub fn clauses(&self) -> Vec<Clause> {
         let mut answer = Vec::new();
         for var_map in &self.var_maps {
             let specialized = var_map.specialize_clause(&self.generic);
@@ -720,8 +720,7 @@ impl<'a> Proof<'a> {
                 let Some(cs) = concrete_steps.remove(&concrete_id) else {
                     continue;
                 };
-                let (definitions, codes) =
-                    generator.concrete_clauses_to_code(&cs.clauses(), self.normalizer)?;
+                let (definitions, codes) = generator.concrete_step_to_code(&cs, self.normalizer)?;
                 // Collect all skolem definitions
                 for def in definitions {
                     if !skolem_definitions.contains(&def) {
@@ -742,8 +741,7 @@ impl<'a> Proof<'a> {
                 let Some(cs) = concrete_steps.remove(&concrete_id) else {
                     continue;
                 };
-                let (definitions, codes) =
-                    generator.concrete_clauses_to_code(&cs.clauses(), self.normalizer)?;
+                let (definitions, codes) = generator.concrete_step_to_code(&cs, self.normalizer)?;
                 // Add any new definitions
                 for def in definitions {
                     if !answer.contains(&def) {
