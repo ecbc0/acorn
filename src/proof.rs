@@ -660,7 +660,7 @@ fn concrete_ids_for(ps_id: ProofStepId) -> [ConcreteStepId; 2] {
 
 impl<'a> Proof<'a> {
     /// Create the concrete proof.
-    pub fn make_concrete(&mut self, bindings: &BindingMap) -> Result<Vec<String>, Error> {
+    pub fn make_concrete(&self, bindings: &BindingMap) -> Result<Vec<String>, Error> {
         let mut generator = CodeGenerator::new(&bindings);
 
         // First, reconstruct all the steps, working backwards.

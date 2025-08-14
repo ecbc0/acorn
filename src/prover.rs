@@ -641,7 +641,7 @@ impl Prover {
         bindings: &BindingMap,
         print: bool,
     ) -> Result<Vec<String>, Error> {
-        let mut proof = match self.get_uncondensed_proof(false) {
+        let proof = match self.get_uncondensed_proof(false) {
             Some(proof) => proof,
             None => return Err(Error::internal("no proof available")),
         };
