@@ -62,6 +62,15 @@ impl CodeGenerator<'_> {
         })
     }
 
+    /// Converts a ModuleId to an Expression representing that module.
+    /// For now, this only handles modules with local names.
+    fn module_to_expr(&self, module_id: ModuleId) -> Result<Expression> {
+        match self.bindings.get_module_info(module_id).and_then(|info| info.local_name.as_ref()) {
+            Some(local_name) => Ok(Expression::generate_identifier(local_name)),
+            None => Err(Error::UnimportedModule(module_id, format!("module {}", module_id))),
+        }
+    }
+
     fn datatype_to_expr(&self, datatype: &Datatype) -> Result<Expression> {
         if datatype.module_id == self.bindings.module_id() {
             return Ok(Expression::generate_identifier(&datatype.name));
@@ -73,15 +82,8 @@ impl CodeGenerator<'_> {
         }
 
         // Reference this type via referencing the imported module
-        if let Some(module_info) = self.bindings.get_module_info(datatype.module_id) {
-            if let Some(module_name) = &module_info.local_name {
-                return Ok(Expression::generate_identifier_chain(&[
-                    module_name,
-                    &datatype.name,
-                ]));
-            }
-        }
-        Err(Error::unnamed_type(&datatype))
+        let module = self.module_to_expr(datatype.module_id)?;
+        Ok(module.add_dot_str(&datatype.name))
     }
 
     /// Returns an error if this type can't be encoded as an expression.
@@ -362,24 +364,16 @@ impl CodeGenerator<'_> {
         }
 
         // Refer to this constant using its module
-        match self.bindings.get_module_info(ci.name.module_id()).and_then(|info| info.local_name.as_ref()) {
-            Some(module_name) => {
-                let module = Expression::generate_identifier(module_name);
-                match &ci.name {
-                    ConstantName::Unqualified(_, name) => Ok(module.add_dot_str(name)),
-                    ConstantName::DatatypeAttribute(datatype, attr) => {
-                        Ok(module.add_dot_str(&datatype.name).add_dot_str(attr))
-                    }
-                    ConstantName::TypeclassAttribute(tc, attr) => {
-                        Ok(module.add_dot_str(&tc.name).add_dot_str(attr))
-                    }
-                    ConstantName::Skolem(_) => panic!("control should not get here"),
-                }
+        let module = self.module_to_expr(ci.name.module_id())?;
+        match &ci.name {
+            ConstantName::Unqualified(_, name) => Ok(module.add_dot_str(name)),
+            ConstantName::DatatypeAttribute(datatype, attr) => {
+                Ok(module.add_dot_str(&datatype.name).add_dot_str(attr))
             }
-            None => Err(Error::UnimportedModule(
-                ci.name.module_id(),
-                ci.name.to_string(),
-            )),
+            ConstantName::TypeclassAttribute(tc, attr) => {
+                Ok(module.add_dot_str(&tc.name).add_dot_str(attr))
+            }
+            ConstantName::Skolem(_) => panic!("control should not get here"),
         }
     }
 
