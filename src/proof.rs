@@ -667,15 +667,6 @@ struct ConcreteStep {
     var_maps: HashSet<VariableMap>,
 }
 
-impl Default for ConcreteStep {
-    fn default() -> Self {
-        ConcreteStep {
-            generic: None,
-            var_maps: HashSet::new(),
-        }
-    }
-}
-
 impl ConcreteStep {
     fn new(generic: Clause, var_map: VariableMap) -> Self {
         ConcreteStep {
@@ -880,11 +871,17 @@ impl<'a> Proof<'a> {
                         // We don't need to track exact concrete assumptions.
                         continue;
                     }
-                    concrete_steps
-                        .entry(assumption_id)
-                        .or_default()
-                        .var_maps
-                        .insert(var_map);
+                    match concrete_steps.entry(assumption_id) {
+                        std::collections::hash_map::Entry::Occupied(mut entry) => {
+                            let concrete_step = entry.get_mut();
+                            concrete_step.var_maps.insert(var_map);
+                        }
+                        std::collections::hash_map::Entry::Vacant(entry) => {
+                            let generic = Clause::new(info.literals.clone());
+                            let concrete_step = ConcreteStep::new(generic, var_map);
+                            entry.insert(concrete_step);
+                        }
+                    }
                 }
             }
             Rule::Rewrite(info) => {
@@ -1198,12 +1195,7 @@ impl<'a> Proof<'a> {
                     scope
                 ))
             })?;
-            let concrete_id = ConcreteStepId::ProofStep(*step_id);
-            simp_maps
-                .entry(concrete_id)
-                .or_default()
-                .var_maps
-                .insert(map);
+            self.add_var_map(*step_id, map, simp_maps);
         }
 
         Ok(answer)
