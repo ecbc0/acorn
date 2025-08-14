@@ -2033,8 +2033,9 @@ impl Environment {
                 ));
             }
             Some(bindings) => {
+                let full_name_vec = is.components.iter().map(|t| t.text().to_string()).collect();
                 self.bindings
-                    .import_module(local_name, &bindings, &statement.first_token)?;
+                    .import_module(local_name, full_name_vec, &bindings, &statement.first_token)?;
             }
         }
 

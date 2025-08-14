@@ -70,8 +70,8 @@ pub struct BindingMap {
     /// It's important that these are in alphabetical order, so that dependency hashes are consistent.
     name_to_module: BTreeMap<String, ModuleId>,
 
-    /// The local name for imported modules.
-    module_to_name: HashMap<ModuleId, String>,
+    /// Information about imported modules.
+    module_info: HashMap<ModuleId, ModuleInfo>,
 
     /// The default data type to use for numeric literals.
     numerals: Option<Datatype>,
@@ -94,7 +94,7 @@ impl BindingMap {
             unqualified: BTreeMap::new(),
             constant_to_alias: HashMap::new(),
             name_to_module: BTreeMap::new(),
-            module_to_name: HashMap::new(),
+            module_info: HashMap::new(),
             numerals: None,
             instance_attr_defs: HashMap::new(),
             datatype_defs: HashMap::new(),
@@ -272,8 +272,10 @@ impl BindingMap {
         self.name_to_module.get(name).copied()
     }
 
-    pub fn get_name_for_module_id(&self, module_id: ModuleId) -> Option<&String> {
-        self.module_to_name.get(&module_id)
+    pub fn get_local_name_for_module_id(&self, module_id: ModuleId) -> Option<&String> {
+        self.module_info
+            .get(&module_id)
+            .map(|info| &info.local_name)
     }
 
     /// Just use this for testing.
@@ -1148,19 +1150,23 @@ impl BindingMap {
     /// Also copy over all the typeclass_defs from the module's bindings.
     pub fn import_module(
         &mut self,
-        name: &str,
+        local_name: &str,
+        full_name: Vec<String>,
         bindings: &BindingMap,
         source: &dyn ErrorSource,
     ) -> compilation::Result<()> {
         if self
             .name_to_module
-            .insert(name.to_string(), bindings.module_id)
+            .insert(local_name.to_string(), bindings.module_id)
             .is_some()
         {
-            return Err(source.error(&format!("name {} is already bound", name)));
+            return Err(source.error(&format!("name {} is already bound", local_name)));
         }
-        self.module_to_name
-            .insert(bindings.module_id, name.to_string());
+        let module_info = ModuleInfo {
+            local_name: local_name.to_string(),
+            full_name,
+        };
+        self.module_info.insert(bindings.module_id, module_info);
 
         // Copy over the datatype info.
         for (datatype, imported_info) in bindings.datatype_defs.iter() {
@@ -2026,4 +2032,13 @@ impl TypeclassRegistry for BindingMap {
             false
         }
     }
+}
+
+#[derive(Clone)]
+pub struct ModuleInfo {
+    /// The local name of the module.
+    pub local_name: String,
+
+    /// The import chain used in the module descriptor.
+    pub full_name: Vec<String>,
 }
