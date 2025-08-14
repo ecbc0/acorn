@@ -642,10 +642,10 @@ impl<'a> Proof<'a> {
 // Each step in the ConcreteProof is associated with a ConcreteStepId.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ConcreteStepId {
-    // This step matches the output of a proof step.
+    // This concrete step matches the *output* of a proof step.
     ProofStep(ProofStepId),
 
-    // This concrete step matches an initial assumption.
+    // This concrete step matches the *input* of an assumption.
     // The assumption is a proof step, but its output is simplified, and this represents
     // the original assumption.
     Assumption(ProofStepId),
