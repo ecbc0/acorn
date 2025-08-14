@@ -909,7 +909,7 @@ fn test_lib_keyword() {
             from foo import bar
 
             theorem goal {
-                bar = lib.foo.bar
+                bar = lib(foo).bar
             }
         "#,
     );
@@ -1864,9 +1864,9 @@ fn test_concrete_proof_using_unimported_function() {
     assert_eq!(
         c,
         vec![
-            "not lib.foo.g(Foo.foo) or h(Foo.foo)",
-            "not lib.foo.g(Foo.foo)",
-            "not f(Foo.foo) or lib.foo.g(Foo.foo)"
+            "not lib(foo).g(Foo.foo) or h(Foo.foo)",
+            "not lib(foo).g(Foo.foo)",
+            "not f(Foo.foo) or lib(foo).g(Foo.foo)"
         ]
     );
 }

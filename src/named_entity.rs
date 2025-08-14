@@ -21,7 +21,7 @@ pub enum NamedEntity {
     // A generic type that we don't know the instantiated type of yet.
     UnresolvedType(UnresolvedType),
 
-    // A special namespace for accessing modules via lib.modulename
+    // A special namespace for accessing modules via lib(modulename)
     LibNamespace,
 }
 

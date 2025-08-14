@@ -71,11 +71,20 @@ impl CodeGenerator<'_> {
             return Ok(Expression::generate_identifier(local_name));
         };
 
-        let mut answer = Expression::generate_lib();
-        for part in &info.full_name {
-            answer = answer.add_dot_str(part);
-        }
-        Ok(answer)
+        // Generate lib(module) syntax
+        // Build the dot-separated module path expression
+        let parts: Vec<&str> = info.full_name.iter().map(|s| s.as_str()).collect();
+        let path_expr = Expression::generate_identifier_chain(&parts);
+        let lib_expr = Expression::generate_lib();
+        let args_expr = Expression::Grouping(
+            TokenType::LeftParen.new_token("("),
+            Box::new(path_expr),
+            TokenType::RightParen.new_token(")"),
+        );
+        Ok(Expression::Concatenation(
+            Box::new(lib_expr),
+            Box::new(args_expr),
+        ))
     }
 
     fn datatype_to_expr(&self, datatype: &Datatype) -> Result<Expression> {

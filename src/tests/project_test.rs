@@ -301,9 +301,7 @@ fn test_completions() {
         }
         "#,
     );
-    let env = p
-        .get_env(&ModuleDescriptor::name("main"))
-        .unwrap();
+    let env = p.get_env(&ModuleDescriptor::name("main")).unwrap();
 
     // Make sure the indexes are what we expect
     assert_eq!(env.get_line_type(0), Some(LineType::Empty));
@@ -1105,6 +1103,28 @@ fn test_deep_required_attribute_lookup() {
         "#,
     );
     p.expect_ok("subgroup");
+}
+
+#[test]
+fn test_deep_lib() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/foo/bar.ac",
+        r#"
+        let baz: Bool = false
+    "#,
+    );
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        from foo.bar import baz
+
+        theorem goal {
+            baz = lib(foo.bar).baz
+        }
+        "#,
+    );
+    p.expect_ok("main");
 }
 
 #[test]

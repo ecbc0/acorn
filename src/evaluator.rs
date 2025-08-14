@@ -643,6 +643,34 @@ impl<'a> Evaluator<'a> {
         answer
     }
 
+    /// Extract a module name from an expression like foo.bar.baz
+    /// Returns the module name as a string like "foo.bar.baz"
+    fn extract_module_name(&self, expression: &Expression) -> compilation::Result<String> {
+        match expression {
+            Expression::Singleton(token) => {
+                if token.token_type == TokenType::Identifier {
+                    Ok(token.text().to_string())
+                } else {
+                    Err(token.error("expected a module name"))
+                }
+            }
+            Expression::Binary(left, op, right) => {
+                if op.token_type != TokenType::Dot {
+                    return Err(op.error("expected a dot-separated module path"));
+                }
+                let left_name = self.extract_module_name(left)?;
+                let right_name = match right.as_ref() {
+                    Expression::Singleton(token) if token.token_type == TokenType::Identifier => {
+                        token.text()
+                    }
+                    _ => return Err(right.error("expected an identifier after dot")),
+                };
+                Ok(format!("{}.{}", left_name, right_name))
+            }
+            _ => Err(expression.error("expected a module path")),
+        }
+    }
+
     /// Evaluates an expression that could represent any sort of named entity.
     /// It could be a type, a value, or a module.
     fn evaluate_entity(
@@ -653,6 +681,31 @@ impl<'a> Evaluator<'a> {
         // Handle a plain old name
         if let Expression::Singleton(token) = expression {
             return self.evaluate_name(token, stack, None);
+        }
+
+        // Special case: lib(module) syntax - always returns a module
+        if let Expression::Concatenation(function_expr, args_expr) = expression {
+            if let Expression::Singleton(token) = function_expr.as_ref() {
+                if token.token_type == TokenType::Lib {
+                    // lib() is special syntax for accessing modules
+                    if let Expression::Grouping(_, module_expr, _) = args_expr.as_ref() {
+                        // Extract the module name and return the module
+                        let module_name = self.extract_module_name(module_expr)?;
+
+                        match self.project.get_module_id_by_name(&module_name) {
+                            Some(module_id) => {
+                                return Ok(NamedEntity::Module(module_id));
+                            }
+                            None => {
+                                return Err(module_expr
+                                    .error(&format!("module '{}' not found", module_name)));
+                            }
+                        }
+                    } else {
+                        return Err(args_expr.error("lib() expects a module path in parentheses"));
+                    }
+                }
+            }
         }
 
         // Dot expressions could be any sort of named entity
