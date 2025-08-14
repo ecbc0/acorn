@@ -894,6 +894,31 @@ fn test_useful_fact_extraction() {
 }
 
 #[test]
+fn test_lib_keyword() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/foo.ac",
+        r#"
+            type Foo: axiom
+            let bar: Foo = axiom
+        "#,
+    );
+    p.mock(
+        "/mock/main.ac",
+        r#"
+            from foo import bar
+
+            theorem goal {
+                bar = lib.foo.bar
+            }
+        "#,
+    );
+
+    let c = prove_concrete(&mut p, "main", "goal");
+    assert_eq!(c, Vec::<String>::new());
+}
+
+#[test]
 fn test_concrete_proof_rewrite_only() {
     let mut p = Project::new_mock();
     p.mock(
