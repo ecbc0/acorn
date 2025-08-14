@@ -730,7 +730,7 @@ impl<'a> Proof<'a> {
                 if let Some(clauses) = concrete_clauses.remove(&concrete_id) {
                     for clause in clauses {
                         let (definitions, codes) =
-                            generator.concrete_clause_to_code(&clause, false, self.normalizer)?;
+                            generator.concrete_clause_to_code(&clause, self.normalizer)?;
                         // Collect all skolem definitions
                         for def in definitions {
                             if !skolem_definitions.contains(&def) {
@@ -755,7 +755,7 @@ impl<'a> Proof<'a> {
                 };
                 for clause in clauses.into_iter().rev() {
                     let (definitions, codes) =
-                        generator.concrete_clause_to_code(&clause, false, self.normalizer)?;
+                        generator.concrete_clause_to_code(&clause, self.normalizer)?;
                     // Add any new definitions
                     for def in definitions {
                         if !answer.contains(&def) {

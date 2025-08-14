@@ -225,15 +225,10 @@ impl CodeGenerator<'_> {
     pub fn concrete_clause_to_code(
         &mut self,
         clause: &Clause,
-        negate: bool,
         normalizer: &Normalizer,
     ) -> Result<(Vec<String>, Vec<String>)> {
         self.add_arbitrary_for_clause(clause);
         let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names));
-
-        if negate {
-            value = value.pretty_negate();
-        }
         let mut definitions = vec![];
 
         // Define the arbitrary variables.
