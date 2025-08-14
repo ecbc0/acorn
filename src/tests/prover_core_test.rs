@@ -1860,6 +1860,8 @@ fn test_concrete_proof_with_type_param() {
 //         "#,
 //     );
 
-//     let c = prove_concrete(&mut p, "main", "goal");
-//     assert_eq!(c, vec!["todo"]);
+//     let _c = prove_concrete(&mut p, "main", "goal");
+
+//     // TODO: make this be the correct output
+//     // assert_eq!(c, vec!["todo"]);
 // }

@@ -339,11 +339,16 @@ impl Expression {
         Expression::Singleton(TokenType::Identifier.new_token(s))
     }
 
+    /// Adds ".name"  to an expression.
+    pub fn add_dot_str(self, name: &str) -> Expression {
+        Expression::generate_dot(self, Expression::generate_identifier(name))
+    }
+
     // Generates a dot-separated chain of identifiers, for the provided parts.
     pub fn generate_identifier_chain(parts: &[&str]) -> Expression {
         let mut answer = Expression::generate_identifier(parts[0]);
         for part in &parts[1..] {
-            answer = Expression::generate_dot(answer, Expression::generate_identifier(part));
+            answer = answer.add_dot_str(part);
         }
         answer
     }
