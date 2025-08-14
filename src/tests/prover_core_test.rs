@@ -1860,8 +1860,13 @@ fn test_concrete_proof_using_unimported_function() {
         "#,
     );
 
-    let _c = prove_concrete(&mut p, "main", "goal");
-
-    // TODO: make this be the correct output
-    // assert_eq!(c, vec!["todo"]);
+    let c = prove_concrete(&mut p, "main", "goal");
+    assert_eq!(
+        c,
+        vec![
+            "not lib.foo.g(Foo.foo) or h(Foo.foo)",
+            "not lib.foo.g(Foo.foo)",
+            "not f(Foo.foo) or lib.foo.g(Foo.foo)"
+        ]
+    );
 }
