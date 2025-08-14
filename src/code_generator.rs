@@ -15,6 +15,7 @@ use crate::normalizer::Normalizer;
 use crate::term::{Term, TypeId};
 use crate::token::TokenType;
 use crate::type_unifier::TypeclassRegistry;
+use crate::variable_map::VariableMap;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -222,14 +223,16 @@ impl CodeGenerator<'_> {
     /// This will generate skolem definitions if necessary.
     /// Appends let statements that define arbitrary variables and skolems to definitions,
     /// and appends the actual clause content to codes.
-    fn concrete_clause_to_code(
+    fn specialization_to_code(
         &mut self,
-        clause: &Clause,
+        generic: &Clause,
+        var_map: &VariableMap,
         normalizer: &Normalizer,
         definitions: &mut Vec<String>,
         codes: &mut Vec<String>,
     ) -> Result<()> {
-        self.add_arbitrary_for_clause(clause);
+        let clause = var_map.specialize_clause(&generic);
+        self.add_arbitrary_for_clause(&clause);
         let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names));
 
         // Define the arbitrary variables.
@@ -262,8 +265,8 @@ impl CodeGenerator<'_> {
     ) -> Result<(Vec<String>, Vec<String>)> {
         let mut defs = vec![];
         let mut codes = vec![];
-        for clause in step.clauses() {
-            self.concrete_clause_to_code(&clause, normalizer, &mut defs, &mut codes)?;
+        for var_map in &step.var_maps {
+            self.specialization_to_code(&step.generic, var_map, normalizer, &mut defs, &mut codes)?;
         }
         defs.sort();
         codes.sort();
