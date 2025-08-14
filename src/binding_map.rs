@@ -275,7 +275,11 @@ impl BindingMap {
     pub fn get_local_name_for_module_id(&self, module_id: ModuleId) -> Option<&String> {
         self.module_info
             .get(&module_id)
-            .map(|info| &info.local_name)
+            .and_then(|info| info.local_name.as_ref())
+    }
+
+    pub fn get_full_name_for_module_id(&self, module_id: ModuleId) -> Option<&Vec<String>> {
+        self.module_info.get(&module_id).map(|info| &info.full_name)
     }
 
     /// Just use this for testing.
@@ -1162,8 +1166,21 @@ impl BindingMap {
         {
             return Err(source.error(&format!("name {} is already bound", local_name)));
         }
+        // Copy over module info from the imported module, but don't override entries with local names
+        for (module_id, imported_info) in bindings.module_info.iter() {
+            if !self.module_info.contains_key(module_id) {
+                // Only add if we don't already have info for this module
+                let info = ModuleInfo {
+                    local_name: None,  // Imported modules from another module don't have local names here
+                    full_name: imported_info.full_name.clone(),
+                };
+                self.module_info.insert(*module_id, info);
+            }
+        }
+        
+        // Now add/update the directly imported module with its local name
         let module_info = ModuleInfo {
-            local_name: local_name.to_string(),
+            local_name: Some(local_name.to_string()),
             full_name,
         };
         self.module_info.insert(bindings.module_id, module_info);
@@ -2036,8 +2053,8 @@ impl TypeclassRegistry for BindingMap {
 
 #[derive(Clone)]
 pub struct ModuleInfo {
-    /// The local name of the module.
-    pub local_name: String,
+    /// The local name of the module, if it has one.
+    pub local_name: Option<String>,
 
     /// The import chain used in the module descriptor.
     pub full_name: Vec<String>,
