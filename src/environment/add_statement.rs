@@ -2001,12 +2001,8 @@ impl Environment {
         let local_name = is.components.last().unwrap().text();
         self.bindings
             .check_unqualified_name_available(local_name, statement)?;
-        let full_name = is
-            .components
-            .iter()
-            .map(|t| t.text())
-            .collect::<Vec<_>>()
-            .join(".");
+        let full_name_vec: Vec<_> = is.components.iter().map(|t| t.text().to_string()).collect();
+        let full_name = full_name_vec.join(".");
         let module_id = match project.load_module_by_name(&full_name) {
             Ok(module_id) => module_id,
             Err(ImportError::NotFound(message)) => {
@@ -2033,9 +2029,12 @@ impl Environment {
                 ));
             }
             Some(bindings) => {
-                let full_name_vec = is.components.iter().map(|t| t.text().to_string()).collect();
-                self.bindings
-                    .import_module(local_name, full_name_vec, &bindings, &statement.first_token)?;
+                self.bindings.import_module(
+                    local_name,
+                    full_name_vec,
+                    &bindings,
+                    &statement.first_token,
+                )?;
             }
         }
 
