@@ -126,18 +126,20 @@ impl VariableMap {
         // First apply to the head
         let mut answer = match &term.head {
             Atom::Variable(i) => {
-                // Expand the head to a full term.
-                // Its term type isn't correct, though.
-                // Note that the variable must be in the map, or the rewrite doesn't make sense.
-                let replacement = self
-                    .get_mapping(*i)
-                    .expect("tried to specialize but a variable is missing");
-                Term::new(
-                    term.get_term_type(),
-                    replacement.head_type,
-                    replacement.head,
-                    replacement.args.clone(),
-                )
+                // Check if we have a mapping for this variable
+                if let Some(replacement) = self.get_mapping(*i) {
+                    // Expand the head to a full term.
+                    // Its term type isn't correct, though.
+                    Term::new(
+                        term.get_term_type(),
+                        replacement.head_type,
+                        replacement.head,
+                        replacement.args.clone(),
+                    )
+                } else {
+                    // Keep the variable as-is if unmapped
+                    Term::new(term.get_term_type(), term.head_type, term.head, Vec::new())
+                }
             }
             head => Term::new(term.get_term_type(), term.head_type, *head, Vec::new()),
         };
@@ -169,29 +171,6 @@ impl VariableMap {
             .map(|lit| self.specialize_literal(lit))
             .collect();
         Clause { literals }
-    }
-
-    fn keep_unmapped_in_term(&mut self, term: &Term) {
-        if let Some(i) = term.atomic_variable() {
-            if !self.has_mapping(i) {
-                self.set(i, term.clone());
-            }
-        } else {
-            for arg in &term.args {
-                self.keep_unmapped_in_term(arg);
-            }
-        }
-    }
-
-    fn keep_unmapped_in_literal(&mut self, literal: &Literal) {
-        self.keep_unmapped_in_term(&literal.left);
-        self.keep_unmapped_in_term(&literal.right);
-    }
-
-    pub fn keep_unmapped_in_clause(&mut self, clause: &Clause) {
-        for literal in &clause.literals {
-            self.keep_unmapped_in_literal(literal);
-        }
     }
 
     pub fn output_has_any_variable(&self) -> bool {

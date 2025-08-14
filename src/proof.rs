@@ -728,8 +728,7 @@ impl<'a> Proof<'a> {
                 }
             };
 
-            for mut var_map in concrete_step.var_maps {
-                var_map.keep_unmapped_in_clause(&generic_clause);
+            for var_map in concrete_step.var_maps {
                 let concrete = var_map.specialize_clause(&generic_clause);
                 concrete_clauses
                     .entry(concrete_id)
