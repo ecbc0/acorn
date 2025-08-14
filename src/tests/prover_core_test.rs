@@ -1875,7 +1875,7 @@ fn test_concrete_proof_using_unimported_function() {
 fn test_concrete_proof_list_contains() {
     let mut p = Project::new_mock();
     p.mock(
-        "/mock/list.ac",
+        "/mock/main.ac",
         r#"
         inductive List<T> {
             nil
@@ -1898,13 +1898,6 @@ fn test_concrete_proof_list_contains() {
                 }
             }
         }
-        "#,
-    );
-
-    p.mock(
-        "/mock/main.ac",
-        r#"
-        from list import List
 
         define finite_constraint<T>(contains: T -> Bool) -> Bool {
             exists(superset: List<T>) {
