@@ -1,10 +1,11 @@
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::vec;
 
 use crate::clause::Clause;
 use crate::literal::Literal;
 use crate::pattern_tree::PatternTree;
-use crate::term::Term;
+use crate::term::{Term, TypeId};
 
 /// The ClauseSet stores general clauses in a way that allows us to quickly check whether
 /// a new clause is a specialization of an existing one.
@@ -12,21 +13,35 @@ use crate::term::Term;
 pub struct ClauseSet {
     /// Stores an id for each clause.
     tree: PatternTree<usize>,
+
+    /// The pattern tree doesn't work right for clauses with applied variables.
+    /// We store them here as a fallback.
+    with_applied_variables: HashMap<ClauseTypeKey, Vec<(Clause, usize)>>,
 }
 
 impl ClauseSet {
     pub fn new() -> ClauseSet {
         ClauseSet {
             tree: PatternTree::new(),
+            with_applied_variables: HashMap::new(),
         }
     }
 
     /// Inserts a clause into the set, reordering it in every way that is KBO-nonincreasing.
     pub fn insert(&mut self, mut clause: Clause, id: usize) {
+        let has_av = clause.has_any_applied_variable();
         let mut generalized = vec![];
         all_generalized_forms(&mut clause, 0, &mut generalized);
         for c in generalized {
             self.tree.insert_clause(&c, id);
+
+            if has_av {
+                let key = ClauseTypeKey::new(&c);
+                self.with_applied_variables
+                    .entry(key)
+                    .or_default()
+                    .push((c, id));
+            }
         }
     }
 
@@ -34,6 +49,23 @@ impl ClauseSet {
         let special = specialized_form(clause);
         let answer = self.tree.find_clause(&special).map(|id| *id);
         answer
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ClauseTypeKey {
+    // The types for each literal in the clause.
+    types: Vec<TypeId>,
+}
+
+impl ClauseTypeKey {
+    pub fn new(clause: &Clause) -> ClauseTypeKey {
+        let types = clause
+            .literals
+            .iter()
+            .map(|lit| lit.left.term_type)
+            .collect();
+        ClauseTypeKey { types }
     }
 }
 
