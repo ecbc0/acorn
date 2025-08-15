@@ -280,6 +280,22 @@ impl Term {
         }
     }
 
+    /// Recursively checks if any term has a variable as its head with arguments applied to it.
+    /// Returns true for terms like x0(a, b) but false for plain variables like x0.
+    pub fn has_any_applied_variable(&self) -> bool {
+        // Check if this term itself is an applied variable
+        if matches!(self.head, Atom::Variable(_)) && !self.args.is_empty() {
+            return true;
+        }
+        // Recursively check arguments
+        for arg in &self.args {
+            if arg.has_any_applied_variable() {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn atoms_for_type(&self, type_id: TypeId) -> Vec<Atom> {
         let mut answer = vec![];
         if self.term_type == type_id {
@@ -673,5 +689,32 @@ mod tests {
         let new_term = Term::parse("c0(x0)");
         let replaced = old_term.replace_at_path(&[1], new_term);
         assert_eq!(replaced, Term::parse("c2(x0, c0(x0))"));
+    }
+
+    #[test]
+    fn test_has_any_applied_variable() {
+        // Plain variable should NOT be considered an applied variable
+        let plain_var = Term::parse("x0");
+        assert!(!plain_var.has_any_applied_variable());
+
+        // Variable applied to arguments SHOULD be considered an applied variable
+        let applied_var = Term::parse("x0(c1, c2)");
+        assert!(applied_var.has_any_applied_variable());
+
+        // Nested applied variable should be detected
+        let nested = Term::parse("c0(x1(c2))");
+        assert!(nested.has_any_applied_variable());
+
+        // Constants with arguments should NOT be considered applied variables
+        let constant_with_args = Term::parse("c0(c1, c2)");
+        assert!(!constant_with_args.has_any_applied_variable());
+
+        // Mix of plain variable and constant should NOT be considered applied variable
+        let mix = Term::parse("c0(x1, c2)");
+        assert!(!mix.has_any_applied_variable());
+
+        // Deeply nested applied variable should be detected
+        let deeply_nested = Term::parse("c0(c1(c2(x3(c4))))");
+        assert!(deeply_nested.has_any_applied_variable());
     }
 }

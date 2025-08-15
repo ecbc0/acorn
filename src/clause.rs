@@ -229,6 +229,10 @@ impl Clause {
         self.literals.iter().any(|x| x.has_any_variable())
     }
 
+    pub fn has_any_applied_variable(&self) -> bool {
+        self.literals.iter().any(|x| x.has_any_applied_variable())
+    }
+
     pub fn has_skolem(&self) -> bool {
         self.literals.iter().any(|x| x.has_skolem())
     }

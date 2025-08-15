@@ -159,6 +159,10 @@ impl Literal {
         self.left.has_any_variable() || self.right.has_any_variable()
     }
 
+    pub fn has_any_applied_variable(&self) -> bool {
+        self.left.has_any_applied_variable() || self.right.has_any_applied_variable()
+    }
+
     pub fn has_local_constant(&self) -> bool {
         self.left.has_local_constant() || self.right.has_local_constant()
     }
