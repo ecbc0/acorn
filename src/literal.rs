@@ -91,6 +91,17 @@ impl Literal {
         }
     }
 
+    /// Extracts the polarity from this literal, returning a positive version and the original polarity.
+    /// If the literal is already positive, returns (self, true).
+    /// If the literal is negative, returns (positive version, false).
+    pub fn extract_polarity(&self) -> (Literal, bool) {
+        if self.positive {
+            (self.clone(), true)
+        } else {
+            (self.negate(), false)
+        }
+    }
+
     pub fn parse(s: &str) -> Literal {
         if s.contains(" != ") {
             let mut parts = s.split(" != ");

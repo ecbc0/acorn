@@ -499,4 +499,22 @@ impl Clause {
             .filter(|clause| !clause.is_tautology())
             .collect()
     }
+
+    /// Extracts the polarity of each literal and returns a new clause with sorted positive literals
+    /// along with a vector of polarities that correspond to each literal in the sorted order.
+    pub fn extract_polarity(&self) -> (Clause, Vec<bool>) {
+        let mut literal_polarity_pairs: Vec<(Literal, bool)> = self
+            .literals
+            .iter()
+            .map(|lit| lit.extract_polarity())
+            .collect();
+
+        // Sort the pairs by the positive literal
+        literal_polarity_pairs.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let (literals, polarities): (Vec<Literal>, Vec<bool>) =
+            literal_polarity_pairs.into_iter().unzip();
+
+        (Clause { literals }, polarities)
+    }
 }
