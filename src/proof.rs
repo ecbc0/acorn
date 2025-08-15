@@ -674,16 +674,6 @@ impl ConcreteStep {
             var_maps: HashSet::from([var_map]),
         }
     }
-
-    pub fn clauses(&self) -> Vec<Clause> {
-        let mut answer = Vec::new();
-        for var_map in &self.var_maps {
-            let specialized = var_map.specialize_clause(&self.generic);
-            answer.push(specialized);
-        }
-        answer.sort();
-        answer
-    }
 }
 
 impl<'a> Proof<'a> {
