@@ -301,6 +301,60 @@ impl CodeGenerator<'_> {
         }
     }
 
+    /// Check if we can infer a function's type parameters from its argument types.
+    /// Returns true if the type parameters can be uniquely determined from the arguments.
+    fn can_infer_type_params_from_args(
+        &self,
+        function: &AcornValue,
+        args: &[AcornValue],
+    ) -> bool {
+        // Get the function's type parameters
+        let params = match function {
+            AcornValue::Constant(c) => &c.params,
+            _ => return true, // Not a generic constant, inference doesn't apply
+        };
+
+        if params.is_empty() {
+            return true; // No parameters to infer
+        }
+
+        // Get the function's expected argument types
+        let function_type = function.get_type();
+        let arg_types = match &function_type {
+            AcornType::Function(ft) => &ft.arg_types,
+            _ => return false, // Not a function type, can't infer
+        };
+
+        // Check if all type parameters appear in the argument types in a way
+        // that allows unambiguous inference
+        for param in params {
+            let mut found_in_args = false;
+            
+            // Check if this parameter appears directly in any argument type
+            for (i, arg_type) in arg_types.iter().enumerate() {
+                if i >= args.len() {
+                    break;
+                }
+                
+                // If the argument type directly matches the parameter, we can infer it
+                if arg_type == param {
+                    found_in_args = true;
+                    break;
+                }
+                
+                // For more complex cases (like the parameter appearing inside a composite type),
+                // we would need more sophisticated analysis. For now, we conservatively
+                // assume we can't infer in those cases.
+            }
+            
+            if !found_in_args {
+                return false; // Can't infer this parameter from arguments
+            }
+        }
+        
+        true
+    }
+
     /// Create a marked-up string to display information for this value.
     pub fn value_to_marked(&mut self, value: &AcornValue) -> Result<MarkedString> {
         let value_code = self.value_to_code(value)?;
@@ -460,12 +514,12 @@ impl CodeGenerator<'_> {
                 }
             }
             AcornValue::Application(fa) => {
-                let mut args = vec![];
+                let mut arg_exprs = vec![];
                 for arg in &fa.args {
                     // We currently never infer the type of arguments from the type of the function.
                     // Inference only goes the other way.
                     // We could improve this at some point.
-                    args.push(self.value_to_expr(arg, false)?);
+                    arg_exprs.push(self.value_to_expr(arg, false)?);
                 }
 
                 // Check if we could replace this with receiver+attribute syntax
@@ -500,45 +554,45 @@ impl CodeGenerator<'_> {
 
                     if use_receiver_syntax {
                         // We can use receiver+attribute syntax
-                        if args.len() == 1 {
+                        if arg_exprs.len() == 1 {
                             // Prefix operators
                             if let Some(op) = TokenType::from_prefix_magic_method_name(&attr) {
-                                return Ok(Expression::generate_unary(op, args.pop().unwrap()));
+                                return Ok(Expression::generate_unary(op, arg_exprs.pop().unwrap()));
                             }
                         }
 
-                        if args.len() == 2 {
+                        if arg_exprs.len() == 2 {
                             // Infix operators
                             if let Some(op) = TokenType::from_infix_magic_method_name(&attr) {
-                                let right = args.pop().unwrap();
-                                let left = args.pop().unwrap();
+                                let right = arg_exprs.pop().unwrap();
+                                let left = arg_exprs.pop().unwrap();
                                 return Ok(Expression::generate_binary(left, op, right));
                             }
 
                             // Long numeric literals
-                            if attr == "read" && args[0].is_number() {
-                                if let Some(digit) = args[1].to_digit() {
-                                    let left = args.remove(0);
+                            if attr == "read" && arg_exprs[0].is_number() {
+                                if let Some(digit) = arg_exprs[1].to_digit() {
+                                    let left = arg_exprs.remove(0);
                                     return Ok(Expression::generate_number(left, digit));
                                 }
                             }
                         }
 
                         // General member functions
-                        let instance = args.remove(0);
+                        let instance = arg_exprs.remove(0);
                         let bound = Expression::generate_binary(
                             instance,
                             TokenType::Dot,
                             Expression::generate_identifier(&attr),
                         );
-                        if args.len() == 0 {
+                        if arg_exprs.len() == 0 {
                             // Like foo.bar
                             return Ok(bound);
                         } else {
                             // Like foo.bar(baz, qux)
                             let applied = Expression::Concatenation(
                                 Box::new(bound),
-                                Box::new(Expression::generate_paren_grouping(args)),
+                                Box::new(Expression::generate_paren_grouping(arg_exprs)),
                             );
                             return Ok(applied);
                         }
@@ -562,13 +616,14 @@ impl CodeGenerator<'_> {
                             true
                         }
                     } else {
-                        true
+                        // For regular functions, check if we can infer type parameters from arguments
+                        self.can_infer_type_params_from_args(&fa.function, &fa.args)
                     }
                 } else {
                     true
                 };
                 let f = self.value_to_expr(&fa.function, inferrable)?;
-                let grouped_args = Expression::generate_paren_grouping(args);
+                let grouped_args = Expression::generate_paren_grouping(arg_exprs);
                 Ok(Expression::Concatenation(
                     Box::new(f),
                     Box::new(grouped_args),
