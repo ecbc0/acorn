@@ -246,9 +246,8 @@ impl CodeGenerator<'_> {
         let skolem_ids = value.find_skolems();
         self.define_skolems(skolem_ids, normalizer, definitions)?;
 
-        let mut subvalues = vec![];
         value = value.replace_skolems(self.bindings.module_id(), &self.skolem_names);
-        value.into_and(&mut subvalues);
+        let subvalues = value.remove_and();
         for subvalue in subvalues {
             codes.push(self.value_to_code(&subvalue)?);
         }
