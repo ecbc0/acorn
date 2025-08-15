@@ -1915,3 +1915,32 @@ fn test_concrete_proof_list_contains() {
 
     prove_concrete(&mut p, "main", "goal");
 }
+
+#[test]
+fn test_concrete_proof_needing_templates() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        typeclass P: Pointed {
+            origin: P
+        }
+
+        define foo<P: Pointed, Q: Pointed>(x: P) -> Q {
+            Q.origin
+        }
+
+        define is_const<T, U>(f: T -> U) -> Bool {
+            forall(x: T, y: T) {
+                f(x) = f(y)
+            }
+        }
+
+        theorem goal<P: Pointed, Q: Pointed> {
+            is_const(foo<P, Q>)
+        }
+        "#,
+    );
+
+    prove_concrete(&mut p, "main", "goal");
+}
