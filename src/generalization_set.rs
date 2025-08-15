@@ -8,10 +8,10 @@ use crate::pattern_tree::PatternTree;
 use crate::term::{Term, TypeId};
 use crate::unifier::Unifier;
 
-/// The ClauseSet stores general clauses in a way that allows us to quickly check whether
+/// The GeneralizationSet stores general clauses in a way that allows us to quickly check whether
 /// a new clause is a specialization of an existing one.
 #[derive(Clone)]
-pub struct ClauseSet {
+pub struct GeneralizationSet {
     /// Stores an id for each clause.
     tree: PatternTree<usize>,
 
@@ -20,9 +20,9 @@ pub struct ClauseSet {
     with_applied_variables: HashMap<ClauseTypeKey, Vec<(Clause, usize)>>,
 }
 
-impl ClauseSet {
-    pub fn new() -> ClauseSet {
-        ClauseSet {
+impl GeneralizationSet {
+    pub fn new() -> GeneralizationSet {
+        GeneralizationSet {
             tree: PatternTree::new(),
             with_applied_variables: HashMap::new(),
         }
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_clause_set_basic_generalization() {
-        let mut clause_set = ClauseSet::new();
+        let mut clause_set = GeneralizationSet::new();
 
         // Insert a general clause: "c0(x0, c1) or c2(c3, x0)"
         let general_clause = Clause::parse("c0(x0, c1) or c2(c3, x0)");
@@ -276,7 +276,7 @@ mod tests {
 
     #[test]
     fn test_clause_set_reordered_literals() {
-        let mut clause_set = ClauseSet::new();
+        let mut clause_set = GeneralizationSet::new();
 
         // Insert a clause with specific order
         let clause = Clause::parse("c0(x0) or c1(c2, x0) or c3(x0, c4)");
@@ -292,7 +292,7 @@ mod tests {
 
     #[test]
     fn test_clause_set_flipped_equality() {
-        let mut clause_set = ClauseSet::new();
+        let mut clause_set = GeneralizationSet::new();
 
         // Insert an equality clause
         let clause = Clause::parse("x0 = c0 or c1(x0)");
@@ -309,7 +309,7 @@ mod tests {
 
     #[test]
     fn test_clause_set_no_generalization() {
-        let mut clause_set = ClauseSet::new();
+        let mut clause_set = GeneralizationSet::new();
 
         // Insert a specific clause
         let clause = Clause::parse("c0(c1, c2) or c3(c4)");
@@ -325,7 +325,7 @@ mod tests {
 
     #[test]
     fn test_clause_set_multiple_variables() {
-        let mut clause_set = ClauseSet::new();
+        let mut clause_set = GeneralizationSet::new();
 
         // Insert a clause with multiple variables
         let clause = Clause::parse("c0(x0, x1) or c1(x1, x0)");
@@ -345,7 +345,7 @@ mod tests {
 
     #[test]
     fn test_clause_set_single_literal() {
-        let mut clause_set = ClauseSet::new();
+        let mut clause_set = GeneralizationSet::new();
 
         // Insert single literal clauses
         let clause1 = Clause::parse("c0(x0, c1)");
@@ -371,7 +371,7 @@ mod tests {
 
     #[test]
     fn test_clause_set_negated_literals() {
-        let mut clause_set = ClauseSet::new();
+        let mut clause_set = GeneralizationSet::new();
 
         // Insert a clause with negated literals
         let clause = Clause::parse("c0 = x0 or x1 != c1");
@@ -392,7 +392,7 @@ mod tests {
 
     #[test]
     fn test_clause_set_no_positive_negative_confusion() {
-        let mut clause_set = ClauseSet::new();
+        let mut clause_set = GeneralizationSet::new();
 
         // Insert a clause with a positive literal
         let positive_clause = Clause::parse("x0 = c0");
@@ -429,7 +429,7 @@ mod tests {
 
     #[test]
     fn test_clause_set_mixed_positive_negative() {
-        let mut clause_set = ClauseSet::new();
+        let mut clause_set = GeneralizationSet::new();
 
         // Insert a complex clause with both positive and negative literals
         // Using "not" for boolean literals and "!=" for inequalities
@@ -454,7 +454,7 @@ mod tests {
 
     #[test]
     fn test_clause_set_all_negative() {
-        let mut clause_set = ClauseSet::new();
+        let mut clause_set = GeneralizationSet::new();
 
         // Insert a simpler clause with only inequality literals
         let clause = Clause::parse("x0 != c0 or x1 != c1 or x0 != x1");
@@ -471,7 +471,7 @@ mod tests {
 
     #[test]
     fn test_clause_set_boolean_negation() {
-        let mut clause_set = ClauseSet::new();
+        let mut clause_set = GeneralizationSet::new();
 
         // Test with boolean negation (not)
         let clause = Clause::parse("not c0(x0) or c1(x0)");
@@ -492,7 +492,7 @@ mod tests {
 
     #[test]
     fn test_clause_set_compound_generalization() {
-        let mut clause_set = ClauseSet::new();
+        let mut clause_set = GeneralizationSet::new();
         let general = Clause::parse("g2(g1, x0) = x0");
         clause_set.insert(general, 1);
         let special = Clause::parse("g2(g1, g2(c2, c3)) = g2(c2, c3)");
@@ -502,7 +502,7 @@ mod tests {
     #[test]
     fn test_clause_set_literal_with_indeterminate_ordering() {
         // Taken from a failing example.
-        let mut clause_set = ClauseSet::new();
+        let mut clause_set = GeneralizationSet::new();
         let general_json = r#"{"literals":[{"positive":true,"left":{"term_type":2,"head_type":6,"head":{"GlobalConstant":12},"args":[{"term_type":2,"head_type":2,"head":{"GlobalConstant":1},"args":[]},{"term_type":2,"head_type":2,"head":{"Variable":0},"args":[]}]},"right":{"term_type":2,"head_type":2,"head":{"Variable":0},"args":[]}}]}"#;
         let general = serde_json::from_str::<Clause>(general_json).unwrap();
         clause_set.insert(general, 1);

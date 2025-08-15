@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::clause::Clause;
-use crate::clause_set::ClauseSet;
+use crate::generalization_set::GeneralizationSet;
 use crate::term_graph::{StepId, TermGraph};
 
 /// The checker quickly checks if a clause can be proven in a single step from known clauses.
@@ -10,7 +10,7 @@ pub struct Checker {
     term_graph: TermGraph,
 
     /// For looking up specializations of clauses with free variables.
-    clause_set: ClauseSet,
+    clause_set: GeneralizationSet,
 
     /// For looking up concrete clauses that are known exactly.
     concrete_long_clauses: HashSet<Clause>,
@@ -25,7 +25,7 @@ impl Checker {
     pub fn new() -> Self {
         Checker {
             term_graph: TermGraph::new(),
-            clause_set: ClauseSet::new(),
+            clause_set: GeneralizationSet::new(),
             concrete_long_clauses: HashSet::new(),
             next_step_id: 0,
             direct_contradiction: false,
