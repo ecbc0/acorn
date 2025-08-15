@@ -302,53 +302,51 @@ impl CodeGenerator<'_> {
     }
 
     /// Check if we can infer a function's type parameters from its argument types.
-    /// Returns true if the type parameters can be uniquely determined from the arguments.
+    /// 
+    /// The key insight: if a function foo<P, Q> takes argument of type P, 
+    /// we can't infer Q from just the argument. So we need explicit parameters.
     fn can_infer_type_params_from_args(
         &self,
         function: &AcornValue,
         args: &[AcornValue],
     ) -> bool {
-        // Get the function's type parameters
-        let params = match function {
-            AcornValue::Constant(c) => &c.params,
+        // Get the constant and its parameters
+        let constant = match function {
+            AcornValue::Constant(c) => c,
             _ => return true, // Not a generic constant, inference doesn't apply
         };
 
-        if params.is_empty() {
+        if constant.params.is_empty() {
             return true; // No parameters to infer
         }
 
-        // Get the function's expected argument types
+        // Get the function type
         let function_type = function.get_type();
-        let arg_types = match &function_type {
-            AcornType::Function(ft) => &ft.arg_types,
+        let fn_type = match &function_type {
+            AcornType::Function(ft) => ft,
             _ => return false, // Not a function type, can't infer
         };
 
-        // Check if all type parameters appear in the argument types in a way
-        // that allows unambiguous inference
-        for param in params {
+        // For each type parameter, check if it appears in the argument types
+        // in a way that would allow inference
+        for param_type in &constant.params {
             let mut found_in_args = false;
             
-            // Check if this parameter appears directly in any argument type
-            for (i, arg_type) in arg_types.iter().enumerate() {
-                if i >= args.len() {
-                    break;
+            // Check each argument type to see if this parameter appears
+            for (i, _arg) in args.iter().enumerate() {
+                if let Some(expected_arg_type) = fn_type.arg_types.get(i) {
+                    // Check if the parameter appears in this argument position
+                    // For simplicity, we just check direct equality
+                    if param_type == expected_arg_type {
+                        found_in_args = true;
+                        break;
+                    }
                 }
-                
-                // If the argument type directly matches the parameter, we can infer it
-                if arg_type == param {
-                    found_in_args = true;
-                    break;
-                }
-                
-                // For more complex cases (like the parameter appearing inside a composite type),
-                // we would need more sophisticated analysis. For now, we conservatively
-                // assume we can't infer in those cases.
             }
             
             if !found_in_args {
-                return false; // Can't infer this parameter from arguments
+                // This parameter doesn't appear in arguments, can't infer
+                return false;
             }
         }
         
