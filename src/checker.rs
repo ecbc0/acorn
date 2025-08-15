@@ -10,7 +10,7 @@ pub struct Checker {
     term_graph: TermGraph,
 
     /// For looking up specializations of clauses with free variables.
-    clause_set: GeneralizationSet,
+    generalization_set: GeneralizationSet,
 
     /// For looking up concrete clauses that are known exactly.
     concrete_long_clauses: HashSet<Clause>,
@@ -25,7 +25,7 @@ impl Checker {
     pub fn new() -> Self {
         Checker {
             term_graph: TermGraph::new(),
-            clause_set: GeneralizationSet::new(),
+            generalization_set: GeneralizationSet::new(),
             concrete_long_clauses: HashSet::new(),
             next_step_id: 0,
             direct_contradiction: false,
@@ -43,10 +43,8 @@ impl Checker {
         self.next_step_id += 1;
 
         if clause.has_any_variable() {
-            // The clause has free variables.
-
-            // The clause set is used to look up specializations.
-            self.clause_set.insert(clause.clone(), step_id);
+            // The clause has free variables, so it can be a generalization.
+            self.generalization_set.insert(clause.clone(), step_id);
 
             // We only need to do equality resolution for clauses with free variables,
             // because resolvable concrete literals would already have been simplified out.
@@ -93,7 +91,7 @@ impl Checker {
 
         // If not found in term graph, check if there's a generalization in the clause set
         if self
-            .clause_set
+            .generalization_set
             .find_generalization(clause.clone())
             .is_some()
         {
