@@ -6,6 +6,7 @@ use crate::clause::Clause;
 use crate::literal::Literal;
 use crate::pattern_tree::PatternTree;
 use crate::term::{Term, TypeId};
+use crate::unifier::Unifier;
 
 /// The ClauseSet stores general clauses in a way that allows us to quickly check whether
 /// a new clause is a specialization of an existing one.
@@ -47,8 +48,20 @@ impl ClauseSet {
 
     pub fn find_generalization(&self, clause: Clause) -> Option<usize> {
         let special = specialized_form(clause);
-        let answer = self.tree.find_clause(&special).map(|id| *id);
-        answer
+        if let Some(id) = self.tree.find_clause(&special) {
+            return Some(*id);
+        }
+
+        // Fall back to checking with_applied_variables
+        let key = ClauseTypeKey::new(&special);
+        if let Some(candidates) = self.with_applied_variables.get(&key) {
+            for (general, id) in candidates {
+                if Unifier::unify_clauses(general, &special) {
+                    return Some(*id);
+                }
+            }
+        }
+        None
     }
 }
 

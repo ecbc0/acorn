@@ -41,6 +41,7 @@ struct Replacement<'a> {
 }
 
 impl Unifier {
+    /// Creates a new unifier with the given number of scopes.
     pub fn new(num_scopes: usize) -> Unifier {
         let mut maps = Vec::with_capacity(num_scopes);
         for _ in 0..num_scopes {
@@ -321,11 +322,11 @@ impl Unifier {
             if var_term.args.len() == 1 && full_term.args.len() > 1 {
                 // We want to unify x0(arg) with f(a1, a2, ...)
                 // This means x0 should map to f(a1, a2, ..., an-1) and arg should unify with an
-                
+
                 // Build the partial application: all of full_term except the last arg
                 let n = full_term.args.len();
-                let partial_args = full_term.args[0..n-1].to_vec();
-                
+                let partial_args = full_term.args[0..n - 1].to_vec();
+
                 // Create the partial application term
                 // Use the head_type of var_term (the variable's type) as the term_type
                 let partial = Term {
@@ -334,14 +335,19 @@ impl Unifier {
                     head: full_term.head,
                     args: partial_args,
                 };
-                
+
                 // Unify the variable with the partial application
                 if !self.unify_variable(var_scope, var_id, full_scope, &partial) {
                     return Some(false);
                 }
-                
+
                 // Unify the argument with the last argument of full_term
-                return Some(self.unify(var_scope, &var_term.args[0], full_scope, &full_term.args[n-1]));
+                return Some(self.unify(
+                    var_scope,
+                    &var_term.args[0],
+                    full_scope,
+                    &full_term.args[n - 1],
+                ));
             }
         }
         None
@@ -365,7 +371,7 @@ impl Unifier {
         if let Some(result) = self.try_unify_partial_application(term1, scope1, term2, scope2) {
             return result;
         }
-        
+
         // Try the symmetric case: term2 with a partial application of term1
         if let Some(result) = self.try_unify_partial_application(term2, scope2, term1, scope1) {
             return result;
@@ -392,7 +398,7 @@ impl Unifier {
         true
     }
 
-    // Doesn't worry about literal sign.
+    /// Doesn't worry about literal sign.
     pub fn unify_literals(
         &mut self,
         scope1: Scope,
@@ -412,6 +418,21 @@ impl Unifier {
         }
     }
 
+    /// Tries to unify a left clause and a right clause.
+    /// Does not reorder anything.
+    pub fn unify_clauses(left: &Clause, right: &Clause) -> bool {
+        if left.literals.len() != right.literals.len() {
+            return false;
+        }
+        let mut unifier = Unifier::new(3);
+        for (lit1, lit2) in left.literals.iter().zip(right.literals.iter()) {
+            if !unifier.unify_literals(Scope::LEFT, lit1, Scope::RIGHT, lit2, false) {
+                return false;
+            }
+        }
+        true
+    }
+
     pub fn assert_unify(&mut self, scope1: Scope, term1: &Term, scope2: Scope, term2: &Term) {
         assert!(
             self.unify(scope1, term1, scope2, term2),
@@ -429,27 +450,27 @@ impl Unifier {
         );
     }
 
-    // Handle superposition into either positive or negative literals. The "SP" and "SN" rules.
-    //
-    // The superposition rule is, given:
-    // s = t   (pm_clause, the paramodulator's clause)
-    // u ?= v  (res_clause, the resolver's clause)
-    //
-    // If 'res_forward' is false, the u ?= v literal is swapped to be v ?= u.
-    //
-    // If s matches a subterm of u, superposition lets you replace the s with t to infer that:
-    //
-    // u[s -> t] ?= v
-    // (after the unifier has been applied to the whole thing)
-    //
-    // Sometimes we refer to s = t as the "paramodulator" and u ?= v as the "resolver".
-    // path describes which subterm of u we're replacing.
-    // s/t and u/v must be in the "right" scope.
-    //
-    // If ?= is =, it's "superposition into positive literals".
-    // If ?= is !=, it's "superposition into negative literals".
-    //
-    // Refer to page 3 of "E: A Brainiac Theorem Prover" for more detail.
+    /// Handle superposition into either positive or negative literals. The "SP" and "SN" rules.
+    ///
+    /// The superposition rule is, given:
+    /// s = t   (pm_clause, the paramodulator's clause)
+    /// u ?= v  (res_clause, the resolver's clause)
+    ///
+    /// If 'res_forward' is false, the u ?= v literal is swapped to be v ?= u.
+    ///
+    /// If s matches a subterm of u, superposition lets you replace the s with t to infer that:
+    ///
+    /// u[s -> t] ?= v
+    /// (after the unifier has been applied to the whole thing)
+    ///
+    /// Sometimes we refer to s = t as the "paramodulator" and u ?= v as the "resolver".
+    /// path describes which subterm of u we're replacing.
+    /// s/t and u/v must be in the "right" scope.
+    ///
+    /// If ?= is =, it's "superposition into positive literals".
+    /// If ?= is !=, it's "superposition into negative literals".
+    ///
+    /// Refer to page 3 of "E: A Brainiac Theorem Prover" for more detail.
     pub fn superpose_literals(
         &mut self,
         t: &Term,
@@ -649,12 +670,12 @@ mod tests {
         // This test reproduces the issue from test_concrete_proof_list_contains
         // We need to unify x0(s5(x0, x1)) with m2(c0, s5(m2(c0), x0))
         // where x0 should map to m2(c0) (a partial application)
-        
+
         // Create terms with proper types
         // For simplicity, let's use type 11 for functions and type 4 for the result
         let x0_var = Term::atom(11, Atom::Variable(0));
         let x1_var = Term::atom(2, Atom::Variable(1));
-        
+
         // s5 is a skolem function that takes two arguments
         let s5_left = Term {
             term_type: 4,
@@ -662,7 +683,7 @@ mod tests {
             head: Atom::Skolem(5),
             args: vec![x0_var.clone(), x1_var.clone()],
         };
-        
+
         // Left side: x0(s5(x0, x1))
         let left_term = Term {
             term_type: 4,
@@ -670,7 +691,7 @@ mod tests {
             head: Atom::Variable(0),
             args: vec![s5_left],
         };
-        
+
         // Right side: m2(c0, s5(m2(c0), x0))
         let c0 = Term::atom(2, Atom::LocalConstant(0));
         let m2_c0 = Term {
@@ -679,30 +700,32 @@ mod tests {
             head: Atom::Monomorph(2),
             args: vec![c0.clone()],
         };
-        
+
         let s5_right = Term {
             term_type: 4,
             head_type: 14,
             head: Atom::Skolem(5),
             args: vec![m2_c0.clone(), Term::atom(2, Atom::Variable(0))],
         };
-        
+
         let right_term = Term {
             term_type: 4,
             head_type: 10,
             head: Atom::Monomorph(2),
             args: vec![c0.clone(), s5_right],
         };
-        
+
         // Try to unify these terms
         let mut u = Unifier::new(3);
-        
-        
+
         let result = u.unify(Scope::LEFT, &left_term, Scope::RIGHT, &right_term);
-        
+
         // This should succeed, with x0 mapping to m2(c0)
-        assert!(result, "Should be able to unify x0(s5(x0, x1)) with m2(c0, s5(m2(c0), x0))");
-        
+        assert!(
+            result,
+            "Should be able to unify x0(s5(x0, x1)) with m2(c0, s5(m2(c0), x0))"
+        );
+
         // Check that x0 maps to m2(c0)
         if result {
             let x0_mapping = u.get_mapping(Scope::LEFT, 0);

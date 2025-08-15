@@ -1871,49 +1871,47 @@ fn test_concrete_proof_using_unimported_function() {
     );
 }
 
-// This relies on matching a partial function application with a variable in a general clause,
-// which doesn't work yet.
-// #[test]
-// fn test_concrete_proof_list_contains() {
-//     let mut p = Project::new_mock();
-//     p.mock(
-//         "/mock/main.ac",
-//         r#"
-//         inductive List<T> {
-//             nil
-//             cons(T, List<T>)
-//         }
+#[test]
+fn test_concrete_proof_list_contains() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        inductive List<T> {
+            nil
+            cons(T, List<T>)
+        }
 
-//         attributes List<T> {
-//             define contains(self, elem: T) -> Bool {
-//                 match self {
-//                     List.nil {
-//                         false
-//                     }
-//                     List.cons(head, tail) {
-//                         if head = elem {
-//                             true
-//                         } else {
-//                             tail.contains(elem)
-//                         }
-//                     }
-//                 }
-//             }
-//         }
+        attributes List<T> {
+            define contains(self, elem: T) -> Bool {
+                match self {
+                    List.nil {
+                        false
+                    }
+                    List.cons(head, tail) {
+                        if head = elem {
+                            true
+                        } else {
+                            tail.contains(elem)
+                        }
+                    }
+                }
+            }
+        }
 
-//         define finite_constraint<T>(contains: T -> Bool) -> Bool {
-//             exists(superset: List<T>) {
-//                 forall(x: T) {
-//                     contains(x) implies superset.contains(x)
-//                 }
-//             }
-//         }
+        define finite_constraint<T>(contains: T -> Bool) -> Bool {
+            exists(superset: List<T>) {
+                forall(x: T) {
+                    contains(x) implies superset.contains(x)
+                }
+            }
+        }
 
-//         theorem goal<T>(ts: List<T>) {
-//             finite_constraint(ts.contains)
-//         }
-//         "#,
-//     );
+        theorem goal<T>(ts: List<T>) {
+            finite_constraint(ts.contains)
+        }
+        "#,
+    );
 
-//     prove_concrete(&mut p, "main", "goal");
-// }
+    prove_concrete(&mut p, "main", "goal");
+}
