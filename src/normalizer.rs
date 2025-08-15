@@ -622,6 +622,11 @@ impl Normalizer {
                 AcornValue::Constant(self.normalization_map.get_monomorph(*i).clone())
             }
             Atom::Variable(i) => {
+                if let Some(map) = arbitrary_names {
+                    if let Some(name) = map.get(&atom_type) {
+                        return AcornValue::constant(name.clone(), vec![], acorn_type);
+                    }
+                }
                 let index = *i as usize;
                 if index < var_types.len() {
                     assert_eq!(var_types[index], acorn_type);
@@ -629,11 +634,6 @@ impl Normalizer {
                     var_types.push(acorn_type.clone());
                 } else {
                     panic!("variable index out of order");
-                }
-                if let Some(map) = arbitrary_names {
-                    if let Some(name) = map.get(&atom_type) {
-                        return AcornValue::constant(name.clone(), vec![], acorn_type);
-                    }
                 }
                 AcornValue::Variable(*i, acorn_type)
             }
@@ -711,11 +711,7 @@ impl Normalizer {
             ));
         }
         let disjunction = AcornValue::reduce(BinaryOp::Or, denormalized_literals);
-        if arbitrary_names.is_some() {
-            disjunction
-        } else {
-            AcornValue::forall(var_types, disjunction)
-        }
+        AcornValue::forall(var_types, disjunction)
     }
 
     pub fn denormalize_type(&self, type_id: TypeId) -> AcornType {
