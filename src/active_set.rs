@@ -5,8 +5,8 @@ use crate::fingerprint::FingerprintUnifier;
 use crate::literal::Literal;
 use crate::pattern_tree::LiteralSet;
 use crate::proof_step::{
-    EqualityFactoringInfo, EqualityResolutionInfo,
-    FunctionEliminationInfo, ProofStep, Rule, Truthiness,
+    EqualityFactoringInfo, EqualityResolutionInfo, FunctionEliminationInfo, ProofStep, Rule,
+    Truthiness,
 };
 use crate::rewrite_tree::{Rewrite, RewriteTree};
 use crate::term::Term;
@@ -212,11 +212,14 @@ impl ActiveSet {
 
         // Do some heuristic filtering before trying unification, because unification is expensive.
 
-        // We need only the simplest form of two-long-clause resolution.
-        // Concluding from "A or B" and "not A or B" that "B" is true.
+        // We do only the simplest form of two-long-clause resolution.
+        // Concluding from concrete "A or B" and "not A or B" that "B" is true.
         // So let's allow that case, and return None otherwise.
         if short_clause.len() > 1 {
             if short_clause.len() != 2 || long_clause.len() != 2 {
+                return None;
+            }
+            if short_clause.has_any_variable() || long_clause.has_any_variable() {
                 return None;
             }
         }
@@ -484,7 +487,7 @@ impl ActiveSet {
         for (index, new_literals, flipped) in clause.find_equality_resolutions() {
             let literals = new_literals.clone();
             let (new_clause, traces) = Clause::normalize_with_trace(new_literals);
-            
+
             // Check if normalization resulted in a tautology
             if !new_clause.is_tautology() {
                 let step = ProofStep::direct(
@@ -550,10 +553,10 @@ impl ActiveSet {
     pub fn equality_factoring(activated_id: usize, activated_step: &ProofStep) -> Vec<ProofStep> {
         let clause = &activated_step.clause;
         let mut answer = vec![];
-        
+
         // Use the clause's helper method to find all factorings
         let factorings = clause.find_equality_factorings();
-        
+
         for (literals, ef_trace) in factorings {
             // Capture the literals before normalization
             let literals_before_normalization = literals.clone();
@@ -574,7 +577,7 @@ impl ActiveSet {
             );
             answer.push(step);
         }
-        
+
         answer
     }
 

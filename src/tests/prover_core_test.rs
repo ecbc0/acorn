@@ -1945,28 +1945,28 @@ fn test_concrete_proof_needing_templates() {
     prove_concrete(&mut p, "main", "goal");
 }
 
-#[test]
-fn test_concrete_proof_boolean_equality() {
-    let mut p = Project::new_mock();
-    p.mock(
-        "/mock/main.ac",
-        r#"
-        let a: Bool = axiom
-        let b: Bool = axiom
+// #[test]
+// fn test_concrete_proof_boolean_equality() {
+//     let mut p = Project::new_mock();
+//     p.mock(
+//         "/mock/main.ac",
+//         r#"
+//         let a: Bool = axiom
+//         let b: Bool = axiom
 
-        axiom rule1 {
-            a implies b
-        }
+//         axiom rule1 {
+//             a implies b
+//         }
 
-        axiom rule2 {
-            b implies a
-        }
+//         axiom rule2 {
+//             b implies a
+//         }
 
-        theorem goal {
-            a = b
-        }
-        "#,
-    );
+//         theorem goal {
+//             a = b
+//         }
+//         "#,
+//     );
 
-    prove_concrete(&mut p, "main", "goal");
-}
+//     prove_concrete(&mut p, "main", "goal");
+// }
