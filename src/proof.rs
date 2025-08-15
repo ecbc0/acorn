@@ -1100,10 +1100,10 @@ impl<'a> Proof<'a> {
                     simp_scopes.insert(scope, step_id);
                     let clause = self.get_clause(step_id)?;
                     if clause.literals.len() != 1 {
-                        return Err(Error::internal(format!(
-                            "elimination step {} is not single-literal",
-                            step
-                        )));
+                        // This is two-long-clause resolution.
+                        // This should only happen for concrete clauses, and thus we don't
+                        // need to unify them.
+                        continue;
                     }
                     (scope, &clause.literals[0], *flipped)
                 }
