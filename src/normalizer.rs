@@ -597,9 +597,9 @@ impl Normalizer {
         Ok(())
     }
 
-    /// Variables are left unbound. Their types are accumulated.
     /// If arbitrary names are provided, any free variables of the keyed types are converted
     /// to constants.
+    /// Any other free variables are left unbound. Their types are accumulated.
     fn denormalize_atom(
         &self,
         atom_type: TypeId,
@@ -645,6 +645,9 @@ impl Normalizer {
         }
     }
 
+    /// If arbitrary names are provided, any free variables of the keyed types are converted
+    /// to constants.
+    /// Any other free variables are left unbound. Their types are accumulated.
     fn denormalize_term(
         &self,
         term: &Term,
@@ -660,6 +663,9 @@ impl Normalizer {
         AcornValue::apply(head, args)
     }
 
+    /// If arbitrary names are provided, any free variables of the keyed types are converted
+    /// to constants.
+    /// Any other free variables are left unbound. Their types are accumulated.
     fn denormalize_literal(
         &self,
         literal: &Literal,
@@ -684,7 +690,9 @@ impl Normalizer {
 
     /// Converts backwards, from a clause to a value.
     /// The resulting value may have skolem atoms in it.
-    /// If arbitrary_names is provided, replace all free variables with constants.
+    /// If arbitrary names are provided, any free variables of the keyed types are converted
+    /// to constants.
+    /// Any remaining free variables are enclosed in a "forall" quantifier.
     pub fn denormalize(
         &self,
         clause: &Clause,
