@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::clause::Clause;
+use crate::{clause::Clause, literal::Literal};
 
 /// A set that stores clauses by their truth table representation.
 /// Each clause is stored with its normalized positive form as the key,
@@ -37,6 +37,24 @@ fn compare(a: &Vec<bool>, b: &Vec<bool>) -> VecBoolComparison {
     }
 }
 
+// Removes the literal at the given index from the positive clause and adds back in polarities.
+// This does normalize the resulting clause.
+fn eliminate_literal(positive_clause: &Clause, polarities: &Vec<bool>, index: usize) -> Clause {
+    let mut literals = vec![];
+    for (i, (lit, pol)) in positive_clause
+        .literals
+        .iter()
+        .zip(polarities.iter())
+        .enumerate()
+    {
+        if i == index {
+            continue;
+        }
+        literals.push(Literal::new(*pol, lit.left.clone(), lit.right.clone()));
+    }
+    Clause::new(literals)
+}
+
 impl TruthTableSet {
     /// Creates a new empty TruthTableSet
     pub fn new() -> Self {
@@ -52,6 +70,10 @@ impl TruthTableSet {
         let (positive_clause, new_pol) = clause.extract_polarity();
 
         let known_pols = self.tables.entry(positive_clause).or_insert_with(Vec::new);
+        if known_pols.contains(&new_pol) {
+            // Already exists, no need to insert
+            return;
+        }
 
         for pol in known_pols.iter() {
             match compare(pol, &new_pol) {
