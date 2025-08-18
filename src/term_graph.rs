@@ -1262,24 +1262,20 @@ impl TermGraph {
             let left_group = self.get_group_id(left_id);
             let right_group = self.get_group_id(right_id);
 
-            // Skip literals that are known to be false
+            // Figure out whether the sides are equal, if possible
             let sides_equal = if left_group == right_group {
-                true
+                Some(true)
             } else {
                 let left_info = self.get_group_info(left_group);
                 if left_info.inequalities.contains_key(&right_group) {
-                    false
+                    Some(false)
                 } else {
-                    // We can't evaluate this literal, so include it
-                    groups_involved.insert(left_group);
-                    groups_involved.insert(right_group);
-                    check_literals.push((literal.positive, left_group, right_group));
-                    continue;
+                    None
                 }
             };
 
             // If the literal evaluates to false, skip it
-            if literal.positive != sides_equal {
+            if Some(!literal.positive) == sides_equal {
                 continue;
             }
 
