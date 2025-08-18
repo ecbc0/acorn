@@ -19,18 +19,18 @@ impl fmt::Display for TermId {
 pub struct GroupId(pub u32);
 
 impl GroupId {
-    /// Parses a string like "g7" into GroupId(7).
-    /// Panics if the string doesn't start with "g" followed by a valid number.
+    /// Parses a string like "id7" into GroupId(7).
+    /// Panics if the string doesn't start with "id" followed by a valid number.
     pub fn parse(s: &str) -> GroupId {
-        if !s.starts_with('g') {
+        if !s.starts_with("id") {
             panic!(
-                "GroupId::parse expects string starting with 'g', got: {}",
+                "GroupId::parse expects string starting with 'id', got: {}",
                 s
             );
         }
-        let num = s[1..].parse::<u32>().unwrap_or_else(|_| {
+        let num = s[2..].parse::<u32>().unwrap_or_else(|_| {
             panic!(
-                "GroupId::parse expects 'g' followed by a number, got: {}",
+                "GroupId::parse expects 'id' followed by a number, got: {}",
                 s
             )
         });
@@ -40,7 +40,7 @@ impl GroupId {
 
 impl fmt::Display for GroupId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "id{}", self.0)
     }
 }
 
@@ -68,6 +68,33 @@ impl LiteralId {
             }
         }
     }
+
+    /// Parses a string like "id0 = id1" or "id1 != id2" into a LiteralId.
+    /// Panics if the format is invalid.
+    pub fn parse(s: &str) -> LiteralId {
+        // Try to split on " != " first (longer operator)
+        if let Some((left_str, right_str)) = s.split_once(" != ") {
+            let left = GroupId::parse(left_str.trim());
+            let right = GroupId::parse(right_str.trim());
+            LiteralId::new(left, right, false)
+        } else if let Some((left_str, right_str)) = s.split_once(" = ") {
+            let left = GroupId::parse(left_str.trim());
+            let right = GroupId::parse(right_str.trim());
+            LiteralId::new(left, right, true)
+        } else {
+            panic!("LiteralId::parse expects format 'id0 = id1' or 'id0 != id1', got: {}", s);
+        }
+    }
+}
+
+impl fmt::Display for LiteralId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.positive {
+            write!(f, "{} = {}", self.left, self.right)
+        } else {
+            write!(f, "{} != {}", self.left, self.right)
+        }
+    }
 }
 
 // Canonically the literal ids are sorted.
@@ -90,6 +117,41 @@ impl ClauseId {
 
     pub fn literals(&self) -> &Vec<LiteralId> {
         &self.0
+    }
+
+    /// Parses a string like "id0 = id1" or "id0 = id1 or id2 != id3" into a ClauseId.
+    /// Panics if the format is invalid.
+    pub fn parse(s: &str) -> ClauseId {
+        let literals: Vec<LiteralId> = s
+            .split(" or ")
+            .map(|lit_str| LiteralId::parse(lit_str.trim()))
+            .collect();
+        
+        if literals.is_empty() {
+            panic!("ClauseId::parse expects at least one literal, got empty string");
+        }
+        
+        // Create a ClauseId directly with sorted and deduped literals
+        let mut literals = literals;
+        literals.sort();
+        literals.dedup();
+        ClauseId(literals)
+    }
+}
+
+impl fmt::Display for ClauseId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.0.is_empty() {
+            write!(f, "(empty clause)")
+        } else {
+            for (i, literal) in self.0.iter().enumerate() {
+                if i > 0 {
+                    write!(f, " or ")?;
+                }
+                write!(f, "{}", literal)?;
+            }
+            Ok(())
+        }
     }
 }
 
