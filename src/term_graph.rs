@@ -1751,4 +1751,20 @@ mod tests {
 
         g.check_clause_str("not g1(c2, c3) or c3 = c2");
     }
+
+    #[test]
+    fn test_term_graph_eliminating_one_literal() {
+        let mut g = TermGraph::with_clauses(&[
+            // These are necessary to reproduce the bug
+            "m4(c4, c5) = c3",
+            "c4 != c0",
+            "m4(c4, c5) != c3 or m4(c4, m1(c5, c0)) = m1(c3, c0) or c4 = c0",
+
+            // The clauses from the basic case
+            "not m0(m1(c5, c0), c1)",
+            "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or m0(m1(c5, c0), c1) or c4 = c1",
+        ]);
+
+        g.check_clause_str("m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or c4 = c1");
+    }
 }
