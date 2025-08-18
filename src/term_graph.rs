@@ -937,26 +937,57 @@ impl TermGraph {
 
             // Remove clause from groups that are no longer involved
             for &removed_group in old_groups.difference(&new_groups) {
-                // Remove this clause from removed_group's indexing of all other old groups
-                for &other_group in &old_groups {
-                    if removed_group != other_group {
-                        if let Some(group_info) = self.groups[removed_group.0 as usize].as_mut() {
-                            if let Some(clause_ids) = group_info.clauses.get_mut(&other_group) {
-                                clause_ids.remove(&clause_id);
-                            }
+                // We need to remove this clause from the indexing between removed_group and all other groups
+
+                // Remove from removed_group's indexing of all groups
+                if let Some(group_info) = self.groups[removed_group.0 as usize].as_mut() {
+                    // For each group that removed_group indexes clauses by
+                    let groups_to_clean: Vec<GroupId> =
+                        group_info.clauses.keys().copied().collect();
+                    for other_group in groups_to_clean {
+                        if let Some(clause_ids) = group_info.clauses.get_mut(&other_group) {
+                            clause_ids.remove(&clause_id);
                         }
-                        // Also remove from the other direction
-                        if let Some(group_info) = self.groups[other_group.0 as usize].as_mut() {
-                            if let Some(clause_ids) = group_info.clauses.get_mut(&removed_group) {
-                                clause_ids.remove(&clause_id);
-                            }
+                    }
+                }
+
+                // Also remove from all other groups' indexing of removed_group
+                for i in 0..self.groups.len() {
+                    if let Some(group_info) = self.groups[i].as_mut() {
+                        if let Some(clause_ids) = group_info.clauses.get_mut(&removed_group) {
+                            clause_ids.remove(&clause_id);
                         }
                     }
                 }
             }
 
             // This clause is still valid. Put it back.
-            self.clauses[clause_id.0] = Some(clause_info);
+            self.clauses[clause_id.0] = Some(clause_info.clone());
+
+            // Re-index the clause with its current groups
+            for literal in &clause_info.literals {
+                let left_group = self.get_group_id(literal.left);
+                let right_group = self.get_group_id(literal.right);
+
+                // Add to left group's clauses, indexed by right group
+                if let Some(left_group_info) = &mut self.groups[left_group.0 as usize] {
+                    left_group_info
+                        .clauses
+                        .entry(right_group)
+                        .or_insert_with(HashSet::new)
+                        .insert(clause_id);
+                }
+
+                // Add to right group's clauses, indexed by left group
+                if let Some(right_group_info) = &mut self.groups[right_group.0 as usize] {
+                    right_group_info
+                        .clauses
+                        .entry(left_group)
+                        .or_insert_with(HashSet::new)
+                        .insert(clause_id);
+                }
+            }
+
             return;
         }
 
@@ -1222,7 +1253,7 @@ impl TermGraph {
             return false;
         }
 
-        // First, convert the clause to check into group-normalized form
+        // First, convert the clause to check into group-normalized form, skipping false literals
         let mut check_literals = Vec::new();
         let mut groups_involved = HashSet::new();
         for literal in &clause.literals {
@@ -1230,6 +1261,29 @@ impl TermGraph {
             let right_id = self.insert_term(&literal.right);
             let left_group = self.get_group_id(left_id);
             let right_group = self.get_group_id(right_id);
+
+            // Skip literals that are known to be false
+            let sides_equal = if left_group == right_group {
+                true
+            } else {
+                let left_info = self.get_group_info(left_group);
+                if left_info.inequalities.contains_key(&right_group) {
+                    false
+                } else {
+                    // We can't evaluate this literal, so include it
+                    groups_involved.insert(left_group);
+                    groups_involved.insert(right_group);
+                    check_literals.push((literal.positive, left_group, right_group));
+                    continue;
+                }
+            };
+
+            // If the literal evaluates to false, skip it
+            if literal.positive != sides_equal {
+                continue;
+            }
+
+            // Otherwise include it
             groups_involved.insert(left_group);
             groups_involved.insert(right_group);
             check_literals.push((literal.positive, left_group, right_group));
@@ -1237,6 +1291,11 @@ impl TermGraph {
 
         // Sort literals for canonical comparison
         check_literals.sort();
+
+        if check_literals.is_empty() {
+            // If literals are false, the clause itself is false
+            return self.has_contradiction();
+        }
 
         // Use the clause indexing to find potentially matching clauses
         // We only need to check clauses that involve the same groups
@@ -1433,7 +1492,6 @@ impl TermGraph {
                 return; // Found a term from the group
             }
         }
-
         panic!(
             "clause {} does not contain a term from group {}",
             clause_id, group_id
@@ -1759,12 +1817,10 @@ mod tests {
             "m4(c4, c5) = c3",
             "c4 != c0",
             "m4(c4, c5) != c3 or m4(c4, m1(c5, c0)) = m1(c3, c0) or c4 = c0",
-
             // The clauses from the basic case
             "not m0(m1(c5, c0), c1)",
             "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or m0(m1(c5, c0), c1) or c4 = c1",
         ]);
-
         g.check_clause_str("m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or c4 = c1");
     }
 }

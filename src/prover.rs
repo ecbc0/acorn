@@ -578,7 +578,6 @@ impl Prover {
 
                 for mut clause in clauses {
                     if !self.checker.check_clause(&clause) {
-                        println!("XXX code: {}", code);
                         return Err(Error::GeneratedBadCode(format!(
                             "The clause '{}' is not obviously true",
                             self.display(&clause)
