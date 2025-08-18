@@ -5,6 +5,7 @@ use crate::{clause::Clause, literal::Literal};
 /// A set that stores clauses by their truth table representation.
 /// Each clause is stored with its normalized positive form as the key,
 /// and all the polarity patterns that have been seen for that clause.
+#[derive(Clone)]
 pub struct TruthTableSet {
     /// Maps from normalized positive clauses to sets of polarity patterns
     tables: HashMap<Clause, Vec<Vec<bool>>>,
