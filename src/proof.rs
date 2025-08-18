@@ -352,7 +352,7 @@ impl<'a> Proof<'a> {
                 "clause: {}",
                 DisplayClause {
                     normalizer: self.normalizer,
-                    clause: clause,
+                    clause,
                 }
             ),
             NodeValue::Contradiction => "contradiction".to_string(),

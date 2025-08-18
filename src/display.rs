@@ -80,17 +80,15 @@ impl fmt::Display for DisplayLiteral<'_> {
                     self.term(&self.literal.right)
                 )
             }
+        } else if self.literal.is_boolean() {
+            write!(f, "not {}", self.term(&self.literal.left),)
         } else {
-            if self.literal.is_boolean() {
-                write!(f, "not {}", self.term(&self.literal.left),)
-            } else {
-                write!(
-                    f,
-                    "{} != {}",
-                    self.term(&self.literal.left),
-                    self.term(&self.literal.right),
-                )
-            }
+            write!(
+                f,
+                "{} != {}",
+                self.term(&self.literal.left),
+                self.term(&self.literal.right),
+            )
         }
     }
 }

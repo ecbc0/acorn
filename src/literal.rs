@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
-use serde::{Deserialize, Serialize};
 
 use crate::atom::{Atom, AtomId};
 use crate::term::{Term, TypeId};
@@ -24,12 +24,10 @@ impl fmt::Display for Literal {
             } else {
                 write!(f, "{} = {}", self.left, self.right)
             }
+        } else if self.is_boolean() {
+            write!(f, "not {}", self.left)
         } else {
-            if self.is_boolean() {
-                write!(f, "not {}", self.left)
-            } else {
-                write!(f, "{} != {}", self.left, self.right)
-            }
+            write!(f, "{} != {}", self.left, self.right)
         }
     }
 }

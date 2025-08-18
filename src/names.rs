@@ -165,7 +165,7 @@ impl DefinedName {
         let inst = InstanceName {
             typeclass: tc,
             attribute: attr.to_string(),
-            datatype: datatype,
+            datatype,
         };
         DefinedName::Instance(inst)
     }

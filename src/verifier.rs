@@ -105,10 +105,8 @@ impl Verifier {
                 if let Err(e) = project.add_target_by_path(&path) {
                     return Err(format!("{}", e));
                 }
-            } else {
-                if let Err(e) = project.add_target_by_name(&target) {
-                    return Err(format!("{}", e));
-                }
+            } else if let Err(e) = project.add_target_by_name(&target) {
+                return Err(format!("{}", e));
             }
         } else {
             project.add_all_targets();

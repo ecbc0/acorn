@@ -503,7 +503,7 @@ impl Token {
         if self.token_type != TokenType::DocComment {
             return String::new();
         }
-        
+
         let text = self.text();
         if text.starts_with("///") {
             let after_slash = &text[3..];
@@ -744,10 +744,8 @@ impl Token {
                 if !char.is_ascii_uppercase() {
                     return false;
                 }
-            } else {
-                if !char.is_alphanumeric() {
-                    return false;
-                }
+            } else if !char.is_alphanumeric() {
+                return false;
             }
         }
         true

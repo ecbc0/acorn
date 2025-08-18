@@ -10,31 +10,25 @@ pub struct TruthTableSet {
     tables: HashMap<Clause, Vec<Vec<bool>>>,
 }
 
-enum VecBoolComparison {
-    Equal,
-    OneBitDifferent(usize),
-    Other,
-}
-
-fn compare(a: &Vec<bool>, b: &Vec<bool>) -> VecBoolComparison {
+// If the two bit vectors differ in exactly one spot, return the index of that spot.
+// Otherwise return None.
+fn find_different_bit(a: &Vec<bool>, b: &Vec<bool>) -> Option<usize> {
     if a.len() != b.len() {
-        return VecBoolComparison::Other;
+        return None;
     }
 
     let mut diff_index = None;
     for (i, (a_bit, b_bit)) in a.iter().zip(b.iter()).enumerate() {
         if a_bit != b_bit {
             if diff_index.is_some() {
-                return VecBoolComparison::Other;
+                // Different in multiple spots
+                return None;
             }
             diff_index = Some(i);
         }
     }
 
-    match diff_index {
-        None => VecBoolComparison::Equal,
-        Some(i) => VecBoolComparison::OneBitDifferent(i),
-    }
+    diff_index
 }
 
 // Removes the literal at the given index from the positive clause and adds back in polarities.
@@ -66,27 +60,39 @@ impl TruthTableSet {
     /// Inserts a clause into the set if it doesn't already exist.
     /// Extracts the polarity pattern and stores it under the normalized positive clause.
     /// Does not insert duplicates.
-    pub fn insert(&mut self, clause: &Clause) {
+    ///
+    /// When there are any other clauses which differ in exactly one spot, you can deduce that
+    /// the clause without this differing literal must also be true. This method returns all
+    /// clauses that can be deduced in such a way.
+    ///
+    /// When we insert a duplicate, no deduced clauses are returned.
+    pub fn insert(&mut self, clause: &Clause) -> Vec<Clause> {
         let (positive_clause, new_pol) = clause.extract_polarity();
 
-        let known_pols = self.tables.entry(positive_clause).or_insert_with(Vec::new);
+        let entry = match self.tables.entry(positive_clause) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry,
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(vec![new_pol]);
+                return vec![];
+            }
+        };
+        let key = entry.key();
+        let known_pols = entry.get();
         if known_pols.contains(&new_pol) {
             // Already exists, no need to insert
-            return;
+            return vec![];
         }
 
+        let mut answer = vec![];
         for pol in known_pols.iter() {
-            match compare(pol, &new_pol) {
-                VecBoolComparison::Equal => return,
-                VecBoolComparison::OneBitDifferent(_) => {
-                    // TODO: track these
-                    continue;
-                }
-                VecBoolComparison::Other => {}
+            if let Some(i) = find_different_bit(pol, &new_pol) {
+                let new_clause = eliminate_literal(key, &new_pol, i);
+                answer.push(new_clause);
             }
         }
 
-        known_pols.push(new_pol);
+        entry.into_mut().push(new_pol);
+        answer
     }
 
     /// Checks if a clause is contained in the set.
