@@ -116,4 +116,92 @@ impl Checker {
     pub fn has_contradiction(&self) -> bool {
         self.direct_contradiction || self.term_graph.has_contradiction()
     }
+
+    #[cfg(test)]
+    pub fn with_clauses(clauses: &[&str]) -> Checker {
+        let mut checker = Checker::new();
+        for clause_str in clauses {
+            let clause = Clause::parse(clause_str);
+            checker.insert_clause(&clause);
+        }
+        checker
+    }
+
+    #[cfg(test)]
+    pub fn check_clause_str(&mut self, s: &str) {
+        let clause = Clause::parse(s);
+        if !self.check_clause(&clause) {
+            panic!("check_clause_str(\"{}\") failed", s);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_checker_bug() {
+        let mut checker = Checker::with_clauses(&[
+            "c1 != c0",
+            "m1(x0, x1) = x0 or m0(x0, x1)",
+            "not m0(m1(x0, x1), x2) or not m2(x0, x1, x2) or m0(x0, x2) or x1 = x2",
+            "not m2(x0, x1, x2) or not m0(x0, x2) or m0(m1(x0, x1), x2) or x1 = x2",
+            "x0 != x1 or m2(x2, x0, x1)",
+            "m2(x0, x1, x1)",
+            "not m0(m1(x0, x1), x2) or not m0(x0, x2) or m2(x0, x1, x2)",
+            "m0(m1(x0, x1), x2) or m2(x0, x1, x2) or m0(x0, x2)",
+            "m0(m1(x0, x1), x2) != m2(x0, x1, x2) or m2(x0, x1, x2) or m0(x0, x2)",
+            "m0(m1(x0, x1), x2) != m0(x0, x2) or m2(x0, x1, x2) or m0(x0, x2)",
+            "m1(x0, x1) != x0 or m2(x0, x1, x2) or m0(x0, x2)",
+            "m3 != x0 or m3 = m1(x0, x1)",
+            "m1(m3, x0) = m3",
+            "m4(x0, x1) != x2 or m4(x0, m1(x1, x3)) = m1(x2, x3) or x3 = x0",
+            "m4(x0, m1(x1, x2)) = m1(m4(x0, x1), x2) or x0 = x2",
+            "m4(x0, x1) != x2 or x3 != x0 or m1(x2, x3) = m1(x1, x3)",
+            "x0 != x1 or m1(m4(x0, x2), x1) = m1(x2, x1)",
+            "m1(m4(x0, x1), x0) = m1(x1, x0)",
+            "m4(x0, x1) != x2 or m1(x1, x0) = m1(x2, x0)",
+            "m1(m4(x0, x1), x0) = m1(x1, x0)",
+            "m3 != x0 or not m0(x0, x1)",
+            "not m0(m3, x0)",
+            "m4(x0, x1) != x2 or not m0(x2, x3) or m0(x1, x3) or x3 = x0",
+            "not m0(m4(x0, x1), x2) or m0(x1, x2) or x0 = x2",
+            "m4(x0, x1) != x2 or x3 != x0 or m0(x2, x3)",
+            "x0 != x1 or m0(m4(x0, x2), x1)",
+            "m0(m4(x0, x1), x0)",
+            "m4(x0, x1) != x2 or m0(x2, x0)",
+            "m0(m4(x0, x1), x0)",
+            "m4(x0, x1) != x2 or not m0(x1, x3) or m0(x2, x3)",
+            "not m0(x0, x1) or m0(m4(x2, x0), x1)",
+            "not m0(m1(x0, x1), x2) or not c2(x0, x1, x2) or m0(x0, x2) or x1 = x2",
+            "not c2(x0, x1, x2) or not m0(x0, x2) or m0(m1(x0, x1), x2) or x1 = x2",
+            "x0 != x1 or c2(x2, x0, x1)",
+            "c2(x0, x1, x1)",
+            "not m0(m1(x0, x1), x2) or not m0(x0, x2) or c2(x0, x1, x2)",
+            "m0(m1(x0, x1), x2) or c2(x0, x1, x2) or m0(x0, x2)",
+            "m0(m1(x0, x1), x2) != c2(x0, x1, x2) or c2(x0, x1, x2) or m0(x0, x2)",
+            "m0(m1(x0, x1), x2) != m0(x0, x2) or c2(x0, x1, x2) or m0(x0, x2)",
+            "m1(x0, x1) != x0 or c2(x0, x1, x2) or m0(x0, x2)",
+            "c2(m3, c0, c1)",
+            "m4(c4, c5) = c3",
+            "c2(c5, c0, c1)",
+            "c1 != c0",
+            "c2(c3, c0, c1) or m0(c3, c0)",
+            "c2(c3, c0, c1) != m0(c3, c0) or m0(c3, c0)",
+            "c4 != c0 or c2(c3, c0, c1)",
+            "c4 != c0",
+            "not m0(m1(c3, c0), c1) or c4 != c1",
+            "m0(m1(c3, c0), c1) or c4 = c1",
+            "not m0(m1(c5, c0), c1)",
+            "m4(c4, c5) != c3 or m4(c4, m1(c5, c0)) = m1(c3, c0) or c4 = c0",
+            "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or m0(m1(c5, c0), c1) or c4 = c1",
+            "m4(c4, m1(c5, c0)) != m1(c3, c0) or m0(m1(c3, c0), c4)",
+            "m4(c4, m1(c5, c0)) != m1(c3, c0) or m0(m1(c3, c0), c4)",
+        ]);
+
+        checker.check_clause_str(
+            "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or c4 = c1",
+        );
+    }
 }
