@@ -18,6 +18,26 @@ impl fmt::Display for TermId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct GroupId(pub u32);
 
+impl GroupId {
+    /// Parses a string like "g7" into GroupId(7).
+    /// Panics if the string doesn't start with "g" followed by a valid number.
+    pub fn parse(s: &str) -> GroupId {
+        if !s.starts_with('g') {
+            panic!(
+                "GroupId::parse expects string starting with 'g', got: {}",
+                s
+            );
+        }
+        let num = s[1..].parse::<u32>().unwrap_or_else(|_| {
+            panic!(
+                "GroupId::parse expects 'g' followed by a number, got: {}",
+                s
+            )
+        });
+        GroupId(num)
+    }
+}
+
 impl fmt::Display for GroupId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -54,11 +74,18 @@ impl LiteralId {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ClauseId(Vec<LiteralId>);
 
+pub enum Normalization {
+    True,
+    False,
+    Clause(ClauseId),
+}
+
 impl ClauseId {
     // This sorts the literals, but doesn't check for degeneracy like repeating literals.
-    pub fn new(mut literals: Vec<LiteralId>) -> Self {
+    pub fn new(mut literals: Vec<LiteralId>) -> Normalization {
         literals.sort();
-        ClauseId(literals)
+        literals.dedup();
+        Normalization::Clause(ClauseId(literals))
     }
 
     pub fn literals(&self) -> &Vec<LiteralId> {
