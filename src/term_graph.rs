@@ -331,9 +331,6 @@ pub struct TermGraph {
     // When set, this indicates that the provided step sets these terms to be unequal.
     // But there is a chain of rewrites that proves that they are equal. This is a contradiction.
     contradiction_info: Option<(TermId, TermId, StepId)>,
-
-    // When verbose is set, we print out a bunch of debugging information.
-    pub verbose: bool,
 }
 
 impl TermGraph {
@@ -348,14 +345,7 @@ impl TermGraph {
             pending: Vec::new(),
             has_contradiction: false,
             contradiction_info: None,
-            verbose: false,
         }
-    }
-
-    pub fn new_verbose() -> TermGraph {
-        let mut graph = TermGraph::new();
-        graph.verbose = true;
-        graph
     }
 
     /// Returns None if this term isn't in the graph.
@@ -453,9 +443,6 @@ impl TermGraph {
         });
         self.groups.push(group_info);
         self.decompositions.insert(key, term_id);
-        if self.verbose {
-            println!("TG: t{} := {}", term_id, term.head);
-        }
         term_id
     }
 
@@ -486,9 +473,6 @@ impl TermGraph {
         });
         self.groups.push(group_info);
         self.decompositions.insert(key, term_id);
-        if self.verbose {
-            println!("TG: t{} := {}", term_id, term);
-        }
         term_id
     }
 
@@ -557,10 +541,6 @@ impl TermGraph {
     /// The clause is indexed by all groups that appear in its literals.
     /// Don't insert clauses with no literals.
     pub fn insert_clause(&mut self, clause: &Clause, step: StepId) {
-        if self.verbose {
-            println!("TG: Inserting clause: {}", clause);
-        }
-
         // First, insert all terms and collect their IDs
         let mut literal_infos = Vec::new();
         for literal in &clause.literals {
@@ -616,13 +596,6 @@ impl TermGraph {
             let left_group = self.get_group_id(literal_info.left);
             let right_group = self.get_group_id(literal_info.right);
 
-            if self.verbose {
-                println!(
-                    "TG: Indexing clause {} by groups {} and {}",
-                    clause_id, left_group, right_group
-                );
-            }
-
             // Add to left group's clauses, indexed by right group
             if let Some(left_group_info) = &mut self.groups[left_group.0 as usize] {
                 left_group_info
@@ -660,9 +633,6 @@ impl TermGraph {
         new_group: GroupId,
         source: Option<RewriteSource>,
     ) {
-        if self.verbose {
-            println!("TG: identifying t{} = t{}", old_term, new_term);
-        }
         let old_info = self.groups[old_group.0 as usize]
             .take()
             .expect("group is remapped");
@@ -780,12 +750,6 @@ impl TermGraph {
         for other_group in other_groups_to_update {
             if let Some(other_info) = self.groups[other_group.0 as usize].as_mut() {
                 if let Some(clauses) = other_info.clauses.remove(&old_group) {
-                    if self.verbose {
-                        println!(
-                            "TG: Remapping clauses in group {} from old_group {} to new_group {}",
-                            other_group, old_group, new_group
-                        );
-                    }
                     // If other_group == new_group, these clauses now compare a group to itself
                     if other_group == new_group {
                         for &clause_id in &clauses {
@@ -808,12 +772,6 @@ impl TermGraph {
 
         // Add reciprocal indexing to new_group
         for (other_group, clause_ids) in reciprocal_updates {
-            if self.verbose {
-                println!(
-                    "TG: Adding reciprocal indexing to group {} for group {}: {:?}",
-                    new_group, other_group, clause_ids
-                );
-            }
             let new_info = self.groups[new_group.0 as usize]
                 .as_mut()
                 .expect("group is remapped");
@@ -875,10 +833,6 @@ impl TermGraph {
         let Some(mut clause_info) = self.clauses[clause_id.0].take() else {
             return;
         };
-
-        if self.verbose {
-            println!("TG: Reducing clause {}", clause_id);
-        }
 
         // Track which groups were involved before reduction
         let mut old_groups = HashSet::new();
@@ -1075,12 +1029,6 @@ impl TermGraph {
     }
 
     pub fn set_terms_not_equal(&mut self, term1: TermId, term2: TermId, step: StepId) {
-        if self.verbose {
-            println!(
-                "TG: set_terms_not_equal called for t{} and t{}",
-                term1, term2
-            );
-        }
         self.pending
             .push(SemanticOperation::TermInequality(term1, term2, step));
         self.process_pending();
@@ -1091,12 +1039,6 @@ impl TermGraph {
     fn set_terms_not_equal_once(&mut self, term1: TermId, term2: TermId, step: StepId) {
         let group1 = self.get_group_id(term1);
         let group2 = self.get_group_id(term2);
-        if self.verbose {
-            println!(
-                "TG: setting t{} (group {}) != t{} (group {}) at step {}",
-                term1, group1, term2, group2, step
-            );
-        }
         if group1 == group2 {
             self.has_contradiction = true;
             self.contradiction_info = Some((term1, term2, step));
@@ -1113,30 +1055,10 @@ impl TermGraph {
 
         // Trigger reduction for clauses that involve both groups
         if let Some(clause_ids) = info1.clauses.get(&group2) {
-            if self.verbose {
-                println!(
-                    "TG: Found {} clauses to reduce involving groups {} and {} (from group {})",
-                    clause_ids.len(),
-                    group1,
-                    group2,
-                    group1
-                );
-            }
             for &clause_id in clause_ids {
                 self.pending
                     .push(SemanticOperation::ClauseReduction(clause_id));
             }
-        } else if self.verbose {
-            println!(
-                "TG: No clauses found in group {} indexed by group {}",
-                group1, group2
-            );
-            // Debug: show what's actually in group1's clauses
-            println!(
-                "TG: Group {} has clauses indexed by: {:?}",
-                group1,
-                info1.clauses.keys().collect::<Vec<_>>()
-            );
         }
 
         let info2 = &mut self.groups[group2.0 as usize]
@@ -1147,41 +1069,17 @@ impl TermGraph {
         if !already_unequal {
             // Check clauses from the other direction too
             if let Some(clause_ids) = info2.clauses.get(&group1) {
-                if self.verbose {
-                    println!(
-                        "TG: Also found {} clauses in group {} indexed by group {}: {:?}",
-                        clause_ids.len(),
-                        group2,
-                        group1,
-                        clause_ids
-                    );
-                }
                 // Trigger reduction on these clauses too
                 for &clause_id in clause_ids {
                     self.pending
                         .push(SemanticOperation::ClauseReduction(clause_id));
                 }
-            } else if self.verbose {
-                println!(
-                    "TG: No clauses found in group {} indexed by group {}",
-                    group2, group1
-                );
-                println!(
-                    "TG: Group {} has clauses indexed by: {:?}",
-                    group2,
-                    info2.clauses.keys().collect::<Vec<_>>()
-                );
             }
 
             let prev = info2.inequalities.insert(group1, (term1, term2, step));
             if prev.is_some() {
                 panic!("asymmetry in group inequalities");
             }
-        } else if self.verbose {
-            println!(
-                "TG: Groups {} and {} are already unequal, skipping",
-                group1, group2
-            );
         }
     }
 
