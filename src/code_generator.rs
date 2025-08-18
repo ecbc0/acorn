@@ -12,6 +12,7 @@ use crate::expression::{Declaration, Expression};
 use crate::module::ModuleId;
 use crate::names::{ConstantName, DefinedName};
 use crate::normalizer::Normalizer;
+use crate::proof::ConcreteStep;
 use crate::term::{Term, TypeId};
 use crate::token::TokenType;
 use crate::type_unifier::TypeclassRegistry;
@@ -259,7 +260,7 @@ impl CodeGenerator<'_> {
     /// arbitrary variables and skolems, and code is the actual clause content.
     pub fn concrete_step_to_code(
         &mut self,
-        step: &crate::proof::ConcreteStep,
+        step: &ConcreteStep,
         normalizer: &Normalizer,
     ) -> Result<(Vec<String>, Vec<String>)> {
         let mut defs = vec![];
@@ -302,14 +303,10 @@ impl CodeGenerator<'_> {
     }
 
     /// Check if we can infer a function's type parameters from its argument types.
-    /// 
-    /// The key insight: if a function foo<P, Q> takes argument of type P, 
+    ///
+    /// The key insight: if a function foo<P, Q> takes argument of type P,
     /// we can't infer Q from just the argument. So we need explicit parameters.
-    fn can_infer_type_params_from_args(
-        &self,
-        function: &AcornValue,
-        args: &[AcornValue],
-    ) -> bool {
+    fn can_infer_type_params_from_args(&self, function: &AcornValue, args: &[AcornValue]) -> bool {
         // Get the constant and its parameters
         let constant = match function {
             AcornValue::Constant(c) => c,
@@ -331,7 +328,7 @@ impl CodeGenerator<'_> {
         // in a way that would allow inference
         for param_type in &constant.params {
             let mut found_in_args = false;
-            
+
             // Check each argument type to see if this parameter appears
             for (i, _arg) in args.iter().enumerate() {
                 if let Some(expected_arg_type) = fn_type.arg_types.get(i) {
@@ -343,13 +340,13 @@ impl CodeGenerator<'_> {
                     }
                 }
             }
-            
+
             if !found_in_args {
                 // This parameter doesn't appear in arguments, can't infer
                 return false;
             }
         }
-        
+
         true
     }
 
@@ -555,7 +552,10 @@ impl CodeGenerator<'_> {
                         if arg_exprs.len() == 1 {
                             // Prefix operators
                             if let Some(op) = TokenType::from_prefix_magic_method_name(&attr) {
-                                return Ok(Expression::generate_unary(op, arg_exprs.pop().unwrap()));
+                                return Ok(Expression::generate_unary(
+                                    op,
+                                    arg_exprs.pop().unwrap(),
+                                ));
                             }
                         }
 
