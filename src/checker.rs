@@ -6,6 +6,7 @@ use crate::truth_table_set::TruthTableSet;
 /// The checker quickly checks if a clause can be proven in a single step from known clauses.
 #[derive(Clone)]
 pub struct Checker {
+    /// For deductions among concrete clauses.
     term_graph: TermGraph,
 
     /// For looking up specializations of clauses with free variables.
@@ -168,4 +169,12 @@ mod tests {
             "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or c4 = c1",
         );
     }
+
+    // #[test]
+    // fn test_checker_cascades_updates() {
+    //     // "c0 or c1 or c2" should combine with "not c2" to yield "c0 or c1".
+    //     // That should then reduce via truth table logic with "not c0 or c1" to yield "c1".
+    //     let mut checker = Checker::with_clauses(&["c0 or c1 or c2", "not c0 or c1", "not c2"]);
+    //     checker.check_clause_str("c1");
+    // }
 }
