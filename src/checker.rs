@@ -138,34 +138,34 @@ impl Checker {
 
 #[cfg(test)]
 mod tests {
-    // use super::*;
+    use super::*;
 
-    // #[test]
-    // fn test_checker_should_be_monovariant() {
-    //     // This basic case works
-    //     let mut checker1 = Checker::with_clauses(&[
-    //         "not m0(m1(c5, c0), c1)",
-    //         "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or m0(m1(c5, c0), c1) or c4 = c1",
-    //     ]);
+    #[test]
+    fn test_checker_should_be_monovariant() {
+        // This basic case works
+        let mut checker1 = Checker::with_clauses(&[
+            "not m0(m1(c5, c0), c1)",
+            "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or m0(m1(c5, c0), c1) or c4 = c1",
+        ]);
 
-    //     checker1.check_clause_str(
-    //         "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or c4 = c1",
-    //     );
+        checker1.check_clause_str(
+            "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or c4 = c1",
+        );
 
-    //     // This is the basic case plus extra things. So it should also work.
-    //     let mut checker2 = Checker::with_clauses(&[
-    //         // The minimal set of clauses that screw up our result
-    //         "m4(c4, c5) = c3",
-    //         "c4 != c0",
-    //         "m4(c4, c5) != c3 or m4(c4, m1(c5, c0)) = m1(c3, c0) or c4 = c0",
+        // This is the basic case plus extra things. So it should also work.
+        let mut checker2 = Checker::with_clauses(&[
+            // The minimal set of clauses that screw up our result
+            "m4(c4, c5) = c3",
+            "c4 != c0",
+            "m4(c4, c5) != c3 or m4(c4, m1(c5, c0)) = m1(c3, c0) or c4 = c0",
 
-    //         // The clauses from the basic case
-    //         "not m0(m1(c5, c0), c1)",
-    //         "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or m0(m1(c5, c0), c1) or c4 = c1",
-    //     ]);
+            // The clauses from the basic case
+            "not m0(m1(c5, c0), c1)",
+            "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or m0(m1(c5, c0), c1) or c4 = c1",
+        ]);
 
-    //     checker2.check_clause_str(
-    //         "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or c4 = c1",
-    //     );
-    // }
+        checker2.check_clause_str(
+            "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or c4 = c1",
+        );
+    }
 }

@@ -1807,7 +1807,8 @@ mod tests {
     }
 
     #[test]
-    fn test_term_graph_eliminating_one_literal() {
+    fn test_term_graph_checking_reducible_clause() {
+        // This failed at some point because we were checking a clause that could be reduced.
         let mut g = TermGraph::with_clauses(&[
             // These are necessary to reproduce the bug
             "m4(c4, c5) = c3",
