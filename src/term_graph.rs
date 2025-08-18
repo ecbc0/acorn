@@ -4,20 +4,9 @@ use std::hash::Hash;
 
 use crate::atom::Atom;
 use crate::clause::Clause;
+use crate::clause_set::{GroupId, TermId};
 use crate::literal::Literal;
 use crate::term::Term;
-
-/// Each term has a unique id.
-/// We never invent new terms. We only make copies of terms that the caller created and find
-/// relationships between them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct TermId(u32);
-
-impl fmt::Display for TermId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
 
 /// Every time we set two terms equal or not equal, that action is tagged with a StepId.
 /// The term graph uses it to provide a history of the reasoning that led to a conclusion.
@@ -125,17 +114,6 @@ struct TermInfo {
     // The terms that this one can be directly turned into.
     // When the step id is not provided, we concluded it from composition.
     adjacent: Vec<(TermId, Option<RewriteSource>)>,
-}
-
-// Each term belongs to a group.
-// Terms that belong to the same group are equal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-struct GroupId(u32);
-
-impl fmt::Display for GroupId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
 }
 
 #[derive(Clone)]

@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::clause::{Clause, LiteralTrace};
+use crate::clause_set::TermId;
 use crate::fingerprint::FingerprintUnifier;
 use crate::literal::Literal;
 use crate::pattern_tree::LiteralSet;
@@ -10,7 +11,7 @@ use crate::proof_step::{
 };
 use crate::rewrite_tree::{Rewrite, RewriteTree};
 use crate::term::Term;
-use crate::term_graph::{StepId, TermGraph, TermId};
+use crate::term_graph::{StepId, TermGraph};
 use crate::unifier::{Scope, Unifier};
 
 /// The ActiveSet stores a bunch of clauses that are indexed for various efficient lookups.
