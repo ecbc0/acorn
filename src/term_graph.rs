@@ -736,7 +736,8 @@ impl TermGraph {
             }
         }
 
-        // First, merge clauses from old_group into new_group and track which other groups need updates
+        // First, merge clauses from old_group into new_group.
+        // Track which other groups need updates
         let mut other_groups_to_update = Vec::new();
         for (other_group, clause_ids) in old_info.clauses {
             let key_group = if other_group == old_group {
@@ -760,10 +761,6 @@ impl TermGraph {
             } else if new_info.inequalities.contains_key(&key_group) {
                 // The new group already has an inequality with this other group,
                 // so these clauses might be reducible now
-                if self.verbose {
-                    println!("TG: Group {} already has inequality with group {}, scheduling clause reduction", 
-                        new_group, key_group);
-                }
                 for &clause_id in &clause_ids {
                     self.pending
                         .push(SemanticOperation::ClauseReduction(clause_id));
@@ -1010,12 +1007,6 @@ impl TermGraph {
 
         if clause_info.literals.len() == 1 {
             let literal = &clause_info.literals[0];
-            if self.verbose {
-                println!(
-                    "TG: Clause reduced to single literal: positive={}, left=t{}, right=t{}",
-                    literal.positive, literal.left.0, literal.right.0
-                );
-            }
             if literal.positive {
                 let source = RewriteSource {
                     pattern_id: clause_info.step,
@@ -1032,9 +1023,7 @@ impl TermGraph {
                 ));
             }
         } else {
-            if self.verbose {
-                println!("TG: Clause reduced to empty (contradiction)");
-            }
+            // No literals.
             self.has_contradiction = true;
         }
     }
