@@ -141,7 +141,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_checker_bug() {
+    fn test_checker_basic_truth_table() {
+        let mut checker = Checker::with_clauses(&[
+            "not m0(m1(c5, c0), c1)",
+            "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or m0(m1(c5, c0), c1) or c4 = c1",
+        ]);
+
+        checker.check_clause_str(
+            "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or c4 = c1",
+        );
+    }
+
+    #[test]
+    fn test_checker_should_be_monovariant() {
+        // This is the basic case plus extra things. So it should also work.
         let mut checker = Checker::with_clauses(&[
             "c1 != c0",
             "m1(x0, x1) = x0 or m0(x0, x1)",
@@ -193,9 +206,15 @@ mod tests {
             "c4 != c0",
             "not m0(m1(c3, c0), c1) or c4 != c1",
             "m0(m1(c3, c0), c1) or c4 = c1",
+
+            // This should be the short clause
             "not m0(m1(c5, c0), c1)",
+
             "m4(c4, c5) != c3 or m4(c4, m1(c5, c0)) = m1(c3, c0) or c4 = c0",
+
+            // This should be the long clause
             "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or m0(m1(c5, c0), c1) or c4 = c1",
+
             "m4(c4, m1(c5, c0)) != m1(c3, c0) or m0(m1(c3, c0), c4)",
             "m4(c4, m1(c5, c0)) != m1(c3, c0) or m0(m1(c3, c0), c4)",
         ]);
