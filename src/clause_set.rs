@@ -226,7 +226,6 @@ impl fmt::Display for ClauseId {
 pub struct ClauseSet {
     clauses: HashSet<ClauseId>,
     clauses_for_group: HashMap<GroupId, HashSet<ClauseId>>,
-    clauses_for_literal: HashMap<LiteralId, HashSet<ClauseId>>,
 }
 
 impl ClauseSet {
@@ -234,17 +233,12 @@ impl ClauseSet {
         ClauseSet {
             clauses: HashSet::new(),
             clauses_for_group: HashMap::new(),
-            clauses_for_literal: HashMap::new(),
         }
     }
 
     pub fn insert(&mut self, clause: ClauseId) {
         if self.clauses.insert(clause.clone()) {
             for literal in clause.literals() {
-                self.clauses_for_literal
-                    .entry(literal.clone())
-                    .or_insert_with(HashSet::new)
-                    .insert(clause.clone());
                 self.clauses_for_group
                     .entry(literal.left)
                     .or_insert_with(HashSet::new)
@@ -259,6 +253,72 @@ impl ClauseSet {
 
     pub fn contains(&self, clause: &ClauseId) -> bool {
         self.clauses.contains(clause)
+    }
+    
+    /// Removes a clause from the set, including all index entries.
+    pub fn remove(&mut self, clause: &ClauseId) -> bool {
+        if self.clauses.remove(clause) {
+            // Remove from all group indices
+            for literal in clause.literals() {
+                if let Some(clauses) = self.clauses_for_group.get_mut(&literal.left) {
+                    clauses.remove(clause);
+                    if clauses.is_empty() {
+                        self.clauses_for_group.remove(&literal.left);
+                    }
+                }
+                if let Some(clauses) = self.clauses_for_group.get_mut(&literal.right) {
+                    clauses.remove(clause);
+                    if clauses.is_empty() {
+                        self.clauses_for_group.remove(&literal.right);
+                    }
+                }
+            }
+            true
+        } else {
+            false
+        }
+    }
+    
+    /// Validates that the indices are consistent with the main clause set.
+    /// Panics if any inconsistency is found.
+    pub fn validate(&self) {
+        // Check that every clause in clauses appears in the appropriate group indices
+        for clause in &self.clauses {
+            for literal in clause.literals() {
+                // Check left group index
+                if !self.clauses_for_group
+                    .get(&literal.left)
+                    .map(|set| set.contains(clause))
+                    .unwrap_or(false) 
+                {
+                    panic!("Clause {:?} not found in clauses_for_group[{:?}]", clause, literal.left);
+                }
+                // Check right group index  
+                if !self.clauses_for_group
+                    .get(&literal.right)
+                    .map(|set| set.contains(clause))
+                    .unwrap_or(false)
+                {
+                    panic!("Clause {:?} not found in clauses_for_group[{:?}]", clause, literal.right);
+                }
+            }
+        }
+        
+        // Check that every clause in the indices exists in the main set
+        for (group_id, clause_set) in &self.clauses_for_group {
+            for clause in clause_set {
+                if !self.clauses.contains(clause) {
+                    panic!("Clause {:?} in clauses_for_group[{:?}] not found in main clauses set", clause, group_id);
+                }
+                // Also verify this clause actually mentions this group
+                let mentions_group = clause.literals().iter().any(|lit| 
+                    lit.left == *group_id || lit.right == *group_id
+                );
+                if !mentions_group {
+                    panic!("Clause {:?} in clauses_for_group[{:?}] doesn't mention that group", clause, group_id);
+                }
+            }
+        }
     }
 
     /// Inserts a clause by parsing it from a string.
@@ -325,7 +385,7 @@ mod tests {
     fn test_reflexive_equality_is_tautology() {
         // "id0 = id0" should be recognized as a tautology (always true)
         ClauseId::parse("id0 = id0").assert_true();
-        
+
         // Same for more complex clauses - if any literal is reflexively true, whole clause is true
         ClauseId::parse("id0 != id1 or id2 = id2").assert_true();
         ClauseId::parse("id5 = id5 or id3 != id4").assert_true();
@@ -336,23 +396,87 @@ mod tests {
         // "id0 != id0" is always false, so it should be removed from the clause
         // A clause with just "id0 != id0" becomes empty (False)
         ClauseId::parse("id0 != id0").assert_false();
-        
+
         // When combined with other literals, the false literal is removed
         match ClauseId::parse("id0 != id0 or id1 = id2") {
             Normalization::Clause(clause) => {
-                assert_eq!(clause.literals().len(), 1, "False literal should be removed");
+                assert_eq!(
+                    clause.literals().len(),
+                    1,
+                    "False literal should be removed"
+                );
                 assert_eq!(clause.literals()[0], LiteralId::parse("id1 = id2"));
             }
             _ => panic!("Expected Normalization::Clause"),
         }
-        
+
         // Multiple false literals all get removed
         match ClauseId::parse("id0 != id0 or id1 = id2 or id3 != id3") {
             Normalization::Clause(clause) => {
-                assert_eq!(clause.literals().len(), 1, "All false literals should be removed");
+                assert_eq!(
+                    clause.literals().len(),
+                    1,
+                    "All false literals should be removed"
+                );
                 assert_eq!(clause.literals()[0], LiteralId::parse("id1 = id2"));
             }
             _ => panic!("Expected Normalization::Clause"),
         }
+    }
+    
+    #[test]
+    fn test_clause_set_remove_and_validate() {
+        let mut clause_set = ClauseSet::new();
+        
+        // Insert some clauses
+        clause_set.insert_str("id0 = id1 or id2 != id3");
+        clause_set.insert_str("id1 = id2");
+        clause_set.insert_str("id3 != id4 or id0 = id3");
+        
+        // Validate should pass
+        clause_set.validate();
+        
+        // Check all clauses are there
+        clause_set.check_contains("id0 = id1 or id2 != id3");
+        clause_set.check_contains("id1 = id2");
+        clause_set.check_contains("id3 != id4 or id0 = id3");
+        
+        // Remove the middle clause
+        let clause_to_remove = ClauseId::parse("id1 = id2").unwrap();
+        assert!(clause_set.remove(&clause_to_remove), "Should successfully remove existing clause");
+        
+        // Validate should still pass after removal
+        clause_set.validate();
+        
+        // Check the removed clause is gone
+        assert!(!clause_set.contains(&clause_to_remove), "Removed clause should not be in set");
+        
+        // Check the other clauses are still there
+        clause_set.check_contains("id0 = id1 or id2 != id3");
+        clause_set.check_contains("id3 != id4 or id0 = id3");
+        
+        // Try to remove the same clause again - should return false
+        assert!(!clause_set.remove(&clause_to_remove), "Removing non-existent clause should return false");
+        
+        // Remove another clause with multiple literals
+        let multi_clause = ClauseId::parse("id0 = id1 or id2 != id3").unwrap();
+        assert!(clause_set.remove(&multi_clause), "Should remove multi-literal clause");
+        
+        // Validate again
+        clause_set.validate();
+        
+        // Only one clause should remain
+        clause_set.check_contains("id3 != id4 or id0 = id3");
+        
+        // Check that groups are properly cleaned up
+        // After removing "id0 = id1 or id2 != id3" and "id1 = id2",
+        // id1 and id2 should no longer be in clauses_for_group (unless in remaining clause)
+        let remaining_groups: Vec<_> = clause_set.clauses_for_group.keys().cloned().collect();
+        assert!(remaining_groups.contains(&GroupId::parse("id0")));
+        assert!(remaining_groups.contains(&GroupId::parse("id3")));
+        assert!(remaining_groups.contains(&GroupId::parse("id4")));
+        // id1 and id2 should be gone since they're not in the remaining clause
+        assert!(!remaining_groups.contains(&GroupId::parse("id1")));
+        assert!(!remaining_groups.contains(&GroupId::parse("id2")));
     }
 }
