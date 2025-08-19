@@ -1356,6 +1356,37 @@ impl TermGraph {
         }
     }
 
+    /// Follows remapping chains to find the current group id.
+    /// Updates intermediate remaps to point directly to the final destination for efficiency.
+    pub fn update_group_id(&mut self, group_id: GroupId) -> GroupId {
+        // First, follow the chain to find the final destination
+        let mut current = group_id;
+        let mut chain = Vec::new();
+        
+        loop {
+            match &self.groups[current.get() as usize] {
+                PossibleGroupInfo::Info(_) => {
+                    // We've reached the final destination
+                    break;
+                }
+                PossibleGroupInfo::Remapped(next) => {
+                    chain.push(current);
+                    current = *next;
+                }
+            }
+        }
+        
+        // If we followed more than one hop, update all intermediate remaps
+        // to point directly to the final destination
+        if chain.len() > 1 {
+            for intermediate in &chain[..chain.len() - 1] {
+                self.groups[intermediate.get() as usize] = PossibleGroupInfo::Remapped(current);
+            }
+        }
+        
+        current
+    }
+
     // Checks that the group id has not been remapped
     fn validate_group_id(&self, group_id: GroupId) -> &GroupInfo {
         assert!(group_id < GroupId(self.groups.len() as u32));
@@ -1711,5 +1742,95 @@ mod tests {
             "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or m0(m1(c5, c0), c1) or c4 = c1",
         ]);
         g.check_clause_str("m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or c4 = c1");
+    }
+
+    #[test]
+    fn test_update_group_id() {
+        let mut g = TermGraph::new();
+        
+        // Create some terms that will have different groups
+        let t1 = g.insert_term_str("c1");
+        let t2 = g.insert_term_str("c2");
+        let t3 = g.insert_term_str("c3");
+        let t4 = g.insert_term_str("c4");
+        
+        let initial_g1 = g.get_group_id(t1);
+        let initial_g2 = g.get_group_id(t2);
+        let initial_g3 = g.get_group_id(t3);
+        let initial_g4 = g.get_group_id(t4);
+        
+        // All groups should initially map to themselves
+        assert_eq!(g.update_group_id(initial_g1), initial_g1);
+        assert_eq!(g.update_group_id(initial_g2), initial_g2);
+        assert_eq!(g.update_group_id(initial_g3), initial_g3);
+        assert_eq!(g.update_group_id(initial_g4), initial_g4);
+        
+        // Now merge t1 and t2
+        g.set_eq(t1, t2, StepId(0));
+        
+        // Find which group survived the merge
+        let g1_after_first = g.update_group_id(initial_g1);
+        let g2_after_first = g.update_group_id(initial_g2);
+        assert_eq!(g1_after_first, g2_after_first); // They should be the same
+        
+        // Now merge t2 and t3
+        g.set_eq(t2, t3, StepId(1));
+        
+        // Find which group survived this merge
+        let g1_after_second = g.update_group_id(initial_g1);
+        let g2_after_second = g.update_group_id(initial_g2);
+        let g3_after_second = g.update_group_id(initial_g3);
+        assert_eq!(g1_after_second, g2_after_second);
+        assert_eq!(g2_after_second, g3_after_second);
+        
+        // Now merge t3 and t4
+        g.set_eq(t3, t4, StepId(2));
+        
+        // Everyone should now map to the same group
+        let final_g1 = g.update_group_id(initial_g1);
+        let final_g2 = g.update_group_id(initial_g2);
+        let final_g3 = g.update_group_id(initial_g3);
+        let final_g4 = g.update_group_id(initial_g4);
+        assert_eq!(final_g1, final_g2);
+        assert_eq!(final_g2, final_g3);
+        assert_eq!(final_g3, final_g4);
+        let final_group = final_g1;
+        
+        // After calling update_group_id on initial_g1, it should have been optimized
+        // to point directly to the final group
+        assert_eq!(g.update_group_id(initial_g1), final_group);
+        
+        // If initial_g1 was remapped, check that the optimization worked
+        if initial_g1 != final_group {
+            match &g.groups[initial_g1.get() as usize] {
+                PossibleGroupInfo::Remapped(target) => assert_eq!(*target, final_group),
+                PossibleGroupInfo::Info(_) => panic!("initial_g1 should be remapped"),
+            }
+        }
+        
+        // Test a chain of remappings specifically
+        // Create a longer chain to ensure optimization works
+        let t5 = g.insert_term_str("c5");
+        let t6 = g.insert_term_str("c6");
+        let t7 = g.insert_term_str("c7");
+        
+        let g5 = g.get_group_id(t5);
+        let _g6 = g.get_group_id(t6);
+        let _g7 = g.get_group_id(t7);
+        
+        // Create chain: t5 -> t6 -> t7
+        g.set_eq(t5, t6, StepId(3));
+        g.set_eq(t6, t7, StepId(4));
+        
+        // g5 should now map to the final group (either g6 or g7 survived)
+        let final_567 = g.update_group_id(g5);
+        
+        // Check that g5 now points directly to the final group (optimization happened)
+        if g5 != final_567 {
+            match &g.groups[g5.get() as usize] {
+                PossibleGroupInfo::Remapped(target) => assert_eq!(*target, final_567),
+                PossibleGroupInfo::Info(_) => panic!("g5 should be remapped"),
+            }
+        }
     }
 }
