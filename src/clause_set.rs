@@ -7,9 +7,15 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TermId(pub u32);
 
+impl TermId {
+    pub fn get(&self) -> u32 {
+        self.0
+    }
+}
+
 impl fmt::Display for TermId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.get())
     }
 }
 
@@ -19,6 +25,10 @@ impl fmt::Display for TermId {
 pub struct GroupId(pub u32);
 
 impl GroupId {
+    pub fn get(&self) -> u32 {
+        self.0
+    }
+
     /// Parses a string like "id7" into GroupId(7).
     /// Panics if the string doesn't start with "id" followed by a valid number.
     pub fn parse(s: &str) -> GroupId {
@@ -40,7 +50,7 @@ impl GroupId {
 
 impl fmt::Display for GroupId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "id{}", self.0)
+        write!(f, "id{}", self.get())
     }
 }
 

@@ -21,7 +21,7 @@ impl StepId {
 
 impl fmt::Display for StepId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.get())
     }
 }
 
@@ -155,9 +155,15 @@ impl GroupInfo {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 struct CompoundId(u32);
 
+impl CompoundId {
+    fn get(&self) -> u32 {
+        self.0
+    }
+}
+
 impl fmt::Display for CompoundId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.get())
     }
 }
 
@@ -245,9 +251,15 @@ struct ClauseInfo {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 struct ClauseId(usize);
 
+impl ClauseId {
+    fn get(&self) -> usize {
+        self.0
+    }
+}
+
 impl fmt::Display for ClauseId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.get())
     }
 }
 
@@ -355,11 +367,11 @@ impl TermGraph {
     }
 
     pub fn get_term(&self, term_id: TermId) -> &Term {
-        &self.terms[term_id.0 as usize].term
+        &self.terms[term_id.get() as usize].term
     }
 
     fn get_group_id(&self, term_id: TermId) -> GroupId {
-        self.terms[term_id.0 as usize].group
+        self.terms[term_id.get() as usize].group
     }
 
     /// Whether there is any sort of contradiction at all.
@@ -385,14 +397,14 @@ impl TermGraph {
     }
 
     fn get_group_info(&self, group_id: GroupId) -> &GroupInfo {
-        match &self.groups[group_id.0 as usize] {
+        match &self.groups[group_id.get() as usize] {
             PossibleGroupInfo::Remapped(new_id) => panic!("group {} is remapped to {}", group_id, new_id),
             PossibleGroupInfo::Info(info) => info,
         }
     }
 
     fn get_clause_info(&self, clause_id: ClauseId) -> &Option<ClauseInfo> {
-        &self.clauses[clause_id.0]
+        &self.clauses[clause_id.get()]
     }
 
     // Inserts the head of the provided term as an atom.
@@ -484,7 +496,7 @@ impl TermGraph {
             result_term,
         };
         for group in key.groups() {
-            match &mut self.groups[group.0 as usize] {
+            match &mut self.groups[group.get() as usize] {
                 PossibleGroupInfo::Remapped(id) => {
                     panic!("compound info refers to a remapped group {} -> {}", group, id);
                 }
@@ -583,7 +595,7 @@ impl TermGraph {
             let right_group = self.get_group_id(literal_info.right);
 
             // Add to left group's clauses, indexed by right group
-            if let PossibleGroupInfo::Info(left_group_info) = &mut self.groups[left_group.0 as usize] {
+            if let PossibleGroupInfo::Info(left_group_info) = &mut self.groups[left_group.get() as usize] {
                 left_group_info
                     .clauses
                     .entry(right_group)
@@ -592,7 +604,7 @@ impl TermGraph {
             }
 
             // Add to right group's clauses, indexed by left group
-            if let PossibleGroupInfo::Info(right_group_info) = &mut self.groups[right_group.0 as usize] {
+            if let PossibleGroupInfo::Info(right_group_info) = &mut self.groups[right_group.get() as usize] {
                 right_group_info
                     .clauses
                     .entry(left_group)
@@ -619,19 +631,19 @@ impl TermGraph {
         new_group: GroupId,
         source: Option<RewriteSource>,
     ) {
-        let old_info = match std::mem::replace(&mut self.groups[old_group.0 as usize], PossibleGroupInfo::Remapped(new_group)) {
+        let old_info = match std::mem::replace(&mut self.groups[old_group.get() as usize], PossibleGroupInfo::Remapped(new_group)) {
             PossibleGroupInfo::Info(info) => info,
             PossibleGroupInfo::Remapped(id) => panic!("group {} is already remapped to {}", old_group, id),
         };
 
         for &term_id in &old_info.terms {
-            self.terms[term_id.0 as usize].group = new_group;
+            self.terms[term_id.get() as usize].group = new_group;
         }
 
         let mut keep_compounds = vec![];
         for compound_id in old_info.compounds {
             {
-                let compound = match &mut self.compounds[compound_id.0 as usize] {
+                let compound = match &mut self.compounds[compound_id.get() as usize] {
                     Some(compound) => compound,
                     None => {
                         // This compound has already been deleted.
@@ -642,7 +654,7 @@ impl TermGraph {
                 self.compound_map.remove(&compound.key);
                 compound.key.remap_group(old_group, new_group);
             }
-            let compound = self.compounds[compound_id.0 as usize]
+            let compound = self.compounds[compound_id.get() as usize]
                 .as_ref()
                 .expect("how does this happen?");
 
@@ -654,7 +666,7 @@ impl TermGraph {
                     compound.result_term,
                     existing_result_term,
                 ));
-                self.compounds[compound_id.0 as usize] = None;
+                self.compounds[compound_id.get() as usize] = None;
             } else {
                 self.compound_map
                     .insert(compound.key.clone(), compound.result_term);
@@ -664,7 +676,7 @@ impl TermGraph {
 
         // Rekey the inequalities that refer to this group from elsewhere
         for &unequal_group in old_info.inequalities.keys() {
-            let unequal_info = match &mut self.groups[unequal_group.0 as usize] {
+            let unequal_info = match &mut self.groups[unequal_group.get() as usize] {
                 PossibleGroupInfo::Remapped(id) => panic!("group {} is remapped to {}", unequal_group, id),
                 PossibleGroupInfo::Info(info) => info,
             };
@@ -683,7 +695,7 @@ impl TermGraph {
         }
 
         // Merge the old info into the new info
-        let new_info = match &mut self.groups[new_group.0 as usize] {
+        let new_info = match &mut self.groups[new_group.get() as usize] {
             PossibleGroupInfo::Remapped(id) => panic!("group {} is remapped to {}", new_group, id),
             PossibleGroupInfo::Info(info) => info,
         };
@@ -737,7 +749,7 @@ impl TermGraph {
         // Also collect the clauses to add reciprocal indexing to new_group
         let mut reciprocal_updates = Vec::new();
         for other_group in other_groups_to_update {
-            if let PossibleGroupInfo::Info(other_info) = &mut self.groups[other_group.0 as usize] {
+            if let PossibleGroupInfo::Info(other_info) = &mut self.groups[other_group.get() as usize] {
                 if let Some(clauses) = other_info.clauses.remove(&old_group) {
                     // If other_group == new_group, these clauses now compare a group to itself
                     if other_group == new_group {
@@ -761,7 +773,7 @@ impl TermGraph {
 
         // Add reciprocal indexing to new_group
         for (other_group, clause_ids) in reciprocal_updates {
-            let new_info = match &mut self.groups[new_group.0 as usize] {
+            let new_info = match &mut self.groups[new_group.get() as usize] {
                 PossibleGroupInfo::Remapped(id) => panic!("group {} is remapped to {}", new_group, id),
                 PossibleGroupInfo::Info(info) => info,
             };
@@ -774,7 +786,7 @@ impl TermGraph {
 
         // Also need to remove old_group from new_group's clauses if it exists
         // Do this after the loop to avoid borrow checker issues
-        let new_info = match &mut self.groups[new_group.0 as usize] {
+        let new_info = match &mut self.groups[new_group.get() as usize] {
             PossibleGroupInfo::Remapped(id) => panic!("group {} is remapped to {}", new_group, id),
             PossibleGroupInfo::Info(info) => info,
         };
@@ -786,10 +798,10 @@ impl TermGraph {
             }
         }
 
-        self.terms[old_term.0 as usize]
+        self.terms[old_term.get() as usize]
             .adjacent
             .push((new_term, source));
-        self.terms[new_term.0 as usize]
+        self.terms[new_term.get() as usize]
             .adjacent
             .push((old_term, source));
     }
@@ -821,7 +833,7 @@ impl TermGraph {
     /// Reduces a clause by checking if any of its literals can be evaluated.
     fn reduce_clause(&mut self, clause_id: ClauseId) {
         // Taking the clause info. Don't forget to put it back.
-        let Some(mut clause_info) = self.clauses[clause_id.0].take() else {
+        let Some(mut clause_info) = self.clauses[clause_id.get()].take() else {
             return;
         };
 
@@ -859,7 +871,7 @@ impl TermGraph {
                     .collect();
 
                 for (group1, group2) in group_pairs {
-                    if let PossibleGroupInfo::Info(group_info) = &mut self.groups[group1.0 as usize] {
+                    if let PossibleGroupInfo::Info(group_info) = &mut self.groups[group1.get() as usize] {
                         if let Some(clause_ids) = group_info.clauses.get_mut(&group2) {
                             clause_ids.remove(&clause_id);
                         }
@@ -882,7 +894,7 @@ impl TermGraph {
                 // We need to remove this clause from the indexing between removed_group and all other groups
 
                 // Remove from removed_group's indexing of all groups
-                if let PossibleGroupInfo::Info(group_info) = &mut self.groups[removed_group.0 as usize] {
+                if let PossibleGroupInfo::Info(group_info) = &mut self.groups[removed_group.get() as usize] {
                     // For each group that removed_group indexes clauses by
                     let groups_to_clean: Vec<GroupId> =
                         group_info.clauses.keys().copied().collect();
@@ -904,7 +916,7 @@ impl TermGraph {
             }
 
             // This clause is still valid. Put it back.
-            self.clauses[clause_id.0] = Some(clause_info.clone());
+            self.clauses[clause_id.get()] = Some(clause_info.clone());
 
             // Re-index the clause with its current groups
             for literal in &clause_info.literals {
@@ -912,7 +924,7 @@ impl TermGraph {
                 let right_group = self.get_group_id(literal.right);
 
                 // Add to left group's clauses, indexed by right group
-                if let PossibleGroupInfo::Info(left_group_info) = &mut self.groups[left_group.0 as usize] {
+                if let PossibleGroupInfo::Info(left_group_info) = &mut self.groups[left_group.get() as usize] {
                     left_group_info
                         .clauses
                         .entry(right_group)
@@ -921,7 +933,7 @@ impl TermGraph {
                 }
 
                 // Add to right group's clauses, indexed by left group
-                if let PossibleGroupInfo::Info(right_group_info) = &mut self.groups[right_group.0 as usize] {
+                if let PossibleGroupInfo::Info(right_group_info) = &mut self.groups[right_group.get() as usize] {
                     right_group_info
                         .clauses
                         .entry(left_group)
@@ -943,7 +955,7 @@ impl TermGraph {
             .collect();
 
         for (group1, group2) in group_pairs {
-            if let PossibleGroupInfo::Info(group_info) = &mut self.groups[group1.0 as usize] {
+            if let PossibleGroupInfo::Info(group_info) = &mut self.groups[group1.get() as usize] {
                 if let Some(clause_ids) = group_info.clauses.get_mut(&group2) {
                     clause_ids.remove(&clause_id);
                 }
@@ -1036,7 +1048,7 @@ impl TermGraph {
             return;
         }
 
-        let info1 = match &mut self.groups[group1.0 as usize] {
+        let info1 = match &mut self.groups[group1.get() as usize] {
             PossibleGroupInfo::Remapped(id) => panic!("group {} is remapped to {}", group1, id),
             PossibleGroupInfo::Info(info) => info,
         };
@@ -1053,7 +1065,7 @@ impl TermGraph {
             }
         }
 
-        let info2 = match &mut self.groups[group2.0 as usize] {
+        let info2 = match &mut self.groups[group2.get() as usize] {
             PossibleGroupInfo::Remapped(id) => panic!("group {} is remapped to {}", group2, id),
             PossibleGroupInfo::Info(info) => info,
         };
@@ -1077,7 +1089,7 @@ impl TermGraph {
     }
 
     fn as_compound(&self, term: TermId) -> (TermId, &Vec<TermId>) {
-        match &self.terms[term.0 as usize].decomp {
+        match &self.terms[term.get() as usize].decomp {
             Decomposition::Compound(head, args) => (*head, args),
             _ => panic!("not a compound"),
         }
@@ -1179,7 +1191,7 @@ impl TermGraph {
 
         // Get clauses from the first group's index
         let first_group = *groups_involved.iter().next().unwrap();
-        if let PossibleGroupInfo::Info(group_info) = &self.groups[first_group.0 as usize] {
+        if let PossibleGroupInfo::Info(group_info) = &self.groups[first_group.get() as usize] {
             for (other_group, clause_ids) in &group_info.clauses {
                 if groups_involved.contains(other_group) {
                     candidate_clauses.extend(clause_ids);
@@ -1189,7 +1201,7 @@ impl TermGraph {
 
         // Now check only the candidate clauses
         for &clause_id in &candidate_clauses {
-            let Some(info) = &self.clauses[clause_id.0] else {
+            let Some(info) = &self.clauses[clause_id.get()] else {
                 continue;
             };
 
@@ -1232,7 +1244,7 @@ impl TermGraph {
         let mut queue = vec![term2];
         'outer: loop {
             let term_b = queue.pop().expect("no path between terms");
-            for (term_a, source) in &self.terms[term_b.0 as usize].adjacent {
+            for (term_a, source) in &self.terms[term_b.get() as usize].adjacent {
                 if next_edge.contains_key(term_a) {
                     // We already have a way to get from term_a to term2
                     continue;
@@ -1328,7 +1340,7 @@ impl TermGraph {
     pub fn get_step_ids(&self, term1: TermId, term2: TermId) -> Vec<usize> {
         let mut answer = BTreeSet::new();
         self.get_step_ids_helper(term1, term2, &mut answer);
-        answer.into_iter().map(|id| id.0).collect()
+        answer.into_iter().map(|id| id.get()).collect()
     }
 
     pub fn show_graph(&self) {
@@ -1347,7 +1359,7 @@ impl TermGraph {
     // Checks that the group id has not been remapped
     fn validate_group_id(&self, group_id: GroupId) -> &GroupInfo {
         assert!(group_id < GroupId(self.groups.len() as u32));
-        match &self.groups[group_id.0 as usize] {
+        match &self.groups[group_id.get() as usize] {
             PossibleGroupInfo::Remapped(new_id) => {
                 panic!("group {} is remapped to {}", group_id, new_id)
             }
@@ -1393,11 +1405,11 @@ impl TermGraph {
                 PossibleGroupInfo::Info(info) => info,
             };
             for term_id in &group_info.terms {
-                let term_group = self.terms[term_id.0 as usize].group;
+                let term_group = self.terms[term_id.get() as usize].group;
                 assert_eq!(term_group, group_id);
             }
             for compound_id in &group_info.compounds {
-                let compound = &self.compounds[compound_id.0 as usize];
+                let compound = &self.compounds[compound_id.get() as usize];
                 let compound = match compound {
                     Some(compound) => compound,
                     None => continue,
