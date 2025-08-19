@@ -110,14 +110,64 @@ pub enum Normalization {
     Clause(ClauseId),
 }
 
+impl Normalization {
+    fn unwrap(self) -> ClauseId {
+        match self {
+            Normalization::True | Normalization::False => {
+                panic!("Normalization::unwrap called on non-clause variant")
+            }
+            Normalization::Clause(clause) => clause,
+        }
+    }
+
+    /// Asserts that this normalization is True (tautology).
+    /// Panics if it's False or a Clause.
+    pub fn assert_true(&self) {
+        match self {
+            Normalization::True => {}
+            Normalization::False => panic!("Expected Normalization::True but got False"),
+            Normalization::Clause(clause) => {
+                panic!("Expected Normalization::True but got Clause: {}", clause)
+            }
+        }
+    }
+
+    /// Asserts that this normalization is False (contradiction).
+    /// Panics if it's True or a Clause.
+    pub fn assert_false(&self) {
+        match self {
+            Normalization::False => {}
+            Normalization::True => panic!("Expected Normalization::False but got True"),
+            Normalization::Clause(clause) => {
+                panic!("Expected Normalization::False but got Clause: {}", clause)
+            }
+        }
+    }
+}
+
 impl ClauseId {
     /// Creates a normalized clause from literals.
-    /// Returns Normalization::True if the clause is a tautology (contains both x and !x).
+    /// Returns Normalization::True if the clause is a tautology (contains both x and !x or id = id).
     /// Returns Normalization::False if the clause is empty.
     /// Otherwise returns Normalization::Clause with sorted, deduplicated literals.
     pub fn new(mut literals: Vec<LiteralId>) -> Normalization {
         literals.sort();
         literals.dedup();
+
+        // Filter out reflexive literals and check for tautologies
+        let mut filtered_literals = Vec::new();
+        for lit in literals {
+            if lit.left == lit.right {
+                if lit.positive {
+                    // id = id is always true, making the whole clause true
+                    return Normalization::True;
+                }
+                // id != id is always false, skip it (don't add to filtered)
+            } else {
+                filtered_literals.push(lit);
+            }
+        }
+        literals = filtered_literals;
 
         // Check if empty (contradiction)
         if literals.is_empty() {
@@ -143,23 +193,16 @@ impl ClauseId {
         &self.0
     }
 
-    /// Parses a string like "id0 = id1" or "id0 = id1 or id2 != id3" into a ClauseId.
+    /// Parses a string like "id0 = id1" or "id0 = id1 or id2 != id3" into a Normalization.
+    /// Returns the appropriate variant based on the clause content.
     /// Panics if the format is invalid.
-    pub fn parse(s: &str) -> ClauseId {
+    pub fn parse(s: &str) -> Normalization {
         let literals: Vec<LiteralId> = s
             .split(" or ")
             .map(|lit_str| LiteralId::parse(lit_str.trim()))
             .collect();
 
-        if literals.is_empty() {
-            panic!("ClauseId::parse expects at least one literal, got empty string");
-        }
-
-        // Create a ClauseId directly with sorted and deduped literals
-        let mut literals = literals;
-        literals.sort();
-        literals.dedup();
-        ClauseId(literals)
+        ClauseId::new(literals)
     }
 }
 
@@ -219,16 +262,16 @@ impl ClauseSet {
     }
 
     /// Inserts a clause by parsing it from a string.
-    /// Panics if the string format is invalid.
+    /// Panics if the string format is invalid or if the parsed result is True/False.
     pub fn insert_str(&mut self, s: &str) {
-        let clause = ClauseId::parse(s);
+        let clause = ClauseId::parse(s).unwrap();
         self.insert(clause);
     }
 
     /// Checks if the clause set contains a clause parsed from the string.
-    /// Panics if the clause is not found or if the string format is invalid.
+    /// Panics if the clause is not found or if the parsed result is True/False.
     pub fn check_contains(&self, s: &str) {
-        let clause = ClauseId::parse(s);
+        let clause = ClauseId::parse(s).unwrap();
         if !self.contains(&clause) {
             panic!("ClauseSet does not contain clause: {}", s);
         }
@@ -242,13 +285,8 @@ mod tests {
     #[test]
     fn test_clause_deduplication() {
         // Test that duplicate literals are removed
-        let literals = vec![
-            LiteralId::parse("id0 = id1"),
-            LiteralId::parse("id0 = id1"), // duplicate
-            LiteralId::parse("id2 != id3"),
-        ];
-
-        match ClauseId::new(literals) {
+        // "id0 = id1 or id0 = id1 or id2 != id3" should deduplicate to just 2 literals
+        match ClauseId::parse("id0 = id1 or id0 = id1 or id2 != id3") {
             Normalization::Clause(clause) => {
                 assert_eq!(
                     clause.literals().len(),
@@ -266,15 +304,7 @@ mod tests {
     #[test]
     fn test_clause_tautology() {
         // Test that "id0 = id1 or id0 != id1" is recognized as a tautology
-        let literals = vec![
-            LiteralId::parse("id0 = id1"),
-            LiteralId::parse("id0 != id1"),
-        ];
-
-        match ClauseId::new(literals) {
-            Normalization::True => {} // Expected
-            _ => panic!("Expected Normalization::True for tautology"),
-        }
+        ClauseId::parse("id0 = id1 or id0 != id1").assert_true();
     }
 
     #[test]
@@ -289,5 +319,40 @@ mod tests {
 
         // Check that reordered literals still match (due to canonicalization)
         clause_set.check_contains("id2 != id3 or id0 = id1");
+    }
+
+    #[test]
+    fn test_reflexive_equality_is_tautology() {
+        // "id0 = id0" should be recognized as a tautology (always true)
+        ClauseId::parse("id0 = id0").assert_true();
+        
+        // Same for more complex clauses - if any literal is reflexively true, whole clause is true
+        ClauseId::parse("id0 != id1 or id2 = id2").assert_true();
+        ClauseId::parse("id5 = id5 or id3 != id4").assert_true();
+    }
+
+    #[test]
+    fn test_reflexive_inequality_removed() {
+        // "id0 != id0" is always false, so it should be removed from the clause
+        // A clause with just "id0 != id0" becomes empty (False)
+        ClauseId::parse("id0 != id0").assert_false();
+        
+        // When combined with other literals, the false literal is removed
+        match ClauseId::parse("id0 != id0 or id1 = id2") {
+            Normalization::Clause(clause) => {
+                assert_eq!(clause.literals().len(), 1, "False literal should be removed");
+                assert_eq!(clause.literals()[0], LiteralId::parse("id1 = id2"));
+            }
+            _ => panic!("Expected Normalization::Clause"),
+        }
+        
+        // Multiple false literals all get removed
+        match ClauseId::parse("id0 != id0 or id1 = id2 or id3 != id3") {
+            Normalization::Clause(clause) => {
+                assert_eq!(clause.literals().len(), 1, "All false literals should be removed");
+                assert_eq!(clause.literals()[0], LiteralId::parse("id1 = id2"));
+            }
+            _ => panic!("Expected Normalization::Clause"),
+        }
     }
 }
