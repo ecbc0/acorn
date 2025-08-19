@@ -226,7 +226,6 @@ impl fmt::Display for CompoundInfo {
     }
 }
 
-
 // In general, there are two sorts of operations that are performed on the graph.
 //
 // "Integrity" operations are to keep the graph valid. A lot of the data is denormalized,
@@ -506,7 +505,7 @@ impl TermGraph {
         for literal in &clause.literals {
             let left_id = self.insert_term(&literal.left);
             let right_id = self.insert_term(&literal.right);
-            
+
             if clause.literals.len() == 1 {
                 // If this is a single literal, we can just set the terms equal or not equal
                 if literal.positive {
@@ -516,7 +515,7 @@ impl TermGraph {
                 }
                 return;
             }
-            
+
             let left_group = self.get_group_id(left_id);
             let right_group = self.get_group_id(right_id);
             literal_ids.push(LiteralId::new(left_group, right_group, literal.positive));
@@ -652,7 +651,7 @@ impl TermGraph {
                 };
                 updated_literals.push(LiteralId::new(left, right, literal.positive));
             }
-            
+
             // Normalize and re-insert the updated clause
             let normalized = ClauseId::new(updated_literals);
             match normalized {
@@ -665,7 +664,8 @@ impl TermGraph {
                 }
                 Normalization::Clause(new_clause) => {
                     // Queue the clause for re-insertion
-                    self.pending.push(SemanticOperation::InsertClause(new_clause));
+                    self.pending
+                        .push(SemanticOperation::InsertClause(new_clause));
                 }
             }
         }
@@ -684,7 +684,7 @@ impl TermGraph {
         // Re-normalize the clause with current group knowledge
         let mut new_literals = Vec::new();
         let mut has_true_literal = false;
-        
+
         for literal in clause.literals() {
             // Check if groups are equal
             if literal.left == literal.right {
@@ -697,7 +697,7 @@ impl TermGraph {
                     continue;
                 }
             }
-            
+
             // Check if groups are known to be unequal
             let left_info = self.get_group_info(literal.left);
             if left_info.inequalities.contains_key(&literal.right) {
@@ -710,29 +710,29 @@ impl TermGraph {
                     continue;
                 }
             }
-            
+
             // This literal can't be evaluated, keep it
             new_literals.push(literal.clone());
         }
-        
+
         if has_true_literal {
             // The clause is a tautology, don't insert
             return;
         }
-        
+
         if new_literals.is_empty() {
             // The clause is a contradiction
             self.has_contradiction = true;
             return;
         }
-        
+
         if new_literals.len() == 1 {
             // Single literal clause - convert to equality/inequality
             let _literal = &new_literals[0];
             // We need to find the actual terms for this, which is tricky since we only have groups
             // For now, just insert the clause as-is
         }
-        
+
         // Create the normalized clause and insert it
         let normalized = ClauseId::new(new_literals);
         match normalized {
@@ -749,7 +749,7 @@ impl TermGraph {
             }
         }
     }
-    
+
     fn process_pending(&mut self) {
         while let Some(operation) = self.pending.pop() {
             // We can stop processing when we find a contradiction.
@@ -857,20 +857,23 @@ impl TermGraph {
             if prev.is_some() {
                 panic!("asymmetry in group inequalities");
             }
-            
+
             // When groups become unequal, we need to remove and re-normalize clauses
             // containing literals that compare these two groups
-            
+
             // Remove clauses with positive literals (group1 = group2)
             let positive_literal = LiteralId::new(group1, group2, true);
             let removed_positive = self.clause_set.remove_literal(&positive_literal);
-            
+
             // Remove clauses with negative literals (group1 != group2)
             let negative_literal = LiteralId::new(group1, group2, false);
             let removed_negative = self.clause_set.remove_literal(&negative_literal);
-            
+
             // Re-normalize and re-insert all removed clauses
-            for clause in removed_positive.into_iter().chain(removed_negative.into_iter()) {
+            for clause in removed_positive
+                .into_iter()
+                .chain(removed_negative.into_iter())
+            {
                 // The clause needs to be re-normalized with the new inequality knowledge
                 // We'll just re-insert it through the pending queue
                 self.pending.push(SemanticOperation::InsertClause(clause));
@@ -1126,14 +1129,14 @@ impl TermGraph {
 
         current
     }
-    
+
     /// Normalizes a ClauseId by updating all group IDs to their current values.
     /// Takes a ClauseId (from clause_set) which contains LiteralIds.
     /// Returns a Normalization which can be True (tautology), False (contradiction), or Clause.
     pub fn normalize(&mut self, clause_id: ClauseId) -> Normalization {
         // Get the literals from the ClauseId
         let literals = clause_id.literals();
-        
+
         // Update all group IDs in the literals to their current values
         let mut updated_literals = Vec::new();
         for literal in literals {
@@ -1142,7 +1145,7 @@ impl TermGraph {
             let updated_literal = LiteralId::new(updated_left, updated_right, literal.positive);
             updated_literals.push(updated_literal);
         }
-        
+
         // Use ClauseId::new to normalize the updated literals
         ClauseId::new(updated_literals)
     }
@@ -1190,7 +1193,6 @@ impl TermGraph {
                 };
                 assert!(compound.key.touches_group(group_id));
             }
-
         }
 
         for (compound_id, compound) in self.compounds.iter().enumerate() {
@@ -1461,20 +1463,31 @@ mod tests {
     }
 
     #[test]
+    fn test_term_graph_reducing_clauses() {
+        let g = TermGraph::with_clauses(&[
+            "not g3(g1) or g3(g0)",
+            "not g3(g0) or g3(g2)",
+            "g3(g1)",
+            "not g3(g2)",
+        ]);
+        assert!(g.has_contradiction);
+    }
+
+    #[test]
     fn test_normalize() {
         let mut g = TermGraph::new();
-        
+
         // Create some terms
         let t1 = g.insert_term_str("c1");
         let t2 = g.insert_term_str("c2");
         let t3 = g.insert_term_str("c3");
         let t4 = g.insert_term_str("c4");
-        
+
         let g1 = g.get_group_id(t1);
         let g2 = g.get_group_id(t2);
         let g3 = g.get_group_id(t3);
         let g4 = g.get_group_id(t4);
-        
+
         // Test 1: Normal clause that stays normal
         let lit1 = LiteralId::new(g1, g2, true);
         let lit2 = LiteralId::new(g3, g4, false);
@@ -1483,32 +1496,32 @@ mod tests {
             Normalization::Clause(c) => c,
             _ => panic!("Expected a clause"),
         };
-        
+
         match g.normalize(clause.clone()) {
             Normalization::Clause(normalized) => {
                 assert_eq!(normalized.literals().len(), 2);
-            },
+            }
             _ => panic!("Expected a normal clause"),
         }
-        
+
         // Test 2: Clause that becomes simpler after merging
         g.set_eq(t1, t2, StepId(0));
-        
+
         // After merging t1 and t2, the literal "g1 = g2" becomes reflexive and should be filtered
         match g.normalize(clause) {
-            Normalization::True => {}, // The equality becomes reflexive and true, making the whole clause true
+            Normalization::True => {} // The equality becomes reflexive and true, making the whole clause true
             _ => panic!("Expected a tautology after merging"),
         }
-        
+
         // Test 3: Create a clause that will have duplicate literals after merging
         let t5 = g.insert_term_str("c5");
         let t6 = g.insert_term_str("c6");
         let t7 = g.insert_term_str("c7");
-        
+
         let g5 = g.get_group_id(t5);
         let g6 = g.get_group_id(t6);
         let g7 = g.get_group_id(t7);
-        
+
         let lit3 = LiteralId::new(g5, g6, true);
         let lit4 = LiteralId::new(g5, g7, true);
         let clause2_norm = ClauseId::new(vec![lit3, lit4]);
@@ -1516,25 +1529,29 @@ mod tests {
             Normalization::Clause(c) => c,
             _ => panic!("Expected a clause"),
         };
-        
+
         // Merge g6 and g7
         g.set_eq(t6, t7, StepId(1));
-        
+
         // After merging, both literals become "g5 = g6" (or g7), so they should deduplicate
         match g.normalize(clause2) {
             Normalization::Clause(normalized) => {
-                assert_eq!(normalized.literals().len(), 1, "Should deduplicate to one literal");
-            },
+                assert_eq!(
+                    normalized.literals().len(),
+                    1,
+                    "Should deduplicate to one literal"
+                );
+            }
             _ => panic!("Expected a normalized clause"),
         }
-        
+
         // Test 4: Tautology test (p or not p)
         let lit5 = LiteralId::new(g3, g4, true);
         let lit6 = LiteralId::new(g3, g4, false);
         let tautology = ClauseId::new(vec![lit5, lit6]);
-        
+
         match tautology {
-            Normalization::True => {}, // This is already a tautology
+            Normalization::True => {} // This is already a tautology
             _ => panic!("Expected a tautology"),
         }
     }
