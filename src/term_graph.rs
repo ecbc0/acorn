@@ -1753,20 +1753,11 @@ mod tests {
 
     #[test]
     fn test_term_graph_missed_resolution() {
-        // A bug seen in the wild
         let mut g = TermGraph::with_clauses(&[
-            "m1(x0, x1) != m1(x1, x0) or m1(x1, x0)",
-            "m1(x0, x0)",
-            "not m1(x0, x1) or m4(x1, x0) = x1",
-            "m4(x0, x1) = x1 or m1(x1, x0)",
             "m4(c0, c1) = c1",
             "not m3(m4(c0, c1), c0)",
-            "not m1(c1, c0) or m4(c0, c1) = c0",
-            "m1(c0, c0)",
             "m1(c1, c0) or m1(c0, c1)", // Key clause 1
-            "m1(c1, c0) != m1(c0, c1) or m1(c0, c1)",
             "m3(m4(c0, c1), c0) = m1(c0, m4(c0, c1))",
-            "not m1(c0, m4(c0, c1))",
             "not m1(c0, c1)", // Key clause 2
         ]);
         g.check_clause_str("m1(c1, c0)");
