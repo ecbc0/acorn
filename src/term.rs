@@ -209,6 +209,23 @@ impl Term {
         false
     }
 
+    /// Returns the maximum index of any variable in this term, or None if there are no variables.
+    pub fn max_variable(&self) -> Option<AtomId> {
+        let mut max = None;
+        if let Atom::Variable(i) = self.head {
+            max = Some(i);
+        }
+        for arg in &self.args {
+            if let Some(arg_max) = arg.max_variable() {
+                max = Some(match max {
+                    None => arg_max,
+                    Some(current_max) => current_max.max(arg_max),
+                });
+            }
+        }
+        max
+    }
+
     pub fn has_any_variable(&self) -> bool {
         if self.head.is_variable() {
             return true;

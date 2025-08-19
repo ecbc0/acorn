@@ -16,6 +16,22 @@ impl VariableMap {
         VariableMap { map: Vec::new() }
     }
 
+    /// Returns the maximum variable index in any of the mapped terms, or None if there are no variables.
+    pub fn max_output_variable(&self) -> Option<AtomId> {
+        let mut max: Option<AtomId> = None;
+        for opt_term in &self.map {
+            if let Some(term) = opt_term {
+                if let Some(term_max) = term.max_variable() {
+                    max = Some(match max {
+                        None => term_max,
+                        Some(current_max) => current_max.max(term_max),
+                    });
+                }
+            }
+        }
+        max
+    }
+
     pub fn get_mapping(&self, i: AtomId) -> Option<&Term> {
         let i = i as usize;
         if i >= self.map.len() {

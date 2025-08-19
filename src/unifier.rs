@@ -52,8 +52,18 @@ impl Unifier {
 
     /// Creates a single-scope unifier.
     pub fn with_map(map: VariableMap) -> (Unifier, Scope) {
+        // Initialize the output map with enough blank entries for any variables in the initial map
+        let mut output_map = VariableMap::new();
+        if let Some(max_var) = map.max_output_variable() {
+            // Push blank entries up to and including the max variable index.
+            // TODO: is just pushing none okay here, or do we need some extra information?
+            for _ in 0..=max_var {
+                output_map.push_none();
+            }
+        }
+
         let unifier = Unifier {
-            maps: vec![VariableMap::new(), map],
+            maps: vec![output_map, map],
         };
         (unifier, Scope(1))
     }
