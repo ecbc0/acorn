@@ -598,6 +598,7 @@ impl TermGraph {
         }
 
         // Rekey the inequalities that refer to this group from elsewhere
+        let mut discovered_inequalities = Vec::new();
         for &unequal_group in old_info.inequalities.keys() {
             let unequal_info = match &mut self.groups[unequal_group.get() as usize] {
                 PossibleGroupInfo::Remapped(id) => {
@@ -616,20 +617,56 @@ impl TermGraph {
             }
             if !unequal_info.inequalities.contains_key(&new_group) {
                 unequal_info.inequalities.insert(new_group, value);
+                // Remember this new inequality to handle later
+                discovered_inequalities.push((unequal_group, new_group));
             }
+        }
+        
+        // Handle inequalities discovered through rekeying
+        for (group1, group2) in discovered_inequalities {
+            self.handle_inequality(group1, group2);
         }
 
         // Merge the old info into the new info
-        let new_info = match &mut self.groups[new_group.get() as usize] {
-            PossibleGroupInfo::Remapped(id) => panic!("group {} is remapped to {}", new_group, id),
-            PossibleGroupInfo::Info(info) => info,
-        };
-        new_info.terms.extend(old_info.terms);
-        new_info.compounds.extend(keep_compounds);
-        for (group, value) in old_info.inequalities {
-            if !new_info.inequalities.contains_key(&group) {
-                new_info.inequalities.insert(group, value);
+        {
+            let new_info = match &mut self.groups[new_group.get() as usize] {
+                PossibleGroupInfo::Remapped(id) => panic!("group {} is remapped to {}", new_group, id),
+                PossibleGroupInfo::Info(info) => info,
+            };
+            new_info.terms.extend(old_info.terms);
+            new_info.compounds.extend(keep_compounds);
+            for (group, value) in old_info.inequalities {
+                if !new_info.inequalities.contains_key(&group) {
+                    new_info.inequalities.insert(group, value);
+                }
             }
+        }
+        
+        // Collect inequalities that need reverse updates
+        let inequalities_to_check: Vec<_> = {
+            let new_info = match &self.groups[new_group.get() as usize] {
+                PossibleGroupInfo::Remapped(id) => panic!("group {} is remapped to {}", new_group, id),
+                PossibleGroupInfo::Info(info) => info,
+            };
+            new_info.inequalities.iter().map(|(&g, &v)| (g, v)).collect()
+        };
+        
+        // Now update the reverse inequalities and collect new ones to handle
+        let mut new_inequalities = Vec::new();
+        for (group, value) in inequalities_to_check {
+            let group_info = match &mut self.groups[group.get() as usize] {
+                PossibleGroupInfo::Remapped(_) => continue,
+                PossibleGroupInfo::Info(info) => info,
+            };
+            if !group_info.inequalities.contains_key(&new_group) {
+                group_info.inequalities.insert(new_group, value);
+                new_inequalities.push((group, new_group));
+            }
+        }
+        
+        // Handle all new inequalities discovered through group merging
+        for (group1, group2) in new_inequalities {
+            self.handle_inequality(group1, group2);
         }
 
         // Handle clause migration for the remapped group
@@ -916,6 +953,31 @@ impl TermGraph {
         self.process_pending();
     }
 
+    // Handle the discovery that two groups are unequal.
+    // This removes and re-normalizes clauses that contain literals comparing these groups.
+    fn handle_inequality(&mut self, group1: GroupId, group2: GroupId) {
+        // When groups become unequal, we need to remove and re-normalize clauses
+        // containing literals that compare these two groups
+
+        // Remove clauses with positive literals (group1 = group2)
+        let positive_literal = LiteralId::new(group1, group2, true);
+        let removed_positive = self.clause_set.remove_literal(&positive_literal);
+
+        // Remove clauses with negative literals (group1 != group2)
+        let negative_literal = LiteralId::new(group1, group2, false);
+        let removed_negative = self.clause_set.remove_literal(&negative_literal);
+
+        // Re-normalize and re-insert all removed clauses
+        for clause in removed_positive
+            .into_iter()
+            .chain(removed_negative.into_iter())
+        {
+            // The clause needs to be re-normalized with the new inequality knowledge
+            // We'll just re-insert it through the pending queue
+            self.pending.push(SemanticOperation::InsertClause(clause));
+        }
+    }
+
     // Set two terms to be not equal.
     // Doesn't repeat to find the logical closure.
     fn set_terms_not_equal_once(&mut self, term1: TermId, term2: TermId, step: StepId) {
@@ -948,26 +1010,8 @@ impl TermGraph {
                 panic!("asymmetry in group inequalities");
             }
 
-            // When groups become unequal, we need to remove and re-normalize clauses
-            // containing literals that compare these two groups
-
-            // Remove clauses with positive literals (group1 = group2)
-            let positive_literal = LiteralId::new(group1, group2, true);
-            let removed_positive = self.clause_set.remove_literal(&positive_literal);
-
-            // Remove clauses with negative literals (group1 != group2)
-            let negative_literal = LiteralId::new(group1, group2, false);
-            let removed_negative = self.clause_set.remove_literal(&negative_literal);
-
-            // Re-normalize and re-insert all removed clauses
-            for clause in removed_positive
-                .into_iter()
-                .chain(removed_negative.into_iter())
-            {
-                // The clause needs to be re-normalized with the new inequality knowledge
-                // We'll just re-insert it through the pending queue
-                self.pending.push(SemanticOperation::InsertClause(clause));
-            }
+            // Handle the new inequality by removing and re-normalizing affected clauses
+            self.handle_inequality(group1, group2);
         }
     }
 
