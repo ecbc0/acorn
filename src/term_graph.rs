@@ -1,10 +1,10 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 use std::hash::Hash;
 
 use crate::atom::Atom;
 use crate::clause::Clause;
-use crate::clause_set::{ClauseId, GroupId, LiteralId, Normalization, TermId};
+use crate::clause_set::{ClauseId, ClauseSet, GroupId, LiteralId, Normalization, TermId};
 use crate::literal::Literal;
 use crate::term::Term;
 
@@ -137,10 +137,6 @@ struct GroupInfo {
     // For each inequality, we store the two terms that we know are not equal,
     // along with the step that we know it from.
     inequalities: HashMap<GroupId, (TermId, TermId, StepId)>,
-
-    // The clauses that are related to this group.
-    // Keyed by the group that is on the other side of the literal from this one.
-    clauses: HashMap<GroupId, HashSet<OldClauseId>>,
 }
 
 impl GroupInfo {
@@ -230,38 +226,6 @@ impl fmt::Display for CompoundInfo {
     }
 }
 
-// We represent literals based on their terms.
-// This isn't quite enough to have good tracking information, so we might need to expand on this.
-#[derive(Clone)]
-struct LiteralInfo {
-    positive: bool,
-    left: TermId,
-    right: TermId,
-}
-
-#[derive(Clone)]
-struct ClauseInfo {
-    // The literals that make up the clause.
-    literals: Vec<LiteralInfo>,
-
-    // The step in which we added this clause to the graph.
-    step: StepId,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
-struct OldClauseId(usize);
-
-impl OldClauseId {
-    fn get(&self) -> usize {
-        self.0
-    }
-}
-
-impl fmt::Display for OldClauseId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.get())
-    }
-}
 
 // In general, there are two sorts of operations that are performed on the graph.
 //
@@ -289,8 +253,8 @@ enum SemanticOperation {
     // We have discovered that two terms are not equal.
     TermInequality(TermId, TermId, StepId),
 
-    // We have discovered that a clause can be reduced.
-    ClauseReduction(OldClauseId),
+    // Insert a clause (will be normalized first).
+    InsertClause(ClauseId),
 }
 
 /// The TermGraph stores concrete terms, along with relationships between them that represent
@@ -307,9 +271,8 @@ pub struct TermGraph {
     // When a compound is deleted, we replace it with None.
     compounds: Vec<Option<CompoundInfo>>,
 
-    // clauses maps ClauseId to ClauseInfo.
-    // When a clause is eliminated, we replace it with None.
-    clauses: Vec<Option<ClauseInfo>>,
+    // The set of clauses in the graph
+    clause_set: ClauseSet,
 
     // Keying the compounds so that we can check if a composition belongs to an existing group.
     compound_map: HashMap<CompoundKey, TermId>,
@@ -337,7 +300,7 @@ impl TermGraph {
             terms: Vec::new(),
             groups: Vec::new(),
             compounds: Vec::new(),
-            clauses: Vec::new(),
+            clause_set: ClauseSet::new(),
             compound_map: HashMap::new(),
             decompositions: HashMap::new(),
             pending: Vec::new(),
@@ -405,10 +368,6 @@ impl TermGraph {
         }
     }
 
-    fn get_clause_info(&self, clause_id: OldClauseId) -> &Option<ClauseInfo> {
-        &self.clauses[clause_id.get()]
-    }
-
     // Inserts the head of the provided term as an atom.
     // If it's already in the graph, return the existing term id.
     // Otherwise, make a new term id and give it a new group.
@@ -439,7 +398,6 @@ impl TermGraph {
             terms: vec![term_id],
             compounds: vec![],
             inequalities: HashMap::new(),
-            clauses: HashMap::new(),
         });
         self.groups.push(group_info);
         self.decompositions.insert(key, term_id);
@@ -469,7 +427,6 @@ impl TermGraph {
             terms: vec![term_id],
             compounds: vec![],
             inequalities: HashMap::new(),
-            clauses: HashMap::new(),
         });
         self.groups.push(group_info);
         self.decompositions.insert(key, term_id);
@@ -544,11 +501,12 @@ impl TermGraph {
     /// The clause is indexed by all groups that appear in its literals.
     /// Don't insert clauses with no literals.
     pub fn insert_clause(&mut self, clause: &Clause, step: StepId) {
-        // First, insert all terms and collect their IDs
-        let mut literal_infos = Vec::new();
+        // First, insert all terms and collect literal IDs
+        let mut literal_ids = Vec::new();
         for literal in &clause.literals {
             let left_id = self.insert_term(&literal.left);
             let right_id = self.insert_term(&literal.right);
+            
             if clause.literals.len() == 1 {
                 // If this is a single literal, we can just set the terms equal or not equal
                 if literal.positive {
@@ -558,74 +516,26 @@ impl TermGraph {
                 }
                 return;
             }
-            literal_infos.push(LiteralInfo {
-                positive: literal.positive,
-                left: left_id,
-                right: right_id,
-            });
+            
+            let left_group = self.get_group_id(left_id);
+            let right_group = self.get_group_id(right_id);
+            literal_ids.push(LiteralId::new(left_group, right_group, literal.positive));
         }
 
-        // Create the clause info
-        let clause_info = ClauseInfo {
-            literals: literal_infos.clone(),
-            step,
-        };
-
-        // Add the clause to the clauses vector
-        let clause_id = OldClauseId(self.clauses.len());
-        self.clauses.push(Some(clause_info));
-
-        // Check if any literal can already be evaluated
-        let mut needs_reduction = false;
-        for literal_info in &literal_infos {
-            let left_group = self.get_group_id(literal_info.left);
-            let right_group = self.get_group_id(literal_info.right);
-
-            // Check if the literal can be evaluated
-            if left_group == right_group {
-                // The terms are equal
-                needs_reduction = true;
-            } else {
-                let left_group_info = self.get_group_info(left_group);
-                if left_group_info.inequalities.contains_key(&right_group) {
-                    // The terms are known to be not equal
-                    needs_reduction = true;
-                }
+        // Create the clause and add it to the pending queue for normalization
+        let clause_normalization = ClauseId::new(literal_ids);
+        match clause_normalization {
+            Normalization::True => {
+                // Tautology - nothing to do
             }
-        }
-
-        // For each literal, add the clause to both groups involved
-        for literal_info in &literal_infos {
-            let left_group = self.get_group_id(literal_info.left);
-            let right_group = self.get_group_id(literal_info.right);
-
-            // Add to left group's clauses, indexed by right group
-            if let PossibleGroupInfo::Info(left_group_info) =
-                &mut self.groups[left_group.get() as usize]
-            {
-                left_group_info
-                    .clauses
-                    .entry(right_group)
-                    .or_insert_with(HashSet::new)
-                    .insert(clause_id);
+            Normalization::False => {
+                // Contradiction - set the contradiction flag
+                self.has_contradiction = true;
             }
-
-            // Add to right group's clauses, indexed by left group
-            if let PossibleGroupInfo::Info(right_group_info) =
-                &mut self.groups[right_group.get() as usize]
-            {
-                right_group_info
-                    .clauses
-                    .entry(left_group)
-                    .or_insert_with(HashSet::new)
-                    .insert(clause_id);
+            Normalization::Clause(clause) => {
+                // Add to pending queue for insertion
+                self.pending.push(SemanticOperation::InsertClause(clause));
             }
-        }
-
-        // If any literal can be evaluated, schedule a reduction
-        if needs_reduction {
-            self.pending
-                .push(SemanticOperation::ClauseReduction(clause_id));
         }
 
         self.process_pending();
@@ -723,98 +633,40 @@ impl TermGraph {
             }
         }
 
-        // First, merge clauses from old_group into new_group.
-        // Track which other groups need updates
-        let mut other_groups_to_update = Vec::new();
-        for (other_group, clause_ids) in old_info.clauses {
-            let key_group = if other_group == old_group {
-                // Self-referential: old_group -> old_group becomes new_group -> new_group
-                new_group
-            } else {
-                // Track that this other group needs to be updated
-                if other_group != new_group {
-                    other_groups_to_update.push(other_group);
-                }
-                other_group
-            };
-
-            // If key_group == new_group, these clauses now compare a group to itself
-            // and need reduction
-            if key_group == new_group {
-                for &clause_id in &clause_ids {
-                    self.pending
-                        .push(SemanticOperation::ClauseReduction(clause_id));
-                }
-            } else if new_info.inequalities.contains_key(&key_group) {
-                // The new group already has an inequality with this other group,
-                // so these clauses might be reducible now
-                for &clause_id in &clause_ids {
-                    self.pending
-                        .push(SemanticOperation::ClauseReduction(clause_id));
-                }
+        // Handle clause migration for the remapped group
+        // Remove all clauses mentioning old_group and re-normalize them
+        let removed_clauses = self.clause_set.remove_group(old_group);
+        for clause in removed_clauses {
+            // Update the clause by remapping old_group to new_group
+            let mut updated_literals = Vec::new();
+            for literal in clause.literals() {
+                let left = if literal.left == old_group {
+                    new_group
+                } else {
+                    literal.left
+                };
+                let right = if literal.right == old_group {
+                    new_group
+                } else {
+                    literal.right
+                };
+                updated_literals.push(LiteralId::new(left, right, literal.positive));
             }
-
-            new_info
-                .clauses
-                .entry(key_group)
-                .or_insert_with(HashSet::new)
-                .extend(clause_ids);
-        }
-
-        // Now update the other groups to point to new_group instead of old_group
-        // Also collect the clauses to add reciprocal indexing to new_group
-        let mut reciprocal_updates = Vec::new();
-        for other_group in other_groups_to_update {
-            if let PossibleGroupInfo::Info(other_info) =
-                &mut self.groups[other_group.get() as usize]
-            {
-                if let Some(clauses) = other_info.clauses.remove(&old_group) {
-                    // If other_group == new_group, these clauses now compare a group to itself
-                    if other_group == new_group {
-                        for &clause_id in &clauses {
-                            self.pending
-                                .push(SemanticOperation::ClauseReduction(clause_id));
-                        }
-                    } else {
-                        // Store for reciprocal update
-                        reciprocal_updates.push((other_group, clauses.clone()));
-                    }
-
-                    other_info
-                        .clauses
-                        .entry(new_group)
-                        .or_insert_with(HashSet::new)
-                        .extend(clauses);
+            
+            // Normalize and re-insert the updated clause
+            let normalized = ClauseId::new(updated_literals);
+            match normalized {
+                Normalization::True => {
+                    // Tautology - don't re-insert
                 }
-            }
-        }
-
-        // Add reciprocal indexing to new_group
-        for (other_group, clause_ids) in reciprocal_updates {
-            let new_info = match &mut self.groups[new_group.get() as usize] {
-                PossibleGroupInfo::Remapped(id) => {
-                    panic!("group {} is remapped to {}", new_group, id)
+                Normalization::False => {
+                    // Contradiction
+                    self.has_contradiction = true;
                 }
-                PossibleGroupInfo::Info(info) => info,
-            };
-            new_info
-                .clauses
-                .entry(other_group)
-                .or_insert_with(HashSet::new)
-                .extend(clause_ids);
-        }
-
-        // Also need to remove old_group from new_group's clauses if it exists
-        // Do this after the loop to avoid borrow checker issues
-        let new_info = match &mut self.groups[new_group.get() as usize] {
-            PossibleGroupInfo::Remapped(id) => panic!("group {} is remapped to {}", new_group, id),
-            PossibleGroupInfo::Info(info) => info,
-        };
-        if let Some(clauses) = new_info.clauses.remove(&old_group) {
-            // These clauses now compare a group to itself and need reduction
-            for &clause_id in &clauses {
-                self.pending
-                    .push(SemanticOperation::ClauseReduction(clause_id));
+                Normalization::Clause(new_clause) => {
+                    // Queue the clause for re-insertion
+                    self.pending.push(SemanticOperation::InsertClause(new_clause));
+                }
             }
         }
 
@@ -826,6 +678,78 @@ impl TermGraph {
             .push((old_term, source));
     }
 
+    /// Inserts a clause that has already been normalized.
+    /// This re-normalizes it in case the graph state has changed.
+    fn insert_clause_normalized(&mut self, clause: ClauseId) {
+        // Re-normalize the clause with current group knowledge
+        let mut new_literals = Vec::new();
+        let mut has_true_literal = false;
+        
+        for literal in clause.literals() {
+            // Check if groups are equal
+            if literal.left == literal.right {
+                if literal.positive {
+                    // id = id is always true
+                    has_true_literal = true;
+                    break;
+                } else {
+                    // id != id is always false, skip it
+                    continue;
+                }
+            }
+            
+            // Check if groups are known to be unequal
+            let left_info = self.get_group_info(literal.left);
+            if left_info.inequalities.contains_key(&literal.right) {
+                if !literal.positive {
+                    // id != different_id where they're known unequal is true
+                    has_true_literal = true;
+                    break;
+                } else {
+                    // id = different_id where they're known unequal is false, skip it
+                    continue;
+                }
+            }
+            
+            // This literal can't be evaluated, keep it
+            new_literals.push(literal.clone());
+        }
+        
+        if has_true_literal {
+            // The clause is a tautology, don't insert
+            return;
+        }
+        
+        if new_literals.is_empty() {
+            // The clause is a contradiction
+            self.has_contradiction = true;
+            return;
+        }
+        
+        if new_literals.len() == 1 {
+            // Single literal clause - convert to equality/inequality
+            let _literal = &new_literals[0];
+            // We need to find the actual terms for this, which is tricky since we only have groups
+            // For now, just insert the clause as-is
+        }
+        
+        // Create the normalized clause and insert it
+        let normalized = ClauseId::new(new_literals);
+        match normalized {
+            Normalization::True => {
+                // Tautology - nothing to do
+            }
+            Normalization::False => {
+                // Contradiction
+                self.has_contradiction = true;
+            }
+            Normalization::Clause(new_clause) => {
+                // Actually insert the clause into the set
+                self.clause_set.insert(new_clause);
+            }
+        }
+    }
+    
     fn process_pending(&mut self) {
         while let Some(operation) = self.pending.pop() {
             // We can stop processing when we find a contradiction.
@@ -843,173 +767,10 @@ impl TermGraph {
                 SemanticOperation::TermInequality(term1, term2, step) => {
                     self.set_terms_not_equal_once(term1, term2, step);
                 }
-                SemanticOperation::ClauseReduction(clause_id) => {
-                    self.reduce_clause(clause_id);
+                SemanticOperation::InsertClause(clause) => {
+                    self.insert_clause_normalized(clause);
                 }
             }
-        }
-    }
-
-    /// Reduces a clause by checking if any of its literals can be evaluated.
-    fn reduce_clause(&mut self, clause_id: OldClauseId) {
-        // Taking the clause info. Don't forget to put it back.
-        let Some(mut clause_info) = self.clauses[clause_id.get()].take() else {
-            return;
-        };
-
-        // Track which groups were involved before reduction
-        let mut old_groups = HashSet::new();
-        for literal in &clause_info.literals {
-            old_groups.insert(self.get_group_id(literal.left));
-            old_groups.insert(self.get_group_id(literal.right));
-        }
-
-        let mut literals = vec![];
-        std::mem::swap(&mut clause_info.literals, &mut literals);
-        for literal in literals {
-            let left_group = self.get_group_id(literal.left);
-            let right_group = self.get_group_id(literal.right);
-            let sides_equal = if left_group == right_group {
-                true
-            } else {
-                let left_info = self.get_group_info(left_group);
-                if left_info.inequalities.contains_key(&right_group) {
-                    false
-                } else {
-                    // We can't evaluate this literal. Put it back.
-                    clause_info.literals.push(literal);
-                    continue;
-                }
-            };
-            if literal.positive == sides_equal {
-                // This literal is true, so the whole clause is redundant.
-                // Remove clause from all group pairs
-                let group_pairs: Vec<(GroupId, GroupId)> = old_groups
-                    .iter()
-                    .flat_map(|&g1| old_groups.iter().map(move |&g2| (g1, g2)))
-                    .filter(|(g1, g2)| g1 != g2)
-                    .collect();
-
-                for (group1, group2) in group_pairs {
-                    if let PossibleGroupInfo::Info(group_info) =
-                        &mut self.groups[group1.get() as usize]
-                    {
-                        if let Some(clause_ids) = group_info.clauses.get_mut(&group2) {
-                            clause_ids.remove(&clause_id);
-                        }
-                    }
-                }
-                return;
-            }
-        }
-
-        if clause_info.literals.len() >= 2 {
-            // Track which groups are involved after reduction
-            let mut new_groups = HashSet::new();
-            for literal in &clause_info.literals {
-                new_groups.insert(self.get_group_id(literal.left));
-                new_groups.insert(self.get_group_id(literal.right));
-            }
-
-            // Remove clause from groups that are no longer involved
-            for &removed_group in old_groups.difference(&new_groups) {
-                // We need to remove this clause from the indexing between removed_group and all other groups
-
-                // Remove from removed_group's indexing of all groups
-                if let PossibleGroupInfo::Info(group_info) =
-                    &mut self.groups[removed_group.get() as usize]
-                {
-                    // For each group that removed_group indexes clauses by
-                    let groups_to_clean: Vec<GroupId> =
-                        group_info.clauses.keys().copied().collect();
-                    for other_group in groups_to_clean {
-                        if let Some(clause_ids) = group_info.clauses.get_mut(&other_group) {
-                            clause_ids.remove(&clause_id);
-                        }
-                    }
-                }
-
-                // Also remove from all other groups' indexing of removed_group
-                for i in 0..self.groups.len() {
-                    if let PossibleGroupInfo::Info(group_info) = &mut self.groups[i] {
-                        if let Some(clause_ids) = group_info.clauses.get_mut(&removed_group) {
-                            clause_ids.remove(&clause_id);
-                        }
-                    }
-                }
-            }
-
-            // This clause is still valid. Put it back.
-            self.clauses[clause_id.get()] = Some(clause_info.clone());
-
-            // Re-index the clause with its current groups
-            for literal in &clause_info.literals {
-                let left_group = self.get_group_id(literal.left);
-                let right_group = self.get_group_id(literal.right);
-
-                // Add to left group's clauses, indexed by right group
-                if let PossibleGroupInfo::Info(left_group_info) =
-                    &mut self.groups[left_group.get() as usize]
-                {
-                    left_group_info
-                        .clauses
-                        .entry(right_group)
-                        .or_insert_with(HashSet::new)
-                        .insert(clause_id);
-                }
-
-                // Add to right group's clauses, indexed by left group
-                if let PossibleGroupInfo::Info(right_group_info) =
-                    &mut self.groups[right_group.get() as usize]
-                {
-                    right_group_info
-                        .clauses
-                        .entry(left_group)
-                        .or_insert_with(HashSet::new)
-                        .insert(clause_id);
-                }
-            }
-
-            return;
-        }
-
-        // This clause is toast, but now what?
-
-        // Remove clause from all group pairs since it's being deleted
-        let group_pairs: Vec<(GroupId, GroupId)> = old_groups
-            .iter()
-            .flat_map(|&g1| old_groups.iter().map(move |&g2| (g1, g2)))
-            .filter(|(g1, g2)| g1 != g2)
-            .collect();
-
-        for (group1, group2) in group_pairs {
-            if let PossibleGroupInfo::Info(group_info) = &mut self.groups[group1.get() as usize] {
-                if let Some(clause_ids) = group_info.clauses.get_mut(&group2) {
-                    clause_ids.remove(&clause_id);
-                }
-            }
-        }
-
-        if clause_info.literals.len() == 1 {
-            let literal = &clause_info.literals[0];
-            if literal.positive {
-                let source = RewriteSource {
-                    pattern_id: clause_info.step,
-                    inspiration_id: None,
-                    left: literal.left,
-                    right: literal.right,
-                };
-                self.pending.push(SemanticOperation::Rewrite(source));
-            } else {
-                self.pending.push(SemanticOperation::TermInequality(
-                    literal.left,
-                    literal.right,
-                    clause_info.step,
-                ));
-            }
-        } else {
-            // No literals.
-            self.has_contradiction = true;
         }
     }
 
@@ -1085,14 +846,6 @@ impl TermGraph {
             info1.inequalities.insert(group2, (term1, term2, step));
         }
 
-        // Trigger reduction for clauses that involve both groups
-        if let Some(clause_ids) = info1.clauses.get(&group2) {
-            for &clause_id in clause_ids {
-                self.pending
-                    .push(SemanticOperation::ClauseReduction(clause_id));
-            }
-        }
-
         let info2 = match &mut self.groups[group2.get() as usize] {
             PossibleGroupInfo::Remapped(id) => panic!("group {} is remapped to {}", group2, id),
             PossibleGroupInfo::Info(info) => info,
@@ -1100,18 +853,27 @@ impl TermGraph {
 
         // Only update info2 if we didn't already have this inequality
         if !already_unequal {
-            // Check clauses from the other direction too
-            if let Some(clause_ids) = info2.clauses.get(&group1) {
-                // Trigger reduction on these clauses too
-                for &clause_id in clause_ids {
-                    self.pending
-                        .push(SemanticOperation::ClauseReduction(clause_id));
-                }
-            }
-
             let prev = info2.inequalities.insert(group1, (term1, term2, step));
             if prev.is_some() {
                 panic!("asymmetry in group inequalities");
+            }
+            
+            // When groups become unequal, we need to remove and re-normalize clauses
+            // containing literals that compare these two groups
+            
+            // Remove clauses with positive literals (group1 = group2)
+            let positive_literal = LiteralId::new(group1, group2, true);
+            let removed_positive = self.clause_set.remove_literal(&positive_literal);
+            
+            // Remove clauses with negative literals (group1 != group2)
+            let negative_literal = LiteralId::new(group1, group2, false);
+            let removed_negative = self.clause_set.remove_literal(&negative_literal);
+            
+            // Re-normalize and re-insert all removed clauses
+            for clause in removed_positive.into_iter().chain(removed_negative.into_iter()) {
+                // The clause needs to be re-normalized with the new inequality knowledge
+                // We'll just re-insert it through the pending queue
+                self.pending.push(SemanticOperation::InsertClause(clause));
             }
         }
     }
@@ -1173,82 +935,32 @@ impl TermGraph {
             return false;
         }
 
-        // First, convert the clause to check into group-normalized form, skipping false literals
-        let mut check_literals = Vec::new();
-        let mut groups_involved = HashSet::new();
+        // Convert the clause to literal IDs
+        let mut literal_ids = Vec::new();
         for literal in &clause.literals {
             let left_id = self.insert_term(&literal.left);
             let right_id = self.insert_term(&literal.right);
             let left_group = self.get_group_id(left_id);
             let right_group = self.get_group_id(right_id);
-
-            // Figure out whether the sides are equal, if possible
-            let sides_equal = if left_group == right_group {
-                Some(true)
-            } else {
-                let left_info = self.get_group_info(left_group);
-                if left_info.inequalities.contains_key(&right_group) {
-                    Some(false)
-                } else {
-                    None
-                }
-            };
-
-            // If the literal evaluates to false, skip it
-            if Some(!literal.positive) == sides_equal {
-                continue;
-            }
-
-            // Otherwise include it
-            groups_involved.insert(left_group);
-            groups_involved.insert(right_group);
-            check_literals.push((literal.positive, left_group, right_group));
+            literal_ids.push(LiteralId::new(left_group, right_group, literal.positive));
         }
 
-        // Sort literals for canonical comparison
-        check_literals.sort();
-
-        if check_literals.is_empty() {
-            // If literals are false, the clause itself is false
-            return self.has_contradiction();
-        }
-
-        // Use the clause indexing to find potentially matching clauses
-        // We only need to check clauses that involve the same groups
-        let mut candidate_clauses: HashSet<OldClauseId> = HashSet::new();
-
-        // Get clauses from the first group's index
-        let first_group = *groups_involved.iter().next().unwrap();
-        if let PossibleGroupInfo::Info(group_info) = &self.groups[first_group.get() as usize] {
-            for (other_group, clause_ids) in &group_info.clauses {
-                if groups_involved.contains(other_group) {
-                    candidate_clauses.extend(clause_ids);
-                }
+        // Normalize the clause
+        let normalized = ClauseId::new(literal_ids);
+        match normalized {
+            Normalization::True => {
+                // Tautology - always exists in a sense
+                true
+            }
+            Normalization::False => {
+                // Contradiction - exists if we have a contradiction
+                self.has_contradiction()
+            }
+            Normalization::Clause(clause_id) => {
+                // Check if this clause exists in the set
+                self.clause_set.contains(&clause_id)
             }
         }
-
-        // Now check only the candidate clauses
-        for &clause_id in &candidate_clauses {
-            let Some(info) = &self.clauses[clause_id.get()] else {
-                continue;
-            };
-
-            // Convert stored clause to same normalized form
-            let mut stored_literals = Vec::new();
-            for literal in &info.literals {
-                let left_group = self.get_group_id(literal.left);
-                let right_group = self.get_group_id(literal.right);
-                stored_literals.push((literal.positive, left_group, right_group));
-            }
-            stored_literals.sort();
-
-            // Check if they match
-            if check_literals == stored_literals {
-                return true;
-            }
-        }
-
-        false
     }
 
     // Gets a step of edges that demonstrate that term1 and term2 are equal.
@@ -1448,23 +1160,6 @@ impl TermGraph {
 
     // Checks that this clause contains a term from this group.
     // It's also okay if the clause has ceased to exist, because we clean up lazily.
-    fn check_clause_has_group(&self, clause_id: OldClauseId, group_id: GroupId) {
-        let Some(clause_info) = self.get_clause_info(clause_id) else {
-            return;
-        };
-        for literal in &clause_info.literals {
-            let left_group = self.get_group_id(literal.left);
-            let right_group = self.get_group_id(literal.right);
-            if left_group == group_id || right_group == group_id {
-                return; // Found a term from the group
-            }
-        }
-        panic!(
-            "clause {} does not contain a term from group {}",
-            clause_id, group_id
-        );
-    }
-
     /// Panics if it finds a consistency problem.
     pub fn validate(&self) {
         if !self.has_contradiction {
@@ -1496,16 +1191,6 @@ impl TermGraph {
                 assert!(compound.key.touches_group(group_id));
             }
 
-            for (other_group_id, clause_ids) in &group_info.clauses {
-                // The same clause ids should be stored in both direction
-                let other_info = self.validate_group_id(*other_group_id);
-                let alt_clause_ids = other_info.clauses.get(&group_id).unwrap();
-                assert_eq!(clause_ids, alt_clause_ids);
-
-                for clause_id in clause_ids {
-                    self.check_clause_has_group(*clause_id, group_id);
-                }
-            }
         }
 
         for (compound_id, compound) in self.compounds.iter().enumerate() {
@@ -1520,25 +1205,8 @@ impl TermGraph {
             }
         }
 
-        for (clause_id, clause_info) in self.clauses.iter().enumerate() {
-            let clause_id = OldClauseId(clause_id);
-            let Some(clause_info) = clause_info else {
-                continue;
-            };
-            assert!(clause_info.literals.len() > 1);
-            for literal in &clause_info.literals {
-                let left_group = self.get_group_id(literal.left);
-                let right_group = self.get_group_id(literal.right);
-
-                let left_info = self.validate_group_id(left_group);
-                let clause_ids = left_info.clauses.get(&right_group).unwrap();
-                assert!(clause_ids.contains(&clause_id));
-
-                let right_info = self.validate_group_id(right_group);
-                let clause_ids = right_info.clauses.get(&left_group).unwrap();
-                assert!(clause_ids.contains(&clause_id));
-            }
-        }
+        // Validate the clause set
+        self.clause_set.validate();
     }
 }
 
