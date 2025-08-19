@@ -237,6 +237,7 @@ impl fmt::Display for ClauseId {
 pub struct ClauseSet {
     clauses: HashSet<ClauseId>,
     clauses_for_group: HashMap<GroupId, HashSet<ClauseId>>,
+    clauses_for_literal: HashMap<LiteralId, HashSet<ClauseId>>,
 }
 
 impl ClauseSet {
@@ -244,18 +245,26 @@ impl ClauseSet {
         ClauseSet {
             clauses: HashSet::new(),
             clauses_for_group: HashMap::new(),
+            clauses_for_literal: HashMap::new(),
         }
     }
 
     pub fn insert(&mut self, clause: ClauseId) {
         if self.clauses.insert(clause.clone()) {
             for literal in clause.literals() {
+                // Index by group
                 self.clauses_for_group
                     .entry(literal.left)
                     .or_insert_with(HashSet::new)
                     .insert(clause.clone());
                 self.clauses_for_group
                     .entry(literal.right)
+                    .or_insert_with(HashSet::new)
+                    .insert(clause.clone());
+                
+                // Index by literal
+                self.clauses_for_literal
+                    .entry(literal.clone())
                     .or_insert_with(HashSet::new)
                     .insert(clause.clone());
             }
@@ -269,8 +278,9 @@ impl ClauseSet {
     /// Removes a clause from the set, including all index entries.
     pub fn remove(&mut self, clause: &ClauseId) -> bool {
         if self.clauses.remove(clause) {
-            // Remove from all group indices
+            // Remove from all indices
             for literal in clause.literals() {
+                // Remove from group indices
                 if let Some(clauses) = self.clauses_for_group.get_mut(&literal.left) {
                     clauses.remove(clause);
                     if clauses.is_empty() {
@@ -283,11 +293,36 @@ impl ClauseSet {
                         self.clauses_for_group.remove(&literal.right);
                     }
                 }
+                
+                // Remove from literal index
+                if let Some(clauses) = self.clauses_for_literal.get_mut(literal) {
+                    clauses.remove(clause);
+                    if clauses.is_empty() {
+                        self.clauses_for_literal.remove(literal);
+                    }
+                }
             }
             true
         } else {
             false
         }
+    }
+    
+    /// Removes all clauses that contain a specific literal.
+    /// Returns the set of clauses that were removed.
+    pub fn remove_literal(&mut self, literal: &LiteralId) -> HashSet<ClauseId> {
+        // Get all clauses that contain this literal
+        let clauses_to_remove = self.clauses_for_literal
+            .get(literal)
+            .cloned()
+            .unwrap_or_else(HashSet::new);
+        
+        // Remove each clause completely
+        for clause in &clauses_to_remove {
+            self.remove(clause);
+        }
+        
+        clauses_to_remove
     }
     
     /// Removes all clauses that mention a specific group.
@@ -299,24 +334,10 @@ impl ClauseSet {
             .cloned()
             .unwrap_or_else(HashSet::new);
         
-        // Remove each clause completely
+        // Remove each clause completely using the remove method (which handles all indices)
         for clause in &clauses_to_remove {
-            // Remove from main set
-            self.clauses.remove(clause);
-            
-            // Remove from all group indices
-            for literal in clause.literals() {
-                if let Some(clauses) = self.clauses_for_group.get_mut(&literal.left) {
-                    clauses.remove(clause);
-                }
-                if let Some(clauses) = self.clauses_for_group.get_mut(&literal.right) {
-                    clauses.remove(clause);
-                }
-            }
+            self.remove(clause);
         }
-        
-        // Clean up empty entries in clauses_for_group
-        self.clauses_for_group.retain(|_, clauses| !clauses.is_empty());
         
         clauses_to_remove
     }
@@ -324,7 +345,7 @@ impl ClauseSet {
     /// Validates that the indices are consistent with the main clause set.
     /// Panics if any inconsistency is found.
     pub fn validate(&self) {
-        // Check that every clause in clauses appears in the appropriate group indices
+        // Check that every clause in clauses appears in the appropriate indices
         for clause in &self.clauses {
             for literal in clause.literals() {
                 // Check left group index
@@ -343,10 +364,19 @@ impl ClauseSet {
                 {
                     panic!("Clause {:?} not found in clauses_for_group[{:?}]", clause, literal.right);
                 }
+                
+                // Check literal index
+                if !self.clauses_for_literal
+                    .get(literal)
+                    .map(|set| set.contains(clause))
+                    .unwrap_or(false)
+                {
+                    panic!("Clause {:?} not found in clauses_for_literal[{:?}]", clause, literal);
+                }
             }
         }
         
-        // Check that every clause in the indices exists in the main set
+        // Check that every clause in the group indices exists in the main set
         for (group_id, clause_set) in &self.clauses_for_group {
             for clause in clause_set {
                 if !self.clauses.contains(clause) {
@@ -358,6 +388,20 @@ impl ClauseSet {
                 );
                 if !mentions_group {
                     panic!("Clause {:?} in clauses_for_group[{:?}] doesn't mention that group", clause, group_id);
+                }
+            }
+        }
+        
+        // Check that every clause in the literal indices exists in the main set
+        for (literal_id, clause_set) in &self.clauses_for_literal {
+            for clause in clause_set {
+                if !self.clauses.contains(clause) {
+                    panic!("Clause {:?} in clauses_for_literal[{:?}] not found in main clauses set", clause, literal_id);
+                }
+                // Also verify this clause actually contains this literal
+                let contains_literal = clause.literals().iter().any(|lit| lit == literal_id);
+                if !contains_literal {
+                    panic!("Clause {:?} in clauses_for_literal[{:?}] doesn't contain that literal", clause, literal_id);
                 }
             }
         }
@@ -520,6 +564,70 @@ mod tests {
         // id1 and id2 should be gone since they're not in the remaining clause
         assert!(!remaining_groups.contains(&GroupId::parse("id1")));
         assert!(!remaining_groups.contains(&GroupId::parse("id2")));
+    }
+    
+    #[test]
+    fn test_clause_set_remove_literal() {
+        let mut clause_set = ClauseSet::new();
+        
+        // Insert several clauses with various literals
+        clause_set.insert_str("id0 = id1");
+        clause_set.insert_str("id1 = id2 or id3 != id4");  
+        clause_set.insert_str("id2 != id3");  
+        clause_set.insert_str("id4 = id5");
+        clause_set.insert_str("id0 != id2 or id1 = id3");  
+        clause_set.insert_str("id1 = id2 or id5 != id6"); // Another clause with "id1 = id2"
+        
+        // Validate initial state
+        clause_set.validate();
+        
+        // Remove all clauses containing the literal "id1 = id2"
+        let literal_to_remove = LiteralId::parse("id1 = id2");
+        let removed = clause_set.remove_literal(&literal_to_remove);
+        
+        // Should have removed 2 clauses
+        assert_eq!(removed.len(), 2, "Should remove 2 clauses that contain 'id1 = id2'");
+        
+        // Check the removed clauses are the right ones
+        assert!(removed.contains(&ClauseId::parse("id1 = id2 or id3 != id4").unwrap()));
+        assert!(removed.contains(&ClauseId::parse("id1 = id2 or id5 != id6").unwrap()));
+        
+        // Validate after removal
+        clause_set.validate();
+        
+        // Check remaining clauses
+        clause_set.check_contains("id0 = id1");
+        clause_set.check_contains("id2 != id3");
+        clause_set.check_contains("id4 = id5");
+        clause_set.check_contains("id0 != id2 or id1 = id3");
+        
+        // Check that removed clauses are gone
+        assert!(!clause_set.contains(&ClauseId::parse("id1 = id2 or id3 != id4").unwrap()));
+        assert!(!clause_set.contains(&ClauseId::parse("id1 = id2 or id5 != id6").unwrap()));
+        
+        // Remove a literal that doesn't exist
+        let nonexistent_literal = LiteralId::parse("id99 = id100");
+        let empty_removal = clause_set.remove_literal(&nonexistent_literal);
+        assert!(empty_removal.is_empty(), "Removing non-existent literal should return empty set");
+        
+        // Validate still works
+        clause_set.validate();
+        
+        // Remove another literal "id2 != id3"
+        let another_literal = LiteralId::parse("id2 != id3");
+        let removed2 = clause_set.remove_literal(&another_literal);
+        
+        // Should have removed 1 clause
+        assert_eq!(removed2.len(), 1, "Should remove 1 clause that contains 'id2 != id3'");
+        assert!(removed2.contains(&ClauseId::parse("id2 != id3").unwrap()));
+        
+        // Validate final state
+        clause_set.validate();
+        
+        // Check final remaining clauses
+        clause_set.check_contains("id0 = id1");
+        clause_set.check_contains("id4 = id5");
+        clause_set.check_contains("id0 != id2 or id1 = id3");
     }
     
     #[test]
