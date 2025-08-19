@@ -8,7 +8,7 @@
 // Try:
 //   cargo build --release --bin=verify; time ~/acorn/target/release/verify
 
-use acorn::verifier::{Verifier, ProverMode};
+use acorn::verifier::{ProverMode, Verifier};
 use clap::Parser;
 
 #[derive(Parser)]
@@ -47,7 +47,7 @@ async fn main() {
     } else {
         ProverMode::Standard
     };
-    
+
     let current_dir = match std::env::current_dir() {
         Ok(dir) => dir,
         Err(e) => {
@@ -55,7 +55,7 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    
+
     let verifier = Verifier::new(current_dir, mode, args.target, args.dataset, false);
     if let Err(e) = verifier.run() {
         println!("{}", e);

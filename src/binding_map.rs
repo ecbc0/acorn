@@ -1165,13 +1165,13 @@ impl BindingMap {
             if !self.module_info.contains_key(module_id) {
                 // Only add if we don't already have info for this module
                 let info = ModuleInfo {
-                    local_name: None,  // Imported modules from another module don't have local names here
+                    local_name: None, // Imported modules from another module don't have local names here
                     full_name: imported_info.full_name.clone(),
                 };
                 self.module_info.insert(*module_id, info);
             }
         }
-        
+
         // Now add/update the directly imported module with its local name
         let module_info = ModuleInfo {
             local_name: Some(local_name.to_string()),

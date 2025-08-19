@@ -649,11 +649,11 @@ impl<'a> NodeCursor<'a> {
             Node::Block(block, _o) => {
                 if block.is_todo {
                     return false;
-                }else{
-                    return self.node().has_goal() || self.num_children() > 0
+                } else {
+                    return self.node().has_goal() || self.num_children() > 0;
                 }
-            },
-            _ => return self.node().has_goal() || self.num_children() > 0
+            }
+            _ => return self.node().has_goal() || self.num_children() > 0,
         }
     }
 

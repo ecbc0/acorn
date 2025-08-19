@@ -1079,6 +1079,7 @@ impl<'a> Proof<'a> {
     ) -> Result<HashSet<VariableMap>, Error> {
         // The unifier will figure out the concrete clauses.
         // The base and conclusion get their own scope.
+        println!("XXX conc map: {}", conc_map);
         let (mut unifier, conc_scope) = Unifier::with_map(conc_map);
         let base_scope = unifier.add_scope();
 
@@ -1091,6 +1092,7 @@ impl<'a> Proof<'a> {
         }
 
         // Do the multi-way unification according to the trace.
+        println!("XXX unifying");
         for (base_literal, trace) in base_literals.iter().zip(traces) {
             let (scope, literal, flipped) = match trace {
                 LiteralTrace::Eliminated { step, flipped } => {
@@ -1116,6 +1118,10 @@ impl<'a> Proof<'a> {
                 }
             };
 
+            println!(
+                "XXX unifying {} ({:?}) with {} ({:?}) flipped = {}",
+                base_literal, base_scope, literal, scope, flipped
+            );
             if !unifier.unify_literals(base_scope, base_literal, scope, literal, flipped) {
                 return Err(Error::internal(format!(
                     "failed to unify base literal {} with trace literal {}",
@@ -1123,6 +1129,7 @@ impl<'a> Proof<'a> {
                 )));
             }
         }
+        println!("XXX OK");
 
         // Now that we've unified, get the var maps.
         let mut answer = HashSet::new();

@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
-use serde::{Deserialize, Serialize};
 
 use crate::atom::{Atom, AtomId};
 

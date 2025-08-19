@@ -51,14 +51,6 @@ impl Unifier {
     }
 
     /// Creates a single-scope unifier.
-    /// TODO: I think this is fundamentally buggy.
-    pub fn with_output_map(output_map: VariableMap) -> Unifier {
-        Unifier {
-            maps: vec![output_map],
-        }
-    }
-
-    /// Creates a single-scope unifier.
     pub fn with_map(map: VariableMap) -> (Unifier, Scope) {
         let unifier = Unifier {
             maps: vec![VariableMap::new(), map],
@@ -450,6 +442,19 @@ impl Unifier {
         );
     }
 
+    // Helper method for testing unification
+    #[cfg(test)]
+    fn unify_str(&mut self, scope1: Scope, str1: &str, scope2: Scope, str2: &str, expected: bool) {
+        let term1 = Term::parse(str1);
+        let term2 = Term::parse(str2);
+        let result = self.unify(scope1, &term1, scope2, &term2);
+        assert_eq!(
+            result, expected,
+            "Unification of {} ({:?}) with {} ({:?}) expected {}, got {}",
+            str1, scope1, str2, scope2, expected, result
+        );
+    }
+
     /// Handle superposition into either positive or negative literals. The "SP" and "SN" rules.
     ///
     /// The superposition rule is, given:
@@ -661,8 +666,7 @@ mod tests {
         let mut u = Unifier::new(3);
         u.assert_unify(Scope::LEFT, &s, Scope::RIGHT, &u_subterm);
         u.print();
-        let _literals =
-            u.superpose_clauses(&t, &pm_clause, 0, target_path, &resolution_clause, 0, true);
+        u.superpose_clauses(&t, &pm_clause, 0, target_path, &resolution_clause, 0, true);
     }
 
     #[test]
@@ -758,25 +762,45 @@ mod tests {
 
     #[test]
     fn test_mutual_containment_invalid_1() {
-        let first = Term::parse("c0(x0, c0(x1, c1(x2)))");
-        let second = Term::parse("c0(c0(x2, x1), x0)");
         let mut u = Unifier::new(3);
-        assert!(!u.unify(Scope::LEFT, &first, Scope::LEFT, &second));
+        u.unify_str(
+            Scope::LEFT,
+            "c0(x0, c0(x1, c1(x2)))",
+            Scope::LEFT,
+            "c0(c0(x2, x1), x0)",
+            false,
+        );
     }
 
     #[test]
     fn test_mutual_containment_invalid_2() {
-        let first = Term::parse("c0(c0(x0, c1(x1)), x2)");
-        let second = Term::parse("c0(x2, c0(x1, x0))");
         let mut u = Unifier::new(3);
-        assert!(!u.unify(Scope::LEFT, &first, Scope::LEFT, &second));
+        u.unify_str(
+            Scope::LEFT,
+            "c0(c0(x0, c1(x1)), x2)",
+            Scope::LEFT,
+            "c0(x2, c0(x1, x0))",
+            false,
+        );
     }
 
     #[test]
     fn test_recursive_reference_in_output() {
-        let first = Term::parse("g2(x0, x0)");
-        let second = Term::parse("g2(g2(g1(c0, x0), x0), g2(x1, x1))");
         let mut u = Unifier::new(3);
-        assert!(!u.unify(Scope::LEFT, &first, Scope::RIGHT, &second));
+        u.unify_str(
+            Scope::LEFT,
+            "g2(x0, x0)",
+            Scope::RIGHT,
+            "g2(g2(g1(c0, x0), x0), g2(x1, x1))",
+            false,
+        );
+    }
+
+    #[test]
+    fn test_variables_in_output_scope() {
+        let mut unifier = Unifier::new(4);
+        unifier.unify_str(Scope(1), "x0", Scope(0), "s0(x0, x1, s4)", true);
+        unifier.unify_str(Scope(2), "g6(x0, x1)", Scope(3), "g6(c1, x0)", true);
+        unifier.unify_str(Scope(2), "g0(x2, x1)", Scope(1), "g0(s4, x0)", true);
     }
 }

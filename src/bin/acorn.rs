@@ -68,7 +68,10 @@ struct Args {
     doc_root: Option<String>,
 
     // Appends input to a file (can only be used if target is \"-\")
-    #[clap(long, help = "Appends input to a file (can only be used if target is \"-\")")]
+    #[clap(
+        long,
+        help = "Appends input to a file (can only be used if target is \"-\")"
+    )]
     append_to: Option<String>,
 }
 
@@ -156,7 +159,13 @@ async fn main() {
             std::process::exit(1);
         }
         let new_target = target + ":" + &append;
-        let verifier = Verifier::new(current_dir, mode, Some(new_target), args.dataset, args.concrete);
+        let verifier = Verifier::new(
+            current_dir,
+            mode,
+            Some(new_target),
+            args.dataset,
+            args.concrete,
+        );
         match verifier.run() {
             Err(e) => {
                 println!("{}", e);

@@ -1983,7 +1983,7 @@ fn test_standalone_lib_is_error() {
     env.bad("let x = lib");
     env.bad("let t: lib = axiom");
     env.bad("theorem foo { lib }");
-    
+
     // lib(foo) would also fail because module foo doesn't exist
     env.bad("let y = lib(foo)");
     env.bad("let z = lib(foo).bar");

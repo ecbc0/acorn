@@ -596,7 +596,8 @@ impl<'a> Evaluator<'a> {
                     }
                     TokenType::Lib => {
                         // lib must be used with parentheses as lib(module)
-                        return Err(name_token.error("'lib' must be followed by parentheses, e.g. lib(module)"));
+                        return Err(name_token
+                            .error("'lib' must be followed by parentheses, e.g. lib(module)"));
                     }
                     t => return Err(name_token.error(&format!("unexpected {:?} token", t))),
                 }
