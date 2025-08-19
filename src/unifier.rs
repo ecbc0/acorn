@@ -256,7 +256,7 @@ impl Unifier {
             // We already have a mapping for this variable.
             // Unify the existing mapping with the term.
             let existing = self.get_mapping(var_scope, var_id).unwrap().clone();
-            return self.unify(Scope::OUTPUT, &existing, Scope::OUTPUT, term);
+            return self.unify_internal(Scope::OUTPUT, &existing, Scope::OUTPUT, term);
         }
 
         if var_scope == Scope::OUTPUT {
@@ -334,7 +334,7 @@ impl Unifier {
                 }
 
                 // Unify the argument with the last argument of full_term
-                return Some(self.unify(
+                return Some(self.unify_internal(
                     var_scope,
                     &var_term.args[0],
                     full_scope,
@@ -345,8 +345,18 @@ impl Unifier {
         None
     }
 
-    // Unify two terms, which may be in different scopes.
+    // Public interface for unification
+    // Does not allow unification with the output scope - callers should not directly
+    // provide terms in the output scope as the unifier manages output variables internally
     pub fn unify(&mut self, scope1: Scope, term1: &Term, scope2: Scope, term2: &Term) -> bool {
+        if scope1 == Scope::OUTPUT || scope2 == Scope::OUTPUT {
+            panic!("Cannot call unify with output scope - the unifier manages output variables internally");
+        }
+        self.unify_internal(scope1, term1, scope2, term2)
+    }
+
+    // Internal unification implementation
+    fn unify_internal(&mut self, scope1: Scope, term1: &Term, scope2: Scope, term2: &Term) -> bool {
         if term1.term_type != term2.term_type {
             return false;
         }
@@ -382,7 +392,7 @@ impl Unifier {
         }
 
         for (a1, a2) in term1.args.iter().zip(term2.args.iter()) {
-            if !self.unify(scope1, a1, scope2, a2) {
+            if !self.unify_internal(scope1, a1, scope2, a2) {
                 return false;
             }
         }
@@ -401,12 +411,12 @@ impl Unifier {
     ) -> bool {
         if flipped {
             // If we're flipped, swap the literals.
-            self.unify(scope1, &literal1.right, scope2, &literal2.left)
-                && self.unify(scope1, &literal1.left, scope2, &literal2.right)
+            self.unify_internal(scope1, &literal1.right, scope2, &literal2.left)
+                && self.unify_internal(scope1, &literal1.left, scope2, &literal2.right)
         } else {
             // If we're not flipped, keep the literals as they are.
-            self.unify(scope1, &literal1.left, scope2, &literal2.left)
-                && self.unify(scope1, &literal1.right, scope2, &literal2.right)
+            self.unify_internal(scope1, &literal1.left, scope2, &literal2.left)
+                && self.unify_internal(scope1, &literal1.right, scope2, &literal2.right)
         }
     }
 
