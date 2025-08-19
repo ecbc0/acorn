@@ -15,6 +15,12 @@ pub struct Checker {
 
     /// Whether a contradiction was directly inserted into the checker.
     direct_contradiction: bool,
+
+    /// Whether to track clause insertions in verbose mode.
+    verbose: bool,
+
+    /// Stringified versions of inserted clauses when verbose is true.
+    insertions: Vec<String>,
 }
 
 impl Checker {
@@ -24,11 +30,23 @@ impl Checker {
             generalization_set: GeneralizationSet::new(),
             next_step_id: 0,
             direct_contradiction: false,
+            verbose: false,
+            insertions: Vec::new(),
         }
+    }
+
+    pub fn new_verbose() -> Self {
+        let mut c = Checker::new();
+        c.verbose = true;
+        c
     }
 
     /// Adds a true clause to the checker.
     pub fn insert_clause(&mut self, clause: &Clause) {
+        if self.verbose {
+            self.insertions.push(clause.to_string());
+        }
+
         if clause.is_impossible() {
             self.direct_contradiction = true;
             return;
@@ -81,6 +99,15 @@ impl Checker {
             .is_some()
         {
             return true;
+        }
+
+        if self.verbose {
+            println!("With Checker::with_clauses(&[");
+            for insertion in &self.insertions {
+                println!("    \"{}\",", insertion);
+            }
+            println!("]);");
+            println!("Failed check: \"{}\"", clause);
         }
 
         false
