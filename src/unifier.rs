@@ -807,10 +807,14 @@ mod tests {
     }
 
     #[test]
-    fn test_variables_in_output_scope() {
-        let mut unifier = Unifier::new(4);
-        unifier.unify_str(Scope(1), "x0", Scope(0), "s0(x0, x1, s4)", true);
-        unifier.unify_str(Scope(2), "g6(x0, x1)", Scope(3), "g6(c1, x0)", true);
-        unifier.unify_str(Scope(2), "g0(x2, x1)", Scope(1), "g0(s4, x0)", true);
+    fn test_initializing_with_variables_in_map() {
+        let mut initial_map = VariableMap::new();
+        initial_map.set(0, Term::parse("s0(x0, x1, s4)"));
+        let (mut unifier, scope1) = Unifier::with_map(initial_map);
+        let scope2 = unifier.add_scope();
+        let scope3 = unifier.add_scope();
+
+        unifier.unify_str(scope2, "g6(x0, x1)", scope3, "g6(c1, x0)", true);
+        unifier.unify_str(scope2, "g0(x2, x1)", scope1, "g0(s4, x0)", true);
     }
 }
