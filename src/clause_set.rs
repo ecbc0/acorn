@@ -114,6 +114,7 @@ impl fmt::Display for LiteralId {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ClauseId(Vec<LiteralId>);
 
+#[derive(Debug)]
 pub enum Normalization {
     True,
     False,

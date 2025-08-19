@@ -4,7 +4,7 @@ use std::hash::Hash;
 
 use crate::atom::Atom;
 use crate::clause::Clause;
-use crate::clause_set::{GroupId, TermId};
+use crate::clause_set::{ClauseId, GroupId, LiteralId, Normalization, TermId};
 use crate::literal::Literal;
 use crate::term::Term;
 
@@ -1414,6 +1414,26 @@ impl TermGraph {
 
         current
     }
+    
+    /// Normalizes a ClauseId by updating all group IDs to their current values.
+    /// Takes a ClauseId (from clause_set) which contains LiteralIds.
+    /// Returns a Normalization which can be True (tautology), False (contradiction), or Clause.
+    pub fn normalize(&mut self, clause_id: ClauseId) -> Normalization {
+        // Get the literals from the ClauseId
+        let literals = clause_id.literals();
+        
+        // Update all group IDs in the literals to their current values
+        let mut updated_literals = Vec::new();
+        for literal in literals {
+            let updated_left = self.update_group_id(literal.left);
+            let updated_right = self.update_group_id(literal.right);
+            let updated_literal = LiteralId::new(updated_left, updated_right, literal.positive);
+            updated_literals.push(updated_literal);
+        }
+        
+        // Use ClauseId::new to normalize the updated literals
+        ClauseId::new(updated_literals)
+    }
 
     // Checks that the group id has not been remapped
     fn validate_group_id(&self, group_id: GroupId) -> &GroupInfo {
@@ -1770,6 +1790,85 @@ mod tests {
             "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or m0(m1(c5, c0), c1) or c4 = c1",
         ]);
         g.check_clause_str("m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or c4 = c1");
+    }
+
+    #[test]
+    fn test_normalize() {
+        let mut g = TermGraph::new();
+        
+        // Create some terms
+        let t1 = g.insert_term_str("c1");
+        let t2 = g.insert_term_str("c2");
+        let t3 = g.insert_term_str("c3");
+        let t4 = g.insert_term_str("c4");
+        
+        let g1 = g.get_group_id(t1);
+        let g2 = g.get_group_id(t2);
+        let g3 = g.get_group_id(t3);
+        let g4 = g.get_group_id(t4);
+        
+        // Test 1: Normal clause that stays normal
+        let lit1 = LiteralId::new(g1, g2, true);
+        let lit2 = LiteralId::new(g3, g4, false);
+        let clause_norm = ClauseId::new(vec![lit1, lit2]);
+        let clause = match clause_norm {
+            Normalization::Clause(c) => c,
+            _ => panic!("Expected a clause"),
+        };
+        
+        match g.normalize(clause.clone()) {
+            Normalization::Clause(normalized) => {
+                assert_eq!(normalized.literals().len(), 2);
+            },
+            _ => panic!("Expected a normal clause"),
+        }
+        
+        // Test 2: Clause that becomes simpler after merging
+        g.set_eq(t1, t2, StepId(0));
+        
+        // After merging t1 and t2, the literal "g1 = g2" becomes reflexive and should be filtered
+        match g.normalize(clause) {
+            Normalization::True => {}, // The equality becomes reflexive and true, making the whole clause true
+            _ => panic!("Expected a tautology after merging"),
+        }
+        
+        // Test 3: Create a clause that will have duplicate literals after merging
+        let t5 = g.insert_term_str("c5");
+        let t6 = g.insert_term_str("c6");
+        let t7 = g.insert_term_str("c7");
+        
+        let g5 = g.get_group_id(t5);
+        let g6 = g.get_group_id(t6);
+        let g7 = g.get_group_id(t7);
+        
+        let lit3 = LiteralId::new(g5, g6, true);
+        let lit4 = LiteralId::new(g5, g7, true);
+        let clause2_norm = ClauseId::new(vec![lit3, lit4]);
+        let clause2 = match clause2_norm {
+            Normalization::Clause(c) => c,
+            _ => panic!("Expected a clause"),
+        };
+        
+        // Merge g6 and g7
+        g.set_eq(t6, t7, StepId(1));
+        
+        // After merging, both literals become "g5 = g6" (or g7), so they should deduplicate
+        match g.normalize(clause2) {
+            Normalization::Clause(normalized) => {
+                assert_eq!(normalized.literals().len(), 1, "Should deduplicate to one literal");
+            },
+            _ => panic!("Expected a normalized clause"),
+        }
+        
+        // Test 4: Tautology test (p or not p)
+        let lit5 = LiteralId::new(g3, g4, true);
+        let lit6 = LiteralId::new(g3, g4, false);
+        let tautology = ClauseId::new(vec![lit5, lit6]);
+        
+        match tautology {
+            Normalization::True => {}, // This is already a tautology
+            _ => panic!("Expected a tautology"),
+        }
     }
 
     #[test]
