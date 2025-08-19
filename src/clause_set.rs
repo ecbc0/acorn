@@ -82,7 +82,10 @@ impl LiteralId {
             let right = GroupId::parse(right_str.trim());
             LiteralId::new(left, right, true)
         } else {
-            panic!("LiteralId::parse expects format 'id0 = id1' or 'id0 != id1', got: {}", s);
+            panic!(
+                "LiteralId::parse expects format 'id0 = id1' or 'id0 != id1', got: {}",
+                s
+            );
         }
     }
 }
@@ -108,10 +111,31 @@ pub enum Normalization {
 }
 
 impl ClauseId {
-    // This sorts the literals, but doesn't check for degeneracy like repeating literals.
+    /// Creates a normalized clause from literals.
+    /// Returns Normalization::True if the clause is a tautology (contains both x and !x).
+    /// Returns Normalization::False if the clause is empty.
+    /// Otherwise returns Normalization::Clause with sorted, deduplicated literals.
     pub fn new(mut literals: Vec<LiteralId>) -> Normalization {
         literals.sort();
         literals.dedup();
+
+        // Check if empty (contradiction)
+        if literals.is_empty() {
+            return Normalization::False;
+        }
+
+        // Check for tautology: same left/right groups but opposite polarity
+        for i in 0..literals.len() {
+            for j in i + 1..literals.len() {
+                if literals[i].left == literals[j].left
+                    && literals[i].right == literals[j].right
+                    && literals[i].positive != literals[j].positive
+                {
+                    return Normalization::True;
+                }
+            }
+        }
+
         Normalization::Clause(ClauseId(literals))
     }
 
@@ -126,11 +150,11 @@ impl ClauseId {
             .split(" or ")
             .map(|lit_str| LiteralId::parse(lit_str.trim()))
             .collect();
-        
+
         if literals.is_empty() {
             panic!("ClauseId::parse expects at least one literal, got empty string");
         }
-        
+
         // Create a ClauseId directly with sorted and deduped literals
         let mut literals = literals;
         literals.sort();
@@ -192,5 +216,78 @@ impl ClauseSet {
 
     pub fn contains(&self, clause: &ClauseId) -> bool {
         self.clauses.contains(clause)
+    }
+
+    /// Inserts a clause by parsing it from a string.
+    /// Panics if the string format is invalid.
+    pub fn insert_str(&mut self, s: &str) {
+        let clause = ClauseId::parse(s);
+        self.insert(clause);
+    }
+
+    /// Checks if the clause set contains a clause parsed from the string.
+    /// Panics if the clause is not found or if the string format is invalid.
+    pub fn check_contains(&self, s: &str) {
+        let clause = ClauseId::parse(s);
+        if !self.contains(&clause) {
+            panic!("ClauseSet does not contain clause: {}", s);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clause_deduplication() {
+        // Test that duplicate literals are removed
+        let literals = vec![
+            LiteralId::parse("id0 = id1"),
+            LiteralId::parse("id0 = id1"), // duplicate
+            LiteralId::parse("id2 != id3"),
+        ];
+
+        match ClauseId::new(literals) {
+            Normalization::Clause(clause) => {
+                assert_eq!(
+                    clause.literals().len(),
+                    2,
+                    "Should deduplicate to 2 literals"
+                );
+                // Verify the literals are sorted and correct
+                assert_eq!(clause.literals()[0], LiteralId::parse("id0 = id1"));
+                assert_eq!(clause.literals()[1], LiteralId::parse("id2 != id3"));
+            }
+            _ => panic!("Expected Normalization::Clause"),
+        }
+    }
+
+    #[test]
+    fn test_clause_tautology() {
+        // Test that "id0 = id1 or id0 != id1" is recognized as a tautology
+        let literals = vec![
+            LiteralId::parse("id0 = id1"),
+            LiteralId::parse("id0 != id1"),
+        ];
+
+        match ClauseId::new(literals) {
+            Normalization::True => {} // Expected
+            _ => panic!("Expected Normalization::True for tautology"),
+        }
+    }
+
+    #[test]
+    fn test_clause_set_helpers() {
+        let mut clause_set = ClauseSet::new();
+
+        // Insert a clause using the string helper
+        clause_set.insert_str("id0 = id1 or id2 != id3");
+
+        // Check it's there using the check helper (should not panic)
+        clause_set.check_contains("id0 = id1 or id2 != id3");
+
+        // Check that reordered literals still match (due to canonicalization)
+        clause_set.check_contains("id2 != id3 or id0 = id1");
     }
 }
