@@ -689,7 +689,7 @@ impl TermGraph {
             // Update group IDs in case they've been remapped
             let left = self.update_group_id(literal.left);
             let right = self.update_group_id(literal.right);
-            
+
             // Check if groups are equal
             if left == right {
                 if literal.positive {
@@ -734,30 +734,31 @@ impl TermGraph {
         if new_literals.len() == 1 {
             // Single literal clause - convert to equality/inequality
             let literal = &new_literals[0];
-            
+
             // Update group IDs in case they've been remapped
             let left_group = self.update_group_id(literal.left);
             let right_group = self.update_group_id(literal.right);
-            
+
             // Get representative terms from each group
             let left_info = self.get_group_info(left_group);
             let right_info = self.get_group_info(right_group);
-            
+
             // Use the first term from each group as representative
             if !left_info.terms.is_empty() && !right_info.terms.is_empty() {
                 let left_term = left_info.terms[0];
                 let right_term = right_info.terms[0];
-                
+
                 if literal.positive {
                     // Positive literal becomes an equality
-                    self.pending.push(SemanticOperation::TermEquality(left_term, right_term));
+                    self.pending
+                        .push(SemanticOperation::TermEquality(left_term, right_term));
                 } else {
                     // Negative literal becomes an inequality
                     // We need a StepId here - use a dummy one for now
                     // This should ideally track where this clause came from
                     self.pending.push(SemanticOperation::TermInequality(
                         left_term,
-                        right_term, 
+                        right_term,
                         StepId(0),
                     ));
                 }
@@ -1501,6 +1502,21 @@ mod tests {
             "not g3(g0) or g3(g2)",
             "g3(g1)",
             "not g3(g2)",
+        ]);
+        assert!(g.has_contradiction);
+    }
+
+    #[test]
+    fn test_term_graph_eight_case_reduction() {
+        let g = TermGraph::with_clauses(&[
+            "g0 or g1 or g2",
+            "g0 or g1 or not g2",
+            "g0 or not g1 or g2",
+            "not g0 or g1 or g2",
+            "not g0 or not g1 or g2",
+            "not g0 or g1 or not g2",
+            "g0 or not g1 or not g2",
+            "not g0 or not g1 or not g2",
         ]);
         assert!(g.has_contradiction);
     }
