@@ -279,6 +279,37 @@ impl ClauseSet {
         }
     }
     
+    /// Removes all clauses that mention a specific group.
+    /// Returns the set of clauses that were removed.
+    pub fn remove_group(&mut self, group: GroupId) -> HashSet<ClauseId> {
+        // Get all clauses that mention this group
+        let clauses_to_remove = self.clauses_for_group
+            .get(&group)
+            .cloned()
+            .unwrap_or_else(HashSet::new);
+        
+        // Remove each clause completely
+        for clause in &clauses_to_remove {
+            // Remove from main set
+            self.clauses.remove(clause);
+            
+            // Remove from all group indices
+            for literal in clause.literals() {
+                if let Some(clauses) = self.clauses_for_group.get_mut(&literal.left) {
+                    clauses.remove(clause);
+                }
+                if let Some(clauses) = self.clauses_for_group.get_mut(&literal.right) {
+                    clauses.remove(clause);
+                }
+            }
+        }
+        
+        // Clean up empty entries in clauses_for_group
+        self.clauses_for_group.retain(|_, clauses| !clauses.is_empty());
+        
+        clauses_to_remove
+    }
+    
     /// Validates that the indices are consistent with the main clause set.
     /// Panics if any inconsistency is found.
     pub fn validate(&self) {
@@ -478,5 +509,62 @@ mod tests {
         // id1 and id2 should be gone since they're not in the remaining clause
         assert!(!remaining_groups.contains(&GroupId::parse("id1")));
         assert!(!remaining_groups.contains(&GroupId::parse("id2")));
+    }
+    
+    #[test]
+    fn test_clause_set_remove_group() {
+        let mut clause_set = ClauseSet::new();
+        
+        // Insert several clauses, some mentioning id2
+        clause_set.insert_str("id0 = id1");
+        clause_set.insert_str("id1 = id2 or id3 != id4");  // mentions id2
+        clause_set.insert_str("id2 != id3");  // mentions id2
+        clause_set.insert_str("id4 = id5");
+        clause_set.insert_str("id0 != id2 or id1 = id3");  // mentions id2
+        
+        // Validate initial state
+        clause_set.validate();
+        
+        // Remove all clauses mentioning id2
+        let removed = clause_set.remove_group(GroupId::parse("id2"));
+        
+        // Should have removed 3 clauses
+        assert_eq!(removed.len(), 3, "Should remove 3 clauses that mention id2");
+        
+        // Check the removed clauses are the right ones
+        assert!(removed.contains(&ClauseId::parse("id1 = id2 or id3 != id4").unwrap()));
+        assert!(removed.contains(&ClauseId::parse("id2 != id3").unwrap()));
+        assert!(removed.contains(&ClauseId::parse("id0 != id2 or id1 = id3").unwrap()));
+        
+        // Validate after removal - this is the key test
+        clause_set.validate();
+        
+        // Check remaining clauses
+        clause_set.check_contains("id0 = id1");
+        clause_set.check_contains("id4 = id5");
+        
+        // Check that removed clauses are gone
+        assert!(!clause_set.contains(&ClauseId::parse("id1 = id2 or id3 != id4").unwrap()));
+        assert!(!clause_set.contains(&ClauseId::parse("id2 != id3").unwrap()));
+        assert!(!clause_set.contains(&ClauseId::parse("id0 != id2 or id1 = id3").unwrap()));
+        
+        // Check that id2 is completely gone from indices
+        assert!(!clause_set.clauses_for_group.contains_key(&GroupId::parse("id2")));
+        
+        // Groups that should still be present (from remaining clauses)
+        assert!(clause_set.clauses_for_group.contains_key(&GroupId::parse("id0")));
+        assert!(clause_set.clauses_for_group.contains_key(&GroupId::parse("id1")));
+        assert!(clause_set.clauses_for_group.contains_key(&GroupId::parse("id4")));
+        assert!(clause_set.clauses_for_group.contains_key(&GroupId::parse("id5")));
+        
+        // id3 should be gone since all clauses mentioning it were removed
+        assert!(!clause_set.clauses_for_group.contains_key(&GroupId::parse("id3")));
+        
+        // Test removing a group that doesn't exist
+        let empty_removal = clause_set.remove_group(GroupId::parse("id99"));
+        assert!(empty_removal.is_empty(), "Removing non-existent group should return empty set");
+        
+        // Validate still works after removing non-existent group
+        clause_set.validate();
     }
 }
