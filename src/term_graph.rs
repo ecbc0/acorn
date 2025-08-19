@@ -686,8 +686,12 @@ impl TermGraph {
         let mut has_true_literal = false;
 
         for literal in clause.literals() {
+            // Update group IDs in case they've been remapped
+            let left = self.update_group_id(literal.left);
+            let right = self.update_group_id(literal.right);
+            
             // Check if groups are equal
-            if literal.left == literal.right {
+            if left == right {
                 if literal.positive {
                     // id = id is always true
                     has_true_literal = true;
@@ -699,8 +703,8 @@ impl TermGraph {
             }
 
             // Check if groups are known to be unequal
-            let left_info = self.get_group_info(literal.left);
-            if left_info.inequalities.contains_key(&literal.right) {
+            let left_info = self.get_group_info(left);
+            if left_info.inequalities.contains_key(&right) {
                 if !literal.positive {
                     // id != different_id where they're known unequal is true
                     has_true_literal = true;
@@ -712,7 +716,8 @@ impl TermGraph {
             }
 
             // This literal can't be evaluated, keep it
-            new_literals.push(literal.clone());
+            // Create a new literal with the updated group IDs
+            new_literals.push(LiteralId::new(left, right, literal.positive));
         }
 
         if has_true_literal {
@@ -728,9 +733,36 @@ impl TermGraph {
 
         if new_literals.len() == 1 {
             // Single literal clause - convert to equality/inequality
-            let _literal = &new_literals[0];
-            // We need to find the actual terms for this, which is tricky since we only have groups
-            // For now, just insert the clause as-is
+            let literal = &new_literals[0];
+            
+            // Update group IDs in case they've been remapped
+            let left_group = self.update_group_id(literal.left);
+            let right_group = self.update_group_id(literal.right);
+            
+            // Get representative terms from each group
+            let left_info = self.get_group_info(left_group);
+            let right_info = self.get_group_info(right_group);
+            
+            // Use the first term from each group as representative
+            if !left_info.terms.is_empty() && !right_info.terms.is_empty() {
+                let left_term = left_info.terms[0];
+                let right_term = right_info.terms[0];
+                
+                if literal.positive {
+                    // Positive literal becomes an equality
+                    self.pending.push(SemanticOperation::TermEquality(left_term, right_term));
+                } else {
+                    // Negative literal becomes an inequality
+                    // We need a StepId here - use a dummy one for now
+                    // This should ideally track where this clause came from
+                    self.pending.push(SemanticOperation::TermInequality(
+                        left_term,
+                        right_term, 
+                        StepId(0),
+                    ));
+                }
+                return;
+            }
         }
 
         // Create the normalized clause and insert it
