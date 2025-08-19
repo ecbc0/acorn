@@ -170,11 +170,11 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn test_checker_cascades_updates() {
-    //     // "c0 or c1 or c2" should combine with "not c2" to yield "c0 or c1".
-    //     // That should then reduce via truth table logic with "not c0 or c1" to yield "c1".
-    //     let mut checker = Checker::with_clauses(&["c0 or c1 or c2", "not c0 or c1", "not c2"]);
-    //     checker.check_clause_str("c1");
-    // }
+    #[test]
+    fn test_checker_cascades_updates() {
+        // "c0 or c1 or c2" should combine with "not c2" to yield "c0 or c1".
+        // That should then reduce via truth table logic with "not c0 or c1" to yield "c1".
+        let mut checker = Checker::with_clauses(&["c0 or c1 or c2", "not c0 or c1", "not c2"]);
+        checker.check_clause_str("c1");
+    }
 }

@@ -112,7 +112,7 @@ impl fmt::Display for LiteralId {
 
 // Canonically the literal ids are sorted.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ClauseId(Vec<LiteralId>);
+pub struct ClauseId(pub Vec<LiteralId>);
 
 #[derive(Debug)]
 pub enum Normalization {

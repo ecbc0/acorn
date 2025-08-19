@@ -777,8 +777,60 @@ impl TermGraph {
                 self.has_contradiction = true;
             }
             Normalization::Clause(new_clause) => {
+                // If the clause already exists, nothing to do
+                if self.clause_set.contains(&new_clause) {
+                    return;
+                }
+                
                 // Actually insert the clause into the set
-                self.clause_set.insert(new_clause);
+                self.clause_set.insert(new_clause.clone());
+                
+                // Check for resolution opportunities by flipping each literal
+                let literals = new_clause.literals();
+                for i in 0..literals.len() {
+                    // Create a modified version with the i-th literal flipped
+                    let mut modified_literals = Vec::new();
+                    for (j, lit) in literals.iter().enumerate() {
+                        if i == j {
+                            // Flip this literal's sign
+                            modified_literals.push(LiteralId::new(lit.left, lit.right, !lit.positive));
+                        } else {
+                            modified_literals.push(lit.clone());
+                        }
+                    }
+                    
+                    // Check if this modified clause exists
+                    // We don't need to re-sort because sign is the last field in ordering
+                    let modified_clause = ClauseId(modified_literals);
+                    
+                    if self.clause_set.contains(&modified_clause) {
+                        // We can resolve! Create the resolved clause by removing the i-th literal
+                        let mut resolved_literals = Vec::new();
+                        for (j, lit) in literals.iter().enumerate() {
+                            if i != j {
+                                resolved_literals.push(lit.clone());
+                            }
+                        }
+                        
+                        // Create the resolved clause and queue it for insertion
+                        let resolved = ClauseId::new(resolved_literals);
+                        match resolved {
+                            Normalization::True => {
+                                // Tautology - don't add
+                            }
+                            Normalization::False => {
+                                // Contradiction from resolution
+                                self.has_contradiction = true;
+                            }
+                            Normalization::Clause(resolved_clause) => {
+                                // Only queue the resolved clause if it's not already in the set
+                                if !self.clause_set.contains(&resolved_clause) {
+                                    self.pending.push(SemanticOperation::InsertClause(resolved_clause));
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
