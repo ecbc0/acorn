@@ -1,7 +1,6 @@
 use crate::clause::Clause;
 use crate::generalization_set::GeneralizationSet;
 use crate::term_graph::{StepId, TermGraph};
-use crate::truth_table_set::TruthTableSet;
 
 /// The checker quickly checks if a clause can be proven in a single step from known clauses.
 #[derive(Clone)]
@@ -11,9 +10,6 @@ pub struct Checker {
 
     /// For looking up specializations of clauses with free variables.
     generalization_set: GeneralizationSet,
-
-    /// For concluding slightly-less-long clauses from long clauses.
-    truth_tables: TruthTableSet,
 
     next_step_id: usize,
 
@@ -26,7 +22,6 @@ impl Checker {
         Checker {
             term_graph: TermGraph::new(),
             generalization_set: GeneralizationSet::new(),
-            truth_tables: TruthTableSet::new(),
             next_step_id: 0,
             direct_contradiction: false,
         }
@@ -41,7 +36,6 @@ impl Checker {
 
         let step_id = self.next_step_id;
         self.next_step_id += 1;
-        let mut queue = vec![];
 
         if clause.has_any_variable() {
             // The clause has free variables, so it can be a generalization.
@@ -55,11 +49,6 @@ impl Checker {
         } else {
             // The clause is concrete.
 
-            // Track concrete long clauses exactly
-            if clause.len() > 1 {
-                queue = self.truth_tables.insert(clause);
-            }
-
             // The term graph does all sorts of stuff but only for concrete clauses.
             self.term_graph.insert_clause(clause, StepId(step_id));
         }
@@ -71,21 +60,12 @@ impl Checker {
         for elim in clause.function_eliminations() {
             self.insert_clause(&elim);
         }
-
-        for c in queue {
-            self.insert_clause(&c);
-        }
     }
 
     /// Returns true if the clause is known to be true.
     /// If we have found any contradiction, we can degenerately conclude the clause is true.
     pub fn check_clause(&mut self, clause: &Clause) -> bool {
         if self.has_contradiction() {
-            return true;
-        }
-
-        if clause.len() > 1 && self.truth_tables.contains(clause) {
-            // We've seen this clause exactly
             return true;
         }
 
