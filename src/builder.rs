@@ -324,7 +324,7 @@ impl<'a> Builder<'a> {
         match outcome {
             Outcome::Success => {
                 if project.check_concrete {
-                    if let Err(e) = prover.check_cert(project, &env.bindings, false) {
+                    if let Err(e) = prover.make_cert(project, &env.bindings, false) {
                         self.log_proving_error(
                             &goal_context,
                             &format!("concrete proof check failed: {}", e),

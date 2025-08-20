@@ -601,7 +601,7 @@ impl Prover {
 
     /// Use the checker to check a proof that we just generated.
     /// This does mutate the checker itself, so if you do anything else afterwards it'll be weird.
-    pub fn check_proof(
+    fn check_proof(
         &mut self,
         codes: &[String],
         project: &Project,
@@ -635,8 +635,9 @@ impl Prover {
     }
 
     /// Generate a concrete proof, check it, and return it.
+    /// This should only be called after successfully proving.
     /// This will also print the proof if `print` is true.
-    pub fn check_cert(
+    pub fn make_cert(
         &mut self,
         project: &Project,
         bindings: &BindingMap,

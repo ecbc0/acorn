@@ -14,6 +14,44 @@ use crate::source::{Source, SourceType};
 use crate::unifier::{Scope, Unifier};
 use crate::variable_map::VariableMap;
 
+/// A proof that was successfully found by the prover.
+///
+/// We store the proof in two different ways.
+/// First, we store each step of the proof in the order we found them, in `steps`.
+/// This starts with the negated goal and proves it by reducing it to a contradiction.
+///
+/// Second, we store the proof as a graph in `nodes`.
+/// This form lets us manipulate the proof to create an equivalent version that we can use
+/// for code generation.
+/// This dual representation helps us avoid the problem of proof generation creating a proof
+/// that is unreadable because it repeats itself or uses unnecessarily indirect reasoning.
+pub struct Proof<'a> {
+    normalizer: &'a Normalizer,
+
+    // Steps of the proof that can be directly verified.
+    // When steps are condensed away, they still exist in all_steps.
+    // all_steps always represents a proof by contradiction, with each step depending only on
+    // previous steps.
+    pub all_steps: Vec<(ProofStepId, &'a ProofStep)>,
+
+    // The graph representation of the proof.
+    // Nodes are indexed by node id.
+    // The goal is always id zero.
+    //
+    // Nodes that get condensed out of the proof are not removed from this vector.
+    // Instead, they are modified to have no content, with nothing depending on them.
+    nodes: Vec<ProofNode<'a>>,
+
+    // Whether we have called condense().
+    condensed: bool,
+
+    // A map from proof step ids to the ids nodes that correspond to them.
+    id_map: HashMap<ProofStepId, NodeId>,
+
+    // The difficulty of finding this proof.
+    difficulty: Difficulty,
+}
+
 /// Ranking for how difficult the proof was to find.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Difficulty {
@@ -130,44 +168,6 @@ impl<'a> ProofNode<'a> {
             }
         }
     }
-}
-
-/// A proof that was successfully found by the prover.
-///
-/// We store the proof in two different ways.
-/// First, we store each step of the proof in the order we found them, in `steps`.
-/// This starts with the negated goal and proves it by reducing it to a contradiction.
-///
-/// Second, we store the proof as a graph in `nodes`.
-/// This form lets us manipulate the proof to create an equivalent version that we can use
-/// for code generation.
-/// This dual representation helps us avoid the problem of proof generation creating a proof
-/// that is unreadable because it repeats itself or uses unnecessarily indirect reasoning.
-pub struct Proof<'a> {
-    normalizer: &'a Normalizer,
-
-    // Steps of the proof that can be directly verified.
-    // When steps are condensed away, they still exist in all_steps.
-    // all_steps always represents a proof by contradiction, with each step depending only on
-    // previous steps.
-    pub all_steps: Vec<(ProofStepId, &'a ProofStep)>,
-
-    // The graph representation of the proof.
-    // Nodes are indexed by node id.
-    // The goal is always id zero.
-    //
-    // Nodes that get condensed out of the proof are not removed from this vector.
-    // Instead, they are modified to have no content, with nothing depending on them.
-    nodes: Vec<ProofNode<'a>>,
-
-    // Whether we have called condense().
-    condensed: bool,
-
-    // A map from proof step ids to the ids nodes that correspond to them.
-    id_map: HashMap<ProofStepId, NodeId>,
-
-    // The difficulty of finding this proof.
-    difficulty: Difficulty,
 }
 
 fn remove_edge(nodes: &mut Vec<ProofNode>, from: NodeId, to: NodeId) {
