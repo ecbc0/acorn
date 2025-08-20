@@ -424,22 +424,6 @@ mod tests {
     }
 
     #[test]
-    fn test_solve_statement() {
-        ok(indoc! {"
-        solve x by {
-            x = 2
-        }"});
-    }
-
-    #[test]
-    fn test_solve_infix_expression() {
-        ok(indoc! {"
-        solve 1 - 1 by {
-            1 - 1 = 0
-        }"});
-    }
-
-    #[test]
     fn test_failing_early_on_bad_define_syntax() {
         fail_with(
             indoc! {"

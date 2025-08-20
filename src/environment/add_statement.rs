@@ -19,7 +19,7 @@ use crate::stack::Stack;
 use crate::statement::{
     AttributesStatement, Body, ClaimStatement, DefineStatement, ForAllStatement,
     FunctionSatisfyStatement, IfStatement, ImportStatement, InductiveStatement, InstanceStatement,
-    LetStatement, MatchStatement, NumeralsStatement, SolveStatement, Statement, StatementInfo,
+    LetStatement, MatchStatement, NumeralsStatement, Statement, StatementInfo,
     StructureStatement, TheoremStatement, TodoStatement, TypeStatement, TypeclassStatement,
     VariableSatisfyStatement,
 };
@@ -150,8 +150,6 @@ impl Environment {
             }
 
             StatementInfo::Numerals(ds) => self.add_numerals_statement(project, statement, ds),
-
-            StatementInfo::Solve(ss) => self.add_solve_statement(project, statement, ss),
 
             StatementInfo::Problem(body) => self.add_problem_statement(project, statement, body),
 
@@ -2073,44 +2071,6 @@ impl Environment {
         } else {
             Err(ds.type_expr.error("numerals type must be a data type"))
         }
-    }
-
-    /// Adds a solve statement to the environment.
-    fn add_solve_statement(
-        &mut self,
-        project: &mut Project,
-        statement: &Statement,
-        ss: &SolveStatement,
-    ) -> compilation::Result<()> {
-        let target = self.evaluator(project).evaluate_value(&ss.target, None)?;
-        let solve_range = Range {
-            start: statement.first_token.start_pos(),
-            end: ss.target.last_token().end_pos(),
-        };
-
-        let mut block = Block::new(
-            project,
-            &self,
-            vec![],
-            vec![],
-            BlockParams::Solve(target.clone(), solve_range),
-            statement.first_line(),
-            statement.last_line(),
-            Some(&ss.body),
-        )?;
-
-        let prop = match block.solves(self, &target) {
-            Some((outer_claim, claim_range)) => {
-                block.goal = None;
-                let source = Source::anonymous(self.module_id, claim_range, self.depth);
-                Some(Proposition::monomorphic(outer_claim, source))
-            }
-            None => None,
-        };
-
-        let index = self.add_node(Node::block(project, self, block, prop));
-        self.add_node_lines(index, &statement.range());
-        Ok(())
     }
 
     /// Adds a problem statement to the environment.

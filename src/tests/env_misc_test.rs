@@ -310,19 +310,6 @@ fn test_non_default_numeric_literals() {
 }
 
 #[test]
-fn test_solve_block_has_a_goal_path() {
-    let mut env = Environment::test();
-    env.add(
-        r#"
-            let b: Bool = true or false
-            solve b by {
-            }
-            "#,
-    );
-    assert_eq!(env.iter_goals().count(), 1);
-}
-
-#[test]
 fn test_structure_with_good_constraint() {
     let mut env = Environment::test();
     env.add(

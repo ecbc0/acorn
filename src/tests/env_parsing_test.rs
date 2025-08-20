@@ -1426,60 +1426,7 @@ fn test_right_recursive_member_function() {
     );
 }
 
-#[test]
-fn test_root_level_solve() {
-    let mut env = Environment::test();
-    env.add(
-        r#"
-            let b: Bool = true or false
-            solve b by {
-                b = true
-            }
-            "#,
-    );
-}
 
-#[test]
-fn test_nested_solve() {
-    let mut env = Environment::test();
-    env.add(
-        r#"
-            let b: Bool = true or false
-            if b or b {
-                solve b by {
-                    b = true
-                }
-            }
-            "#,
-    );
-}
-
-#[test]
-fn test_infix_solve() {
-    let mut env = Environment::test();
-    env.add(
-        r#"
-            let b: Bool = true or false
-            solve b or b by {
-                b or b = b
-            }
-            "#,
-    );
-}
-
-#[test]
-fn test_basic_problem_statement() {
-    let mut env = Environment::test();
-    env.add(
-        r#"
-            problem {
-                let b: Bool = true or false
-                solve b by {
-                }
-            }
-            "#,
-    );
-}
 
 #[test]
 fn test_class_variables() {

@@ -10,23 +10,18 @@ use crate::proposition::Proposition;
 pub enum Goal {
     // Prove that this proposition is true.
     Prove(Proposition),
-
-    // Find a simplified form of this value.
-    Solve(AcornValue, Range),
 }
 
 impl Goal {
     pub fn value(&self) -> &AcornValue {
         match self {
             Goal::Prove(p) => &p.value,
-            Goal::Solve(v, _) => v,
         }
     }
 
     pub fn range(&self) -> Range {
         match self {
             Goal::Prove(p) => p.source.range,
-            Goal::Solve(_, r) => *r,
         }
     }
 }
@@ -77,12 +72,6 @@ impl GoalContext {
                         .value_to_code(&proposition.value)
                         .unwrap_or("<goal>".to_string()),
                 }
-            }
-            Goal::Solve(value, _) => {
-                let value_str = CodeGenerator::new(&env.bindings)
-                    .value_to_code(value)
-                    .unwrap_or("<goal>".to_string());
-                format!("solve {}", value_str)
             }
         };
         GoalContext {

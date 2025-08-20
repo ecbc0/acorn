@@ -32,7 +32,6 @@ use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
 use crate::source::SourceType;
 use crate::stack::Stack;
 use crate::statement::{Statement, StatementInfo};
-use crate::term::Term;
 use crate::term_graph::TermGraphContradiction;
 
 #[derive(Clone)]
@@ -90,9 +89,6 @@ enum NormalizedGoal {
     /// The flag indicates whether inconsistencies are okay.
     /// Ie, if we find a contradiction, is that Outcome::Success or Outcome::Inconsistent?
     ProveNegated(AcornValue, bool),
-
-    /// The normalized term we are solving for, if there is one.
-    Solve(Term),
 }
 
 /// The outcome of a prover operation.
@@ -191,17 +187,6 @@ impl Prover {
                     goal_context.inconsistency_okay,
                 ));
             }
-            Goal::Solve(value, _) => match self
-                .normalizer
-                .term_from_value(value, NewConstantType::Local)
-            {
-                Ok(term) => {
-                    self.goal = Some(NormalizedGoal::Solve(term));
-                }
-                Err(s) => {
-                    self.error = Some(s);
-                }
-            },
         }
     }
 
@@ -221,9 +206,6 @@ impl Prover {
         match &self.goal {
             Some(NormalizedGoal::ProveNegated(v, _)) => {
                 println!("goal: disprove {}", v);
-            }
-            Some(NormalizedGoal::Solve(t)) => {
-                println!("goal: solve for {}", t);
             }
             None => {
                 println!("no goal set");

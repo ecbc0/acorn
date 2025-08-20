@@ -72,9 +72,6 @@ pub enum BlockParams<'a> {
     /// The assumption to be used by the block, and the range of this assumption.
     Conditional(&'a AcornValue, Range),
 
-    /// The expression to solve for, and the range of the "solve <target>" component.
-    Solve(AcornValue, Range),
-
     /// (unbound goal, function return type, range of condition)
     /// This goal has one more unbound variable than the block args account for.
     /// The last one, we are trying to prove there exists a variable that satisfies the goal.
@@ -221,7 +218,6 @@ impl Block {
                 let source = Source::anonymous(env.module_id, range, env.depth);
                 Some(Goal::Prove(Proposition::monomorphic(constraint, source)))
             }
-            BlockParams::Solve(target, range) => Some(Goal::Solve(target, range)),
             BlockParams::ForAll | BlockParams::Problem | BlockParams::Todo => None,
         };
 

@@ -197,14 +197,6 @@ pub struct NumeralsStatement {
     pub type_expr: Expression,
 }
 
-pub struct SolveStatement {
-    /// The expression we are trying to find equalities for.
-    pub target: Expression,
-
-    /// Statements used to solve the problem.
-    pub body: Body,
-}
-
 pub struct MatchStatement {
     /// The thing we are matching patterns against.
     pub scrutinee: Expression,
@@ -331,7 +323,6 @@ pub enum StatementInfo {
     Import(ImportStatement),
     Attributes(AttributesStatement),
     Numerals(NumeralsStatement),
-    Solve(SolveStatement),
     Problem(Body),
     Match(MatchStatement),
     Typeclass(TypeclassStatement),
@@ -1706,14 +1697,6 @@ impl Statement {
             StatementInfo::Numerals(ds) => allocator
                 .text("default ")
                 .append(ds.type_expr.pretty_ref(allocator)),
-
-            StatementInfo::Solve(ss) => {
-                let doc = allocator
-                    .text("solve ")
-                    .append(ss.target.pretty_ref(allocator))
-                    .append(allocator.text(" by"));
-                write_block_pretty(allocator, doc, &ss.body.statements).group()
-            }
 
             StatementInfo::Problem(body) => {
                 let doc = allocator.text("problem");
