@@ -424,7 +424,7 @@ impl<'a> Builder<'a> {
     ) -> BuildEvent {
         let full_message = format!("{} {}", goal_context.description, message);
         let diagnostic = Diagnostic {
-            range: goal_context.goal.range(),
+            range: goal_context.proposition.source.range,
             severity: Some(sev),
             message: full_message.clone(),
             ..Diagnostic::default()

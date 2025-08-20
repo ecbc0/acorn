@@ -242,10 +242,10 @@ impl Block {
                 subenv.add_line_types(LineType::Opening, first_line, last_line);
             }
         };
-        
+
         // Create the GoalContext if we have a goal proposition
         let goal = goal_prop.map(|prop| GoalContext::block(&subenv, &prop));
-        
+
         Ok(Block {
             args,
             env: subenv,
@@ -740,7 +740,7 @@ impl<'a> NodeCursor<'a> {
         if let Some(block) = &node.get_block() {
             match &block.goal {
                 Some(goal_context) => Ok(goal_context.clone()),
-                None => Err(format!("block at {} has no goal", self))
+                None => Err(format!("block at {} has no goal", self)),
             }
         } else {
             let prop = node.proposition().unwrap();

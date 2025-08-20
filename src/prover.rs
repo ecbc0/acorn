@@ -171,7 +171,7 @@ impl Prover {
     pub fn set_goal(&mut self, goal_context: &GoalContext) {
         assert!(self.goal.is_none());
 
-        let prop = &goal_context.goal.proposition;
+        let prop = &goal_context.proposition;
         // Negate the goal and add it as a counterfactual assumption.
         let (hypo, counter) = prop.value.clone().negate_goal();
         if let Some(hypo) = hypo {
