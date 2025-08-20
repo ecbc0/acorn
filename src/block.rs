@@ -734,7 +734,10 @@ impl<'a> NodeCursor<'a> {
         }
 
         if let Some(block) = &node.get_block() {
-            GoalContext::block(block)
+            match &block.goal {
+                Some(goal) => Ok(GoalContext::block(&block.env, &goal.proposition)),
+                None => Err(format!("block at {} has no goal", self))
+            }
         } else {
             let prop = node.proposition().unwrap();
             Ok(GoalContext::interior(self.env(), &prop))
