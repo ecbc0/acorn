@@ -9,7 +9,7 @@ use crate::atom::AtomId;
 use crate::compilation::{self, ErrorSource};
 use crate::environment::{Environment, LineType};
 use crate::fact::Fact;
-use crate::goal::{Goal, GoalContext};
+use crate::goal::GoalContext;
 use crate::names::DefinedName;
 use crate::potential_value::PotentialValue;
 use crate::project::Project;
@@ -37,7 +37,7 @@ pub struct Block {
     /// Everything in the block can be used to achieve this goal.
     /// If there is no goal for the block, we can still use its conclusion externally,
     /// but we let the conclusion be determined by the code in the block.
-    pub goal: Option<Goal>,
+    pub goal: Option<GoalContext>,
 
     /// The environment created inside the block.
     pub env: Environment,
@@ -139,7 +139,7 @@ impl Block {
         }
 
         let is_todo = matches!(params, BlockParams::Todo);
-        let goal = match params {
+        let goal_prop = match params {
             BlockParams::Conditional(condition, range) => {
                 let source = Source::premise(env.module_id, range, subenv.depth);
                 let prop = Proposition::monomorphic(condition.clone(), source);
@@ -175,7 +175,7 @@ impl Block {
                     subenv.depth,
                     theorem_name.map(|s| s.to_string()),
                 );
-                Some(Goal::new(Proposition::monomorphic(bound_goal, source)))
+                Some(Proposition::monomorphic(bound_goal, source))
             }
             BlockParams::FunctionSatisfy(unbound_goal, return_type, range) => {
                 // In the block, we need to prove this goal in bound form, so bind args to it.
@@ -186,7 +186,7 @@ impl Block {
                 assert!(!bound_goal.has_generic());
                 let source = Source::anonymous(env.module_id, range, env.depth);
                 let prop = Proposition::monomorphic(bound_goal, source);
-                Some(Goal::new(prop))
+                Some(prop)
             }
             BlockParams::MatchCase(scrutinee, constructor, pattern_args, range) => {
                 // Inside the block, the pattern arguments are constants.
@@ -216,7 +216,7 @@ impl Block {
             BlockParams::TypeRequirement(constraint, range) => {
                 // We don't add any other given theorems.
                 let source = Source::anonymous(env.module_id, range, env.depth);
-                Some(Goal::new(Proposition::monomorphic(constraint, source)))
+                Some(Proposition::monomorphic(constraint, source))
             }
             BlockParams::ForAll | BlockParams::Problem | BlockParams::Todo => None,
         };
@@ -242,6 +242,10 @@ impl Block {
                 subenv.add_line_types(LineType::Opening, first_line, last_line);
             }
         };
+        
+        // Create the GoalContext if we have a goal proposition
+        let goal = goal_prop.map(|prop| GoalContext::block(&subenv, &prop));
+        
         Ok(Block {
             args,
             env: subenv,
@@ -735,7 +739,7 @@ impl<'a> NodeCursor<'a> {
 
         if let Some(block) = &node.get_block() {
             match &block.goal {
-                Some(goal) => Ok(GoalContext::block(&block.env, &goal.proposition)),
+                Some(goal_context) => Ok(goal_context.clone()),
                 None => Err(format!("block at {} has no goal", self))
             }
         } else {

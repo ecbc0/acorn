@@ -26,6 +26,7 @@ impl Goal {
 }
 
 // A goal along with some information related to it.
+#[derive(Clone, Debug)]
 pub struct GoalContext {
     pub module_id: ModuleId,
 
