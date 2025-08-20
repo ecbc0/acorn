@@ -6,6 +6,7 @@ pub mod binding_map;
 pub mod block;
 pub mod build_cache;
 pub mod builder;
+pub mod certificate;
 pub mod checker;
 pub mod clause;
 pub mod clause_set;

@@ -3,6 +3,7 @@ use std::fmt;
 
 use crate::acorn_value::AcornValue;
 use crate::binding_map::BindingMap;
+use crate::certificate::Certificate;
 use crate::clause::{Clause, LiteralTrace};
 use crate::code_generator::{CodeGenerator, Error};
 use crate::display::DisplayClause;
@@ -677,8 +678,8 @@ impl ConcreteStep {
 }
 
 impl<'a> Proof<'a> {
-    /// Create the concrete proof.
-    pub fn make_concrete(&self, bindings: &BindingMap) -> Result<Vec<String>, Error> {
+    /// Create a certificate for this proof.
+    pub fn make_cert(&self, bindings: &BindingMap) -> Result<Certificate, Error> {
         let mut generator = CodeGenerator::new(&bindings);
 
         // First, reconstruct all the steps, working backwards.
@@ -746,7 +747,7 @@ impl<'a> Proof<'a> {
                 }
             }
         }
-        Ok(answer)
+        Ok(Certificate::new(answer))
     }
 
     // Adds a var map for a non-assumption proof step.

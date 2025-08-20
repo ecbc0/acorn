@@ -10,6 +10,7 @@ use crate::acorn_type::AcornType;
 use crate::acorn_value::AcornValue;
 use crate::active_set::ActiveSet;
 use crate::binding_map::BindingMap;
+use crate::certificate::Certificate;
 use crate::checker::Checker;
 use crate::clause::Clause;
 use crate::code_generator::{CodeGenerator, Error};
@@ -635,12 +636,12 @@ impl Prover {
 
     /// Generate a concrete proof, check it, and return it.
     /// This will also print the proof if `print` is true.
-    pub fn check_concrete(
+    pub fn check_cert(
         &mut self,
         project: &Project,
         bindings: &BindingMap,
         print: bool,
-    ) -> Result<Vec<String>, Error> {
+    ) -> Result<Certificate, Error> {
         let proof = match self.get_uncondensed_proof(false) {
             Some(proof) => proof,
             None => return Err(Error::internal("no proof available")),
@@ -650,15 +651,15 @@ impl Prover {
             self.print_proof(project, bindings, &proof);
         }
 
-        let concrete_proof = proof.make_concrete(bindings)?;
+        let concrete_proof = proof.make_cert(bindings)?;
         if print {
             println!("concrete proof:");
-            for line in &concrete_proof {
+            for line in &concrete_proof.proof {
                 println!("  {}", line);
             }
         }
 
-        self.check_proof(&concrete_proof, project, &mut Cow::Borrowed(bindings))?;
+        self.check_proof(&concrete_proof.proof, project, &mut Cow::Borrowed(bindings))?;
 
         Ok(concrete_proof)
     }
