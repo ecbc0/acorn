@@ -5,7 +5,7 @@ use crate::project::Project;
 use crate::prover::{Outcome, Prover};
 
 // Helper to do a proof for a particular goal.
-fn prove<'a>(
+fn prove_helper<'a>(
     project: &'a mut Project,
     module_name: &str,
     goal_name: &str,
@@ -38,12 +38,12 @@ fn prove<'a>(
 
 // Tries to prove one thing from the project.
 // If the proof is successful, try to generate the code.
-pub fn prove_with_code(
+pub fn prove_with_old_codegen(
     project: &mut Project,
     module_name: &str,
     goal_name: &str,
 ) -> (Prover, Outcome, Result<Vec<String>, Error>) {
-    let (project, env, prover, outcome) = prove(project, module_name, goal_name);
+    let (project, env, prover, outcome) = prove_helper(project, module_name, goal_name);
     let code = match prover.get_and_print_proof(project, &env.bindings) {
         Some(proof) => proof.to_code(&env.bindings),
         None => Err(Error::NoProof),
@@ -52,8 +52,8 @@ pub fn prove_with_code(
 }
 
 /// Expects the proof to succeed, and a concrete proof to be generated.
-pub fn prove_concrete(project: &mut Project, module_name: &str, goal_name: &str) -> Vec<String> {
-    let (project, base_env, mut prover, outcome) = prove(project, module_name, goal_name);
+pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Vec<String> {
+    let (project, base_env, mut prover, outcome) = prove_helper(project, module_name, goal_name);
     assert_eq!(outcome, Outcome::Success);
     let cursor = base_env.get_node_by_description(goal_name);
     let env = cursor.goal_env().unwrap();
@@ -67,7 +67,7 @@ pub fn prove_concrete(project: &mut Project, module_name: &str, goal_name: &str)
 pub fn prove_as_main(text: &str, goal_name: &str) -> (Prover, Outcome, Result<Vec<String>, Error>) {
     let mut project = Project::new_mock();
     project.mock("/mock/main.ac", text);
-    prove_with_code(&mut project, "main", goal_name)
+    prove_with_old_codegen(&mut project, "main", goal_name)
 }
 
 // Does one proof on the provided text.
