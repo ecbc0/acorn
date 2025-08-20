@@ -18,7 +18,7 @@ use crate::display::DisplayClause;
 use crate::evaluator::Evaluator;
 use crate::expression::Declaration;
 use crate::fact::Fact;
-use crate::goal::{Goal, GoalContext};
+use crate::goal::GoalContext;
 use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
 use crate::literal::Literal;
 use crate::module::ModuleId;
@@ -171,23 +171,20 @@ impl Prover {
     pub fn set_goal(&mut self, goal_context: &GoalContext) {
         assert!(self.goal.is_none());
 
-        match &goal_context.goal {
-            Goal::Prove(prop) => {
-                // Negate the goal and add it as a counterfactual assumption.
-                let (hypo, counter) = prop.value.clone().negate_goal();
-                if let Some(hypo) = hypo {
-                    self.add_fact(Fact::proposition(hypo, prop.source.clone()));
-                }
-                self.add_fact(Fact::proposition(
-                    counter.clone(),
-                    prop.source.as_negated_goal(),
-                ));
-                self.goal = Some(NormalizedGoal::ProveNegated(
-                    counter,
-                    goal_context.inconsistency_okay,
-                ));
-            }
+        let prop = &goal_context.goal.proposition;
+        // Negate the goal and add it as a counterfactual assumption.
+        let (hypo, counter) = prop.value.clone().negate_goal();
+        if let Some(hypo) = hypo {
+            self.add_fact(Fact::proposition(hypo, prop.source.clone()));
         }
+        self.add_fact(Fact::proposition(
+            counter.clone(),
+            prop.source.as_negated_goal(),
+        ));
+        self.goal = Some(NormalizedGoal::ProveNegated(
+            counter,
+            goal_context.inconsistency_okay,
+        ));
     }
 
     /// Returns the final step of the proof if available

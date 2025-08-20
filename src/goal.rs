@@ -7,22 +7,21 @@ use crate::module::ModuleId;
 use crate::proposition::Proposition;
 
 #[derive(Debug, Clone)]
-pub enum Goal {
-    // Prove that this proposition is true.
-    Prove(Proposition),
+pub struct Goal {
+    pub proposition: Proposition,
 }
 
 impl Goal {
+    pub fn new(proposition: Proposition) -> Self {
+        Goal { proposition }
+    }
+
     pub fn value(&self) -> &AcornValue {
-        match self {
-            Goal::Prove(p) => &p.value,
-        }
+        &self.proposition.value
     }
 
     pub fn range(&self) -> Range {
-        match self {
-            Goal::Prove(p) => p.source.range,
-        }
+        self.proposition.source.range
     }
 }
 
@@ -61,18 +60,14 @@ impl GoalContext {
         first_line: u32,
         last_line: u32,
     ) -> GoalContext {
-        let description = match &goal {
-            Goal::Prove(proposition) => {
-                // Goals should never be generic.
-                assert!(!proposition.value.has_generic());
+        // Goals should never be generic.
+        assert!(!goal.proposition.value.has_generic());
 
-                match proposition.theorem_name() {
-                    Some(name) => name.to_string(),
-                    None => CodeGenerator::new(&env.bindings)
-                        .value_to_code(&proposition.value)
-                        .unwrap_or("<goal>".to_string()),
-                }
-            }
+        let description = match goal.proposition.theorem_name() {
+            Some(name) => name.to_string(),
+            None => CodeGenerator::new(&env.bindings)
+                .value_to_code(&goal.proposition.value)
+                .unwrap_or("<goal>".to_string()),
         };
         GoalContext {
             module_id: env.module_id,

@@ -175,7 +175,7 @@ impl Block {
                     subenv.depth,
                     theorem_name.map(|s| s.to_string()),
                 );
-                Some(Goal::Prove(Proposition::monomorphic(bound_goal, source)))
+                Some(Goal::new(Proposition::monomorphic(bound_goal, source)))
             }
             BlockParams::FunctionSatisfy(unbound_goal, return_type, range) => {
                 // In the block, we need to prove this goal in bound form, so bind args to it.
@@ -186,7 +186,7 @@ impl Block {
                 assert!(!bound_goal.has_generic());
                 let source = Source::anonymous(env.module_id, range, env.depth);
                 let prop = Proposition::monomorphic(bound_goal, source);
-                Some(Goal::Prove(prop))
+                Some(Goal::new(prop))
             }
             BlockParams::MatchCase(scrutinee, constructor, pattern_args, range) => {
                 // Inside the block, the pattern arguments are constants.
@@ -216,7 +216,7 @@ impl Block {
             BlockParams::TypeRequirement(constraint, range) => {
                 // We don't add any other given theorems.
                 let source = Source::anonymous(env.module_id, range, env.depth);
-                Some(Goal::Prove(Proposition::monomorphic(constraint, source)))
+                Some(Goal::new(Proposition::monomorphic(constraint, source)))
             }
             BlockParams::ForAll | BlockParams::Problem | BlockParams::Todo => None,
         };
@@ -753,7 +753,7 @@ impl<'a> NodeCursor<'a> {
             let last_line = prop.source.range.end.line;
             return Ok(GoalContext::new(
                 self.env(),
-                Goal::Prove(prop.clone()),
+                Goal::new(prop.clone()),
                 first_line,
                 first_line,
                 last_line,
