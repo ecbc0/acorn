@@ -734,30 +734,10 @@ impl<'a> NodeCursor<'a> {
         }
 
         if let Some(block) = &node.get_block() {
-            let first_line = block.env.first_line;
-            let last_line = block.env.last_line();
-            let goal = match &block.goal {
-                Some(goal) => goal,
-                None => return Err(format!("block at {} has no goal", self)),
-            };
-            Ok(GoalContext::new(
-                &block.env,
-                goal.clone(),
-                last_line,
-                first_line,
-                last_line,
-            ))
+            GoalContext::block(block)
         } else {
             let prop = node.proposition().unwrap();
-            let first_line = prop.source.range.start.line;
-            let last_line = prop.source.range.end.line;
-            return Ok(GoalContext::new(
-                self.env(),
-                Goal::new(prop.clone()),
-                first_line,
-                first_line,
-                last_line,
-            ));
+            Ok(GoalContext::interior(self.env(), &prop))
         }
     }
 

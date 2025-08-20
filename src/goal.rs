@@ -52,14 +52,44 @@ pub struct GoalContext {
 }
 
 impl GoalContext {
-    // env is the environment we are proving the goal in.
-    pub fn new(
-        env: &Environment,
-        goal: Goal,
-        proof_insertion_line: u32,
-        first_line: u32,
-        last_line: u32,
-    ) -> GoalContext {
+    /// Creates a GoalContext for a block that has a goal.
+    pub fn block(block: &crate::block::Block) -> Result<GoalContext, String> {
+        let goal = match &block.goal {
+            Some(goal) => goal.clone(),
+            None => return Err("block has no goal".to_string()),
+        };
+        
+        let first_line = block.env.first_line;
+        let last_line = block.env.last_line();
+        
+        // Goals should never be generic.
+        assert!(!goal.proposition.value.has_generic());
+
+        let description = match goal.proposition.theorem_name() {
+            Some(name) => name.to_string(),
+            None => CodeGenerator::new(&block.env.bindings)
+                .value_to_code(&goal.proposition.value)
+                .unwrap_or("<goal>".to_string()),
+        };
+        
+        Ok(GoalContext {
+            module_id: block.env.module_id,
+            description,
+            goal,
+            proof_insertion_line: last_line,
+            insert_block: block.env.implicit,
+            inconsistency_okay: block.env.includes_explicit_false,
+            first_line,
+            last_line,
+        })
+    }
+    
+    /// Creates a GoalContext for a proposition that is inside a block (or standalone).
+    pub fn interior(env: &Environment, prop: &Proposition) -> GoalContext {
+        let goal = Goal::new(prop.clone());
+        let first_line = prop.source.range.start.line;
+        let last_line = prop.source.range.end.line;
+        
         // Goals should never be generic.
         assert!(!goal.proposition.value.has_generic());
 
@@ -69,11 +99,12 @@ impl GoalContext {
                 .value_to_code(&goal.proposition.value)
                 .unwrap_or("<goal>".to_string()),
         };
+        
         GoalContext {
             module_id: env.module_id,
             description,
             goal,
-            proof_insertion_line,
+            proof_insertion_line: first_line,
             insert_block: env.implicit,
             inconsistency_okay: env.includes_explicit_false,
             first_line,
