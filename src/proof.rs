@@ -16,6 +16,13 @@ use crate::variable_map::VariableMap;
 
 /// A proof that was successfully found by the prover.
 ///
+/// This is the internal form of the proof. There are currently two different exportable
+/// forms of the proof: the Certificate, and the "condensed proof".
+/// The nice thing about the Certificate is that it always exists, and is fast to check.
+/// The condensed proof, on the other hand, is optimized for readability and direct
+/// insertability into the code. It cannot always be created.
+/// We probably want to deprecate the condensed proof, once the UI doesn't use it.
+///
 /// We store the proof in two different ways.
 /// First, we store each step of the proof in the order we found them, in `steps`.
 /// This starts with the negated goal and proves it by reducing it to a contradiction.
