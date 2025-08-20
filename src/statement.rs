@@ -937,24 +937,6 @@ fn parse_attributes_statement(keyword: Token, tokens: &mut TokenIter) -> Result<
     Ok(statement)
 }
 
-/// Parses a solve statement where the "solve" keyword has already been found.
-fn parse_solve_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
-    let (target, _) = Expression::parse_value(tokens, Terminator::Is(TokenType::By))?;
-    let left_brace = tokens.expect_type(TokenType::LeftBrace)?;
-    let (statements, right_brace) = parse_block(tokens)?;
-    let body = Body {
-        left_brace,
-        statements,
-        right_brace: right_brace.clone(),
-    };
-    let ss = SolveStatement { target, body };
-    let s = Statement {
-        first_token: keyword,
-        last_token: right_brace,
-        statement: StatementInfo::Solve(ss),
-    };
-    Ok(s)
-}
 
 /// Parses a match statement where the "match" keyword has already been found.
 fn parse_match_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
@@ -1364,8 +1346,11 @@ impl Statement {
                     }
                     TokenType::Solve => {
                         let keyword = tokens.next().unwrap();
-                        let s = parse_solve_statement(keyword, tokens)?;
-                        return Ok((Some(s), None));
+                        return Err(Error::new(
+                            &keyword,
+                            &keyword,
+                            "the 'solve' keyword is no longer supported",
+                        ));
                     }
                     TokenType::Problem => {
                         let keyword = tokens.next().unwrap();
