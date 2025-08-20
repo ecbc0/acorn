@@ -5,7 +5,7 @@ use crate::proposition::Proposition;
 
 // A goal along with some information related to it.
 #[derive(Clone, Debug)]
-pub struct GoalContext {
+pub struct Goal {
     pub module_id: ModuleId,
 
     // Something a person reads, describing this goal.
@@ -30,9 +30,9 @@ pub struct GoalContext {
     pub last_line: u32,
 }
 
-impl GoalContext {
-    /// Creates a GoalContext for a block that has a goal.
-    pub fn block(env: &Environment, prop: &Proposition) -> GoalContext {
+impl Goal {
+    /// Creates a Goal for a block that has a goal.
+    pub fn block(env: &Environment, prop: &Proposition) -> Goal {
         let first_line = env.first_line;
         let last_line = env.last_line();
 
@@ -46,7 +46,7 @@ impl GoalContext {
                 .unwrap_or("<goal>".to_string()),
         };
 
-        GoalContext {
+        Goal {
             module_id: env.module_id,
             description,
             proposition: prop.clone(),
@@ -58,8 +58,8 @@ impl GoalContext {
         }
     }
 
-    /// Creates a GoalContext for a proposition that is inside a block (or standalone).
-    pub fn interior(env: &Environment, prop: &Proposition) -> GoalContext {
+    /// Creates a Goal for a proposition that is inside a block (or standalone).
+    pub fn interior(env: &Environment, prop: &Proposition) -> Goal {
         let first_line = prop.source.range.start.line;
         let last_line = prop.source.range.end.line;
 
@@ -73,7 +73,7 @@ impl GoalContext {
                 .unwrap_or("<goal>".to_string()),
         };
 
-        GoalContext {
+        Goal {
             module_id: env.module_id,
             description,
             proposition: prop.clone(),

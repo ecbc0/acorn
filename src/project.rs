@@ -19,7 +19,7 @@ use crate::code_generator::{self, CodeGenerator};
 use crate::compilation;
 use crate::environment::Environment;
 use crate::fact::Fact;
-use crate::goal::GoalContext;
+use crate::goal::Goal;
 use crate::module::{LoadState, Module, ModuleDescriptor, ModuleId};
 use crate::module_cache::{ModuleCache, ModuleHash};
 use crate::named_entity::NamedEntity;
@@ -765,7 +765,7 @@ impl Project {
         &self,
         mut full_prover: Prover,
         filtered_prover: Option<Prover>,
-        goal_context: &GoalContext,
+        goal_context: &Goal,
         builder: &mut Builder,
         env: &Environment,
     ) -> Prover {

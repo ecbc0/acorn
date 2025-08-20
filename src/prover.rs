@@ -18,7 +18,7 @@ use crate::display::DisplayClause;
 use crate::evaluator::Evaluator;
 use crate::expression::Declaration;
 use crate::fact::Fact;
-use crate::goal::GoalContext;
+use crate::goal::Goal;
 use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
 use crate::literal::Literal;
 use crate::module::ModuleId;
@@ -168,7 +168,7 @@ impl Prover {
     }
 
     /// Sets the goal for the prover
-    pub fn set_goal(&mut self, goal_context: &GoalContext) {
+    pub fn set_goal(&mut self, goal_context: &Goal) {
         assert!(self.goal.is_none());
 
         let prop = &goal_context.proposition;

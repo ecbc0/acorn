@@ -9,7 +9,7 @@ use crate::atom::AtomId;
 use crate::compilation::{self, ErrorSource};
 use crate::environment::{Environment, LineType};
 use crate::fact::Fact;
-use crate::goal::GoalContext;
+use crate::goal::Goal;
 use crate::names::DefinedName;
 use crate::potential_value::PotentialValue;
 use crate::project::Project;
@@ -37,7 +37,7 @@ pub struct Block {
     /// Everything in the block can be used to achieve this goal.
     /// If there is no goal for the block, we can still use its conclusion externally,
     /// but we let the conclusion be determined by the code in the block.
-    pub goal: Option<GoalContext>,
+    pub goal: Option<Goal>,
 
     /// The environment created inside the block.
     pub env: Environment,
@@ -243,8 +243,7 @@ impl Block {
             }
         };
 
-        // Create the GoalContext if we have a goal proposition
-        let goal = goal_prop.map(|prop| GoalContext::block(&subenv, &prop));
+        let goal = goal_prop.map(|prop| Goal::block(&subenv, &prop));
 
         Ok(Block {
             args,
@@ -728,7 +727,7 @@ impl<'a> NodeCursor<'a> {
     }
 
     /// Get a goal context for the current node.
-    pub fn goal_context(&self) -> Result<GoalContext, String> {
+    pub fn goal_context(&self) -> Result<Goal, String> {
         let node = self.node();
         if let Node::Structural(_) = node {
             return Err(format!(
@@ -744,7 +743,7 @@ impl<'a> NodeCursor<'a> {
             }
         } else {
             let prop = node.proposition().unwrap();
-            Ok(GoalContext::interior(self.env(), &prop))
+            Ok(Goal::interior(self.env(), &prop))
         }
     }
 

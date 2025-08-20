@@ -8,7 +8,7 @@ use crate::compilation::Error;
 use crate::dataset::Dataset;
 use crate::environment::Environment;
 use crate::features::Features;
-use crate::goal::GoalContext;
+use crate::goal::Goal;
 use crate::module::ModuleDescriptor;
 use crate::project::Project;
 use crate::prover::{Outcome, Prover};
@@ -299,7 +299,7 @@ impl<'a> Builder<'a> {
     pub fn search_finished(
         &mut self,
         prover: &mut Prover,
-        goal_context: &GoalContext,
+        goal_context: &Goal,
         outcome: Outcome,
         elapsed: Duration,
         project: &Project,
@@ -418,7 +418,7 @@ impl<'a> Builder<'a> {
     /// Create a build event for a proof that was other than successful.
     fn make_event(
         &mut self,
-        goal_context: &GoalContext,
+        goal_context: &Goal,
         message: &str,
         sev: DiagnosticSeverity,
     ) -> BuildEvent {
@@ -438,14 +438,14 @@ impl<'a> Builder<'a> {
     }
 
     /// Note that this will blue-squiggle in VS Code, so don't just use this willy-nilly.
-    pub fn log_proving_info(&mut self, goal_context: &GoalContext, message: &str) {
+    pub fn log_proving_info(&mut self, goal_context: &Goal, message: &str) {
         let event = self.make_event(goal_context, message, DiagnosticSeverity::INFORMATION);
         (self.event_handler)(event);
     }
 
     /// Logs a warning. Warnings can only happen during the proving phase.
     /// This will mark the build as "not good", so we won't cache it.
-    fn log_proving_warning(&mut self, goal_context: &GoalContext, message: &str) {
+    fn log_proving_warning(&mut self, goal_context: &Goal, message: &str) {
         let event = self.make_event(goal_context, message, DiagnosticSeverity::WARNING);
         (self.event_handler)(event);
         self.current_module_good = false;
@@ -453,7 +453,7 @@ impl<'a> Builder<'a> {
     }
 
     /// Logs an error during the proving phase.
-    fn log_proving_error(&mut self, goal_context: &GoalContext, message: &str) {
+    fn log_proving_error(&mut self, goal_context: &Goal, message: &str) {
         let mut event = self.make_event(goal_context, message, DiagnosticSeverity::WARNING);
 
         // Set progress as complete, because an error will halt the build
