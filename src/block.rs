@@ -243,7 +243,7 @@ impl Block {
             }
         };
 
-        let goal = goal_prop.map(|prop| Goal::block(&subenv, &prop));
+        let goal = goal_prop.map(|prop| Goal::block(&subenv, &prop)).transpose()?;
 
         Ok(Block {
             args,
@@ -743,7 +743,7 @@ impl<'a> NodeCursor<'a> {
             }
         } else {
             let prop = node.proposition().unwrap();
-            Ok(Goal::interior(self.env(), &prop))
+            Goal::interior(self.env(), &prop).map_err(|e| e.to_string())
         }
     }
 
