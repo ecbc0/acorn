@@ -378,22 +378,17 @@ impl Environment {
     }
 
     /// Used for integration testing.
-    /// Not good for general use because it's based on the human-readable description.
-    pub fn get_node_by_description(&self, description: &str) -> NodeCursor {
-        let mut descriptions = Vec::new();
+    pub fn get_node_by_goal_name(&self, name: &str) -> NodeCursor {
+        let mut names = Vec::new();
         for node in self.iter_goals() {
             let context = node.goal_context().unwrap();
-            if context.description == description {
+            if context.name == name {
                 return node;
             }
-            descriptions.push(context.description);
+            names.push(context.name);
         }
 
-        panic!(
-            "no context found for {} in:\n{}\n",
-            description,
-            descriptions.join("\n")
-        );
+        panic!("no context found for {} in:\n{}\n", name, names.join("\n"));
     }
 
     /// Returns the path to a given zero-based line.
@@ -611,7 +606,7 @@ impl Environment {
 
     /// Get the bindings for the theorem block with the given name.
     pub fn get_bindings(&self, theorem_name: &str) -> &BindingMap {
-        let mut cursor = self.get_node_by_description(theorem_name);
+        let mut cursor = self.get_node_by_goal_name(theorem_name);
         cursor.descend(0);
         &cursor.env().bindings
     }

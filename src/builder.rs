@@ -422,7 +422,7 @@ impl<'a> Builder<'a> {
         message: &str,
         sev: DiagnosticSeverity,
     ) -> BuildEvent {
-        let full_message = format!("{} {}", goal_context.description, message);
+        let full_message = format!("{} {}", goal_context.name, message);
         let diagnostic = Diagnostic {
             range: goal_context.proposition.source.range,
             severity: Some(sev),

@@ -62,7 +62,7 @@ impl Searcher {
             )
         })?;
 
-        println!("proving {} ...", goal_context.description);
+        println!("proving {} ...", goal_context.name);
 
         let verbose = false;
         let mut prover = if self.mode == ProverMode::Filtered {

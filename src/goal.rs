@@ -9,8 +9,8 @@ use crate::proposition::Proposition;
 pub struct Goal {
     pub module_id: ModuleId,
 
-    // Something a person reads, describing this goal.
-    pub description: String,
+    // A normalized form of the goal.
+    pub name: String,
 
     // The proposition to be proved.
     pub proposition: Proposition,
@@ -31,6 +31,9 @@ pub struct Goal {
     pub last_line: u32,
 }
 
+// Whether to be strict about goal names
+const STRICT: bool = false;
+
 impl Goal {
     /// Creates a new Goal with the given parameters.
     fn new(
@@ -43,16 +46,24 @@ impl Goal {
         // Goals should never be generic.
         assert!(!prop.value.has_generic());
 
-        let description = match prop.theorem_name() {
-            Some(name) => name.to_string(),
-            None => CodeGenerator::new(&env.bindings)
-                .value_to_code(&prop.value)
-                .unwrap_or("<goal>".to_string()),
+        let name = if let Some(name) = prop.theorem_name() {
+            name.to_string()
+        } else {
+            match CodeGenerator::new(&env.bindings).value_to_code(&prop.value) {
+                Ok(code) => code,
+                Err(e) => {
+                    if STRICT {
+                        panic!("could not create goal name: {}", e);
+                    } else {
+                        "<goal>".to_string()
+                    }
+                }
+            }
         };
 
         Ok(Goal {
             module_id: env.module_id,
-            description,
+            name,
             proposition: prop.clone(),
             proof_insertion_line,
             insert_block: env.implicit,

@@ -20,7 +20,7 @@ fn prove_helper<'a>(
         LoadState::Error(e) => panic!("module loading error: {}", e),
         _ => panic!("no module"),
     };
-    let node = env.get_node_by_description(goal_name);
+    let node = env.get_node_by_goal_name(goal_name);
     let facts = node.usable_facts(project);
     let goal_context = node.goal_context().unwrap();
     let mut prover = Prover::new(&project, false);
@@ -56,7 +56,7 @@ pub fn prove_with_old_codegen(
 pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certificate {
     let (project, base_env, mut prover, outcome) = prove_helper(project, module_name, goal_name);
     assert_eq!(outcome, Outcome::Success);
-    let cursor = base_env.get_node_by_description(goal_name);
+    let cursor = base_env.get_node_by_goal_name(goal_name);
     let env = cursor.goal_env().unwrap();
 
     match prover.make_cert(project, &env.bindings, true) {
@@ -89,7 +89,7 @@ pub fn verify(text: &str) -> Outcome {
     for cursor in env.iter_goals() {
         let facts = cursor.usable_facts(&project);
         let goal_context = cursor.goal_context().unwrap();
-        println!("proving: {}", goal_context.description);
+        println!("proving: {}", goal_context.name);
         let mut prover = Prover::new(&project, false);
         for fact in facts {
             prover.add_fact(fact);
