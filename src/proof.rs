@@ -686,7 +686,7 @@ impl ConcreteStep {
 
 impl<'a> Proof<'a> {
     /// Create a certificate for this proof.
-    pub fn make_cert(&self, bindings: &BindingMap) -> Result<Certificate, Error> {
+    pub fn make_cert(&self, goal: String, bindings: &BindingMap) -> Result<Certificate, Error> {
         let mut generator = CodeGenerator::new(&bindings);
 
         // First, reconstruct all the steps, working backwards.
@@ -754,7 +754,7 @@ impl<'a> Proof<'a> {
                 }
             }
         }
-        Ok(Certificate::new(answer))
+        Ok(Certificate::new(goal, answer))
     }
 
     // Adds a var map for a non-assumption proof step.

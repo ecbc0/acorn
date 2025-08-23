@@ -76,6 +76,9 @@ pub struct Prover {
     /// If this is None, the goal hasn't been set yet.
     goal: Option<NormalizedGoal>,
 
+    /// The name of the goal being proved.
+    goal_name: Option<String>,
+
     /// If strict codegen is set, we panic when we can't generate code correctly.
     /// Good for testing.
     /// Otherwise, we kinda guess. Good for production.
@@ -139,6 +142,7 @@ impl Prover {
             useful_passive: vec![],
             nonfactual_activations: 0,
             goal: None,
+            goal_name: None,
             strict_codegen: false,
         }
     }
@@ -185,6 +189,7 @@ impl Prover {
             counter,
             goal_context.inconsistency_okay,
         ));
+        self.goal_name = Some(goal_context.name.clone());
     }
 
     /// Returns the final step of the proof if available
@@ -631,7 +636,8 @@ impl Prover {
             self.print_proof(project, bindings, &proof);
         }
 
-        let concrete_proof = proof.make_cert(bindings)?;
+        let goal_name = self.goal_name.clone().unwrap();
+        let concrete_proof = proof.make_cert(goal_name, bindings)?;
         if print {
             println!("concrete proof:");
             for line in &concrete_proof.proof {
