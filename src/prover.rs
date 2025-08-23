@@ -86,12 +86,16 @@ pub struct Prover {
 }
 
 #[derive(Clone)]
-enum NormalizedGoal {
+struct NormalizedGoal {
     /// The value expresses the negation of the goal we are trying to prove.
-    /// It is normalized in the sense that we would use this form to generate code.
-    /// The flag indicates whether inconsistencies are okay.
-    /// Ie, if we find a contradiction, is that Outcome::Success or Outcome::Inconsistent?
-    ProveNegated(AcornValue, bool),
+    /// It is normalized in the sense that hypothesis and counterfactual have been separated.
+    /// There is still more normalization that will happen when it is converted to Clause.
+    counterfactual: AcornValue,
+
+    /// Whether inconsistencies are okay.
+    /// If true, finding a contradiction results in Outcome::Success.
+    /// If false, finding a contradiction results in Outcome::Inconsistent.
+    inconsistency_okay: bool,
 }
 
 /// The outcome of a prover operation.
@@ -177,18 +181,18 @@ impl Prover {
 
         let prop = &goal_context.proposition;
         // Negate the goal and add it as a counterfactual assumption.
-        let (hypo, counter) = prop.value.clone().negate_goal();
+        let (hypo, counterfactual) = prop.value.clone().negate_goal();
         if let Some(hypo) = hypo {
             self.add_fact(Fact::proposition(hypo, prop.source.clone()));
         }
         self.add_fact(Fact::proposition(
-            counter.clone(),
+            counterfactual.clone(),
             prop.source.as_negated_goal(),
         ));
-        self.goal = Some(NormalizedGoal::ProveNegated(
-            counter,
-            goal_context.inconsistency_okay,
-        ));
+        self.goal = Some(NormalizedGoal {
+            counterfactual,
+            inconsistency_okay: goal_context.inconsistency_okay,
+        });
         self.goal_name = Some(goal_context.name.clone());
     }
 
@@ -206,7 +210,8 @@ impl Prover {
     pub fn print_stats(&self) {
         // Kinda only printing this so that Solve(term) isn't unused
         match &self.goal {
-            Some(NormalizedGoal::ProveNegated(v, _)) => {
+            Some(goal) => {
+                let v = &goal.counterfactual;
                 println!("goal: disprove {}", v);
             }
             None => {
@@ -436,7 +441,7 @@ impl Prover {
                 .find_upstream(step, include_inspiration, &mut useful_active);
         }
         let negated_goal = match &self.goal {
-            Some(NormalizedGoal::ProveNegated(negated_goal, _)) => negated_goal,
+            Some(goal) => &goal.counterfactual,
             _ => return None,
         };
 
@@ -592,7 +597,7 @@ impl Prover {
         bindings: &mut Cow<BindingMap>,
     ) -> Result<(), Error> {
         let negated_goal = match &self.goal {
-            Some(NormalizedGoal::ProveNegated(negated_goal, _)) => negated_goal.clone(),
+            Some(goal) => goal.counterfactual.clone(),
             _ => return Err(Error::internal("cannot check proof without a goal")),
         };
         let negated_goal_clauses = self
@@ -879,9 +884,11 @@ impl Prover {
                         // The normal success case
                         return Outcome::Success;
                     }
-                    if let Some(NormalizedGoal::ProveNegated(_, true)) = self.goal {
-                        // We found an inconsistency in our assumptions, but it's okay
-                        return Outcome::Success;
+                    if let Some(goal) = &self.goal {
+                        if goal.inconsistency_okay {
+                            // We found an inconsistency in our assumptions, but it's okay
+                            return Outcome::Success;
+                        }
                     }
                     // We found an inconsistency and it's not okay
                     return Outcome::Inconsistent;
