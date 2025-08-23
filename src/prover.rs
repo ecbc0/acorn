@@ -86,7 +86,7 @@ pub struct Prover {
 struct NormalizedGoal {
     /// The name of the goal being proved.
     name: String,
-    
+
     /// The value expresses the negation of the goal we are trying to prove.
     /// It is normalized in the sense that hypothesis and counterfactual have been separated.
     /// There is still more normalization that will happen when it is converted to Clause.
@@ -596,12 +596,12 @@ impl Prover {
         bindings: &mut Cow<BindingMap>,
     ) -> Result<(), Error> {
         let negated_goal = match &self.goal {
-            Some(goal) => goal.counterfactual.clone(),
+            Some(goal) => &goal.counterfactual,
             _ => return Err(Error::internal("cannot check proof without a goal")),
         };
         let negated_goal_clauses = self
             .normalizer
-            .normalize_value(&negated_goal, NewConstantType::Local)?;
+            .normalize_value(negated_goal, NewConstantType::Local)?;
         for clause in negated_goal_clauses {
             self.checker.insert_clause(&clause);
         }

@@ -1,4 +1,7 @@
+use serde::{Deserialize, Serialize};
+
 /// A proof certificate containing the concrete proof steps
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Certificate {
     /// The name of the goal that was proved
     pub goal: String,
