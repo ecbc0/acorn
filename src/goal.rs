@@ -54,7 +54,7 @@ impl Goal {
                     if STRICT {
                         panic!("could not create goal name: {}", e);
                     } else {
-                        "<goal>".to_string()
+                        format!("line{}", first_line + 1)
                     }
                 }
             }
