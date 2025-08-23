@@ -76,9 +76,6 @@ pub struct Prover {
     /// If this is None, the goal hasn't been set yet.
     goal: Option<NormalizedGoal>,
 
-    /// The name of the goal being proved.
-    goal_name: Option<String>,
-
     /// If strict codegen is set, we panic when we can't generate code correctly.
     /// Good for testing.
     /// Otherwise, we kinda guess. Good for production.
@@ -87,6 +84,9 @@ pub struct Prover {
 
 #[derive(Clone)]
 struct NormalizedGoal {
+    /// The name of the goal being proved.
+    name: String,
+    
     /// The value expresses the negation of the goal we are trying to prove.
     /// It is normalized in the sense that hypothesis and counterfactual have been separated.
     /// There is still more normalization that will happen when it is converted to Clause.
@@ -146,7 +146,6 @@ impl Prover {
             useful_passive: vec![],
             nonfactual_activations: 0,
             goal: None,
-            goal_name: None,
             strict_codegen: false,
         }
     }
@@ -190,10 +189,10 @@ impl Prover {
             prop.source.as_negated_goal(),
         ));
         self.goal = Some(NormalizedGoal {
+            name: goal_context.name.clone(),
             counterfactual,
             inconsistency_okay: goal_context.inconsistency_okay,
         });
-        self.goal_name = Some(goal_context.name.clone());
     }
 
     /// Returns the final step of the proof if available
@@ -641,7 +640,7 @@ impl Prover {
             self.print_proof(project, bindings, &proof);
         }
 
-        let goal_name = self.goal_name.clone().unwrap();
+        let goal_name = self.goal.as_ref().unwrap().name.clone();
         let concrete_proof = proof.make_cert(goal_name, bindings)?;
         if print {
             println!("concrete proof:");
