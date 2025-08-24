@@ -23,13 +23,11 @@ use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
 use crate::literal::Literal;
 use crate::module::ModuleId;
 use crate::names::ConstantName;
-use crate::normalization_map::NewConstantType;
 use crate::normalizer::Normalizer;
 use crate::passive_set::PassiveSet;
 use crate::project::Project;
 use crate::proof::{Difficulty, Proof};
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
-use crate::source::SourceType;
 use crate::stack::Stack;
 use crate::statement::{Statement, StatementInfo};
 use crate::term_graph::TermGraphContradiction;
@@ -47,8 +45,8 @@ pub struct Prover {
     /// we will add to the active clauses in the future.
     passive_set: PassiveSet,
 
-    /// The "checker" is used to quickly check if a clause can be proven
-    /// in a single step from the known clauses.
+    /// The checker validates a proof certificate, after the prover creates it.
+    /// TODO: make the checker not just live inside the prover.
     checker: Checker,
 
     /// A verbose prover prints out a lot of stuff.
@@ -162,14 +160,7 @@ impl Prover {
             }
         };
         for step in &steps {
-            // Add to checker if it's not from the negated goal source
-            let is_negated_goal_source = match &step.rule {
-                Rule::Assumption(info) => info.source.source_type == SourceType::NegatedGoal,
-                _ => false,
-            };
-            if !is_negated_goal_source {
-                self.checker.insert_clause(&step.clause);
-            }
+            self.checker.insert_clause(&step.clause);
         }
         self.passive_set.push_batch(steps);
     }
@@ -595,17 +586,6 @@ impl Prover {
         project: &Project,
         bindings: &mut Cow<BindingMap>,
     ) -> Result<(), Error> {
-        let negated_goal = match &self.goal {
-            Some(goal) => &goal.counterfactual,
-            _ => return Err(Error::internal("cannot check proof without a goal")),
-        };
-        let negated_goal_clauses = self
-            .normalizer
-            .normalize_value(negated_goal, NewConstantType::Local)?;
-        for clause in negated_goal_clauses {
-            self.checker.insert_clause(&clause);
-        }
-
         for code in codes {
             if self.checker.has_contradiction() {
                 return Ok(());
