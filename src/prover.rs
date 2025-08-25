@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use tower_lsp::lsp_types::Url;
 
-use crate::acorn_type::AcornType;
 use crate::acorn_value::AcornValue;
 use crate::active_set::ActiveSet;
 use crate::binding_map::BindingMap;
@@ -15,21 +14,16 @@ use crate::checker::Checker;
 use crate::clause::Clause;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::display::DisplayClause;
-use crate::evaluator::Evaluator;
-use crate::expression::Declaration;
 use crate::fact::Fact;
 use crate::goal::Goal;
 use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
 use crate::literal::Literal;
 use crate::module::ModuleId;
-use crate::names::ConstantName;
 use crate::normalizer::Normalizer;
 use crate::passive_set::PassiveSet;
 use crate::project::Project;
 use crate::proof::{Difficulty, Proof};
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
-use crate::stack::Stack;
-use crate::statement::{Statement, StatementInfo};
 use crate::term_graph::TermGraphContradiction;
 
 #[derive(Clone)]
@@ -467,141 +461,6 @@ impl Prover {
         Some(proof)
     }
 
-    /// Helper method to check a single line of code in a proof.
-    fn check_code(
-        &mut self,
-        code: &str,
-        project: &Project,
-        bindings: &mut Cow<BindingMap>,
-    ) -> Result<(), Error> {
-        // Parse as a statement with in_block=true to allow bare expressions
-        let statement = Statement::parse_str_with_options(&code, true)?;
-
-        // Create a new evaluator for this check
-        let mut evaluator = Evaluator::new(project, bindings, None);
-
-        match statement.statement {
-            StatementInfo::VariableSatisfy(vss) => {
-                // Create an exists value from the let...satisfy statement
-                // The declarations become the existential quantifiers
-                let mut decls = vec![];
-                for decl in &vss.declarations {
-                    match decl {
-                        Declaration::Typed(name_token, type_expr) => {
-                            let name = name_token.text().to_string();
-                            let acorn_type = evaluator.evaluate_type(type_expr)?;
-                            decls.push((name, acorn_type));
-                        }
-                        Declaration::SelfToken(_) => {
-                            return Err(Error::GeneratedBadCode(
-                                "Unexpected 'self' in let...satisfy statement".to_string(),
-                            ));
-                        }
-                    }
-                }
-
-                // Bind the declared variables to the stack
-                let mut stack = Stack::new();
-                evaluator.bind_args(&mut stack, &vss.declarations, None)?;
-
-                // Evaluate the condition with the declared variables on the stack
-                let condition_value = evaluator.evaluate_value_with_stack(
-                    &mut stack,
-                    &vss.condition,
-                    Some(&AcornType::Bool),
-                )?;
-
-                // Create an exists value
-                let types = decls.iter().map(|(_, ty)| ty.clone()).collect();
-
-                if condition_value != AcornValue::Bool(true) {
-                    let exists_value = AcornValue::exists(types, condition_value);
-
-                    // Check if this matches any existing skolem
-                    let Some(_info) = self.normalizer.find_exact_skolem_info(&exists_value) else {
-                        return Err(Error::GeneratedBadCode(
-                            "let...satisfy statement does not match any skolem definition"
-                                .to_string(),
-                        ));
-                    };
-                }
-
-                // Add all the variables in decls to the bindings and the normalizer
-                for (name, acorn_type) in decls {
-                    let cname = ConstantName::unqualified(bindings.module_id(), &name);
-                    bindings.to_mut().add_unqualified_constant(
-                        &name,
-                        vec![],
-                        acorn_type,
-                        None,
-                        None,
-                        vec![],
-                        None,
-                        String::new(),
-                    );
-                    self.normalizer.add_local_constant(cname);
-                }
-
-                // Re-parse the expression with the newly defined variables
-                let mut evaluator = Evaluator::new(project, bindings, None);
-                let value = evaluator.evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
-                let clauses = self.normalizer.clauses_from_value(&value)?;
-                for mut clause in clauses {
-                    clause.normalize();
-                    self.checker.insert_clause(&clause);
-                }
-                Ok(())
-            }
-            StatementInfo::Claim(claim) => {
-                let value = evaluator.evaluate_value(&claim.claim, Some(&AcornType::Bool))?;
-                let clauses = self.normalizer.clauses_from_value(&value)?;
-
-                for mut clause in clauses {
-                    if !self.checker.check_clause(&clause) {
-                        return Err(Error::GeneratedBadCode(format!(
-                            "The clause '{}' is not obviously true",
-                            self.display(&clause)
-                        )));
-                    }
-                    clause.normalize();
-                    self.checker.insert_clause(&clause);
-                }
-
-                Ok(())
-            }
-            _ => {
-                return Err(Error::GeneratedBadCode(format!(
-                    "Expected a claim or let...satisfy statement, got: {}",
-                    code
-                )));
-            }
-        }
-    }
-
-    /// Use the checker to check a proof that we just generated.
-    /// This does mutate the checker itself, so if you do anything else afterwards it'll be weird.
-    fn check_proof(
-        &mut self,
-        codes: &[String],
-        project: &Project,
-        bindings: &mut Cow<BindingMap>,
-    ) -> Result<(), Error> {
-        for code in codes {
-            if self.checker.has_contradiction() {
-                return Ok(());
-            }
-            self.check_code(code, project, bindings)?;
-        }
-
-        if self.checker.has_contradiction() {
-            Ok(())
-        } else {
-            Err(Error::GeneratedBadCode(
-                "The proof does not lead to a contradiction".to_string(),
-            ))
-        }
-    }
-
     /// Generate a concrete proof, check it, and return it.
     /// This should only be called after successfully proving.
     /// This will also print the proof if `print` is true.
@@ -629,7 +488,7 @@ impl Prover {
             }
         }
 
-        self.check_proof(&cert.proof, project, &mut Cow::Borrowed(bindings))?;
+        self.checker.check_proof(&cert.proof, project, &mut Cow::Borrowed(bindings), &mut self.normalizer)?;
 
         Ok(cert)
     }

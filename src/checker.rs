@@ -1,5 +1,18 @@
+use std::borrow::Cow;
+
+use crate::acorn_type::AcornType;
+use crate::acorn_value::AcornValue;
+use crate::binding_map::BindingMap;
 use crate::clause::Clause;
+use crate::code_generator::Error;
+use crate::evaluator::Evaluator;
+use crate::expression::Declaration;
 use crate::generalization_set::GeneralizationSet;
+use crate::names::ConstantName;
+use crate::normalizer::Normalizer;
+use crate::project::Project;
+use crate::stack::Stack;
+use crate::statement::{Statement, StatementInfo};
 use crate::term_graph::{StepId, TermGraph};
 
 /// The checker quickly checks if a clause can be proven in a single step from known clauses.
@@ -123,6 +136,143 @@ impl Checker {
     /// has_contradiction will return true.
     pub fn has_contradiction(&self) -> bool {
         self.direct_contradiction || self.term_graph.has_contradiction()
+    }
+
+    /// Helper method to check a single line of code in a proof.
+    pub fn check_code(
+        &mut self,
+        code: &str,
+        project: &Project,
+        bindings: &mut Cow<BindingMap>,
+        normalizer: &mut Normalizer,
+    ) -> Result<(), Error> {
+        // Parse as a statement with in_block=true to allow bare expressions
+        let statement = Statement::parse_str_with_options(&code, true)?;
+
+        // Create a new evaluator for this check
+        let mut evaluator = Evaluator::new(project, bindings, None);
+
+        match statement.statement {
+            StatementInfo::VariableSatisfy(vss) => {
+                // Create an exists value from the let...satisfy statement
+                // The declarations become the existential quantifiers
+                let mut decls = vec![];
+                for decl in &vss.declarations {
+                    match decl {
+                        Declaration::Typed(name_token, type_expr) => {
+                            let name = name_token.text().to_string();
+                            let acorn_type = evaluator.evaluate_type(type_expr)?;
+                            decls.push((name, acorn_type));
+                        }
+                        Declaration::SelfToken(_) => {
+                            return Err(Error::GeneratedBadCode(
+                                "Unexpected 'self' in let...satisfy statement".to_string(),
+                            ));
+                        }
+                    }
+                }
+
+                // Bind the declared variables to the stack
+                let mut stack = Stack::new();
+                evaluator.bind_args(&mut stack, &vss.declarations, None)?;
+
+                // Evaluate the condition with the declared variables on the stack
+                let condition_value = evaluator.evaluate_value_with_stack(
+                    &mut stack,
+                    &vss.condition,
+                    Some(&AcornType::Bool),
+                )?;
+
+                // Create an exists value
+                let types = decls.iter().map(|(_, ty)| ty.clone()).collect();
+
+                if condition_value != AcornValue::Bool(true) {
+                    let exists_value = AcornValue::exists(types, condition_value);
+
+                    // Check if this matches any existing skolem
+                    let Some(_info) = normalizer.find_exact_skolem_info(&exists_value) else {
+                        return Err(Error::GeneratedBadCode(
+                            "let...satisfy statement does not match any skolem definition"
+                                .to_string(),
+                        ));
+                    };
+                }
+
+                // Add all the variables in decls to the bindings and the normalizer
+                for (name, acorn_type) in decls {
+                    let cname = ConstantName::unqualified(bindings.module_id(), &name);
+                    bindings.to_mut().add_unqualified_constant(
+                        &name,
+                        vec![],
+                        acorn_type,
+                        None,
+                        None,
+                        vec![],
+                        None,
+                        String::new(),
+                    );
+                    normalizer.add_local_constant(cname);
+                }
+
+                // Re-parse the expression with the newly defined variables
+                let mut evaluator = Evaluator::new(project, bindings, None);
+                let value = evaluator.evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
+                let clauses = normalizer.clauses_from_value(&value)?;
+                for mut clause in clauses {
+                    clause.normalize();
+                    self.insert_clause(&clause);
+                }
+                Ok(())
+            }
+            StatementInfo::Claim(claim) => {
+                let value = evaluator.evaluate_value(&claim.claim, Some(&AcornType::Bool))?;
+                let clauses = normalizer.clauses_from_value(&value)?;
+
+                for mut clause in clauses {
+                    if !self.check_clause(&clause) {
+                        return Err(Error::GeneratedBadCode(format!(
+                            "The clause '{}' is not obviously true",
+                            clause
+                        )));
+                    }
+                    clause.normalize();
+                    self.insert_clause(&clause);
+                }
+
+                Ok(())
+            }
+            _ => {
+                return Err(Error::GeneratedBadCode(format!(
+                    "Expected a claim or let...satisfy statement, got: {}",
+                    code
+                )));
+            }
+        }
+    }
+
+    /// Use the checker to check a proof that we just generated.
+    /// This does mutate the checker itself, so if you do anything else afterwards it'll be weird.
+    pub fn check_proof(
+        &mut self,
+        codes: &[String],
+        project: &Project,
+        bindings: &mut Cow<BindingMap>,
+        normalizer: &mut Normalizer,
+    ) -> Result<(), Error> {
+        for code in codes {
+            if self.has_contradiction() {
+                return Ok(());
+            }
+            self.check_code(code, project, bindings, normalizer)?;
+        }
+
+        if self.has_contradiction() {
+            Ok(())
+        } else {
+            Err(Error::GeneratedBadCode(
+                "proof does not result in a contradiction".to_string(),
+            ))
+        }
     }
 
     #[cfg(test)]
