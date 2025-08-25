@@ -621,17 +621,17 @@ impl Prover {
         }
 
         let goal_name = self.goal.as_ref().unwrap().name.clone();
-        let concrete_proof = proof.make_cert(goal_name, bindings)?;
+        let cert = proof.make_cert(goal_name, bindings)?;
         if print {
             println!("concrete proof:");
-            for line in &concrete_proof.proof {
+            for line in &cert.proof {
                 println!("  {}", line);
             }
         }
 
-        self.check_proof(&concrete_proof.proof, project, &mut Cow::Borrowed(bindings))?;
+        self.check_proof(&cert.proof, project, &mut Cow::Borrowed(bindings))?;
 
-        Ok(concrete_proof)
+        Ok(cert)
     }
 
     fn report_term_graph_contradiction(&mut self, contradiction: TermGraphContradiction) {
