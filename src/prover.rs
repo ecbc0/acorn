@@ -483,12 +483,20 @@ impl Prover {
         let cert = proof.make_cert(goal_name, bindings)?;
         if print {
             println!("concrete proof:");
-            for line in &cert.proof {
-                println!("  {}", line);
+            if let Some(proof) = &cert.proof {
+                for line in proof {
+                    println!("  {}", line);
+                }
+            } else {
+                println!("  <no proof>");
             }
         }
 
-        self.checker.check_proof(&cert.proof, project, &mut Cow::Borrowed(bindings), &mut self.normalizer)?;
+        if let Some(proof) = &cert.proof {
+            self.checker.check_proof(proof, project, &mut Cow::Borrowed(bindings), &mut self.normalizer)?;
+        } else {
+            return Err("Certificate has no proof".to_string().into());
+        }
 
         Ok(cert)
     }

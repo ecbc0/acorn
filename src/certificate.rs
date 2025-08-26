@@ -10,12 +10,14 @@ pub struct Certificate {
     /// The name of the goal that was proved
     pub goal: String,
     /// The proof steps as strings
-    pub proof: Vec<String>,
+    /// None indicates no proof exists for this goal
+    /// Some(vec![]) indicates a trivial proof requiring no steps
+    pub proof: Option<Vec<String>>,
 }
 
 impl Certificate {
     /// Create a new certificate from proof steps
-    pub fn new(goal: String, proof: Vec<String>) -> Self {
+    pub fn new(goal: String, proof: Option<Vec<String>>) -> Self {
         Certificate { goal, proof }
     }
 }
@@ -73,20 +75,24 @@ mod tests {
         // Create some test certificates
         let cert1 = Certificate::new(
             "goal1".to_string(),
-            vec!["step1".to_string(), "step2".to_string()]
+            Some(vec!["step1".to_string(), "step2".to_string()])
         );
         let cert2 = Certificate::new(
             "goal2".to_string(), 
-            vec!["step3".to_string(), "step4".to_string(), "step5".to_string()]
+            Some(vec!["step3".to_string(), "step4".to_string(), "step5".to_string()])
         );
         let cert3 = Certificate::new(
             "goal3".to_string(),
-            vec![]  // Test with empty proof
+            Some(vec![])  // Trivial proof with no steps
+        );
+        let cert4 = Certificate::new(
+            "goal4".to_string(),
+            None  // No proof exists for this goal
         );
         
         // Create original certificate set
         let original = CertificateSet {
-            certs: vec![cert1, cert2, cert3],
+            certs: vec![cert1, cert2, cert3, cert4],
         };
         
         // Save to file

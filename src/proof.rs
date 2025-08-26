@@ -754,7 +754,7 @@ impl<'a> Proof<'a> {
                 }
             }
         }
-        Ok(Certificate::new(goal, answer))
+        Ok(Certificate::new(goal, Some(answer)))
     }
 
     // Adds a var map for a non-assumption proof step.
