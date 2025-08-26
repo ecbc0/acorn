@@ -35,9 +35,9 @@ struct Args {
     #[clap(long, help = "Create a dataset from the prover logs.")]
     dataset: bool,
 
-    /// Check concrete proofs
-    #[clap(long, help = "Check concrete proofs.")]
-    concrete: bool,
+    /// Use proof certificates
+    #[clap(long, help = "Use proof certificates.")]
+    certs: bool,
 
     /// Ignore the cache and do a full reverify
     #[clap(long, help = "Ignore the cache and do a full reverify.")]
@@ -164,7 +164,7 @@ async fn main() {
             mode,
             Some(new_target),
             args.dataset,
-            args.concrete,
+            args.certs,
         );
         match verifier.run() {
             Err(e) => {
@@ -182,7 +182,7 @@ async fn main() {
     }
 
     // Run the verifier.
-    let verifier = Verifier::new(current_dir, mode, args.target, args.dataset, args.concrete);
+    let verifier = Verifier::new(current_dir, mode, args.target, args.dataset, args.certs);
     match verifier.run() {
         Err(e) => {
             println!("{}", e);

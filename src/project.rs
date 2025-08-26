@@ -69,9 +69,9 @@ pub struct Project {
     // Defaults to true.
     pub check_hashes: bool,
 
-    // Whether to check concrete proofs.
+    // Whether to use proof certificates.
     // Defaults to false.
-    pub check_concrete: bool,
+    pub use_certs: bool,
 }
 
 // General project-level errors (file operations, setup, etc.)
@@ -169,7 +169,7 @@ impl Project {
             build_cache,
             build_stopped: Arc::new(AtomicBool::new(false)),
             check_hashes: true,
-            check_concrete: false,
+            use_certs: false,
         }
     }
 

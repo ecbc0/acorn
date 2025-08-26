@@ -53,8 +53,8 @@ pub struct Verifier {
     /// If true, a dataset is created, for training.
     create_dataset: bool,
 
-    /// If true, check concrete proofs.
-    check_concrete: bool,
+    /// If true, use proof certificates.
+    use_certs: bool,
 
     /// The starting path to find the acorn library from.
     start_path: PathBuf,
@@ -66,13 +66,13 @@ impl Verifier {
         mode: ProverMode,
         target: Option<String>,
         create_dataset: bool,
-        check_concrete: bool,
+        use_certs: bool,
     ) -> Self {
         Self {
             mode,
             target,
             create_dataset,
-            check_concrete,
+            use_certs,
             start_path,
         }
     }
@@ -84,8 +84,8 @@ impl Verifier {
             Err(e) => return Err(format!("Error: {}", e)),
         };
 
-        if self.check_concrete {
-            project.check_concrete = true;
+        if self.use_certs {
+            project.use_certs = true;
         }
 
         if let Some(target) = &self.target {
