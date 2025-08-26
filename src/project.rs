@@ -563,22 +563,7 @@ impl Project {
 
     // Verifies all goals within this module.
     // If we run into an error, we exit without verifying any more goals.
-    #[cfg(test)]
     pub fn verify_module(
-        &self,
-        target: &ModuleDescriptor,
-        env: &Environment,
-        builder: &mut Builder,
-    ) {
-        self.verify_module_internal(target, env, builder);
-    }
-
-    #[cfg(not(test))]
-    fn verify_module(&self, target: &ModuleDescriptor, env: &Environment, builder: &mut Builder) {
-        self.verify_module_internal(target, env, builder);
-    }
-
-    fn verify_module_internal(
         &self,
         target: &ModuleDescriptor,
         env: &Environment,
