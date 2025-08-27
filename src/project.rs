@@ -768,6 +768,7 @@ impl Project {
                     start.elapsed(),
                     self,
                     env,
+                    None,
                 );
                 return filtered_prover;
             }
@@ -786,6 +787,7 @@ impl Project {
             start.elapsed(),
             self,
             env,
+            None,
         );
         full_prover
     }

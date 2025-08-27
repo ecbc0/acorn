@@ -4,6 +4,7 @@ use std::time::Duration;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
 
 use crate::block::NodeCursor;
+use crate::certificate::Certificate;
 use crate::compilation::Error;
 use crate::dataset::Dataset;
 use crate::environment::Environment;
@@ -304,6 +305,7 @@ impl<'a> Builder<'a> {
         elapsed: Duration,
         project: &Project,
         env: &Environment,
+        new_certs: Option<&mut Vec<Certificate>>,
     ) {
         // Time conversion
         let secs = elapsed.as_secs() as f64;
@@ -321,17 +323,23 @@ impl<'a> Builder<'a> {
         self.metrics.clauses_total += clauses_activated + num_passive;
         self.metrics.clauses_sum_square_activated += (clauses_activated * clauses_activated) as u64;
 
+        // If new_certs is provided, create a certificate and append it
+        if let Some(certs) = new_certs {
+            match prover.make_cert(project, &env.bindings, false) {
+                Ok(cert) => certs.push(cert),
+                Err(e) => {
+                    self.log_proving_error(
+                        &goal_context,
+                        &format!("failed to create certificate: {}", e),
+                    );
+                    return;
+                }
+            }
+        }
+
         match outcome {
             Outcome::Success => {
-                if project.use_certs {
-                    if let Err(e) = prover.make_cert(project, &env.bindings, false) {
-                        self.log_proving_error(
-                            &goal_context,
-                            &format!("proof certificate check failed: {}", e),
-                        );
-                        return;
-                    }
-                } else {
+                if !project.use_certs {
                     let Some(proof) = prover.get_condensed_proof() else {
                         self.log_proving_warning(&goal_context, "had a missing proof");
                         return;
