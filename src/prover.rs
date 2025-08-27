@@ -461,8 +461,9 @@ impl Prover {
         Some(proof)
     }
 
-    /// Generate a concrete proof, check it, and return it.
-    /// This should only be called after successfully proving.
+    /// Generate a certificate for the goal.
+    /// If a proof was found, creates a certificate with the proof and checks it.
+    /// If no proof was found, creates a placeholder certificate with no proof.
     /// This will also print the proof if `print` is true.
     pub fn make_cert(
         &mut self,
@@ -470,16 +471,25 @@ impl Prover {
         bindings: &BindingMap,
         print: bool,
     ) -> Result<Certificate, Error> {
+        let goal_name = self.goal.as_ref()
+            .ok_or_else(|| Error::internal("no goal set"))?
+            .name.clone();
+        
         let proof = match self.get_uncondensed_proof(false) {
             Some(proof) => proof,
-            None => return Err(Error::internal("no proof available")),
+            None => {
+                // No proof found, create a placeholder certificate
+                if print {
+                    println!("No proof found, creating placeholder certificate for goal: {}", goal_name);
+                }
+                return Ok(Certificate::placeholder(goal_name));
+            }
         };
 
         if print {
             self.print_proof(project, bindings, &proof);
         }
 
-        let goal_name = self.goal.as_ref().unwrap().name.clone();
         let cert = proof.make_cert(goal_name, bindings)?;
         if print {
             println!("concrete proof:");
