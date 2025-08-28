@@ -4,8 +4,10 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 
+use crate::module::ModuleDescriptor;
+
 /// A proof certificate containing the concrete proof steps
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Certificate {
     /// The name of the goal that was proved
     pub goal: String,
@@ -35,7 +37,7 @@ impl Certificate {
 }
 
 /// A collection of certificates that can be saved to a file
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CertificateSet {
     pub certs: Vec<Certificate>,
 }
@@ -70,6 +72,27 @@ impl CertificateSet {
 
         writer.flush()?;
         Ok(())
+    }
+
+    /// Loads a CertificateSet along with its descriptor.
+    /// Similar to ModuleCache::load_relative, this expects certificate files to have .jsonl extension
+    pub fn load_relative(
+        root: &Path,
+        full_filename: &Path,
+    ) -> Option<(ModuleDescriptor, CertificateSet)> {
+        let relative_filename = full_filename.strip_prefix(root).ok()?;
+        let ext = relative_filename.extension()?;
+        if ext != "jsonl" {
+            return None;
+        }
+        let path_without_extension = relative_filename.with_extension("");
+        let parts = path_without_extension
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+        let descriptor = ModuleDescriptor::Name(parts);
+        let cert_set = CertificateSet::load(full_filename).ok()?;
+        Some((descriptor, cert_set))
     }
 }
 
