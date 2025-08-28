@@ -15,6 +15,7 @@ use crate::binding_map::BindingMap;
 use crate::block::NodeCursor;
 use crate::build_cache::BuildCache;
 use crate::builder::{BuildEvent, BuildStatus, Builder};
+use crate::certificate::Certificate;
 use crate::code_generator::{self, CodeGenerator};
 use crate::compilation;
 use crate::environment::Environment;
@@ -626,6 +627,7 @@ impl Project {
                         &mut cursor,
                         &mut new_premises,
                         builder,
+                        None,
                     );
                     if builder.status.is_error() {
                         return;
@@ -686,6 +688,7 @@ impl Project {
         cursor: &mut NodeCursor,
         new_premises: &mut HashSet<(ModuleId, String)>,
         builder: &mut Builder,
+        mut new_certs: Option<&mut Vec<Certificate>>,
     ) {
         if !cursor.requires_verification() {
             return;
@@ -703,6 +706,7 @@ impl Project {
                     cursor,
                     new_premises,
                     builder,
+                    new_certs.as_deref_mut(),
                 );
                 if builder.status.is_error() {
                     return;
@@ -732,6 +736,7 @@ impl Project {
                 &goal_context,
                 builder,
                 cursor.goal_env().unwrap(),
+                new_certs,
             );
             if builder.status.is_error() {
                 return;
@@ -753,6 +758,7 @@ impl Project {
         goal_context: &Goal,
         builder: &mut Builder,
         env: &Environment,
+        new_certs: Option<&mut Vec<Certificate>>,
     ) -> Prover {
         // Try the filtered prover
         if let Some(mut filtered_prover) = filtered_prover {
@@ -768,7 +774,7 @@ impl Project {
                     start.elapsed(),
                     self,
                     env,
-                    None,
+                    new_certs,
                 );
                 return filtered_prover;
             }
@@ -787,7 +793,7 @@ impl Project {
             start.elapsed(),
             self,
             env,
-            None,
+            new_certs,
         );
         full_prover
     }
