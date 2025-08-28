@@ -578,6 +578,14 @@ impl Project {
         let module_hash = self.get_hash(env.module_id).unwrap();
         let old_module_cache = self.build_cache.get_cloned(target);
         let mut new_module_cache = ModuleCache::new(module_hash);
+        
+        // Create new_certs based on project.use_certs
+        let mut new_certs_vec = Vec::new();
+        let mut new_certs = if self.use_certs {
+            Some(&mut new_certs_vec)
+        } else {
+            None
+        };
 
         builder.module_proving_started(target.clone());
 
@@ -627,7 +635,7 @@ impl Project {
                         &mut cursor,
                         &mut new_premises,
                         builder,
-                        None,
+                        new_certs.as_deref_mut(),
                     );
                     if builder.status.is_error() {
                         return;
