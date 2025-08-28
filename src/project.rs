@@ -13,9 +13,9 @@ use crate::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::acorn_value::AcornValue;
 use crate::binding_map::BindingMap;
 use crate::block::NodeCursor;
-use crate::module_cache_set::ModuleCacheSet;
+use crate::build_cache::BuildCache;
 use crate::builder::{BuildEvent, BuildStatus, Builder};
-use crate::certificate::Certificate;
+use crate::certificate::{Certificate, CertificateSet};
 use crate::code_generator::{self, CodeGenerator};
 use crate::compilation;
 use crate::environment::Environment;
@@ -23,6 +23,7 @@ use crate::fact::Fact;
 use crate::goal::Goal;
 use crate::module::{LoadState, Module, ModuleDescriptor, ModuleId};
 use crate::module_cache::{ModuleCache, ModuleHash};
+use crate::module_cache_set::ModuleCacheSet;
 use crate::named_entity::NamedEntity;
 use crate::names::ConstantName;
 use crate::prover::{Outcome, Prover};
@@ -408,6 +409,11 @@ impl Project {
 
     // Builds all open modules, logging build events.
     pub fn build(&self, builder: &mut Builder) {
+        // Initialize the build cache if we're using certificates
+        if self.use_certs {
+            builder.build_cache = Some(BuildCache::new());
+        }
+
         // Build in alphabetical order by module name for consistency.
         let mut targets = self.targets.iter().collect::<Vec<_>>();
         targets.sort();
@@ -676,6 +682,18 @@ impl Project {
                 .insert_module_cache(target.clone(), new_module_cache)
             {
                 builder.log_info(format!("error in module cache set: {}", e));
+            }
+
+            if self.use_certs {
+                // Insert the new CertificateSet into the build cache
+                let cert_set = CertificateSet {
+                    certs: new_certs_vec,
+                };
+                builder
+                    .build_cache
+                    .as_mut()
+                    .unwrap()
+                    .insert(target.clone(), cert_set);
             }
         }
     }

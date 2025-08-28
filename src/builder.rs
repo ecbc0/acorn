@@ -4,6 +4,7 @@ use std::time::Duration;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
 
 use crate::block::NodeCursor;
+use crate::build_cache::BuildCache;
 use crate::certificate::Certificate;
 use crate::compilation::Error;
 use crate::dataset::Dataset;
@@ -194,6 +195,9 @@ pub struct Builder<'a> {
 
     /// If dataset is not None, we are gathering data for training.
     pub dataset: Option<Dataset>,
+
+    /// If we are using certificates, for every build we construct a new build cache.
+    pub build_cache: Option<BuildCache>,
 }
 
 impl<'a> Builder<'a> {
@@ -209,6 +213,7 @@ impl<'a> Builder<'a> {
             current_module: None,
             current_module_good: true,
             dataset: None,
+            build_cache: None,
         }
     }
 
