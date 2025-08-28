@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
@@ -96,6 +97,57 @@ impl CertificateStore {
         let descriptor = ModuleDescriptor::Name(parts);
         let cert_store = CertificateStore::load(full_filename).ok()?;
         Some((descriptor, cert_store))
+    }
+}
+
+/// A collection of certificates designed to be consumed, not necessarily in linear order.
+pub struct CertificateWorklist {
+    /// The underlying certificates. This doesn't change.
+    store: CertificateStore,
+
+    /// A mapping from goal name to the indices of all certificates with that goal name
+    /// left in the store.
+    indexes_for_goal: HashMap<String, Vec<usize>>,
+}
+
+impl CertificateWorklist {
+    /// Create a new worklist from a certificate store
+    pub fn new(store: CertificateStore) -> Self {
+        let mut indexes_for_goal = HashMap::new();
+
+        // Build the index mapping
+        for (index, cert) in store.certs.iter().enumerate() {
+            indexes_for_goal
+                .entry(cert.goal.clone())
+                .or_insert_with(Vec::new)
+                .push(index);
+        }
+
+        CertificateWorklist {
+            store,
+            indexes_for_goal,
+        }
+    }
+
+    /// Get the indices for all certificates with the given goal name
+    pub fn get_indexes(&self, goal: &str) -> &Vec<usize> {
+        static EMPTY: Vec<usize> = Vec::new();
+        self.indexes_for_goal.get(goal).unwrap_or(&EMPTY)
+    }
+
+    /// Get a certificate by its index
+    pub fn get_cert(&self, index: usize) -> Option<&Certificate> {
+        self.store.certs.get(index)
+    }
+
+    /// Remove a specific index for a goal from the worklist
+    pub fn remove(&mut self, goal: &str, index: usize) {
+        if let Some(indexes) = self.indexes_for_goal.get_mut(goal) {
+            indexes.retain(|&i| i != index);
+            if indexes.is_empty() {
+                self.indexes_for_goal.remove(goal);
+            }
+        }
     }
 }
 
