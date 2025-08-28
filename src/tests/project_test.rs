@@ -209,7 +209,10 @@ fn test_repeated_verification() {
     assert_eq!(builder.metrics.searches_total, 5);
     assert_eq!(builder.metrics.searches_full, 5);
     assert_eq!(builder.metrics.searches_filtered, 0);
-    let module_cache = p.build_cache.get_cloned(&main_descriptor).unwrap();
+    let module_cache = p
+        .build_cache
+        .get_cloned_module_cache(&main_descriptor)
+        .unwrap();
     assert_eq!(module_cache.blocks.len(), 2);
     module_cache.assert_premises_eq("goal1", &[]);
     module_cache.assert_premises_eq("goal2", &["nat:Nat.new", "nat:nz_nonzero"]);
@@ -221,7 +224,10 @@ fn test_repeated_verification() {
     assert_eq!(builder.metrics.searches_total, 0);
     assert_eq!(builder.metrics.searches_full, 0);
     assert_eq!(builder.metrics.searches_filtered, 0);
-    let module_cache = p.build_cache.get_cloned(&main_descriptor).unwrap();
+    let module_cache = p
+        .build_cache
+        .get_cloned_module_cache(&main_descriptor)
+        .unwrap();
     assert_eq!(module_cache.blocks.len(), 2);
     module_cache.assert_premises_eq("goal1", &[]);
     module_cache.assert_premises_eq("goal2", &["nat:Nat.new", "nat:nz_nonzero"]);
@@ -235,7 +241,10 @@ fn test_repeated_verification() {
     assert_eq!(builder.metrics.searches_total, 5);
     assert_eq!(builder.metrics.searches_full, 0);
     assert_eq!(builder.metrics.searches_filtered, 5);
-    let module_cache = p.build_cache.get_cloned(&main_descriptor).unwrap();
+    let module_cache = p
+        .build_cache
+        .get_cloned_module_cache(&main_descriptor)
+        .unwrap();
     assert_eq!(module_cache.blocks.len(), 2);
     module_cache.assert_premises_eq("goal1", &[]);
     module_cache.assert_premises_eq("goal2", &["nat:Nat.new", "nat:nz_nonzero"]);
@@ -250,7 +259,10 @@ fn test_repeated_verification() {
     assert_eq!(builder.metrics.searches_total, 5);
     assert_eq!(builder.metrics.searches_full, 1);
     assert_eq!(builder.metrics.searches_filtered, 5);
-    let module_cache = p.build_cache.get_cloned(&main_descriptor).unwrap();
+    let module_cache = p
+        .build_cache
+        .get_cloned_module_cache(&main_descriptor)
+        .unwrap();
     assert_eq!(module_cache.blocks.len(), 2);
     module_cache.assert_premises_eq("goal1", &[]);
     module_cache.assert_premises_eq("goal2", &["nat:Nat.new", "nat:nz_nonzero_renamed"]);
@@ -347,7 +359,7 @@ fn test_build_cache() {
     p.mock("/mock/main.ac", main_text);
     let num_success = p.expect_build_ok();
     assert_eq!(num_success, 2);
-    assert_eq!(p.build_cache.len(), 2);
+    assert_eq!(p.build_cache.num_module_caches(), 2);
 
     // Just rebuilding a second time should require no work
     let num_success = p.expect_build_ok();

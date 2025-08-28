@@ -576,9 +576,9 @@ impl Project {
         }
 
         let module_hash = self.get_hash(env.module_id).unwrap();
-        let old_module_cache = self.build_cache.get_cloned(target);
+        let old_module_cache = self.build_cache.get_cloned_module_cache(target);
         let mut new_module_cache = ModuleCache::new(module_hash);
-        
+
         // Create new_certs based on project.use_certs
         let mut new_certs_vec = Vec::new();
         let mut new_certs = if self.use_certs {
@@ -671,7 +671,10 @@ impl Project {
 
         if builder.module_proving_complete(target) {
             // The module was entirely verified. We can update the cache.
-            if let Err(e) = self.build_cache.insert(target.clone(), new_module_cache) {
+            if let Err(e) = self
+                .build_cache
+                .insert_module_cache(target.clone(), new_module_cache)
+            {
                 builder.log_info(format!("error in build cache: {}", e));
             }
         }
@@ -1385,7 +1388,7 @@ impl Project {
     }
 
     pub fn get_module_cache(&self, descriptor: &ModuleDescriptor) -> Option<ModuleCache> {
-        self.build_cache.get_cloned(descriptor)
+        self.build_cache.get_cloned_module_cache(descriptor)
     }
 
     /// Iterate over all module descriptors with their corresponding module IDs.
