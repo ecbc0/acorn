@@ -74,6 +74,12 @@ pub struct Project {
     // Whether to use proof certificates.
     // Defaults to false.
     pub use_certs: bool,
+
+    // The directory where caches are stored
+    cache_dir: PathBuf,
+
+    // Whether we should write to the cache
+    write_cache: bool,
 }
 
 // General project-level errors (file operations, setup, etc.)
@@ -155,8 +161,8 @@ impl Project {
         write_cache: bool,
     ) -> Project {
         // Check if the directory exists
-        let build_cache = if read_cache && cache_dir.is_dir() {
-            ModuleCacheSet::new(Some(cache_dir), write_cache)
+        let module_caches = if read_cache && cache_dir.is_dir() {
+            ModuleCacheSet::new(Some(cache_dir.clone()), write_cache)
         } else {
             ModuleCacheSet::new(None, false)
         };
@@ -168,10 +174,12 @@ impl Project {
             modules: vec![],
             module_map: HashMap::new(),
             targets: HashSet::new(),
-            module_caches: build_cache,
+            module_caches,
             build_stopped: Arc::new(AtomicBool::new(false)),
             check_hashes: true,
             use_certs: false,
+            cache_dir,
+            write_cache,
         }
     }
 
@@ -471,6 +479,13 @@ impl Project {
             self.verify_module(&target, env, builder);
             if builder.status.is_error() {
                 return;
+            }
+        }
+
+        if self.use_certs && builder.status.is_good() && self.write_cache {
+            let build_cache = builder.build_cache.as_ref().unwrap();
+            if let Err(e) = build_cache.save(self.cache_dir.clone()) {
+                builder.log_info(format!("error saving build cache: {}", e));
             }
         }
     }
