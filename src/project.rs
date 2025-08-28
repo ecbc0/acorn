@@ -185,22 +185,20 @@ impl Project {
 
     // Finds an acorn library directory, based on the provided path.
     // It can be either:
-    //   - a parent directory named "acornlib"
+    //   - a parent directory named "acornlib" (with acorn.toml)
     //   - a parent directory containing "acorn.toml"
-    //   - a directory named "acornlib" next to one named "acorn"
-    // Returns (library_root, cache_dir) where:
-    //   - For new format (with acorn.toml): library_root is src/, cache_dir is build/
-    //   - For old format: library_root is acornlib/, cache_dir is acornlib/build/
+    //   - a directory named "acornlib" next to one named "acorn" (with acorn.toml)
+    // Returns (library_root, cache_dir) where library_root is src/, cache_dir is build/
     pub fn find_local_acorn_library(start: &Path) -> Option<(PathBuf, PathBuf)> {
         let mut current = Some(start);
 
         while let Some(path) = current {
-            // Check if path is an acornlib directory
+            // Check if path is an acornlib directory with proper structure
             if path.ends_with("acornlib") {
                 return Self::check_acornlib_layout(path);
             }
 
-            // Check if path contains acorn.toml (new format)
+            // Check if path contains acorn.toml
             if path.join("acorn.toml").is_file() {
                 return Self::check_acornlib_layout(path);
             }
@@ -219,21 +217,18 @@ impl Project {
         None
     }
 
-    // Helper function to check if an acornlib directory uses the new format
-    // with acorn.toml and src directory. If so, returns (src_dir, build_dir).
-    // Otherwise, returns (acornlib_dir, build_dir_within_acornlib).
+    // Helper function to check if an acornlib directory has the required format
+    // with acorn.toml and src directory. Returns (src_dir, build_dir).
     fn check_acornlib_layout(acornlib_path: &Path) -> Option<(PathBuf, PathBuf)> {
         let acorn_toml = acornlib_path.join("acorn.toml");
         let src_dir = acornlib_path.join("src");
 
         if acorn_toml.is_file() && src_dir.is_dir() {
-            // New format: library root is src/, cache dir is build/ at same level as src/
+            // Library root is src/, cache dir is build/ at same level as src/
             let cache_dir = acornlib_path.join("build");
             Some((src_dir, cache_dir))
         } else {
-            // Old format: library root is acornlib/, cache dir is build/ within acornlib/
-            let cache_dir = acornlib_path.join("build");
-            Some((acornlib_path.to_path_buf(), cache_dir))
+            None
         }
     }
 

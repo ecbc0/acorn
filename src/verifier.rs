@@ -198,62 +198,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verifier_with_simple_acornlib() {
-        // Create a temporary directory with acornlib structure
-        let temp = TempDir::new().unwrap();
-        let acornlib = temp.child("acornlib");
-        acornlib.create_dir_all().unwrap();
-
-        // Create foo.ac with a simple theorem
-        let foo_ac = acornlib.child("foo.ac");
-        foo_ac
-            .write_str(
-                r#"
-                theorem simple_truth {
-                    true
-                }
-                "#,
-            )
-            .unwrap();
-
-        // Create a verifier and test that it can run successfully
-        let verifier = Verifier::new(
-            acornlib.path().to_path_buf(),
-            ProverMode::Standard,
-            Some("foo".to_string()),
-            false,
-            true,
-        );
-
-        // Test that the verifier was created successfully with the right parameters
-        assert_eq!(verifier.start_path, acornlib.path());
-        assert_eq!(verifier.mode, ProverMode::Standard);
-        assert_eq!(verifier.target, Some("foo".to_string()));
-        assert_eq!(verifier.create_dataset, false);
-
-        // Test that the verifier can run successfully on our simple theorem
-        let result = verifier.run();
-        assert!(
-            result.is_ok(),
-            "Verifier should successfully verify the simple theorem: {:?}",
-            result
-        );
-
-        // Check that we actually proved something
-        let output = result.unwrap();
-        assert_eq!(output.status, BuildStatus::Good);
-        assert_eq!(output.metrics.goals_total, 1); // Should have 1 theorem to prove
-        assert_eq!(output.metrics.goals_success, 1); // Should have successfully proven 1 theorem
-        assert!(output.metrics.searches_total > 0); // Should have performed at least one search
-        assert!(!output.events.is_empty());
-        assert!(output.num_verified() > 0);
-
-        temp.close().unwrap();
-    }
-
-    #[test]
     fn test_verifier_with_acorn_toml_layout() {
-        // Create a temporary directory with the new acorn.toml + src layout
         let (acornlib, src, build) = setup();
 
         // Create foo.ac inside the src directory
@@ -318,7 +263,6 @@ mod tests {
 
     #[test]
     fn test_verifier_uses_nested_cache() {
-        // Create a temporary directory with the new acorn.toml + src layout
         let (acornlib, src, build) = setup();
 
         // Create a nested directory structure
