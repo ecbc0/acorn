@@ -9,12 +9,12 @@ use walkdir::WalkDir;
 use crate::module::ModuleDescriptor;
 use crate::module_cache::ModuleCache;
 
-// The BuildCache contains information for each module, from the last time it was cleanly built.
+// The ModuleCacheSet contains information for each module, from the last time it was cleanly built.
 // This enables skipping verification for modules that haven't changed.
 // We read once at startup, and write whole files at a time when needed.
 // Hopefully that makes it okay to not lock it. But we might need to be better about this.
 #[derive(Clone)]
-pub struct BuildCache {
+pub struct ModuleCacheSet {
     // A per-module hash, plus filtering information.
     module_caches: Arc<DashMap<ModuleDescriptor, ModuleCache>>,
 
@@ -26,9 +26,9 @@ pub struct BuildCache {
     writable: bool,
 }
 
-impl BuildCache {
-    // Creates a new build cache, based on data stored on disk if there is any.
-    pub fn new(directory: Option<PathBuf>, writable: bool) -> BuildCache {
+impl ModuleCacheSet {
+    // Creates a new module cache set, based on data stored on disk if there is any.
+    pub fn new(directory: Option<PathBuf>, writable: bool) -> ModuleCacheSet {
         let inner = DashMap::new();
         if let Some(root) = &directory {
             if root.exists() {
@@ -42,7 +42,7 @@ impl BuildCache {
                 }
             }
         }
-        BuildCache {
+        ModuleCacheSet {
             module_caches: Arc::new(inner),
             directory,
             writable,

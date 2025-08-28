@@ -4,7 +4,7 @@ pub mod active_set;
 pub mod atom;
 pub mod binding_map;
 pub mod block;
-pub mod build_cache;
+pub mod module_cache_set;
 pub mod builder;
 pub mod certificate;
 pub mod checker;

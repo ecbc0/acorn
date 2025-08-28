@@ -13,7 +13,7 @@ use crate::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::acorn_value::AcornValue;
 use crate::binding_map::BindingMap;
 use crate::block::NodeCursor;
-use crate::build_cache::BuildCache;
+use crate::module_cache_set::ModuleCacheSet;
 use crate::builder::{BuildEvent, BuildStatus, Builder};
 use crate::certificate::Certificate;
 use crate::code_generator::{self, CodeGenerator};
@@ -61,7 +61,7 @@ pub struct Project {
     targets: HashSet<ModuleDescriptor>,
 
     // The cache contains a hash for each module from the last time it was cleanly built.
-    pub build_cache: BuildCache,
+    pub module_caches: ModuleCacheSet,
 
     // Used as a flag to stop a build in progress.
     pub build_stopped: Arc<AtomicBool>,
@@ -155,9 +155,9 @@ impl Project {
     ) -> Project {
         // Check if the directory exists
         let build_cache = if read_cache && cache_dir.is_dir() {
-            BuildCache::new(Some(cache_dir), write_cache)
+            ModuleCacheSet::new(Some(cache_dir), write_cache)
         } else {
-            BuildCache::new(None, false)
+            ModuleCacheSet::new(None, false)
         };
 
         Project {
@@ -167,7 +167,7 @@ impl Project {
             modules: vec![],
             module_map: HashMap::new(),
             targets: HashSet::new(),
-            build_cache,
+            module_caches: build_cache,
             build_stopped: Arc::new(AtomicBool::new(false)),
             check_hashes: true,
             use_certs: false,
@@ -576,7 +576,7 @@ impl Project {
         }
 
         let module_hash = self.get_hash(env.module_id).unwrap();
-        let old_module_cache = self.build_cache.get_cloned_module_cache(target);
+        let old_module_cache = self.module_caches.get_cloned_module_cache(target);
         let mut new_module_cache = ModuleCache::new(module_hash);
 
         // Create new_certs based on project.use_certs
@@ -672,10 +672,10 @@ impl Project {
         if builder.module_proving_complete(target) {
             // The module was entirely verified. We can update the cache.
             if let Err(e) = self
-                .build_cache
+                .module_caches
                 .insert_module_cache(target.clone(), new_module_cache)
             {
-                builder.log_info(format!("error in build cache: {}", e));
+                builder.log_info(format!("error in module cache set: {}", e));
             }
         }
     }
@@ -1388,7 +1388,7 @@ impl Project {
     }
 
     pub fn get_module_cache(&self, descriptor: &ModuleDescriptor) -> Option<ModuleCache> {
-        self.build_cache.get_cloned_module_cache(descriptor)
+        self.module_caches.get_cloned_module_cache(descriptor)
     }
 
     /// Iterate over all module descriptors with their corresponding module IDs.

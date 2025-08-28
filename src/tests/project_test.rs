@@ -210,7 +210,7 @@ fn test_repeated_verification() {
     assert_eq!(builder.metrics.searches_full, 5);
     assert_eq!(builder.metrics.searches_filtered, 0);
     let module_cache = p
-        .build_cache
+        .module_caches
         .get_cloned_module_cache(&main_descriptor)
         .unwrap();
     assert_eq!(module_cache.blocks.len(), 2);
@@ -225,7 +225,7 @@ fn test_repeated_verification() {
     assert_eq!(builder.metrics.searches_full, 0);
     assert_eq!(builder.metrics.searches_filtered, 0);
     let module_cache = p
-        .build_cache
+        .module_caches
         .get_cloned_module_cache(&main_descriptor)
         .unwrap();
     assert_eq!(module_cache.blocks.len(), 2);
@@ -242,7 +242,7 @@ fn test_repeated_verification() {
     assert_eq!(builder.metrics.searches_full, 0);
     assert_eq!(builder.metrics.searches_filtered, 5);
     let module_cache = p
-        .build_cache
+        .module_caches
         .get_cloned_module_cache(&main_descriptor)
         .unwrap();
     assert_eq!(module_cache.blocks.len(), 2);
@@ -260,7 +260,7 @@ fn test_repeated_verification() {
     assert_eq!(builder.metrics.searches_full, 1);
     assert_eq!(builder.metrics.searches_filtered, 5);
     let module_cache = p
-        .build_cache
+        .module_caches
         .get_cloned_module_cache(&main_descriptor)
         .unwrap();
     assert_eq!(module_cache.blocks.len(), 2);
@@ -359,7 +359,7 @@ fn test_build_cache() {
     p.mock("/mock/main.ac", main_text);
     let num_success = p.expect_build_ok();
     assert_eq!(num_success, 2);
-    assert_eq!(p.build_cache.num_module_caches(), 2);
+    assert_eq!(p.module_caches.num_module_caches(), 2);
 
     // Just rebuilding a second time should require no work
     let num_success = p.expect_build_ok();

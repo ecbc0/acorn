@@ -32,9 +32,9 @@ pub struct Module {
 
     // A hash of the state of the module, to use for the cache.
     // This corresponds to the current state of the module.
-    // This may not match the cache held by the BuildCache.
+    // This may not match the cache held by the ModuleCacheSet.
     // In particular, when we have made some changes and are rebuilding, this hash will
-    // reflect the current state of the module, while the BuildCache will have a previous good state.
+    // reflect the current state of the module, while the ModuleCacheSet will have a previous good state.
     // None before the module is loaded.
     pub hash: Option<ModuleHash>,
 }
