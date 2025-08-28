@@ -322,6 +322,13 @@ mod tests {
             build_file.exists(),
             "Cache file should exist at build/foo/bar.yaml"
         );
+        
+        // Check that we created a JSONL file for certificates in the nested directory
+        let cert_file = build_foo_dir.child("bar.jsonl");
+        assert!(
+            cert_file.exists(),
+            "Certificate file should exist at build/foo/bar.jsonl"
+        );
 
         // Verify again - should use the cache
         let result2 = verifier.run();
