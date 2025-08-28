@@ -196,7 +196,8 @@ pub struct Builder<'a> {
     /// If dataset is not None, we are gathering data for training.
     pub dataset: Option<Dataset>,
 
-    /// If we are using certificates, for every build we construct a new build cache.
+    /// The new build cache, that is being produced as a result of this build.
+    /// Only populated when use_certs is true.
     pub build_cache: Option<BuildCache>,
 }
 

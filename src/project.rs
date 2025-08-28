@@ -75,6 +75,12 @@ pub struct Project {
     // Defaults to false.
     pub use_certs: bool,
 
+    // The last known-good build cache.
+    // Only populated when we are using certs.
+    // This is different from the Builder's build cache, which is created during a build.
+    // TODO: When a build succeeds, this build cache should get updated.
+    build_cache: Option<BuildCache>,
+
     // The directory where caches are stored
     cache_dir: PathBuf,
 
@@ -178,6 +184,7 @@ impl Project {
             build_stopped: Arc::new(AtomicBool::new(false)),
             check_hashes: true,
             use_certs: false,
+            build_cache: None,
             cache_dir,
             write_cache,
         }
