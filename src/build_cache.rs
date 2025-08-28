@@ -33,8 +33,11 @@ impl BuildCache {
         if let Some(root) = &directory {
             if root.exists() {
                 for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
-                    if let Some((desc, cache)) = ModuleCache::load_relative(root, entry.path()) {
-                        inner.insert(desc, cache);
+                    let path = entry.path();
+                    if path.extension().and_then(|ext| ext.to_str()) == Some("yaml") {
+                        if let Some((desc, cache)) = ModuleCache::load_relative(root, path) {
+                            inner.insert(desc, cache);
+                        }
                     }
                 }
             }
