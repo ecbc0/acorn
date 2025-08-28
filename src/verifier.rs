@@ -240,7 +240,17 @@ mod tests {
 
         // Check that we created a file in the build directory
         let build_file = build.child("foo.yaml");
-        assert!(build_file.exists(),);
+        assert!(
+            build_file.exists(),
+            "Module cache file should exist at build/foo.yaml"
+        );
+
+        // Check that we created a JSONL file for certificates
+        let cert_file = build.child("foo.jsonl");
+        assert!(
+            cert_file.exists(),
+            "Certificate file should exist at build/foo.jsonl"
+        );
 
         // Verify again - should use the cache
         let result2 = verifier.run();
