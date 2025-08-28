@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::path::PathBuf;
 
-use crate::certificate::CertificateSet;
+use crate::certificate::CertificateStore;
 use crate::module::ModuleDescriptor;
 
 pub struct BuildCache {
-    cache: HashMap<ModuleDescriptor, CertificateSet>,
+    cache: HashMap<ModuleDescriptor, CertificateStore>,
 }
 
 impl BuildCache {
@@ -16,12 +16,12 @@ impl BuildCache {
         }
     }
 
-    pub fn insert(&mut self, module: ModuleDescriptor, certificates: CertificateSet) {
+    pub fn insert(&mut self, module: ModuleDescriptor, certificates: CertificateStore) {
         self.cache.insert(module, certificates);
     }
 
     pub fn save(&self, directory: PathBuf) -> Result<(), Box<dyn Error>> {
-        for (descriptor, cert_set) in &self.cache {
+        for (descriptor, cert_store) in &self.cache {
             if let ModuleDescriptor::Name(parts) = descriptor {
                 if parts.is_empty() {
                     continue;
@@ -40,7 +40,7 @@ impl BuildCache {
                 
                 // Create the JSONL file for this module's certificates
                 path.push(format!("{}.jsonl", last));
-                cert_set.save(&path)?;
+                cert_store.save(&path)?;
             }
         }
         Ok(())

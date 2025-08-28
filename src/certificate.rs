@@ -22,7 +22,10 @@ pub struct Certificate {
 impl Certificate {
     /// Create a new certificate with proof steps
     pub fn new(goal: String, proof: Vec<String>) -> Self {
-        Certificate { goal, proof: Some(proof) }
+        Certificate {
+            goal,
+            proof: Some(proof),
+        }
     }
 
     /// Create a placeholder certificate with no proof
@@ -38,13 +41,13 @@ impl Certificate {
 
 /// A collection of certificates that can be saved to a file
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct CertificateSet {
+pub struct CertificateStore {
     pub certs: Vec<Certificate>,
 }
 
-impl CertificateSet {
-    /// Load a certificate set from a file in JSONL format (one certificate per line)
-    pub fn load(filename: &Path) -> Result<CertificateSet, Box<dyn Error>> {
+impl CertificateStore {
+    /// Load a certificate store from a file in JSONL format (one certificate per line)
+    pub fn load(filename: &Path) -> Result<CertificateStore, Box<dyn Error>> {
         let file = File::open(filename)?;
         let reader = BufReader::new(file);
         let mut certs = Vec::new();
@@ -57,10 +60,10 @@ impl CertificateSet {
             }
         }
 
-        Ok(CertificateSet { certs })
+        Ok(CertificateStore { certs })
     }
 
-    /// Save the certificate set to a file in JSONL format (one certificate per line)
+    /// Save the certificate store to a file in JSONL format (one certificate per line)
     pub fn save(&self, filename: &Path) -> Result<(), Box<dyn Error>> {
         let file = File::create(filename)?;
         let mut writer = BufWriter::new(file);
@@ -74,12 +77,12 @@ impl CertificateSet {
         Ok(())
     }
 
-    /// Loads a CertificateSet along with its descriptor.
+    /// Loads a CertificateStore along with its descriptor.
     /// Similar to ModuleCache::load_relative, this expects certificate files to have .jsonl extension
     pub fn load_relative(
         root: &Path,
         full_filename: &Path,
-    ) -> Option<(ModuleDescriptor, CertificateSet)> {
+    ) -> Option<(ModuleDescriptor, CertificateStore)> {
         let relative_filename = full_filename.strip_prefix(root).ok()?;
         let ext = relative_filename.extension()?;
         if ext != "jsonl" {
@@ -91,8 +94,8 @@ impl CertificateSet {
             .map(|c| c.as_os_str().to_string_lossy().to_string())
             .collect::<Vec<_>>();
         let descriptor = ModuleDescriptor::Name(parts);
-        let cert_set = CertificateSet::load(full_filename).ok()?;
-        Some((descriptor, cert_set))
+        let cert_store = CertificateStore::load(full_filename).ok()?;
+        Some((descriptor, cert_store))
     }
 }
 
@@ -128,8 +131,8 @@ mod tests {
             "goal4".to_string(), // No proof exists for this goal
         );
 
-        // Create original certificate set
-        let original = CertificateSet {
+        // Create original certificate store
+        let original = CertificateStore {
             certs: vec![cert1, cert2, cert3, cert4],
         };
 
@@ -137,7 +140,7 @@ mod tests {
         original.save(&file_path).unwrap();
 
         // Load from file
-        let loaded = CertificateSet::load(&file_path).unwrap();
+        let loaded = CertificateStore::load(&file_path).unwrap();
 
         // Check that we got the same data back
         assert_eq!(original.certs.len(), loaded.certs.len());

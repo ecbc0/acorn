@@ -15,7 +15,7 @@ use crate::binding_map::BindingMap;
 use crate::block::NodeCursor;
 use crate::build_cache::BuildCache;
 use crate::builder::{BuildEvent, BuildStatus, Builder};
-use crate::certificate::{Certificate, CertificateSet};
+use crate::certificate::{Certificate, CertificateStore};
 use crate::code_generator::{self, CodeGenerator};
 use crate::compilation;
 use crate::environment::Environment;
@@ -695,15 +695,15 @@ impl Project {
             }
 
             if self.use_certs {
-                // Insert the new CertificateSet into the build cache
-                let cert_set = CertificateSet {
+                // Insert the new CertificateStore into the build cache
+                let cert_store = CertificateStore {
                     certs: new_certs_vec,
                 };
                 builder
                     .build_cache
                     .as_mut()
                     .unwrap()
-                    .insert(target.clone(), cert_set);
+                    .insert(target.clone(), cert_store);
             }
         }
     }
