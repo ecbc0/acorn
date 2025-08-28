@@ -75,7 +75,7 @@ pub struct Project {
     use_certs: bool,
 
     // The last known-good build cache.
-    // Only populated when we are using certs.
+    // This is "some" iff we are using certs.
     // This is different from the Builder's build cache, which is created during a build.
     // TODO: When a build succeeds, this build cache should get updated.
     build_cache: Option<BuildCache>,
@@ -173,6 +173,17 @@ impl Project {
             ModuleCacheSet::new(None, false)
         };
 
+        // Load the build cache if we're using certificates
+        let build_cache = if use_certs {
+            if read_cache {
+                Some(BuildCache::load(&cache_dir))
+            } else {
+                Some(BuildCache::new())
+            }
+        } else {
+            None
+        };
+
         Project {
             library_root,
             use_filesystem: true,
@@ -184,7 +195,7 @@ impl Project {
             build_stopped: Arc::new(AtomicBool::new(false)),
             check_hashes: true,
             use_certs,
-            build_cache: None,
+            build_cache,
             cache_dir,
             write_cache,
         }

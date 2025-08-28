@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::PathBuf;
+use walkdir::WalkDir;
 
 use crate::certificate::CertificateStore;
 use crate::module::ModuleDescriptor;
@@ -14,6 +15,24 @@ impl BuildCache {
         BuildCache {
             cache: HashMap::new(),
         }
+    }
+
+    /// Load a build cache from a directory containing JSONL files
+    pub fn load(directory: &PathBuf) -> Self {
+        let mut cache = HashMap::new();
+        
+        if directory.exists() {
+            for entry in WalkDir::new(directory).into_iter().filter_map(Result::ok) {
+                let path = entry.path();
+                if path.extension().and_then(|ext| ext.to_str()) == Some("jsonl") {
+                    if let Some((desc, cert_store)) = CertificateStore::load_relative(directory, path) {
+                        cache.insert(desc, cert_store);
+                    }
+                }
+            }
+        }
+        
+        BuildCache { cache }
     }
 
     pub fn insert(&mut self, module: ModuleDescriptor, certificates: CertificateStore) {
