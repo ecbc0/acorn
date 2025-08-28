@@ -10,7 +10,7 @@ use acorn::verifier::ProverMode;
 fn main() {
     let current_dir = std::env::current_dir().unwrap();
     for _ in 0..10 {
-        let mut project = Project::new_local(&current_dir, ProverMode::Full).unwrap();
+        let mut project = Project::new_local(&current_dir, ProverMode::Full, false).unwrap();
         project
             .add_target_by_name("nat")
             .expect("Failed to add nat target");

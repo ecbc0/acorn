@@ -117,7 +117,7 @@ async fn main() {
     // Check if we should generate documentation.
     if let Some(doc_root) = args.doc_root {
         let mut project =
-            Project::new_local(&current_dir, ProverMode::Standard).unwrap_or_else(|e| {
+            Project::new_local(&current_dir, ProverMode::Standard, false).unwrap_or_else(|e| {
                 println!("Error loading project: {}", e);
                 std::process::exit(1);
             });

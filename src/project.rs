@@ -72,8 +72,7 @@ pub struct Project {
     pub check_hashes: bool,
 
     // Whether to use proof certificates.
-    // Defaults to false.
-    pub use_certs: bool,
+    use_certs: bool,
 
     // The last known-good build cache.
     // Only populated when we are using certs.
@@ -165,6 +164,7 @@ impl Project {
         cache_dir: PathBuf,
         read_cache: bool,
         write_cache: bool,
+        use_certs: bool,
     ) -> Project {
         // Check if the directory exists
         let module_caches = if read_cache && cache_dir.is_dir() {
@@ -183,7 +183,7 @@ impl Project {
             module_caches,
             build_stopped: Arc::new(AtomicBool::new(false)),
             check_hashes: true,
-            use_certs: false,
+            use_certs,
             build_cache: None,
             cache_dir,
             write_cache,
@@ -241,7 +241,11 @@ impl Project {
 
     // A Project based on the provided starting path.
     // Returns an error if we can't find an acorn library.
-    pub fn new_local(start_path: &Path, mode: ProverMode) -> Result<Project, ProjectError> {
+    pub fn new_local(
+        start_path: &Path,
+        mode: ProverMode,
+        use_certs: bool,
+    ) -> Result<Project, ProjectError> {
         let (library_root, cache_dir) =
             Project::find_local_acorn_library(start_path).ok_or_else(|| {
                 ProjectError(
@@ -252,7 +256,7 @@ impl Project {
                 )
             })?;
         let use_cache = mode != ProverMode::Full;
-        let mut project = Project::new(library_root, cache_dir, use_cache, use_cache);
+        let mut project = Project::new(library_root, cache_dir, use_cache, use_cache, use_certs);
         if mode == ProverMode::Filtered {
             project.check_hashes = false;
         }
@@ -263,7 +267,7 @@ impl Project {
     pub fn new_mock() -> Project {
         let mock_dir = PathBuf::from("/mock");
         let cache_dir = mock_dir.join("build");
-        let mut p = Project::new(mock_dir, cache_dir, false, false);
+        let mut p = Project::new(mock_dir, cache_dir, false, false, false);
         p.use_filesystem = false;
         p
     }

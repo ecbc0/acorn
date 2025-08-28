@@ -79,14 +79,10 @@ impl Verifier {
 
     /// Returns VerifierOutput on success, or an error string if verification fails.
     pub fn run(&self) -> Result<VerifierOutput, String> {
-        let mut project = match Project::new_local(&self.start_path, self.mode) {
+        let mut project = match Project::new_local(&self.start_path, self.mode, self.use_certs) {
             Ok(p) => p,
             Err(e) => return Err(format!("Error: {}", e)),
         };
-
-        if self.use_certs {
-            project.use_certs = true;
-        }
 
         if let Some(target) = &self.target {
             if target == "-" {

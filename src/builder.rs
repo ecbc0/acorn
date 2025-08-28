@@ -330,7 +330,7 @@ impl<'a> Builder<'a> {
         self.metrics.clauses_sum_square_activated += (clauses_activated * clauses_activated) as u64;
 
         // If new_certs is provided, create a certificate and append it
-        if let Some(certs) = new_certs {
+        let using_certs = if let Some(certs) = new_certs {
             match prover.make_cert(project, &env.bindings, false) {
                 Ok(cert) => certs.push(cert),
                 Err(e) => {
@@ -341,11 +341,15 @@ impl<'a> Builder<'a> {
                     return;
                 }
             }
-        }
+            true
+        } else {
+            false
+        };
 
         match outcome {
             Outcome::Success => {
-                if !project.use_certs {
+                if !using_certs {
+                    // Old proof-generation logic
                     let Some(proof) = prover.get_condensed_proof() else {
                         self.log_proving_warning(&goal_context, "had a missing proof");
                         return;

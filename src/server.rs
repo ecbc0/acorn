@@ -432,7 +432,7 @@ impl Backend {
         ));
 
         // The cache is always readable, only sometimes writable.
-        let project = Project::new(library_root, cache_dir, true, cache_writable);
+        let project = Project::new(library_root, cache_dir, true, cache_writable, false);
         Backend {
             project: Arc::new(RwLock::new(project)),
             client,
