@@ -30,25 +30,6 @@ impl VerifierOutput {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum ProverMode {
-    /// Uses the cache, skipping modules entirely if they are already built.
-    /// This is the default mode.
-    Standard,
-
-    /// Uses the cache, but only for filtering premise retrieval. Does not skip modules.
-    Filtered,
-}
-
-impl ProverMode {
-    pub fn check_hashes(&self) -> bool {
-        match self {
-            ProverMode::Standard => true,
-            ProverMode::Filtered => false,
-        }
-    }
-}
-
 pub struct Verifier {
     /// If true, use cache for hash checking. If false, use cache only for filtering.
     check_hashes: bool,
@@ -86,10 +67,11 @@ impl Verifier {
 
     /// Returns VerifierOutput on success, or an error string if verification fails.
     pub fn run(&self) -> Result<VerifierOutput, String> {
-        let mut project = match Project::new_local(&self.start_path, self.check_hashes, self.use_certs) {
-            Ok(p) => p,
-            Err(e) => return Err(format!("Error: {}", e)),
-        };
+        let mut project =
+            match Project::new_local(&self.start_path, self.check_hashes, self.use_certs) {
+                Ok(p) => p,
+                Err(e) => return Err(format!("Error: {}", e)),
+            };
 
         if let Some(target) = &self.target {
             if target == "-" {
