@@ -5,7 +5,7 @@ use acorn::doc_generator::DocGenerator;
 use acorn::project::Project;
 use acorn::searcher::Searcher;
 use acorn::server::{run_server, ServerArgs};
-use acorn::verifier::{ProverMode, Verifier};
+use acorn::verifier::Verifier;
 use clap::Parser;
 
 #[derive(Parser)]
@@ -89,11 +89,7 @@ async fn main() {
         std::process::exit(1);
     }
 
-    let mode = if args.filtered {
-        ProverMode::Filtered
-    } else {
-        ProverMode::Standard
-    };
+    let check_hashes = !args.filtered;
 
     let current_dir = match std::env::current_dir() {
         Ok(dir) => dir,
@@ -149,7 +145,7 @@ async fn main() {
         let new_target = target + ":" + &append;
         let verifier = Verifier::new(
             current_dir,
-            mode,
+            check_hashes,
             Some(new_target),
             args.dataset,
             args.certs,
@@ -170,7 +166,7 @@ async fn main() {
     }
 
     // Run the verifier.
-    let verifier = Verifier::new(current_dir, mode, args.target, args.dataset, args.certs);
+    let verifier = Verifier::new(current_dir, check_hashes, args.target, args.dataset, args.certs);
     match verifier.run() {
         Err(e) => {
             println!("{}", e);

@@ -50,7 +50,8 @@ impl ProverMode {
 }
 
 pub struct Verifier {
-    mode: ProverMode,
+    /// If true, use cache for hash checking. If false, use cache only for filtering.
+    check_hashes: bool,
 
     /// The target module to verify.
     /// If None, all modules are verified.
@@ -69,13 +70,13 @@ pub struct Verifier {
 impl Verifier {
     pub fn new(
         start_path: PathBuf,
-        mode: ProverMode,
+        check_hashes: bool,
         target: Option<String>,
         create_dataset: bool,
         use_certs: bool,
     ) -> Self {
         Self {
-            mode,
+            check_hashes,
             target,
             create_dataset,
             use_certs,
@@ -85,7 +86,7 @@ impl Verifier {
 
     /// Returns VerifierOutput on success, or an error string if verification fails.
     pub fn run(&self) -> Result<VerifierOutput, String> {
-        let mut project = match Project::new_local(&self.start_path, self.mode.check_hashes(), self.use_certs) {
+        let mut project = match Project::new_local(&self.start_path, self.check_hashes, self.use_certs) {
             Ok(p) => p,
             Err(e) => return Err(format!("Error: {}", e)),
         };
@@ -147,7 +148,7 @@ impl Verifier {
         // Get a reference back to use in the rest of the method
         let project = Arc::as_ref(&project_arc);
 
-        if self.mode == ProverMode::Filtered {
+        if !self.check_hashes {
             builder.log_when_slow = true;
         }
         if self.create_dataset {
@@ -164,7 +165,7 @@ impl Verifier {
             dataset.save();
         }
 
-        if self.mode == ProverMode::Filtered && builder.metrics.searches_fallback > 0 {
+        if !self.check_hashes && builder.metrics.searches_fallback > 0 {
             println!("Warning: the filtered prover was not able to handle all goals.");
         }
 
@@ -219,7 +220,7 @@ mod tests {
         // The verifier should find the src directory and use it as the root
         let verifier = Verifier::new(
             acornlib.path().to_path_buf(),
-            ProverMode::Standard,
+            true,
             Some("foo".to_string()),
             false,
             true,
@@ -296,7 +297,7 @@ mod tests {
         // Create a verifier targeting the nested module
         let verifier = Verifier::new(
             acornlib.path().to_path_buf(),
-            ProverMode::Standard,
+            true,
             Some("foo.bar".to_string()),
             false,
             true,
@@ -392,7 +393,7 @@ mod tests {
 
         let verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
-            ProverMode::Standard,
+            true,
             Some("main".to_string()),
             false,
             true,
@@ -402,7 +403,7 @@ mod tests {
 
         let verifier2 = Verifier::new(
             acornlib.path().to_path_buf(),
-            ProverMode::Filtered,
+            false,
             Some("main".to_string()),
             false,
             true,
@@ -447,7 +448,7 @@ mod tests {
 
         let verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
-            ProverMode::Standard,
+            true,
             Some("main".to_string()),
             false,
             true,
@@ -457,7 +458,7 @@ mod tests {
 
         let verifier2 = Verifier::new(
             acornlib.path().to_path_buf(),
-            ProverMode::Filtered,
+            false,
             Some("main".to_string()),
             false,
             true,
@@ -479,7 +480,7 @@ mod tests {
 
         let verifier = Verifier::new(
             acornlib.path().to_path_buf(),
-            ProverMode::Standard,
+            true,
             Some("foo".to_string()),
             false,
             true,
@@ -523,7 +524,7 @@ mod tests {
 
         let verifier = Verifier::new(
             acornlib.path().to_path_buf(),
-            ProverMode::Standard,
+            true,
             Some("main".to_string()),
             false,
             true,
@@ -592,7 +593,7 @@ mod tests {
 
         let verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
-            ProverMode::Standard,
+            true,
             Some("main".to_string()),
             false,
             true,
