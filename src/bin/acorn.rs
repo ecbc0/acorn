@@ -105,11 +105,10 @@ async fn main() {
 
     // Check if we should generate documentation.
     if let Some(doc_root) = args.doc_root {
-        let mut project =
-            Project::new_local(&current_dir, true, false).unwrap_or_else(|e| {
-                println!("Error loading project: {}", e);
-                std::process::exit(1);
-            });
+        let mut project = Project::new_local(&current_dir, true, false).unwrap_or_else(|e| {
+            println!("Error loading project: {}", e);
+            std::process::exit(1);
+        });
         project.add_all_targets();
         match DocGenerator::new(&project).generate(&doc_root) {
             Ok(count) => {
@@ -129,7 +128,7 @@ async fn main() {
             println!("Error: --line requires a target module or file to be specified.");
             std::process::exit(1);
         };
-        let searcher = Searcher::new(current_dir, mode, target, line);
+        let searcher = Searcher::new(current_dir, target, line);
         if let Err(e) = searcher.run() {
             println!("{}", e);
             std::process::exit(1);
