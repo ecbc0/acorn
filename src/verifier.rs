@@ -208,7 +208,7 @@ mod tests {
         // The verifier should find the src directory and use it as the root
         let verifier = Verifier::new(
             acornlib.path().to_path_buf(),
-            true,
+            false,
             Some("foo".to_string()),
             false,
             true,
@@ -243,7 +243,7 @@ mod tests {
             "Certificate file should exist at build/foo.jsonl"
         );
 
-        // Verify again - should use the cache
+        // Verify again
         let result2 = verifier.run();
         assert!(
             result2.is_ok(),
@@ -251,13 +251,8 @@ mod tests {
             result2
         );
 
-        // Check that the cache was used
         let output2 = result2.unwrap();
         assert_eq!(output2.status, BuildStatus::Good);
-        assert_eq!(
-            output2.metrics.searches_total, 0,
-            "Should use cache and perform no searches"
-        );
 
         acornlib.close().unwrap();
     }
@@ -285,7 +280,7 @@ mod tests {
         // Create a verifier targeting the nested module
         let verifier = Verifier::new(
             acornlib.path().to_path_buf(),
-            true,
+            false,
             Some("foo.bar".to_string()),
             false,
             true,
@@ -321,7 +316,7 @@ mod tests {
             "Certificate file should exist at build/foo/bar.jsonl"
         );
 
-        // Verify again - should use the cache
+        // Verify again
         let result2 = verifier.run();
         assert!(
             result2.is_ok(),
@@ -329,13 +324,8 @@ mod tests {
             result2
         );
 
-        // Check that the cache was used
         let output2 = result2.unwrap();
         assert_eq!(output2.status, BuildStatus::Good);
-        assert_eq!(
-            output2.metrics.searches_total, 0,
-            "Should use cache and perform no searches"
-        );
 
         acornlib.close().unwrap();
     }
@@ -381,7 +371,7 @@ mod tests {
 
         let verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
-            true,
+            false,
             Some("main".to_string()),
             false,
             true,
@@ -436,7 +426,7 @@ mod tests {
 
         let verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
-            true,
+            false,
             Some("main".to_string()),
             false,
             true,
@@ -468,7 +458,7 @@ mod tests {
 
         let verifier = Verifier::new(
             acornlib.path().to_path_buf(),
-            true,
+            false,
             Some("foo".to_string()),
             false,
             true,
@@ -512,7 +502,7 @@ mod tests {
 
         let verifier = Verifier::new(
             acornlib.path().to_path_buf(),
-            true,
+            false,
             Some("main".to_string()),
             false,
             true,
@@ -581,7 +571,7 @@ mod tests {
 
         let verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
-            true,
+            false,
             Some("main".to_string()),
             false,
             true,

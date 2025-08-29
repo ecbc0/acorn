@@ -1,3 +1,4 @@
+use core::panic;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -168,6 +169,10 @@ fn check_valid_module_part(s: &str, error_name: &str) -> Result<(), ImportError>
 impl Project {
     // Create a new project.
     pub fn new(library_root: PathBuf, cache_dir: PathBuf, config: ProjectConfig) -> Project {
+        if config.use_certs && config.check_hashes {
+            panic!("Cannot use both certificates and hash checking");
+        }
+
         // Check if the directory exists
         let module_caches = if config.read_cache && cache_dir.is_dir() {
             ModuleCacheSet::new(Some(cache_dir.clone()), config.write_cache)
@@ -644,6 +649,7 @@ impl Project {
                         .matches_through_line(&old_module_cache, cursor.node().last_line())
                 {
                     // We don't need to verify this, we can just treat it as verified due to the hash.
+                    // Note that this breaks certificate-gathering, so we don't do this path in certs mode.
                     builder.log_proving_cache_hit(&mut cursor);
                     if let Some(old_mc) = &old_module_cache {
                         // We skipped the proof of this theorem.
