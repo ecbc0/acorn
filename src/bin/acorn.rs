@@ -39,12 +39,9 @@ struct Args {
     #[clap(long, help = "Use proof certificates.")]
     certs: bool,
 
-    /// Use the cache only for the filtered prover, not for hash checking
-    #[clap(
-        long,
-        help = "Use the cache only for the filtered prover, not for hash checking."
-    )]
-    filtered: bool,
+    /// Don't skip goals based on hash checks
+    #[clap(long, help = "Don't skip goals based on hash checks.")]
+    nohash: bool,
 
     /// Search for a proof at a specific line number (requires target)
     #[clap(
@@ -89,7 +86,7 @@ async fn main() {
         std::process::exit(1);
     }
 
-    let check_hashes = !args.filtered;
+    let check_hashes = !args.nohash;
 
     let current_dir = match std::env::current_dir() {
         Ok(dir) => dir,
@@ -166,7 +163,13 @@ async fn main() {
     }
 
     // Run the verifier.
-    let verifier = Verifier::new(current_dir, check_hashes, args.target, args.dataset, args.certs);
+    let verifier = Verifier::new(
+        current_dir,
+        check_hashes,
+        args.target,
+        args.dataset,
+        args.certs,
+    );
     match verifier.run() {
         Err(e) => {
             println!("{}", e);

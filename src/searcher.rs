@@ -60,7 +60,7 @@ impl Searcher {
         println!("proving {} ...", goal_context.name);
 
         let verbose = false;
-        // Try to use the filtered prover if we're in filtered mode
+        // Try to use the filtered prover
         let module_descriptor = project
             .get_module_descriptor(module_id)
             .ok_or_else(|| format!("Module {} not found", module_id))?;
