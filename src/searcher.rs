@@ -2,8 +2,7 @@ use std::path::PathBuf;
 
 use crate::block::NodeCursor;
 use crate::project::Project;
-use crate::prover::{Outcome, Prover};
-use crate::verifier::ProverMode;
+use crate::prover::Outcome;
 
 pub struct Searcher {
     /// The target module or file to search in.
@@ -14,24 +13,20 @@ pub struct Searcher {
 
     /// The starting path to find the acorn library from.
     start_path: PathBuf,
-
-    /// The mode to use for the verifier.
-    mode: ProverMode,
 }
 
 impl Searcher {
-    pub fn new(start_path: PathBuf, mode: ProverMode, target: String, line_number: u32) -> Self {
+    pub fn new(start_path: PathBuf, target: String, line_number: u32) -> Self {
         Self {
             target,
             line_number,
             start_path,
-            mode,
         }
     }
 
     /// Runs the search and returns an error string if the search fails.
     pub fn run(&self) -> Result<(), String> {
-        let mut project = match Project::new_local(&self.start_path, self.mode.check_hashes(), false) {
+        let mut project = match Project::new_local(&self.start_path, false, false) {
             Ok(p) => p,
             Err(e) => return Err(format!("Error: {}", e)),
         };
@@ -65,38 +60,28 @@ impl Searcher {
         println!("proving {} ...", goal_context.name);
 
         let verbose = false;
-        let mut prover = if self.mode == ProverMode::Filtered {
-            // Try to use the filtered prover if we're in filtered mode
-            let module_descriptor = project
-                .get_module_descriptor(module_id)
-                .ok_or_else(|| format!("Module {} not found", module_id))?;
-            let module_cache = project.get_module_cache(module_descriptor);
+        // Try to use the filtered prover if we're in filtered mode
+        let module_descriptor = project
+            .get_module_descriptor(module_id)
+            .ok_or_else(|| format!("Module {} not found", module_id))?;
+        let module_cache = project.get_module_cache(module_descriptor);
 
-            let block_name = cursor.block_name();
-            match project.make_filtered_prover(env, &block_name, &module_cache) {
-                Some(mut filtered_prover) => {
-                    println!("using filtered prover");
-                    for fact in cursor.block_facts() {
-                        filtered_prover.add_fact(fact);
-                    }
-                    filtered_prover
+        let block_name = cursor.block_name();
+        let mut prover = match project.make_filtered_prover(env, &block_name, &module_cache) {
+            Some(mut filtered_prover) => {
+                println!("using filtered prover");
+                for fact in cursor.block_facts() {
+                    filtered_prover.add_fact(fact);
                 }
-                None => {
-                    return Err(format!(
-                        "Cannot create filtered prover: no cached premises found for {} at line {}. \
+                filtered_prover
+            }
+            None => {
+                return Err(format!(
+                    "Cannot create filtered prover: no cached premises found for {} at line {}. \
                         Run verification in standard mode first to build the cache.",
-                        block_name,
-                        self.line_number
-                    ));
-                }
+                    block_name, self.line_number
+                ));
             }
-        } else {
-            // Use full prover in other modes
-            let mut prover = Prover::new(&project, verbose);
-            for fact in cursor.usable_facts(&project) {
-                prover.add_fact(fact);
-            }
-            prover
         };
 
         prover.verbose = verbose;
