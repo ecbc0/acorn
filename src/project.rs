@@ -71,9 +71,6 @@ pub struct Project {
     // Defaults to true.
     pub check_hashes: bool,
 
-    // Whether to use proof certificates.
-    use_certs: bool,
-
     // The last known-good build cache.
     // This is "some" iff we are using certs.
     // This is different from the Builder's build cache, which is created during a build.
@@ -194,7 +191,6 @@ impl Project {
             module_caches,
             build_stopped: Arc::new(AtomicBool::new(false)),
             check_hashes: true,
-            use_certs,
             build_cache,
             cache_dir,
             write_cache,
@@ -281,6 +277,11 @@ impl Project {
         let mut p = Project::new(mock_dir, cache_dir, false, false, false);
         p.use_filesystem = false;
         p
+    }
+
+    // Returns true if we are using certificates (indicated by having a build cache)
+    pub fn using_certs(&self) -> bool {
+        self.build_cache.is_some()
     }
 
     // Dropping existing modules lets you update the project for new data.
@@ -435,7 +436,7 @@ impl Project {
     // Builds all open modules, logging build events.
     pub fn build(&self, builder: &mut Builder) {
         // Initialize the build cache if we're using certificates
-        if self.use_certs {
+        if self.using_certs() {
             builder.build_cache = Some(BuildCache::new());
         }
 
@@ -499,7 +500,7 @@ impl Project {
             }
         }
 
-        if self.use_certs && builder.status.is_good() && self.write_cache {
+        if self.using_certs() && builder.status.is_good() && self.write_cache {
             let build_cache = builder.build_cache.as_ref().unwrap();
             if let Err(e) = build_cache.save(self.cache_dir.clone()) {
                 builder.log_info(format!("error saving build cache: {}", e));
@@ -617,9 +618,9 @@ impl Project {
         let old_module_cache = self.module_caches.get_cloned_module_cache(target);
         let mut new_module_cache = ModuleCache::new(module_hash);
 
-        // Create new_certs based on project.use_certs
+        // Create new_certs based on whether we're using certificates
         let mut new_certs_vec = Vec::new();
-        let mut new_certs = if self.use_certs {
+        let mut new_certs = if self.using_certs() {
             Some(&mut new_certs_vec)
         } else {
             None
@@ -716,7 +717,7 @@ impl Project {
                 builder.log_info(format!("error in module cache set: {}", e));
             }
 
-            if self.use_certs {
+            if self.using_certs() {
                 // Insert the new CertificateStore into the build cache
                 let cert_store = CertificateStore {
                     certs: new_certs_vec,
