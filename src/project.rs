@@ -29,7 +29,6 @@ use crate::names::ConstantName;
 use crate::prover::{Outcome, Prover};
 use crate::token::Token;
 use crate::token_map::TokenInfo;
-use crate::verifier::ProverMode;
 
 // The Project is responsible for importing different files and assigning them module ids.
 pub struct Project {
@@ -268,7 +267,7 @@ impl Project {
     // Returns an error if we can't find an acorn library.
     pub fn new_local(
         start_path: &Path,
-        mode: ProverMode,
+        check_hashes: bool,
         use_certs: bool,
     ) -> Result<Project, ProjectError> {
         let (library_root, cache_dir) =
@@ -281,7 +280,6 @@ impl Project {
                 )
             })?;
         let use_cache = true;
-        let check_hashes = mode.check_hashes();
         let project = Project::new(
             library_root,
             cache_dir,

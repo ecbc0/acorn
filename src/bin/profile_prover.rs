@@ -5,12 +5,11 @@
 //   samply record target/fastdev/profile_prover
 
 use acorn::project::Project;
-use acorn::verifier::ProverMode;
 
 fn main() {
     let current_dir = std::env::current_dir().unwrap();
     for _ in 0..10 {
-        let mut project = Project::new_local(&current_dir, ProverMode::Filtered, false).unwrap();
+        let mut project = Project::new_local(&current_dir, false, false).unwrap();
         project
             .add_target_by_name("nat")
             .expect("Failed to add nat target");

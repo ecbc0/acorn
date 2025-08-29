@@ -31,7 +31,7 @@ impl Searcher {
 
     /// Runs the search and returns an error string if the search fails.
     pub fn run(&self) -> Result<(), String> {
-        let mut project = match Project::new_local(&self.start_path, self.mode, false) {
+        let mut project = match Project::new_local(&self.start_path, self.mode.check_hashes(), false) {
             Ok(p) => p,
             Err(e) => return Err(format!("Error: {}", e)),
         };
