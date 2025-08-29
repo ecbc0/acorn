@@ -43,10 +43,6 @@ name = "search"
 test = false
 
 [[bin]]
-name = "verify"
-test = false
-
-[[bin]]
 name = "profile_prover"
 test = false
 
