@@ -159,6 +159,7 @@ impl Project {
     pub fn new(
         library_root: PathBuf,
         cache_dir: PathBuf,
+        check_hashes: bool,
         read_cache: bool,
         write_cache: bool,
         use_certs: bool,
@@ -190,7 +191,7 @@ impl Project {
             targets: HashSet::new(),
             module_caches,
             build_stopped: Arc::new(AtomicBool::new(false)),
-            check_hashes: true,
+            check_hashes,
             build_cache,
             cache_dir,
             write_cache,
@@ -263,10 +264,8 @@ impl Project {
                 )
             })?;
         let use_cache = mode != ProverMode::Full;
-        let mut project = Project::new(library_root, cache_dir, use_cache, use_cache, use_certs);
-        if mode == ProverMode::Filtered {
-            project.check_hashes = false;
-        }
+        let check_hashes = mode != ProverMode::Filtered;
+        let project = Project::new(library_root, cache_dir, check_hashes, use_cache, use_cache, use_certs);
         Ok(project)
     }
 
@@ -274,7 +273,7 @@ impl Project {
     pub fn new_mock() -> Project {
         let mock_dir = PathBuf::from("/mock");
         let cache_dir = mock_dir.join("build");
-        let mut p = Project::new(mock_dir, cache_dir, false, false, false);
+        let mut p = Project::new(mock_dir, cache_dir, true, false, false, false);
         p.use_filesystem = false;
         p
     }
