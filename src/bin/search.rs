@@ -25,7 +25,7 @@ async fn main() {
         }
     };
 
-    let searcher = Searcher::new(current_dir, ProverMode::Full, module_name, line_number);
+    let searcher = Searcher::new(current_dir, ProverMode::Filtered, module_name, line_number);
     if let Err(e) = searcher.run() {
         eprintln!("{}", e);
         std::process::exit(1);

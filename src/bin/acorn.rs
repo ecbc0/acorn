@@ -39,15 +39,10 @@ struct Args {
     #[clap(long, help = "Use proof certificates.")]
     certs: bool,
 
-    /// Ignore the cache and do a full reverify
-    #[clap(long, help = "Ignore the cache and do a full reverify.")]
-    full: bool,
-
     /// Use the cache only for the filtered prover, not for hash checking
     #[clap(
         long,
-        help = "Use the cache only for the filtered prover, not for hash checking.",
-        conflicts_with = "full"
+        help = "Use the cache only for the filtered prover, not for hash checking."
     )]
     filtered: bool,
 
@@ -94,13 +89,7 @@ async fn main() {
         std::process::exit(1);
     }
 
-    let mode = if args.full {
-        if args.filtered {
-            println!("--full and --filtered are incompatible.");
-            std::process::exit(1);
-        }
-        ProverMode::Full
-    } else if args.filtered {
+    let mode = if args.filtered {
         ProverMode::Filtered
     } else {
         ProverMode::Standard

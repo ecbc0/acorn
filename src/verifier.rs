@@ -36,9 +36,6 @@ pub enum ProverMode {
     /// This is the default mode.
     Standard,
 
-    /// Does not use the cache, and builds everything from scratch.
-    Full,
-
     /// Uses the cache, but only for filtering premise retrieval. Does not skip modules.
     Filtered,
 }

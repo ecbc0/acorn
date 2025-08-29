@@ -280,7 +280,7 @@ impl Project {
                         .to_string(),
                 )
             })?;
-        let use_cache = mode != ProverMode::Full;
+        let use_cache = true;
         let check_hashes = mode != ProverMode::Filtered;
         let project = Project::new(
             library_root,
