@@ -86,6 +86,11 @@ async fn main() {
         std::process::exit(1);
     }
 
+    if args.nohash && args.certs {
+        println!("Cannot use both --nohash and --certs.");
+        std::process::exit(1);
+    }
+
     let check_hashes = !args.nohash && !args.certs;
 
     let current_dir = match std::env::current_dir() {
