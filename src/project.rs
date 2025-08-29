@@ -87,8 +87,14 @@ pub struct ProjectConfig {
     // Defaults to true.
     pub check_hashes: bool,
 
+    // Whether we should read from the cache
+    pub read_cache: bool,
+
     // Whether we should write to the cache
     pub write_cache: bool,
+
+    // Whether we are using certificates
+    pub use_certs: bool,
 }
 
 // General project-level errors (file operations, setup, etc.)
@@ -193,7 +199,9 @@ impl Project {
             config: ProjectConfig {
                 use_filesystem: true,
                 check_hashes,
+                read_cache,
                 write_cache,
+                use_certs,
             },
             library_root,
             open_files: HashMap::new(),
