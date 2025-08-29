@@ -86,7 +86,7 @@ async fn main() {
         std::process::exit(1);
     }
 
-    let check_hashes = !args.nohash;
+    let check_hashes = !args.nohash && !args.certs;
 
     let current_dir = match std::env::current_dir() {
         Ok(dir) => dir,
