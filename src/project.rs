@@ -281,7 +281,7 @@ impl Project {
                 )
             })?;
         let use_cache = true;
-        let check_hashes = mode != ProverMode::Filtered;
+        let check_hashes = mode.check_hashes();
         let project = Project::new(
             library_root,
             cache_dir,

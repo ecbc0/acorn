@@ -40,6 +40,15 @@ pub enum ProverMode {
     Filtered,
 }
 
+impl ProverMode {
+    pub fn check_hashes(&self) -> bool {
+        match self {
+            ProverMode::Standard => true,
+            ProverMode::Filtered => false,
+        }
+    }
+}
+
 pub struct Verifier {
     mode: ProverMode,
 
@@ -315,7 +324,7 @@ mod tests {
             build_file.exists(),
             "Cache file should exist at build/foo/bar.yaml"
         );
-        
+
         // Check that we created a JSONL file for certificates in the nested directory
         let cert_file = build_foo_dir.child("bar.jsonl");
         assert!(
