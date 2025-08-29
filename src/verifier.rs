@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::builder::{BuildEvent, BuildMetrics, BuildStatus};
-use crate::project::Project;
+use crate::project::{Project, ProjectConfig};
 
 /// Output from running the verifier
 #[derive(Debug)]
@@ -67,11 +67,17 @@ impl Verifier {
 
     /// Returns VerifierOutput on success, or an error string if verification fails.
     pub fn run(&self) -> Result<VerifierOutput, String> {
-        let mut project =
-            match Project::new_local(&self.start_path, self.check_hashes, self.use_certs) {
-                Ok(p) => p,
-                Err(e) => return Err(format!("Error: {}", e)),
-            };
+        let config = ProjectConfig {
+            use_filesystem: true,
+            check_hashes: self.check_hashes,
+            read_cache: true,
+            write_cache: true,
+            use_certs: self.use_certs,
+        };
+        let mut project = match Project::new_local(&self.start_path, config) {
+            Ok(p) => p,
+            Err(e) => return Err(format!("Error: {}", e)),
+        };
 
         if let Some(target) = &self.target {
             if target == "-" {

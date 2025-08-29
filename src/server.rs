@@ -21,7 +21,7 @@ use crate::interfaces::{
     SearchResponse, SearchStatus,
 };
 use crate::module::{LoadState, ModuleDescriptor};
-use crate::project::Project;
+use crate::project::{Project, ProjectConfig};
 use crate::prover::{Outcome, Prover};
 
 pub struct ServerArgs {
@@ -432,7 +432,14 @@ impl Backend {
         ));
 
         // The cache is always readable, only sometimes writable.
-        let project = Project::new(library_root, cache_dir, true, true, cache_writable, false);
+        let config = ProjectConfig {
+            use_filesystem: true,
+            check_hashes: true,
+            read_cache: true,
+            write_cache: cache_writable,
+            use_certs: false,
+        };
+        let project = Project::new(library_root, cache_dir, config);
         Backend {
             project: Arc::new(RwLock::new(project)),
             client,

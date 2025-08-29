@@ -2,7 +2,7 @@
 // You can run a language server, verify a file, or verify the whole project.
 
 use acorn::doc_generator::DocGenerator;
-use acorn::project::Project;
+use acorn::project::{Project, ProjectConfig};
 use acorn::searcher::Searcher;
 use acorn::server::{run_server, ServerArgs};
 use acorn::verifier::Verifier;
@@ -98,7 +98,14 @@ async fn main() {
 
     // Check if we should generate documentation.
     if let Some(doc_root) = args.doc_root {
-        let mut project = Project::new_local(&current_dir, true, false).unwrap_or_else(|e| {
+        let config = ProjectConfig {
+            use_filesystem: true,
+            check_hashes: true,
+            read_cache: true,
+            write_cache: true,
+            use_certs: false,
+        };
+        let mut project = Project::new_local(&current_dir, config).unwrap_or_else(|e| {
             println!("Error loading project: {}", e);
             std::process::exit(1);
         });

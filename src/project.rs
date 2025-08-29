@@ -167,25 +167,17 @@ fn check_valid_module_part(s: &str, error_name: &str) -> Result<(), ImportError>
 
 impl Project {
     // Create a new project.
-    // Flags control whether we read the cache, and whether we write the cache.
-    pub fn new(
-        library_root: PathBuf,
-        cache_dir: PathBuf,
-        check_hashes: bool,
-        read_cache: bool,
-        write_cache: bool,
-        use_certs: bool,
-    ) -> Project {
+    pub fn new(library_root: PathBuf, cache_dir: PathBuf, config: ProjectConfig) -> Project {
         // Check if the directory exists
-        let module_caches = if read_cache && cache_dir.is_dir() {
-            ModuleCacheSet::new(Some(cache_dir.clone()), write_cache)
+        let module_caches = if config.read_cache && cache_dir.is_dir() {
+            ModuleCacheSet::new(Some(cache_dir.clone()), config.write_cache)
         } else {
             ModuleCacheSet::new(None, false)
         };
 
         // Load the build cache if we're using certificates
-        let build_cache = if use_certs {
-            if read_cache {
+        let build_cache = if config.use_certs {
+            if config.read_cache {
                 Some(BuildCache::load(&cache_dir))
             } else {
                 Some(BuildCache::new())
@@ -195,13 +187,7 @@ impl Project {
         };
 
         Project {
-            config: ProjectConfig {
-                use_filesystem: true,
-                check_hashes,
-                read_cache,
-                write_cache,
-                use_certs,
-            },
+            config,
             library_root,
             open_files: HashMap::new(),
             modules: vec![],
@@ -265,11 +251,7 @@ impl Project {
 
     // A Project based on the provided starting path.
     // Returns an error if we can't find an acorn library.
-    pub fn new_local(
-        start_path: &Path,
-        check_hashes: bool,
-        use_certs: bool,
-    ) -> Result<Project, ProjectError> {
+    pub fn new_local(start_path: &Path, config: ProjectConfig) -> Result<Project, ProjectError> {
         let (library_root, cache_dir) =
             Project::find_local_acorn_library(start_path).ok_or_else(|| {
                 ProjectError(
@@ -279,15 +261,7 @@ impl Project {
                         .to_string(),
                 )
             })?;
-        let use_cache = true;
-        let project = Project::new(
-            library_root,
-            cache_dir,
-            check_hashes,
-            use_cache,
-            use_cache,
-            use_certs,
-        );
+        let project = Project::new(library_root, cache_dir, config);
         Ok(project)
     }
 
@@ -295,9 +269,14 @@ impl Project {
     pub fn new_mock() -> Project {
         let mock_dir = PathBuf::from("/mock");
         let cache_dir = mock_dir.join("build");
-        let mut p = Project::new(mock_dir, cache_dir, true, false, false, false);
-        p.config.use_filesystem = false;
-        p
+        let config = ProjectConfig {
+            use_filesystem: false,
+            check_hashes: true,
+            read_cache: false,
+            write_cache: false,
+            use_certs: false,
+        };
+        Project::new(mock_dir, cache_dir, config)
     }
 
     // Returns true if we are using certificates (indicated by having a build cache)

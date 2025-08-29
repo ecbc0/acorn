@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::block::NodeCursor;
-use crate::project::Project;
+use crate::project::{Project, ProjectConfig};
 use crate::prover::Outcome;
 
 pub struct Searcher {
@@ -26,7 +26,14 @@ impl Searcher {
 
     /// Runs the search and returns an error string if the search fails.
     pub fn run(&self) -> Result<(), String> {
-        let mut project = match Project::new_local(&self.start_path, false, false) {
+        let config = ProjectConfig {
+            use_filesystem: true,
+            check_hashes: false,
+            read_cache: true,
+            write_cache: true,
+            use_certs: false,
+        };
+        let mut project = match Project::new_local(&self.start_path, config) {
             Ok(p) => p,
             Err(e) => return Err(format!("Error: {}", e)),
         };
