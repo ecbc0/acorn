@@ -33,14 +33,17 @@ use crate::verifier::ProverMode;
 
 // The Project is responsible for importing different files and assigning them module ids.
 pub struct Project {
+    // Flags that affect project behavior
+    config: ProjectConfig,
+
     // The root directory of the library.
     // This is used to resolve all imports.
     // Note that it may be different from the editor root, which is where the user is working.
     // Set to "/mock" for mock projects.
     library_root: PathBuf,
 
-    // Whether we permit loading files from the filesystem
-    use_filesystem: bool,
+    // The directory where caches are stored
+    cache_dir: PathBuf,
 
     // For "open" files, we use the content we are storing rather than the content on disk.
     // This can store either test data that doesn't exist on the filesystem at all, or
@@ -67,21 +70,25 @@ pub struct Project {
     // Used as a flag to stop a build in progress.
     pub build_stopped: Arc<AtomicBool>,
 
-    // Whether we skip goals that match hashes in the cache.
-    // Defaults to true.
-    pub check_hashes: bool,
-
     // The last known-good build cache.
     // This is "some" iff we are using certs.
     // This is different from the Builder's build cache, which is created during a build.
     // TODO: When a build succeeds, this build cache should get updated.
     build_cache: Option<BuildCache>,
+}
 
-    // The directory where caches are stored
-    cache_dir: PathBuf,
+/// Configuration options for the project.
+pub struct ProjectConfig {
+    // Whether we permit loading files from the filesystem.
+    // If false, this indicates we only want mocked files.
+    pub use_filesystem: bool,
+
+    // Whether we skip goals that match hashes in the cache.
+    // Defaults to true.
+    pub check_hashes: bool,
 
     // Whether we should write to the cache
-    write_cache: bool,
+    pub write_cache: bool,
 }
 
 // General project-level errors (file operations, setup, etc.)
@@ -183,18 +190,20 @@ impl Project {
         };
 
         Project {
+            config: ProjectConfig {
+                use_filesystem: true,
+                check_hashes,
+                write_cache,
+            },
             library_root,
-            use_filesystem: true,
             open_files: HashMap::new(),
             modules: vec![],
             module_map: HashMap::new(),
             targets: HashSet::new(),
             module_caches,
             build_stopped: Arc::new(AtomicBool::new(false)),
-            check_hashes,
             build_cache,
             cache_dir,
-            write_cache,
         }
     }
 
@@ -265,7 +274,14 @@ impl Project {
             })?;
         let use_cache = mode != ProverMode::Full;
         let check_hashes = mode != ProverMode::Filtered;
-        let project = Project::new(library_root, cache_dir, check_hashes, use_cache, use_cache, use_certs);
+        let project = Project::new(
+            library_root,
+            cache_dir,
+            check_hashes,
+            use_cache,
+            use_cache,
+            use_certs,
+        );
         Ok(project)
     }
 
@@ -274,7 +290,7 @@ impl Project {
         let mock_dir = PathBuf::from("/mock");
         let cache_dir = mock_dir.join("build");
         let mut p = Project::new(mock_dir, cache_dir, true, false, false, false);
-        p.use_filesystem = false;
+        p.config.use_filesystem = false;
         p
     }
 
@@ -334,7 +350,7 @@ impl Project {
 
     // Adds a target for all files in this directory.
     pub fn add_all_targets(&mut self) {
-        if !self.use_filesystem {
+        if !self.config.use_filesystem {
             panic!("cannot add all targets without filesystem access")
         }
         for entry in WalkDir::new(&self.library_root)
@@ -499,7 +515,7 @@ impl Project {
             }
         }
 
-        if self.using_certs() && builder.status.is_good() && self.write_cache {
+        if self.using_certs() && builder.status.is_good() && self.config.write_cache {
             let build_cache = builder.build_cache.as_ref().unwrap();
             if let Err(e) = build_cache.save(self.cache_dir.clone()) {
                 builder.log_info(format!("error saving build cache: {}", e));
@@ -638,7 +654,7 @@ impl Project {
         loop {
             if cursor.requires_verification() {
                 let block_name = cursor.block_name();
-                if self.check_hashes
+                if self.config.check_hashes
                     && module_hash
                         .matches_through_line(&old_module_cache, cursor.node().last_line())
                 {
@@ -873,7 +889,7 @@ impl Project {
 
     // Set the file content. This has priority over the actual filesystem.
     pub fn mock(&mut self, filename: &str, content: &str) {
-        assert!(!self.use_filesystem);
+        assert!(!self.config.use_filesystem);
         let path = PathBuf::from(filename);
         let next_version = match self.get_version(&path) {
             Some(version) => version + 1,
@@ -1281,7 +1297,7 @@ impl Project {
         if let Some((content, _)) = self.open_files.get(path) {
             return Ok(content.clone());
         }
-        if !self.use_filesystem {
+        if !self.config.use_filesystem {
             return Err(ProjectError(format!(
                 "no mocked file for: {}",
                 path.display()
@@ -1351,13 +1367,13 @@ impl Project {
                 let file_path = path.join(format!("{}.ac", part));
                 let dir_path = path.join(part).join("default.ac");
 
-                let file_exists = if self.use_filesystem {
+                let file_exists = if self.config.use_filesystem {
                     file_path.exists()
                 } else {
                     self.open_files.contains_key(&file_path)
                 };
 
-                let dir_exists = if self.use_filesystem {
+                let dir_exists = if self.config.use_filesystem {
                     dir_path.exists()
                 } else {
                     self.open_files.contains_key(&dir_path)
