@@ -624,9 +624,8 @@ impl Project {
         let mut new_module_cache = ModuleCache::new(module_hash);
 
         // If we're using certificates, create a worklist and a vector of new certs.
-        let mut new_certs_vec = Vec::new();
         let mut new_certs = if self.using_certs() {
-            Some(&mut new_certs_vec)
+            Some(Vec::new())
         } else {
             None
         };
@@ -680,7 +679,7 @@ impl Project {
                         &mut cursor,
                         &mut new_premises,
                         builder,
-                        new_certs.as_deref_mut(),
+                        &mut new_certs,
                     );
                     if builder.status.is_error() {
                         return;
@@ -723,11 +722,9 @@ impl Project {
                 builder.log_info(format!("error in module cache set: {}", e));
             }
 
-            if self.using_certs() {
+            if let Some(certs) = new_certs {
                 // Insert the new CertificateStore into the build cache
-                let cert_store = CertificateStore {
-                    certs: new_certs_vec,
-                };
+                let cert_store = CertificateStore { certs };
                 builder
                     .build_cache
                     .as_mut()
@@ -756,7 +753,7 @@ impl Project {
         cursor: &mut NodeCursor,
         new_premises: &mut HashSet<(ModuleId, String)>,
         builder: &mut Builder,
-        mut new_certs: Option<&mut Vec<Certificate>>,
+        new_certs: &mut Option<Vec<Certificate>>,
     ) {
         if !cursor.requires_verification() {
             return;
@@ -774,7 +771,7 @@ impl Project {
                     cursor,
                     new_premises,
                     builder,
-                    new_certs.as_deref_mut(),
+                    new_certs,
                 );
                 if builder.status.is_error() {
                     return;
@@ -826,7 +823,7 @@ impl Project {
         goal_context: &Goal,
         builder: &mut Builder,
         env: &Environment,
-        new_certs: Option<&mut Vec<Certificate>>,
+        new_certs: &mut Option<Vec<Certificate>>,
     ) -> Prover {
         // Try the filtered prover
         if let Some(mut filtered_prover) = filtered_prover {

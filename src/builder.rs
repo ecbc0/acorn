@@ -311,7 +311,7 @@ impl<'a> Builder<'a> {
         elapsed: Duration,
         project: &Project,
         env: &Environment,
-        new_certs: Option<&mut Vec<Certificate>>,
+        new_certs: &mut Option<Vec<Certificate>>,
     ) {
         // Time conversion
         let secs = elapsed.as_secs() as f64;
