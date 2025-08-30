@@ -624,10 +624,12 @@ impl Project {
         let mut new_module_cache = ModuleCache::new(module_hash);
 
         // If we're using certificates, create a worklist and a vector of new certs.
-        let mut new_certs = if self.using_certs() {
-            Some(Vec::new())
-        } else {
-            None
+        let (mut new_certs, mut _worklist) = match self.build_cache.as_ref() {
+            Some(bc) => {
+                let worklist = bc.make_worklist(target);
+                (Some(vec![]), Some(worklist))
+            }
+            None => (None, None),
         };
 
         builder.module_proving_started(target.clone());
