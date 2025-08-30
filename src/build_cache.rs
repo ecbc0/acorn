@@ -3,7 +3,7 @@ use std::error::Error;
 use std::path::PathBuf;
 use walkdir::WalkDir;
 
-use crate::certificate::CertificateStore;
+use crate::certificate::{CertificateStore, CertificateWorklist};
 use crate::module::ModuleDescriptor;
 
 pub struct BuildCache {
@@ -37,6 +37,12 @@ impl BuildCache {
 
     pub fn insert(&mut self, module: ModuleDescriptor, certificates: CertificateStore) {
         self.cache.insert(module, certificates);
+    }
+
+    pub fn make_worklist(&self, descriptor: &ModuleDescriptor) -> Option<CertificateWorklist> {
+        self.cache
+            .get(descriptor)
+            .map(|store| CertificateWorklist::new(store.clone()))
     }
 
     pub fn save(&self, directory: PathBuf) -> Result<(), Box<dyn Error>> {

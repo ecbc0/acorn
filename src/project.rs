@@ -623,7 +623,7 @@ impl Project {
         let old_module_cache = self.module_caches.get_cloned_module_cache(target);
         let mut new_module_cache = ModuleCache::new(module_hash);
 
-        // Create new_certs based on whether we're using certificates
+        // If we're using certificates, create a worklist and a vector of new certs.
         let mut new_certs_vec = Vec::new();
         let mut new_certs = if self.using_certs() {
             Some(&mut new_certs_vec)
