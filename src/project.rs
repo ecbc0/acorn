@@ -16,7 +16,7 @@ use crate::binding_map::BindingMap;
 use crate::block::NodeCursor;
 use crate::build_cache::BuildCache;
 use crate::builder::{BuildEvent, BuildStatus, Builder};
-use crate::certificate::{Certificate, CertificateStore};
+use crate::certificate::{Certificate, CertificateStore, CertificateWorklist};
 use crate::code_generator::{self, CodeGenerator};
 use crate::compilation;
 use crate::environment::Environment;
@@ -624,10 +624,10 @@ impl Project {
         let mut new_module_cache = ModuleCache::new(module_hash);
 
         // If we're using certificates, create a worklist and a vector of new certs.
-        let (mut new_certs, mut _worklist) = match self.build_cache.as_ref() {
+        let (mut new_certs, mut worklist) = match self.build_cache.as_ref() {
             Some(bc) => {
                 let worklist = bc.make_worklist(target);
-                (Some(vec![]), Some(worklist))
+                (Some(vec![]), worklist)
             }
             None => (None, None),
         };
@@ -682,6 +682,7 @@ impl Project {
                         &mut new_premises,
                         builder,
                         &mut new_certs,
+                        &mut worklist,
                     );
                     if builder.status.is_error() {
                         return;
@@ -756,6 +757,7 @@ impl Project {
         new_premises: &mut HashSet<(ModuleId, String)>,
         builder: &mut Builder,
         new_certs: &mut Option<Vec<Certificate>>,
+        worklist: &mut Option<CertificateWorklist>,
     ) {
         if !cursor.requires_verification() {
             return;
@@ -774,6 +776,7 @@ impl Project {
                     new_premises,
                     builder,
                     new_certs,
+                    worklist,
                 );
                 if builder.status.is_error() {
                     return;
@@ -804,6 +807,7 @@ impl Project {
                 builder,
                 cursor.goal_env().unwrap(),
                 new_certs,
+                worklist,
             );
             if builder.status.is_error() {
                 return;
@@ -826,6 +830,7 @@ impl Project {
         builder: &mut Builder,
         env: &Environment,
         new_certs: &mut Option<Vec<Certificate>>,
+        worklist: &mut Option<CertificateWorklist>,
     ) -> Prover {
         // Try the filtered prover
         if let Some(mut filtered_prover) = filtered_prover {
@@ -842,6 +847,7 @@ impl Project {
                     self,
                     env,
                     new_certs,
+                    worklist,
                 );
                 return filtered_prover;
             }
@@ -861,6 +867,7 @@ impl Project {
             self,
             env,
             new_certs,
+            worklist,
         );
         full_prover
     }
