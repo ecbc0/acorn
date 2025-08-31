@@ -471,16 +471,22 @@ impl Prover {
         bindings: &BindingMap,
         print: bool,
     ) -> Result<Certificate, Error> {
-        let goal_name = self.goal.as_ref()
+        let goal_name = self
+            .goal
+            .as_ref()
             .ok_or_else(|| Error::internal("no goal set"))?
-            .name.clone();
-        
+            .name
+            .clone();
+
         let proof = match self.get_uncondensed_proof(false) {
             Some(proof) => proof,
             None => {
                 // No proof found, create a placeholder certificate
                 if print {
-                    println!("No proof found, creating placeholder certificate for goal: {}", goal_name);
+                    println!(
+                        "No proof found, creating placeholder certificate for goal: {}",
+                        goal_name
+                    );
                 }
                 return Ok(Certificate::placeholder(goal_name));
             }
@@ -503,12 +509,36 @@ impl Prover {
         }
 
         if let Some(proof) = &cert.proof {
-            self.checker.check_proof(proof, project, &mut Cow::Borrowed(bindings), &mut self.normalizer)?;
+            self.checker.check_proof(
+                proof,
+                project,
+                &mut Cow::Borrowed(bindings),
+                &mut self.normalizer,
+            )?;
         } else {
             return Err("Certificate has no proof".to_string().into());
         }
 
         Ok(cert)
+    }
+
+    /// Returns whether this certificate is okay.
+    /// This clones various components of the prover that we might mutate.
+    /// It's unclear to me whether this is problematically slow, or something we can ignore.
+    pub fn check_cert(
+        &self,
+        cert: &Certificate,
+        project: &Project,
+        bindings: &BindingMap,
+    ) -> Result<(), Error> {
+        let mut checker = self.checker.clone();
+        let proof = match &cert.proof {
+            Some(proof) => proof,
+            None => return Err("Certificate has no proof".to_string().into()),
+        };
+        let mut bindings = Cow::Borrowed(bindings);
+        let mut normalizer = self.normalizer.clone();
+        checker.check_proof(proof, project, &mut bindings, &mut normalizer)
     }
 
     fn report_term_graph_contradiction(&mut self, contradiction: TermGraphContradiction) {
