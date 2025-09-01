@@ -832,6 +832,11 @@ impl Project {
         new_certs: &mut Option<Vec<Certificate>>,
         worklist: &mut Option<CertificateWorklist>,
     ) -> Prover {
+        full_prover.set_goal(goal_context);
+        if let Some(mut _worklist) = worklist.as_mut() {
+            // TODO: see if we can find any valid cert in the worklist
+        }
+
         // Try the filtered prover
         if let Some(mut filtered_prover) = filtered_prover {
             builder.metrics.searches_filtered += 1;
@@ -856,7 +861,6 @@ impl Project {
 
         // Try the full prover
         builder.metrics.searches_full += 1;
-        full_prover.set_goal(goal_context);
         let start = std::time::Instant::now();
         let outcome = full_prover.verification_search();
         builder.search_finished(
