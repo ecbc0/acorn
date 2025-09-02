@@ -5,7 +5,7 @@ use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
 
 use crate::block::NodeCursor;
 use crate::build_cache::BuildCache;
-use crate::certificate::{Certificate, CertificateWorklist};
+use crate::certificate::Certificate;
 use crate::compilation::Error;
 use crate::dataset::Dataset;
 use crate::environment::Environment;
@@ -312,7 +312,6 @@ impl<'a> Builder<'a> {
         project: &Project,
         env: &Environment,
         new_certs: &mut Option<Vec<Certificate>>,
-        _worklist: &mut Option<CertificateWorklist>,
     ) {
         // Time conversion
         let secs = elapsed.as_secs() as f64;
@@ -331,6 +330,7 @@ impl<'a> Builder<'a> {
         self.metrics.clauses_sum_square_activated += (clauses_activated * clauses_activated) as u64;
 
         // If new_certs is provided, create a certificate and append it
+        // TODO: we need this to work right in reverification
         let using_certs = if let Some(certs) = new_certs {
             match prover.make_cert(project, &env.bindings, false) {
                 Ok(cert) => certs.push(cert),

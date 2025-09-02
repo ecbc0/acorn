@@ -826,33 +826,49 @@ impl Project {
         &self,
         mut full_prover: Prover,
         filtered_prover: Option<Prover>,
-        goal_context: &Goal,
+        goal: &Goal,
         builder: &mut Builder,
         env: &Environment,
         new_certs: &mut Option<Vec<Certificate>>,
         worklist: &mut Option<CertificateWorklist>,
     ) -> Prover {
-        full_prover.set_goal(goal_context);
-        if let Some(mut _worklist) = worklist.as_mut() {
-            // TODO: see if we can find any valid cert in the worklist
+        full_prover.set_goal(goal);
+        if let Some(worklist) = worklist.as_mut() {
+            let start = std::time::Instant::now();
+            let indexes = worklist.get_indexes(&goal.name);
+            for i in indexes {
+                let cert = worklist.get_cert(*i).unwrap();
+                if full_prover.check_cert(cert, self, &env.bindings).is_ok() {
+                    builder.search_finished(
+                        &mut full_prover,
+                        goal,
+                        Outcome::Success,
+                        start.elapsed(),
+                        self,
+                        env,
+                        new_certs,
+                    );
+                    worklist.remove(&goal.name, *i);
+                    return full_prover;
+                }
+            }
         }
 
         // Try the filtered prover
         if let Some(mut filtered_prover) = filtered_prover {
             builder.metrics.searches_filtered += 1;
-            filtered_prover.set_goal(goal_context);
+            filtered_prover.set_goal(goal);
             let start = std::time::Instant::now();
             let outcome = filtered_prover.verification_search();
             if outcome == Outcome::Success {
                 builder.search_finished(
                     &mut filtered_prover,
-                    goal_context,
+                    goal,
                     outcome,
                     start.elapsed(),
                     self,
                     env,
                     new_certs,
-                    worklist,
                 );
                 return filtered_prover;
             }
@@ -865,13 +881,12 @@ impl Project {
         let outcome = full_prover.verification_search();
         builder.search_finished(
             &mut full_prover,
-            goal_context,
+            goal,
             outcome,
             start.elapsed(),
             self,
             env,
             new_certs,
-            worklist,
         );
         full_prover
     }
