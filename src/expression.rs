@@ -36,6 +36,8 @@ pub enum Expression {
     /// Expressions you get by placing two expressions next to each other.
     /// This can either be the application of a function, or a type instantiation.
     /// The second parameter can either be an argument list or a type parameter list.
+
+    // f(x) or f[T]
     Concatenation(Box<Expression>, Box<Expression>),
 
     /// A grouping like ( <expr> ) or < <expr> >.
@@ -179,12 +181,14 @@ impl fmt::Display for TypeParamExpr {
 
 impl TypeParamExpr {
     // Parses a type parameter list, if it's there.
-    // If the tokens don't start with '<', just return an empty list.
+    // If the tokens don't start with '[', just return an empty list.
     pub fn parse_list(tokens: &mut TokenIter) -> Result<Vec<TypeParamExpr>> {
-        if tokens.peek_type() != Some(TokenType::LessThan) {
+        // Namespace function
+        if tokens.peek_type() != Some(TokenType::LeftBracket) {
             return Ok(vec![]);
         }
         tokens.next();
+        // It's `[`
         let mut params = vec![];
         loop {
             let name = tokens.expect_type(TokenType::Identifier)?;
@@ -192,7 +196,7 @@ impl TypeParamExpr {
             let (typeclass, terminator) = if terminator.token_type == TokenType::Colon {
                 let (typeclass, terminator) = Expression::parse_type(
                     tokens,
-                    Terminator::Or(TokenType::Comma, TokenType::GreaterThan),
+                    Terminator::Or(TokenType::Comma, TokenType::RightBracket),
                 )?;
                 (Some(typeclass), terminator)
             } else {
@@ -200,14 +204,14 @@ impl TypeParamExpr {
             };
             params.push(TypeParamExpr { name, typeclass });
             match terminator.token_type {
-                TokenType::GreaterThan => {
+                TokenType::RightBracket => {
                     break;
                 }
                 TokenType::Comma => {
                     continue;
                 }
                 _ => {
-                    return Err(terminator.error("expected '>' or ',' after each type param"));
+                    return Err(terminator.error("expected ']' or ',' after each type param"));
                 }
             }
         }
@@ -375,9 +379,9 @@ impl Expression {
         Expression::generate_grouping(exprs, TokenType::LeftParen, TokenType::RightParen)
     }
 
-    // Generate a comma-separated grouping in angle brackets
+    // Generate a comma-separated grouping in square brackets
     pub fn generate_params(exprs: Vec<Expression>) -> Expression {
-        Expression::generate_grouping(exprs, TokenType::LessThan, TokenType::GreaterThan)
+        Expression::generate_grouping(exprs, TokenType::LeftBracket, TokenType::RightBracket)
     }
 
     // Generates a unary expression, parenthesizing if necessary according to precedence.
@@ -555,7 +559,6 @@ impl Expression {
     ) -> Result<(Expression, Token)> {
         let (mut partials, terminator) =
             parse_partial_expressions(tokens, expected_type, termination)?;
-        group_type_parameters(&mut partials)?;
         check_partial_expressions(&partials)?;
         let expression = combine_partial_expressions(partials, expected_type, &terminator)?;
         Ok((expression, terminator))
@@ -627,7 +630,7 @@ impl Expression {
         Expression::expect_parse(input, ExpressionType::Value)
     }
 
-    // For the purposes of this function, type params like <T, U> are considered types.
+    // For the purposes of this function, type params like [T, U] are considered types.
     pub fn is_type(&self) -> bool {
         match &self {
             Expression::Singleton(token) => token.is_type_name(),
@@ -657,10 +660,9 @@ enum PartialExpression {
     // Tokens that are only part of an expression
     Unary(Token),
 
-    // Binary includes < and > which might be used for type parameters.
     Binary(Token),
 
-    // An implicit binary expression, like "f(x)" or "List<Bool>".
+    // An implicit binary expression, like "f(x)" or "List[Bool]".
     // It's located between the f and the (x).
     Implicit(Token),
 }
@@ -711,18 +713,29 @@ fn parse_partial_expressions(
             return Ok((partials, token));
         }
 
-        if token.token_type == TokenType::LessThan && expected_type == ExpressionType::Type {
+        if token.token_type == TokenType::LeftBracket {
             // The start of a type parameter list.
             // If so, we need to parse the whole list as a single expression.
             let (subexpression, last_token) = Expression::parse(
                 tokens,
                 ExpressionType::Type,
-                Terminator::Is(TokenType::GreaterThan),
+                Terminator::Is(TokenType::RightBracket),
             )?;
             partials.push_back(PartialExpression::Implicit(token.clone()));
             let group = Expression::Grouping(token, Box::new(subexpression), last_token);
             partials.push_back(PartialExpression::Expression(group));
             continue;
+            /* 
+                Support nested `[ ]`. Recursion parse use different `partials` by `let mut partials = VecDeque::<PartialExpression>::new()`
+
+                Recursion parse will advance token iterator.
+
+                Is the return value rellay useful? Yes. Inner `partials` are used by inner `Expression::parse` to build inner `expression`. Also inner `parse` avoid expose inner terminator to outside, inclue `(` type terminator. 
+                
+                `PartialExpression` may have the form of `expression` and also use `Expression::parse`, but in context, it's a part of one maximal `expression` entity. 
+
+                But I think for semantics we still need to deal with many parts inside a maxiaml `expression`. If it's needed to use, it's stored in the binding data of enum struct `PartialExpression` and `Expression`. The nested data is the "expression tree"
+            */
         }
 
         if token.token_type.is_binary() {
@@ -735,9 +748,7 @@ fn parse_partial_expressions(
                 }
                 (ExpressionType::Type, TokenType::Comma)
                 | (ExpressionType::Type, TokenType::RightArrow)
-                | (ExpressionType::Type, TokenType::Dot)
-                | (ExpressionType::Type, TokenType::LessThan)
-                | (ExpressionType::Type, TokenType::GreaterThan) => {
+                | (ExpressionType::Type, TokenType::Dot) => {
                     // These are okay in types
                 }
                 (ExpressionType::Type, _) => {
@@ -758,6 +769,7 @@ fn parse_partial_expressions(
                     | Some(PartialExpression::Binary(_))
                     | None => {
                         // All of these things can be followed by a unary operator.
+                        // And binary operator cannot be followed by a unary/binary/implict operator, e.g. cannot `- +` or `+ +`. But implicit can be followed by a binary operator? e.g. implicit and then `[`. But `[` is not a unary operator
                         true
                     }
                 } {
@@ -803,6 +815,7 @@ fn parse_partial_expressions(
             TokenType::ForAll | TokenType::Exists | TokenType::Function => {
                 if expected_type != ExpressionType::Value {
                     return Err(token.error("quantifiers cannot be used here"));
+                    // syntax of anonymous function is similar to binder
                 }
                 tokens.expect_type(TokenType::LeftParen)?;
                 let args = Declaration::parse_list(tokens)?;
@@ -936,94 +949,6 @@ fn find_last_operator(partials: &VecDeque<PartialExpression>) -> Result<Option<u
     }
 }
 
-// Checks if this "looks like" a type parameter list.
-// It only has to find the innermost one when they are nested.
-// index is the index of the first partial expression after a '<'.
-// If so, returns the index of the closing '>'.
-fn looks_like_type_params(partials: &VecDeque<PartialExpression>, index: usize) -> Option<usize> {
-    for (i, partial) in partials.iter().enumerate().skip(index) {
-        match partial {
-            PartialExpression::Binary(token) => match token.token_type {
-                TokenType::Comma | TokenType::RightArrow | TokenType::Dot | TokenType::Colon => {
-                    continue
-                }
-                TokenType::GreaterThan => return Some(i),
-                _ => {
-                    return None;
-                }
-            },
-            PartialExpression::Expression(expr) => {
-                if expr.could_be_part_of_type() {
-                    continue;
-                }
-                return None;
-            }
-            _ => return None,
-        }
-    }
-    None
-}
-
-// Checks if anything in this list of partial expressions is actually type parameters.
-// Returns the indices of the '<' and '>' if so.
-fn find_type_params(partials: &VecDeque<PartialExpression>) -> Option<(usize, usize)> {
-    for (i, partial) in partials.iter().enumerate() {
-        match partial {
-            PartialExpression::Binary(token) => {
-                if token.token_type == TokenType::LessThan {
-                    if let Some(j) = looks_like_type_params(partials, i + 1) {
-                        return Some((i, j));
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-// Checks if there are any type parameters in this list of partial expressions.
-// If so, it combines them into a single Grouping expression.
-// It's weird that sometimes we catch type parameters here and sometimes we catch them
-// while parsing partial expressions. It would be better to do it all in one place.
-fn group_type_parameters(partials: &mut VecDeque<PartialExpression>) -> Result<()> {
-    loop {
-        match find_type_params(&partials) {
-            Some((i, j)) => {
-                // Break into three groups.
-                // left, opening token, middle (the type parameters), closing token, right
-                // The left group is still called "partials".
-                let right = partials.split_off(j + 1);
-                let closing = partials.pop_back().unwrap();
-                let closing = match closing {
-                    PartialExpression::Binary(t) => t,
-                    _ => return Err(closing.error("expected a closing '>'")),
-                };
-                let middle = partials.split_off(i + 1);
-                let opening = partials.pop_back().unwrap();
-                let opening = match opening {
-                    PartialExpression::Binary(t) => t,
-                    _ => return Err(opening.error("expected an opening '<'")),
-                };
-
-                // Make a partial expression for the type params
-                let params = combine_partial_expressions(middle, ExpressionType::Type, &opening)?;
-                let grouped =
-                    Expression::Grouping(opening.clone(), Box::new(params), closing.clone());
-
-                // Reassemble the whole thing
-                partials.push_back(PartialExpression::Implicit(opening));
-                partials.push_back(PartialExpression::Expression(grouped));
-                if right.front().map_or(false, |p| p.is_grouping()) {
-                    partials.push_back(PartialExpression::Implicit(closing));
-                }
-                partials.extend(right);
-            }
-            None => return Ok(()),
-        }
-    }
-}
-
 // Checks to see if the partial expressions are valid.
 // This is not necessary for correctness. But we can generate a nicer error message here than
 // in the depths of a recursion.
@@ -1032,12 +957,6 @@ fn check_partial_expressions(partials: &VecDeque<PartialExpression>) -> Result<(
         // Iterate over all pairs
         for i in 0..(partials.len() - 1) {
             let left = &partials[i];
-            if let PartialExpression::Binary(t) = left {
-                if t.token_type == TokenType::GreaterThan {
-                    // Our sanity checks don't work for type parameters.
-                    continue;
-                }
-            }
             let right = &partials[i + 1];
             match (left, right) {
                 (PartialExpression::Binary(a), PartialExpression::Binary(b))
@@ -1548,20 +1467,20 @@ mod tests {
 
     #[test]
     fn test_generic_types() {
-        check_type("List<List<T>>");
-        check_type("List<List<X> -> List<Y>, List<Y> -> List<X>>");
-        check_type("List<(foo.Foo, bar.Bar) -> baz.Baz<Qux>>");
-        check_type("Pair<Bool, Bool>");
+        check_type("List[List[T]]");
+        check_type("List[List[X] -> List[Y], List[Y] -> List[X]]");
+        check_type("List[(foo.Foo, bar.Bar) -> baz.Baz[Qux]]");
+        check_type("Pair[Bool, Bool]");
     }
 
     #[test]
     fn test_type_params_in_expressions() {
-        check_value("foo<T>");
-        check_value("List<T>.new");
-        check_value("map(add<Int>, myList)");
-        check_value("is_surjective(identity<T>)");
-        check_value("foo.bar<T>");
-        check_value("maps_to<Bool, Bool>(not2, false)");
+        check_value("foo[T]");
+        check_value("List[T].new");
+        check_value("map(add[Int], myList)");
+        check_value("is_surjective(identity[T])");
+        check_value("foo.bar[T]");
+        check_value("maps_to[Bool, Bool](not2, false)");
     }
 
     #[test]
@@ -1571,11 +1490,16 @@ mod tests {
 
     #[test]
     fn test_multiple_type_params_in_argument() {
-        check_value("forall(p: Pair<Bool, Bool>) { true }");
+        check_value("forall(p: Pair[Bool, Bool]) { true }");
     }
 
     #[test]
     fn test_instantiated_method_expression() {
-        check_value("Pair<Foo, Bar>.new(foo, bar)");
+        check_value("Pair[Foo, Bar].new(foo, bar)"); // why error if no whitespace after `,`
+    }
+
+    #[test]
+    fn test_nested_generics_with_method() {
+        check_value("List[Pair[T1, T2]].new(nil)"); // why error if no whitespace after `,`. why `.new` and `.new(nil)` pass but `.new()` not
     }
 }
