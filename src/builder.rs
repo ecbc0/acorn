@@ -29,8 +29,8 @@ pub struct BuildMetrics {
     /// The number of goals that were successfully proven.
     pub goals_success: i32,
 
-    /// How many goals were proven by an existing certificate.
-    pub existing_certs: i32,
+    /// How many goals were proven by a cached certificate.
+    pub cached_certs: i32,
 
     /// How many proof searches we did.
     pub searches_total: i32,

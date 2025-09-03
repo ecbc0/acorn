@@ -227,6 +227,7 @@ mod tests {
         assert_eq!(output.status, BuildStatus::Good);
         assert_eq!(output.metrics.goals_total, 1);
         assert_eq!(output.metrics.goals_success, 1);
+        assert_eq!(output.metrics.cached_certs, 0);
         assert_eq!(output.metrics.searches_total, 1);
 
         // Check that we created a file in the build directory
@@ -251,12 +252,13 @@ mod tests {
             result2
         );
 
-        // We should have proved one goal, without searching
+        // Check that we proved one goal, via cached cert
         let output2 = result2.unwrap();
         assert_eq!(output2.status, BuildStatus::Good);
         assert_eq!(output2.metrics.goals_total, 1);
         assert_eq!(output2.metrics.goals_success, 1);
-        // assert_eq!(output2.metrics.searches_total, 0);
+        assert_eq!(output2.metrics.cached_certs, 1);
+        assert_eq!(output2.metrics.searches_total, 0);
 
         acornlib.close().unwrap();
     }

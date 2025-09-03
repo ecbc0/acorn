@@ -834,13 +834,13 @@ impl Project {
     ) -> Prover {
         full_prover.set_goal(goal);
 
-        // Check for an existing cert
+        // Check for a cached cert
         if let Some(worklist) = worklist.as_mut() {
             let indexes = worklist.get_indexes(&goal.name);
             for i in indexes {
                 let cert = worklist.get_cert(*i).unwrap();
                 if full_prover.check_cert(cert, self, &env.bindings).is_ok() {
-                    builder.metrics.existing_certs += 1;
+                    builder.metrics.cached_certs += 1;
                     builder.metrics.goals_done += 1;
                     builder.metrics.goals_success += 1;
                     builder.log_verified(goal.first_line, goal.last_line);
