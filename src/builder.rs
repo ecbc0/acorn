@@ -56,8 +56,8 @@ pub struct BuildMetrics {
     /// Total number of clauses scored, both active and passive.
     pub clauses_total: i32,
 
-    /// The total amount of time spent proving, in seconds.
-    pub proving_time: f64,
+    /// The total amount of time spent in proof search, in seconds.
+    pub search_time: f64,
 }
 
 impl BuildMetrics {
@@ -82,8 +82,8 @@ impl BuildMetrics {
             println!("{:.1} mean square activations", mean_square_activated);
             let num_clauses = self.clauses_total as f64 / self.searches_total as f64;
             println!("{:.2} average clauses", num_clauses);
-            let proving_time_ms = 1000.0 * self.proving_time / self.searches_total as f64;
-            println!("{:.1} ms average proving time", proving_time_ms);
+            let search_time_ms = 1000.0 * self.search_time / self.searches_total as f64;
+            println!("{:.1} ms average search time", search_time_ms);
         }
         println!("{}/{} OK", self.goals_success, self.goals_total);
         match status {
@@ -325,7 +325,7 @@ impl<'a> Builder<'a> {
         // Tracking statistics
         self.metrics.goals_done += 1;
         self.metrics.searches_total += 1;
-        self.metrics.proving_time += elapsed_f64;
+        self.metrics.search_time += elapsed_f64;
         let clauses_activated = prover.num_activated() as i32;
         self.metrics.clauses_activated += clauses_activated;
         let num_passive = prover.num_passive() as i32;
