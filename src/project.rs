@@ -799,7 +799,7 @@ impl Project {
         }
 
         if cursor.node().has_goal() {
-            let goal_context = cursor.goal_context().unwrap();
+            let goal_context = cursor.goal().unwrap();
             let prover = self.verify_with_fallback(
                 full_prover,
                 filtered_prover,
@@ -1760,7 +1760,7 @@ impl Project {
         let module_id = self.expect_ok(module_name);
         let env = self.get_env_by_id(module_id).expect("no env");
         let node = env.get_node_by_goal_name(theorem_name);
-        let goal_context = node.goal_context().unwrap();
+        let goal_context = node.goal().unwrap();
         let value = &goal_context.proposition.value;
         let fake_input = format!("<{}>", theorem_name);
         CodeGenerator::expect(&node.env().bindings, &fake_input, &value, expected);

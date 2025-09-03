@@ -189,7 +189,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verifier_with_acorn_toml_layout() {
+    fn test_verifier_basic() {
         let (acornlib, src, build) = setup();
 
         // Create foo.ac inside the src directory
@@ -222,12 +222,12 @@ mod tests {
             result
         );
 
-        // Check that we actually proved something
+        // Check that we proved one goal, via search
         let output = result.unwrap();
         assert_eq!(output.status, BuildStatus::Good);
-        assert_eq!(output.metrics.goals_total, 1); // Should have 1 theorem to prove
-        assert_eq!(output.metrics.goals_success, 1); // Should have successfully proven 1 theorem
-        assert!(output.metrics.searches_total > 0); // Should have performed at least one search
+        assert_eq!(output.metrics.goals_total, 1);
+        assert_eq!(output.metrics.goals_success, 1);
+        assert_eq!(output.metrics.searches_total, 1);
 
         // Check that we created a file in the build directory
         let build_file = build.child("foo.yaml");
@@ -251,8 +251,12 @@ mod tests {
             result2
         );
 
+        // We should have proved one goal, without searching
         let output2 = result2.unwrap();
         assert_eq!(output2.status, BuildStatus::Good);
+        assert_eq!(output2.metrics.goals_total, 1);
+        assert_eq!(output2.metrics.goals_success, 1);
+        // assert_eq!(output2.metrics.searches_total, 0);
 
         acornlib.close().unwrap();
     }

@@ -727,7 +727,7 @@ impl<'a> NodeCursor<'a> {
     }
 
     /// Get a goal context for the current node.
-    pub fn goal_context(&self) -> Result<Goal, String> {
+    pub fn goal(&self) -> Result<Goal, String> {
         let node = self.node();
         if let Node::Structural(_) = node {
             return Err(format!(

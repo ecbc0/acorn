@@ -22,7 +22,7 @@ fn prove_helper<'a>(
     };
     let node = env.get_node_by_goal_name(goal_name);
     let facts = node.usable_facts(project);
-    let goal_context = node.goal_context().unwrap();
+    let goal_context = node.goal().unwrap();
     let mut prover = Prover::new(&project, false);
     for fact in facts {
         prover.add_fact(fact);
@@ -88,7 +88,7 @@ pub fn verify(text: &str) -> Outcome {
     };
     for cursor in env.iter_goals() {
         let facts = cursor.usable_facts(&project);
-        let goal_context = cursor.goal_context().unwrap();
+        let goal_context = cursor.goal().unwrap();
         println!("proving: {}", goal_context.name);
         let mut prover = Prover::new(&project, false);
         for fact in facts {

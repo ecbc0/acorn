@@ -29,6 +29,9 @@ pub struct BuildMetrics {
     /// The number of goals that were successfully proven.
     pub goals_success: i32,
 
+    /// How many goals were proven by an existing certificate.
+    pub existing_certs: i32,
+
     /// How many proof searches we did.
     pub searches_total: i32,
 
@@ -413,37 +416,32 @@ impl<'a> Builder<'a> {
 
     /// Logs a cache hit for this node and every child of it.
     /// Returns the cursor to its initial state when done.
-    pub fn log_proving_cache_hit(&mut self, node: &mut NodeCursor) {
-        if node.num_children() > 0 {
-            node.descend(0);
+    pub fn log_proving_cache_hit(&mut self, cursor: &mut NodeCursor) {
+        if cursor.num_children() > 0 {
+            cursor.descend(0);
             loop {
-                self.log_proving_cache_hit(node);
-                if node.has_next() {
-                    node.next();
+                self.log_proving_cache_hit(cursor);
+                if cursor.has_next() {
+                    cursor.next();
                 } else {
                     break;
                 }
             }
-            node.ascend();
+            cursor.ascend();
         }
-        if node.node().has_goal() {
-            let goal_context = node.goal_context().unwrap();
+        if cursor.node().has_goal() {
+            let goal = cursor.goal().unwrap();
             self.metrics.goals_done += 1;
             self.metrics.goals_success += 1;
-            self.log_verified(goal_context.first_line, goal_context.last_line);
+            self.log_verified(goal.first_line, goal.last_line);
         }
     }
 
     /// Create a build event for a proof that was other than successful.
-    fn make_event(
-        &mut self,
-        goal_context: &Goal,
-        message: &str,
-        sev: DiagnosticSeverity,
-    ) -> BuildEvent {
-        let full_message = format!("{} {}", goal_context.name, message);
+    fn make_event(&mut self, goal: &Goal, message: &str, sev: DiagnosticSeverity) -> BuildEvent {
+        let full_message = format!("{} {}", goal.name, message);
         let diagnostic = Diagnostic {
-            range: goal_context.proposition.source.range,
+            range: goal.proposition.source.range,
             severity: Some(sev),
             message: full_message.clone(),
             ..Diagnostic::default()

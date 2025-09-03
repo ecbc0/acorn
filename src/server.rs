@@ -706,7 +706,7 @@ impl Backend {
             }
         }
         let cursor = NodeCursor::from_path(env, &path);
-        let goal_context = match cursor.goal_context() {
+        let goal_context = match cursor.goal() {
             Ok(goal_context) => goal_context,
             Err(s) => return self.search_fail(params, &s),
         };

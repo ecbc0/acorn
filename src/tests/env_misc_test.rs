@@ -153,7 +153,7 @@ fn test_if_block_ending_with_exists() {
     let module = p.expect_ok("main");
     let env = p.get_env_by_id(module).unwrap();
     for node in env.iter_goals() {
-        node.goal_context().unwrap();
+        node.goal().unwrap();
     }
 }
 
@@ -174,7 +174,7 @@ fn test_forall_block_ending_with_exists() {
     let module = p.expect_ok("main");
     let env = p.get_env_by_id(module).unwrap();
     for node in env.iter_goals() {
-        node.goal_context().unwrap();
+        node.goal().unwrap();
     }
 }
 

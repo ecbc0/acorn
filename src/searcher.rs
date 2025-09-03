@@ -57,7 +57,7 @@ impl Searcher {
         })?;
 
         let cursor = NodeCursor::from_path(env, &path);
-        let goal_context = cursor.goal_context().map_err(|e| {
+        let goal_context = cursor.goal().map_err(|e| {
             format!(
                 "Error getting goal at line {} in {}: {}",
                 self.line_number, self.target, e

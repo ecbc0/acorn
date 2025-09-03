@@ -381,7 +381,7 @@ impl Environment {
     pub fn get_node_by_goal_name(&self, name: &str) -> NodeCursor {
         let mut names = Vec::new();
         for node in self.iter_goals() {
-            let context = node.goal_context().unwrap();
+            let context = node.goal().unwrap();
             if context.name == name {
                 return node;
             }
