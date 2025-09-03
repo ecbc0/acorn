@@ -70,7 +70,12 @@ impl BuildMetrics {
 
     pub fn print(&self, status: BuildStatus) {
         println!();
-
+        if self.cached_certs > 0 {
+            println!("{} cached certificates", self.cached_certs);
+        }
+        if self.unused_certs > 0 {
+            println!("{} unused certificates", self.unused_certs);
+        }
         println!(
             "{} searches performed ({} full, {} filtered, {} fallback)",
             self.searches_total, self.searches_full, self.searches_filtered, self.searches_fallback
