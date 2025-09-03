@@ -833,21 +833,20 @@ impl Project {
         worklist: &mut Option<CertificateWorklist>,
     ) -> Prover {
         full_prover.set_goal(goal);
+
+        // Check for an existing cert
         if let Some(worklist) = worklist.as_mut() {
-            let start = std::time::Instant::now();
             let indexes = worklist.get_indexes(&goal.name);
             for i in indexes {
                 let cert = worklist.get_cert(*i).unwrap();
                 if full_prover.check_cert(cert, self, &env.bindings).is_ok() {
-                    builder.search_finished(
-                        &mut full_prover,
-                        goal,
-                        Outcome::Success,
-                        start.elapsed(),
-                        self,
-                        env,
-                        new_certs,
-                    );
+                    builder.metrics.existing_certs += 1;
+                    builder.metrics.goals_done += 1;
+                    builder.metrics.goals_success += 1;
+                    builder.log_verified(goal.first_line, goal.last_line);
+                    if let Some(new_certs) = new_certs {
+                        new_certs.push(cert.clone());
+                    }
                     worklist.remove(&goal.name, *i);
                     return full_prover;
                 }
