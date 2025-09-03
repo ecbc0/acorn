@@ -237,12 +237,12 @@ mod tests {
             "Module cache file should exist at build/foo.yaml"
         );
 
-        // Check that we created a JSONL file for certificates
+        // Check that the cert file has one line
         let cert_file = build.child("foo.jsonl");
-        assert!(
-            cert_file.exists(),
-            "Certificate file should exist at build/foo.jsonl"
-        );
+        assert!(cert_file.exists(), "build/foo.jsonl should exist");
+        let jsonl_content = std::fs::read_to_string(cert_file.path()).unwrap();
+        let line_count = jsonl_content.lines().count();
+        assert_eq!(line_count, 1,);
 
         // Verify again
         let result2 = verifier.run();
@@ -259,6 +259,12 @@ mod tests {
         assert_eq!(output2.metrics.goals_success, 1);
         assert_eq!(output2.metrics.cached_certs, 1);
         assert_eq!(output2.metrics.searches_total, 0);
+
+        // Check that the cert file still has one line
+        assert!(cert_file.exists(), "build/foo.jsonl should exist");
+        let jsonl_content = std::fs::read_to_string(cert_file.path()).unwrap();
+        let line_count = jsonl_content.lines().count();
+        assert_eq!(line_count, 1,);
 
         acornlib.close().unwrap();
     }
