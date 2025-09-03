@@ -228,6 +228,7 @@ mod tests {
         assert_eq!(output.metrics.goals_total, 1);
         assert_eq!(output.metrics.goals_success, 1);
         assert_eq!(output.metrics.cached_certs, 0);
+        assert_eq!(output.metrics.unused_certs, 0);
         assert_eq!(output.metrics.searches_total, 1);
 
         // Check that we created a file in the build directory
@@ -258,6 +259,7 @@ mod tests {
         assert_eq!(output2.metrics.goals_total, 1);
         assert_eq!(output2.metrics.goals_success, 1);
         assert_eq!(output2.metrics.cached_certs, 1);
+        assert_eq!(output2.metrics.unused_certs, 0);
         assert_eq!(output2.metrics.searches_total, 0);
 
         // Check that the cert file still has one line

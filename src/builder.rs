@@ -32,6 +32,9 @@ pub struct BuildMetrics {
     /// How many goals were proven by a cached certificate.
     pub cached_certs: i32,
 
+    /// How many cached certificates for a file we verified were unused.
+    pub unused_certs: i32,
+
     /// How many proof searches we did.
     pub searches_total: i32,
 

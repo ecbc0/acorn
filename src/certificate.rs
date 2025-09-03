@@ -149,6 +149,11 @@ impl CertificateWorklist {
             }
         }
     }
+
+    /// Get the number of unused certificates remaining in the worklist
+    pub fn unused(&self) -> usize {
+        self.indexes_for_goal.values().map(|v| v.len()).sum()
+    }
 }
 
 #[cfg(test)]

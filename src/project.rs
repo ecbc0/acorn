@@ -725,6 +725,10 @@ impl Project {
                 builder.log_info(format!("error in module cache set: {}", e));
             }
 
+            if let Some(worklist) = worklist {
+                builder.metrics.unused_certs += worklist.unused() as i32;
+            }
+
             if let Some(certs) = new_certs {
                 // Insert the new CertificateStore into the build cache
                 let cert_store = CertificateStore { certs };
