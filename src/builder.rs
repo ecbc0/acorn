@@ -455,4 +455,29 @@ impl<'a> Builder<'a> {
         self.current_module_good = false;
         self.status = BuildStatus::Error;
     }
+
+    /// Sets the builder to only build a single goal.
+    /// Takes a target module name and an external line number (1-based).
+    /// Does not check that there is a goal at this line.
+    pub fn set_single_goal(
+        &mut self,
+        project: &mut Project,
+        target: &str,
+        external_line_number: u32,
+    ) -> Result<(), String> {
+        // Convert from 1-based (external) to 0-based (internal) line number
+        let internal_line_number = external_line_number - 1;
+
+        let module_id = project
+            .load_module_by_name(target)
+            .map_err(|e| format!("Failed to load module '{}': {}", target, e))?;
+
+        let module_descriptor = project
+            .get_module_descriptor(module_id)
+            .ok_or_else(|| format!("No descriptor found for module '{}'", target))?
+            .clone();
+
+        self.single_goal = Some((module_descriptor, internal_line_number));
+        Ok(())
+    }
 }
