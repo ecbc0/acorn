@@ -38,9 +38,6 @@ pub struct Verifier {
     /// If None, all modules are verified.
     target: Option<String>,
 
-    /// If true, a dataset is created, for training.
-    create_dataset: bool,
-
     /// The starting path to find the acorn library from.
     start_path: PathBuf,
 }
@@ -50,12 +47,10 @@ impl Verifier {
         start_path: PathBuf,
         config: ProjectConfig,
         target: Option<String>,
-        create_dataset: bool,
     ) -> Self {
         Self {
             config,
             target,
-            create_dataset,
             start_path,
         }
     }
@@ -127,9 +122,6 @@ impl Verifier {
         if !self.config.check_hashes {
             builder.log_when_slow = true;
         }
-        if self.create_dataset {
-            builder.create_dataset();
-        }
         if self.target.is_none() {
             builder.log_secondary_errors = false;
         }
@@ -137,9 +129,6 @@ impl Verifier {
         // Build
         project.build(&mut builder);
         builder.metrics.print(builder.status);
-        if let Some(dataset) = builder.dataset {
-            dataset.save();
-        }
 
         if !self.config.check_hashes && builder.metrics.searches_fallback > 0 {
             println!("Warning: the filtered prover was not able to handle all goals.");
@@ -205,7 +194,6 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("foo".to_string()),
-            false,
         );
 
         // Test that the verifier can run successfully on our theorem in the src directory
@@ -297,7 +285,6 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("foo.bar".to_string()),
-            false,
         );
 
         // Run the verifier the first time
@@ -394,7 +381,6 @@ mod tests {
             acornlib.path().to_path_buf(),
             config.clone(),
             Some("main".to_string()),
-            false,
         );
         let output = verifier1.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
@@ -403,7 +389,6 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
-            false,
         );
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
@@ -454,7 +439,6 @@ mod tests {
             acornlib.path().to_path_buf(),
             config.clone(),
             Some("main".to_string()),
-            false,
         );
         let output = verifier1.run().unwrap();
         assert_eq!(output.num_verified(), 5);
@@ -463,7 +447,6 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
-            false,
         );
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good,);
@@ -491,7 +474,6 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("foo".to_string()),
-            false,
         );
 
         let result = verifier.run();
@@ -541,7 +523,6 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
-            false,
         );
 
         let result = verifier.run();
@@ -616,7 +597,6 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
-            false,
         );
         let output = verifier1.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);

@@ -31,10 +31,6 @@ struct Args {
     )]
     target: Option<String>,
 
-    /// Create a dataset from the prover logs
-    #[clap(long, help = "Create a dataset from the prover logs.")]
-    dataset: bool,
-
     /// Use proof certificates
     #[clap(long, help = "Use proof certificates.")]
     certs: bool,
@@ -165,7 +161,6 @@ async fn main() {
             current_dir,
             config,
             Some(new_target),
-            args.dataset,
         );
         match verifier.run() {
             Err(e) => {
@@ -187,7 +182,6 @@ async fn main() {
         current_dir,
         config,
         args.target,
-        args.dataset,
     );
     match verifier.run() {
         Err(e) => {
