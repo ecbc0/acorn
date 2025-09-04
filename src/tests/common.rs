@@ -61,7 +61,7 @@ pub fn prove_with_old_codegen(
 
 /// Expects the proof to succeed, and a valid concrete proof to be generated.
 pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certificate {
-    let (project, base_env, mut prover, outcome) = prove_helper(project, module_name, goal_name);
+    let (project, base_env, prover, outcome) = prove_helper(project, module_name, goal_name);
     assert_eq!(outcome, Outcome::Success);
     let cursor = base_env.get_node_by_goal_name(goal_name);
     let env = cursor.goal_env().unwrap();

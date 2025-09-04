@@ -376,7 +376,7 @@ impl Prover {
     /// If no proof was found, creates a placeholder certificate with no proof.
     /// If `print` is true, we print the proof.
     pub fn make_cert(
-        &mut self,
+        &self,
         print: bool,
         project: &Project,
         bindings: &BindingMap,
