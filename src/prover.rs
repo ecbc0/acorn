@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
 use std::sync::atomic::AtomicBool;
@@ -428,25 +427,6 @@ impl Prover {
         // Check parameter removed - was always false
 
         Ok(cert)
-    }
-
-    /// Returns whether this certificate is okay.
-    /// This clones various components of the prover that we might mutate.
-    /// It's unclear to me whether this is problematically slow, or something we can ignore.
-    pub fn old_check_cert(
-        &self,
-        cert: &Certificate,
-        project: &Project,
-        bindings: &BindingMap,
-    ) -> Result<(), Error> {
-        let mut checker = self.checker.clone();
-        let proof = match &cert.proof {
-            Some(proof) => proof,
-            None => return Err("Certificate has no proof".to_string().into()),
-        };
-        let mut bindings = Cow::Borrowed(bindings);
-        let mut normalizer = self.normalizer.clone();
-        checker.check_proof(proof, project, &mut bindings, &mut normalizer)
     }
 
     fn report_term_graph_contradiction(&mut self, contradiction: TermGraphContradiction) {

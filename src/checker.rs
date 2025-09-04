@@ -140,7 +140,7 @@ impl Checker {
     }
 
     /// Helper method to check a single line of code in a proof.
-    pub fn check_code(
+    fn check_code(
         &mut self,
         code: &str,
         project: &Project,
@@ -251,16 +251,18 @@ impl Checker {
         }
     }
 
-    /// Use the checker to check a proof that we just generated.
-    /// This does mutate the checker itself, so if you do anything else afterwards it'll be weird.
-    pub fn check_proof(
+    /// Check a certificate. It is expected that the certificate has a proof.
+    pub fn check_cert(
         &mut self,
-        codes: &[String],
+        cert: &Certificate,
         project: &Project,
         bindings: &mut Cow<BindingMap>,
         normalizer: &mut Normalizer,
     ) -> Result<(), Error> {
-        for code in codes {
+        let Some(proof) = &cert.proof else {
+            return Err(Error::NoProof);
+        };
+        for code in proof {
             if self.has_contradiction() {
                 return Ok(());
             }
@@ -274,20 +276,6 @@ impl Checker {
                 "proof does not result in a contradiction".to_string(),
             ))
         }
-    }
-
-    /// Check a certificate. It is expected that the certificate has a proof.
-    pub fn check_cert(
-        &mut self,
-        cert: &Certificate,
-        project: &Project,
-        bindings: &mut Cow<BindingMap>,
-        normalizer: &mut Normalizer,
-    ) -> Result<(), Error> {
-        let Some(proof) = &cert.proof else {
-            return Err(Error::NoProof);
-        };
-        self.check_proof(proof, project, bindings, normalizer)
     }
 
     #[cfg(test)]

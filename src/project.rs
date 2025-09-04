@@ -1,4 +1,5 @@
 use core::panic;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -876,7 +877,10 @@ impl Project {
             let indexes = worklist.get_indexes(&goal.name);
             for i in indexes {
                 let cert = worklist.get_cert(*i).unwrap();
-                match full_prover.old_check_cert(cert, self, &env.bindings) {
+                let mut checker = full_prover.checker.clone();
+                let mut normalizer = full_prover.normalizer.clone();
+                let mut bindings = Cow::Borrowed(&env.bindings);
+                match checker.check_cert(cert, self, &mut bindings, &mut normalizer) {
                     Ok(()) => {
                         builder.metrics.cached_certs += 1;
                         builder.metrics.goals_done += 1;
@@ -922,7 +926,10 @@ impl Project {
                 if let Some(new_certs) = new_certs {
                     match filtered_prover.make_cert(&self, &env.bindings, builder.verbose) {
                         Ok(cert) => {
-                            if let Err(e) = full_prover.old_check_cert(&cert, self, &env.bindings) {
+                            let mut checker = full_prover.checker.clone();
+                            let mut normalizer = full_prover.normalizer.clone();
+                            let mut bindings = Cow::Borrowed(&env.bindings);
+                            if let Err(e) = checker.check_cert(&cert, self, &mut bindings, &mut normalizer) {
                                 builder.log_proving_error(
                                     &goal,
                                     &format!("filtered prover created cert that the full prover rejected: {}", e),

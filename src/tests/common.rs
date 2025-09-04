@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::certificate::Certificate;
 use crate::code_generator::Error;
 use crate::environment::Environment;
@@ -63,7 +65,10 @@ pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certi
         Err(e) => panic!("make_cert failed: {}", e),
     };
 
-    if let Err(e) = prover.old_check_cert(&cert, project, &env.bindings) {
+    let mut checker = prover.checker.clone();
+    let mut normalizer = prover.normalizer.clone();
+    let mut bindings = Cow::Borrowed(&env.bindings);
+    if let Err(e) = checker.check_cert(&cert, project, &mut bindings, &mut normalizer) {
         panic!("check_cert failed: {}", e);
     }
     cert
