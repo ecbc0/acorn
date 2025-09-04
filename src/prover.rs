@@ -186,85 +186,6 @@ impl Prover {
         self.active_set.iter_steps()
     }
 
-    /// Prints statistics about the prover state
-    pub fn print_stats(&self) {
-        // Kinda only printing this so that Solve(term) isn't unused
-        match &self.goal {
-            Some(goal) => {
-                let v = &goal.counterfactual;
-                println!("goal: disprove {}", v);
-            }
-            None => {
-                println!("no goal set");
-            }
-        }
-        println!("{} clauses in the active set", self.active_set.len());
-        println!("{} clauses in the passive set", self.passive_set.len());
-    }
-
-    /// Prints out the entire active set
-    pub fn print_active(&self, substr: Option<&str>) {
-        let mut count = 0;
-        for clause in self.active_set.iter_clauses() {
-            let clause = self.display(clause);
-            if let Some(substr) = substr {
-                if !clause.to_string().contains(substr) {
-                    continue;
-                }
-            }
-            count += 1;
-            println!("{}", clause);
-        }
-        if let Some(substr) = substr {
-            println!("{} active clauses matched {}", count, substr);
-        } else {
-            println!("{} clauses total in the active set", count);
-        }
-    }
-
-    /// Lists the clauses in the passive set, optionally filtered by a substring
-    pub fn print_passive(&self, substr: Option<&str>) {
-        let mut count = 0;
-        let steps: Vec<_> = self.passive_set.iter_steps().collect();
-        // Only print the first ones
-        for step in steps.iter().take(500) {
-            let clause = self.display(&step.clause);
-            if let Some(substr) = substr {
-                if !clause.to_string().contains(substr) {
-                    continue;
-                }
-            }
-            count += 1;
-            println!("{}", clause);
-            println!("  {}", step);
-        }
-        if let Some(substr) = substr {
-            println!("{} passive clauses matched {}", count, substr);
-        } else {
-            if steps.len() > count {
-                println!("  ...omitting {} more", steps.len() - count);
-            }
-            println!("{} clauses total in the passive set", steps.len());
-        }
-    }
-
-    /// Prints out information for a specific term
-    pub fn print_term_info(&self, s: &str) {
-        let mut count = 0;
-        for clause in self.active_set.iter_clauses() {
-            let clause_str = self.display(clause).to_string();
-            if clause_str.contains(s) {
-                println!("{}", clause_str);
-                count += 1;
-            }
-        }
-        println!(
-            "{} clause{} matched",
-            count,
-            if count == 1 { "" } else { "s" }
-        );
-    }
-
     /// (description, id) for every clause this rule depends on.
     /// Entries with an id are references to clauses we are using.
     /// An entry with no id is like a comment, it won't be linked to anything.
@@ -814,7 +735,7 @@ impl Prover {
     /// Convert a clause to a jsonable form
     /// We only take active ids, because the others have no external meaning.
     /// If we are given a binding map, use it to make a nicer-looking display.
-    pub fn to_clause_info(
+    fn to_clause_info(
         &self,
         bindings: &BindingMap,
         id: Option<usize>,
