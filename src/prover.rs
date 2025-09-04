@@ -377,9 +377,9 @@ impl Prover {
     /// If `print` is true, we print the proof.
     pub fn make_cert(
         &mut self,
+        print: bool,
         project: &Project,
         bindings: &BindingMap,
-        print: bool,
     ) -> Result<Certificate, Error> {
         let goal_name = self
             .goal
