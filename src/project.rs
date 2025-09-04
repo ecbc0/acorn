@@ -517,13 +517,23 @@ impl Project {
 
         // The second pass is the "proving phase".
         for (target, env) in targets.into_iter().zip(envs) {
+            if let Some((ref m, _)) = builder.single_goal {
+                if m != target {
+                    continue;
+                }
+            }
             self.verify_module(&target, env, builder);
             if builder.status.is_error() {
                 return;
             }
         }
 
-        if self.using_certs() && builder.status.is_good() && self.config.write_cache {
+        // There's a lot of conditions for when we actually write to the cache
+        if self.using_certs()
+            && builder.status.is_good()
+            && self.config.write_cache
+            && builder.single_goal.is_none()
+        {
             let build_cache = builder.build_cache.as_ref().unwrap();
             if let Err(e) = build_cache.save(self.cache_dir.clone()) {
                 builder.log_info(format!("error saving build cache: {}", e));
@@ -734,7 +744,7 @@ impl Project {
             cursor.next();
         }
 
-        if builder.module_proving_complete(target) {
+        if builder.module_proving_complete(target) && builder.single_goal.is_none() {
             // The module was entirely verified. We can update the cache.
             if let Err(e) = self
                 .module_caches
@@ -821,11 +831,11 @@ impl Project {
         }
 
         if cursor.node().has_goal() {
-            let goal_context = cursor.goal().unwrap();
+            let goal = cursor.goal().unwrap();
             let prover = self.verify_with_fallback(
                 full_prover,
                 filtered_prover,
-                &goal_context,
+                &goal,
                 builder,
                 cursor.goal_env().unwrap(),
                 new_certs,

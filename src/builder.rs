@@ -205,6 +205,10 @@ pub struct Builder<'a> {
     /// The new build cache, that is being produced as a result of this build.
     /// Only populated when use_certs is true.
     pub build_cache: Option<BuildCache>,
+
+    /// When this is set, the builder only builds a single goal.
+    /// We specify goal by (module, line number).
+    pub single_goal: Option<(ModuleDescriptor, u32)>,
 }
 
 impl<'a> Builder<'a> {
@@ -220,6 +224,7 @@ impl<'a> Builder<'a> {
             current_module: None,
             current_module_good: true,
             build_cache: None,
+            single_goal: None,
         }
     }
 
@@ -441,23 +446,23 @@ impl<'a> Builder<'a> {
     }
 
     /// Note that this will blue-squiggle in VS Code, so don't just use this willy-nilly.
-    pub fn log_proving_info(&mut self, goal_context: &Goal, message: &str) {
-        let event = self.make_event(goal_context, message, DiagnosticSeverity::INFORMATION);
+    pub fn log_proving_info(&mut self, goal: &Goal, message: &str) {
+        let event = self.make_event(goal, message, DiagnosticSeverity::INFORMATION);
         (self.event_handler)(event);
     }
 
     /// Logs a warning. Warnings can only happen during the proving phase.
     /// This will mark the build as "not good", so we won't cache it.
-    fn log_proving_warning(&mut self, goal_context: &Goal, message: &str) {
-        let event = self.make_event(goal_context, message, DiagnosticSeverity::WARNING);
+    fn log_proving_warning(&mut self, goal: &Goal, message: &str) {
+        let event = self.make_event(goal, message, DiagnosticSeverity::WARNING);
         (self.event_handler)(event);
         self.current_module_good = false;
         self.status.warn();
     }
 
     /// Logs an error during the proving phase.
-    pub fn log_proving_error(&mut self, goal_context: &Goal, message: &str) {
-        let mut event = self.make_event(goal_context, message, DiagnosticSeverity::WARNING);
+    pub fn log_proving_error(&mut self, goal: &Goal, message: &str) {
+        let mut event = self.make_event(goal, message, DiagnosticSeverity::WARNING);
 
         // Set progress as complete, because an error will halt the build
         event.progress = Some((self.metrics.goals_total, self.metrics.goals_total));
