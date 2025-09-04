@@ -915,7 +915,16 @@ impl Project {
             if outcome == Outcome::Success {
                 if let Some(new_certs) = new_certs {
                     match filtered_prover.make_cert(&self, &env.bindings, true, false) {
-                        Ok(cert) => new_certs.push(cert),
+                        Ok(cert) => {
+                            if let Err(e) = full_prover.check_cert(&cert, self, &env.bindings) {
+                                builder.log_proving_error(
+                                    &goal,
+                                    &format!("filtered prover created cert that the full prover rejected: {}", e),
+                                );
+                                return;
+                            }
+                            new_certs.push(cert);
+                        }
                         Err(e) => {
                             builder.log_proving_error(
                                 &goal,
