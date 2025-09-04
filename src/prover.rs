@@ -156,10 +156,10 @@ impl Prover {
     }
 
     /// Sets the goal for the prover
-    pub fn set_goal(&mut self, goal_context: &Goal) {
+    pub fn set_goal(&mut self, goal: &Goal) {
         assert!(self.goal.is_none());
 
-        let prop = &goal_context.proposition;
+        let prop = &goal.proposition;
         // Negate the goal and add it as a counterfactual assumption.
         let (hypo, counterfactual) = prop.value.clone().negate_goal();
         if let Some(hypo) = hypo {
@@ -170,9 +170,9 @@ impl Prover {
             prop.source.as_negated_goal(),
         ));
         self.goal = Some(NormalizedGoal {
-            name: goal_context.name.clone(),
+            name: goal.name.clone(),
             counterfactual,
-            inconsistency_okay: goal_context.inconsistency_okay,
+            inconsistency_okay: goal.inconsistency_okay,
         });
     }
 
@@ -694,7 +694,6 @@ impl Prover {
         }
     }
 
-
     /// Gets a clause by its proof step ID
     fn get_clause(&self, id: ProofStepId) -> &Clause {
         match id {
@@ -708,7 +707,12 @@ impl Prover {
     }
 
     /// Attempts to convert this clause to code, but shows the clause form if that's all we can.
-    fn clause_to_code(&self, clause: &Clause, bindings: &BindingMap, normalizer: &Normalizer) -> String {
+    fn clause_to_code(
+        &self,
+        clause: &Clause,
+        bindings: &BindingMap,
+        normalizer: &Normalizer,
+    ) -> String {
         let denormalized = normalizer.denormalize(clause, None);
         match CodeGenerator::new(bindings).value_to_code(&denormalized) {
             Ok(code) => return code,
@@ -722,10 +726,7 @@ impl Prover {
                 }
             }
         };
-        DisplayClause {
-            clause,
-            normalizer,
-        }.to_string()
+        DisplayClause { clause, normalizer }.to_string()
     }
 
     /// Convert a clause to a jsonable form
@@ -797,7 +798,13 @@ impl Prover {
     ) -> Vec<ProofStepInfo> {
         let mut result = vec![];
         for (step_id, step) in &proof.all_steps {
-            result.push(self.to_proof_step_info(step, step_id.active_id(), project, bindings, normalizer));
+            result.push(self.to_proof_step_info(
+                step,
+                step_id.active_id(),
+                project,
+                bindings,
+                normalizer,
+            ));
         }
         result
     }
@@ -815,8 +822,13 @@ impl Prover {
         if !self.active_set.has_step(id) {
             return None;
         }
-        let step =
-            self.to_proof_step_info(self.active_set.get_step(id), Some(id), project, bindings, normalizer);
+        let step = self.to_proof_step_info(
+            self.active_set.get_step(id),
+            Some(id),
+            project,
+            bindings,
+            normalizer,
+        );
         let mut consequences = vec![];
         let mut num_consequences = 0;
         let limit = 100;
@@ -824,7 +836,13 @@ impl Prover {
         // Check if the final step is a consequence of this clause
         if let Some(final_step) = &self.final_step {
             if final_step.depends_on_active(id) {
-                consequences.push(self.to_proof_step_info(&final_step, None, project, bindings, normalizer));
+                consequences.push(self.to_proof_step_info(
+                    &final_step,
+                    None,
+                    project,
+                    bindings,
+                    normalizer,
+                ));
                 num_consequences += 1;
             }
         }
@@ -832,7 +850,13 @@ impl Prover {
         // Check the active set for consequences
         for (i, step) in self.active_set.find_consequences(id) {
             if consequences.len() < limit {
-                consequences.push(self.to_proof_step_info(step, Some(i), project, bindings, normalizer));
+                consequences.push(self.to_proof_step_info(
+                    step,
+                    Some(i),
+                    project,
+                    bindings,
+                    normalizer,
+                ));
             }
             num_consequences += 1;
         }
@@ -840,7 +864,8 @@ impl Prover {
         // Check the passive set for consequences
         for step in self.passive_set.find_consequences(id) {
             if consequences.len() < limit {
-                consequences.push(self.to_proof_step_info(step, None, project, bindings, normalizer));
+                consequences
+                    .push(self.to_proof_step_info(step, None, project, bindings, normalizer));
             }
             num_consequences += 1;
         }
