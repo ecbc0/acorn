@@ -586,7 +586,7 @@ impl Project {
             let module_id = self.get_module_id_by_name(module_name)?;
             premises.insert(module_id, premise_set.iter().cloned().collect());
         }
-        let mut prover = Prover::new(&self, false);
+        let mut prover = Prover::new(&self);
 
         // Add facts from the dependencies
         let empty = HashSet::new();
@@ -663,7 +663,7 @@ impl Project {
         builder.module_proving_started(target.clone());
 
         // The full prover has access to all facts.
-        let mut full_prover = Prover::new(&self, false);
+        let mut full_prover = Prover::new(&self);
         for fact in self.imported_facts(env.module_id, None) {
             full_prover.add_fact(fact);
         }

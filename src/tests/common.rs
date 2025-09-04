@@ -23,12 +23,11 @@ fn prove_helper<'a>(
     let node = env.get_node_by_goal_name(goal_name);
     let facts = node.usable_facts(project);
     let goal_context = node.goal().unwrap();
-    let mut prover = Prover::new(&project, false);
+    let mut prover = Prover::new(&project);
     for fact in facts {
         prover.add_fact(fact);
     }
     prover.set_goal(&goal_context);
-    prover.verbose = true;
     prover.strict_codegen = true;
     let outcome = prover.quick_search();
     if let Outcome::Error(s) = outcome {
@@ -90,13 +89,12 @@ pub fn verify(text: &str) -> Outcome {
         let facts = cursor.usable_facts(&project);
         let goal_context = cursor.goal().unwrap();
         println!("proving: {}", goal_context.name);
-        let mut prover = Prover::new(&project, false);
+        let mut prover = Prover::new(&project);
         for fact in facts {
             prover.add_fact(fact);
         }
         prover.set_goal(&goal_context);
-        prover.verbose = true;
-        // This is a key difference between our verification tests, and our real verification.
+            // This is a key difference between our verification tests, and our real verification.
         // This helps us test that verification fails in cases where we do have an
         // infinite rabbit hole we could go down.
         let outcome = prover.quick_shallow_search();

@@ -708,7 +708,7 @@ impl Backend {
             Err(s) => return self.search_fail(params, &s),
         };
         let superseded = Arc::new(AtomicBool::new(false));
-        let mut prover = Prover::new(&project, false);
+        let mut prover = Prover::new(&project);
         for fact in cursor.usable_facts(&project) {
             prover.add_fact(fact);
         }

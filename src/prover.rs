@@ -43,9 +43,6 @@ pub struct Prover {
     /// TODO: make the checker not just live inside the prover.
     checker: Checker,
 
-    /// A verbose prover prints out a lot of stuff.
-    pub verbose: bool,
-
     /// The last step of the proof search that leads to a contradiction.
     /// If we haven't finished the search, this is None.
     final_step: Option<ProofStep>,
@@ -125,13 +122,12 @@ impl fmt::Display for Outcome {
 
 impl Prover {
     /// Creates a new Prover instance
-    pub fn new(project: &Project, verbose: bool) -> Prover {
+    pub fn new(project: &Project) -> Prover {
         Prover {
             normalizer: Normalizer::new(),
             active_set: ActiveSet::new(),
             passive_set: PassiveSet::new(),
             checker: Checker::new(),
-            verbose,
             final_step: None,
             stop_flags: vec![project.build_stopped.clone()],
             error: None,
@@ -641,20 +637,6 @@ impl Prover {
             return true;
         }
 
-        if self.verbose {
-            let prefix = match step.truthiness {
-                Truthiness::Factual => " fact",
-                Truthiness::Hypothetical => " hypothesis",
-                Truthiness::Counterfactual => {
-                    if step.rule.is_negated_goal() {
-                        " negated goal"
-                    } else {
-                        ""
-                    }
-                }
-            };
-            println!("activating{}: {}", prefix, self.display(&step.clause));
-        }
         self.activate(step)
     }
 
@@ -679,14 +661,6 @@ impl Prover {
         let (alt_activated_id, generated_steps) = self.active_set.activate(activated_step);
         assert_eq!(activated_id, alt_activated_id);
 
-        let len = generated_steps.len();
-        if self.verbose {
-            println!(
-                "  generated {} new clause{}",
-                len,
-                if len == 1 { "" } else { "s" }
-            );
-        }
         let mut new_steps = vec![];
         for step in generated_steps {
             if step.finishes_proof() {
@@ -790,18 +764,10 @@ impl Prover {
                 }
             }
             if self.nonfactual_activations >= activation_limit {
-                if self.verbose {
-                    println!("activations hit the limit: {}", activation_limit);
-                }
                 return Outcome::Constrained;
             }
             let elapsed = start_time.elapsed().as_secs_f32();
             if elapsed >= seconds {
-                if self.verbose {
-                    println!("active set size: {}", self.active_set.len());
-                    println!("nonfactual activations: {}", self.nonfactual_activations);
-                    println!("prover hit time limit after {} seconds", elapsed);
-                }
                 return Outcome::Timeout;
             }
         }

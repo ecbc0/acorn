@@ -64,7 +64,6 @@ impl Searcher {
 
         println!("proving {} ...", goal_context.name);
 
-        let verbose = false;
         // Try to use the filtered prover
         let module_descriptor = project
             .get_module_descriptor(module_id)
@@ -89,7 +88,6 @@ impl Searcher {
             }
         };
 
-        prover.verbose = verbose;
         prover.strict_codegen = true;
         prover.set_goal(&goal_context);
 
