@@ -43,21 +43,21 @@ pub struct Verifier {
 
     /// Optional external line number (1-based) to verify a single goal.
     /// If this is set, target must be as well.
-    line: Option<u32>,
+    pub line: Option<u32>,
+
+    /// The verbose flag makes us print miscellaneous debug output.
+    /// Don't set it from within the language server.
+    pub verbose: bool,
 }
 
 impl Verifier {
-    pub fn new(
-        start_path: PathBuf,
-        config: ProjectConfig,
-        target: Option<String>,
-        line: Option<u32>,
-    ) -> Self {
+    pub fn new(start_path: PathBuf, config: ProjectConfig, target: Option<String>) -> Self {
         Self {
             config,
             target,
             start_path,
-            line,
+            line: None,
+            verbose: false,
         }
     }
 
@@ -143,6 +143,8 @@ impl Verifier {
             }
         }
 
+        builder.verbose = self.verbose;
+
         // Build
         project.build(&mut builder);
         builder.metrics.print(builder.status);
@@ -209,7 +211,6 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("foo".to_string()),
-            None,
         );
 
         // Test that the verifier can run successfully on our theorem in the src directory
@@ -299,7 +300,6 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("foo.bar".to_string()),
-            None,
         );
 
         // Run the verifier the first time
@@ -394,7 +394,6 @@ mod tests {
             acornlib.path().to_path_buf(),
             config.clone(),
             Some("main".to_string()),
-            None,
         );
         let output = verifier1.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
@@ -403,7 +402,6 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
-            None,
         );
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
@@ -452,7 +450,6 @@ mod tests {
             acornlib.path().to_path_buf(),
             config.clone(),
             Some("main".to_string()),
-            None,
         );
         let output = verifier1.run().unwrap();
         assert_eq!(output.num_verified(), 5);
@@ -461,7 +458,6 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
-            None,
         );
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good,);
@@ -487,7 +483,6 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("foo".to_string()),
-            None,
         );
 
         let result = verifier.run();
@@ -535,7 +530,6 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
-            None,
         );
 
         let result = verifier.run();
@@ -608,7 +602,6 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
-            None,
         );
         let output = verifier1.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
