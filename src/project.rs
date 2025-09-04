@@ -832,7 +832,7 @@ impl Project {
 
         if cursor.node().has_goal() {
             let goal = cursor.goal().unwrap();
-            let prover = self.verify_with_fallback(
+            self.verify_with_fallback(
                 full_prover,
                 filtered_prover,
                 &goal,
@@ -840,13 +840,11 @@ impl Project {
                 cursor.goal_env().unwrap(),
                 new_certs,
                 worklist,
+                new_premises,
             );
             if builder.status.is_error() {
                 return;
             }
-
-            // Gather the premises used by this proof
-            prover.get_useful_source_names(new_premises);
         }
     }
 
@@ -863,7 +861,8 @@ impl Project {
         env: &Environment,
         new_certs: &mut Option<Vec<Certificate>>,
         worklist: &mut Option<CertificateWorklist>,
-    ) -> Prover {
+        new_premises: &mut HashSet<(ModuleId, String)>,
+    ) {
         full_prover.set_goal(goal);
 
         // Check for a cached cert
@@ -881,7 +880,7 @@ impl Project {
                             new_certs.push(cert.clone());
                         }
                         worklist.remove(&goal.name, *i);
-                        return full_prover;
+                        return;
                     }
                     Err(e) if self.config.verify => {
                         // In verify mode, a cert that fails to verify is an error
@@ -889,7 +888,7 @@ impl Project {
                             goal,
                             &format!("certificate failed to verify: {}", e),
                         );
-                        return full_prover;
+                        return;
                     }
                     Err(_) => {
                         // Certificate didn't verify, continue to next cert or fall through
@@ -898,13 +897,13 @@ impl Project {
             }
         } else if self.config.verify {
             builder.log_proving_error(goal, "no worklist found");
-            return full_prover;
+            return;
         }
 
         // In verify mode, we should never reach the search phase
         if self.config.verify {
             builder.log_proving_error(goal, "no certificate found");
-            return full_prover;
+            return;
         }
 
         // Try the filtered prover
@@ -923,7 +922,8 @@ impl Project {
                     env,
                     new_certs,
                 );
-                return filtered_prover;
+                filtered_prover.get_useful_source_names(new_premises);
+                return;
             }
             builder.metrics.searches_fallback += 1;
         }
@@ -941,7 +941,7 @@ impl Project {
             env,
             new_certs,
         );
-        full_prover
+        full_prover.get_useful_source_names(new_premises);
     }
 
     // Does the build and returns when it's done, rather than asynchronously.
