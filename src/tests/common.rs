@@ -51,17 +51,22 @@ pub fn prove_with_old_codegen(
     (prover, outcome, code)
 }
 
-/// Expects the proof to succeed, and a concrete proof to be generated.
+/// Expects the proof to succeed, and a valid concrete proof to be generated.
 pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certificate {
     let (project, base_env, mut prover, outcome) = prove_helper(project, module_name, goal_name);
     assert_eq!(outcome, Outcome::Success);
     let cursor = base_env.get_node_by_goal_name(goal_name);
     let env = cursor.goal_env().unwrap();
 
-    match prover.make_cert(project, &env.bindings, true, true) {
+    let cert = match prover.make_cert(project, &env.bindings, false, true) {
         Ok(cert) => cert,
-        Err(e) => panic!("concrete proof check failed: {}", e),
+        Err(e) => panic!("make_cert failed: {}", e),
+    };
+
+    if let Err(e) = prover.check_cert(&cert, project, &env.bindings) {
+        panic!("check_cert failed: {}", e);
     }
+    cert
 }
 
 pub fn prove_as_main(text: &str, goal_name: &str) -> (Prover, Outcome, Result<Vec<String>, Error>) {
@@ -94,7 +99,7 @@ pub fn verify(text: &str) -> Outcome {
             prover.add_fact(fact);
         }
         prover.set_goal(&goal_context);
-            // This is a key difference between our verification tests, and our real verification.
+        // This is a key difference between our verification tests, and our real verification.
         // This helps us test that verification fails in cases where we do have an
         // infinite rabbit hole we could go down.
         let outcome = prover.quick_shallow_search();
