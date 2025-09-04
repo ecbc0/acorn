@@ -380,6 +380,7 @@ impl Prover {
         print: bool,
         project: &Project,
         bindings: &BindingMap,
+        normalizer: &Normalizer,
     ) -> Result<Certificate, Error> {
         let goal_name = self
             .goal
@@ -403,7 +404,7 @@ impl Prover {
         };
 
         if print {
-            self.print_proof(&proof, project, bindings, &self.normalizer);
+            self.print_proof(&proof, project, bindings, normalizer);
         }
 
         let cert = proof.make_cert(goal_name, bindings)?;
