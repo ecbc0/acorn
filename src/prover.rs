@@ -254,19 +254,6 @@ impl Prover {
         self.passive_set.len()
     }
 
-    /// Gets and prints the proof, if one exists
-    pub fn get_and_print_proof(&self, project: &Project, bindings: &BindingMap) -> Option<Proof> {
-        let proof = match self.get_condensed_proof() {
-            Some(proof) => proof,
-            None => {
-                println!("we do not have a proof");
-                return None;
-            }
-        };
-        self.print_proof(project, bindings, &proof);
-        Some(proof)
-    }
-
     /// Prints the proof in a human-readable form.
     pub fn print_proof(&self, project: &Project, bindings: &BindingMap, proof: &Proof) {
         println!(

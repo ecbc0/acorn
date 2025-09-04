@@ -46,9 +46,15 @@ pub fn prove_with_old_codegen(
     goal_name: &str,
 ) -> (Prover, Outcome, Result<Vec<String>, Error>) {
     let (project, env, prover, outcome) = prove_helper(project, module_name, goal_name);
-    let code = match prover.get_and_print_proof(project, &env.bindings) {
-        Some(proof) => proof.to_code(&env.bindings),
-        None => Err(Error::NoProof),
+    let code = match prover.get_condensed_proof() {
+        Some(proof) => {
+            prover.print_proof(project, &env.bindings, &proof);
+            proof.to_code(&env.bindings)
+        }
+        None => {
+            println!("we do not have a proof");
+            Err(Error::NoProof)
+        }
     };
     (prover, outcome, code)
 }
