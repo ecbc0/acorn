@@ -207,6 +207,7 @@ pub struct Builder<'a> {
 
     /// When this is set, the builder only builds a single goal.
     /// We specify goal by (module, line number).
+    /// This is an internal line number, which starts at 0.
     pub single_goal: Option<(ModuleDescriptor, u32)>,
 }
 

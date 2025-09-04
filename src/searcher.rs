@@ -16,6 +16,7 @@ pub struct Searcher {
 }
 
 impl Searcher {
+    /// Here, line number is an external line number, which starts at 1.
     pub fn new(start_path: PathBuf, target: String, line_number: u32) -> Self {
         Self {
             target,

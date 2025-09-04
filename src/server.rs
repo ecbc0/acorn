@@ -420,7 +420,7 @@ impl Backend {
     // If we can't find one in a logical location based on the editor, we use
     // the library bundled with the extension.
     fn new(client: Client, args: &ServerArgs) -> Backend {
-        let (library_root, cache_dir, cache_writable) = find_acorn_library(&args);
+        let (library_root, cache_dir, write_cache) = find_acorn_library(&args);
 
         log(&format!(
             "using acorn server version {}",
@@ -433,7 +433,7 @@ impl Backend {
 
         // The cache is always readable, only sometimes writable.
         let config = ProjectConfig {
-            write_cache: cache_writable,
+            write_cache,
             ..Default::default()
         };
         let project = Project::new(library_root, cache_dir, config);
