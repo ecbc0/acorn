@@ -40,7 +40,10 @@ struct Args {
     nohash: bool,
 
     /// Verify mode: error if any goal requires a search instead of just checking the cert
-    #[clap(long, help = "Error if any goal requires a search instead of just checking the cert.")]
+    #[clap(
+        long,
+        help = "Error if any goal requires a search instead of just checking the cert."
+    )]
     verify: bool,
 
     /// Search for a proof at a specific line number (requires target)
@@ -143,8 +146,8 @@ async fn main() {
         ..Default::default()
     };
 
-    // Run the verifier with input appended to a file.
-    if let Some(append) = args.append_to {
+    // Handle the append_to flag.
+    let target = if let Some(append) = args.append_to {
         let Some(target) = args.target else {
             println!("Error: --append_to requires a target file to be specified.");
             std::process::exit(1);
@@ -153,33 +156,13 @@ async fn main() {
             println!("Error: target is required to be \"-\".");
             std::process::exit(1);
         }
-        let new_target = target + ":" + &append;
-        let verifier = Verifier::new(
-            current_dir,
-            config,
-            Some(new_target),
-        );
-        match verifier.run() {
-            Err(e) => {
-                println!("{}", e);
-                std::process::exit(1);
-            }
-            Ok(output) => {
-                if !output.is_success() {
-                    // Make sure CI-type environments fail.
-                    std::process::exit(1);
-                }
-            }
-        }
-        return;
-    }
+        Some(target + ":" + &append)
+    } else {
+        args.target
+    };
 
     // Run the verifier.
-    let verifier = Verifier::new(
-        current_dir,
-        config,
-        args.target,
-    );
+    let verifier = Verifier::new(current_dir, config, target);
     match verifier.run() {
         Err(e) => {
             println!("{}", e);
