@@ -339,7 +339,7 @@ impl<'a> Builder<'a> {
             Outcome::Success => {
                 if !project.config.use_certs {
                     // Old proof-generation logic
-                    let Some(proof) = prover.get_condensed_proof() else {
+                    let Some(proof) = prover.get_condensed_proof(&prover.normalizer) else {
                         self.log_proving_warning(&goal_context, "had a missing proof");
                         return;
                     };

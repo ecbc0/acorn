@@ -369,8 +369,8 @@ impl Prover {
 
     /// Returns a condensed proof, if we have a proof.
     /// The condensed proof is what we recommend inserting into the code.
-    pub fn get_condensed_proof(&self) -> Option<Proof> {
-        let mut proof = self.get_uncondensed_proof(&self.normalizer, false)?;
+    pub fn get_condensed_proof<'a>(&'a self, normalizer: &'a Normalizer) -> Option<Proof<'a>> {
+        let mut proof = self.get_uncondensed_proof(normalizer, false)?;
         proof.condense();
         Some(proof)
     }
