@@ -94,8 +94,6 @@ async fn main() {
         std::process::exit(1);
     }
 
-    let check_hashes = !args.nohash && !args.certs;
-
     let current_dir = match std::env::current_dir() {
         Ok(dir) => dir,
         Err(e) => {
@@ -104,7 +102,7 @@ async fn main() {
         }
     };
 
-    // Check if we should generate documentation.
+    // Handle the --doc_root flag
     if let Some(doc_root) = args.doc_root {
         let config = ProjectConfig::default();
         let mut project = Project::new_local(&current_dir, config).unwrap_or_else(|e| {
@@ -124,31 +122,16 @@ async fn main() {
         }
     }
 
-    // Check if we should run the searcher.
-    if let Some(line) = args.line {
-        let Some(target) = args.target else {
-            println!("Error: --line requires a target module or file to be specified.");
-            std::process::exit(1);
-        };
-        let searcher = Searcher::new(current_dir, target, line);
-        if let Err(e) = searcher.run() {
-            println!("{}", e);
-            std::process::exit(1);
-        }
-        return;
-    }
-
-    // Create the project config
     let config = ProjectConfig {
-        check_hashes,
+        check_hashes: !args.nohash && !args.certs,
         use_certs: args.certs,
         verify: args.verify,
         ..Default::default()
     };
 
-    // Handle the append_to flag.
+    // Handle the --append_to flag
     let target = if let Some(append) = args.append_to {
-        let Some(target) = args.target else {
+        let Some(target) = &args.target else {
             println!("Error: --append_to requires a target file to be specified.");
             std::process::exit(1);
         };
@@ -156,13 +139,27 @@ async fn main() {
             println!("Error: target is required to be \"-\".");
             std::process::exit(1);
         }
-        Some(target + ":" + &append)
+        Some(target.to_string() + ":" + &append)
     } else {
-        args.target
+        args.target.clone()
     };
 
-    // Run the verifier.
-    let verifier = Verifier::new(current_dir, config, target);
+    let verifier = Verifier::new(current_dir.clone(), config, target);
+
+    // Handle the --line flag
+    if let Some(line) = args.line {
+        let Some(target) = &args.target else {
+            println!("Error: --line requires a target module or file to be specified.");
+            std::process::exit(1);
+        };
+        let searcher = Searcher::new(current_dir, target.clone(), line);
+        if let Err(e) = searcher.run() {
+            println!("{}", e);
+            std::process::exit(1);
+        }
+        return;
+    }
+
     match verifier.run() {
         Err(e) => {
             println!("{}", e);
