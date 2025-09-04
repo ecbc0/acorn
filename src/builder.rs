@@ -459,9 +459,10 @@ impl<'a> Builder<'a> {
     /// Sets the builder to only build a single goal.
     /// Takes a target module name and an external line number (1-based).
     /// Does not check that there is a goal at this line.
+    /// Requires that the target module is already loaded.
     pub fn set_single_goal(
         &mut self,
-        project: &mut Project,
+        project: &Project,
         target: &str,
         external_line_number: u32,
     ) -> Result<(), String> {
@@ -469,8 +470,8 @@ impl<'a> Builder<'a> {
         let internal_line_number = external_line_number - 1;
 
         let module_id = project
-            .load_module_by_name(target)
-            .map_err(|e| format!("Failed to load module '{}': {}", target, e))?;
+            .get_module_id_by_name(target)
+            .ok_or_else(|| format!("Module '{}' not found", target))?;
 
         let module_descriptor = project
             .get_module_descriptor(module_id)
