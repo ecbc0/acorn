@@ -34,7 +34,7 @@ use crate::token_map::TokenInfo;
 // The Project is responsible for importing different files and assigning them module ids.
 pub struct Project {
     // Flags that affect project behavior
-    config: ProjectConfig,
+    pub config: ProjectConfig,
 
     // The root directory of the library.
     // This is used to resolve all imports.
@@ -913,15 +913,19 @@ impl Project {
             let start = std::time::Instant::now();
             let outcome = filtered_prover.verification_search();
             if outcome == Outcome::Success {
-                builder.search_finished(
-                    &mut filtered_prover,
-                    goal,
-                    outcome,
-                    start.elapsed(),
-                    self,
-                    env,
-                    new_certs,
-                );
+                if let Some(new_certs) = new_certs {
+                    match filtered_prover.make_cert(&self, &env.bindings, false) {
+                        Ok(cert) => new_certs.push(cert),
+                        Err(e) => {
+                            builder.log_proving_error(
+                                &goal,
+                                &format!("filtered prover failed to create certificate: {}", e),
+                            );
+                            return;
+                        }
+                    }
+                }
+                builder.search_finished(&mut filtered_prover, goal, outcome, start.elapsed(), self);
                 filtered_prover.get_useful_source_names(new_premises);
                 return;
             }
@@ -932,15 +936,21 @@ impl Project {
         builder.metrics.searches_full += 1;
         let start = std::time::Instant::now();
         let outcome = full_prover.verification_search();
-        builder.search_finished(
-            &mut full_prover,
-            goal,
-            outcome,
-            start.elapsed(),
-            self,
-            env,
-            new_certs,
-        );
+        if outcome == Outcome::Success {
+            if let Some(new_certs) = new_certs {
+                match full_prover.make_cert(&self, &env.bindings, false) {
+                    Ok(cert) => new_certs.push(cert),
+                    Err(e) => {
+                        builder.log_proving_error(
+                            &goal,
+                            &format!("full prover failed to create certificate: {}", e),
+                        );
+                        return;
+                    }
+                }
+            }
+        }
+        builder.search_finished(&mut full_prover, goal, outcome, start.elapsed(), self);
         full_prover.get_useful_source_names(new_premises);
     }
 
