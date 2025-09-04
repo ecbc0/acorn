@@ -48,7 +48,7 @@ pub fn prove_with_old_codegen(
     let (project, env, prover, outcome) = prove_helper(project, module_name, goal_name);
     let code = match prover.get_condensed_proof() {
         Some(proof) => {
-            prover.print_proof(project, &env.bindings, &proof);
+            prover.print_proof(&proof, project, &env.bindings, &prover.normalizer);
             proof.to_code(&env.bindings)
         }
         None => {

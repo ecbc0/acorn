@@ -255,7 +255,13 @@ impl Prover {
     }
 
     /// Prints the proof in a human-readable form.
-    pub fn print_proof(&self, project: &Project, bindings: &BindingMap, proof: &Proof) {
+    pub fn print_proof(
+        &self,
+        proof: &Proof,
+        project: &Project,
+        bindings: &BindingMap,
+        normalizer: &Normalizer,
+    ) {
         println!(
             "in total, we activated {} proof steps.",
             self.active_set.len()
@@ -263,7 +269,7 @@ impl Prover {
         println!("non-factual activations: {}", self.nonfactual_activations);
 
         // This logic is similar to the display logic in ProofStep.svelte, but for the terminal.
-        let proof_info = self.to_proof_info(&proof, project, bindings, &self.normalizer);
+        let proof_info = self.to_proof_info(&proof, project, bindings, normalizer);
         println!("the proof uses {} steps:", proof_info.len());
         println!();
 
@@ -397,7 +403,7 @@ impl Prover {
         };
 
         if print {
-            self.print_proof(project, bindings, &proof);
+            self.print_proof(&proof, project, bindings, &self.normalizer);
         }
 
         let cert = proof.make_cert(goal_name, bindings)?;
