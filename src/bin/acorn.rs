@@ -162,7 +162,7 @@ async fn main() {
     };
 
     // Run the verifier.
-    let verifier = Verifier::new(current_dir, config, target);
+    let verifier = Verifier::new(current_dir, config, target, None);
     match verifier.run() {
         Err(e) => {
             println!("{}", e);

@@ -40,6 +40,10 @@ pub struct Verifier {
 
     /// The starting path to find the acorn library from.
     start_path: PathBuf,
+
+    /// Optional external line number (1-based) to verify a single goal.
+    /// If this is set, target must be as well.
+    line: Option<u32>,
 }
 
 impl Verifier {
@@ -47,11 +51,13 @@ impl Verifier {
         start_path: PathBuf,
         config: ProjectConfig,
         target: Option<String>,
+        line: Option<u32>,
     ) -> Self {
         Self {
             config,
             target,
             start_path,
+            line,
         }
     }
 
@@ -126,6 +132,17 @@ impl Verifier {
             builder.log_secondary_errors = false;
         }
 
+        // If a specific line is provided along with a target, set up single goal verification
+        if let Some(line) = self.line {
+            let Some(target) = &self.target else {
+                panic!("line set without target");
+            };
+            // line is the external line number (1-based)
+            if let Err(e) = builder.set_single_goal(project, target, line) {
+                return Err(format!("Failed to set single goal: {}", e));
+            }
+        }
+
         // Build
         project.build(&mut builder);
         builder.metrics.print(builder.status);
@@ -192,6 +209,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("foo".to_string()),
+            None,
         );
 
         // Test that the verifier can run successfully on our theorem in the src directory
@@ -281,6 +299,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("foo.bar".to_string()),
+            None,
         );
 
         // Run the verifier the first time
@@ -375,6 +394,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config.clone(),
             Some("main".to_string()),
+            None,
         );
         let output = verifier1.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
@@ -383,6 +403,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
+            None,
         );
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
@@ -431,6 +452,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config.clone(),
             Some("main".to_string()),
+            None,
         );
         let output = verifier1.run().unwrap();
         assert_eq!(output.num_verified(), 5);
@@ -439,6 +461,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
+            None,
         );
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good,);
@@ -464,6 +487,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("foo".to_string()),
+            None,
         );
 
         let result = verifier.run();
@@ -511,6 +535,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
+            None,
         );
 
         let result = verifier.run();
@@ -583,6 +608,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
+            None,
         );
         let output = verifier1.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
