@@ -3,7 +3,6 @@
 
 use acorn::doc_generator::DocGenerator;
 use acorn::project::{Project, ProjectConfig};
-use acorn::searcher::Searcher;
 use acorn::server::{run_server, ServerArgs};
 use acorn::verifier::Verifier;
 use clap::Parser;
@@ -144,22 +143,9 @@ async fn main() {
         args.target.clone()
     };
 
-    let verifier = Verifier::new(current_dir.clone(), config, target);
-
-    // Handle the --line flag
-    if let Some(line) = args.line {
-        let Some(target) = &args.target else {
-            println!("Error: --line requires a target module or file to be specified.");
-            std::process::exit(1);
-        };
-        let searcher = Searcher::new(current_dir, target.clone(), line);
-        if let Err(e) = searcher.run() {
-            println!("{}", e);
-            std::process::exit(1);
-        }
-        return;
-    }
-
+    let mut verifier = Verifier::new(current_dir, config, target);
+    verifier.verbose = args.line.is_some();
+    verifier.line = args.line;
     match verifier.run() {
         Err(e) => {
             println!("{}", e);

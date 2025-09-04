@@ -4,6 +4,7 @@ use crate::block::NodeCursor;
 use crate::project::{Project, ProjectConfig};
 use crate::prover::Outcome;
 
+/// The Searcher is deprecated in favor of using the Verifier with single_goal set.
 pub struct Searcher {
     /// The target module or file to search in.
     target: String,

@@ -832,6 +832,12 @@ impl Project {
 
         if cursor.node().has_goal() {
             let goal = cursor.goal().unwrap();
+            if let Some((_, line)) = builder.single_goal {
+                if goal.first_line != line {
+                    // This isn't the goal we're looking for.
+                    return;
+                }
+            }
             self.verify_with_fallback(
                 full_prover,
                 filtered_prover,
