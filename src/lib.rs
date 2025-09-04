@@ -47,7 +47,6 @@ pub mod prover;
 pub mod rewrite_tree;
 pub mod score;
 pub mod scorer;
-pub mod searcher;
 pub mod server;
 pub mod source;
 pub mod stack;
