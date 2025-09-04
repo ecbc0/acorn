@@ -30,7 +30,12 @@ use crate::term_graph::TermGraphContradiction;
 pub struct Prover {
     /// The normalizer is used when we are turning the facts and goals from the environment into
     /// clauses that we can use internally.
+    /// TODO: make the normalizer not live inside the prover.
     pub normalizer: Normalizer,
+
+    /// The checker validates a proof certificate, after the prover creates it.
+    /// TODO: make the checker not live inside the prover.
+    pub checker: Checker,
 
     /// The "active" clauses are the ones we use for reasoning.
     active_set: ActiveSet,
@@ -38,10 +43,6 @@ pub struct Prover {
     /// The "passive" clauses are a queue of pending clauses that
     /// we will add to the active clauses in the future.
     passive_set: PassiveSet,
-
-    /// The checker validates a proof certificate, after the prover creates it.
-    /// TODO: make the checker not just live inside the prover.
-    checker: Checker,
 
     /// The last step of the proof search that leads to a contradiction.
     /// If we haven't finished the search, this is None.
@@ -432,7 +433,7 @@ impl Prover {
     /// Returns whether this certificate is okay.
     /// This clones various components of the prover that we might mutate.
     /// It's unclear to me whether this is problematically slow, or something we can ignore.
-    pub fn check_cert(
+    pub fn old_check_cert(
         &self,
         cert: &Certificate,
         project: &Project,

@@ -876,7 +876,7 @@ impl Project {
             let indexes = worklist.get_indexes(&goal.name);
             for i in indexes {
                 let cert = worklist.get_cert(*i).unwrap();
-                match full_prover.check_cert(cert, self, &env.bindings) {
+                match full_prover.old_check_cert(cert, self, &env.bindings) {
                     Ok(()) => {
                         builder.metrics.cached_certs += 1;
                         builder.metrics.goals_done += 1;
@@ -922,7 +922,7 @@ impl Project {
                 if let Some(new_certs) = new_certs {
                     match filtered_prover.make_cert(&self, &env.bindings, builder.verbose) {
                         Ok(cert) => {
-                            if let Err(e) = full_prover.check_cert(&cert, self, &env.bindings) {
+                            if let Err(e) = full_prover.old_check_cert(&cert, self, &env.bindings) {
                                 builder.log_proving_error(
                                     &goal,
                                     &format!("filtered prover created cert that the full prover rejected: {}", e),

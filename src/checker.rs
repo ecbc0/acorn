@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use crate::acorn_type::AcornType;
 use crate::acorn_value::AcornValue;
 use crate::binding_map::BindingMap;
+use crate::certificate::Certificate;
 use crate::clause::Clause;
 use crate::code_generator::Error;
 use crate::evaluator::Evaluator;
@@ -273,6 +274,20 @@ impl Checker {
                 "proof does not result in a contradiction".to_string(),
             ))
         }
+    }
+
+    /// Check a certificate. It is expected that the certificate has a proof.
+    pub fn check_cert(
+        &mut self,
+        cert: &Certificate,
+        project: &Project,
+        bindings: &mut Cow<BindingMap>,
+        normalizer: &mut Normalizer,
+    ) -> Result<(), Error> {
+        let Some(proof) = &cert.proof else {
+            return Err(Error::NoProof);
+        };
+        self.check_proof(proof, project, bindings, normalizer)
     }
 
     #[cfg(test)]

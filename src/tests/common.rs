@@ -63,7 +63,7 @@ pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certi
         Err(e) => panic!("make_cert failed: {}", e),
     };
 
-    if let Err(e) = prover.check_cert(&cert, project, &env.bindings) {
+    if let Err(e) = prover.old_check_cert(&cert, project, &env.bindings) {
         panic!("check_cert failed: {}", e);
     }
     cert
