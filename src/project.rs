@@ -97,8 +97,9 @@ pub struct ProjectConfig {
     // Whether we are using certificates
     pub use_certs: bool,
 
-    // When verify mode is set, it's an error if we run into any goal that requires
-    // a search to be verified, instead of just checking the cert.
+    // When verify mode is set, we want to verify the existing certs.
+    // In this situation, it's an error if we run into any goal that is missing a cert,
+    // or any cert that fails to verify.
     pub verify: bool,
 }
 
