@@ -58,7 +58,7 @@ pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certi
     let cursor = base_env.get_node_by_goal_name(goal_name);
     let env = cursor.goal_env().unwrap();
 
-    let cert = match prover.make_cert(project, &env.bindings, false, true) {
+    let cert = match prover.make_cert(project, &env.bindings, true) {
         Ok(cert) => cert,
         Err(e) => panic!("make_cert failed: {}", e),
     };
