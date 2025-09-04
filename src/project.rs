@@ -873,11 +873,11 @@ impl Project {
                         worklist.remove(&goal.name, *i);
                         return full_prover;
                     }
-                    Err(_) if self.config.verify => {
+                    Err(e) if self.config.verify => {
                         // In verify mode, a cert that fails to verify is an error
                         builder.log_proving_error(
                             goal,
-                            &format!("certificate for '{}' failed to verify", goal.name),
+                            &format!("certificate failed to verify: {}", e),
                         );
                         return full_prover;
                     }
@@ -893,7 +893,7 @@ impl Project {
 
         // In verify mode, we should never reach the search phase
         if self.config.verify {
-            builder.log_proving_error(goal, &format!("no certificate found for '{}'", goal.name));
+            builder.log_proving_error(goal, "no certificate found");
             return full_prover;
         }
 

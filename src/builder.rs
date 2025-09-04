@@ -7,9 +7,7 @@ use crate::block::NodeCursor;
 use crate::build_cache::BuildCache;
 use crate::certificate::Certificate;
 use crate::compilation::Error;
-use crate::dataset::Dataset;
 use crate::environment::Environment;
-use crate::features::Features;
 use crate::goal::Goal;
 use crate::module::ModuleDescriptor;
 use crate::project::Project;
@@ -204,9 +202,6 @@ pub struct Builder<'a> {
     /// I guess if there is no current module, it's vacuously good.
     current_module_good: bool,
 
-    /// If dataset is not None, we are gathering data for training.
-    pub dataset: Option<Dataset>,
-
     /// The new build cache, that is being produced as a result of this build.
     /// Only populated when use_certs is true.
     pub build_cache: Option<BuildCache>,
@@ -224,7 +219,6 @@ impl<'a> Builder<'a> {
             log_secondary_errors: true,
             current_module: None,
             current_module_good: true,
-            dataset: None,
             build_cache: None,
         }
     }
@@ -251,13 +245,6 @@ impl<'a> Builder<'a> {
     /// Called when a single module is loaded successfully.
     pub fn module_loaded(&mut self, env: &Environment) {
         self.metrics.goals_total += env.iter_goals().count() as i32;
-    }
-
-    /// When create_dataset is called, that tells the Builder to gather data for training.
-    /// Only call this before the build starts.
-    pub fn create_dataset(&mut self) {
-        assert_eq!(self.metrics.goals_done, 0);
-        self.dataset = Some(Dataset::new());
     }
 
     /// Called when the entire loading phase is done.
@@ -369,15 +356,6 @@ impl<'a> Builder<'a> {
                     if proof.needs_simplification() {
                         self.log_proving_warning(&goal_context, "needs simplification");
                         return;
-                    }
-
-                    if let Some(ref mut dataset) = self.dataset {
-                        // Collect data for the dataset.
-                        for (id, step) in prover.iter_active_steps() {
-                            let features = Features::new(step);
-                            let label = proof.has_active_id(id);
-                            dataset.add(features, label);
-                        }
                     }
                 }
 
