@@ -462,13 +462,15 @@ impl Prover {
     }
 
     /// Generate a certificate for the goal.
-    /// If a proof was found, creates a certificate with the proof and checks it.
+    /// If a proof was found, creates a certificate with the proof.
     /// If no proof was found, creates a placeholder certificate with no proof.
-    /// This will also print the proof if `print` is true.
+    /// If `check` is true, we check the proof after generating it.
+    /// If `print` is true, we print the proof.
     pub fn make_cert(
         &mut self,
         project: &Project,
         bindings: &BindingMap,
+        check: bool,
         print: bool,
     ) -> Result<Certificate, Error> {
         let goal_name = self
@@ -507,16 +509,17 @@ impl Prover {
                 println!("  <no proof>");
             }
         }
-
-        if let Some(proof) = &cert.proof {
-            self.checker.check_proof(
-                proof,
-                project,
-                &mut Cow::Borrowed(bindings),
-                &mut self.normalizer,
-            )?;
-        } else {
-            return Err("Certificate has no proof".to_string().into());
+        if check {
+            if let Some(proof) = &cert.proof {
+                self.checker.check_proof(
+                    proof,
+                    project,
+                    &mut Cow::Borrowed(bindings),
+                    &mut self.normalizer,
+                )?;
+            } else {
+                return Err("Certificate has no proof".to_string().into());
+            }
         }
 
         Ok(cert)

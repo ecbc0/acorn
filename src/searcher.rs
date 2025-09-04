@@ -99,7 +99,7 @@ impl Searcher {
                 Outcome::Success => {
                     println!("success!");
                     let env = cursor.goal_env().unwrap();
-                    if let Err(e) = prover.make_cert(&project, &env.bindings, true) {
+                    if let Err(e) = prover.make_cert(&project, &env.bindings, true, true) {
                         println!("Error generating concrete proof: {}", e);
                     }
                 }
