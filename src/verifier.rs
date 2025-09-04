@@ -31,8 +31,8 @@ impl VerifierOutput {
 }
 
 pub struct Verifier {
-    /// If true, use cache for hash checking. If false, use cache only for filtering.
-    check_hashes: bool,
+    /// Configuration for the project
+    config: ProjectConfig,
 
     /// The target module to verify.
     /// If None, all modules are verified.
@@ -41,9 +41,6 @@ pub struct Verifier {
     /// If true, a dataset is created, for training.
     create_dataset: bool,
 
-    /// If true, use proof certificates.
-    use_certs: bool,
-
     /// The starting path to find the acorn library from.
     start_path: PathBuf,
 }
@@ -51,30 +48,21 @@ pub struct Verifier {
 impl Verifier {
     pub fn new(
         start_path: PathBuf,
-        check_hashes: bool,
+        config: ProjectConfig,
         target: Option<String>,
         create_dataset: bool,
-        use_certs: bool,
     ) -> Self {
         Self {
-            check_hashes,
+            config,
             target,
             create_dataset,
-            use_certs,
             start_path,
         }
     }
 
     /// Returns VerifierOutput on success, or an error string if verification fails.
     pub fn run(&self) -> Result<VerifierOutput, String> {
-        let config = ProjectConfig {
-            use_filesystem: true,
-            check_hashes: self.check_hashes,
-            read_cache: true,
-            write_cache: true,
-            use_certs: self.use_certs,
-        };
-        let mut project = match Project::new_local(&self.start_path, config) {
+        let mut project = match Project::new_local(&self.start_path, self.config.clone()) {
             Ok(p) => p,
             Err(e) => return Err(format!("Error: {}", e)),
         };
@@ -136,7 +124,7 @@ impl Verifier {
         // Get a reference back to use in the rest of the method
         let project = Arc::as_ref(&project_arc);
 
-        if !self.check_hashes {
+        if !self.config.check_hashes {
             builder.log_when_slow = true;
         }
         if self.create_dataset {
@@ -153,7 +141,7 @@ impl Verifier {
             dataset.save();
         }
 
-        if !self.check_hashes && builder.metrics.searches_fallback > 0 {
+        if !self.config.check_hashes && builder.metrics.searches_fallback > 0 {
             println!("Warning: the filtered prover was not able to handle all goals.");
         }
 
@@ -206,12 +194,18 @@ mod tests {
 
         // Create a verifier starting from the acornlib directory
         // The verifier should find the src directory and use it as the root
+        let config = ProjectConfig {
+            use_filesystem: true,
+            check_hashes: false,
+            read_cache: true,
+            write_cache: true,
+            use_certs: true,
+        };
         let verifier = Verifier::new(
             acornlib.path().to_path_buf(),
-            false,
+            config,
             Some("foo".to_string()),
             false,
-            true,
         );
 
         // Test that the verifier can run successfully on our theorem in the src directory
@@ -292,12 +286,18 @@ mod tests {
             .unwrap();
 
         // Create a verifier targeting the nested module
+        let config = ProjectConfig {
+            use_filesystem: true,
+            check_hashes: false,
+            read_cache: true,
+            write_cache: true,
+            use_certs: true,
+        };
         let verifier = Verifier::new(
             acornlib.path().to_path_buf(),
-            false,
+            config,
             Some("foo.bar".to_string()),
             false,
-            true,
         );
 
         // Run the verifier the first time
@@ -383,22 +383,27 @@ mod tests {
             )
             .unwrap();
 
+        let config = ProjectConfig {
+            use_filesystem: true,
+            check_hashes: false,
+            read_cache: true,
+            write_cache: true,
+            use_certs: true,
+        };
         let verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
-            false,
+            config.clone(),
             Some("main".to_string()),
             false,
-            true,
         );
         let output = verifier1.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
 
         let verifier2 = Verifier::new(
             acornlib.path().to_path_buf(),
-            false,
+            config,
             Some("main".to_string()),
             false,
-            true,
         );
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
@@ -438,22 +443,27 @@ mod tests {
             )
             .unwrap();
 
+        let config = ProjectConfig {
+            use_filesystem: true,
+            check_hashes: false,
+            read_cache: true,
+            write_cache: true,
+            use_certs: true,
+        };
         let verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
-            false,
+            config.clone(),
             Some("main".to_string()),
             false,
-            true,
         );
         let output = verifier1.run().unwrap();
         assert_eq!(output.num_verified(), 5);
 
         let verifier2 = Verifier::new(
             acornlib.path().to_path_buf(),
-            false,
+            config,
             Some("main".to_string()),
             false,
-            true,
         );
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good,);
@@ -470,12 +480,18 @@ mod tests {
         src.child("foo.ac").write_str("import bar").unwrap();
         src.child("bar.ac").write_str("import foo").unwrap();
 
+        let config = ProjectConfig {
+            use_filesystem: true,
+            check_hashes: false,
+            read_cache: true,
+            write_cache: true,
+            use_certs: true,
+        };
         let verifier = Verifier::new(
             acornlib.path().to_path_buf(),
-            false,
+            config,
             Some("foo".to_string()),
             false,
-            true,
         );
 
         let result = verifier.run();
@@ -514,12 +530,18 @@ mod tests {
         // Try to import the ambiguous module
         src.child("main.ac").write_str("import foo").unwrap();
 
+        let config = ProjectConfig {
+            use_filesystem: true,
+            check_hashes: false,
+            read_cache: true,
+            write_cache: true,
+            use_certs: true,
+        };
         let verifier = Verifier::new(
             acornlib.path().to_path_buf(),
-            false,
+            config,
             Some("main".to_string()),
             false,
-            true,
         );
 
         let result = verifier.run();
@@ -583,12 +605,18 @@ mod tests {
             )
             .unwrap();
 
+        let config = ProjectConfig {
+            use_filesystem: true,
+            check_hashes: false,
+            read_cache: true,
+            write_cache: true,
+            use_certs: true,
+        };
         let verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
-            false,
+            config,
             Some("main".to_string()),
             false,
-            true,
         );
         let output = verifier1.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);

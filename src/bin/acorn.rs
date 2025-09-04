@@ -141,6 +141,15 @@ async fn main() {
         return;
     }
 
+    // Create the project config
+    let config = ProjectConfig {
+        use_filesystem: true,
+        check_hashes,
+        read_cache: true,
+        write_cache: true,
+        use_certs: args.certs,
+    };
+
     // Run the verifier with input appended to a file.
     if let Some(append) = args.append_to {
         let Some(target) = args.target else {
@@ -154,10 +163,9 @@ async fn main() {
         let new_target = target + ":" + &append;
         let verifier = Verifier::new(
             current_dir,
-            check_hashes,
+            config,
             Some(new_target),
             args.dataset,
-            args.certs,
         );
         match verifier.run() {
             Err(e) => {
@@ -177,10 +185,9 @@ async fn main() {
     // Run the verifier.
     let verifier = Verifier::new(
         current_dir,
-        check_hashes,
+        config,
         args.target,
         args.dataset,
-        args.certs,
     );
     match verifier.run() {
         Err(e) => {

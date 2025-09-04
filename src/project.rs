@@ -78,6 +78,7 @@ pub struct Project {
 }
 
 /// Configuration options for the project.
+#[derive(Clone)]
 pub struct ProjectConfig {
     // Whether we permit loading files from the filesystem.
     // If false, this indicates we only want mocked files.
