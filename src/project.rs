@@ -861,18 +861,40 @@ impl Project {
             let indexes = worklist.get_indexes(&goal.name);
             for i in indexes {
                 let cert = worklist.get_cert(*i).unwrap();
-                if full_prover.check_cert(cert, self, &env.bindings).is_ok() {
-                    builder.metrics.cached_certs += 1;
-                    builder.metrics.goals_done += 1;
-                    builder.metrics.goals_success += 1;
-                    builder.log_verified(goal.first_line, goal.last_line);
-                    if let Some(new_certs) = new_certs {
-                        new_certs.push(cert.clone());
+                match full_prover.check_cert(cert, self, &env.bindings) {
+                    Ok(()) => {
+                        builder.metrics.cached_certs += 1;
+                        builder.metrics.goals_done += 1;
+                        builder.metrics.goals_success += 1;
+                        builder.log_verified(goal.first_line, goal.last_line);
+                        if let Some(new_certs) = new_certs {
+                            new_certs.push(cert.clone());
+                        }
+                        worklist.remove(&goal.name, *i);
+                        return full_prover;
                     }
-                    worklist.remove(&goal.name, *i);
-                    return full_prover;
+                    Err(_) if self.config.verify => {
+                        // In verify mode, a cert that fails to verify is an error
+                        builder.log_proving_error(
+                            goal,
+                            &format!("certificate for '{}' failed to verify", goal.name),
+                        );
+                        return full_prover;
+                    }
+                    Err(_) => {
+                        // Certificate didn't verify, continue to next cert or fall through
+                    }
                 }
             }
+        } else if self.config.verify {
+            builder.log_proving_error(goal, "no worklist found");
+            return full_prover;
+        }
+
+        // In verify mode, we should never reach the search phase
+        if self.config.verify {
+            builder.log_proving_error(goal, &format!("no certificate found for '{}'", goal.name));
+            return full_prover;
         }
 
         // Try the filtered prover

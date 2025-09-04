@@ -478,7 +478,7 @@ impl<'a> Builder<'a> {
     }
 
     /// Logs an error during the proving phase.
-    fn log_proving_error(&mut self, goal_context: &Goal, message: &str) {
+    pub fn log_proving_error(&mut self, goal_context: &Goal, message: &str) {
         let mut event = self.make_event(goal_context, message, DiagnosticSeverity::WARNING);
 
         // Set progress as complete, because an error will halt the build
