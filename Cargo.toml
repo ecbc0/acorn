@@ -39,10 +39,6 @@ name = "acorn"
 test = false
 
 [[bin]]
-name = "search"
-test = false
-
-[[bin]]
 name = "profile_prover"
 test = false
 
