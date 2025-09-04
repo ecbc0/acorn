@@ -694,13 +694,6 @@ impl Prover {
         }
     }
 
-    /// Creates a display helper for a clause
-    fn display<'a>(&'a self, clause: &'a Clause) -> DisplayClause<'a> {
-        DisplayClause {
-            clause,
-            normalizer: &self.normalizer,
-        }
-    }
 
     /// Gets a clause by its proof step ID
     fn get_clause(&self, id: ProofStepId) -> &Clause {
@@ -715,7 +708,7 @@ impl Prover {
     }
 
     /// Attempts to convert this clause to code, but shows the clause form if that's all we can.
-    fn clause_to_code(&self, bindings: &BindingMap, clause: &Clause) -> String {
+    fn clause_to_code(&self, clause: &Clause, bindings: &BindingMap) -> String {
         let denormalized = self.normalizer.denormalize(clause, None);
         match CodeGenerator::new(bindings).value_to_code(&denormalized) {
             Ok(code) => return code,
@@ -729,7 +722,10 @@ impl Prover {
                 }
             }
         };
-        self.display(clause).to_string()
+        DisplayClause {
+            clause,
+            normalizer: &self.normalizer,
+        }.to_string()
     }
 
     /// Convert a clause to a jsonable form
@@ -744,7 +740,7 @@ impl Prover {
         let text = if clause.is_impossible() {
             None
         } else {
-            Some(self.clause_to_code(bindings, clause))
+            Some(self.clause_to_code(clause, bindings))
         };
         ClauseInfo { text, id }
     }
