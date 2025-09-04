@@ -184,11 +184,9 @@ mod tests {
         // Create a verifier starting from the acornlib directory
         // The verifier should find the src directory and use it as the root
         let config = ProjectConfig {
-            use_filesystem: true,
             check_hashes: false,
-            read_cache: true,
-            write_cache: true,
             use_certs: true,
+            ..Default::default()
         };
         let verifier = Verifier::new(
             acornlib.path().to_path_buf(),
@@ -275,11 +273,9 @@ mod tests {
 
         // Create a verifier targeting the nested module
         let config = ProjectConfig {
-            use_filesystem: true,
             check_hashes: false,
-            read_cache: true,
-            write_cache: true,
             use_certs: true,
+            ..Default::default()
         };
         let verifier = Verifier::new(
             acornlib.path().to_path_buf(),
@@ -371,11 +367,9 @@ mod tests {
             .unwrap();
 
         let config = ProjectConfig {
-            use_filesystem: true,
             check_hashes: false,
-            read_cache: true,
-            write_cache: true,
             use_certs: true,
+            ..Default::default()
         };
         let verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
@@ -429,11 +423,9 @@ mod tests {
             .unwrap();
 
         let config = ProjectConfig {
-            use_filesystem: true,
             check_hashes: false,
-            read_cache: true,
-            write_cache: true,
             use_certs: true,
+            ..Default::default()
         };
         let verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
@@ -464,11 +456,9 @@ mod tests {
         src.child("bar.ac").write_str("import foo").unwrap();
 
         let config = ProjectConfig {
-            use_filesystem: true,
             check_hashes: false,
-            read_cache: true,
-            write_cache: true,
             use_certs: true,
+            ..Default::default()
         };
         let verifier = Verifier::new(
             acornlib.path().to_path_buf(),
@@ -513,11 +503,9 @@ mod tests {
         src.child("main.ac").write_str("import foo").unwrap();
 
         let config = ProjectConfig {
-            use_filesystem: true,
             check_hashes: false,
-            read_cache: true,
-            write_cache: true,
             use_certs: true,
+            ..Default::default()
         };
         let verifier = Verifier::new(
             acornlib.path().to_path_buf(),
@@ -587,11 +575,9 @@ mod tests {
             .unwrap();
 
         let config = ProjectConfig {
-            use_filesystem: true,
             check_hashes: false,
-            read_cache: true,
-            write_cache: true,
             use_certs: true,
+            ..Default::default()
         };
         let verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),

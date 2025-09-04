@@ -10,11 +10,8 @@ fn main() {
     let current_dir = std::env::current_dir().unwrap();
     for _ in 0..10 {
         let config = ProjectConfig {
-            use_filesystem: true,
             check_hashes: false,
-            read_cache: true,
-            write_cache: true,
-            use_certs: false,
+            ..Default::default()
         };
         let mut project = Project::new_local(&current_dir, config).unwrap();
         project

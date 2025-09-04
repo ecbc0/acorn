@@ -433,11 +433,8 @@ impl Backend {
 
         // The cache is always readable, only sometimes writable.
         let config = ProjectConfig {
-            use_filesystem: true,
-            check_hashes: true,
-            read_cache: true,
             write_cache: cache_writable,
-            use_certs: false,
+            ..Default::default()
         };
         let project = Project::new(library_root, cache_dir, config);
         Backend {

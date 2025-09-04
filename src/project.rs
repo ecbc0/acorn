@@ -98,6 +98,18 @@ pub struct ProjectConfig {
     pub use_certs: bool,
 }
 
+impl Default for ProjectConfig {
+    fn default() -> Self {
+        Self {
+            use_filesystem: true,
+            check_hashes: true,
+            read_cache: true,
+            write_cache: true,
+            use_certs: false,
+        }
+    }
+}
+
 // General project-level errors (file operations, setup, etc.)
 #[derive(Debug)]
 pub struct ProjectError(pub String);
@@ -277,10 +289,9 @@ impl Project {
         let cache_dir = mock_dir.join("build");
         let config = ProjectConfig {
             use_filesystem: false,
-            check_hashes: true,
             read_cache: false,
             write_cache: false,
-            use_certs: false,
+            ..Default::default()
         };
         Project::new(mock_dir, cache_dir, config)
     }

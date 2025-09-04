@@ -27,11 +27,8 @@ impl Searcher {
     /// Runs the search and returns an error string if the search fails.
     pub fn run(&self) -> Result<(), String> {
         let config = ProjectConfig {
-            use_filesystem: true,
             check_hashes: false,
-            read_cache: true,
-            write_cache: true,
-            use_certs: false,
+            ..Default::default()
         };
         let mut project = match Project::new_local(&self.start_path, config) {
             Ok(p) => p,

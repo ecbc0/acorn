@@ -99,13 +99,7 @@ async fn main() {
 
     // Check if we should generate documentation.
     if let Some(doc_root) = args.doc_root {
-        let config = ProjectConfig {
-            use_filesystem: true,
-            check_hashes: true,
-            read_cache: true,
-            write_cache: true,
-            use_certs: false,
-        };
+        let config = ProjectConfig::default();
         let mut project = Project::new_local(&current_dir, config).unwrap_or_else(|e| {
             println!("Error loading project: {}", e);
             std::process::exit(1);
@@ -139,11 +133,9 @@ async fn main() {
 
     // Create the project config
     let config = ProjectConfig {
-        use_filesystem: true,
         check_hashes,
-        read_cache: true,
-        write_cache: true,
         use_certs: args.certs,
+        ..Default::default()
     };
 
     // Run the verifier with input appended to a file.
