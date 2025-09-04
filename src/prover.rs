@@ -30,7 +30,7 @@ use crate::term_graph::TermGraphContradiction;
 pub struct Prover {
     /// The normalizer is used when we are turning the facts and goals from the environment into
     /// clauses that we can use internally.
-    normalizer: Normalizer,
+    pub normalizer: Normalizer,
 
     /// The "active" clauses are the ones we use for reasoning.
     active_set: ActiveSet,
@@ -276,7 +276,7 @@ impl Prover {
         println!("non-factual activations: {}", self.nonfactual_activations);
 
         // This logic is similar to the display logic in ProofStep.svelte, but for the terminal.
-        let proof_info = self.to_proof_info(project, bindings, &proof);
+        let proof_info = self.to_proof_info(&proof, project, bindings);
         println!("the proof uses {} steps:", proof_info.len());
         println!();
 
@@ -737,9 +737,9 @@ impl Prover {
     /// If we are given a binding map, use it to make a nicer-looking display.
     fn to_clause_info(
         &self,
-        bindings: &BindingMap,
-        id: Option<usize>,
         clause: &Clause,
+        id: Option<usize>,
+        bindings: &BindingMap,
     ) -> ClauseInfo {
         let text = if clause.is_impossible() {
             None
@@ -751,16 +751,16 @@ impl Prover {
 
     fn to_proof_step_info(
         &self,
+        step: &ProofStep,
+        active_id: Option<usize>,
         project: &Project,
         bindings: &BindingMap,
-        active_id: Option<usize>,
-        step: &ProofStep,
     ) -> ProofStepInfo {
-        let clause = self.to_clause_info(bindings, active_id, &step.clause);
+        let clause = self.to_clause_info(&step.clause, active_id, bindings);
         let mut premises = vec![];
         for (description, id) in self.descriptive_dependencies(&step) {
             let clause = self.get_clause(id);
-            let clause_info = self.to_clause_info(bindings, id.active_id(), clause);
+            let clause_info = self.to_clause_info(clause, id.active_id(), bindings);
             premises.push((description, clause_info));
         }
         let (rule, location) = match &step.rule {
@@ -792,13 +792,13 @@ impl Prover {
     /// It isn't clear to me whether this is okay or not.
     pub fn to_proof_info(
         &self,
+        proof: &Proof,
         project: &Project,
         bindings: &BindingMap,
-        proof: &Proof,
     ) -> Vec<ProofStepInfo> {
         let mut result = vec![];
         for (step_id, step) in &proof.all_steps {
-            result.push(self.to_proof_step_info(project, bindings, step_id.active_id(), step));
+            result.push(self.to_proof_step_info(step, step_id.active_id(), project, bindings));
         }
         result
     }
@@ -807,16 +807,16 @@ impl Prover {
     /// Returns None if we don't have any information about this clause.
     pub fn info_result(
         &self,
+        id: usize,
         project: &Project,
         bindings: &BindingMap,
-        id: usize,
     ) -> Option<InfoResult> {
         // Information for the step that proved this clause
         if !self.active_set.has_step(id) {
             return None;
         }
         let step =
-            self.to_proof_step_info(project, bindings, Some(id), self.active_set.get_step(id));
+            self.to_proof_step_info(self.active_set.get_step(id), Some(id), project, bindings);
         let mut consequences = vec![];
         let mut num_consequences = 0;
         let limit = 100;
@@ -824,7 +824,7 @@ impl Prover {
         // Check if the final step is a consequence of this clause
         if let Some(final_step) = &self.final_step {
             if final_step.depends_on_active(id) {
-                consequences.push(self.to_proof_step_info(project, bindings, None, &final_step));
+                consequences.push(self.to_proof_step_info(&final_step, None, project, bindings));
                 num_consequences += 1;
             }
         }
@@ -832,7 +832,7 @@ impl Prover {
         // Check the active set for consequences
         for (i, step) in self.active_set.find_consequences(id) {
             if consequences.len() < limit {
-                consequences.push(self.to_proof_step_info(project, bindings, Some(i), step));
+                consequences.push(self.to_proof_step_info(step, Some(i), project, bindings));
             }
             num_consequences += 1;
         }
@@ -840,7 +840,7 @@ impl Prover {
         // Check the passive set for consequences
         for step in self.passive_set.find_consequences(id) {
             if consequences.len() < limit {
-                consequences.push(self.to_proof_step_info(project, bindings, None, step));
+                consequences.push(self.to_proof_step_info(step, None, project, bindings));
             }
             num_consequences += 1;
         }
