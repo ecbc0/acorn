@@ -39,6 +39,10 @@ struct Args {
     #[clap(long, help = "Don't skip goals based on hash checks.")]
     nohash: bool,
 
+    /// Verify mode: error if any goal requires a search instead of just checking the cert
+    #[clap(long, help = "Error if any goal requires a search instead of just checking the cert.")]
+    verify: bool,
+
     /// Search for a proof at a specific line number (requires target)
     #[clap(
         long,
@@ -135,6 +139,7 @@ async fn main() {
     let config = ProjectConfig {
         check_hashes,
         use_certs: args.certs,
+        verify: args.verify,
         ..Default::default()
     };
 

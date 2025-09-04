@@ -96,6 +96,10 @@ pub struct ProjectConfig {
 
     // Whether we are using certificates
     pub use_certs: bool,
+
+    // When verify mode is set, it's an error if we run into any goal that requires
+    // a search to be verified, instead of just checking the cert.
+    pub verify: bool,
 }
 
 impl Default for ProjectConfig {
@@ -106,6 +110,7 @@ impl Default for ProjectConfig {
             read_cache: true,
             write_cache: true,
             use_certs: false,
+            verify: false,
         }
     }
 }
