@@ -914,7 +914,7 @@ impl Project {
             let outcome = filtered_prover.verification_search();
             if outcome == Outcome::Success {
                 if let Some(new_certs) = new_certs {
-                    match filtered_prover.make_cert(&self, &env.bindings, true, false) {
+                    match filtered_prover.make_cert(&self, &env.bindings, true, builder.verbose) {
                         Ok(cert) => {
                             if let Err(e) = full_prover.check_cert(&cert, self, &env.bindings) {
                                 builder.log_proving_error(
@@ -947,7 +947,7 @@ impl Project {
         let outcome = full_prover.verification_search();
         if outcome == Outcome::Success {
             if let Some(new_certs) = new_certs {
-                match full_prover.make_cert(&self, &env.bindings, true, false) {
+                match full_prover.make_cert(&self, &env.bindings, true, builder.verbose) {
                     Ok(cert) => new_certs.push(cert),
                     Err(e) => {
                         builder.log_proving_error(

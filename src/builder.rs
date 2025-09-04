@@ -209,6 +209,10 @@ pub struct Builder<'a> {
     /// We specify goal by (module, line number).
     /// This is an internal line number, which starts at 0.
     pub single_goal: Option<(ModuleDescriptor, u32)>,
+
+    /// The verbose flag makes us print miscellaneous debug output.
+    /// Don't set it from within the language server.
+    pub verbose: bool,
 }
 
 impl<'a> Builder<'a> {
@@ -225,6 +229,7 @@ impl<'a> Builder<'a> {
             current_module_good: true,
             build_cache: None,
             single_goal: None,
+            verbose: false,
         }
     }
 
