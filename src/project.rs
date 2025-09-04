@@ -924,12 +924,19 @@ impl Project {
             let outcome = filtered_prover.verification_search();
             if outcome == Outcome::Success {
                 if let Some(new_certs) = new_certs {
-                    match filtered_prover.make_cert(&self, &env.bindings, &filtered_prover.normalizer, builder.verbose) {
+                    match filtered_prover.make_cert(
+                        &self,
+                        &env.bindings,
+                        &filtered_prover.normalizer,
+                        builder.verbose,
+                    ) {
                         Ok(cert) => {
                             let mut checker = full_prover.checker.clone();
                             let mut normalizer = full_prover.normalizer.clone();
                             let mut bindings = Cow::Borrowed(&env.bindings);
-                            if let Err(e) = checker.check_cert(&cert, self, &mut bindings, &mut normalizer) {
+                            if let Err(e) =
+                                checker.check_cert(&cert, self, &mut bindings, &mut normalizer)
+                            {
                                 builder.log_proving_error(
                                     &goal,
                                     &format!("filtered prover created cert that the full prover rejected: {}", e),
@@ -948,7 +955,7 @@ impl Project {
                     }
                 }
                 builder.search_finished(&mut filtered_prover, goal, outcome, start.elapsed(), self);
-                filtered_prover.get_useful_source_names(new_premises);
+                filtered_prover.get_useful_source_names(new_premises, &filtered_prover.normalizer);
                 return;
             }
             builder.metrics.searches_fallback += 1;
@@ -960,7 +967,12 @@ impl Project {
         let outcome = full_prover.verification_search();
         if outcome == Outcome::Success {
             if let Some(new_certs) = new_certs {
-                match full_prover.make_cert(&self, &env.bindings, &full_prover.normalizer, builder.verbose) {
+                match full_prover.make_cert(
+                    &self,
+                    &env.bindings,
+                    &full_prover.normalizer,
+                    builder.verbose,
+                ) {
                     Ok(cert) => new_certs.push(cert),
                     Err(e) => {
                         builder.log_proving_error(
@@ -973,7 +985,7 @@ impl Project {
             }
         }
         builder.search_finished(&mut full_prover, goal, outcome, start.elapsed(), self);
-        full_prover.get_useful_source_names(new_premises);
+        full_prover.get_useful_source_names(new_premises, &full_prover.normalizer);
     }
 
     // Does the build and returns when it's done, rather than asynchronously.

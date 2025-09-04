@@ -884,7 +884,7 @@ fn test_useful_fact_extraction() {
     let (prover, outcome, _) = prove_with_old_codegen(&mut p, "main", "goal");
     assert_eq!(outcome, Outcome::Success);
     let mut name_set = HashSet::new();
-    prover.get_useful_source_names(&mut name_set);
+    prover.get_useful_source_names(&mut name_set, &prover.normalizer);
     let mut names = name_set
         .into_iter()
         .map(|(_, name)| name)
@@ -1098,7 +1098,10 @@ fn test_concrete_proof_removes_duplicates() {
     );
 
     let c = prove(&mut p, "main", "goal");
-    assert_eq!(c.proof.unwrap(), vec!["not f(y) or g(y)", "not f(y)", "f(y)"]);
+    assert_eq!(
+        c.proof.unwrap(),
+        vec!["not f(y) or g(y)", "not f(y)", "f(y)"]
+    );
 }
 
 #[test]
@@ -1195,7 +1198,10 @@ fn test_concrete_proof_with_passive_contradiction() {
     );
 
     let c = prove(&mut p, "main", "goal");
-    assert_eq!(c.proof.unwrap(), vec!["f(Foo.foo) = g(Foo.foo)", "not h(f(Foo.foo))"]);
+    assert_eq!(
+        c.proof.unwrap(),
+        vec!["f(Foo.foo) = g(Foo.foo)", "not h(f(Foo.foo))"]
+    );
 }
 
 #[test]
@@ -1515,7 +1521,10 @@ fn test_concrete_proof_of_existence() {
     );
 
     let c = prove(&mut p, "main", "goal");
-    assert_eq!(c.proof.unwrap(), vec!["let s0: Foo satisfy { f(s0) }", "not f(s0)"]);
+    assert_eq!(
+        c.proof.unwrap(),
+        vec!["let s0: Foo satisfy { f(s0) }", "not f(s0)"]
+    );
 }
 
 #[test]

@@ -322,7 +322,11 @@ impl Prover {
     /// We always include all of the steps that are mathematically necessary for the proof.
     /// The include_inspiration flag determines whether we include the "inspiration" steps,
     /// which the prover used to find the proof, but are not needed for the proof to be valid.
-    pub fn get_uncondensed_proof(&self, include_inspiration: bool) -> Option<Proof> {
+    pub fn get_uncondensed_proof<'a>(
+        &'a self,
+        normalizer: &'a Normalizer,
+        include_inspiration: bool,
+    ) -> Option<Proof<'a>> {
         let final_step = match &self.final_step {
             Some(step) => step,
             None => return None,
@@ -349,7 +353,7 @@ impl Prover {
             Difficulty::Simple
         };
 
-        let mut proof = Proof::new(&self.normalizer, negated_goal, difficulty);
+        let mut proof = Proof::new(&normalizer, negated_goal, difficulty);
         let mut active_ids: Vec<_> = useful_active.iter().collect();
         active_ids.sort();
         for i in active_ids {
@@ -366,7 +370,7 @@ impl Prover {
     /// Returns a condensed proof, if we have a proof.
     /// The condensed proof is what we recommend inserting into the code.
     pub fn get_condensed_proof(&self) -> Option<Proof> {
-        let mut proof = self.get_uncondensed_proof(false)?;
+        let mut proof = self.get_uncondensed_proof(&self.normalizer, false)?;
         proof.condense();
         Some(proof)
     }
@@ -389,7 +393,7 @@ impl Prover {
             .name
             .clone();
 
-        let proof = match self.get_uncondensed_proof(false) {
+        let proof = match self.get_uncondensed_proof(&normalizer, false) {
             Some(proof) => proof,
             None => {
                 // No proof found, create a placeholder certificate
@@ -843,8 +847,12 @@ impl Prover {
     /// Gets the qualified name of every fact that was used in the proof.
     /// This includes the "inspiration" facts that were used to find the proof but are
     /// not mathematically necessary for the proof to be valid.
-    pub fn get_useful_source_names(&self, names: &mut HashSet<(ModuleId, String)>) {
-        let proof = match self.get_uncondensed_proof(true) {
+    pub fn get_useful_source_names(
+        &self,
+        names: &mut HashSet<(ModuleId, String)>,
+        normalizer: &Normalizer,
+    ) {
+        let proof = match self.get_uncondensed_proof(&normalizer, true) {
             Some(proof) => proof,
             None => return,
         };
