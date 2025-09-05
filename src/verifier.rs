@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::builder::{BuildEvent, BuildMetrics, BuildStatus};
+use crate::builder::{BuildEvent, BuildMetrics, BuildStatus, Builder};
 use crate::project::{Project, ProjectConfig};
 
 /// Output from running the verifier
@@ -101,7 +101,7 @@ impl Verifier {
         let project_for_closure = Arc::clone(&project_arc);
 
         // Set up the builder
-        let mut builder = project_arc.builder(move |event| {
+        let mut builder = Builder::new(move |event| {
             // Also print log messages as before
             if let Some(m) = &event.log_message {
                 if let Some(diagnostic) = &event.diagnostic {

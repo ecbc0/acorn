@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::builder::{BuildStatus, Builder};
+use crate::builder::{BuildEvent, BuildStatus, Builder};
 use crate::environment::LineType;
 use crate::module::ModuleDescriptor;
 use crate::names::ConstantName;
@@ -8,9 +8,9 @@ use crate::project::Project;
 use indoc::indoc;
 
 fn expect_build_ok(project: &Project) -> i32 {
-    let mut events = vec![];
+    let mut events: Vec<BuildEvent> = vec![];
     let (status, searches_success) = {
-        let mut builder = project.builder(|event| events.push(event));
+        let mut builder = Builder::new(|event| events.push(event));
         builder.build(&project);
         (builder.status, builder.metrics.searches_success)
     };

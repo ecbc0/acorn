@@ -14,7 +14,7 @@ use crate::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::acorn_value::AcornValue;
 use crate::binding_map::BindingMap;
 use crate::build_cache::BuildCache;
-use crate::builder::{BuildError, BuildEvent, Builder};
+use crate::builder::BuildError;
 use crate::code_generator::{self, CodeGenerator};
 use crate::compilation;
 use crate::environment::Environment;
@@ -447,11 +447,6 @@ impl Project {
         Ok(())
     }
 
-    // Create a Builder object that will then handle the build.
-    pub fn builder<'a>(&self, event_handler: impl FnMut(BuildEvent) + 'a) -> Builder<'a> {
-        Builder::new(event_handler)
-    }
-
     // Turns a hash set of qualified premises into its serializable form.
     // If any premise is from an unimportable module, we return None.
     // This can happen when Acorn is running in "detached library" mode, where the current
@@ -490,10 +485,13 @@ impl Project {
         module_cache: &Option<ModuleCache>,
     ) -> Result<Option<Prover>, BuildError> {
         // Load the premises from the cache
-        let Some(normalized) = module_cache.as_ref().and_then(|mc| mc.blocks.get(block_name)) else {
+        let Some(normalized) = module_cache
+            .as_ref()
+            .and_then(|mc| mc.blocks.get(block_name))
+        else {
             return Ok(None);
         };
-        
+
         let mut premises = HashMap::new();
         for (module_name, premise_set) in normalized.iter() {
             // A module could have been renamed, in which case the whole cache is borked.

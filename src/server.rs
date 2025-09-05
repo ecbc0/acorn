@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use crate::builder::BuildEvent;
+use crate::builder::{BuildEvent, Builder};
 use crate::live_document::LiveDocument;
 use chrono;
 use color_backtrace::BacktracePrinter;
@@ -462,7 +462,7 @@ impl Backend {
             let project = project.read().await;
 
             tokio::task::block_in_place(move || {
-                let mut builder = project.builder(move |event| {
+                let mut builder = Builder::new(move |event| {
                     tx.send(event).unwrap();
                 });
                 builder.build(&project);
