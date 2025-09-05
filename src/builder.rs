@@ -109,12 +109,13 @@ pub struct BuildMetrics {
 
 #[derive(Debug)]
 pub struct BuildError {
-    range: Range,
-    message: String,
+    pub range: Range,
+    pub message: String,
 }
 
 impl BuildError {
-    pub fn new(goal: &Goal, message: impl Into<String>) -> Self {
+    /// A build error that occurred at a particular goal.
+    fn new(goal: &Goal, message: impl Into<String>) -> Self {
         let message = format!("{} {}", goal.name, message.into());
         BuildError {
             range: goal.proposition.source.range,
