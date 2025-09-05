@@ -31,15 +31,15 @@ impl VerifierOutput {
 
 /// The Verifier manages the run of a single build.
 pub struct Verifier {
+    /// The project that we're verifying
+    project: Project,
+
     /// Configuration for the project
     config: ProjectConfig,
 
     /// The target module to verify.
     /// If None, all modules are verified.
     target: Option<String>,
-
-    /// The starting path to find the acorn library from.
-    start_path: PathBuf,
 
     /// Optional external line number (1-based) to verify a single goal.
     /// If this is set, target must be as well.
@@ -51,36 +51,35 @@ pub struct Verifier {
 }
 
 impl Verifier {
-    pub fn new(start_path: PathBuf, config: ProjectConfig, target: Option<String>) -> Self {
-        Self {
+    pub fn new(start_path: PathBuf, config: ProjectConfig, target: Option<String>) -> Result<Self, String> {
+        let project = Project::new_local(&start_path, config.clone())?;
+        Ok(Self {
+            project,
             config,
             target,
-            start_path,
             line: None,
             verbose: false,
-        }
+        })
     }
 
     /// Returns VerifierOutput on success, or an error string if verification fails.
-    pub fn run(self) -> Result<VerifierOutput, String> {
-        let mut project = Project::new_local(&self.start_path, self.config.clone())?;
-
+    pub fn run(mut self) -> Result<VerifierOutput, String> {
         if let Some(target) = &self.target {
             if target == "-" {
                 let path = PathBuf::from("<stdin>");
-                project.add_target_by_path(&path)?;
+                self.project.add_target_by_path(&path)?;
             } else if target.starts_with("-:") {
                 let path = PathBuf::from(target);
-                project.add_target_by_path(&path)?;
+                self.project.add_target_by_path(&path)?;
             } else if target.ends_with(".ac") {
                 // Looks like a filename
                 let path = PathBuf::from(&target);
-                project.add_target_by_path(&path)?;
+                self.project.add_target_by_path(&path)?;
             } else {
-                project.add_target_by_name(&target)?;
+                self.project.add_target_by_name(&target)?;
             }
         } else {
-            project.add_all_targets();
+            self.project.add_all_targets();
         }
 
         // Create a vector to collect events
@@ -88,12 +87,12 @@ impl Verifier {
         let events_clone = events.clone();
 
         // Set up the builder
-        let mut builder = Builder::new(&project, |event| {
+        let mut builder = Builder::new(&self.project, |event| {
             // Also print log messages as before
             if let Some(m) = &event.log_message {
                 if let Some(diagnostic) = &event.diagnostic {
                     // Use display_path to show a relative path
-                    let display_path = project.display_path(&event.module);
+                    let display_path = self.project.display_path(&event.module);
                     println!(
                         "{}, line {}: {}",
                         display_path,
@@ -195,7 +194,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config.clone(),
             Some("foo".to_string()),
-        );
+        ).unwrap();
 
         // Test that the verifier can run successfully on our theorem in the src directory
         let result = verifier1.run();
@@ -233,7 +232,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("foo".to_string()),
-        );
+        ).unwrap();
         let result2 = verifier2.run();
         assert!(
             result2.is_ok(),
@@ -289,7 +288,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config.clone(),
             Some("foo.bar".to_string()),
-        );
+        ).unwrap();
 
         // Run the verifier the first time
         let result = verifier1.run();
@@ -326,7 +325,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("foo.bar".to_string()),
-        );
+        ).unwrap();
         let result2 = verifier2.run();
         assert!(
             result2.is_ok(),
@@ -388,7 +387,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config.clone(),
             Some("main".to_string()),
-        );
+        ).unwrap();
         let output = verifier1.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
 
@@ -396,7 +395,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
-        );
+        ).unwrap();
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
         assert_eq!(output.metrics.searches_fallback, 0);
@@ -444,7 +443,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config.clone(),
             Some("main".to_string()),
-        );
+        ).unwrap();
         let output = verifier1.run().unwrap();
         assert_eq!(output.num_verified(), 5);
 
@@ -452,7 +451,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
-        );
+        ).unwrap();
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good,);
         assert_eq!(output.metrics.searches_fallback, 0,);
@@ -477,7 +476,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("foo".to_string()),
-        );
+        ).unwrap();
 
         let result = verifier.run();
         let Err(err) = result else {
@@ -524,7 +523,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
-        );
+        ).unwrap();
 
         let result = verifier.run();
         let Ok(output) = result else {
@@ -596,7 +595,7 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
-        );
+        ).unwrap();
         let output = verifier1.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
     }

@@ -143,7 +143,13 @@ async fn main() {
         args.target.clone()
     };
 
-    let mut verifier = Verifier::new(current_dir, config, target);
+    let mut verifier = match Verifier::new(current_dir, config, target) {
+        Ok(v) => v,
+        Err(e) => {
+            println!("{}", e);
+            std::process::exit(1);
+        }
+    };
     verifier.verbose = args.line.is_some();
     verifier.line = args.line;
     match verifier.run() {
