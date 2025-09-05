@@ -465,7 +465,7 @@ impl Backend {
                 let mut builder = Builder::new(&project, move |event| {
                     tx.send(event).unwrap();
                 });
-                builder.build(&project);
+                builder.build();
 
                 let duration = chrono::Local::now() - start_time;
                 let seconds = duration.num_milliseconds() as f64 / 1000.0;

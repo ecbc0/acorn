@@ -11,7 +11,7 @@ fn expect_build_ok(project: &Project) -> i32 {
     let mut events: Vec<BuildEvent> = vec![];
     let (status, searches_success) = {
         let mut builder = Builder::new(&project, |event| events.push(event));
-        builder.build(&project);
+        builder.build();
         (builder.status, builder.metrics.searches_success)
     };
     assert_eq!(status, BuildStatus::Good);
@@ -219,7 +219,7 @@ fn test_repeated_verification() {
     {
         // The first verification should populate the cache, starting from an empty cache.
         let mut builder = Builder::new(&p, |_| {});
-        builder.verify_module(&main_descriptor, &env, &p).unwrap();
+        builder.verify_module(&main_descriptor, &env).unwrap();
         assert_eq!(builder.status, BuildStatus::Good);
         assert_eq!(builder.metrics.searches_total, 5);
         assert_eq!(builder.metrics.searches_full, 5);
@@ -236,7 +236,7 @@ fn test_repeated_verification() {
     {
         // Run a second verification with no changes. This should use the cache.
         let mut builder = Builder::new(&p, |_| {});
-        builder.verify_module(&main_descriptor, &env, &p).unwrap();
+        builder.verify_module(&main_descriptor, &env).unwrap();
         assert_eq!(builder.status, BuildStatus::Good);
         assert_eq!(builder.metrics.searches_total, 0);
         assert_eq!(builder.metrics.searches_full, 0);
@@ -255,7 +255,7 @@ fn test_repeated_verification() {
         p.mock("/mock/nat.ac", format!("// \n{}", nat_text).as_str());
         let env = p.get_env(&main_descriptor).unwrap();
         let mut builder = Builder::new(&p, |_| {});
-        builder.verify_module(&main_descriptor, &env, &p).unwrap();
+        builder.verify_module(&main_descriptor, &env).unwrap();
         assert_eq!(builder.status, BuildStatus::Good);
         assert_eq!(builder.metrics.searches_total, 5);
         assert_eq!(builder.metrics.searches_full, 0);
@@ -274,7 +274,7 @@ fn test_repeated_verification() {
     p.mock("/mock/nat.ac", new_nat_text.as_str());
     let env = p.get_env(&main_descriptor).unwrap();
     let mut builder = Builder::new(&p, |_| {});
-    builder.verify_module(&main_descriptor, &env, &p).unwrap();
+    builder.verify_module(&main_descriptor, &env).unwrap();
     assert_eq!(builder.status, BuildStatus::Good);
     assert_eq!(builder.metrics.searches_total, 5);
     assert_eq!(builder.metrics.searches_full, 1);

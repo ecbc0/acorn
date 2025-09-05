@@ -22,6 +22,8 @@ static NEXT_BUILD_ID: AtomicU32 = AtomicU32::new(1);
 /// This is separate from the Project because you can read information from the Project from other
 /// threads while a build is ongoing, but a Builder is only used by the build itself.
 pub struct Builder<'a> {
+    /// Reference to the project being built.
+    project: &'a Project,
     /// A single event handler is used across all modules.
     event_handler: Box<dyn FnMut(BuildEvent) + 'a>,
 
@@ -250,9 +252,10 @@ impl BuildStatus {
 }
 
 impl<'a> Builder<'a> {
-    pub fn new(_project: &'a Project, event_handler: impl FnMut(BuildEvent) + 'a) -> Self {
+    pub fn new(project: &'a Project, event_handler: impl FnMut(BuildEvent) + 'a) -> Self {
         let event_handler = Box::new(event_handler);
         Builder {
+            project,
             event_handler,
             status: BuildStatus::Good,
             id: NEXT_BUILD_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
@@ -354,7 +357,6 @@ impl<'a> Builder<'a> {
         goal: &Goal,
         outcome: Outcome,
         elapsed: Duration,
-        project: &Project,
     ) {
         // Time conversion
         let secs = elapsed.as_secs() as f64;
@@ -374,7 +376,7 @@ impl<'a> Builder<'a> {
 
         match outcome {
             Outcome::Success => {
-                if !project.config.use_certs {
+                if !self.project.config.use_certs {
                     // Old proof-generation logic
                     let Some(proof) = prover.get_condensed_proof(&prover.normalizer) else {
                         self.log_warning(&goal, "had a missing proof");
@@ -510,16 +512,15 @@ impl<'a> Builder<'a> {
         &mut self,
         target: &str,
         external_line_number: u32,
-        project: &Project,
     ) -> Result<(), String> {
         // Convert from 1-based (external) to 0-based (internal) line number
         let internal_line_number = external_line_number - 1;
 
-        let module_id = project
+        let module_id = self.project
             .get_module_id_by_name(target)
             .ok_or_else(|| format!("Module '{}' not found", target))?;
 
-        let module_descriptor = project
+        let module_descriptor = self.project
             .get_module_descriptor(module_id)
             .ok_or_else(|| format!("No descriptor found for module '{}'", target))?
             .clone();
@@ -539,7 +540,6 @@ impl<'a> Builder<'a> {
         new_certs: &mut Option<Vec<Certificate>>,
         worklist: &mut Option<CertificateWorklist>,
         new_premises: &mut HashSet<(ModuleId, String)>,
-        project: &Project,
     ) -> Result<(), BuildError> {
         let (ng, steps) = full_prover.normalizer.normalize_goal(goal)?;
         full_prover.set_goal(ng, steps);
@@ -552,7 +552,7 @@ impl<'a> Builder<'a> {
                 let mut checker = full_prover.checker.clone();
                 let mut normalizer = full_prover.normalizer.clone();
                 let mut bindings = Cow::Borrowed(&env.bindings);
-                match checker.check_cert(cert, project, &mut bindings, &mut normalizer) {
+                match checker.check_cert(cert, self.project, &mut bindings, &mut normalizer) {
                     Ok(()) => {
                         self.metrics.cached_certs += 1;
                         self.metrics.goals_done += 1;
@@ -564,7 +564,7 @@ impl<'a> Builder<'a> {
                         worklist.remove(&goal.name, *i);
                         return Ok(());
                     }
-                    Err(e) if project.config.verify => {
+                    Err(e) if self.project.config.verify => {
                         // In verify mode, a cert that fails to verify is an error
                         return Err(BuildError::goal(
                             goal,
@@ -576,12 +576,12 @@ impl<'a> Builder<'a> {
                     }
                 }
             }
-        } else if project.config.verify {
+        } else if self.project.config.verify {
             return Err(BuildError::goal(goal, "no worklist found"));
         }
 
         // In verify mode, we should never reach the search phase
-        if project.config.verify {
+        if self.project.config.verify {
             return Err(BuildError::goal(goal, "no certificate found"));
         }
 
@@ -595,7 +595,7 @@ impl<'a> Builder<'a> {
             if outcome == Outcome::Success {
                 if let Some(new_certs) = new_certs {
                     match filtered_prover.make_cert(
-                        project,
+                        self.project,
                         &env.bindings,
                         &filtered_prover.normalizer,
                         self.verbose,
@@ -604,8 +604,8 @@ impl<'a> Builder<'a> {
                             let mut checker = full_prover.checker.clone();
                             let mut normalizer = full_prover.normalizer.clone();
                             let mut bindings = Cow::Borrowed(&env.bindings);
-                            if let Err(e) =
-                                checker.check_cert(&cert, project, &mut bindings, &mut normalizer)
+                            if let Err(e) = checker
+                                .check_cert(&cert, self.project, &mut bindings, &mut normalizer)
                             {
                                 return Err(BuildError::goal(
                                     &goal,
@@ -622,13 +622,7 @@ impl<'a> Builder<'a> {
                         }
                     }
                 }
-                self.search_finished(
-                    &mut filtered_prover,
-                    goal,
-                    outcome,
-                    start.elapsed(),
-                    project,
-                );
+                self.search_finished(&mut filtered_prover, goal, outcome, start.elapsed());
                 filtered_prover.get_useful_source_names(new_premises, &filtered_prover.normalizer);
                 return Ok(());
             }
@@ -642,7 +636,7 @@ impl<'a> Builder<'a> {
         if outcome == Outcome::Success {
             if let Some(new_certs) = new_certs {
                 match full_prover.make_cert(
-                    project,
+                    self.project,
                     &env.bindings,
                     &full_prover.normalizer,
                     self.verbose,
@@ -657,7 +651,7 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        self.search_finished(&mut full_prover, goal, outcome, start.elapsed(), project);
+        self.search_finished(&mut full_prover, goal, outcome, start.elapsed());
         full_prover.get_useful_source_names(new_premises, &full_prover.normalizer);
         Ok(())
     }
@@ -673,7 +667,6 @@ impl<'a> Builder<'a> {
         new_premises: &mut HashSet<(ModuleId, String)>,
         new_certs: &mut Option<Vec<Certificate>>,
         worklist: &mut Option<CertificateWorklist>,
-        project: &Project,
     ) -> Result<(), BuildError> {
         if !cursor.requires_verification() {
             return Ok(());
@@ -692,7 +685,6 @@ impl<'a> Builder<'a> {
                     new_premises,
                     new_certs,
                     worklist,
-                    project,
                 )?;
 
                 if let Some(fact) = cursor.node().get_fact() {
@@ -729,7 +721,6 @@ impl<'a> Builder<'a> {
                 new_certs,
                 worklist,
                 new_premises,
-                project,
             )?;
         }
 
@@ -741,19 +732,18 @@ impl<'a> Builder<'a> {
         &mut self,
         target: &ModuleDescriptor,
         env: &Environment,
-        project: &Project,
     ) -> Result<(), BuildError> {
         if env.nodes.is_empty() {
             // Nothing to prove
             return Ok(());
         }
 
-        let module_hash = project.get_hash(env.module_id).unwrap();
-        let old_module_cache = project.module_caches.get_cloned_module_cache(target);
+        let module_hash = self.project.get_hash(env.module_id).unwrap();
+        let old_module_cache = self.project.module_caches.get_cloned_module_cache(target);
         let mut new_module_cache = ModuleCache::new(module_hash);
 
         // If we're using certificates, create a worklist and a vector of new certs.
-        let (mut new_certs, mut worklist) = match project.build_cache.as_ref() {
+        let (mut new_certs, mut worklist) = match self.project.build_cache.as_ref() {
             Some(bc) => {
                 let worklist = bc.make_worklist(target);
                 (Some(vec![]), worklist)
@@ -764,8 +754,8 @@ impl<'a> Builder<'a> {
         self.module_proving_started(target.clone());
 
         // The full prover has access to all imported facts.
-        let mut full_prover = Prover::new(&project);
-        for fact in project.imported_facts(env.module_id, None) {
+        let mut full_prover = Prover::new(&self.project);
+        for fact in self.project.imported_facts(env.module_id, None) {
             let steps = full_prover.normalizer.normalize_fact(fact.clone())?;
             full_prover.add_steps(steps);
         }
@@ -775,7 +765,7 @@ impl<'a> Builder<'a> {
         loop {
             if cursor.requires_verification() {
                 let block_name = cursor.block_name();
-                if project.config.check_hashes
+                if self.project.config.check_hashes
                     && module_hash
                         .matches_through_line(&old_module_cache, cursor.node().last_line())
                 {
@@ -798,8 +788,9 @@ impl<'a> Builder<'a> {
                     // If we have a cached set of premises, we use it to create a filtered prover.
                     // The filtered prover only contains the premises that we think it needs.
                     let block_name = cursor.block_name();
-                    let filtered_prover =
-                        project.make_filtered_prover(env, &block_name, &old_module_cache)?;
+                    let filtered_prover = self
+                        .project
+                        .make_filtered_prover(env, &block_name, &old_module_cache)?;
 
                     // The premises we use while verifying this block.
                     let mut new_premises = HashSet::new();
@@ -812,9 +803,11 @@ impl<'a> Builder<'a> {
                         &mut new_premises,
                         &mut new_certs,
                         &mut worklist,
-                        project,
                     )?;
-                    match project.normalize_premises(env.module_id, &block_name, &new_premises) {
+                    match self
+                        .project
+                        .normalize_premises(env.module_id, &block_name, &new_premises)
+                    {
                         Some(normalized) => {
                             // We verified this block, so we can cache it.
                             new_module_cache
@@ -846,7 +839,8 @@ impl<'a> Builder<'a> {
 
         if self.module_proving_complete(target) && self.single_goal.is_none() {
             // The module was entirely verified. We can update the cache.
-            if let Err(e) = project
+            if let Err(e) = self
+                .project
                 .module_caches
                 .insert_module_cache(target.clone(), new_module_cache)
             {
@@ -870,14 +864,14 @@ impl<'a> Builder<'a> {
     }
 
     /// Builds all open modules, logging build events.
-    pub fn build(&mut self, project: &Project) {
+    pub fn build(&mut self) {
         // Initialize the build cache if we're using certificates
-        if project.using_certs() {
+        if self.project.using_certs() {
             self.build_cache = Some(BuildCache::new());
         }
 
         // Build in alphabetical order by module name for consistency.
-        let mut targets = project.targets.iter().collect::<Vec<_>>();
+        let mut targets = self.project.targets.iter().collect::<Vec<_>>();
         targets.sort();
 
         self.log_global(format!(
@@ -893,7 +887,7 @@ impl<'a> Builder<'a> {
         // If there are errors, we won't try to do proving.
         let mut envs = vec![];
         for target in &targets {
-            let module = project.get_module(target);
+            let module = self.project.get_module(target);
             match module {
                 LoadState::Ok(env) => {
                     self.module_loaded(&env);
@@ -935,20 +929,20 @@ impl<'a> Builder<'a> {
                     continue;
                 }
             }
-            if let Err(e) = self.verify_module(&target, env, project) {
+            if let Err(e) = self.verify_module(&target, env) {
                 self.log_build_error(&e);
                 return;
             }
         }
 
         // There's a lot of conditions for when we actually write to the cache
-        if project.using_certs()
+        if self.project.using_certs()
             && self.status.is_good()
-            && project.config.write_cache
+            && self.project.config.write_cache
             && self.single_goal.is_none()
         {
             let build_cache = self.build_cache.as_ref().unwrap();
-            if let Err(e) = build_cache.save(project.cache_dir.clone()) {
+            if let Err(e) = build_cache.save(self.project.cache_dir.clone()) {
                 self.log_global(format!("error saving build cache: {}", e));
             }
         }

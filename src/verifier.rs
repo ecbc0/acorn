@@ -123,9 +123,6 @@ impl Verifier {
             events_clone.borrow_mut().push(event);
         });
 
-        // Get a reference back to use in the rest of the method
-        let project = Arc::as_ref(&project_arc);
-
         if !self.config.check_hashes {
             builder.log_when_slow = true;
         }
@@ -139,7 +136,7 @@ impl Verifier {
                 panic!("line set without target");
             };
             // line is the external line number (1-based)
-            if let Err(e) = builder.set_single_goal(target, line, project) {
+            if let Err(e) = builder.set_single_goal(target, line) {
                 return Err(format!("Failed to set single goal: {}", e));
             }
         }
@@ -147,7 +144,7 @@ impl Verifier {
         builder.verbose = self.verbose;
 
         // Build
-        builder.build(&project);
+        builder.build();
         builder.metrics.print(builder.status);
 
         if !self.config.check_hashes && builder.metrics.searches_fallback > 0 {
