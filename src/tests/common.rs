@@ -24,13 +24,13 @@ fn prove_helper<'a>(
     };
     let node = env.get_node_by_goal_name(goal_name);
     let facts = node.usable_facts(project);
-    let goal_context = node.goal().unwrap();
+    let goal = node.goal().unwrap();
     let mut prover = Prover::new(&project);
     for fact in facts {
         let steps = prover.normalizer.normalize_fact(fact).unwrap();
         prover.add_steps(steps);
     }
-    let (ng, steps) = prover.normalizer.normalize_goal(&goal_context).unwrap();
+    let (ng, steps) = prover.normalizer.normalize_goal(&goal).unwrap();
     prover.add_steps(steps);
     prover.set_goal(ng);
     prover.strict_codegen = true;
