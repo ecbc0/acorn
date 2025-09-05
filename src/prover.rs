@@ -50,10 +50,6 @@ pub struct Prover {
     /// Setting any of these flags to true externally will stop the prover.
     pub stop_flags: Vec<Arc<AtomicBool>>,
 
-    /// This error gets set when there is a problem during the construction of the prover.
-    /// It would be nicer to report the error immediately, but we wait so that we have
-    /// a reasonable location to attach the error to, when running in the LSP.
-    error: Option<String>,
 
     /// Number of proof steps activated, not counting Factual ones.
     nonfactual_activations: i32,
@@ -111,7 +107,6 @@ impl Prover {
             checker: Checker::new(),
             final_step: None,
             stop_flags: vec![project.build_stopped.clone()],
-            error: None,
             useful_passive: vec![],
             nonfactual_activations: 0,
             goal: None,
@@ -127,8 +122,6 @@ impl Prover {
         }
         self.passive_set.push_batch(steps);
     }
-
-
 
     /// Sets the prover goal and adds the goal-derived steps.
     /// This replaces the common pattern of calling `add_steps` for the goal
@@ -582,9 +575,6 @@ impl Prover {
         seconds: f32,
         shallow_only: bool,
     ) -> Outcome {
-        if let Some(s) = &self.error {
-            return Outcome::Error(s.clone());
-        }
         let start_time = std::time::Instant::now();
         loop {
             if shallow_only && !self.passive_set.all_shallow {
