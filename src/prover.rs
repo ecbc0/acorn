@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use tower_lsp::lsp_types::Url;
 
-use crate::acorn_value::AcornValue;
 use crate::active_set::ActiveSet;
 use crate::binding_map::BindingMap;
 use crate::certificate::Certificate;
@@ -18,7 +17,7 @@ use crate::goal::Goal;
 use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
 use crate::literal::Literal;
 use crate::module::ModuleId;
-use crate::normalizer::Normalizer;
+use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::passive_set::PassiveSet;
 use crate::project::Project;
 use crate::proof::{Difficulty, Proof};
@@ -71,21 +70,6 @@ pub struct Prover {
     pub strict_codegen: bool,
 }
 
-#[derive(Clone)]
-struct NormalizedGoal {
-    /// The name of the goal being proved.
-    name: String,
-
-    /// The value expresses the negation of the goal we are trying to prove.
-    /// It is normalized in the sense that hypothesis and counterfactual have been separated.
-    /// There is still more normalization that will happen when it is converted to Clause.
-    counterfactual: AcornValue,
-
-    /// Whether inconsistencies are okay.
-    /// If true, finding a contradiction results in Outcome::Success.
-    /// If false, finding a contradiction results in Outcome::Inconsistent.
-    inconsistency_okay: bool,
-}
 
 /// The outcome of a prover operation.
 /// - "Success" means we proved it.

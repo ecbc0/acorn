@@ -17,6 +17,22 @@ use crate::term::{Term, TypeId};
 type Result<T> = std::result::Result<T, String>;
 
 #[derive(Clone)]
+pub struct NormalizedGoal {
+    /// The name of the goal being proved.
+    pub name: String,
+
+    /// The value expresses the negation of the goal we are trying to prove.
+    /// It is normalized in the sense that hypothesis and counterfactual have been separated.
+    /// There is still more normalization that will happen when it is converted to Clause.
+    pub counterfactual: AcornValue,
+
+    /// Whether inconsistencies are okay.
+    /// If true, finding a contradiction results in Outcome::Success.
+    /// If false, finding a contradiction results in Outcome::Inconsistent.
+    pub inconsistency_okay: bool,
+}
+
+#[derive(Clone)]
 pub struct Normalizer {
     monomorphizer: Monomorphizer,
 
