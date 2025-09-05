@@ -130,8 +130,12 @@ impl Prover {
 
 
 
-    pub fn set_goal(&mut self, ng: NormalizedGoal) {
+    /// Sets the prover goal and adds the goal-derived steps.
+    /// This replaces the common pattern of calling `add_steps` for the goal
+    /// steps followed by `set_goal`.
+    pub fn set_goal(&mut self, ng: NormalizedGoal, steps: Vec<ProofStep>) {
         assert!(self.goal.is_none());
+        self.add_steps(steps);
         self.goal = Some(ng);
     }
 

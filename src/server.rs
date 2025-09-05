@@ -710,8 +710,7 @@ impl Backend {
             prover.add_steps(steps);
         }
         let (ng, steps) = prover.normalizer.normalize_goal(&goal)?;
-        prover.add_steps(steps);
-        prover.set_goal(ng);
+        prover.set_goal(ng, steps);
         prover.stop_flags.push(superseded.clone());
         let status = SearchStatus::pending(&prover);
 

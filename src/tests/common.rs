@@ -31,8 +31,7 @@ fn prove_helper<'a>(
         prover.add_steps(steps);
     }
     let (ng, steps) = prover.normalizer.normalize_goal(&goal).unwrap();
-    prover.add_steps(steps);
-    prover.set_goal(ng);
+    prover.set_goal(ng, steps);
     prover.strict_codegen = true;
     let outcome = prover.quick_search();
     if let Outcome::Error(s) = outcome {
@@ -115,8 +114,7 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
             prover.add_steps(steps);
         }
         let (ng, steps) = prover.normalizer.normalize_goal(&goal)?;
-        prover.add_steps(steps);
-        prover.set_goal(ng);
+        prover.set_goal(ng, steps);
 
         // This is a key difference between our verification tests, and our real verification.
         // This helps us test that verification fails in cases where we do have an
