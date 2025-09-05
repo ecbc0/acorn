@@ -1,6 +1,6 @@
 use tower_lsp::lsp_types::Range;
 
-use crate::compilation::{Error, ErrorSource, Result};
+use crate::compilation::{CompilationError, ErrorSource, Result};
 use crate::expression::{Declaration, Expression, Terminator, TypeParamExpr};
 use crate::token::{Token, TokenIter, TokenType};
 
@@ -302,8 +302,8 @@ pub struct Statement {
 }
 
 impl ErrorSource for Statement {
-    fn error(&self, message: &str) -> Error {
-        Error::new(&self.first_token, &self.last_token, message)
+    fn error(&self, message: &str) -> CompilationError {
+        CompilationError::new(&self.first_token, &self.last_token, message)
     }
 }
 
@@ -928,7 +928,6 @@ fn parse_attributes_statement(keyword: Token, tokens: &mut TokenIter) -> Result<
     Ok(statement)
 }
 
-
 /// Parses a match statement where the "match" keyword has already been found.
 fn parse_match_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
     let (scrutinee, _) = Expression::parse_value(tokens, Terminator::Is(TokenType::LeftBrace))?;
@@ -1337,7 +1336,7 @@ impl Statement {
                     }
                     TokenType::Solve => {
                         let keyword = tokens.next().unwrap();
-                        return Err(Error::new(
+                        return Err(CompilationError::new(
                             &keyword,
                             &keyword,
                             "the 'solve' keyword is no longer supported",

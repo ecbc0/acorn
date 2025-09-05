@@ -5,7 +5,7 @@ use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::AtomId;
 use crate::binding_map::ConstructorInfo;
 use crate::block::{Block, BlockParams, Node};
-use crate::compilation::{self, Error, ErrorSource};
+use crate::compilation::{self, CompilationError, ErrorSource};
 use crate::evaluator::Evaluator;
 use crate::expression::{Declaration, Expression};
 use crate::fact::Fact;
@@ -2009,7 +2009,7 @@ impl Environment {
             }
             Err(ImportError::Circular(module_id)) => {
                 // Circular imports kind of count everywhere.
-                return Err(Error::circular(
+                return Err(CompilationError::circular(
                     module_id,
                     &statement.first_token,
                     &statement.last_token,
@@ -2020,7 +2020,7 @@ impl Environment {
         match project.get_bindings(module_id) {
             None => {
                 // The fundamental error is in the other module, not this one.
-                return Err(Error::indirect(
+                return Err(CompilationError::indirect(
                     &statement.first_token,
                     &statement.last_token,
                     &format!("error in '{}' module", full_name),

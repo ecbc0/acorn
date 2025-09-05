@@ -948,7 +948,7 @@ impl Project {
         })
     }
 
-    pub fn errors(&self) -> Vec<(ModuleId, &compilation::Error)> {
+    pub fn errors(&self) -> Vec<(ModuleId, &compilation::CompilationError)> {
         let mut errors = vec![];
         for (module_id, module) in self.modules.iter().enumerate() {
             if let LoadState::Error(e) = &module.state {

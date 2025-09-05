@@ -3,7 +3,7 @@ use std::{collections::VecDeque, fmt};
 use pretty::{DocAllocator, DocBuilder, Pretty};
 use tower_lsp::lsp_types::Range;
 
-use crate::compilation::{Error, ErrorSource, Result};
+use crate::compilation::{CompilationError, ErrorSource, Result};
 use crate::token::{Token, TokenIter, TokenType};
 
 /// There are two main sorts of expressions.
@@ -84,8 +84,8 @@ impl fmt::Display for Expression {
 }
 
 impl ErrorSource for Expression {
-    fn error(&self, message: &str) -> Error {
-        Error::new(self.first_token(), self.last_token(), message)
+    fn error(&self, message: &str) -> CompilationError {
+        CompilationError::new(self.first_token(), self.last_token(), message)
     }
 }
 
@@ -678,7 +678,7 @@ impl fmt::Display for PartialExpression {
 }
 
 impl ErrorSource for PartialExpression {
-    fn error(&self, message: &str) -> Error {
+    fn error(&self, message: &str) -> CompilationError {
         match &self {
             PartialExpression::Expression(e) => e.error(message),
             PartialExpression::Unary(t)

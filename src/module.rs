@@ -57,7 +57,7 @@ impl Module {
         }
     }
 
-    pub fn load_error(&mut self, error: compilation::Error) {
+    pub fn load_error(&mut self, error: compilation::CompilationError) {
         self.state = LoadState::Error(error);
     }
 
@@ -84,7 +84,7 @@ pub enum LoadState {
     Loading,
 
     // The module has been loaded, but there is an error in its code
-    Error(compilation::Error),
+    Error(compilation::CompilationError),
 
     // The module has been loaded successfully and we have its environment
     Ok(Environment),

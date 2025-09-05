@@ -5,7 +5,7 @@ use std::vec::IntoIter;
 use std::{fmt, sync::OnceLock};
 use tower_lsp::lsp_types::{Position, Range, SemanticTokenType};
 
-use crate::compilation::{Error, ErrorSource, Result};
+use crate::compilation::{CompilationError, ErrorSource, Result};
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum TokenType {
@@ -422,8 +422,8 @@ impl fmt::Display for Token {
 }
 
 impl ErrorSource for Token {
-    fn error(&self, message: &str) -> Error {
-        Error::new(self, self, message)
+    fn error(&self, message: &str) -> CompilationError {
+        CompilationError::new(self, self, message)
     }
 }
 
@@ -799,7 +799,7 @@ impl TokenIter {
         self.inner.next()
     }
 
-    pub fn error(&mut self, message: &str) -> Error {
+    pub fn error(&mut self, message: &str) -> CompilationError {
         match self.peek() {
             Some(token) => token.error(message),
             None => self.last.error(message),

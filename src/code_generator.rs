@@ -850,8 +850,8 @@ impl fmt::Display for Error {
     }
 }
 
-impl From<crate::compilation::Error> for Error {
-    fn from(err: crate::compilation::Error) -> Self {
+impl From<crate::compilation::CompilationError> for Error {
+    fn from(err: crate::compilation::CompilationError) -> Self {
         Error::GeneratedBadCode(err.to_string())
     }
 }
