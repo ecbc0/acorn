@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::sync::atomic::AtomicU32;
 use std::time::Duration;
 
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Range};
 
 use crate::block::NodeCursor;
 use crate::build_cache::BuildCache;
@@ -321,7 +321,7 @@ impl<'a> Builder<'a> {
     pub fn search_finished(
         &mut self,
         prover: &mut Prover,
-        goal_context: &Goal,
+        goal: &Goal,
         outcome: Outcome,
         elapsed: Duration,
         project: &Project,
@@ -347,11 +347,11 @@ impl<'a> Builder<'a> {
                 if !project.config.use_certs {
                     // Old proof-generation logic
                     let Some(proof) = prover.get_condensed_proof(&prover.normalizer) else {
-                        self.log_warning(&goal_context, "had a missing proof");
+                        self.log_warning(&goal, "had a missing proof");
                         return;
                     };
                     if proof.needs_simplification() {
-                        self.log_warning(&goal_context, "needs simplification");
+                        self.log_warning(&goal, "needs simplification");
                         return;
                     }
                 }
@@ -360,29 +360,23 @@ impl<'a> Builder<'a> {
                 self.metrics.goals_success += 1;
                 self.metrics.searches_success += 1;
                 if self.log_when_slow && elapsed_f64 > 0.1 {
-                    self.log_info(&goal_context, &format!("took {}", elapsed_str));
+                    self.log_info(&goal, &format!("took {}", elapsed_str));
                 }
-                self.log_verified(goal_context.first_line, goal_context.last_line);
+                self.log_verified(goal.first_line, goal.last_line);
             }
-            Outcome::Exhausted => {
-                self.log_warning(&goal_context, "could not be verified (exhaustion)")
-            }
-            Outcome::Inconsistent => {
-                self.log_warning(&goal_context, "- prover found an inconsistency")
-            }
+            Outcome::Exhausted => self.log_warning(&goal, "could not be verified (exhaustion)"),
+            Outcome::Inconsistent => self.log_warning(&goal, "- prover found an inconsistency"),
             Outcome::Timeout => self.log_warning(
-                &goal_context,
+                &goal,
                 &format!("could not be verified (timeout after {})", elapsed_str),
             ),
             Outcome::Interrupted => {
-                self.log_error(&goal_context, "was interrupted");
+                self.log_error(&goal, "was interrupted");
             }
             Outcome::Error(s) => {
-                self.log_error(&goal_context, &format!("hit an error: {}", s));
+                self.log_error(&goal, &format!("hit an error: {}", s));
             }
-            Outcome::Constrained => {
-                self.log_warning(&goal_context, "could not be verified (constraints)")
-            }
+            Outcome::Constrained => self.log_warning(&goal, "could not be verified (constraints)"),
         }
     }
 
@@ -421,17 +415,16 @@ impl<'a> Builder<'a> {
     }
 
     /// Create a build event for a proof that was other than successful.
-    fn make_event(&mut self, goal: &Goal, message: &str, sev: DiagnosticSeverity) -> BuildEvent {
-        let full_message = format!("{} {}", goal.name, message);
+    fn make_event(&mut self, range: Range, message: &str, sev: DiagnosticSeverity) -> BuildEvent {
         let diagnostic = Diagnostic {
-            range: goal.proposition.source.range,
+            range,
             severity: Some(sev),
-            message: full_message.clone(),
+            message: message.to_string(),
             ..Diagnostic::default()
         };
         BuildEvent {
             progress: Some((self.metrics.goals_done, self.metrics.goals_total)),
-            log_message: Some(full_message),
+            log_message: Some(message.to_string()),
             diagnostic: Some(diagnostic),
             ..self.default_event()
         }
@@ -439,7 +432,12 @@ impl<'a> Builder<'a> {
 
     /// Note that this will blue-squiggle in VS Code, so don't just use this willy-nilly.
     fn log_info(&mut self, goal: &Goal, message: &str) {
-        let event = self.make_event(goal, message, DiagnosticSeverity::INFORMATION);
+        let full_message = format!("{} {}", goal.name, message);
+        let event = self.make_event(
+            goal.proposition.source.range,
+            &full_message,
+            DiagnosticSeverity::INFORMATION,
+        );
         (self.event_handler)(event);
     }
 
@@ -447,7 +445,12 @@ impl<'a> Builder<'a> {
     /// This will cause a yellow squiggle in VS Code.
     /// This will mark the build as "not good", so we won't cache it.
     fn log_warning(&mut self, goal: &Goal, message: &str) {
-        let event = self.make_event(goal, message, DiagnosticSeverity::WARNING);
+        let full_message = format!("{} {}", goal.name, message);
+        let event = self.make_event(
+            goal.proposition.source.range,
+            &full_message,
+            DiagnosticSeverity::WARNING,
+        );
         (self.event_handler)(event);
         self.current_module_good = false;
         self.status.warn();
@@ -457,7 +460,12 @@ impl<'a> Builder<'a> {
     /// This will cause a red squiggle in VS Code.
     /// This will halt the build.
     fn log_error(&mut self, goal: &Goal, message: &str) {
-        let mut event = self.make_event(goal, message, DiagnosticSeverity::ERROR);
+        let full_message = format!("{} {}", goal.name, message);
+        let mut event = self.make_event(
+            goal.proposition.source.range,
+            &full_message,
+            DiagnosticSeverity::ERROR,
+        );
 
         // Set progress as complete, because an error will halt the build
         event.progress = Some((self.metrics.goals_total, self.metrics.goals_total));
