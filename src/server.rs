@@ -151,7 +151,8 @@ impl SearchTask {
             let status = match &outcome {
                 Outcome::Success => {
                     let proof = prover.get_condensed_proof(&prover.normalizer).unwrap();
-                    let steps = prover.to_proof_info(&proof, &project, &env.bindings, &prover.normalizer);
+                    let steps =
+                        prover.to_proof_info(&proof, &project, &env.bindings, &prover.normalizer);
 
                     let (code, error) = match proof.to_code(&env.bindings) {
                         Ok(code) => (Some(code), None),
@@ -710,9 +711,9 @@ impl Backend {
         let superseded = Arc::new(AtomicBool::new(false));
         let mut prover = Prover::new(&project);
         for fact in cursor.usable_facts(&project) {
-            prover.add_fact(fact);
+            prover.old_add_fact(fact);
         }
-        prover.set_goal(&goal_context);
+        prover.old_set_goal(&goal_context);
         prover.stop_flags.push(superseded.clone());
         let status = SearchStatus::pending(&prover);
 
@@ -774,7 +775,12 @@ impl Backend {
                 return self.info_fail(params, "no environment available");
             }
         };
-        let result = prover.info_result(params.clause_id, &project, &env.bindings, &prover.normalizer);
+        let result = prover.info_result(
+            params.clause_id,
+            &project,
+            &env.bindings,
+            &prover.normalizer,
+        );
         let failure = match result {
             Some(_) => None,
             None => Some(format!("no info available for clause {}", params.clause_id)),

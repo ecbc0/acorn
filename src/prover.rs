@@ -149,7 +149,8 @@ impl Prover {
 
     /// Add a fact to the prover.
     /// The fact can be either polymorphic or monomorphic.
-    pub fn add_fact(&mut self, fact: Fact) {
+    /// This is old because it uses the prover-internal normalizer, which we would like to get rid of.
+    pub fn old_add_fact(&mut self, fact: Fact) {
         let steps = match self.normalizer.normalize_fact(fact) {
             Ok(steps) => steps,
             Err(s) => {
@@ -160,17 +161,18 @@ impl Prover {
         self.add_steps(steps);
     }
 
-    /// Sets the goal for the prover
-    pub fn set_goal(&mut self, goal: &Goal) {
+    /// Sets the goal for the prover.
+    /// This is old because it uses the prover-internal normalizer, which we would like to get rid of.
+    pub fn old_set_goal(&mut self, goal: &Goal) {
         assert!(self.goal.is_none());
 
         let prop = &goal.proposition;
         // Negate the goal and add it as a counterfactual assumption.
         let (hypo, counterfactual) = prop.value.clone().negate_goal();
         if let Some(hypo) = hypo {
-            self.add_fact(Fact::proposition(hypo, prop.source.clone()));
+            self.old_add_fact(Fact::proposition(hypo, prop.source.clone()));
         }
-        self.add_fact(Fact::proposition(
+        self.old_add_fact(Fact::proposition(
             counterfactual.clone(),
             prop.source.as_negated_goal(),
         ));

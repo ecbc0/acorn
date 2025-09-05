@@ -600,7 +600,7 @@ impl Project {
             // importable_facts will always include extends and instance facts,
             // even when a filter is provided
             for fact in module_env.importable_facts(Some(module_premises)) {
-                prover.add_fact(fact);
+                prover.old_add_fact(fact);
             }
         }
 
@@ -616,7 +616,7 @@ impl Project {
 
             // Always include facts that are used in normalization.
             if fact.used_in_normalization() {
-                prover.add_fact(fact);
+                prover.old_add_fact(fact);
                 continue;
             }
 
@@ -628,7 +628,7 @@ impl Project {
             };
 
             if local_premises.contains(&name) {
-                prover.add_fact(fact);
+                prover.old_add_fact(fact);
             }
         }
 
@@ -666,7 +666,7 @@ impl Project {
         // The full prover has access to all facts.
         let mut full_prover = Prover::new(&self);
         for fact in self.imported_facts(env.module_id, None) {
-            full_prover.add_fact(fact);
+            full_prover.old_add_fact(fact);
         }
         let mut cursor = NodeCursor::new(&env, 0);
 
@@ -740,7 +740,7 @@ impl Project {
                 break;
             }
             if let Some(fact) = cursor.node().get_fact() {
-                full_prover.add_fact(fact);
+                full_prover.old_add_fact(fact);
             }
             cursor.next();
         }
@@ -817,9 +817,9 @@ impl Project {
 
                 if let Some(fact) = cursor.node().get_fact() {
                     if let Some(ref mut filtered_prover) = filtered_prover {
-                        filtered_prover.add_fact(fact.clone());
+                        filtered_prover.old_add_fact(fact.clone());
                     }
-                    full_prover.add_fact(fact);
+                    full_prover.old_add_fact(fact);
                 }
 
                 if cursor.has_next() {
@@ -870,7 +870,7 @@ impl Project {
         worklist: &mut Option<CertificateWorklist>,
         new_premises: &mut HashSet<(ModuleId, String)>,
     ) {
-        full_prover.set_goal(goal);
+        full_prover.old_set_goal(goal);
 
         // Check for a cached cert
         if let Some(worklist) = worklist.as_mut() {
@@ -919,7 +919,7 @@ impl Project {
         // Try the filtered prover
         if let Some(mut filtered_prover) = filtered_prover {
             builder.metrics.searches_filtered += 1;
-            filtered_prover.set_goal(goal);
+            filtered_prover.old_set_goal(goal);
             let start = std::time::Instant::now();
             let outcome = filtered_prover.verification_search();
             if outcome == Outcome::Success {
