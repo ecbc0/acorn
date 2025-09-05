@@ -12,7 +12,6 @@ use crate::checker::Checker;
 use crate::clause::Clause;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::display::DisplayClause;
-use crate::fact::Fact;
 use crate::goal::Goal;
 use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
 use crate::literal::Literal;
@@ -130,19 +129,6 @@ impl Prover {
         self.passive_set.push_batch(steps);
     }
 
-    /// Add a fact to the prover.
-    /// The fact can be either polymorphic or monomorphic.
-    /// This is old because it uses the prover-internal normalizer, which we would like to get rid of.
-    pub fn old_add_fact(&mut self, fact: Fact) {
-        let steps = match self.normalizer.normalize_fact(fact) {
-            Ok(steps) => steps,
-            Err(e) => {
-                self.error = Some(e.message);
-                return;
-            }
-        };
-        self.add_steps(steps);
-    }
 
     /// Sets the goal for the prover.
     /// This is old because it uses the prover-internal normalizer, which we would like to get rid of.

@@ -14,7 +14,7 @@ use crate::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::acorn_value::AcornValue;
 use crate::binding_map::BindingMap;
 use crate::build_cache::BuildCache;
-use crate::builder::{BuildEvent, Builder};
+use crate::builder::{BuildError, BuildEvent, Builder};
 use crate::code_generator::{self, CodeGenerator};
 use crate::compilation;
 use crate::environment::Environment;
@@ -488,13 +488,18 @@ impl Project {
         env: &Environment,
         block_name: &str,
         module_cache: &Option<ModuleCache>,
-    ) -> Option<Prover> {
+    ) -> Result<Option<Prover>, BuildError> {
         // Load the premises from the cache
-        let normalized = module_cache.as_ref()?.blocks.get(block_name)?;
+        let Some(normalized) = module_cache.as_ref().and_then(|mc| mc.blocks.get(block_name)) else {
+            return Ok(None);
+        };
+        
         let mut premises = HashMap::new();
         for (module_name, premise_set) in normalized.iter() {
             // A module could have been renamed, in which case the whole cache is borked.
-            let module_id = self.get_module_id_by_name(module_name)?;
+            let Some(module_id) = self.get_module_id_by_name(module_name) else {
+                return Ok(None);
+            };
             premises.insert(module_id, premise_set.iter().cloned().collect());
         }
         let mut prover = Prover::new(&self);
@@ -510,12 +515,15 @@ impl Project {
             // importable_facts will always include extends and instance facts,
             // even when a filter is provided
             for fact in module_env.importable_facts(Some(module_premises)) {
-                prover.old_add_fact(fact);
+                let steps = prover.normalizer.normalize_fact(fact)?;
+                prover.add_steps(steps);
             }
         }
 
         // Find the index of the block with the given name
-        let block_index = env.get_block_index(block_name)?;
+        let Some(block_index) = env.get_block_index(block_name) else {
+            return Ok(None);
+        };
 
         // Add facts from this file itself, but only up to the block we're proving
         let local_premises = premises.get(&env.module_id);
@@ -526,7 +534,8 @@ impl Project {
 
             // Always include facts that are used in normalization.
             if fact.used_in_normalization() {
-                prover.old_add_fact(fact);
+                let steps = prover.normalizer.normalize_fact(fact)?;
+                prover.add_steps(steps);
                 continue;
             }
 
@@ -538,11 +547,12 @@ impl Project {
             };
 
             if local_premises.contains(&name) {
-                prover.old_add_fact(fact);
+                let steps = prover.normalizer.normalize_fact(fact)?;
+                prover.add_steps(steps);
             }
         }
 
-        Some(prover)
+        Ok(Some(prover))
     }
 
     // Verifies the goal at this node as well as at every child node.

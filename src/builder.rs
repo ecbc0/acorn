@@ -807,7 +807,7 @@ impl<'a> Builder<'a> {
                     // The filtered prover only contains the premises that we think it needs.
                     let block_name = cursor.block_name();
                     let filtered_prover =
-                        project.make_filtered_prover(env, &block_name, &old_module_cache);
+                        project.make_filtered_prover(env, &block_name, &old_module_cache)?;
 
                     // The premises we use while verifying this block.
                     let mut new_premises = HashSet::new();
