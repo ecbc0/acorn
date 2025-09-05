@@ -138,7 +138,7 @@ impl Verifier {
                 panic!("line set without target");
             };
             // line is the external line number (1-based)
-            if let Err(e) = builder.set_single_goal(project, target, line) {
+            if let Err(e) = builder.set_single_goal(target, line, project) {
                 return Err(format!("Failed to set single goal: {}", e));
             }
         }

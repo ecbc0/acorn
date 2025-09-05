@@ -475,9 +475,9 @@ impl<'a> Builder<'a> {
     /// Requires that the target module is already loaded.
     pub fn set_single_goal(
         &mut self,
-        project: &Project,
         target: &str,
         external_line_number: u32,
+        project: &Project,
     ) -> Result<(), String> {
         // Convert from 1-based (external) to 0-based (internal) line number
         let internal_line_number = external_line_number - 1;
