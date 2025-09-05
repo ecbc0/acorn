@@ -250,7 +250,7 @@ impl BuildStatus {
 }
 
 impl<'a> Builder<'a> {
-    pub fn new(event_handler: impl FnMut(BuildEvent) + 'a) -> Self {
+    pub fn new(_project: &'a Project, event_handler: impl FnMut(BuildEvent) + 'a) -> Self {
         let event_handler = Box::new(event_handler);
         Builder {
             event_handler,

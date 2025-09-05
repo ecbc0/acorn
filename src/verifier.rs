@@ -102,7 +102,7 @@ impl Verifier {
         let project_for_closure = Arc::clone(&project_arc);
 
         // Set up the builder
-        let mut builder = Builder::new(move |event| {
+        let mut builder = Builder::new(Arc::as_ref(&project_arc), move |event| {
             // Also print log messages as before
             if let Some(m) = &event.log_message {
                 if let Some(diagnostic) = &event.diagnostic {

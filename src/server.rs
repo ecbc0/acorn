@@ -162,9 +162,9 @@ impl SearchTask {
                     SearchStatus::success(code, error, steps, proof.needs_simplification(), &prover)
                 }
 
-                Outcome::Inconsistent
-                | Outcome::Exhausted
-                | Outcome::Constrained => SearchStatus::stopped(&prover, &outcome),
+                Outcome::Inconsistent | Outcome::Exhausted | Outcome::Constrained => {
+                    SearchStatus::stopped(&prover, &outcome)
+                }
 
                 Outcome::Timeout => SearchStatus::pending(&prover),
 
@@ -462,7 +462,7 @@ impl Backend {
             let project = project.read().await;
 
             tokio::task::block_in_place(move || {
-                let mut builder = Builder::new(move |event| {
+                let mut builder = Builder::new(&project, move |event| {
                     tx.send(event).unwrap();
                 });
                 builder.build(&project);
