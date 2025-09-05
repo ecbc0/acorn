@@ -62,7 +62,7 @@ impl Verifier {
     }
 
     /// Returns VerifierOutput on success, or an error string if verification fails.
-    pub fn run(&self) -> Result<VerifierOutput, String> {
+    pub fn run(self) -> Result<VerifierOutput, String> {
         let mut project = Project::new_local(&self.start_path, self.config.clone())?;
 
         if let Some(target) = &self.target {
@@ -191,14 +191,14 @@ mod tests {
             use_certs: true,
             ..Default::default()
         };
-        let verifier = Verifier::new(
+        let verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
-            config,
+            config.clone(),
             Some("foo".to_string()),
         );
 
         // Test that the verifier can run successfully on our theorem in the src directory
-        let result = verifier.run();
+        let result = verifier1.run();
         assert!(
             result.is_ok(),
             "Verifier should successfully verify the theorem in src directory: {:?}",
@@ -229,7 +229,12 @@ mod tests {
         assert_eq!(line_count, 1,);
 
         // Verify again
-        let result2 = verifier.run();
+        let verifier2 = Verifier::new(
+            acornlib.path().to_path_buf(),
+            config,
+            Some("foo".to_string()),
+        );
+        let result2 = verifier2.run();
         assert!(
             result2.is_ok(),
             "Second verifier should successfully run: {:?}",
@@ -280,14 +285,14 @@ mod tests {
             use_certs: true,
             ..Default::default()
         };
-        let verifier = Verifier::new(
+        let verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
-            config,
+            config.clone(),
             Some("foo.bar".to_string()),
         );
 
         // Run the verifier the first time
-        let result = verifier.run();
+        let result = verifier1.run();
         assert!(
             result.is_ok(),
             "First verifier run should succeed: {:?}",
@@ -317,7 +322,12 @@ mod tests {
         );
 
         // Verify again
-        let result2 = verifier.run();
+        let verifier2 = Verifier::new(
+            acornlib.path().to_path_buf(),
+            config,
+            Some("foo.bar".to_string()),
+        );
+        let result2 = verifier2.run();
         assert!(
             result2.is_ok(),
             "Second verifier should successfully run: {:?}",
