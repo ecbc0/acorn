@@ -56,7 +56,27 @@ impl Verifier {
         config: ProjectConfig,
         target: Option<String>,
     ) -> Result<Self, String> {
-        let project = Project::new_local(&start_path, config.clone())?;
+        let mut project = Project::new_local(&start_path, config.clone())?;
+
+        // Add targets to the project
+        if let Some(ref target) = target {
+            if target == "-" {
+                let path = PathBuf::from("<stdin>");
+                project.add_target_by_path(&path)?;
+            } else if target.starts_with("-:") {
+                let path = PathBuf::from(target);
+                project.add_target_by_path(&path)?;
+            } else if target.ends_with(".ac") {
+                // Looks like a filename
+                let path = PathBuf::from(target);
+                project.add_target_by_path(&path)?;
+            } else {
+                project.add_target_by_name(target)?;
+            }
+        } else {
+            project.add_all_targets();
+        }
+
         Ok(Self {
             project,
             config,
@@ -67,25 +87,7 @@ impl Verifier {
     }
 
     /// Returns VerifierOutput on success, or an error string if verification fails.
-    pub fn run(mut self) -> Result<VerifierOutput, String> {
-        if let Some(target) = &self.target {
-            if target == "-" {
-                let path = PathBuf::from("<stdin>");
-                self.project.add_target_by_path(&path)?;
-            } else if target.starts_with("-:") {
-                let path = PathBuf::from(target);
-                self.project.add_target_by_path(&path)?;
-            } else if target.ends_with(".ac") {
-                // Looks like a filename
-                let path = PathBuf::from(&target);
-                self.project.add_target_by_path(&path)?;
-            } else {
-                self.project.add_target_by_name(&target)?;
-            }
-        } else {
-            self.project.add_all_targets();
-        }
-
+    pub fn run(self) -> Result<VerifierOutput, String> {
         // Create a vector to collect events
         let events = Rc::new(RefCell::new(Vec::new()));
         let events_clone = events.clone();
@@ -484,16 +486,14 @@ mod tests {
             use_certs: true,
             ..Default::default()
         };
-        let verifier = Verifier::new(
+        let result = Verifier::new(
             acornlib.path().to_path_buf(),
             config,
             Some("foo".to_string()),
-        )
-        .unwrap();
+        );
 
-        let result = verifier.run();
         let Err(err) = result else {
-            panic!("Verifier should fail on circular import: {:?}", result);
+            panic!("Verifier::new should fail on circular import");
         };
 
         assert!(
