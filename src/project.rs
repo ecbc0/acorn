@@ -468,7 +468,7 @@ impl Project {
         let mut targets = self.targets.iter().collect::<Vec<_>>();
         targets.sort();
 
-        builder.log_info(format!(
+        builder.log_global(format!(
             "verifying modules: {}",
             targets
                 .iter()
@@ -492,7 +492,7 @@ impl Project {
                         if builder.log_secondary_errors {
                             // The real problem is in a different module.
                             // So we don't want to locate the error in this module.
-                            builder.log_info(e.to_string());
+                            builder.log_global(e.to_string());
                         }
                     } else {
                         builder.log_loading_error(target, e);
@@ -500,12 +500,12 @@ impl Project {
                 }
                 LoadState::None => {
                     // Targets are supposed to be loaded already.
-                    builder.log_info(format!("error: module {} is not loaded", target));
+                    builder.log_global(format!("error: module {} is not loaded", target));
                 }
                 LoadState::Loading => {
                     // Happens if there's a circular import. A more localized error should
                     // show up elsewhere, so let's just log.
-                    builder.log_info(format!("error: module {} stuck in loading", target));
+                    builder.log_global(format!("error: module {} stuck in loading", target));
                 }
             }
         }
@@ -537,7 +537,7 @@ impl Project {
         {
             let build_cache = builder.build_cache.as_ref().unwrap();
             if let Err(e) = build_cache.save(self.cache_dir.clone()) {
-                builder.log_info(format!("error saving build cache: {}", e));
+                builder.log_global(format!("error saving build cache: {}", e));
             }
         }
     }
@@ -726,7 +726,7 @@ impl Project {
                         None => {
                             // We couldn't normalize the premises, so we can't cache them.
                             // This can happen if the module is unimportable.
-                            builder.log_info(format!(
+                            builder.log_global(format!(
                                 "could not normalize premises for {}",
                                 block_name
                             ));
@@ -751,7 +751,7 @@ impl Project {
                 .module_caches
                 .insert_module_cache(target.clone(), new_module_cache)
             {
-                builder.log_info(format!("error in module cache set: {}", e));
+                builder.log_global(format!("error in module cache set: {}", e));
             }
 
             if let Some(worklist) = worklist {
@@ -894,8 +894,7 @@ impl Project {
                     }
                     Err(e) if self.config.verify => {
                         // In verify mode, a cert that fails to verify is an error
-                        builder
-                            .log_goal_error(goal, &format!("certificate failed to verify: {}", e));
+                        builder.log_error(goal, &format!("certificate failed to verify: {}", e));
                         return;
                     }
                     Err(_) => {
@@ -904,13 +903,13 @@ impl Project {
                 }
             }
         } else if self.config.verify {
-            builder.log_goal_error(goal, "no worklist found");
+            builder.log_error(goal, "no worklist found");
             return;
         }
 
         // In verify mode, we should never reach the search phase
         if self.config.verify {
-            builder.log_goal_error(goal, "no certificate found");
+            builder.log_error(goal, "no certificate found");
             return;
         }
 
@@ -935,7 +934,7 @@ impl Project {
                             if let Err(e) =
                                 checker.check_cert(&cert, self, &mut bindings, &mut normalizer)
                             {
-                                builder.log_goal_error(
+                                builder.log_error(
                                     &goal,
                                     &format!("filtered prover created cert that the full prover rejected: {}", e),
                                 );
@@ -944,7 +943,7 @@ impl Project {
                             new_certs.push(cert);
                         }
                         Err(e) => {
-                            builder.log_goal_error(
+                            builder.log_error(
                                 &goal,
                                 &format!("filtered prover failed to create certificate: {}", e),
                             );
@@ -973,7 +972,7 @@ impl Project {
                 ) {
                     Ok(cert) => new_certs.push(cert),
                     Err(e) => {
-                        builder.log_goal_error(
+                        builder.log_error(
                             &goal,
                             &format!("full prover failed to create certificate: {}", e),
                         );

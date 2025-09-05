@@ -85,4 +85,17 @@ impl Goal {
         let last_line = prop.source.range.end.line;
         Self::new(env, prop, first_line, first_line, last_line)
     }
+
+    pub fn error(&self, message: &str) -> GoalError {
+        GoalError {
+            goal: self.clone(),
+            message: message.to_string(),
+        }
+    }
+}
+
+/// The GoalError is an error that is associated with a particular goal.
+pub struct GoalError {
+    pub goal: Goal,
+    pub message: String,
 }

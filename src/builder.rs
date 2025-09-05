@@ -7,7 +7,7 @@ use crate::block::NodeCursor;
 use crate::build_cache::BuildCache;
 use crate::compilation::Error;
 use crate::environment::Environment;
-use crate::goal::Goal;
+use crate::goal::{Goal, GoalError};
 use crate::module::ModuleDescriptor;
 use crate::project::Project;
 use crate::prover::{Outcome, Prover};
@@ -266,8 +266,11 @@ impl<'a> Builder<'a> {
         (self.event_handler)(event);
     }
 
-    /// Logs an informational message that doesn't change build status.
-    pub fn log_info(&mut self, message: String) {
+    /// Logs an informational message not tied to any particular location.
+    /// In VS Code this will only appear in a pane, so it's only useful for debugging.
+    /// You can't expect a typical user to see these.
+    /// This doesn't change build status.
+    pub fn log_global(&mut self, message: String) {
         let event = BuildEvent {
             log_message: Some(message),
             ..self.default_event()
@@ -340,11 +343,11 @@ impl<'a> Builder<'a> {
                 if !project.config.use_certs {
                     // Old proof-generation logic
                     let Some(proof) = prover.get_condensed_proof(&prover.normalizer) else {
-                        self.log_goal_warning(&goal_context, "had a missing proof");
+                        self.log_warning(&goal_context, "had a missing proof");
                         return;
                     };
                     if proof.needs_simplification() {
-                        self.log_goal_warning(&goal_context, "needs simplification");
+                        self.log_warning(&goal_context, "needs simplification");
                         return;
                     }
                 }
@@ -353,28 +356,28 @@ impl<'a> Builder<'a> {
                 self.metrics.goals_success += 1;
                 self.metrics.searches_success += 1;
                 if self.log_when_slow && elapsed_f64 > 0.1 {
-                    self.log_goal_info(&goal_context, &format!("took {}", elapsed_str));
+                    self.log_info(&goal_context, &format!("took {}", elapsed_str));
                 }
                 self.log_verified(goal_context.first_line, goal_context.last_line);
             }
             Outcome::Exhausted => {
-                self.log_goal_warning(&goal_context, "could not be verified (exhaustion)")
+                self.log_warning(&goal_context, "could not be verified (exhaustion)")
             }
             Outcome::Inconsistent => {
-                self.log_goal_warning(&goal_context, "- prover found an inconsistency")
+                self.log_warning(&goal_context, "- prover found an inconsistency")
             }
-            Outcome::Timeout => self.log_goal_warning(
+            Outcome::Timeout => self.log_warning(
                 &goal_context,
                 &format!("could not be verified (timeout after {})", elapsed_str),
             ),
             Outcome::Interrupted => {
-                self.log_goal_error(&goal_context, "was interrupted");
+                self.log_error(&goal_context, "was interrupted");
             }
             Outcome::Error(s) => {
-                self.log_goal_error(&goal_context, &format!("hit an error: {}", s));
+                self.log_error(&goal_context, &format!("hit an error: {}", s));
             }
             Outcome::Constrained => {
-                self.log_goal_warning(&goal_context, "could not be verified (constraints)")
+                self.log_warning(&goal_context, "could not be verified (constraints)")
             }
         }
     }
@@ -431,7 +434,7 @@ impl<'a> Builder<'a> {
     }
 
     /// Note that this will blue-squiggle in VS Code, so don't just use this willy-nilly.
-    fn log_goal_info(&mut self, goal: &Goal, message: &str) {
+    fn log_info(&mut self, goal: &Goal, message: &str) {
         let event = self.make_event(goal, message, DiagnosticSeverity::INFORMATION);
         (self.event_handler)(event);
     }
@@ -439,7 +442,7 @@ impl<'a> Builder<'a> {
     /// Logs a warning that is associated with a particular goal.
     /// This will cause a yellow squiggle in VS Code.
     /// This will mark the build as "not good", so we won't cache it.
-    fn log_goal_warning(&mut self, goal: &Goal, message: &str) {
+    fn log_warning(&mut self, goal: &Goal, message: &str) {
         let event = self.make_event(goal, message, DiagnosticSeverity::WARNING);
         (self.event_handler)(event);
         self.current_module_good = false;
@@ -449,7 +452,7 @@ impl<'a> Builder<'a> {
     /// Logs an error that is associated with a particular goal.
     /// This will cause a red squiggle in VS Code.
     /// This will halt the build.
-    pub fn log_goal_error(&mut self, goal: &Goal, message: &str) {
+    pub fn log_error(&mut self, goal: &Goal, message: &str) {
         let mut event = self.make_event(goal, message, DiagnosticSeverity::ERROR);
 
         // Set progress as complete, because an error will halt the build
@@ -457,6 +460,13 @@ impl<'a> Builder<'a> {
         (self.event_handler)(event);
         self.current_module_good = false;
         self.status = BuildStatus::Error;
+    }
+
+    /// Logs an error that is associated with a particular goal.
+    /// This will cause a red squiggle in VS Code.
+    /// This will halt the build.
+    pub fn log_goal_error(&mut self, goal_error: &GoalError) {
+        self.log_error(&goal_error.goal, &goal_error.message);
     }
 
     /// Sets the builder to only build a single goal.
