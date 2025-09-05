@@ -663,9 +663,9 @@ impl<'a> Builder<'a> {
         new_certs: &mut Option<Vec<Certificate>>,
         worklist: &mut Option<CertificateWorklist>,
         project: &Project,
-    ) {
+    ) -> Result<(), BuildError> {
         if !cursor.requires_verification() {
-            return;
+            return Ok(());
         }
 
         let mut full_prover = full_prover.clone();
@@ -682,10 +682,7 @@ impl<'a> Builder<'a> {
                     new_certs,
                     worklist,
                     project,
-                );
-                if self.status.is_error() {
-                    return;
-                }
+                )?;
 
                 if let Some(fact) = cursor.node().get_fact() {
                     if let Some(ref mut filtered_prover) = filtered_prover {
@@ -708,7 +705,7 @@ impl<'a> Builder<'a> {
             if let Some((_, line)) = self.single_goal {
                 if goal.first_line != line {
                     // This isn't the goal we're looking for.
-                    return;
+                    return Ok(());
                 }
             }
             self.verify_with_fallback(
@@ -722,9 +719,11 @@ impl<'a> Builder<'a> {
                 project,
             );
             if self.status.is_error() {
-                return;
+                return Ok(());
             }
         }
+
+        Ok(())
     }
 
     /// Verifies all goals within this module.
@@ -803,7 +802,7 @@ impl<'a> Builder<'a> {
                         &mut new_certs,
                         &mut worklist,
                         project,
-                    );
+                    )?;
                     if self.status.is_error() {
                         return Ok(());
                     }
