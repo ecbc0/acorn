@@ -711,7 +711,10 @@ impl Backend {
         let superseded = Arc::new(AtomicBool::new(false));
         let mut prover = Prover::new(&project);
         for fact in cursor.usable_facts(&project) {
-            let steps = prover.normalizer.normalize_fact(fact).unwrap();
+            let steps = match prover.normalizer.normalize_fact(fact) {
+                Ok(steps) => steps,
+                Err(e) => return self.search_fail(params, &e.message),
+            };
             prover.add_steps(steps);
         }
         prover.old_set_goal(&goal_context);

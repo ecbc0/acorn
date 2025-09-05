@@ -4,6 +4,7 @@ use std::sync::Arc;
 use crate::acorn_type::AcornType;
 use crate::acorn_value::{AcornValue, BinaryOp, FunctionApplication};
 use crate::atom::{Atom, AtomId};
+use crate::builder::BuildError;
 use crate::clause::Clause;
 use crate::fact::Fact;
 use crate::goal::Goal;
@@ -592,7 +593,7 @@ impl Normalizer {
 
     /// A single fact can turn into a bunch of proof steps.
     /// This monomorphizes, which can indirectly turn into what seems like a lot of unrelated steps.
-    pub fn normalize_fact(&mut self, fact: Fact) -> Result<Vec<ProofStep>, String> {
+    pub fn normalize_fact(&mut self, fact: Fact) -> Result<Vec<ProofStep>, BuildError> {
         let mut steps = vec![];
 
         // Check if this looks like an aliasing.
@@ -603,6 +604,7 @@ impl Normalizer {
             return Ok(steps);
         }
 
+        let range = fact.source().range;
         self.monomorphizer.add_fact(fact);
         for proposition in self.monomorphizer.take_output() {
             let ctype = if proposition.source.truthiness() == Truthiness::Factual {
@@ -612,12 +614,14 @@ impl Normalizer {
             };
             let defined = match &proposition.source.source_type {
                 SourceType::ConstantDefinition(value, _) => {
-                    let term = self.term_from_value(&value, ctype)?;
+                    let term = self.term_from_value(&value, ctype)
+                        .map_err(|msg| BuildError::new(range, msg))?;
                     Some(term.get_head().clone())
                 }
                 _ => None,
             };
-            let clauses = self.normalize_value(&proposition.value, ctype)?;
+            let clauses = self.normalize_value(&proposition.value, ctype)
+                .map_err(|msg| BuildError::new(range, msg))?;
             for clause in clauses {
                 let step = ProofStep::assumption(&proposition, clause, defined);
                 steps.push(step);
@@ -631,7 +635,7 @@ impl Normalizer {
     pub fn normalize_goal(
         &mut self,
         goal: &Goal,
-    ) -> Result<(NormalizedGoal, Vec<ProofStep>), String> {
+    ) -> Result<(NormalizedGoal, Vec<ProofStep>), BuildError> {
         let prop = &goal.proposition;
         let (hypo, counterfactual) = prop.value.clone().negate_goal();
         let mut steps = vec![];

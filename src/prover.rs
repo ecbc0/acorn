@@ -136,8 +136,8 @@ impl Prover {
     pub fn old_add_fact(&mut self, fact: Fact) {
         let steps = match self.normalizer.normalize_fact(fact) {
             Ok(steps) => steps,
-            Err(s) => {
-                self.error = Some(s);
+            Err(e) => {
+                self.error = Some(e.message);
                 return;
             }
         };
@@ -151,8 +151,8 @@ impl Prover {
 
         let (ng, steps) = match self.normalizer.normalize_goal(goal) {
             Ok((ng, steps)) => (ng, steps),
-            Err(s) => {
-                self.error = Some(s);
+            Err(e) => {
+                self.error = Some(e.message);
                 return;
             }
         };

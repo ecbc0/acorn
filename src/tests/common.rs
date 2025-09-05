@@ -27,7 +27,9 @@ fn prove_helper<'a>(
     let goal_context = node.goal().unwrap();
     let mut prover = Prover::new(&project);
     for fact in facts {
-        let steps = prover.normalizer.normalize_fact(fact).unwrap();
+        let steps = prover.normalizer.normalize_fact(fact)
+            .map_err(|e| e.message)
+            .unwrap();
         prover.add_steps(steps);
     }
     prover.old_set_goal(&goal_context);
@@ -109,10 +111,12 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
 
         let mut prover = Prover::new(&project);
         for fact in facts {
-            let steps = prover.normalizer.normalize_fact(fact)?;
+            let steps = prover.normalizer.normalize_fact(fact)
+                .map_err(|e| e.message)?;
             prover.add_steps(steps);
         }
-        let (ng, steps) = prover.normalizer.normalize_goal(&goal)?;
+        let (ng, steps) = prover.normalizer.normalize_goal(&goal)
+            .map_err(|e| e.message)?;
         prover.add_steps(steps);
         prover.set_goal(ng);
 
