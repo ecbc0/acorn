@@ -1,5 +1,4 @@
 use core::panic;
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -22,13 +21,12 @@ use crate::code_generator::{self, CodeGenerator};
 use crate::compilation;
 use crate::environment::Environment;
 use crate::fact::Fact;
-use crate::goal::Goal;
 use crate::module::{LoadState, Module, ModuleDescriptor, ModuleId};
 use crate::module_cache::{ModuleCache, ModuleHash};
 use crate::module_cache_set::ModuleCacheSet;
 use crate::named_entity::NamedEntity;
 use crate::names::ConstantName;
-use crate::prover::{Outcome, Prover};
+use crate::prover::Prover;
 use crate::token::Token;
 use crate::token_map::TokenInfo;
 
@@ -839,15 +837,15 @@ impl Project {
                     return;
                 }
             }
-            self.verify_with_fallback(
+            builder.verify_with_fallback(
                 full_prover,
                 filtered_prover,
                 &goal,
-                builder,
                 cursor.goal_env().unwrap(),
                 new_certs,
                 worklist,
                 new_premises,
+                &self,
             );
             if builder.status.is_error() {
                 return;
@@ -857,133 +855,6 @@ impl Project {
 
     // Tries to use the filtered prover to verify this goal, but falls back to the full prover
     // if that doesn't work.
-    // env should be the environment that the proof happens in.
-    // Returns the prover that was used.
-    fn verify_with_fallback(
-        &self,
-        mut full_prover: Prover,
-        filtered_prover: Option<Prover>,
-        goal: &Goal,
-        builder: &mut Builder,
-        env: &Environment,
-        new_certs: &mut Option<Vec<Certificate>>,
-        worklist: &mut Option<CertificateWorklist>,
-        new_premises: &mut HashSet<(ModuleId, String)>,
-    ) {
-        full_prover.old_set_goal(goal);
-
-        // Check for a cached cert
-        if let Some(worklist) = worklist.as_mut() {
-            let indexes = worklist.get_indexes(&goal.name);
-            for i in indexes {
-                let cert = worklist.get_cert(*i).unwrap();
-                let mut checker = full_prover.checker.clone();
-                let mut normalizer = full_prover.normalizer.clone();
-                let mut bindings = Cow::Borrowed(&env.bindings);
-                match checker.check_cert(cert, self, &mut bindings, &mut normalizer) {
-                    Ok(()) => {
-                        builder.metrics.cached_certs += 1;
-                        builder.metrics.goals_done += 1;
-                        builder.metrics.goals_success += 1;
-                        builder.log_verified(goal.first_line, goal.last_line);
-                        if let Some(new_certs) = new_certs {
-                            new_certs.push(cert.clone());
-                        }
-                        worklist.remove(&goal.name, *i);
-                        return;
-                    }
-                    Err(e) if self.config.verify => {
-                        // In verify mode, a cert that fails to verify is an error
-                        builder.log_error(goal, &format!("certificate failed to verify: {}", e));
-                        return;
-                    }
-                    Err(_) => {
-                        // Certificate didn't verify, continue to next cert or fall through
-                    }
-                }
-            }
-        } else if self.config.verify {
-            builder.log_error(goal, "no worklist found");
-            return;
-        }
-
-        // In verify mode, we should never reach the search phase
-        if self.config.verify {
-            builder.log_error(goal, "no certificate found");
-            return;
-        }
-
-        // Try the filtered prover
-        if let Some(mut filtered_prover) = filtered_prover {
-            builder.metrics.searches_filtered += 1;
-            filtered_prover.old_set_goal(goal);
-            let start = std::time::Instant::now();
-            let outcome = filtered_prover.verification_search();
-            if outcome == Outcome::Success {
-                if let Some(new_certs) = new_certs {
-                    match filtered_prover.make_cert(
-                        &self,
-                        &env.bindings,
-                        &filtered_prover.normalizer,
-                        builder.verbose,
-                    ) {
-                        Ok(cert) => {
-                            let mut checker = full_prover.checker.clone();
-                            let mut normalizer = full_prover.normalizer.clone();
-                            let mut bindings = Cow::Borrowed(&env.bindings);
-                            if let Err(e) =
-                                checker.check_cert(&cert, self, &mut bindings, &mut normalizer)
-                            {
-                                builder.log_error(
-                                    &goal,
-                                    &format!("filtered prover created cert that the full prover rejected: {}", e),
-                                );
-                                return;
-                            }
-                            new_certs.push(cert);
-                        }
-                        Err(e) => {
-                            builder.log_error(
-                                &goal,
-                                &format!("filtered prover failed to create certificate: {}", e),
-                            );
-                            return;
-                        }
-                    }
-                }
-                builder.search_finished(&mut filtered_prover, goal, outcome, start.elapsed(), self);
-                filtered_prover.get_useful_source_names(new_premises, &filtered_prover.normalizer);
-                return;
-            }
-            builder.metrics.searches_fallback += 1;
-        }
-
-        // Try the full prover
-        builder.metrics.searches_full += 1;
-        let start = std::time::Instant::now();
-        let outcome = full_prover.verification_search();
-        if outcome == Outcome::Success {
-            if let Some(new_certs) = new_certs {
-                match full_prover.make_cert(
-                    &self,
-                    &env.bindings,
-                    &full_prover.normalizer,
-                    builder.verbose,
-                ) {
-                    Ok(cert) => new_certs.push(cert),
-                    Err(e) => {
-                        builder.log_error(
-                            &goal,
-                            &format!("full prover failed to create certificate: {}", e),
-                        );
-                        return;
-                    }
-                }
-            }
-        }
-        builder.search_finished(&mut full_prover, goal, outcome, start.elapsed(), self);
-        full_prover.get_useful_source_names(new_premises, &full_prover.normalizer);
-    }
 
     // Does the build and returns when it's done, rather than asynchronously.
     // Returns (status, events, searches_success, cache).

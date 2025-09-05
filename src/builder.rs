@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+use std::collections::HashSet;
 use std::sync::atomic::AtomicU32;
 use std::time::Duration;
 
@@ -5,10 +7,11 @@ use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
 
 use crate::block::NodeCursor;
 use crate::build_cache::BuildCache;
+use crate::certificate::{Certificate, CertificateWorklist};
 use crate::compilation::Error;
 use crate::environment::Environment;
 use crate::goal::{Goal, GoalError};
-use crate::module::ModuleDescriptor;
+use crate::module::{ModuleDescriptor, ModuleId};
 use crate::project::Project;
 use crate::prover::{Outcome, Prover};
 
@@ -493,5 +496,133 @@ impl<'a> Builder<'a> {
 
         self.single_goal = Some((module_descriptor, internal_line_number));
         Ok(())
+    }
+
+    /// Verifies a goal with fallback from filtered to full prover.
+    /// env should be the environment that the proof happens in.
+    pub fn verify_with_fallback(
+        &mut self,
+        mut full_prover: Prover,
+        filtered_prover: Option<Prover>,
+        goal: &Goal,
+        env: &Environment,
+        new_certs: &mut Option<Vec<Certificate>>,
+        worklist: &mut Option<CertificateWorklist>,
+        new_premises: &mut HashSet<(ModuleId, String)>,
+        project: &Project,
+    ) {
+        full_prover.old_set_goal(goal);
+
+        // Check for a cached cert
+        if let Some(worklist) = worklist.as_mut() {
+            let indexes = worklist.get_indexes(&goal.name);
+            for i in indexes {
+                let cert = worklist.get_cert(*i).unwrap();
+                let mut checker = full_prover.checker.clone();
+                let mut normalizer = full_prover.normalizer.clone();
+                let mut bindings = Cow::Borrowed(&env.bindings);
+                match checker.check_cert(cert, project, &mut bindings, &mut normalizer) {
+                    Ok(()) => {
+                        self.metrics.cached_certs += 1;
+                        self.metrics.goals_done += 1;
+                        self.metrics.goals_success += 1;
+                        self.log_verified(goal.first_line, goal.last_line);
+                        if let Some(new_certs) = new_certs {
+                            new_certs.push(cert.clone());
+                        }
+                        worklist.remove(&goal.name, *i);
+                        return;
+                    }
+                    Err(e) if project.config.verify => {
+                        // In verify mode, a cert that fails to verify is an error
+                        self.log_error(goal, &format!("certificate failed to verify: {}", e));
+                        return;
+                    }
+                    Err(_) => {
+                        // Certificate didn't verify, continue to next cert or fall through
+                    }
+                }
+            }
+        } else if project.config.verify {
+            self.log_error(goal, "no worklist found");
+            return;
+        }
+
+        // In verify mode, we should never reach the search phase
+        if project.config.verify {
+            self.log_error(goal, "no certificate found");
+            return;
+        }
+
+        // Try the filtered prover
+        if let Some(mut filtered_prover) = filtered_prover {
+            self.metrics.searches_filtered += 1;
+            filtered_prover.old_set_goal(goal);
+            let start = std::time::Instant::now();
+            let outcome = filtered_prover.verification_search();
+            if outcome == Outcome::Success {
+                if let Some(new_certs) = new_certs {
+                    match filtered_prover.make_cert(
+                        project,
+                        &env.bindings,
+                        &filtered_prover.normalizer,
+                        self.verbose,
+                    ) {
+                        Ok(cert) => {
+                            let mut checker = full_prover.checker.clone();
+                            let mut normalizer = full_prover.normalizer.clone();
+                            let mut bindings = Cow::Borrowed(&env.bindings);
+                            if let Err(e) =
+                                checker.check_cert(&cert, project, &mut bindings, &mut normalizer)
+                            {
+                                self.log_error(
+                                    &goal,
+                                    &format!("filtered prover created cert that the full prover rejected: {}", e),
+                                );
+                                return;
+                            }
+                            new_certs.push(cert);
+                        }
+                        Err(e) => {
+                            self.log_error(
+                                &goal,
+                                &format!("filtered prover failed to create certificate: {}", e),
+                            );
+                            return;
+                        }
+                    }
+                }
+                self.search_finished(&mut filtered_prover, goal, outcome, start.elapsed(), project);
+                filtered_prover.get_useful_source_names(new_premises, &filtered_prover.normalizer);
+                return;
+            }
+            self.metrics.searches_fallback += 1;
+        }
+
+        // Try the full prover
+        self.metrics.searches_full += 1;
+        let start = std::time::Instant::now();
+        let outcome = full_prover.verification_search();
+        if outcome == Outcome::Success {
+            if let Some(new_certs) = new_certs {
+                match full_prover.make_cert(
+                    project,
+                    &env.bindings,
+                    &full_prover.normalizer,
+                    self.verbose,
+                ) {
+                    Ok(cert) => new_certs.push(cert),
+                    Err(e) => {
+                        self.log_error(
+                            &goal,
+                            &format!("full prover failed to create certificate: {}", e),
+                        );
+                        return;
+                    }
+                }
+            }
+        }
+        self.search_finished(&mut full_prover, goal, outcome, start.elapsed(), project);
+        full_prover.get_useful_source_names(new_premises, &full_prover.normalizer);
     }
 }
