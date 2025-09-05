@@ -51,7 +51,11 @@ pub struct Verifier {
 }
 
 impl Verifier {
-    pub fn new(start_path: PathBuf, config: ProjectConfig, target: Option<String>) -> Result<Self, String> {
+    pub fn new(
+        start_path: PathBuf,
+        config: ProjectConfig,
+        target: Option<String>,
+    ) -> Result<Self, String> {
         let project = Project::new_local(&start_path, config.clone())?;
         Ok(Self {
             project,
@@ -194,7 +198,8 @@ mod tests {
             acornlib.path().to_path_buf(),
             config.clone(),
             Some("foo".to_string()),
-        ).unwrap();
+        )
+        .unwrap();
 
         // Test that the verifier can run successfully on our theorem in the src directory
         let result = verifier1.run();
@@ -232,7 +237,8 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("foo".to_string()),
-        ).unwrap();
+        )
+        .unwrap();
         let result2 = verifier2.run();
         assert!(
             result2.is_ok(),
@@ -288,7 +294,8 @@ mod tests {
             acornlib.path().to_path_buf(),
             config.clone(),
             Some("foo.bar".to_string()),
-        ).unwrap();
+        )
+        .unwrap();
 
         // Run the verifier the first time
         let result = verifier1.run();
@@ -325,7 +332,8 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("foo.bar".to_string()),
-        ).unwrap();
+        )
+        .unwrap();
         let result2 = verifier2.run();
         assert!(
             result2.is_ok(),
@@ -387,7 +395,8 @@ mod tests {
             acornlib.path().to_path_buf(),
             config.clone(),
             Some("main".to_string()),
-        ).unwrap();
+        )
+        .unwrap();
         let output = verifier1.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
 
@@ -395,7 +404,8 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
-        ).unwrap();
+        )
+        .unwrap();
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
         assert_eq!(output.metrics.searches_fallback, 0);
@@ -443,7 +453,8 @@ mod tests {
             acornlib.path().to_path_buf(),
             config.clone(),
             Some("main".to_string()),
-        ).unwrap();
+        )
+        .unwrap();
         let output = verifier1.run().unwrap();
         assert_eq!(output.num_verified(), 5);
 
@@ -451,7 +462,8 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
-        ).unwrap();
+        )
+        .unwrap();
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good,);
         assert_eq!(output.metrics.searches_fallback, 0,);
@@ -476,7 +488,8 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("foo".to_string()),
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = verifier.run();
         let Err(err) = result else {
@@ -523,15 +536,9 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
-        ).unwrap();
-
-        let result = verifier.run();
-        let Ok(output) = result else {
-            panic!(
-                "Verifier should run but report compilation error: {:?}",
-                result
-            );
-        };
+        )
+        .unwrap();
+        let output = verifier.run().unwrap();
 
         // The verifier should report a compilation error
         assert_eq!(output.status, BuildStatus::Error);
@@ -595,7 +602,8 @@ mod tests {
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
-        ).unwrap();
+        )
+        .unwrap();
         let output = verifier1.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
     }
