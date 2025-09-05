@@ -387,7 +387,9 @@ impl<'a> Builder<'a> {
                 &format!("could not be verified (timeout after {})", elapsed_str),
             ),
             Outcome::Interrupted => {
-                self.old_log_error(&goal, "was interrupted");
+                // Should this really be an error?
+                let error = BuildError::new(&goal, "was interrupted");
+                self.log_build_error(&error);
             }
             Outcome::Error(s) => {
                 self.old_log_error(&goal, &format!("hit an error: {}", s));
