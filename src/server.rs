@@ -580,14 +580,6 @@ impl Backend {
         project
     }
 
-    fn search_fail(&self, params: SearchParams, message: &str) -> jsonrpc::Result<SearchResponse> {
-        log(message);
-        Ok(SearchResponse {
-            failure: Some(message.to_string()),
-            ..SearchResponse::new(params)
-        })
-    }
-
     async fn handle_progress_request(
         &self,
         _params: ProgressParams,
@@ -618,11 +610,26 @@ impl Backend {
         }
     }
 
+    fn search_fail(&self, params: SearchParams, message: &str) -> jsonrpc::Result<SearchResponse> {
+        log(message);
+        Ok(SearchResponse {
+            failure: Some(message.to_string()),
+            ..SearchResponse::new(params)
+        })
+    }
+
     async fn handle_search_request(&self, params: SearchParams) -> jsonrpc::Result<SearchResponse> {
+        match self.search_request_helper(params.clone()).await {
+            Ok(response) => Ok(response),
+            Err(message) => self.search_fail(params, &message),
+        }
+    }
+
+    async fn search_request_helper(&self, params: SearchParams) -> Result<SearchResponse, String> {
         let doc = match self.documents.get(&params.uri) {
             Some(doc) => doc,
             None => {
-                return self.search_fail(params, "no text available");
+                return Err("no text available".to_string());
             }
         };
         let doc = doc.read().await;
@@ -644,17 +651,17 @@ impl Backend {
             Some(path) => path,
             None => {
                 // There should be a path available, because we don't run this task without one.
-                return self.search_fail(params, "no path available in SearchTask::run");
+                return Err("no path available in SearchTask::run".to_string());
             }
         };
         match project.get_version(&path) {
             Some(project_version) => {
                 if params.version < project_version {
-                    let message = &format!(
+                    let message = format!(
                         "user requested version {} but the project has version {}",
                         params.version, project_version
                     );
-                    return self.search_fail(params, message);
+                    return Err(message);
                 }
                 if params.version > project_version {
                     // The requested version is not loaded yet.
@@ -665,32 +672,23 @@ impl Backend {
                 }
             }
             None => {
-                return self.search_fail(
-                    params,
-                    &format!("the project has not opened {}", path.display()),
-                );
+                return Err(format!("the project has not opened {}", path.display()));
             }
         }
         let descriptor = match project.descriptor_from_path(&path) {
             Ok(name) => name,
             Err(e) => {
-                return self.search_fail(params, &format!("descriptor_from_path failed: {:?}", e))
+                return Err(format!("descriptor_from_path failed: {:?}", e));
             }
         };
         let env = match project.get_module(&descriptor) {
             LoadState::Ok(env) => env,
             _ => {
-                return self.search_fail(
-                    params,
-                    &format!("could not load module from {:?}", descriptor),
-                );
+                return Err(format!("could not load module from {:?}", descriptor));
             }
         };
 
-        let path = match env.path_for_line(params.selected_line) {
-            Ok(path) => path,
-            Err(s) => return self.search_fail(params, &s),
-        };
+        let path = env.path_for_line(params.selected_line)?;
 
         // Check if this request matches our current task, based on the full path of the goal.
         // This is slower (because we had to acquire the project lock first)
@@ -704,20 +702,17 @@ impl Backend {
             }
         }
         let cursor = NodeCursor::from_path(env, &path);
-        let goal_context = match cursor.goal() {
-            Ok(goal_context) => goal_context,
-            Err(s) => return self.search_fail(params, &s),
-        };
+        let goal = cursor.goal()?;
         let superseded = Arc::new(AtomicBool::new(false));
         let mut prover = Prover::new(&project);
         for fact in cursor.usable_facts(&project) {
-            let steps = match prover.normalizer.normalize_fact(fact) {
-                Ok(steps) => steps,
-                Err(e) => return self.search_fail(params, &e.message),
-            };
+            let steps = prover
+                .normalizer
+                .normalize_fact(fact)
+                .map_err(|e| e.message)?;
             prover.add_steps(steps);
         }
-        prover.old_set_goal(&goal_context);
+        prover.old_set_goal(&goal);
         prover.stop_flags.push(superseded.clone());
         let status = SearchStatus::pending(&prover);
 
@@ -730,12 +725,12 @@ impl Backend {
             descriptor,
             selected_line: params.selected_line,
             path,
-            goal_name: goal_context.name.clone(),
-            goal_range: goal_context.proposition.source.range,
+            goal_name: goal.name.clone(),
+            goal_range: goal.proposition.source.range,
             status: Arc::new(RwLock::new(status)),
             superseded,
-            proof_insertion_line: goal_context.proof_insertion_line,
-            insert_block: goal_context.insert_block,
+            proof_insertion_line: goal.proof_insertion_line,
+            insert_block: goal.insert_block,
             id: params.id,
         };
 
