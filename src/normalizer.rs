@@ -6,6 +6,7 @@ use crate::acorn_value::{AcornValue, BinaryOp, FunctionApplication};
 use crate::atom::{Atom, AtomId};
 use crate::clause::Clause;
 use crate::fact::Fact;
+use crate::goal::Goal;
 use crate::literal::Literal;
 use crate::monomorphizer::Monomorphizer;
 use crate::names::ConstantName;
@@ -613,6 +614,26 @@ impl Normalizer {
             }
         }
         Ok(steps)
+    }
+
+    /// Normalizes a goal into a NormalizedGoal and proof steps that includes
+    /// both positive versions of the hypotheses and negated versions of the conclusion.
+    pub fn normalize_goal(&mut self, goal: &Goal) -> Result<(NormalizedGoal, Vec<ProofStep>)> {
+        let prop = &goal.proposition;
+        let (hypo, counterfactual) = prop.value.clone().negate_goal();
+        let mut steps = vec![];
+        if let Some(hypo) = hypo {
+            let fact = Fact::proposition(hypo, prop.source.clone());
+            steps.extend(self.normalize_fact(fact)?);
+        }
+        let fact = Fact::proposition(counterfactual.clone(), prop.source.as_negated_goal());
+        steps.extend(self.normalize_fact(fact)?);
+        let ng = NormalizedGoal {
+            name: goal.name.clone(),
+            counterfactual,
+            inconsistency_okay: goal.inconsistency_okay,
+        };
+        Ok((ng, steps))
     }
 
     /// If arbitrary names are provided, any free variables of the keyed types are converted

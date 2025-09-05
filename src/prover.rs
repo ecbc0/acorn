@@ -70,7 +70,6 @@ pub struct Prover {
     pub strict_codegen: bool,
 }
 
-
 /// The outcome of a prover operation.
 /// - "Success" means we proved it.
 /// - "Exhausted" means we tried every possibility and couldn't prove it.
@@ -150,21 +149,15 @@ impl Prover {
     pub fn old_set_goal(&mut self, goal: &Goal) {
         assert!(self.goal.is_none());
 
-        let prop = &goal.proposition;
-        // Negate the goal and add it as a counterfactual assumption.
-        let (hypo, counterfactual) = prop.value.clone().negate_goal();
-        if let Some(hypo) = hypo {
-            self.old_add_fact(Fact::proposition(hypo, prop.source.clone()));
-        }
-        self.old_add_fact(Fact::proposition(
-            counterfactual.clone(),
-            prop.source.as_negated_goal(),
-        ));
-        self.goal = Some(NormalizedGoal {
-            name: goal.name.clone(),
-            counterfactual,
-            inconsistency_okay: goal.inconsistency_okay,
-        });
+        let (ng, steps) = match self.normalizer.normalize_goal(goal) {
+            Ok((ng, steps)) => (ng, steps),
+            Err(s) => {
+                self.error = Some(s);
+                return;
+            }
+        };
+        self.add_steps(steps);
+        self.goal = Some(ng);
     }
 
     /// Returns the final step of the proof if available
