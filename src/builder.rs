@@ -561,7 +561,10 @@ impl<'a> Builder<'a> {
                     }
                     Err(e) if project.config.verify => {
                         // In verify mode, a cert that fails to verify is an error
-                        return Err(BuildError::new(goal, &format!("certificate failed to verify: {}", e)));
+                        return Err(BuildError::new(
+                            goal,
+                            &format!("certificate failed to verify: {}", e),
+                        ));
                     }
                     Err(_) => {
                         // Certificate didn't verify, continue to next cert or fall through
@@ -802,9 +805,6 @@ impl<'a> Builder<'a> {
                         &mut worklist,
                         project,
                     )?;
-                    if self.status.is_error() {
-                        return Ok(());
-                    }
                     match project.normalize_premises(env.module_id, &block_name, &new_premises) {
                         Some(normalized) => {
                             // We verified this block, so we can cache it.
@@ -927,8 +927,6 @@ impl<'a> Builder<'a> {
             }
             if let Err(e) = self.verify_module(&target, env, project) {
                 self.log_build_error(&e);
-            }
-            if self.status.is_error() {
                 return;
             }
         }
