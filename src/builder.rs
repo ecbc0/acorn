@@ -771,10 +771,11 @@ impl<'a> Builder<'a> {
 
         self.module_proving_started(target.clone());
 
-        // The full prover has access to all facts.
+        // The full prover has access to all imported facts.
         let mut full_prover = Prover::new(&project);
         for fact in project.imported_facts(env.module_id, None) {
-            full_prover.old_add_fact(fact);
+            let steps = full_prover.normalizer.normalize_fact(fact.clone())?;
+            full_prover.add_steps(steps);
         }
         let mut cursor = NodeCursor::new(&env, 0);
 
