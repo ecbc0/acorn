@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use crate::builder::{BuildEvent, BuildMetrics, BuildStatus, Builder};
 use crate::project::{Project, ProjectConfig};
@@ -97,17 +96,13 @@ impl Verifier {
         let events = Rc::new(RefCell::new(Vec::new()));
         let events_clone = events.clone();
 
-        // Create an Arc to share the project with the closure
-        let project_arc = Arc::new(project);
-        let project_for_closure = Arc::clone(&project_arc);
-
         // Set up the builder
-        let mut builder = Builder::new(Arc::as_ref(&project_arc), move |event| {
+        let mut builder = Builder::new(&project, |event| {
             // Also print log messages as before
             if let Some(m) = &event.log_message {
                 if let Some(diagnostic) = &event.diagnostic {
                     // Use display_path to show a relative path
-                    let display_path = project_for_closure.display_path(&event.module);
+                    let display_path = project.display_path(&event.module);
                     println!(
                         "{}, line {}: {}",
                         display_path,

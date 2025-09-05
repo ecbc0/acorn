@@ -4,7 +4,10 @@
 //   cargo build --bin=profile_prover --profile=fastdev
 //   samply record target/fastdev/profile_prover
 
-use acorn::project::{Project, ProjectConfig};
+use acorn::{
+    builder::Builder,
+    project::{Project, ProjectConfig},
+};
 
 fn main() {
     let current_dir = std::env::current_dir().unwrap();
@@ -23,7 +26,7 @@ fn main() {
         project
             .add_target_by_name("int")
             .expect("Failed to add int target");
-        let mut logger = project.builder(|event| {
+        let mut builder = Builder::new(&project, |event| {
             if let Some(m) = event.log_message {
                 println!("{}", m);
             }
@@ -33,6 +36,6 @@ fn main() {
                 }
             }
         });
-        logger.build(&project);
+        builder.build();
     }
 }
