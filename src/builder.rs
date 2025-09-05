@@ -340,11 +340,11 @@ impl<'a> Builder<'a> {
                 if !project.config.use_certs {
                     // Old proof-generation logic
                     let Some(proof) = prover.get_condensed_proof(&prover.normalizer) else {
-                        self.log_proving_warning(&goal_context, "had a missing proof");
+                        self.log_goal_warning(&goal_context, "had a missing proof");
                         return;
                     };
                     if proof.needs_simplification() {
-                        self.log_proving_warning(&goal_context, "needs simplification");
+                        self.log_goal_warning(&goal_context, "needs simplification");
                         return;
                     }
                 }
@@ -353,28 +353,28 @@ impl<'a> Builder<'a> {
                 self.metrics.goals_success += 1;
                 self.metrics.searches_success += 1;
                 if self.log_when_slow && elapsed_f64 > 0.1 {
-                    self.log_proving_info(&goal_context, &format!("took {}", elapsed_str));
+                    self.log_goal_info(&goal_context, &format!("took {}", elapsed_str));
                 }
                 self.log_verified(goal_context.first_line, goal_context.last_line);
             }
             Outcome::Exhausted => {
-                self.log_proving_warning(&goal_context, "could not be verified (exhaustion)")
+                self.log_goal_warning(&goal_context, "could not be verified (exhaustion)")
             }
             Outcome::Inconsistent => {
-                self.log_proving_warning(&goal_context, "- prover found an inconsistency")
+                self.log_goal_warning(&goal_context, "- prover found an inconsistency")
             }
-            Outcome::Timeout => self.log_proving_warning(
+            Outcome::Timeout => self.log_goal_warning(
                 &goal_context,
                 &format!("could not be verified (timeout after {})", elapsed_str),
             ),
             Outcome::Interrupted => {
-                self.log_proving_error(&goal_context, "was interrupted");
+                self.log_goal_error(&goal_context, "was interrupted");
             }
             Outcome::Error(s) => {
-                self.log_proving_error(&goal_context, &format!("hit an error: {}", s));
+                self.log_goal_error(&goal_context, &format!("hit an error: {}", s));
             }
             Outcome::Constrained => {
-                self.log_proving_warning(&goal_context, "could not be verified (constraints)")
+                self.log_goal_warning(&goal_context, "could not be verified (constraints)")
             }
         }
     }
@@ -431,23 +431,26 @@ impl<'a> Builder<'a> {
     }
 
     /// Note that this will blue-squiggle in VS Code, so don't just use this willy-nilly.
-    pub fn log_proving_info(&mut self, goal: &Goal, message: &str) {
+    fn log_goal_info(&mut self, goal: &Goal, message: &str) {
         let event = self.make_event(goal, message, DiagnosticSeverity::INFORMATION);
         (self.event_handler)(event);
     }
 
-    /// Logs a warning. Warnings can only happen during the proving phase.
+    /// Logs a warning that is associated with a particular goal.
+    /// This will cause a yellow squiggle in VS Code.
     /// This will mark the build as "not good", so we won't cache it.
-    fn log_proving_warning(&mut self, goal: &Goal, message: &str) {
+    fn log_goal_warning(&mut self, goal: &Goal, message: &str) {
         let event = self.make_event(goal, message, DiagnosticSeverity::WARNING);
         (self.event_handler)(event);
         self.current_module_good = false;
         self.status.warn();
     }
 
-    /// Logs an error during the proving phase.
-    pub fn log_proving_error(&mut self, goal: &Goal, message: &str) {
-        let mut event = self.make_event(goal, message, DiagnosticSeverity::WARNING);
+    /// Logs an error that is associated with a particular goal.
+    /// This will cause a red squiggle in VS Code.
+    /// This will halt the build.
+    pub fn log_goal_error(&mut self, goal: &Goal, message: &str) {
+        let mut event = self.make_event(goal, message, DiagnosticSeverity::ERROR);
 
         // Set progress as complete, because an error will halt the build
         event.progress = Some((self.metrics.goals_total, self.metrics.goals_total));

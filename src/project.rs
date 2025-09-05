@@ -894,10 +894,8 @@ impl Project {
                     }
                     Err(e) if self.config.verify => {
                         // In verify mode, a cert that fails to verify is an error
-                        builder.log_proving_error(
-                            goal,
-                            &format!("certificate failed to verify: {}", e),
-                        );
+                        builder
+                            .log_goal_error(goal, &format!("certificate failed to verify: {}", e));
                         return;
                     }
                     Err(_) => {
@@ -906,13 +904,13 @@ impl Project {
                 }
             }
         } else if self.config.verify {
-            builder.log_proving_error(goal, "no worklist found");
+            builder.log_goal_error(goal, "no worklist found");
             return;
         }
 
         // In verify mode, we should never reach the search phase
         if self.config.verify {
-            builder.log_proving_error(goal, "no certificate found");
+            builder.log_goal_error(goal, "no certificate found");
             return;
         }
 
@@ -937,7 +935,7 @@ impl Project {
                             if let Err(e) =
                                 checker.check_cert(&cert, self, &mut bindings, &mut normalizer)
                             {
-                                builder.log_proving_error(
+                                builder.log_goal_error(
                                     &goal,
                                     &format!("filtered prover created cert that the full prover rejected: {}", e),
                                 );
@@ -946,7 +944,7 @@ impl Project {
                             new_certs.push(cert);
                         }
                         Err(e) => {
-                            builder.log_proving_error(
+                            builder.log_goal_error(
                                 &goal,
                                 &format!("filtered prover failed to create certificate: {}", e),
                             );
@@ -975,7 +973,7 @@ impl Project {
                 ) {
                     Ok(cert) => new_certs.push(cert),
                     Err(e) => {
-                        builder.log_proving_error(
+                        builder.log_goal_error(
                             &goal,
                             &format!("full prover failed to create certificate: {}", e),
                         );
