@@ -95,6 +95,7 @@ impl Goal {
 }
 
 /// The GoalError is an error that is associated with a particular goal.
+#[derive(Debug)]
 pub struct GoalError {
     pub goal: Goal,
     pub message: String,

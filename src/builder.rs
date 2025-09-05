@@ -710,16 +710,15 @@ impl<'a> Builder<'a> {
     }
 
     /// Verifies all goals within this module.
-    /// If we run into an error, we exit without verifying any more goals.
     pub fn verify_module(
         &mut self,
         target: &ModuleDescriptor,
         env: &Environment,
         project: &Project,
-    ) {
+    ) -> Result<(), GoalError> {
         if env.nodes.is_empty() {
             // Nothing to prove
-            return;
+            return Ok(());
         }
 
         let module_hash = project.get_hash(env.module_id).unwrap();
@@ -788,7 +787,7 @@ impl<'a> Builder<'a> {
                         project,
                     );
                     if self.status.is_error() {
-                        return;
+                        return Ok(());
                     }
                     match project.normalize_premises(env.module_id, &block_name, &new_premises) {
                         Some(normalized) => {
@@ -841,6 +840,7 @@ impl<'a> Builder<'a> {
                     .insert(target.clone(), cert_store);
             }
         }
+        Ok(())
     }
 
     /// Builds all open modules, logging build events.
@@ -909,7 +909,9 @@ impl<'a> Builder<'a> {
                     continue;
                 }
             }
-            self.verify_module(&target, env, project);
+            if let Err(e) = self.verify_module(&target, env, project) {
+                self.log_goal_error(&e);
+            }
             if self.status.is_error() {
                 return;
             }
