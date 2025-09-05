@@ -30,6 +30,7 @@ impl VerifierOutput {
     }
 }
 
+/// The Verifier manages the run of a single build.
 pub struct Verifier {
     /// Configuration for the project
     config: ProjectConfig,
