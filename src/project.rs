@@ -15,7 +15,7 @@ use crate::acorn_value::AcornValue;
 use crate::binding_map::BindingMap;
 use crate::block::NodeCursor;
 use crate::build_cache::BuildCache;
-use crate::builder::{BuildEvent, BuildStatus, Builder};
+use crate::builder::{BuildEvent, Builder};
 use crate::certificate::{Certificate, CertificateStore, CertificateWorklist};
 use crate::code_generator::{self, CodeGenerator};
 use crate::compilation;
@@ -851,21 +851,6 @@ impl Project {
                 return;
             }
         }
-    }
-
-    // Tries to use the filtered prover to verify this goal, but falls back to the full prover
-    // if that doesn't work.
-
-    // Does the build and returns when it's done, rather than asynchronously.
-    // Returns (status, events, searches_success, cache).
-    pub fn sync_build(&self) -> (BuildStatus, Vec<BuildEvent>, i32) {
-        let mut events = vec![];
-        let (status, searches_success) = {
-            let mut builder = self.builder(|event| events.push(event));
-            self.build(&mut builder);
-            (builder.status, builder.metrics.searches_success)
-        };
-        (status, events, searches_success)
     }
 
     // Set the file content. This has priority over the actual filesystem.
@@ -1729,22 +1714,5 @@ impl Project {
         let value = &goal_context.proposition.value;
         let fake_input = format!("<{}>", theorem_name);
         CodeGenerator::expect(&node.env().bindings, &fake_input, &value, expected);
-    }
-
-    // Returns num_success.
-    #[cfg(test)]
-    pub fn expect_build_ok(&mut self) -> i32 {
-        let (status, events, searches_success) = self.sync_build();
-        assert_eq!(status, BuildStatus::Good);
-        assert!(events.len() > 0);
-        let (done, total) = events.last().unwrap().progress.unwrap();
-        assert_eq!(done, total, "expected number of build events didn't match");
-        searches_success
-    }
-
-    #[cfg(test)]
-    pub fn expect_build_fails(&mut self) {
-        let (status, _, _) = self.sync_build();
-        assert_ne!(status, BuildStatus::Good, "expected build to fail");
     }
 }

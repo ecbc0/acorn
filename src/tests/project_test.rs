@@ -7,6 +7,20 @@ use crate::names::ConstantName;
 use crate::project::Project;
 use indoc::indoc;
 
+fn expect_build_ok(project: &Project) -> i32 {
+    let mut events = vec![];
+    let (status, searches_success) = {
+        let mut builder = project.builder(|event| events.push(event));
+        project.build(&mut builder);
+        (builder.status, builder.metrics.searches_success)
+    };
+    assert_eq!(status, BuildStatus::Good);
+    assert!(events.len() > 0);
+    let (done, total) = events.last().unwrap().progress.unwrap();
+    assert_eq!(done, total, "expected number of build events didn't match");
+    searches_success
+}
+
 const FOO_AC: &str = r#"
 // Imported by other tests
 type Foo: axiom
@@ -145,7 +159,7 @@ fn test_building_project() {
         .expect("adding foo target failed");
     p.add_target_by_name("main")
         .expect("adding main target failed");
-    p.expect_build_ok();
+    expect_build_ok(&p);
 }
 
 #[test]
@@ -155,7 +169,7 @@ fn test_target_outside_library() {
     p.mock(outside_path, FOO_AC);
     p.add_target_by_path(&PathBuf::from(outside_path))
         .expect("adding outside target failed");
-    p.expect_build_ok();
+    expect_build_ok(&p);
 }
 
 #[test]
@@ -357,26 +371,26 @@ fn test_build_cache() {
     "#;
     p.mock("/mock/foo.ac", foo_text);
     p.mock("/mock/main.ac", main_text);
-    let num_success = p.expect_build_ok();
+    let num_success = expect_build_ok(&p);
     assert_eq!(num_success, 2);
     assert_eq!(p.module_caches.num_module_caches(), 2);
 
     // Just rebuilding a second time should require no work
-    let num_success = p.expect_build_ok();
+    let num_success = expect_build_ok(&p);
     assert_eq!(num_success, 0);
 
     // If we change main, we should only have to rebuild main
     let touched_main = format!("// Touch\n{}", main_text);
     p.update_file(PathBuf::from("/mock/main.ac"), &touched_main, 1)
         .expect("update failed");
-    let num_success = p.expect_build_ok();
+    let num_success = expect_build_ok(&p);
     assert_eq!(num_success, 1);
 
     // If we change foo, we should have to rebuild both
     let touched_foo = format!("// Touch\n{}", foo_text);
     p.update_file(PathBuf::from("/mock/foo.ac"), &touched_foo, 1)
         .expect("update failed");
-    let num_success = p.expect_build_ok();
+    let num_success = expect_build_ok(&p);
     assert_eq!(num_success, 2);
 }
 
@@ -396,14 +410,14 @@ fn test_build_cache_partial_rebuild() {
     ];
     let filename = "/mock/main.ac";
     p.mock(filename, &lines.join("\n"));
-    let num_success = p.expect_build_ok();
+    let num_success = expect_build_ok(&p);
     assert_eq!(num_success, 3);
 
     // Change the middle theorem
     lines[4] = "    false = false";
     p.update_file(PathBuf::from(filename), &lines.join("\n"), 1)
         .expect("update failed");
-    let num_success = p.expect_build_ok();
+    let num_success = expect_build_ok(&p);
     assert_eq!(num_success, 2);
 }
 
