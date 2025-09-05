@@ -705,9 +705,11 @@ impl<'a> Builder<'a> {
 
                 if let Some(fact) = cursor.node().get_fact() {
                     if let Some(ref mut filtered_prover) = filtered_prover {
-                        filtered_prover.old_add_fact(fact.clone());
+                        let steps = filtered_prover.normalizer.normalize_fact(fact.clone())?;
+                        filtered_prover.add_steps(steps);
                     }
-                    full_prover.old_add_fact(fact);
+                    let steps = full_prover.normalizer.normalize_fact(fact)?;
+                    full_prover.add_steps(steps);
                 }
 
                 if cursor.has_next() {
