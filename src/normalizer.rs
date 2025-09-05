@@ -565,13 +565,15 @@ impl Normalizer {
 
     /// A single fact can turn into a bunch of proof steps.
     /// This monomorphizes, which can indirectly turn into what seems like a lot of unrelated steps.
-    pub fn normalize_fact(&mut self, fact: Fact, steps: &mut Vec<ProofStep>) -> Result<()> {
+    pub fn normalize_fact(&mut self, fact: Fact) -> Result<Vec<ProofStep>> {
+        let mut steps = vec![];
+
         // Check if this looks like an aliasing.
         if let Some((ci, name, constant_type)) = fact.as_instance_alias() {
             let local = fact.source().truthiness() != Truthiness::Factual;
             self.normalization_map
                 .alias_monomorph(ci, name, &constant_type, local);
-            return Ok(());
+            return Ok(steps);
         }
 
         self.monomorphizer.add_fact(fact);
@@ -594,7 +596,7 @@ impl Normalizer {
                 steps.push(step);
             }
         }
-        Ok(())
+        Ok(steps)
     }
 
     /// If arbitrary names are provided, any free variables of the keyed types are converted

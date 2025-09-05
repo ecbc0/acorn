@@ -138,21 +138,26 @@ impl Prover {
         }
     }
 
+    /// Add proof steps to the prover.
+    /// These can be used as initial facts for starting the proof.
+    pub fn add_steps(&mut self, steps: Vec<ProofStep>) {
+        for step in &steps {
+            self.checker.insert_clause(&step.clause);
+        }
+        self.passive_set.push_batch(steps);
+    }
+
     /// Add a fact to the prover.
     /// The fact can be either polymorphic or monomorphic.
     pub fn add_fact(&mut self, fact: Fact) {
-        let mut steps = vec![];
-        match self.normalizer.normalize_fact(fact, &mut steps) {
-            Ok(()) => {}
+        let steps = match self.normalizer.normalize_fact(fact) {
+            Ok(steps) => steps,
             Err(s) => {
                 self.error = Some(s);
                 return;
             }
         };
-        for step in &steps {
-            self.checker.insert_clause(&step.clause);
-        }
-        self.passive_set.push_batch(steps);
+        self.add_steps(steps);
     }
 
     /// Sets the goal for the prover
