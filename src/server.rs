@@ -706,10 +706,7 @@ impl Backend {
         let superseded = Arc::new(AtomicBool::new(false));
         let mut prover = Prover::new(&project);
         for fact in cursor.usable_facts(&project) {
-            let steps = prover
-                .normalizer
-                .normalize_fact(fact)
-                .map_err(|e| e.message)?;
+            let steps = prover.normalizer.normalize_fact(fact)?;
             prover.add_steps(steps);
         }
         prover.old_set_goal(&goal);

@@ -131,6 +131,12 @@ impl BuildError {
     }
 }
 
+impl From<BuildError> for String {
+    fn from(error: BuildError) -> String {
+        error.message
+    }
+}
+
 impl BuildMetrics {
     pub fn new() -> Self {
         Self::default()
