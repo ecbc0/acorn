@@ -24,6 +24,7 @@ static NEXT_BUILD_ID: AtomicU32 = AtomicU32::new(1);
 pub struct Builder<'a> {
     /// Reference to the project being built.
     project: &'a Project,
+
     /// A single event handler is used across all modules.
     event_handler: Box<dyn FnMut(BuildEvent) + 'a>,
 
@@ -516,11 +517,13 @@ impl<'a> Builder<'a> {
         // Convert from 1-based (external) to 0-based (internal) line number
         let internal_line_number = external_line_number - 1;
 
-        let module_id = self.project
+        let module_id = self
+            .project
             .get_module_id_by_name(target)
             .ok_or_else(|| format!("Module '{}' not found", target))?;
 
-        let module_descriptor = self.project
+        let module_descriptor = self
+            .project
             .get_module_descriptor(module_id)
             .ok_or_else(|| format!("No descriptor found for module '{}'", target))?
             .clone();
@@ -604,9 +607,12 @@ impl<'a> Builder<'a> {
                             let mut checker = full_prover.checker.clone();
                             let mut normalizer = full_prover.normalizer.clone();
                             let mut bindings = Cow::Borrowed(&env.bindings);
-                            if let Err(e) = checker
-                                .check_cert(&cert, self.project, &mut bindings, &mut normalizer)
-                            {
+                            if let Err(e) = checker.check_cert(
+                                &cert,
+                                self.project,
+                                &mut bindings,
+                                &mut normalizer,
+                            ) {
                                 return Err(BuildError::goal(
                                     &goal,
                                     &format!("filtered prover created cert that the full prover rejected: {}", e),
@@ -788,9 +794,9 @@ impl<'a> Builder<'a> {
                     // If we have a cached set of premises, we use it to create a filtered prover.
                     // The filtered prover only contains the premises that we think it needs.
                     let block_name = cursor.block_name();
-                    let filtered_prover = self
-                        .project
-                        .make_filtered_prover(env, &block_name, &old_module_cache)?;
+                    let filtered_prover =
+                        self.project
+                            .make_filtered_prover(env, &block_name, &old_module_cache)?;
 
                     // The premises we use while verifying this block.
                     let mut new_premises = HashSet::new();
