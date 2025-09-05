@@ -160,6 +160,11 @@ impl Prover {
         self.goal = Some(ng);
     }
 
+    pub fn set_goal(&mut self, ng: NormalizedGoal) {
+        assert!(self.goal.is_none());
+        self.goal = Some(ng);
+    }
+
     /// Returns the final step of the proof if available
     pub fn get_final_step(&self) -> Option<&ProofStep> {
         self.final_step.as_ref()
