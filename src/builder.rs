@@ -551,7 +551,9 @@ impl<'a> Builder<'a> {
         new_premises: &mut HashSet<(ModuleId, String)>,
         project: &Project,
     ) -> Result<(), BuildError> {
-        full_prover.old_set_goal(goal);
+        let (ng, steps) = full_prover.normalizer.normalize_goal(goal)?;
+        full_prover.add_steps(steps);
+        full_prover.set_goal(ng);
 
         // Check for a cached cert
         if let Some(worklist) = worklist.as_mut() {
@@ -597,7 +599,9 @@ impl<'a> Builder<'a> {
         // Try the filtered prover
         if let Some(mut filtered_prover) = filtered_prover {
             self.metrics.searches_filtered += 1;
-            filtered_prover.old_set_goal(goal);
+            let (filtered_ng, filtered_steps) = filtered_prover.normalizer.normalize_goal(goal)?;
+            filtered_prover.add_steps(filtered_steps);
+            filtered_prover.set_goal(filtered_ng);
             let start = std::time::Instant::now();
             let outcome = filtered_prover.verification_search();
             if outcome == Outcome::Success {

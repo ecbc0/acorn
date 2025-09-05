@@ -30,7 +30,9 @@ fn prove_helper<'a>(
         let steps = prover.normalizer.normalize_fact(fact).unwrap();
         prover.add_steps(steps);
     }
-    prover.old_set_goal(&goal_context);
+    let (ng, steps) = prover.normalizer.normalize_goal(&goal_context).unwrap();
+    prover.add_steps(steps);
+    prover.set_goal(ng);
     prover.strict_codegen = true;
     let outcome = prover.quick_search();
     if let Outcome::Error(s) = outcome {

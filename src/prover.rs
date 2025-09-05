@@ -12,7 +12,6 @@ use crate::checker::Checker;
 use crate::clause::Clause;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::display::DisplayClause;
-use crate::goal::Goal;
 use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
 use crate::literal::Literal;
 use crate::module::ModuleId;
@@ -130,21 +129,6 @@ impl Prover {
     }
 
 
-    /// Sets the goal for the prover.
-    /// This is old because it uses the prover-internal normalizer, which we would like to get rid of.
-    pub fn old_set_goal(&mut self, goal: &Goal) {
-        assert!(self.goal.is_none());
-
-        let (ng, steps) = match self.normalizer.normalize_goal(goal) {
-            Ok((ng, steps)) => (ng, steps),
-            Err(e) => {
-                self.error = Some(e.message);
-                return;
-            }
-        };
-        self.add_steps(steps);
-        self.goal = Some(ng);
-    }
 
     pub fn set_goal(&mut self, ng: NormalizedGoal) {
         assert!(self.goal.is_none());
