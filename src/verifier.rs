@@ -63,30 +63,21 @@ impl Verifier {
 
     /// Returns VerifierOutput on success, or an error string if verification fails.
     pub fn run(&self) -> Result<VerifierOutput, String> {
-        let mut project = match Project::new_local(&self.start_path, self.config.clone()) {
-            Ok(p) => p,
-            Err(e) => return Err(format!("Error: {}", e)),
-        };
+        let mut project = Project::new_local(&self.start_path, self.config.clone())?;
 
         if let Some(target) = &self.target {
             if target == "-" {
                 let path = PathBuf::from("<stdin>");
-                if let Err(e) = project.add_target_by_path(&path) {
-                    return Err(format!("{}", e));
-                }
+                project.add_target_by_path(&path)?;
             } else if target.starts_with("-:") {
                 let path = PathBuf::from(target);
-                if let Err(e) = project.add_target_by_path(&path) {
-                    return Err(format!("{}", e));
-                }
+                project.add_target_by_path(&path)?;
             } else if target.ends_with(".ac") {
                 // Looks like a filename
                 let path = PathBuf::from(&target);
-                if let Err(e) = project.add_target_by_path(&path) {
-                    return Err(format!("{}", e));
-                }
-            } else if let Err(e) = project.add_target_by_name(&target) {
-                return Err(format!("{}", e));
+                project.add_target_by_path(&path)?;
+            } else {
+                project.add_target_by_name(&target)?;
             }
         } else {
             project.add_all_targets();

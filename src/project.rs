@@ -128,6 +128,12 @@ impl fmt::Display for ProjectError {
     }
 }
 
+impl From<ProjectError> for String {
+    fn from(error: ProjectError) -> Self {
+        error.0
+    }
+}
+
 // Errors specific to importing modules.
 // Each string is a human-readable error message.
 #[derive(Debug)]
@@ -154,6 +160,12 @@ impl fmt::Display for ImportError {
                 write!(f, "circular import of module {}", module_id)
             }
         }
+    }
+}
+
+impl From<ImportError> for String {
+    fn from(error: ImportError) -> Self {
+        error.to_string()
     }
 }
 
