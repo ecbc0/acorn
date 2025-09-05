@@ -146,7 +146,7 @@ impl Verifier {
         builder.verbose = self.verbose;
 
         // Build
-        project.build(&mut builder);
+        builder.build(&project);
         builder.metrics.print(builder.status);
 
         if !self.config.check_hashes && builder.metrics.searches_fallback > 0 {

@@ -11,7 +11,7 @@ fn expect_build_ok(project: &Project) -> i32 {
     let mut events = vec![];
     let (status, searches_success) = {
         let mut builder = project.builder(|event| events.push(event));
-        project.build(&mut builder);
+        builder.build(&project);
         (builder.status, builder.metrics.searches_success)
     };
     assert_eq!(status, BuildStatus::Good);

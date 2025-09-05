@@ -33,6 +33,6 @@ fn main() {
                 }
             }
         });
-        project.build(&mut logger);
+        logger.build(&project);
     }
 }

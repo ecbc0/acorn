@@ -11,7 +11,7 @@ use crate::certificate::{Certificate, CertificateStore, CertificateWorklist};
 use crate::compilation::Error;
 use crate::environment::Environment;
 use crate::goal::{Goal, GoalError};
-use crate::module::{ModuleDescriptor, ModuleId};
+use crate::module::{LoadState, ModuleDescriptor, ModuleId};
 use crate::module_cache::ModuleCache;
 use crate::project::Project;
 use crate::prover::{Outcome, Prover};
@@ -835,11 +835,95 @@ impl<'a> Builder<'a> {
             if let Some(certs) = new_certs {
                 // Insert the new CertificateStore into the build cache
                 let cert_store = CertificateStore { certs };
-                self
-                    .build_cache
+                self.build_cache
                     .as_mut()
                     .unwrap()
                     .insert(target.clone(), cert_store);
+            }
+        }
+    }
+
+    /// Builds all open modules, logging build events.
+    pub fn build(&mut self, project: &Project) {
+        // Initialize the build cache if we're using certificates
+        if project.using_certs() {
+            self.build_cache = Some(BuildCache::new());
+        }
+
+        // Build in alphabetical order by module name for consistency.
+        let mut targets = project.targets.iter().collect::<Vec<_>>();
+        targets.sort();
+
+        self.log_global(format!(
+            "verifying modules: {}",
+            targets
+                .iter()
+                .map(|t| t.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+
+        // The first phase is the "loading phase". We load modules and look for errors.
+        // If there are errors, we won't try to do proving.
+        let mut envs = vec![];
+        for target in &targets {
+            let module = project.get_module(target);
+            match module {
+                LoadState::Ok(env) => {
+                    self.module_loaded(&env);
+                    envs.push(env);
+                }
+                LoadState::Error(e) => {
+                    if e.indirect {
+                        if self.log_secondary_errors {
+                            // The real problem is in a different module.
+                            // So we don't want to locate the error in this module.
+                            self.log_global(e.to_string());
+                        }
+                    } else {
+                        self.log_loading_error(target, e);
+                    }
+                }
+                LoadState::None => {
+                    // Targets are supposed to be loaded already.
+                    self.log_global(format!("error: module {} is not loaded", target));
+                }
+                LoadState::Loading => {
+                    // Happens if there's a circular import. A more localized error should
+                    // show up elsewhere, so let's just log.
+                    self.log_global(format!("error: module {} stuck in loading", target));
+                }
+            }
+        }
+
+        if self.status.is_error() {
+            return;
+        }
+
+        self.loading_phase_complete();
+
+        // The second pass is the "proving phase".
+        for (target, env) in targets.into_iter().zip(envs) {
+            if let Some((ref m, _)) = self.single_goal {
+                if m != target {
+                    continue;
+                }
+            }
+            self.verify_module(&target, env, project);
+            if self.status.is_error() {
+                return;
+            }
+        }
+
+        // There's a lot of conditions for when we actually write to the cache
+        if project.using_certs()
+            && self.status.is_good()
+            && project.config.write_cache
+            && self.single_goal.is_none()
+        {
+            let build_cache = self.build_cache.as_ref().unwrap();
+            if let Err(e) = build_cache.save(project.cache_dir.clone()) {
+                self.log_global(format!("error saving build cache: {}", e));
             }
         }
     }

@@ -40,7 +40,7 @@ pub struct Project {
     library_root: PathBuf,
 
     // The directory where caches are stored
-    cache_dir: PathBuf,
+    pub cache_dir: PathBuf,
 
     // For "open" files, we use the content we are storing rather than the content on disk.
     // This can store either test data that doesn't exist on the filesystem at all, or
@@ -59,7 +59,7 @@ pub struct Project {
     module_map: HashMap<ModuleDescriptor, ModuleId>,
 
     // The module names that we want to build.
-    targets: HashSet<ModuleDescriptor>,
+    pub targets: HashSet<ModuleDescriptor>,
 
     // The cache contains a hash for each module from the last time it was cleanly built.
     pub module_caches: ModuleCacheSet,
@@ -453,90 +453,6 @@ impl Project {
         Builder::new(event_handler)
     }
 
-    // Builds all open modules, logging build events.
-    pub fn build(&self, builder: &mut Builder) {
-        // Initialize the build cache if we're using certificates
-        if self.using_certs() {
-            builder.build_cache = Some(BuildCache::new());
-        }
-
-        // Build in alphabetical order by module name for consistency.
-        let mut targets = self.targets.iter().collect::<Vec<_>>();
-        targets.sort();
-
-        builder.log_global(format!(
-            "verifying modules: {}",
-            targets
-                .iter()
-                .map(|t| t.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-
-        // The first phase is the "loading phase". We load modules and look for errors.
-        // If there are errors, we won't try to do proving.
-        let mut envs = vec![];
-        for target in &targets {
-            let module = self.get_module(target);
-            match module {
-                LoadState::Ok(env) => {
-                    builder.module_loaded(&env);
-                    envs.push(env);
-                }
-                LoadState::Error(e) => {
-                    if e.indirect {
-                        if builder.log_secondary_errors {
-                            // The real problem is in a different module.
-                            // So we don't want to locate the error in this module.
-                            builder.log_global(e.to_string());
-                        }
-                    } else {
-                        builder.log_loading_error(target, e);
-                    }
-                }
-                LoadState::None => {
-                    // Targets are supposed to be loaded already.
-                    builder.log_global(format!("error: module {} is not loaded", target));
-                }
-                LoadState::Loading => {
-                    // Happens if there's a circular import. A more localized error should
-                    // show up elsewhere, so let's just log.
-                    builder.log_global(format!("error: module {} stuck in loading", target));
-                }
-            }
-        }
-
-        if builder.status.is_error() {
-            return;
-        }
-
-        builder.loading_phase_complete();
-
-        // The second pass is the "proving phase".
-        for (target, env) in targets.into_iter().zip(envs) {
-            if let Some((ref m, _)) = builder.single_goal {
-                if m != target {
-                    continue;
-                }
-            }
-            builder.verify_module(&target, env, &self);
-            if builder.status.is_error() {
-                return;
-            }
-        }
-
-        // There's a lot of conditions for when we actually write to the cache
-        if self.using_certs()
-            && builder.status.is_good()
-            && self.config.write_cache
-            && builder.single_goal.is_none()
-        {
-            let build_cache = builder.build_cache.as_ref().unwrap();
-            if let Err(e) = build_cache.save(self.cache_dir.clone()) {
-                builder.log_global(format!("error saving build cache: {}", e));
-            }
-        }
-    }
 
     // Turns a hash set of qualified premises into its serializable form.
     // If any premise is from an unimportable module, we return None.
