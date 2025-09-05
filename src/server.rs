@@ -711,7 +711,8 @@ impl Backend {
         let superseded = Arc::new(AtomicBool::new(false));
         let mut prover = Prover::new(&project);
         for fact in cursor.usable_facts(&project) {
-            prover.old_add_fact(fact);
+            let steps = prover.normalizer.normalize_fact(fact).unwrap();
+            prover.add_steps(steps);
         }
         prover.old_set_goal(&goal_context);
         prover.stop_flags.push(superseded.clone());

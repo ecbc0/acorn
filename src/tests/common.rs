@@ -104,14 +104,18 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
     };
     for cursor in env.iter_goals() {
         let facts = cursor.usable_facts(&project);
-        let goal_context = cursor.goal().unwrap();
-        println!("proving: {}", goal_context.name);
+        let goal = cursor.goal().unwrap();
+        println!("proving: {}", goal.name);
+
         let mut prover = Prover::new(&project);
         for fact in facts {
             let steps = prover.normalizer.normalize_fact(fact)?;
             prover.add_steps(steps);
         }
-        prover.old_set_goal(&goal_context);
+        let (ng, steps) = prover.normalizer.normalize_goal(&goal)?;
+        prover.add_steps(steps);
+        prover.set_goal(ng);
+
         // This is a key difference between our verification tests, and our real verification.
         // This helps us test that verification fails in cases where we do have an
         // infinite rabbit hole we could go down.
