@@ -18,6 +18,49 @@ use crate::prover::{Outcome, Prover};
 
 static NEXT_BUILD_ID: AtomicU32 = AtomicU32::new(1);
 
+/// The Builder contains all the mutable state for a single build.
+/// This is separate from the Project because you can read information from the Project from other
+/// threads while a build is ongoing, but a Builder is only used by the build itself.
+pub struct Builder<'a> {
+    /// A single event handler is used across all modules.
+    event_handler: Box<dyn FnMut(BuildEvent) + 'a>,
+
+    pub status: BuildStatus,
+
+    /// A unique id for each build.
+    pub id: u32,
+
+    /// Build metrics collected during verification.
+    pub metrics: BuildMetrics,
+
+    /// When this flag is set, we emit build events when a goal is slow.
+    pub log_when_slow: bool,
+
+    /// When this flag is set, we emit build events for secondary errors.
+    /// I.e., errors that happen when you try to import a module that itself has an error.
+    pub log_secondary_errors: bool,
+
+    /// The current module we are proving.
+    current_module: Option<ModuleDescriptor>,
+
+    /// Whether the current module has neither errors nor warnings.
+    /// I guess if there is no current module, it's vacuously good.
+    current_module_good: bool,
+
+    /// The new build cache, that is being produced as a result of this build.
+    /// Only populated when use_certs is true.
+    pub build_cache: Option<BuildCache>,
+
+    /// When this is set, the builder only builds a single goal.
+    /// We specify goal by (module, line number).
+    /// This is an internal line number, which starts at 0.
+    pub single_goal: Option<(ModuleDescriptor, u32)>,
+
+    /// The verbose flag makes us print miscellaneous debug output.
+    /// Don't set it from within the language server.
+    pub verbose: bool,
+}
+
 /// Metrics collected during a build.
 #[derive(Debug, Default)]
 pub struct BuildMetrics {
@@ -174,49 +217,6 @@ impl BuildStatus {
             _ => false,
         }
     }
-}
-
-/// The Builder contains all the mutable state for a single build.
-/// This is separate from the Project because you can read information from the Project from other
-/// threads while a build is ongoing, but a Builder is only used by the build itself.
-pub struct Builder<'a> {
-    /// A single event handler is used across all modules.
-    event_handler: Box<dyn FnMut(BuildEvent) + 'a>,
-
-    pub status: BuildStatus,
-
-    /// A unique id for each build.
-    pub id: u32,
-
-    /// Build metrics collected during verification.
-    pub metrics: BuildMetrics,
-
-    /// When this flag is set, we emit build events when a goal is slow.
-    pub log_when_slow: bool,
-
-    /// When this flag is set, we emit build events for secondary errors.
-    /// I.e., errors that happen when you try to import a module that itself has an error.
-    pub log_secondary_errors: bool,
-
-    /// The current module we are proving.
-    current_module: Option<ModuleDescriptor>,
-
-    /// Whether the current module has neither errors nor warnings.
-    /// I guess if there is no current module, it's vacuously good.
-    current_module_good: bool,
-
-    /// The new build cache, that is being produced as a result of this build.
-    /// Only populated when use_certs is true.
-    pub build_cache: Option<BuildCache>,
-
-    /// When this is set, the builder only builds a single goal.
-    /// We specify goal by (module, line number).
-    /// This is an internal line number, which starts at 0.
-    pub single_goal: Option<(ModuleDescriptor, u32)>,
-
-    /// The verbose flag makes us print miscellaneous debug output.
-    /// Don't set it from within the language server.
-    pub verbose: bool,
 }
 
 impl<'a> Builder<'a> {
