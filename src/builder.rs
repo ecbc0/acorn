@@ -536,7 +536,7 @@ impl<'a> Builder<'a> {
         worklist: &mut Option<CertificateWorklist>,
         new_premises: &mut HashSet<(ModuleId, String)>,
         project: &Project,
-    ) {
+    ) -> Result<(), BuildError> {
         full_prover.old_set_goal(goal);
 
         // Check for a cached cert
@@ -557,12 +557,11 @@ impl<'a> Builder<'a> {
                             new_certs.push(cert.clone());
                         }
                         worklist.remove(&goal.name, *i);
-                        return;
+                        return Ok(());
                     }
                     Err(e) if project.config.verify => {
                         // In verify mode, a cert that fails to verify is an error
-                        self.old_log_error(goal, &format!("certificate failed to verify: {}", e));
-                        return;
+                        return Err(BuildError::new(goal, &format!("certificate failed to verify: {}", e)));
                     }
                     Err(_) => {
                         // Certificate didn't verify, continue to next cert or fall through
@@ -570,14 +569,12 @@ impl<'a> Builder<'a> {
                 }
             }
         } else if project.config.verify {
-            self.old_log_error(goal, "no worklist found");
-            return;
+            return Err(BuildError::new(goal, "no worklist found"));
         }
 
         // In verify mode, we should never reach the search phase
         if project.config.verify {
-            self.old_log_error(goal, "no certificate found");
-            return;
+            return Err(BuildError::new(goal, "no certificate found"));
         }
 
         // Try the filtered prover
@@ -601,20 +598,18 @@ impl<'a> Builder<'a> {
                             if let Err(e) =
                                 checker.check_cert(&cert, project, &mut bindings, &mut normalizer)
                             {
-                                self.old_log_error(
+                                return Err(BuildError::new(
                                     &goal,
                                     &format!("filtered prover created cert that the full prover rejected: {}", e),
-                                );
-                                return;
+                                ));
                             }
                             new_certs.push(cert);
                         }
                         Err(e) => {
-                            self.old_log_error(
+                            return Err(BuildError::new(
                                 &goal,
                                 &format!("filtered prover failed to create certificate: {}", e),
-                            );
-                            return;
+                            ));
                         }
                     }
                 }
@@ -626,7 +621,7 @@ impl<'a> Builder<'a> {
                     project,
                 );
                 filtered_prover.get_useful_source_names(new_premises, &filtered_prover.normalizer);
-                return;
+                return Ok(());
             }
             self.metrics.searches_fallback += 1;
         }
@@ -645,17 +640,17 @@ impl<'a> Builder<'a> {
                 ) {
                     Ok(cert) => new_certs.push(cert),
                     Err(e) => {
-                        self.old_log_error(
+                        return Err(BuildError::new(
                             &goal,
                             &format!("full prover failed to create certificate: {}", e),
-                        );
-                        return;
+                        ));
                     }
                 }
             }
         }
         self.search_finished(&mut full_prover, goal, outcome, start.elapsed(), project);
         full_prover.get_useful_source_names(new_premises, &full_prover.normalizer);
+        Ok(())
     }
 
     /// Verifies a node and all its children recursively.
@@ -724,10 +719,7 @@ impl<'a> Builder<'a> {
                 worklist,
                 new_premises,
                 project,
-            );
-            if self.status.is_error() {
-                return Ok(());
-            }
+            )?;
         }
 
         Ok(())
