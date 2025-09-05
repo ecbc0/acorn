@@ -319,7 +319,7 @@ fn test_explicit_false_mandatory() {
                 c
             }
         "#;
-    assert_eq!(verify(text), Outcome::Inconsistent);
+    assert_eq!(verify(text).unwrap(), Outcome::Inconsistent);
 }
 
 #[test]
@@ -401,9 +401,9 @@ fn test_rewrite_consistency() {
 }
 
 #[test]
-fn test_normalization_failure_doesnt_crash() {
+fn test_normalization_failure_errors() {
     // We can't normalize lambdas inside function calls, but we shouldn't crash on them.
-    verify(
+    let r = verify(
         r#"
             type Nat: axiom
             let zero: Nat = axiom
@@ -411,6 +411,7 @@ fn test_normalization_failure_doesnt_crash() {
             theorem goal { apply(function(x: Nat) { x }, zero) = zero }
         "#,
     );
+    assert!(r.is_err(), "expected error");
 }
 
 #[test]

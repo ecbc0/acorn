@@ -93,7 +93,7 @@ pub fn prove_text(text: &str, goal_name: &str) -> Outcome {
 }
 
 // Verifies all the goals in the provided text, returning any non-Success outcome.
-pub fn verify(text: &str) -> Outcome {
+pub fn verify(text: &str) -> Result<Outcome, String> {
     let mut project = Project::new_mock();
     project.mock("/mock/main.ac", text);
     let module_id = project.load_module_by_name("main").expect("load failed");
@@ -108,7 +108,8 @@ pub fn verify(text: &str) -> Outcome {
         println!("proving: {}", goal_context.name);
         let mut prover = Prover::new(&project);
         for fact in facts {
-            prover.old_add_fact(fact);
+            let steps = prover.normalizer.normalize_fact(fact)?;
+            prover.add_steps(steps);
         }
         prover.old_set_goal(&goal_context);
         // This is a key difference between our verification tests, and our real verification.
@@ -119,14 +120,14 @@ pub fn verify(text: &str) -> Outcome {
             println!("prover error: {}", s);
         }
         if outcome != Outcome::Success {
-            return outcome;
+            return Ok(outcome);
         }
     }
-    Outcome::Success
+    Ok(Outcome::Success)
 }
 
 pub fn verify_succeeds(text: &str) {
-    let outcome = verify(text);
+    let outcome = verify(text).expect("verification errored");
     if outcome != Outcome::Success {
         panic!(
             "We expected verification to return Success, but we got {}.",
@@ -136,7 +137,8 @@ pub fn verify_succeeds(text: &str) {
 }
 
 pub fn verify_fails(text: &str) {
-    let outcome = verify(text);
+    let outcome = verify(text).expect("verification errored");
+
     if outcome != Outcome::Exhausted {
         panic!(
             "We expected verification to return Exhausted, but we got {}.",
