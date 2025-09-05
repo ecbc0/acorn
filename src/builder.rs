@@ -114,8 +114,15 @@ pub struct BuildError {
 }
 
 impl BuildError {
+    pub fn new(range: Range, message: impl Into<String>) -> Self {
+        BuildError {
+            range,
+            message: message.into(),
+        }
+    }
+
     /// A build error that occurred at a particular goal.
-    fn new(goal: &Goal, message: impl Into<String>) -> Self {
+    fn goal(goal: &Goal, message: impl Into<String>) -> Self {
         let message = format!("{} {}", goal.name, message.into());
         BuildError {
             range: goal.proposition.source.range,
@@ -389,7 +396,7 @@ impl<'a> Builder<'a> {
             ),
             Outcome::Interrupted => {
                 // Should this really be an error?
-                let error = BuildError::new(&goal, "was interrupted");
+                let error = BuildError::goal(&goal, "was interrupted");
                 self.log_build_error(&error);
             }
             Outcome::Error(s) => {
@@ -479,7 +486,7 @@ impl<'a> Builder<'a> {
     /// This will cause a red squiggle in VS Code.
     /// This will halt the build.
     fn old_log_error(&mut self, goal: &Goal, message: &str) {
-        self.log_build_error(&BuildError::new(goal, message));
+        self.log_build_error(&BuildError::goal(goal, message));
     }
 
     /// Logs an error that is associated with a particular goal.
@@ -562,7 +569,7 @@ impl<'a> Builder<'a> {
                     }
                     Err(e) if project.config.verify => {
                         // In verify mode, a cert that fails to verify is an error
-                        return Err(BuildError::new(
+                        return Err(BuildError::goal(
                             goal,
                             &format!("certificate failed to verify: {}", e),
                         ));
@@ -573,12 +580,12 @@ impl<'a> Builder<'a> {
                 }
             }
         } else if project.config.verify {
-            return Err(BuildError::new(goal, "no worklist found"));
+            return Err(BuildError::goal(goal, "no worklist found"));
         }
 
         // In verify mode, we should never reach the search phase
         if project.config.verify {
-            return Err(BuildError::new(goal, "no certificate found"));
+            return Err(BuildError::goal(goal, "no certificate found"));
         }
 
         // Try the filtered prover
@@ -602,7 +609,7 @@ impl<'a> Builder<'a> {
                             if let Err(e) =
                                 checker.check_cert(&cert, project, &mut bindings, &mut normalizer)
                             {
-                                return Err(BuildError::new(
+                                return Err(BuildError::goal(
                                     &goal,
                                     &format!("filtered prover created cert that the full prover rejected: {}", e),
                                 ));
@@ -610,7 +617,7 @@ impl<'a> Builder<'a> {
                             new_certs.push(cert);
                         }
                         Err(e) => {
-                            return Err(BuildError::new(
+                            return Err(BuildError::goal(
                                 &goal,
                                 &format!("filtered prover failed to create certificate: {}", e),
                             ));
@@ -644,7 +651,7 @@ impl<'a> Builder<'a> {
                 ) {
                     Ok(cert) => new_certs.push(cert),
                     Err(e) => {
-                        return Err(BuildError::new(
+                        return Err(BuildError::goal(
                             &goal,
                             &format!("full prover failed to create certificate: {}", e),
                         ));
