@@ -15,8 +15,6 @@ use crate::proof_step::{ProofStep, Truthiness};
 use crate::source::SourceType;
 use crate::term::{Term, TypeId};
 
-type Result<T> = std::result::Result<T, String>;
-
 #[derive(Clone)]
 pub struct NormalizedGoal {
     /// The name of the goal being proved.
@@ -159,7 +157,7 @@ impl Normalizer {
         value: AcornValue,
         next_skolem_id: &mut AtomId,
         created: &mut Vec<(AtomId, AcornType)>,
-    ) -> Result<AcornValue> {
+    ) -> Result<AcornValue, String> {
         Ok(match value {
             AcornValue::ForAll(quants, subvalue) => {
                 let mut new_stack = stack.clone();
@@ -233,7 +231,7 @@ impl Normalizer {
         &mut self,
         application: &FunctionApplication,
         ctype: NewConstantType,
-    ) -> Result<Term> {
+    ) -> Result<Term, String> {
         let application_type = application.get_type();
         check_normalized_type(&application_type)?;
         let term_type = self.normalization_map.add_type(&application_type);
@@ -251,7 +249,11 @@ impl Normalizer {
     /// Returns an error if it's inconvertible.
     /// The "ctype" parameter controls whether any newly discovered constants
     /// are local, global, or disallowed.
-    pub fn term_from_value(&mut self, value: &AcornValue, ctype: NewConstantType) -> Result<Term> {
+    pub fn term_from_value(
+        &mut self,
+        value: &AcornValue,
+        ctype: NewConstantType,
+    ) -> Result<Term, String> {
         let (t, negated) = self.maybe_negated_term_from_value(value, ctype)?;
         if negated {
             Err(format!(
@@ -263,7 +265,11 @@ impl Normalizer {
         }
     }
 
-    fn atom_from_name(&mut self, name: &ConstantName, ctype: NewConstantType) -> Result<Atom> {
+    fn atom_from_name(
+        &mut self,
+        name: &ConstantName,
+        ctype: NewConstantType,
+    ) -> Result<Atom, String> {
         if let ConstantName::Skolem(i) = name {
             return Ok(Atom::Skolem(*i));
         };
@@ -290,7 +296,7 @@ impl Normalizer {
         &mut self,
         value: &AcornValue,
         ctype: NewConstantType,
-    ) -> Result<(Term, bool)> {
+    ) -> Result<(Term, bool), String> {
         match value {
             AcornValue::Variable(i, var_type) => {
                 check_normalized_type(var_type)?;
@@ -330,7 +336,7 @@ impl Normalizer {
         &mut self,
         value: &AcornValue,
         ctype: NewConstantType,
-    ) -> Result<Literal> {
+    ) -> Result<Literal, String> {
         match value {
             AcornValue::Variable(_, _) | AcornValue::Constant(_) => {
                 Ok(Literal::positive(self.term_from_value(value, ctype)?))
@@ -366,7 +372,7 @@ impl Normalizer {
     /// Does not change variable ids or reorder literals.
     /// TODO: this shouldn't mutate self, but the helper functions do when called with
     /// different arguments, so the signature is mut.
-    fn literals_from_value(&mut self, value: &AcornValue) -> Result<Vec<Literal>> {
+    fn literals_from_value(&mut self, value: &AcornValue) -> Result<Vec<Literal>, String> {
         match value {
             AcornValue::ForAll(_, subvalue) => self.literals_from_value(subvalue),
             AcornValue::Binary(BinaryOp::Or, left_v, right_v) => {
@@ -384,13 +390,13 @@ impl Normalizer {
 
     /// Does not normalize the clause itself.
     /// Ie, it does not change variable ids, reorder literals, or remove redundant literals.
-    pub fn clause_from_value(&mut self, value: &AcornValue) -> Result<Clause> {
+    pub fn clause_from_value(&mut self, value: &AcornValue) -> Result<Clause, String> {
         let literals = self.literals_from_value(value)?;
         Ok(Clause { literals })
     }
 
     /// Does not normalize the clauses.
-    pub fn clauses_from_value(&mut self, value: &AcornValue) -> Result<Vec<Clause>> {
+    pub fn clauses_from_value(&mut self, value: &AcornValue) -> Result<Vec<Clause>, String> {
         if *value == AcornValue::Bool(true) {
             return Ok(vec![]);
         }
@@ -415,7 +421,7 @@ impl Normalizer {
         &mut self,
         value: &AcornValue,
         ctype: NewConstantType,
-    ) -> Result<Option<Vec<Vec<Literal>>>> {
+    ) -> Result<Option<Vec<Vec<Literal>>>, String> {
         match value {
             AcornValue::Binary(BinaryOp::And, left, right) => {
                 let mut left = match self.into_literal_lists(left, ctype)? {
@@ -463,7 +469,11 @@ impl Normalizer {
 
     /// Converts AcornValue to Vec<Clause> without changing the tree structure.
     /// The tree structure should already be manipulated before calling this.
-    fn normalize_cnf(&mut self, value: AcornValue, ctype: NewConstantType) -> Result<Vec<Clause>> {
+    fn normalize_cnf(
+        &mut self,
+        value: AcornValue,
+        ctype: NewConstantType,
+    ) -> Result<Vec<Clause>, String> {
         let mut universal = vec![];
         let value = value.remove_forall(&mut universal);
         match self.into_literal_lists(&value, ctype) {
@@ -498,7 +508,7 @@ impl Normalizer {
         &mut self,
         value: &AcornValue,
         ctype: NewConstantType,
-    ) -> Result<Vec<Clause>> {
+    ) -> Result<Vec<Clause>, String> {
         // println!("\nnormalizing: {}", value);
         let value = value.replace_function_equality(0);
         let value = value.expand_lambdas(0);
@@ -554,7 +564,7 @@ impl Normalizer {
         &mut self,
         value: &AcornValue,
         ctype: NewConstantType,
-    ) -> Result<Vec<Clause>> {
+    ) -> Result<Vec<Clause>, String> {
         if let Err(e) = value.validate() {
             return Err(format!(
                 "validation error: {} while normalizing: {}",
@@ -582,7 +592,7 @@ impl Normalizer {
 
     /// A single fact can turn into a bunch of proof steps.
     /// This monomorphizes, which can indirectly turn into what seems like a lot of unrelated steps.
-    pub fn normalize_fact(&mut self, fact: Fact) -> Result<Vec<ProofStep>> {
+    pub fn normalize_fact(&mut self, fact: Fact) -> Result<Vec<ProofStep>, String> {
         let mut steps = vec![];
 
         // Check if this looks like an aliasing.
@@ -618,7 +628,10 @@ impl Normalizer {
 
     /// Normalizes a goal into a NormalizedGoal and proof steps that includes
     /// both positive versions of the hypotheses and negated versions of the conclusion.
-    pub fn normalize_goal(&mut self, goal: &Goal) -> Result<(NormalizedGoal, Vec<ProofStep>)> {
+    pub fn normalize_goal(
+        &mut self,
+        goal: &Goal,
+    ) -> Result<(NormalizedGoal, Vec<ProofStep>), String> {
         let prop = &goal.proposition;
         let (hypo, counterfactual) = prop.value.clone().negate_goal();
         let mut steps = vec![];
@@ -857,7 +870,7 @@ impl Normalizer {
 }
 
 /// Returns an error if a type is not normalized.
-fn check_normalized_type(acorn_type: &AcornType) -> Result<()> {
+fn check_normalized_type(acorn_type: &AcornType) -> Result<(), String> {
     match acorn_type {
         AcornType::Function(function_type) => {
             if function_type.arg_types.len() == 0 {
