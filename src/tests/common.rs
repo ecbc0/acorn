@@ -27,7 +27,8 @@ fn prove_helper<'a>(
     let goal_context = node.goal().unwrap();
     let mut prover = Prover::new(&project);
     for fact in facts {
-        prover.old_add_fact(fact);
+        let steps = prover.normalizer.normalize_fact(fact).unwrap();
+        prover.add_steps(steps);
     }
     prover.old_set_goal(&goal_context);
     prover.strict_codegen = true;
