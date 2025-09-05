@@ -16,7 +16,7 @@ use crate::binding_map::BindingMap;
 use crate::block::NodeCursor;
 use crate::build_cache::BuildCache;
 use crate::builder::{BuildEvent, Builder};
-use crate::certificate::{Certificate, CertificateStore, CertificateWorklist};
+use crate::certificate::CertificateStore;
 use crate::code_generator::{self, CodeGenerator};
 use crate::compilation;
 use crate::environment::Environment;
@@ -702,14 +702,14 @@ impl Project {
                     let mut new_premises = HashSet::new();
 
                     // This call will recurse and verify everything within this top-level block.
-                    self.verify_node(
+                    builder.verify_node(
                         &full_prover,
                         &filtered_prover,
                         &mut cursor,
                         &mut new_premises,
-                        builder,
                         &mut new_certs,
                         &mut worklist,
+                        &self,
                     );
                     if builder.status.is_error() {
                         return;
@@ -774,84 +774,6 @@ impl Project {
     // filtered_prover contains only the facts that were cached.
     // Our general strategy is to try the filtered prover, if we have it, and only fall back
     // to the full prover if the filtered prover doesn't work.
-    //
-    // node is a cursor, that typically we will mutate and reset to its original state.
-    // new_premises is updated with the premises used in this theorem block.
-    // builder tracks statistics and results for the build.
-    //
-    // If verify_node encounters an error, it stops, leaving node in a borked state.
-    fn verify_node(
-        &self,
-        full_prover: &Prover,
-        filtered_prover: &Option<Prover>,
-        cursor: &mut NodeCursor,
-        new_premises: &mut HashSet<(ModuleId, String)>,
-        builder: &mut Builder,
-        new_certs: &mut Option<Vec<Certificate>>,
-        worklist: &mut Option<CertificateWorklist>,
-    ) {
-        if !cursor.requires_verification() {
-            return;
-        }
-
-        let mut full_prover = full_prover.clone();
-        let mut filtered_prover = filtered_prover.clone();
-        if cursor.num_children() > 0 {
-            // We need to recurse into children
-            cursor.descend(0);
-            loop {
-                self.verify_node(
-                    &full_prover,
-                    &filtered_prover,
-                    cursor,
-                    new_premises,
-                    builder,
-                    new_certs,
-                    worklist,
-                );
-                if builder.status.is_error() {
-                    return;
-                }
-
-                if let Some(fact) = cursor.node().get_fact() {
-                    if let Some(ref mut filtered_prover) = filtered_prover {
-                        filtered_prover.old_add_fact(fact.clone());
-                    }
-                    full_prover.old_add_fact(fact);
-                }
-
-                if cursor.has_next() {
-                    cursor.next();
-                } else {
-                    break;
-                }
-            }
-            cursor.ascend();
-        }
-
-        if cursor.node().has_goal() {
-            let goal = cursor.goal().unwrap();
-            if let Some((_, line)) = builder.single_goal {
-                if goal.first_line != line {
-                    // This isn't the goal we're looking for.
-                    return;
-                }
-            }
-            builder.verify_with_fallback(
-                full_prover,
-                filtered_prover,
-                &goal,
-                cursor.goal_env().unwrap(),
-                new_certs,
-                worklist,
-                new_premises,
-                &self,
-            );
-            if builder.status.is_error() {
-                return;
-            }
-        }
-    }
 
     // Set the file content. This has priority over the actual filesystem.
     pub fn mock(&mut self, filename: &str, content: &str) {

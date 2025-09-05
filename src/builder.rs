@@ -625,4 +625,80 @@ impl<'a> Builder<'a> {
         self.search_finished(&mut full_prover, goal, outcome, start.elapsed(), project);
         full_prover.get_useful_source_names(new_premises, &full_prover.normalizer);
     }
+
+    /// Verifies a node and all its children recursively.
+    /// builder tracks statistics and results for the build.
+    /// If verify_node encounters an error, it stops, leaving node in a borked state.
+    pub fn verify_node(
+        &mut self,
+        full_prover: &Prover,
+        filtered_prover: &Option<Prover>,
+        cursor: &mut NodeCursor,
+        new_premises: &mut HashSet<(ModuleId, String)>,
+        new_certs: &mut Option<Vec<Certificate>>,
+        worklist: &mut Option<CertificateWorklist>,
+        project: &Project,
+    ) {
+        if !cursor.requires_verification() {
+            return;
+        }
+
+        let mut full_prover = full_prover.clone();
+        let mut filtered_prover = filtered_prover.clone();
+        if cursor.num_children() > 0 {
+            // We need to recurse into children
+            cursor.descend(0);
+            loop {
+                self.verify_node(
+                    &full_prover,
+                    &filtered_prover,
+                    cursor,
+                    new_premises,
+                    new_certs,
+                    worklist,
+                    project,
+                );
+                if self.status.is_error() {
+                    return;
+                }
+
+                if let Some(fact) = cursor.node().get_fact() {
+                    if let Some(ref mut filtered_prover) = filtered_prover {
+                        filtered_prover.old_add_fact(fact.clone());
+                    }
+                    full_prover.old_add_fact(fact);
+                }
+
+                if cursor.has_next() {
+                    cursor.next();
+                } else {
+                    break;
+                }
+            }
+            cursor.ascend();
+        }
+
+        if cursor.node().has_goal() {
+            let goal = cursor.goal().unwrap();
+            if let Some((_, line)) = self.single_goal {
+                if goal.first_line != line {
+                    // This isn't the goal we're looking for.
+                    return;
+                }
+            }
+            self.verify_with_fallback(
+                full_prover,
+                filtered_prover,
+                &goal,
+                cursor.goal_env().unwrap(),
+                new_certs,
+                worklist,
+                new_premises,
+                project,
+            );
+            if self.status.is_error() {
+                return;
+            }
+        }
+    }
 }
