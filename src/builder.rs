@@ -846,7 +846,8 @@ impl<'a> Builder<'a> {
                 break;
             }
             if let Some(fact) = cursor.node().get_fact() {
-                full_prover.old_add_fact(fact);
+                let steps = full_prover.normalizer.normalize_fact(fact.clone())?;
+                full_prover.add_steps(steps);
             }
             cursor.next();
         }
