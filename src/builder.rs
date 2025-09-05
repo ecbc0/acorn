@@ -10,7 +10,7 @@ use crate::build_cache::BuildCache;
 use crate::certificate::{Certificate, CertificateStore, CertificateWorklist};
 use crate::compilation::CompilationError;
 use crate::environment::Environment;
-use crate::goal::{Goal, GoalError};
+use crate::goal::Goal;
 use crate::module::{LoadState, ModuleDescriptor, ModuleId};
 use crate::module_cache::ModuleCache;
 use crate::project::Project;
@@ -105,6 +105,12 @@ pub struct BuildMetrics {
 
     /// The total amount of time spent in proof search, in seconds.
     pub search_time: f64,
+}
+
+#[derive(Debug)]
+pub struct BuildError {
+    range: Range,
+    message: String,
 }
 
 impl BuildMetrics {
@@ -460,10 +466,21 @@ impl<'a> Builder<'a> {
     /// This will cause a red squiggle in VS Code.
     /// This will halt the build.
     fn log_error(&mut self, goal: &Goal, message: &str) {
-        let full_message = format!("{} {}", goal.name, message);
+        let message = format!("{} {}", goal.name, message);
+        let error = BuildError {
+            range: goal.proposition.source.range,
+            message,
+        };
+        self.log_build_error(&error);
+    }
+
+    /// Logs an error that is associated with a particular goal.
+    /// This will cause a red squiggle in VS Code.
+    /// This will halt the build.
+    fn log_build_error(&mut self, build_error: &BuildError) {
         let mut event = self.make_event(
-            goal.proposition.source.range,
-            &full_message,
+            build_error.range,
+            &build_error.message,
             DiagnosticSeverity::ERROR,
         );
 
@@ -472,13 +489,6 @@ impl<'a> Builder<'a> {
         (self.event_handler)(event);
         self.current_module_good = false;
         self.status = BuildStatus::Error;
-    }
-
-    /// Logs an error that is associated with a particular goal.
-    /// This will cause a red squiggle in VS Code.
-    /// This will halt the build.
-    pub fn log_goal_error(&mut self, goal_error: &GoalError) {
-        self.log_error(&goal_error.goal, &goal_error.message);
     }
 
     /// Sets the builder to only build a single goal.
@@ -723,7 +733,7 @@ impl<'a> Builder<'a> {
         target: &ModuleDescriptor,
         env: &Environment,
         project: &Project,
-    ) -> Result<(), GoalError> {
+    ) -> Result<(), BuildError> {
         if env.nodes.is_empty() {
             // Nothing to prove
             return Ok(());
@@ -918,7 +928,7 @@ impl<'a> Builder<'a> {
                 }
             }
             if let Err(e) = self.verify_module(&target, env, project) {
-                self.log_goal_error(&e);
+                self.log_build_error(&e);
             }
             if self.status.is_error() {
                 return;
