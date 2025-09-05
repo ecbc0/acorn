@@ -13,10 +13,8 @@ use walkdir::WalkDir;
 use crate::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::acorn_value::AcornValue;
 use crate::binding_map::BindingMap;
-use crate::block::NodeCursor;
 use crate::build_cache::BuildCache;
 use crate::builder::{BuildEvent, Builder};
-use crate::certificate::CertificateStore;
 use crate::code_generator::{self, CodeGenerator};
 use crate::compilation;
 use crate::environment::Environment;
@@ -73,7 +71,7 @@ pub struct Project {
     // This is "some" iff we are using certs.
     // This is different from the Builder's build cache, which is created during a build.
     // TODO: When a build succeeds, this build cache should get updated.
-    build_cache: Option<BuildCache>,
+    pub build_cache: Option<BuildCache>,
 }
 
 /// Configuration options for the project.
@@ -521,7 +519,7 @@ impl Project {
                     continue;
                 }
             }
-            self.verify_module(&target, env, builder);
+            builder.verify_module(&target, env, &self);
             if builder.status.is_error() {
                 return;
             }
@@ -544,7 +542,7 @@ impl Project {
     // If any premise is from an unimportable module, we return None.
     // This can happen when Acorn is running in "detached library" mode, where the current
     // file doesn't have any module name that can be used to refer to it.
-    fn normalize_premises(
+    pub fn normalize_premises(
         &self,
         theorem_module_id: ModuleId,
         theorem_name: &str,
@@ -631,141 +629,6 @@ impl Project {
         }
 
         Some(prover)
-    }
-
-    // Verifies all goals within this module.
-    // If we run into an error, we exit without verifying any more goals.
-    pub fn verify_module(
-        &self,
-        target: &ModuleDescriptor,
-        env: &Environment,
-        builder: &mut Builder,
-    ) {
-        if env.nodes.is_empty() {
-            // Nothing to prove
-            return;
-        }
-
-        let module_hash = self.get_hash(env.module_id).unwrap();
-        let old_module_cache = self.module_caches.get_cloned_module_cache(target);
-        let mut new_module_cache = ModuleCache::new(module_hash);
-
-        // If we're using certificates, create a worklist and a vector of new certs.
-        let (mut new_certs, mut worklist) = match self.build_cache.as_ref() {
-            Some(bc) => {
-                let worklist = bc.make_worklist(target);
-                (Some(vec![]), worklist)
-            }
-            None => (None, None),
-        };
-
-        builder.module_proving_started(target.clone());
-
-        // The full prover has access to all facts.
-        let mut full_prover = Prover::new(&self);
-        for fact in self.imported_facts(env.module_id, None) {
-            full_prover.old_add_fact(fact);
-        }
-        let mut cursor = NodeCursor::new(&env, 0);
-
-        // Loop over all the nodes that are right below the top level.
-        loop {
-            if cursor.requires_verification() {
-                let block_name = cursor.block_name();
-                if self.config.check_hashes
-                    && module_hash
-                        .matches_through_line(&old_module_cache, cursor.node().last_line())
-                {
-                    // We don't need to verify this, we can just treat it as verified due to the hash.
-                    // Note that this breaks certificate-gathering, so we don't do this path in certs mode.
-                    builder.log_proving_cache_hit(&mut cursor);
-                    if let Some(old_mc) = &old_module_cache {
-                        // We skipped the proof of this theorem.
-                        // But we still might want its premises cached.
-                        // So we copy them over from the old module cache.
-                        if let Some(old_block_cache) = old_mc.blocks.get(&block_name) {
-                            new_module_cache
-                                .blocks
-                                .insert(block_name, old_block_cache.clone());
-                        }
-                    }
-                } else {
-                    // We do need to verify this.
-
-                    // If we have a cached set of premises, we use it to create a filtered prover.
-                    // The filtered prover only contains the premises that we think it needs.
-                    let block_name = cursor.block_name();
-                    let filtered_prover =
-                        self.make_filtered_prover(env, &block_name, &old_module_cache);
-
-                    // The premises we use while verifying this block.
-                    let mut new_premises = HashSet::new();
-
-                    // This call will recurse and verify everything within this top-level block.
-                    builder.verify_node(
-                        &full_prover,
-                        &filtered_prover,
-                        &mut cursor,
-                        &mut new_premises,
-                        &mut new_certs,
-                        &mut worklist,
-                        &self,
-                    );
-                    if builder.status.is_error() {
-                        return;
-                    }
-                    match self.normalize_premises(env.module_id, &block_name, &new_premises) {
-                        Some(normalized) => {
-                            // We verified this block, so we can cache it.
-                            new_module_cache
-                                .blocks
-                                .insert(block_name.clone(), normalized);
-                        }
-                        None => {
-                            // We couldn't normalize the premises, so we can't cache them.
-                            // This can happen if the module is unimportable.
-                            builder.log_global(format!(
-                                "could not normalize premises for {}",
-                                block_name
-                            ));
-                        }
-                    }
-                }
-            } else {
-                builder.log_verified(cursor.node().first_line(), cursor.node().last_line());
-            }
-            if !cursor.has_next() {
-                break;
-            }
-            if let Some(fact) = cursor.node().get_fact() {
-                full_prover.old_add_fact(fact);
-            }
-            cursor.next();
-        }
-
-        if builder.module_proving_complete(target) && builder.single_goal.is_none() {
-            // The module was entirely verified. We can update the cache.
-            if let Err(e) = self
-                .module_caches
-                .insert_module_cache(target.clone(), new_module_cache)
-            {
-                builder.log_global(format!("error in module cache set: {}", e));
-            }
-
-            if let Some(worklist) = worklist {
-                builder.metrics.unused_certs += worklist.unused() as i32;
-            }
-
-            if let Some(certs) = new_certs {
-                // Insert the new CertificateStore into the build cache
-                let cert_store = CertificateStore { certs };
-                builder
-                    .build_cache
-                    .as_mut()
-                    .unwrap()
-                    .insert(target.clone(), cert_store);
-            }
-        }
     }
 
     // Verifies the goal at this node as well as at every child node.
