@@ -456,7 +456,7 @@ impl<'a> Builder<'a> {
     /// Logs an error that is associated with a particular goal.
     /// This will cause a red squiggle in VS Code.
     /// This will halt the build.
-    pub fn log_error(&mut self, goal: &Goal, message: &str) {
+    fn log_error(&mut self, goal: &Goal, message: &str) {
         let mut event = self.make_event(goal, message, DiagnosticSeverity::ERROR);
 
         // Set progress as complete, because an error will halt the build

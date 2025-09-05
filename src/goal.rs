@@ -86,10 +86,10 @@ impl Goal {
         Self::new(env, prop, first_line, first_line, last_line)
     }
 
-    pub fn error(&self, message: &str) -> GoalError {
+    pub fn error<M: Into<String>>(&self, message: M) -> GoalError {
         GoalError {
             goal: self.clone(),
-            message: message.to_string(),
+            message: message.into(),
         }
     }
 }
