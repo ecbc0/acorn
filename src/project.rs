@@ -82,7 +82,6 @@ pub struct ProjectConfig {
     pub use_filesystem: bool,
 
     // Whether we skip goals that match hashes in the cache.
-    // Defaults to true.
     pub check_hashes: bool,
 
     // Whether we should read from the cache
@@ -452,7 +451,6 @@ impl Project {
     pub fn builder<'a>(&self, event_handler: impl FnMut(BuildEvent) + 'a) -> Builder<'a> {
         Builder::new(event_handler)
     }
-
 
     // Turns a hash set of qualified premises into its serializable form.
     // If any premise is from an unimportable module, we return None.
