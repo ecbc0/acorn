@@ -138,10 +138,6 @@ impl Verifier {
         builder.build();
         builder.metrics.print(builder.status);
 
-        if !self.config.check_hashes && builder.metrics.searches_fallback > 0 {
-            println!("Warning: the filtered prover was not able to handle all goals.");
-        }
-
         // Create the output
         let output = VerifierOutput {
             status: builder.status,
