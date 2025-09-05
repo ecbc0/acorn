@@ -34,9 +34,6 @@ fn prove_helper<'a>(
     prover.set_goal(ng, steps);
     prover.strict_codegen = true;
     let outcome = prover.quick_search();
-    if let Outcome::Error(s) = outcome {
-        panic!("prover error: {}", s);
-    }
     (project, env, prover, outcome)
 }
 
@@ -120,9 +117,6 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
         // This helps us test that verification fails in cases where we do have an
         // infinite rabbit hole we could go down.
         let outcome = prover.quick_shallow_search();
-        if let Outcome::Error(s) = &outcome {
-            println!("prover error: {}", s);
-        }
         if outcome != Outcome::Success {
             return Ok(outcome);
         }

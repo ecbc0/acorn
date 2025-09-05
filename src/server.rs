@@ -164,8 +164,7 @@ impl SearchTask {
 
                 Outcome::Inconsistent
                 | Outcome::Exhausted
-                | Outcome::Constrained
-                | Outcome::Error(_) => SearchStatus::stopped(&prover, &outcome),
+                | Outcome::Constrained => SearchStatus::stopped(&prover, &outcome),
 
                 Outcome::Timeout => SearchStatus::pending(&prover),
 

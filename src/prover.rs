@@ -71,7 +71,6 @@ pub struct Prover {
 /// - "Interrupted" means that the prover was explicitly stopped.
 /// - "Timeout" means that we hit a nondeterministic timing limit.
 /// - "Constrained" means that we hit some deterministic limit.
-/// - "Error" means that we found a problem in the code that needs to be fixed by the user.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Outcome {
     Success,
@@ -80,7 +79,6 @@ pub enum Outcome {
     Interrupted,
     Timeout,
     Constrained,
-    Error(String),
 }
 
 impl fmt::Display for Outcome {
@@ -92,7 +90,6 @@ impl fmt::Display for Outcome {
             Outcome::Interrupted => write!(f, "Interrupted"),
             Outcome::Timeout => write!(f, "Timeout"),
             Outcome::Constrained => write!(f, "Constrained"),
-            Outcome::Error(s) => write!(f, "Error: {}", s),
         }
     }
 }

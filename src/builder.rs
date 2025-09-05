@@ -405,9 +405,6 @@ impl<'a> Builder<'a> {
                 let error = BuildError::goal(&goal, "was interrupted");
                 self.log_build_error(&error);
             }
-            Outcome::Error(s) => {
-                self.old_log_error(&goal, &format!("hit an error: {}", s));
-            }
             Outcome::Constrained => self.log_warning(&goal, "could not be verified (constraints)"),
         }
     }
@@ -486,13 +483,6 @@ impl<'a> Builder<'a> {
         (self.event_handler)(event);
         self.current_module_good = false;
         self.status.warn();
-    }
-
-    /// Logs an error that is associated with a particular goal.
-    /// This will cause a red squiggle in VS Code.
-    /// This will halt the build.
-    fn old_log_error(&mut self, goal: &Goal, message: &str) {
-        self.log_build_error(&BuildError::goal(goal, message));
     }
 
     /// Logs an error that is associated with a particular goal.
