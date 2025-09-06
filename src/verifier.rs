@@ -30,13 +30,8 @@ impl VerifierOutput {
 }
 
 /// The Verifier manages the run of a single build.
+/// It leaks the project, so don't use this for long-running processes.
 pub struct Verifier {
-    /// The project that we're verifying
-    project: Project,
-
-    /// Configuration for the project
-    config: ProjectConfig,
-
     /// The target module to verify.
     /// If None, all modules are verified.
     target: Option<String>,
@@ -48,6 +43,12 @@ pub struct Verifier {
     /// The verbose flag makes us print miscellaneous debug output.
     /// Don't set it from within the language server.
     pub verbose: bool,
+
+    /// Events collected during verification
+    events: Rc<RefCell<Vec<BuildEvent>>>,
+
+    /// The builder for verification
+    builder: Builder<'static>,
 }
 
 impl Verifier {
@@ -77,28 +78,18 @@ impl Verifier {
             project.add_all_targets();
         }
 
-        Ok(Self {
-            project,
-            config,
-            target,
-            line: None,
-            verbose: false,
-        })
-    }
-
-    /// Returns VerifierOutput on success, or an error string if verification fails.
-    pub fn run(self) -> Result<VerifierOutput, String> {
-        // Create a vector to collect events
+        // Leak the project to get a 'static lifetime
+        let project: &'static Project = Box::leak(Box::new(project));
         let events = Rc::new(RefCell::new(Vec::new()));
         let events_clone = events.clone();
 
-        // Set up the builder
-        let mut builder = Builder::new(&self.project, |event| {
+        // Set up the builder with event handler
+        let mut builder = Builder::new(project, move |event| {
             // Also print log messages as before
             if let Some(m) = &event.log_message {
                 if let Some(diagnostic) = &event.diagnostic {
                     // Use display_path to show a relative path
-                    let display_path = self.project.display_path(&event.module);
+                    let display_path = project.display_path(&event.module);
                     println!(
                         "{}, line {}: {}",
                         display_path,
@@ -114,35 +105,46 @@ impl Verifier {
             events_clone.borrow_mut().push(event);
         });
 
-        if !self.config.check_hashes {
+        if !config.check_hashes {
             builder.log_when_slow = true;
         }
-        if self.target.is_none() {
+        if target.is_none() {
             builder.log_secondary_errors = false;
         }
 
+        Ok(Self {
+            target: target.clone(),
+            line: None,
+            verbose: false,
+            events,
+            builder,
+        })
+    }
+
+    /// Returns VerifierOutput on success, or an error string if verification fails.
+    pub fn run(mut self) -> Result<VerifierOutput, String> {
         // If a specific line is provided along with a target, set up single goal verification
         if let Some(line) = self.line {
             let Some(target) = &self.target else {
                 panic!("line set without target");
             };
             // line is the external line number (1-based)
-            if let Err(e) = builder.set_single_goal(target, line) {
+            if let Err(e) = self.builder.set_single_goal(target, line) {
                 return Err(format!("Failed to set single goal: {}", e));
             }
         }
 
-        builder.verbose = self.verbose;
+        self.builder.verbose = self.verbose;
 
         // Build
-        builder.build();
-        builder.metrics.print(builder.status);
+        self.builder.build();
+        self.builder.metrics.print(self.builder.status);
 
         // Create the output
         let output = VerifierOutput {
-            status: builder.status,
-            metrics: builder.metrics,
-            events: events.take(),
+            status: self.builder.status,
+            metrics: self.builder.metrics,
+            events: self.events.take(),
         };
 
         Ok(output)
