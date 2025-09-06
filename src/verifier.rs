@@ -152,7 +152,7 @@ impl Verifier {
             events: self.events.take(),
         };
 
-        // Clean up the leaked project
+        // Clean up the project
         unsafe {
             drop(Box::from_raw(self.project_ptr));
         }
