@@ -30,8 +30,10 @@ impl VerifierOutput {
 }
 
 /// The Verifier manages the run of a single build.
-/// It leaks the project, so don't use this for long-running processes.
 pub struct Verifier {
+    /// Pointer to the manually managed project for cleanup
+    project_ptr: *mut Project,
+
     /// The target module to verify.
     /// If None, all modules are verified.
     target: Option<String>,
@@ -78,8 +80,10 @@ impl Verifier {
             project.add_all_targets();
         }
 
-        // Leak the project to get a 'static lifetime
-        let project: &'static Project = Box::leak(Box::new(project));
+        // Unsafe is to make this self-referential
+        let project_box = Box::new(project);
+        let project_ptr = Box::into_raw(project_box);
+        let project: &'static Project = unsafe { &*project_ptr };
         let events = Rc::new(RefCell::new(Vec::new()));
         let events_clone = events.clone();
 
@@ -113,6 +117,7 @@ impl Verifier {
         }
 
         Ok(Self {
+            project_ptr,
             target: target.clone(),
             line: None,
             verbose: false,
@@ -146,6 +151,11 @@ impl Verifier {
             metrics: self.builder.metrics,
             events: self.events.take(),
         };
+
+        // Clean up the leaked project
+        unsafe {
+            drop(Box::from_raw(self.project_ptr));
+        }
 
         Ok(output)
     }
