@@ -42,15 +42,11 @@ pub struct Verifier {
     /// If this is set, target must be as well.
     pub line: Option<u32>,
 
-    /// The verbose flag makes us print miscellaneous debug output.
-    /// Don't set it from within the language server.
-    pub verbose: bool,
-
     /// Events collected during verification
     events: Rc<RefCell<Vec<BuildEvent>>>,
 
     /// The builder for verification
-    builder: Builder<'static>,
+    pub builder: Builder<'static>,
 }
 
 impl Verifier {
@@ -120,7 +116,6 @@ impl Verifier {
             project_ptr,
             target: target.clone(),
             line: None,
-            verbose: false,
             events,
             builder,
         })
@@ -138,8 +133,6 @@ impl Verifier {
                 return Err(format!("Failed to set single goal: {}", e));
             }
         }
-
-        self.builder.verbose = self.verbose;
 
         // Build
         self.builder.build();

@@ -150,7 +150,7 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    verifier.verbose = args.line.is_some();
+    verifier.builder.verbose = args.line.is_some();
     verifier.line = args.line;
     match verifier.run() {
         Err(e) => {
