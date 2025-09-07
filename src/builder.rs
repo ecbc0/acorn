@@ -567,24 +567,25 @@ impl<'a> Builder<'a> {
                         worklist.remove(&goal.name, *i);
                         return Ok(());
                     }
-                    Err(e) if self.project.config.verify => {
-                        // In verify mode, a cert that fails to verify is an error
+                    Err(e) if self.project.config.reverify => {
+                        // In reverify mode, a bad cert is an error
                         return Err(BuildError::goal(
                             goal,
                             &format!("certificate failed to verify: {}", e),
                         ));
                     }
                     Err(_) => {
-                        // Certificate didn't verify, continue to next cert or fall through
+                        // The cert is bad, but maybe another one is good.
+                        // That can happen with code edits.
                     }
                 }
             }
-        } else if self.project.config.verify {
+        } else if self.project.config.reverify {
             return Err(BuildError::goal(goal, "no worklist found"));
         }
 
-        // In verify mode, we should never reach the search phase
-        if self.project.config.verify {
+        // In reverify mode, we should never reach the search phase
+        if self.project.config.reverify {
             return Err(BuildError::goal(goal, "no certificate found"));
         }
 

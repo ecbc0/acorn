@@ -1,5 +1,5 @@
 // The Acorn CLI.
-// You can run a language server, verify a file, or verify the whole project.
+// You can run a language server, verify a file, or reverify the whole project.
 
 use acorn::doc_generator::DocGenerator;
 use acorn::project::{Project, ProjectConfig};
@@ -41,9 +41,9 @@ struct Args {
     /// Verify mode: error if any goal requires a search instead of just checking the cert
     #[clap(
         long,
-        help = "Error if any goal requires a search instead of just checking the cert."
+        help = "Reverify all goals, erroring if any goal requires a search instead of just checking the cert."
     )]
-    verify: bool,
+    reverify: bool,
 
     /// Search for a proof at a specific line number (requires target)
     #[clap(
@@ -124,7 +124,7 @@ async fn main() {
     let config = ProjectConfig {
         check_hashes: !args.nohash && !args.certs,
         use_certs: args.certs,
-        verify: args.verify,
+        reverify: args.reverify,
         ..Default::default()
     };
 

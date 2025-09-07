@@ -93,10 +93,11 @@ pub struct ProjectConfig {
     // Whether we are using certificates
     pub use_certs: bool,
 
-    // When verify mode is set, we want to verify the existing certs.
+    // In reverify mode, we are checking to make sure that all goals are covered by existing certs.
     // In this situation, it's an error if we run into any goal that is missing a cert,
-    // or any cert that fails to verify.
-    pub verify: bool,
+    // or any cert that fails checking.
+    // In normal mode, this is okay, because it could be that we modified the file.
+    pub reverify: bool,
 }
 
 impl Default for ProjectConfig {
@@ -107,7 +108,7 @@ impl Default for ProjectConfig {
             read_cache: true,
             write_cache: true,
             use_certs: false,
-            verify: false,
+            reverify: false,
         }
     }
 }
