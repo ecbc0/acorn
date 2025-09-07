@@ -43,6 +43,12 @@ pub struct Builder<'a> {
     /// I.e., errors that happen when you try to import a module that itself has an error.
     pub log_secondary_errors: bool,
 
+    /// In reverify mode, we are checking to make sure that all goals are covered by existing certs.
+    /// In this situation, it's an error if we run into any goal that is missing a cert,
+    /// or any cert that fails checking.
+    /// In normal mode, this is okay, because it could be that we modified the file.
+    pub reverify: bool,
+
     /// The current module we are proving.
     current_module: Option<ModuleDescriptor>,
 
@@ -263,6 +269,7 @@ impl<'a> Builder<'a> {
             metrics: BuildMetrics::new(),
             log_when_slow: false,
             log_secondary_errors: true,
+            reverify: false,
             current_module: None,
             current_module_good: true,
             build_cache: None,
@@ -567,7 +574,7 @@ impl<'a> Builder<'a> {
                         worklist.remove(&goal.name, *i);
                         return Ok(());
                     }
-                    Err(e) if self.project.config.reverify => {
+                    Err(e) if self.reverify => {
                         // In reverify mode, a bad cert is an error
                         return Err(BuildError::goal(
                             goal,
@@ -580,12 +587,12 @@ impl<'a> Builder<'a> {
                     }
                 }
             }
-        } else if self.project.config.reverify {
+        } else if self.reverify {
             return Err(BuildError::goal(goal, "no worklist found"));
         }
 
         // In reverify mode, we should never reach the search phase
-        if self.project.config.reverify {
+        if self.reverify {
             return Err(BuildError::goal(goal, "no certificate found"));
         }
 
