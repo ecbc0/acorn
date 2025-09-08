@@ -15,12 +15,8 @@ fn main() {
             use_certs: true,
             ..Default::default()
         };
-        let mut verifier = Verifier::new(
-            current_dir.clone(),
-            config,
-            Some("rat.rat_base".to_string()),
-        )
-        .expect("Failed to create verifier");
+        let mut verifier =
+            Verifier::new(current_dir.clone(), config, None).expect("Failed to create verifier");
         verifier.builder.reverify = true;
         verifier.builder.check_hashes = false;
 
