@@ -191,7 +191,7 @@ impl Checker {
                     let exists_value = AcornValue::exists(types, condition_value);
 
                     // Check if this matches any existing skolem
-                    let Some(_info) = normalizer.find_exact_skolem_info(&exists_value) else {
+                    if !normalizer.has_exact_skolem_info(&exists_value) {
                         return Err(Error::GeneratedBadCode(
                             "let...satisfy statement does not match any skolem definition"
                                 .to_string(),

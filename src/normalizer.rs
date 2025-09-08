@@ -118,20 +118,21 @@ impl Normalizer {
 
     /// Checks if there's an exact match for a skolem for the given value.
     /// The value should be of the form "exists ___ (forall x and forall y and ...)".
-    /// Returns the SkolemInfo if this exact skolemization has been performed before.
-    pub fn find_exact_skolem_info(&mut self, value: &AcornValue) -> Option<&Arc<SkolemInfo>> {
+    pub fn has_exact_skolem_info(&mut self, value: &AcornValue) -> bool {
         // Remove exists quantifiers if present
         let (num_existential, after_exists) = match value {
             AcornValue::Exists(quants, subvalue) => (quants.len(), subvalue.as_ref().clone()),
             _ => (0, value.clone()),
         };
 
-        let clauses = self.clauses_from_value(&after_exists).ok()?;
+        let Ok(clauses) = self.clauses_from_value(&after_exists) else {
+            return false;
+        };
         let key = SkolemKey {
             clauses,
             num_existential,
         };
-        self.skolem_map.get(&key)
+        self.skolem_map.contains_key(&key)
     }
 
     /// The input should already have negations moved inwards.
@@ -370,7 +371,7 @@ impl Normalizer {
 
     /// Converts a value into a Vec<Literal> if possible.
     /// Ignores leading "forall" since the Clause leaves those implicit.
-    /// Does not change variable ids or reorder literals.
+    /// Does not change variable ids or sort literals but does sort terms within literals.
     /// TODO: this shouldn't mutate self, but the helper functions do when called with
     /// different arguments, so the signature is mut.
     fn literals_from_value(&mut self, value: &AcornValue) -> Result<Vec<Literal>, String> {
@@ -389,14 +390,14 @@ impl Normalizer {
         }
     }
 
-    /// Does not normalize the clause itself.
-    /// Ie, it does not change variable ids, reorder literals, or remove redundant literals.
+    /// Does not change variable ids but does sort literals.
     pub fn clause_from_value(&mut self, value: &AcornValue) -> Result<Clause, String> {
-        let literals = self.literals_from_value(value)?;
+        let mut literals = self.literals_from_value(value)?;
+        literals.sort();
         Ok(Clause { literals })
     }
 
-    /// Does not normalize the clauses.
+    /// Does not change variable ids but does sort literals.
     pub fn clauses_from_value(&mut self, value: &AcornValue) -> Result<Vec<Clause>, String> {
         if *value == AcornValue::Bool(true) {
             return Ok(vec![]);
@@ -492,6 +493,8 @@ impl Normalizer {
         }
     }
 
+    // Note that this can normalize the variable ids for each clause differently.
+    // This is valid because clauses are separately universally quantified.
     fn normalize_literal_lists(&self, literal_lists: Vec<Vec<Literal>>) -> Vec<Clause> {
         let mut clauses = vec![];
         for literals in literal_lists {
@@ -558,7 +561,8 @@ impl Normalizer {
 
     /// Converts a value to CNF: Conjunctive Normal Form.
     /// In other words, a successfully normalized value turns into a bunch of clauses.
-    /// Logically, this is an "and of ors". Each Clause is an "or" of its literals.
+    /// Logically, this is an "and of ors".
+    /// Each Clause represents an implicit "forall", plus an "or" of its literals.
     /// "true" is represented by an empty list, which is always satisfied.
     /// "false" is represented by a single impossible clause.
     pub fn normalize_value(
@@ -614,13 +618,15 @@ impl Normalizer {
             };
             let defined = match &proposition.source.source_type {
                 SourceType::ConstantDefinition(value, _) => {
-                    let term = self.term_from_value(&value, ctype)
+                    let term = self
+                        .term_from_value(&value, ctype)
                         .map_err(|msg| BuildError::new(range, msg))?;
                     Some(term.get_head().clone())
                 }
                 _ => None,
             };
-            let clauses = self.normalize_value(&proposition.value, ctype)
+            let clauses = self
+                .normalize_value(&proposition.value, ctype)
                 .map_err(|msg| BuildError::new(range, msg))?;
             for clause in clauses {
                 let step = ProofStep::assumption(&proposition, clause, defined);
