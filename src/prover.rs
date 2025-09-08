@@ -24,11 +24,6 @@ use crate::term_graph::TermGraphContradiction;
 
 #[derive(Clone)]
 pub struct Prover {
-    /// The normalizer is used when we are turning the facts and goals from the environment into
-    /// clauses that we can use internally.
-    /// TODO: make the normalizer not live inside the prover.
-    pub normalizer: Normalizer,
-
     /// The checker validates a proof certificate, after the prover creates it.
     /// TODO: make the checker not live inside the prover.
     pub checker: Checker,
@@ -49,7 +44,6 @@ pub struct Prover {
 
     /// Setting any of these flags to true externally will stop the prover.
     pub stop_flags: Vec<Arc<AtomicBool>>,
-
 
     /// Number of proof steps activated, not counting Factual ones.
     nonfactual_activations: i32,
@@ -98,7 +92,6 @@ impl Prover {
     /// Creates a new Prover instance
     pub fn new(project: &Project) -> Prover {
         Prover {
-            normalizer: Normalizer::new(),
             active_set: ActiveSet::new(),
             passive_set: PassiveSet::new(),
             checker: Checker::new(),

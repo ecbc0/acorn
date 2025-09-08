@@ -4,6 +4,7 @@ use crate::certificate::Certificate;
 use crate::code_generator::Error;
 use crate::environment::Environment;
 use crate::module::LoadState;
+use crate::normalizer::Normalizer;
 use crate::project::Project;
 use crate::prover::{Outcome, Prover};
 
@@ -12,7 +13,7 @@ fn prove_helper<'a>(
     project: &'a mut Project,
     module_name: &str,
     goal_name: &str,
-) -> (&'a Project, &'a Environment, Prover, Outcome) {
+) -> (&'a Project, &'a Environment, Prover, Normalizer, Outcome) {
     let module_id = project
         .load_module_by_name(module_name)
         .expect("load failed");
@@ -26,15 +27,16 @@ fn prove_helper<'a>(
     let facts = node.usable_facts(project);
     let goal = node.goal().unwrap();
     let mut prover = Prover::new(&project);
+    let mut normalizer = Normalizer::new();
     for fact in facts {
-        let steps = prover.normalizer.normalize_fact(fact).unwrap();
+        let steps = normalizer.normalize_fact(fact).unwrap();
         prover.add_steps(steps);
     }
-    let (ng, steps) = prover.normalizer.normalize_goal(&goal).unwrap();
+    let (ng, steps) = normalizer.normalize_goal(&goal).unwrap();
     prover.set_goal(ng, steps);
     prover.strict_codegen = true;
     let outcome = prover.quick_search();
-    (project, env, prover, outcome)
+    (project, env, prover, normalizer, outcome)
 }
 
 // Tries to prove one thing from the project.
@@ -43,11 +45,11 @@ pub fn prove_with_old_codegen(
     project: &mut Project,
     module_name: &str,
     goal_name: &str,
-) -> (Prover, Outcome, Result<Vec<String>, Error>) {
-    let (project, env, prover, outcome) = prove_helper(project, module_name, goal_name);
-    let code = match prover.get_condensed_proof(&prover.normalizer) {
+) -> (Prover, Normalizer, Outcome, Result<Vec<String>, Error>) {
+    let (project, env, prover, normalizer, outcome) = prove_helper(project, module_name, goal_name);
+    let code = match prover.get_condensed_proof(&normalizer) {
         Some(proof) => {
-            prover.print_proof(&proof, project, &env.bindings, &prover.normalizer);
+            prover.print_proof(&proof, project, &env.bindings, &normalizer);
             proof.to_code(&env.bindings)
         }
         None => {
@@ -55,23 +57,24 @@ pub fn prove_with_old_codegen(
             Err(Error::NoProof)
         }
     };
-    (prover, outcome, code)
+    (prover, normalizer, outcome, code)
 }
 
 /// Expects the proof to succeed, and a valid concrete proof to be generated.
 pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certificate {
-    let (project, base_env, prover, outcome) = prove_helper(project, module_name, goal_name);
+    let (project, base_env, prover, normalizer, outcome) =
+        prove_helper(project, module_name, goal_name);
     assert_eq!(outcome, Outcome::Success);
     let cursor = base_env.get_node_by_goal_name(goal_name);
     let env = cursor.goal_env().unwrap();
 
-    let cert = match prover.make_cert(project, &env.bindings, &prover.normalizer, true) {
+    let cert = match prover.make_cert(project, &env.bindings, &normalizer, true) {
         Ok(cert) => cert,
         Err(e) => panic!("make_cert failed: {}", e),
     };
 
     let mut checker = prover.checker.clone();
-    let mut normalizer = prover.normalizer.clone();
+    let mut normalizer = normalizer.clone();
     let mut bindings = Cow::Borrowed(&env.bindings);
     if let Err(e) = checker.check_cert(&cert, project, &mut bindings, &mut normalizer) {
         panic!("check_cert failed: {}", e);
@@ -79,7 +82,10 @@ pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certi
     cert
 }
 
-pub fn prove_as_main(text: &str, goal_name: &str) -> (Prover, Outcome, Result<Vec<String>, Error>) {
+pub fn prove_as_main(
+    text: &str,
+    goal_name: &str,
+) -> (Prover, Normalizer, Outcome, Result<Vec<String>, Error>) {
     let mut project = Project::new_mock();
     project.mock("/mock/main.ac", text);
     prove_with_old_codegen(&mut project, "main", goal_name)
@@ -87,7 +93,8 @@ pub fn prove_as_main(text: &str, goal_name: &str) -> (Prover, Outcome, Result<Ve
 
 // Does one proof on the provided text.
 pub fn prove_text(text: &str, goal_name: &str) -> Outcome {
-    prove_as_main(text, goal_name).1
+    let (_prover, _normalizer, outcome, _code) = prove_as_main(text, goal_name);
+    outcome
 }
 
 // Verifies all the goals in the provided text, returning any non-Success outcome.
@@ -106,11 +113,12 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
         println!("proving: {}", goal.name);
 
         let mut prover = Prover::new(&project);
+        let mut normalizer = Normalizer::new();
         for fact in facts {
-            let steps = prover.normalizer.normalize_fact(fact)?;
+            let steps = normalizer.normalize_fact(fact)?;
             prover.add_steps(steps);
         }
-        let (ng, steps) = prover.normalizer.normalize_goal(&goal)?;
+        let (ng, steps) = normalizer.normalize_goal(&goal)?;
         prover.set_goal(ng, steps);
 
         // This is a key difference between our verification tests, and our real verification.
@@ -146,7 +154,7 @@ pub fn verify_fails(text: &str) {
 }
 
 pub fn expect_proof(text: &str, goal_name: &str, expected: &[&str]) {
-    let (_, outcome, code) = prove_as_main(text, goal_name);
+    let (_prover, _normalizer, outcome, code) = prove_as_main(text, goal_name);
     assert_eq!(outcome, Outcome::Success);
     let actual = code.expect("code generation failed");
     assert_eq!(actual, expected);
@@ -154,7 +162,7 @@ pub fn expect_proof(text: &str, goal_name: &str, expected: &[&str]) {
 
 // Expects the prover to find a proof that's one of the provided ones.
 pub fn expect_proof_in(text: &str, goal_name: &str, expected: &[&[&str]]) {
-    let (_, outcome, code) = prove_as_main(text, goal_name);
+    let (_prover, _normalizer, outcome, code) = prove_as_main(text, goal_name);
     assert_eq!(outcome, Outcome::Success);
     let actual = code.expect("code generation failed");
 

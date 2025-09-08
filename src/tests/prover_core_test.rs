@@ -803,7 +803,7 @@ fn test_prove_with_imported_skolem() {
             }
         "#,
     );
-    let (_, outcome, _) = prove_with_old_codegen(&mut p, "main", "goal");
+    let (_, _, outcome, _) = prove_with_old_codegen(&mut p, "main", "goal");
     assert_eq!(outcome, Outcome::Success);
 }
 
@@ -882,10 +882,10 @@ fn test_useful_fact_extraction() {
             }
         "#,
     );
-    let (prover, outcome, _) = prove_with_old_codegen(&mut p, "main", "goal");
+    let (prover, normalizer, outcome, _) = prove_with_old_codegen(&mut p, "main", "goal");
     assert_eq!(outcome, Outcome::Success);
     let mut name_set = HashSet::new();
-    prover.get_useful_source_names(&mut name_set, &prover.normalizer);
+    prover.get_useful_source_names(&mut name_set, &normalizer);
     let mut names = name_set
         .into_iter()
         .map(|(_, name)| name)

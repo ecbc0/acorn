@@ -13,6 +13,7 @@ use crate::environment::Environment;
 use crate::goal::Goal;
 use crate::module::{LoadState, ModuleDescriptor, ModuleId};
 use crate::module_cache::ModuleCache;
+use crate::normalizer::Normalizer;
 use crate::project::Project;
 use crate::prover::{Outcome, Prover};
 
@@ -366,6 +367,7 @@ impl<'a> Builder<'a> {
     pub fn search_finished(
         &mut self,
         prover: &mut Prover,
+        normalizer: &Normalizer,
         goal: &Goal,
         outcome: Outcome,
         elapsed: Duration,
@@ -390,7 +392,7 @@ impl<'a> Builder<'a> {
             Outcome::Success => {
                 if !self.project.config.use_certs {
                     // Old proof-generation logic
-                    let Some(proof) = prover.get_condensed_proof(&prover.normalizer) else {
+                    let Some(proof) = prover.get_condensed_proof(normalizer) else {
                         self.log_warning(&goal, "had a missing proof");
                         return;
                     };
@@ -548,14 +550,15 @@ impl<'a> Builder<'a> {
     fn verify_with_fallback(
         &mut self,
         mut full_prover: Prover,
-        filtered_prover: Option<Prover>,
+        mut full_normalizer: Normalizer,
+        filtered_prover: Option<(Prover, Normalizer)>,
         goal: &Goal,
         env: &Environment,
         new_certs: &mut Option<Vec<Certificate>>,
         worklist: &mut Option<CertificateWorklist>,
         new_premises: &mut HashSet<(ModuleId, String)>,
     ) -> Result<(), BuildError> {
-        let (ng, steps) = full_prover.normalizer.normalize_goal(goal)?;
+        let (ng, steps) = full_normalizer.normalize_goal(goal)?;
         full_prover.set_goal(ng, steps);
 
         // Check for a cached cert
@@ -564,7 +567,7 @@ impl<'a> Builder<'a> {
             for i in indexes {
                 let cert = worklist.get_cert(*i).unwrap();
                 let mut checker = full_prover.checker.clone();
-                let mut normalizer = full_prover.normalizer.clone();
+                let mut normalizer = full_normalizer.clone();
                 let mut bindings = Cow::Borrowed(&env.bindings);
                 match checker.check_cert(cert, self.project, &mut bindings, &mut normalizer) {
                     Ok(()) => {
@@ -601,9 +604,9 @@ impl<'a> Builder<'a> {
         }
 
         // Try the filtered prover
-        if let Some(mut filtered_prover) = filtered_prover {
+        if let Some((mut filtered_prover, mut filtered_normalizer)) = filtered_prover {
             self.metrics.searches_filtered += 1;
-            let (filtered_ng, filtered_steps) = filtered_prover.normalizer.normalize_goal(goal)?;
+            let (filtered_ng, filtered_steps) = filtered_normalizer.normalize_goal(goal)?;
             filtered_prover.set_goal(filtered_ng, filtered_steps);
             let start = std::time::Instant::now();
             let outcome = filtered_prover.verification_search();
@@ -612,12 +615,12 @@ impl<'a> Builder<'a> {
                     match filtered_prover.make_cert(
                         self.project,
                         &env.bindings,
-                        &filtered_prover.normalizer,
+                        &filtered_normalizer,
                         self.verbose,
                     ) {
                         Ok(cert) => {
                             let mut checker = full_prover.checker.clone();
-                            let mut normalizer = full_prover.normalizer.clone();
+                            let mut normalizer = full_normalizer.clone();
                             let mut bindings = Cow::Borrowed(&env.bindings);
                             if let Err(e) = checker.check_cert(
                                 &cert,
@@ -640,8 +643,14 @@ impl<'a> Builder<'a> {
                         }
                     }
                 }
-                self.search_finished(&mut filtered_prover, goal, outcome, start.elapsed());
-                filtered_prover.get_useful_source_names(new_premises, &filtered_prover.normalizer);
+                self.search_finished(
+                    &mut filtered_prover,
+                    &filtered_normalizer,
+                    goal,
+                    outcome,
+                    start.elapsed(),
+                );
+                filtered_prover.get_useful_source_names(new_premises, &filtered_normalizer);
                 return Ok(());
             }
             self.metrics.searches_fallback += 1;
@@ -656,7 +665,7 @@ impl<'a> Builder<'a> {
                 match full_prover.make_cert(
                     self.project,
                     &env.bindings,
-                    &full_prover.normalizer,
+                    &full_normalizer,
                     self.verbose,
                 ) {
                     Ok(cert) => new_certs.push(cert),
@@ -669,8 +678,14 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        self.search_finished(&mut full_prover, goal, outcome, start.elapsed());
-        full_prover.get_useful_source_names(new_premises, &full_prover.normalizer);
+        self.search_finished(
+            &mut full_prover,
+            &full_normalizer,
+            goal,
+            outcome,
+            start.elapsed(),
+        );
+        full_prover.get_useful_source_names(new_premises, &full_normalizer);
         Ok(())
     }
 
@@ -680,7 +695,8 @@ impl<'a> Builder<'a> {
     pub fn verify_node(
         &mut self,
         full_prover: &Prover,
-        filtered_prover: &Option<Prover>,
+        full_normalizer: &Normalizer,
+        filtered_prover: &Option<(Prover, Normalizer)>,
         cursor: &mut NodeCursor,
         new_premises: &mut HashSet<(ModuleId, String)>,
         new_certs: &mut Option<Vec<Certificate>>,
@@ -691,6 +707,7 @@ impl<'a> Builder<'a> {
         }
 
         let mut full_prover = full_prover.clone();
+        let mut full_normalizer = full_normalizer.clone();
         let mut filtered_prover = filtered_prover.clone();
         if cursor.num_children() > 0 {
             // We need to recurse into children
@@ -698,6 +715,7 @@ impl<'a> Builder<'a> {
             loop {
                 self.verify_node(
                     &full_prover,
+                    &full_normalizer,
                     &filtered_prover,
                     cursor,
                     new_premises,
@@ -706,11 +724,13 @@ impl<'a> Builder<'a> {
                 )?;
 
                 if let Some(fact) = cursor.node().get_fact() {
-                    if let Some(ref mut filtered_prover) = filtered_prover {
-                        let steps = filtered_prover.normalizer.normalize_fact(fact.clone())?;
+                    if let Some((ref mut filtered_prover, ref mut filtered_normalizer)) =
+                        filtered_prover
+                    {
+                        let steps = filtered_normalizer.normalize_fact(fact.clone())?;
                         filtered_prover.add_steps(steps);
                     }
-                    let steps = full_prover.normalizer.normalize_fact(fact)?;
+                    let steps = full_normalizer.normalize_fact(fact)?;
                     full_prover.add_steps(steps);
                 }
 
@@ -733,6 +753,7 @@ impl<'a> Builder<'a> {
             }
             self.verify_with_fallback(
                 full_prover,
+                full_normalizer,
                 filtered_prover,
                 &goal,
                 cursor.goal_env().unwrap(),
@@ -773,8 +794,9 @@ impl<'a> Builder<'a> {
 
         // The full prover has access to all imported facts.
         let mut full_prover = Prover::new(&self.project);
+        let mut full_normalizer = Normalizer::new();
         for fact in self.project.imported_facts(env.module_id, None) {
-            let steps = full_prover.normalizer.normalize_fact(fact.clone())?;
+            let steps = full_normalizer.normalize_fact(fact.clone())?;
             full_prover.add_steps(steps);
         }
         let mut cursor = NodeCursor::new(&env, 0);
@@ -783,7 +805,8 @@ impl<'a> Builder<'a> {
         loop {
             if cursor.requires_verification() {
                 let block_name = cursor.block_name();
-                if self.check_hashes && module_hash
+                if self.check_hashes
+                    && module_hash
                         .matches_through_line(&old_module_cache, cursor.node().last_line())
                 {
                     // We don't need to verify this, we can just treat it as verified due to the hash.
@@ -815,6 +838,7 @@ impl<'a> Builder<'a> {
                     // This call will recurse and verify everything within this top-level block.
                     self.verify_node(
                         &full_prover,
+                        &full_normalizer,
                         &filtered_prover,
                         &mut cursor,
                         &mut new_premises,
@@ -848,7 +872,7 @@ impl<'a> Builder<'a> {
                 break;
             }
             if let Some(fact) = cursor.node().get_fact() {
-                let steps = full_prover.normalizer.normalize_fact(fact.clone())?;
+                let steps = full_normalizer.normalize_fact(fact.clone())?;
                 full_prover.add_steps(steps);
             }
             cursor.next();

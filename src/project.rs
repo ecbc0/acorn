@@ -24,6 +24,7 @@ use crate::module_cache::{ModuleCache, ModuleHash};
 use crate::module_cache_set::ModuleCacheSet;
 use crate::named_entity::NamedEntity;
 use crate::names::ConstantName;
+use crate::normalizer::Normalizer;
 use crate::prover::Prover;
 use crate::token::Token;
 use crate::token_map::TokenInfo;
@@ -481,7 +482,7 @@ impl Project {
         env: &Environment,
         block_name: &str,
         module_cache: &Option<ModuleCache>,
-    ) -> Result<Option<Prover>, BuildError> {
+    ) -> Result<Option<(Prover, Normalizer)>, BuildError> {
         // Load the premises from the cache
         let Some(normalized) = module_cache
             .as_ref()
@@ -499,6 +500,7 @@ impl Project {
             premises.insert(module_id, premise_set.iter().cloned().collect());
         }
         let mut prover = Prover::new(&self);
+        let mut normalizer = Normalizer::new();
 
         // Add facts from the dependencies
         let empty = HashSet::new();
@@ -511,7 +513,7 @@ impl Project {
             // importable_facts will always include extends and instance facts,
             // even when a filter is provided
             for fact in module_env.importable_facts(Some(module_premises)) {
-                let steps = prover.normalizer.normalize_fact(fact)?;
+                let steps = normalizer.normalize_fact(fact)?;
                 prover.add_steps(steps);
             }
         }
@@ -530,7 +532,7 @@ impl Project {
 
             // Always include facts that are used in normalization.
             if fact.used_in_normalization() {
-                let steps = prover.normalizer.normalize_fact(fact)?;
+                let steps = normalizer.normalize_fact(fact)?;
                 prover.add_steps(steps);
                 continue;
             }
@@ -543,12 +545,12 @@ impl Project {
             };
 
             if local_premises.contains(&name) {
-                let steps = prover.normalizer.normalize_fact(fact)?;
+                let steps = normalizer.normalize_fact(fact)?;
                 prover.add_steps(steps);
             }
         }
 
-        Ok(Some(prover))
+        Ok(Some((prover, normalizer)))
     }
 
     // Verifies the goal at this node as well as at every child node.

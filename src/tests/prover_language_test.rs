@@ -227,7 +227,7 @@ fn test_using_imported_axiom() {
             theorem goal(a: bar.Bar, b: bar.Bar) { bar.morph(a) = bar.morph(b) }
         "#,
     );
-    let (_, outcome, _) = prove_with_old_codegen(&mut p, "main", "goal");
+    let (_, _, outcome, _) = prove_with_old_codegen(&mut p, "main", "goal");
     assert_eq!(outcome, Outcome::Success);
 }
 
@@ -728,11 +728,11 @@ fn test_prove_with_imported_generic_structure() {
             }
         "#,
     );
-    let (_, outcome, _) = prove_with_old_codegen(&mut p, "main", "check_first");
+    let (_, _, outcome, _) = prove_with_old_codegen(&mut p, "main", "check_first");
     assert_eq!(outcome, Outcome::Success);
-    let (_, outcome, _) = prove_with_old_codegen(&mut p, "main", "check_second");
+    let (_, _, outcome, _) = prove_with_old_codegen(&mut p, "main", "check_second");
     assert_eq!(outcome, Outcome::Success);
-    let (_, outcome, _) = prove_with_old_codegen(&mut p, "main", "check_new");
+    let (_, _, outcome, _) = prove_with_old_codegen(&mut p, "main", "check_new");
     assert_eq!(outcome, Outcome::Success);
 }
 
@@ -986,7 +986,7 @@ fn test_normalizing_instance_aliases() {
                 Magma.mul(a, a) = a * a
             }
         "#;
-    let (prover, outcome, _) = prove_as_main(text, "goal");
+    let (prover, _normalizer, outcome, _) = prove_as_main(text, "goal");
     assert_eq!(outcome, Outcome::Success);
     if let Some(final_step) = prover.get_final_step() {
         // TODO: the goal should have just normalized to Foo.mul(x0, x0) = Foo.mul(x0, x0)
@@ -1277,7 +1277,7 @@ fn test_proving_with_mixin_instance() {
             }
         "#,
     );
-    let (_, outcome, _) = prove_with_old_codegen(&mut p, "main", "goal");
+    let (_prover, _normalizer, outcome, _) = prove_with_old_codegen(&mut p, "main", "goal");
     assert_eq!(outcome, Outcome::Success);
 }
 
