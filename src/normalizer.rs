@@ -76,6 +76,12 @@ impl std::fmt::Display for SkolemKey {
     }
 }
 
+impl SkolemKey {
+    fn bucket(&self) -> (usize, usize) {
+        (self.num_existential, self.clauses.len())
+    }
+}
+
 /// Information about a particular skolem function that we created.
 /// We will need to look this up both by skolem key, and by atom id.
 pub struct SkolemInfo {
@@ -136,7 +142,26 @@ impl Normalizer {
             clauses,
             num_existential,
         };
-        self.skolem_map.contains_key(&key)
+        if self.skolem_map.contains_key(&key) {
+            true
+        } else {
+            // Uncomment to debug lookups
+            // self.debug_failed_lookup(&key);
+
+            false
+        }
+    }
+
+    // Useful for debugging
+    #[allow(dead_code)]
+    fn debug_failed_lookup(&self, key: &SkolemKey) {
+        println!("Failed lookup for key: {}", key);
+
+        for candidate in self.skolem_map.keys() {
+            if candidate.bucket() == key.bucket() {
+                println!("Candidate: {}", candidate);
+            }
+        }
     }
 
     /// The input should already have negations moved inwards.
