@@ -1,4 +1,5 @@
 // A representative run of the scorer, to use for profiling.
+//
 // To profile using samply:
 //
 //   cargo build --bin=profile_scorer --profile=fastdev

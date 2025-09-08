@@ -46,6 +46,10 @@ test = false
 name = "profile_scorer"
 test = false
 
+[[bin]]
+name = "profile_verifier"
+test = false
+
 # Fast, but including debug info.
 [profile.fastdev]
 inherits = "release"
