@@ -49,11 +49,13 @@ Hit F5. This will open up a new VS Code window. This new window is called the "e
 
 The guts of Acorn are written in Rust. Those files are mostly [here](./src).
 
-If you'd like to add something new to the language, the best way to start might be to make sure it parses, by adding a new [environment test](./tests/environment_test.rs). Then run the tests with `cargo test -q`, you'll see where it fails, and you can proceed from there. The next step is to make sure it behaves like you want, by adding a new [prover test](./tests/prover_test.rs).
+If you'd like to add something new to the language, the best way to start might be to make sure it parses, by adding a new [environment test](./src/tests/env_parsing_test.rs). Then run the tests with `cargo test -q`, you'll see where it fails, and you can proceed from there. The next step is to make sure it behaves like you want, by adding a new [prover test](./src/tests/prover_language_test.rs).
 
 Other interesting parts of the code:
 
-- The [Acorn binary](./src/bin/acorn.rs) is the entry point to Rust logic within VS Code.
+- The [Acorn binary](./src/bin/acorn.rs) is the entry point to Rust logic from the command line.
+
+- The [Acorn language server](./src/bin/server.rs) handles asynchronous proving in VS Code.
 
 - The [VS Code extension](./vscode/extension) runs within VS Code, and handles communication between the user and the language server.
 
