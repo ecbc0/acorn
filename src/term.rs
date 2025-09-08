@@ -381,13 +381,29 @@ impl Term {
         }
     }
 
-    /// Converts atoms from the given list to variables, and shifts existing variables to make room.
-    pub fn convert_to_variable(&self, from: &[Atom]) -> Term {
-        let new_head = self.head.convert_to_variable(from);
+    /// Renumbers skolems from the provided list into the invalid range.
+    pub fn invalidate_skolems(&self, from: &[AtomId]) -> Term {
+        let new_head = self.head.invalidate_skolems(from);
         let new_args = self
             .args
             .iter()
-            .map(|arg| arg.convert_to_variable(from))
+            .map(|arg| arg.invalidate_skolems(from))
+            .collect();
+        Term {
+            term_type: self.term_type,
+            head_type: self.head_type,
+            head: new_head,
+            args: new_args,
+        }
+    }
+
+    /// Replace the first `num_existential` variables with invalid skolems, renormalizing.
+    pub fn instantiate_invalid_skolems(&self, num_existential: usize) -> Term {
+        let new_head = self.head.instantiate_invalid_skolems(num_existential);
+        let new_args = self
+            .args
+            .iter()
+            .map(|arg| arg.instantiate_invalid_skolems(num_existential))
             .collect();
         Term {
             term_type: self.term_type,

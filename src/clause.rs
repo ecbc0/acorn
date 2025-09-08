@@ -279,17 +279,25 @@ impl Clause {
         true
     }
 
-    /// Converts atoms from the given list to variables, and shifts existing variables to make room.
-    pub fn convert_to_variable(&self, from: &[Atom]) -> Clause {
-        let mut new_literals: Vec<Literal> = self
+    /// Renumbers skolems from the provided list into the invalid range.
+    /// This does renormalize, so it could reorder literals and renumber variables.
+    pub fn invalidate_skolems(&self, from: &[AtomId]) -> Clause {
+        let new_literals: Vec<Literal> = self
             .literals
             .iter()
-            .map(|lit| lit.convert_to_variable(from))
+            .map(|lit| lit.invalidate_skolems(from))
             .collect();
-        new_literals.sort();
-        Clause {
-            literals: new_literals,
-        }
+        Clause::new(new_literals)
+    }
+
+    /// Replace the first `num_existential` variables with invalid skolems, renormalizing.
+    pub fn instantiate_invalid_skolems(&self, num_existential: usize) -> Clause {
+        let new_literals: Vec<Literal> = self
+            .literals
+            .iter()
+            .map(|lit| lit.instantiate_invalid_skolems(num_existential))
+            .collect();
+        Clause::new(new_literals)
     }
 
     /// Finds all possible equality resolutions for this clause.

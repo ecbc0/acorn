@@ -300,10 +300,18 @@ impl Ord for Literal {
 }
 
 impl Literal {
-    /// Converts atoms from the given list to variables, and shifts existing variables to make room.
-    pub fn convert_to_variable(&self, from: &[Atom]) -> Literal {
-        let new_left = self.left.convert_to_variable(from);
-        let new_right = self.right.convert_to_variable(from);
+    /// Renumbers skolems from the provided list into the invalid range.
+    /// This does renormalize, so it could be swapping the order.
+    pub fn invalidate_skolems(&self, from: &[AtomId]) -> Literal {
+        let new_left = self.left.invalidate_skolems(from);
+        let new_right = self.right.invalidate_skolems(from);
+        Literal::new(self.positive, new_left, new_right)
+    }
+
+    /// Replace the first `num_existential` variables with invalid skolems, renormalizing.
+    pub fn instantiate_invalid_skolems(&self, num_existential: usize) -> Literal {
+        let new_left = self.left.instantiate_invalid_skolems(num_existential);
+        let new_right = self.right.instantiate_invalid_skolems(num_existential);
         Literal::new(self.positive, new_left, new_right)
     }
 }

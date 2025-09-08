@@ -96,15 +96,28 @@ impl Atom {
         }
     }
 
-    // Converts from[i] to xi, and shifts existing variables to make room.
-    // Keeps all the types the same.
-    pub fn convert_to_variable(&self, from: &[Atom]) -> Atom {
+    /// Renumbers skolems from the provided list into the invalid range.
+    pub fn invalidate_skolems(&self, from: &[AtomId]) -> Atom {
         match self {
-            Atom::Variable(i) => Atom::Variable(i + from.len() as AtomId),
-            a => match from.iter().position(|x| x == a) {
-                Some(i) => Atom::Variable(i as AtomId),
-                None => *a,
+            Atom::Skolem(i) => match from.iter().position(|x| x == i) {
+                Some(j) => Atom::Skolem((INVALID_SKOLEM_ID as usize + j) as AtomId),
+                None => *self,
             },
+            a => *a,
+        }
+    }
+
+    /// Replace the first `num_existential` variables with invalid skolems, renormalizing.
+    pub fn instantiate_invalid_skolems(&self, num_existential: usize) -> Atom {
+        match self {
+            Atom::Variable(i) => {
+                if (*i as usize) < num_existential {
+                    Atom::Skolem((INVALID_SKOLEM_ID as usize + *i as usize) as AtomId)
+                } else {
+                    Atom::Variable(*i - num_existential as AtomId)
+                }
+            }
+            a => *a,
         }
     }
 

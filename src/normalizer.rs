@@ -125,9 +125,13 @@ impl Normalizer {
             _ => (0, value.clone()),
         };
 
-        let Ok(clauses) = self.clauses_from_value(&after_exists) else {
+        let Ok(uninstantiated) = self.clauses_from_value(&after_exists) else {
             return false;
         };
+        let clauses = uninstantiated
+            .iter()
+            .map(|c| c.instantiate_invalid_skolems(num_existential))
+            .collect();
         let key = SkolemKey {
             clauses,
             num_existential,
@@ -531,29 +535,27 @@ impl Normalizer {
         let clauses = self.normalize_cnf(value, ctype)?;
 
         if !created.is_empty() {
-            let mut skolem_atoms = vec![];
-            let mut ids = vec![];
+            let mut skolem_ids = vec![];
             for (skolem_id, skolem_type) in created {
                 self.skolem_types.push(skolem_type);
-                skolem_atoms.push(Atom::Skolem(skolem_id));
-                ids.push(skolem_id);
+                skolem_ids.push(skolem_id);
             }
 
-            // The first skolem_atom.len() variables are existential, the rest universal.
-            // This is implicit, though, because the list of clauses doesn't itself differentiate.
-            let generic: Vec<_> = clauses
+            // In the skolem key, we normalize skolem ids by renumbering them.
+            let skolem_key_form: Vec<_> = clauses
                 .iter()
-                .map(|c| c.convert_to_variable(&skolem_atoms))
+                .map(|c| c.invalidate_skolems(&skolem_ids))
                 .collect();
+            let num_existential = skolem_ids.len();
             let key = SkolemKey {
-                clauses: generic.clone(),
-                num_existential: skolem_atoms.len(),
+                clauses: skolem_key_form.clone(),
+                num_existential,
             };
             let info = Arc::new(SkolemInfo {
                 clauses: clauses.clone(),
-                ids,
+                ids: skolem_ids,
             });
-            for _ in &skolem_atoms {
+            for _ in 0..num_existential {
                 self.skolem_info.push(info.clone());
             }
             self.skolem_map.insert(key, info);
