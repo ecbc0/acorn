@@ -49,6 +49,9 @@ pub struct Builder<'a> {
     /// In normal mode, this is okay, because it could be that we modified the file.
     pub reverify: bool,
 
+    /// Whether we skip goals that match hashes in the cache.
+    pub check_hashes: bool,
+
     /// The current module we are proving.
     current_module: Option<ModuleDescriptor>,
 
@@ -270,6 +273,7 @@ impl<'a> Builder<'a> {
             log_when_slow: false,
             log_secondary_errors: true,
             reverify: false,
+            check_hashes: true,
             current_module: None,
             current_module_good: true,
             build_cache: None,
@@ -779,8 +783,7 @@ impl<'a> Builder<'a> {
         loop {
             if cursor.requires_verification() {
                 let block_name = cursor.block_name();
-                if self.project.config.check_hashes
-                    && module_hash
+                if self.check_hashes && module_hash
                         .matches_through_line(&old_module_cache, cursor.node().last_line())
                 {
                     // We don't need to verify this, we can just treat it as verified due to the hash.
@@ -879,6 +882,11 @@ impl<'a> Builder<'a> {
 
     /// Builds all open modules, logging build events.
     pub fn build(&mut self) {
+        // Check for incompatible configuration
+        if self.project.config.use_certs && self.check_hashes {
+            panic!("Cannot use both certificates and hash checking");
+        }
+
         // Initialize the build cache if we're using certificates
         if self.project.using_certs() {
             self.build_cache = Some(BuildCache::new());

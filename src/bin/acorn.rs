@@ -122,7 +122,6 @@ async fn main() {
     }
 
     let config = ProjectConfig {
-        check_hashes: !args.nohash && !args.certs,
         use_certs: args.certs,
         ..Default::default()
     };
@@ -151,6 +150,7 @@ async fn main() {
     };
     verifier.builder.verbose = args.line.is_some();
     verifier.builder.reverify = args.reverify;
+    verifier.builder.check_hashes = !args.nohash && !args.certs;
     verifier.line = args.line;
     match verifier.run() {
         Err(e) => {

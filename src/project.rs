@@ -81,9 +81,6 @@ pub struct ProjectConfig {
     // If false, this indicates we only want mocked files.
     pub use_filesystem: bool,
 
-    // Whether we skip goals that match hashes in the cache.
-    pub check_hashes: bool,
-
     // Whether we should read from the cache
     pub read_cache: bool,
 
@@ -98,7 +95,6 @@ impl Default for ProjectConfig {
     fn default() -> Self {
         Self {
             use_filesystem: true,
-            check_hashes: true,
             read_cache: true,
             write_cache: true,
             use_certs: false,
@@ -190,10 +186,6 @@ fn check_valid_module_part(s: &str, error_name: &str) -> Result<(), ImportError>
 impl Project {
     // Create a new project.
     pub fn new(library_root: PathBuf, cache_dir: PathBuf, config: ProjectConfig) -> Project {
-        if config.use_certs && config.check_hashes {
-            panic!("Cannot use both certificates and hash checking");
-        }
-
         // Check if the directory exists
         let module_caches = if config.read_cache && cache_dir.is_dir() {
             ModuleCacheSet::new(Some(cache_dir.clone()), config.write_cache)

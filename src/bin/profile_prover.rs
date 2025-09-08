@@ -12,10 +12,7 @@ use acorn::{
 fn main() {
     let current_dir = std::env::current_dir().unwrap();
     for _ in 0..10 {
-        let config = ProjectConfig {
-            check_hashes: false,
-            ..Default::default()
-        };
+        let config = ProjectConfig::default();
         let mut project = Project::new_local(&current_dir, config).unwrap();
         project
             .add_target_by_name("nat")
@@ -36,6 +33,7 @@ fn main() {
                 }
             }
         });
+        builder.check_hashes = false;
         builder.build();
     }
 }

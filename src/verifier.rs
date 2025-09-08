@@ -105,9 +105,6 @@ impl Verifier {
             events_clone.borrow_mut().push(event);
         });
 
-        if !config.check_hashes {
-            builder.log_when_slow = true;
-        }
         if target.is_none() {
             builder.log_secondary_errors = false;
         }
@@ -193,16 +190,16 @@ mod tests {
         // Create a verifier starting from the acornlib directory
         // The verifier should find the src directory and use it as the root
         let config = ProjectConfig {
-            check_hashes: false,
             use_certs: true,
             ..Default::default()
         };
-        let verifier1 = Verifier::new(
+        let mut verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
             config.clone(),
             Some("foo".to_string()),
         )
         .unwrap();
+        verifier1.builder.check_hashes = false;
 
         // Test that the verifier can run successfully on our theorem in the src directory
         let result = verifier1.run();
@@ -236,12 +233,13 @@ mod tests {
         assert_eq!(line_count, 1,);
 
         // Verify again
-        let verifier2 = Verifier::new(
+        let mut verifier2 = Verifier::new(
             acornlib.path().to_path_buf(),
             config,
             Some("foo".to_string()),
         )
         .unwrap();
+        verifier2.builder.check_hashes = false;
         let result2 = verifier2.run();
         assert!(
             result2.is_ok(),
@@ -289,16 +287,16 @@ mod tests {
 
         // Create a verifier targeting the nested module
         let config = ProjectConfig {
-            check_hashes: false,
             use_certs: true,
             ..Default::default()
         };
-        let verifier1 = Verifier::new(
+        let mut verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
             config.clone(),
             Some("foo.bar".to_string()),
         )
         .unwrap();
+        verifier1.builder.check_hashes = false;
 
         // Run the verifier the first time
         let result = verifier1.run();
@@ -331,12 +329,13 @@ mod tests {
         );
 
         // Verify again
-        let verifier2 = Verifier::new(
+        let mut verifier2 = Verifier::new(
             acornlib.path().to_path_buf(),
             config,
             Some("foo.bar".to_string()),
         )
         .unwrap();
+        verifier2.builder.check_hashes = false;
         let result2 = verifier2.run();
         assert!(
             result2.is_ok(),
@@ -390,25 +389,26 @@ mod tests {
             .unwrap();
 
         let config = ProjectConfig {
-            check_hashes: false,
             use_certs: true,
             ..Default::default()
         };
-        let verifier1 = Verifier::new(
+        let mut verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
             config.clone(),
             Some("main".to_string()),
         )
         .unwrap();
+        verifier1.builder.check_hashes = false;
         let output = verifier1.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
 
-        let verifier2 = Verifier::new(
+        let mut verifier2 = Verifier::new(
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
         )
         .unwrap();
+        verifier2.builder.check_hashes = false;
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
         assert_eq!(output.metrics.searches_fallback, 0);
@@ -448,25 +448,26 @@ mod tests {
             .unwrap();
 
         let config = ProjectConfig {
-            check_hashes: false,
             use_certs: true,
             ..Default::default()
         };
-        let verifier1 = Verifier::new(
+        let mut verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
             config.clone(),
             Some("main".to_string()),
         )
         .unwrap();
+        verifier1.builder.check_hashes = false;
         let output = verifier1.run().unwrap();
         assert_eq!(output.num_verified(), 5);
 
-        let verifier2 = Verifier::new(
+        let mut verifier2 = Verifier::new(
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
         )
         .unwrap();
+        verifier2.builder.check_hashes = false;
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good,);
         assert_eq!(output.metrics.searches_fallback, 0,);
@@ -483,7 +484,6 @@ mod tests {
         src.child("bar.ac").write_str("import foo").unwrap();
 
         let config = ProjectConfig {
-            check_hashes: false,
             use_certs: true,
             ..Default::default()
         };
@@ -529,16 +529,16 @@ mod tests {
         src.child("main.ac").write_str("import foo").unwrap();
 
         let config = ProjectConfig {
-            check_hashes: false,
             use_certs: true,
             ..Default::default()
         };
-        let verifier = Verifier::new(
+        let mut verifier = Verifier::new(
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
         )
         .unwrap();
+        verifier.builder.check_hashes = false;
         let output = verifier.run().unwrap();
 
         // The verifier should report a compilation error
@@ -595,16 +595,16 @@ mod tests {
             .unwrap();
 
         let config = ProjectConfig {
-            check_hashes: false,
             use_certs: true,
             ..Default::default()
         };
-        let verifier1 = Verifier::new(
+        let mut verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
             config,
             Some("main".to_string()),
         )
         .unwrap();
+        verifier1.builder.check_hashes = false;
         let output = verifier1.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
     }
