@@ -192,10 +192,10 @@ impl Checker {
 
                     // Check if this matches any existing skolem
                     if !normalizer.has_exact_skolem_info(&exists_value) {
-                        return Err(Error::GeneratedBadCode(
-                            "let...satisfy statement does not match any skolem definition"
-                                .to_string(),
-                        ));
+                        return Err(Error::GeneratedBadCode(format!(
+                            "statement '{}' does not match any skolem definition",
+                            code
+                        )));
                     };
                 }
 
