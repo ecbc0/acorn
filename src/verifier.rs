@@ -118,7 +118,8 @@ impl Verifier {
         })
     }
 
-    /// Returns VerifierOutput on success, or an error string if verification fails.
+    /// Returns VerifierOutput on success or clean failure.
+    /// Returns an error string if verification fails during setup.
     pub fn run(mut self) -> Result<VerifierOutput, String> {
         // If a specific line is provided along with a target, set up single goal verification
         if let Some(line) = self.line {

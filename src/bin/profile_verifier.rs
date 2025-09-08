@@ -18,16 +18,10 @@ fn main() {
         )
         .expect("Failed to create verifier");
 
-        match verifier.run() {
-            Ok(output) => {
-                println!(
-                    "Verification completed: {} theorems verified",
-                    output.num_verified()
-                );
-            }
-            Err(e) => {
-                println!("Verification failed: {}", e);
-            }
+        let output = verifier.run().unwrap();
+        if !output.status.is_good() {
+            println!("exiting.");
+            std::process::exit(1);
         }
     }
 }
