@@ -11,7 +11,10 @@ use acorn::{project::ProjectConfig, verifier::Verifier};
 fn main() {
     let current_dir = std::env::current_dir().unwrap();
     for _ in 0..1 {
-        let config = ProjectConfig::default();
+        let config = ProjectConfig {
+            use_certs: true,
+            ..Default::default()
+        };
         let mut verifier = Verifier::new(
             current_dir.clone(),
             config,
