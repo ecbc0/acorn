@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 
 pub type AtomId = u16;
 
-pub const INVALID_ATOM_ID: AtomId = 0xffff;
+/// Don't let skolem ids get this high.
+/// We use ids in the invalid space for normalization purposes.
+pub const INVALID_SKOLEM_ID: AtomId = 65000;
 
 /// An atomic value does not have any internal structure.
 /// The Atom is a lower-level representation.

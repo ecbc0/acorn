@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::acorn_type::AcornType;
 use crate::acorn_value::{AcornValue, BinaryOp, FunctionApplication};
-use crate::atom::{Atom, AtomId};
+use crate::atom::{Atom, AtomId, INVALID_SKOLEM_ID};
 use crate::builder::BuildError;
 use crate::clause::Clause;
 use crate::fact::Fact;
@@ -182,6 +182,9 @@ impl Normalizer {
                 for quant in quants {
                     // Make a new skolem atom
                     let skolem_type = AcornType::functional(stack.clone(), quant);
+                    if *next_skolem_id >= INVALID_SKOLEM_ID {
+                        return Err(format!("ran out of skolem ids (used {})", next_skolem_id));
+                    }
                     let skolem_name = ConstantName::Skolem(*next_skolem_id);
                     let skolem_value =
                         AcornValue::constant(skolem_name, vec![], skolem_type.clone());
