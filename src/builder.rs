@@ -546,149 +546,6 @@ impl<'a> Builder<'a> {
         Ok(())
     }
 
-    /// Verifies a goal with fallback from filtered to full prover.
-    /// env should be the environment that the proof happens in.
-    fn verify_with_fallback(
-        &mut self,
-        mut full_processor: Processor,
-        filtered_processor: Option<Processor>,
-        goal: &Goal,
-        env: &Environment,
-        new_certs: &mut Option<Vec<Certificate>>,
-        worklist: &mut Option<CertificateWorklist>,
-        new_premises: &mut HashSet<(ModuleId, String)>,
-    ) -> Result<(), BuildError> {
-        let (ng, steps) = full_processor.normalizer.normalize_goal(goal)?;
-        full_processor.prover.set_goal(ng, steps);
-
-        // Check for a cached cert
-        if let Some(worklist) = worklist.as_mut() {
-            let indexes = worklist.get_indexes(&goal.name);
-            for i in indexes {
-                let cert = worklist.get_cert(*i).unwrap();
-                let mut checker = full_processor.prover.checker.clone();
-                let mut normalizer = full_processor.normalizer.clone();
-                let mut bindings = Cow::Borrowed(&env.bindings);
-                match checker.check_cert(cert, self.project, &mut bindings, &mut normalizer) {
-                    Ok(()) => {
-                        self.metrics.cached_certs += 1;
-                        self.metrics.goals_done += 1;
-                        self.metrics.goals_success += 1;
-                        self.log_verified(goal.first_line, goal.last_line);
-                        if let Some(new_certs) = new_certs {
-                            new_certs.push(cert.clone());
-                        }
-                        worklist.remove(&goal.name, *i);
-                        return Ok(());
-                    }
-                    Err(e) if self.reverify => {
-                        // In reverify mode, a bad cert is an error
-                        return Err(BuildError::goal(
-                            goal,
-                            &format!("certificate failed to verify: {}", e),
-                        ));
-                    }
-                    Err(_) => {
-                        // The cert is bad, but maybe another one is good.
-                        // That can happen with code edits.
-                    }
-                }
-            }
-        } else if self.reverify {
-            return Err(BuildError::goal(goal, "no worklist found"));
-        }
-
-        // In reverify mode, we should never reach the search phase
-        if self.reverify {
-            return Err(BuildError::goal(goal, "no certificate found"));
-        }
-
-        // Try the filtered prover
-        if let Some(mut filtered_processor) = filtered_processor {
-            self.metrics.searches_filtered += 1;
-            let (filtered_ng, filtered_steps) = filtered_processor.normalizer.normalize_goal(goal)?;
-            filtered_processor.prover.set_goal(filtered_ng, filtered_steps);
-            let start = std::time::Instant::now();
-            let outcome = filtered_processor.prover.verification_search();
-            if outcome == Outcome::Success {
-                if let Some(new_certs) = new_certs {
-                    match filtered_processor.prover.make_cert(
-                        self.project,
-                        &env.bindings,
-                        &filtered_processor.normalizer,
-                        self.verbose,
-                    ) {
-                        Ok(cert) => {
-                            let mut checker = full_processor.prover.checker.clone();
-                            let mut normalizer = full_processor.normalizer.clone();
-                            let mut bindings = Cow::Borrowed(&env.bindings);
-                            if let Err(e) = checker.check_cert(
-                                &cert,
-                                self.project,
-                                &mut bindings,
-                                &mut normalizer,
-                            ) {
-                                return Err(BuildError::goal(
-                                    &goal,
-                                    &format!("filtered prover created cert that the full prover rejected: {}", e),
-                                ));
-                            }
-                            new_certs.push(cert);
-                        }
-                        Err(e) => {
-                            return Err(BuildError::goal(
-                                &goal,
-                                &format!("filtered prover failed to create certificate: {}", e),
-                            ));
-                        }
-                    }
-                }
-                self.search_finished(
-                    &mut filtered_processor.prover,
-                    &filtered_processor.normalizer,
-                    goal,
-                    outcome,
-                    start.elapsed(),
-                );
-                filtered_processor.prover.get_useful_source_names(new_premises, &filtered_processor.normalizer);
-                return Ok(());
-            }
-            self.metrics.searches_fallback += 1;
-        }
-
-        // Try the full prover
-        self.metrics.searches_full += 1;
-        let start = std::time::Instant::now();
-        let outcome = full_processor.prover.verification_search();
-        if outcome == Outcome::Success {
-            if let Some(new_certs) = new_certs {
-                match full_processor.prover.make_cert(
-                    self.project,
-                    &env.bindings,
-                    &full_processor.normalizer,
-                    self.verbose,
-                ) {
-                    Ok(cert) => new_certs.push(cert),
-                    Err(e) => {
-                        return Err(BuildError::goal(
-                            &goal,
-                            &format!("full prover failed to create certificate: {}", e),
-                        ));
-                    }
-                }
-            }
-        }
-        self.search_finished(
-            &mut full_processor.prover,
-            &full_processor.normalizer,
-            goal,
-            outcome,
-            start.elapsed(),
-        );
-        full_processor.prover.get_useful_source_names(new_premises, &full_processor.normalizer);
-        Ok(())
-    }
-
     /// Returns None if we don't have cached premises for this block.
     /// cursor points to the node we are verifying.
     pub fn make_filtered_processor(
@@ -764,10 +621,157 @@ impl<'a> Builder<'a> {
             }
         }
 
-        Ok(Some(Processor {
-            prover,
-            normalizer,
-        }))
+        Ok(Some(Processor { prover, normalizer }))
+    }
+
+    /// Verifies a goal with fallback from filtered to full prover.
+    /// env should be the environment that the proof happens in.
+    fn verify_with_fallback(
+        &mut self,
+        mut full_processor: Processor,
+        filtered_processor: Option<Processor>,
+        goal: &Goal,
+        env: &Environment,
+        new_certs: &mut Option<Vec<Certificate>>,
+        worklist: &mut Option<CertificateWorklist>,
+        new_premises: &mut HashSet<(ModuleId, String)>,
+    ) -> Result<(), BuildError> {
+        let (ng, steps) = full_processor.normalizer.normalize_goal(goal)?;
+        full_processor.prover.set_goal(ng, steps);
+
+        // Check for a cached cert
+        if let Some(worklist) = worklist.as_mut() {
+            let indexes = worklist.get_indexes(&goal.name);
+            for i in indexes {
+                let cert = worklist.get_cert(*i).unwrap();
+                let mut checker = full_processor.prover.checker.clone();
+                let mut normalizer = full_processor.normalizer.clone();
+                let mut bindings = Cow::Borrowed(&env.bindings);
+                match checker.check_cert(cert, self.project, &mut bindings, &mut normalizer) {
+                    Ok(()) => {
+                        self.metrics.cached_certs += 1;
+                        self.metrics.goals_done += 1;
+                        self.metrics.goals_success += 1;
+                        self.log_verified(goal.first_line, goal.last_line);
+                        if let Some(new_certs) = new_certs {
+                            new_certs.push(cert.clone());
+                        }
+                        worklist.remove(&goal.name, *i);
+                        return Ok(());
+                    }
+                    Err(e) if self.reverify => {
+                        // In reverify mode, a bad cert is an error
+                        return Err(BuildError::goal(
+                            goal,
+                            &format!("certificate failed to verify: {}", e),
+                        ));
+                    }
+                    Err(_) => {
+                        // The cert is bad, but maybe another one is good.
+                        // That can happen with code edits.
+                    }
+                }
+            }
+        } else if self.reverify {
+            return Err(BuildError::goal(goal, "no worklist found"));
+        }
+
+        // In reverify mode, we should never reach the search phase
+        if self.reverify {
+            return Err(BuildError::goal(goal, "no certificate found"));
+        }
+
+        // Try the filtered prover
+        if let Some(mut filtered_processor) = filtered_processor {
+            self.metrics.searches_filtered += 1;
+            let (filtered_ng, filtered_steps) =
+                filtered_processor.normalizer.normalize_goal(goal)?;
+            filtered_processor
+                .prover
+                .set_goal(filtered_ng, filtered_steps);
+            let start = std::time::Instant::now();
+            let outcome = filtered_processor.prover.verification_search();
+            if outcome == Outcome::Success {
+                if let Some(new_certs) = new_certs {
+                    match filtered_processor.prover.make_cert(
+                        self.project,
+                        &env.bindings,
+                        &filtered_processor.normalizer,
+                        self.verbose,
+                    ) {
+                        Ok(cert) => {
+                            let mut checker = full_processor.prover.checker.clone();
+                            let mut normalizer = full_processor.normalizer.clone();
+                            let mut bindings = Cow::Borrowed(&env.bindings);
+                            if let Err(e) = checker.check_cert(
+                                &cert,
+                                self.project,
+                                &mut bindings,
+                                &mut normalizer,
+                            ) {
+                                return Err(BuildError::goal(
+                                    &goal,
+                                    &format!("filtered prover created cert that the full prover rejected: {}", e),
+                                ));
+                            }
+                            new_certs.push(cert);
+                        }
+                        Err(e) => {
+                            return Err(BuildError::goal(
+                                &goal,
+                                &format!("filtered prover failed to create certificate: {}", e),
+                            ));
+                        }
+                    }
+                }
+                self.search_finished(
+                    &mut filtered_processor.prover,
+                    &filtered_processor.normalizer,
+                    goal,
+                    outcome,
+                    start.elapsed(),
+                );
+                filtered_processor
+                    .prover
+                    .get_useful_source_names(new_premises, &filtered_processor.normalizer);
+                return Ok(());
+            }
+            self.metrics.searches_fallback += 1;
+        }
+
+        // Try the full prover
+        self.metrics.searches_full += 1;
+        let start = std::time::Instant::now();
+        let outcome = full_processor.prover.verification_search();
+        if outcome == Outcome::Success {
+            if let Some(new_certs) = new_certs {
+                match full_processor.prover.make_cert(
+                    self.project,
+                    &env.bindings,
+                    &full_processor.normalizer,
+                    self.verbose,
+                ) {
+                    Ok(cert) => new_certs.push(cert),
+                    Err(e) => {
+                        return Err(BuildError::goal(
+                            &goal,
+                            &format!("full prover failed to create certificate: {}", e),
+                        ));
+                    }
+                }
+            }
+        }
+        self.search_finished(
+            &mut full_processor.prover,
+            &full_processor.normalizer,
+            goal,
+            outcome,
+            start.elapsed(),
+        );
+        full_processor
+            .prover
+            .get_useful_source_names(new_premises, &full_processor.normalizer);
+        Ok(())
     }
 
     /// Verifies a node and all its children recursively.
