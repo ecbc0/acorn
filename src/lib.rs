@@ -40,6 +40,7 @@ pub mod ort_model;
 pub mod passive_set;
 pub mod pattern_tree;
 pub mod potential_value;
+pub mod processor;
 pub mod project;
 pub mod proof;
 pub mod proof_step;

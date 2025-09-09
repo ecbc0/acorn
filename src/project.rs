@@ -14,7 +14,6 @@ use crate::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::acorn_value::AcornValue;
 use crate::binding_map::BindingMap;
 use crate::build_cache::BuildCache;
-use crate::builder::BuildError;
 use crate::code_generator::{self, CodeGenerator};
 use crate::compilation;
 use crate::environment::Environment;
@@ -24,8 +23,6 @@ use crate::module_cache::{ModuleCache, ModuleHash};
 use crate::module_cache_set::ModuleCacheSet;
 use crate::named_entity::NamedEntity;
 use crate::names::ConstantName;
-use crate::normalizer::Normalizer;
-use crate::prover::Prover;
 use crate::token::Token;
 use crate::token_map::TokenInfo;
 
@@ -475,83 +472,6 @@ impl Project {
     }
 
     /// Construct a prover with only the facts that are included in the cached premises.
-    /// Returns None if we don't have cached premises for this block.
-    /// cursor points to the node we are verifying.
-    pub fn make_filtered_prover(
-        &self,
-        env: &Environment,
-        block_name: &str,
-        module_cache: &Option<ModuleCache>,
-    ) -> Result<Option<(Prover, Normalizer)>, BuildError> {
-        // Load the premises from the cache
-        let Some(normalized) = module_cache
-            .as_ref()
-            .and_then(|mc| mc.blocks.get(block_name))
-        else {
-            return Ok(None);
-        };
-
-        let mut premises = HashMap::new();
-        for (module_name, premise_set) in normalized.iter() {
-            // A module could have been renamed, in which case the whole cache is borked.
-            let Some(module_id) = self.get_module_id_by_name(module_name) else {
-                return Ok(None);
-            };
-            premises.insert(module_id, premise_set.iter().cloned().collect());
-        }
-        let mut prover = Prover::new(&self);
-        let mut normalizer = Normalizer::new();
-
-        // Add facts from the dependencies
-        let empty = HashSet::new();
-        for module_id in self.all_dependencies(env.module_id) {
-            let module_premises = match premises.get(&module_id) {
-                Some(p) => p,
-                None => &empty,
-            };
-            let module_env = self.get_env_by_id(module_id).unwrap();
-            // importable_facts will always include extends and instance facts,
-            // even when a filter is provided
-            for fact in module_env.importable_facts(Some(module_premises)) {
-                let steps = normalizer.normalize_fact(fact)?;
-                prover.add_steps(steps);
-            }
-        }
-
-        // Find the index of the block with the given name
-        let Some(block_index) = env.get_block_index(block_name) else {
-            return Ok(None);
-        };
-
-        // Add facts from this file itself, but only up to the block we're proving
-        let local_premises = premises.get(&env.module_id);
-        for node in env.nodes.iter().take(block_index) {
-            let Some(fact) = node.get_fact() else {
-                continue;
-            };
-
-            // Always include facts that are used in normalization.
-            if fact.used_in_normalization() {
-                let steps = normalizer.normalize_fact(fact)?;
-                prover.add_steps(steps);
-                continue;
-            }
-
-            let Some(name) = node.source_name() else {
-                continue;
-            };
-            let Some(local_premises) = local_premises else {
-                continue;
-            };
-
-            if local_premises.contains(&name) {
-                let steps = normalizer.normalize_fact(fact)?;
-                prover.add_steps(steps);
-            }
-        }
-
-        Ok(Some((prover, normalizer)))
-    }
 
     // Verifies the goal at this node as well as at every child node.
     //
