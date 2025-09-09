@@ -1,3 +1,5 @@
+use crate::builder::BuildError;
+use crate::fact::Fact;
 use crate::normalizer::Normalizer;
 use crate::prover::Prover;
 
@@ -9,4 +11,13 @@ use crate::prover::Prover;
 pub struct Processor {
     pub prover: Prover,
     pub normalizer: Normalizer,
+}
+
+impl Processor {
+    /// Normalizes a fact and adds the resulting proof steps to the prover.
+    pub fn add_fact(&mut self, fact: Fact) -> Result<(), BuildError> {
+        let steps = self.normalizer.normalize_fact(fact)?;
+        self.prover.add_steps(steps);
+        Ok(())
+    }
 }

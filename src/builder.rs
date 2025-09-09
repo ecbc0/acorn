@@ -550,8 +550,7 @@ impl<'a> Builder<'a> {
     /// env should be the environment that the proof happens in.
     fn verify_with_fallback(
         &mut self,
-        mut full_prover: Prover,
-        mut full_normalizer: Normalizer,
+        mut full_processor: Processor,
         filtered_processor: Option<Processor>,
         goal: &Goal,
         env: &Environment,
@@ -559,16 +558,16 @@ impl<'a> Builder<'a> {
         worklist: &mut Option<CertificateWorklist>,
         new_premises: &mut HashSet<(ModuleId, String)>,
     ) -> Result<(), BuildError> {
-        let (ng, steps) = full_normalizer.normalize_goal(goal)?;
-        full_prover.set_goal(ng, steps);
+        let (ng, steps) = full_processor.normalizer.normalize_goal(goal)?;
+        full_processor.prover.set_goal(ng, steps);
 
         // Check for a cached cert
         if let Some(worklist) = worklist.as_mut() {
             let indexes = worklist.get_indexes(&goal.name);
             for i in indexes {
                 let cert = worklist.get_cert(*i).unwrap();
-                let mut checker = full_prover.checker.clone();
-                let mut normalizer = full_normalizer.clone();
+                let mut checker = full_processor.prover.checker.clone();
+                let mut normalizer = full_processor.normalizer.clone();
                 let mut bindings = Cow::Borrowed(&env.bindings);
                 match checker.check_cert(cert, self.project, &mut bindings, &mut normalizer) {
                     Ok(()) => {
@@ -620,8 +619,8 @@ impl<'a> Builder<'a> {
                         self.verbose,
                     ) {
                         Ok(cert) => {
-                            let mut checker = full_prover.checker.clone();
-                            let mut normalizer = full_normalizer.clone();
+                            let mut checker = full_processor.prover.checker.clone();
+                            let mut normalizer = full_processor.normalizer.clone();
                             let mut bindings = Cow::Borrowed(&env.bindings);
                             if let Err(e) = checker.check_cert(
                                 &cert,
@@ -660,13 +659,13 @@ impl<'a> Builder<'a> {
         // Try the full prover
         self.metrics.searches_full += 1;
         let start = std::time::Instant::now();
-        let outcome = full_prover.verification_search();
+        let outcome = full_processor.prover.verification_search();
         if outcome == Outcome::Success {
             if let Some(new_certs) = new_certs {
-                match full_prover.make_cert(
+                match full_processor.prover.make_cert(
                     self.project,
                     &env.bindings,
-                    &full_normalizer,
+                    &full_processor.normalizer,
                     self.verbose,
                 ) {
                     Ok(cert) => new_certs.push(cert),
@@ -680,13 +679,13 @@ impl<'a> Builder<'a> {
             }
         }
         self.search_finished(
-            &mut full_prover,
-            &full_normalizer,
+            &mut full_processor.prover,
+            &full_processor.normalizer,
             goal,
             outcome,
             start.elapsed(),
         );
-        full_prover.get_useful_source_names(new_premises, &full_normalizer);
+        full_processor.prover.get_useful_source_names(new_premises, &full_processor.normalizer);
         Ok(())
     }
 
@@ -776,8 +775,7 @@ impl<'a> Builder<'a> {
     /// If verify_node encounters an error, it stops, leaving node in a borked state.
     pub fn verify_node(
         &mut self,
-        full_prover: &Prover,
-        full_normalizer: &Normalizer,
+        full_processor: &Processor,
         filtered_processor: &Option<Processor>,
         cursor: &mut NodeCursor,
         new_premises: &mut HashSet<(ModuleId, String)>,
@@ -788,16 +786,14 @@ impl<'a> Builder<'a> {
             return Ok(());
         }
 
-        let mut full_prover = full_prover.clone();
-        let mut full_normalizer = full_normalizer.clone();
+        let mut full_processor = full_processor.clone();
         let mut filtered_processor = filtered_processor.clone();
         if cursor.num_children() > 0 {
             // We need to recurse into children
             cursor.descend(0);
             loop {
                 self.verify_node(
-                    &full_prover,
-                    &full_normalizer,
+                    &full_processor,
                     &filtered_processor,
                     cursor,
                     new_premises,
@@ -807,11 +803,9 @@ impl<'a> Builder<'a> {
 
                 if let Some(fact) = cursor.node().get_fact() {
                     if let Some(ref mut filtered_processor) = filtered_processor {
-                        let steps = filtered_processor.normalizer.normalize_fact(fact.clone())?;
-                        filtered_processor.prover.add_steps(steps);
+                        filtered_processor.add_fact(fact.clone())?;
                     }
-                    let steps = full_normalizer.normalize_fact(fact)?;
-                    full_prover.add_steps(steps);
+                    full_processor.add_fact(fact)?;
                 }
 
                 if cursor.has_next() {
@@ -832,8 +826,7 @@ impl<'a> Builder<'a> {
                 }
             }
             self.verify_with_fallback(
-                full_prover,
-                full_normalizer,
+                full_processor,
                 filtered_processor,
                 &goal,
                 cursor.goal_env().unwrap(),
@@ -872,12 +865,13 @@ impl<'a> Builder<'a> {
 
         self.module_proving_started(target.clone());
 
-        // The full prover has access to all imported facts.
-        let mut full_prover = Prover::new(&self.project);
-        let mut full_normalizer = Normalizer::new();
+        // The full processor has access to all imported facts.
+        let mut full_processor = Processor {
+            prover: Prover::new(&self.project),
+            normalizer: Normalizer::new(),
+        };
         for fact in self.project.imported_facts(env.module_id, None) {
-            let steps = full_normalizer.normalize_fact(fact.clone())?;
-            full_prover.add_steps(steps);
+            full_processor.add_fact(fact.clone())?;
         }
         let mut cursor = NodeCursor::new(&env, 0);
 
@@ -916,8 +910,7 @@ impl<'a> Builder<'a> {
 
                     // This call will recurse and verify everything within this top-level block.
                     self.verify_node(
-                        &full_prover,
-                        &full_normalizer,
+                        &full_processor,
                         &filtered_processor,
                         &mut cursor,
                         &mut new_premises,
@@ -951,8 +944,7 @@ impl<'a> Builder<'a> {
                 break;
             }
             if let Some(fact) = cursor.node().get_fact() {
-                let steps = full_normalizer.normalize_fact(fact.clone())?;
-                full_prover.add_steps(steps);
+                full_processor.add_fact(fact.clone())?;
             }
             cursor.next();
         }
