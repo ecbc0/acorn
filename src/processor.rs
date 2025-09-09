@@ -1,4 +1,3 @@
-use crate::builder::Builder;
 use crate::normalizer::Normalizer;
 use crate::prover::Prover;
 
@@ -6,8 +5,8 @@ use crate::prover::Prover;
 /// We might want to rename this or refactor it away later.
 /// At the time of writing this comment, its primary motivation for existing is
 /// to handle the yaml -> jsonl build migration.
-pub struct Processor<'a> {
-    pub builder: &'a Builder<'a>,
+#[derive(Clone)]
+pub struct Processor {
     pub prover: Prover,
     pub normalizer: Normalizer,
 }

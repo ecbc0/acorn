@@ -14,6 +14,7 @@ use crate::goal::Goal;
 use crate::module::{LoadState, ModuleDescriptor, ModuleId};
 use crate::module_cache::ModuleCache;
 use crate::normalizer::Normalizer;
+use crate::processor::Processor;
 use crate::project::Project;
 use crate::prover::{Outcome, Prover};
 
@@ -551,7 +552,7 @@ impl<'a> Builder<'a> {
         &mut self,
         mut full_prover: Prover,
         mut full_normalizer: Normalizer,
-        filtered_prover: Option<(Prover, Normalizer)>,
+        filtered_processor: Option<Processor>,
         goal: &Goal,
         env: &Environment,
         new_certs: &mut Option<Vec<Certificate>>,
@@ -604,18 +605,18 @@ impl<'a> Builder<'a> {
         }
 
         // Try the filtered prover
-        if let Some((mut filtered_prover, mut filtered_normalizer)) = filtered_prover {
+        if let Some(mut filtered_processor) = filtered_processor {
             self.metrics.searches_filtered += 1;
-            let (filtered_ng, filtered_steps) = filtered_normalizer.normalize_goal(goal)?;
-            filtered_prover.set_goal(filtered_ng, filtered_steps);
+            let (filtered_ng, filtered_steps) = filtered_processor.normalizer.normalize_goal(goal)?;
+            filtered_processor.prover.set_goal(filtered_ng, filtered_steps);
             let start = std::time::Instant::now();
-            let outcome = filtered_prover.verification_search();
+            let outcome = filtered_processor.prover.verification_search();
             if outcome == Outcome::Success {
                 if let Some(new_certs) = new_certs {
-                    match filtered_prover.make_cert(
+                    match filtered_processor.prover.make_cert(
                         self.project,
                         &env.bindings,
-                        &filtered_normalizer,
+                        &filtered_processor.normalizer,
                         self.verbose,
                     ) {
                         Ok(cert) => {
@@ -644,13 +645,13 @@ impl<'a> Builder<'a> {
                     }
                 }
                 self.search_finished(
-                    &mut filtered_prover,
-                    &filtered_normalizer,
+                    &mut filtered_processor.prover,
+                    &filtered_processor.normalizer,
                     goal,
                     outcome,
                     start.elapsed(),
                 );
-                filtered_prover.get_useful_source_names(new_premises, &filtered_normalizer);
+                filtered_processor.prover.get_useful_source_names(new_premises, &filtered_processor.normalizer);
                 return Ok(());
             }
             self.metrics.searches_fallback += 1;
@@ -691,12 +692,12 @@ impl<'a> Builder<'a> {
 
     /// Returns None if we don't have cached premises for this block.
     /// cursor points to the node we are verifying.
-    pub fn make_filtered_prover(
+    pub fn make_filtered_processor(
         &self,
         env: &Environment,
         block_name: &str,
         module_cache: &Option<ModuleCache>,
-    ) -> Result<Option<(Prover, Normalizer)>, BuildError> {
+    ) -> Result<Option<Processor>, BuildError> {
         // Load the premises from the cache
         let Some(normalized) = module_cache
             .as_ref()
@@ -764,7 +765,10 @@ impl<'a> Builder<'a> {
             }
         }
 
-        Ok(Some((prover, normalizer)))
+        Ok(Some(Processor {
+            prover,
+            normalizer,
+        }))
     }
 
     /// Verifies a node and all its children recursively.
@@ -774,7 +778,7 @@ impl<'a> Builder<'a> {
         &mut self,
         full_prover: &Prover,
         full_normalizer: &Normalizer,
-        filtered_prover: &Option<(Prover, Normalizer)>,
+        filtered_processor: &Option<Processor>,
         cursor: &mut NodeCursor,
         new_premises: &mut HashSet<(ModuleId, String)>,
         new_certs: &mut Option<Vec<Certificate>>,
@@ -786,7 +790,7 @@ impl<'a> Builder<'a> {
 
         let mut full_prover = full_prover.clone();
         let mut full_normalizer = full_normalizer.clone();
-        let mut filtered_prover = filtered_prover.clone();
+        let mut filtered_processor = filtered_processor.clone();
         if cursor.num_children() > 0 {
             // We need to recurse into children
             cursor.descend(0);
@@ -794,7 +798,7 @@ impl<'a> Builder<'a> {
                 self.verify_node(
                     &full_prover,
                     &full_normalizer,
-                    &filtered_prover,
+                    &filtered_processor,
                     cursor,
                     new_premises,
                     new_certs,
@@ -802,11 +806,9 @@ impl<'a> Builder<'a> {
                 )?;
 
                 if let Some(fact) = cursor.node().get_fact() {
-                    if let Some((ref mut filtered_prover, ref mut filtered_normalizer)) =
-                        filtered_prover
-                    {
-                        let steps = filtered_normalizer.normalize_fact(fact.clone())?;
-                        filtered_prover.add_steps(steps);
+                    if let Some(ref mut filtered_processor) = filtered_processor {
+                        let steps = filtered_processor.normalizer.normalize_fact(fact.clone())?;
+                        filtered_processor.prover.add_steps(steps);
                     }
                     let steps = full_normalizer.normalize_fact(fact)?;
                     full_prover.add_steps(steps);
@@ -832,7 +834,7 @@ impl<'a> Builder<'a> {
             self.verify_with_fallback(
                 full_prover,
                 full_normalizer,
-                filtered_prover,
+                filtered_processor,
                 &goal,
                 cursor.goal_env().unwrap(),
                 new_certs,
@@ -906,8 +908,8 @@ impl<'a> Builder<'a> {
                     // If we have a cached set of premises, we use it to create a filtered prover.
                     // The filtered prover only contains the premises that we think it needs.
                     let block_name = cursor.block_name();
-                    let filtered_prover =
-                        self.make_filtered_prover(env, &block_name, &old_module_cache)?;
+                    let filtered_processor =
+                        self.make_filtered_processor(env, &block_name, &old_module_cache)?;
 
                     // The premises we use while verifying this block.
                     let mut new_premises = HashSet::new();
@@ -916,7 +918,7 @@ impl<'a> Builder<'a> {
                     self.verify_node(
                         &full_prover,
                         &full_normalizer,
-                        &filtered_prover,
+                        &filtered_processor,
                         &mut cursor,
                         &mut new_premises,
                         &mut new_certs,
