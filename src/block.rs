@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 
 use tower_lsp::lsp_types::Range;
@@ -263,8 +263,9 @@ impl Block {
             forall_types.push(t.clone());
         }
 
-        // Find all unexportable constants
-        let mut unexportable: HashMap<String, AcornType> = HashMap::new();
+        // Find all unexportable constants.
+        // This is a btree to make the ordering deterministic.
+        let mut unexportable: BTreeMap<String, AcornType> = BTreeMap::new();
         outer_env
             .bindings
             .find_unknown_local_constants(inner_value, &mut unexportable);

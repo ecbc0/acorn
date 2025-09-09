@@ -157,7 +157,8 @@ impl Environment {
     /// Returns the index of the newly added node.
     pub fn add_node(&mut self, node: Node) -> usize {
         self.nodes.push(node);
-        self.nodes.len() - 1
+        let index = self.nodes.len() - 1;
+        index
     }
 
     /// Returns an evaluator that modifies the token map.

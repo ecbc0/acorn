@@ -19,9 +19,8 @@ use crate::stack::Stack;
 use crate::statement::{
     AttributesStatement, Body, ClaimStatement, DefineStatement, ForAllStatement,
     FunctionSatisfyStatement, IfStatement, ImportStatement, InductiveStatement, InstanceStatement,
-    LetStatement, MatchStatement, NumeralsStatement, Statement, StatementInfo,
-    StructureStatement, TheoremStatement, TodoStatement, TypeStatement, TypeclassStatement,
-    VariableSatisfyStatement,
+    LetStatement, MatchStatement, NumeralsStatement, Statement, StatementInfo, StructureStatement,
+    TheoremStatement, TodoStatement, TypeStatement, TypeclassStatement, VariableSatisfyStatement,
 };
 use crate::token::{Token, TokenIter, TokenType};
 use crate::type_unifier::TypeclassRegistry;

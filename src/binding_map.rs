@@ -1731,7 +1731,7 @@ impl BindingMap {
     pub fn find_unknown_local_constants(
         &self,
         value: &AcornValue,
-        answer: &mut HashMap<String, AcornType>,
+        answer: &mut BTreeMap<String, AcornType>,
     ) {
         match value {
             AcornValue::Variable(_, _) | AcornValue::Bool(_) => {}
