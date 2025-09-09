@@ -636,8 +636,7 @@ impl<'a> Builder<'a> {
         worklist: &mut Option<CertificateWorklist>,
         new_premises: &mut HashSet<(ModuleId, String)>,
     ) -> Result<(), BuildError> {
-        let (ng, steps) = full_processor.normalizer.normalize_goal(goal)?;
-        full_processor.prover.set_goal(ng, steps);
+        full_processor.set_goal(goal)?;
 
         // Check for a cached cert
         if let Some(worklist) = worklist.as_mut() {
@@ -684,11 +683,7 @@ impl<'a> Builder<'a> {
         // Try the filtered prover
         if let Some(mut filtered_processor) = filtered_processor {
             self.metrics.searches_filtered += 1;
-            let (filtered_ng, filtered_steps) =
-                filtered_processor.normalizer.normalize_goal(goal)?;
-            filtered_processor
-                .prover
-                .set_goal(filtered_ng, filtered_steps);
+            filtered_processor.set_goal(goal)?;
             let start = std::time::Instant::now();
             let outcome = filtered_processor.prover.verification_search();
             if outcome == Outcome::Success {

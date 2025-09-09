@@ -1,5 +1,6 @@
 use crate::builder::BuildError;
 use crate::fact::Fact;
+use crate::goal::Goal;
 use crate::normalizer::Normalizer;
 use crate::prover::Prover;
 
@@ -18,6 +19,13 @@ impl Processor {
     pub fn add_fact(&mut self, fact: Fact) -> Result<(), BuildError> {
         let steps = self.normalizer.normalize_fact(fact)?;
         self.prover.add_steps(steps);
+        Ok(())
+    }
+
+    /// Normalizes a goal and sets it as the prover's goal.
+    pub fn set_goal(&mut self, goal: &Goal) -> Result<(), BuildError> {
+        let (ng, steps) = self.normalizer.normalize_goal(goal)?;
+        self.prover.set_goal(ng, steps);
         Ok(())
     }
 }
