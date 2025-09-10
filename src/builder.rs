@@ -13,10 +13,9 @@ use crate::environment::Environment;
 use crate::goal::Goal;
 use crate::module::{LoadState, ModuleDescriptor, ModuleId};
 use crate::module_cache::ModuleCache;
-use crate::normalizer::Normalizer;
 use crate::processor::Processor;
 use crate::project::Project;
-use crate::prover::{Outcome, Prover};
+use crate::prover::Outcome;
 
 static NEXT_BUILD_ID: AtomicU32 = AtomicU32::new(1);
 
@@ -367,8 +366,7 @@ impl<'a> Builder<'a> {
     /// env should be the environment that the proof happened in.
     pub fn search_finished(
         &mut self,
-        prover: &mut Prover,
-        normalizer: &Normalizer,
+        processor: &Processor,
         goal: &Goal,
         outcome: Outcome,
         elapsed: Duration,
@@ -383,9 +381,9 @@ impl<'a> Builder<'a> {
         self.metrics.goals_done += 1;
         self.metrics.searches_total += 1;
         self.metrics.search_time += elapsed_f64;
-        let clauses_activated = prover.num_activated() as i32;
+        let clauses_activated = processor.prover.num_activated() as i32;
         self.metrics.clauses_activated += clauses_activated;
-        let num_passive = prover.num_passive() as i32;
+        let num_passive = processor.prover.num_passive() as i32;
         self.metrics.clauses_total += clauses_activated + num_passive;
         self.metrics.clauses_sum_square_activated += (clauses_activated * clauses_activated) as u64;
 
@@ -393,7 +391,7 @@ impl<'a> Builder<'a> {
             Outcome::Success => {
                 if !self.project.config.use_certs {
                     // Old proof-generation logic
-                    let Some(proof) = prover.get_condensed_proof(normalizer) else {
+                    let Some(proof) = processor.get_condensed_proof() else {
                         self.log_warning(&goal, "had a missing proof");
                         return;
                     };
@@ -715,13 +713,7 @@ impl<'a> Builder<'a> {
                         }
                     }
                 }
-                self.search_finished(
-                    &mut filtered_processor.prover,
-                    &filtered_processor.normalizer,
-                    goal,
-                    outcome,
-                    start.elapsed(),
-                );
+                self.search_finished(&mut filtered_processor, goal, outcome, start.elapsed());
                 filtered_processor
                     .prover
                     .get_useful_source_names(new_premises, &filtered_processor.normalizer);
@@ -752,13 +744,7 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        self.search_finished(
-            &mut full_processor.prover,
-            &full_processor.normalizer,
-            goal,
-            outcome,
-            start.elapsed(),
-        );
+        self.search_finished(&mut full_processor, goal, outcome, start.elapsed());
         full_processor
             .prover
             .get_useful_source_names(new_premises, &full_processor.normalizer);

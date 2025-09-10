@@ -4,6 +4,7 @@ use crate::fact::Fact;
 use crate::goal::Goal;
 use crate::normalizer::Normalizer;
 use crate::project::Project;
+use crate::proof::Proof;
 use crate::prover::Prover;
 
 /// The processor represents all of the stuff that can accept a stream of facts.
@@ -44,5 +45,10 @@ impl Processor {
         }
         self.prover.set_goal(ng, steps);
         Ok(())
+    }
+
+    /// Gets the condensed proof from the prover using the normalizer.
+    pub fn get_condensed_proof(&self) -> Option<Proof> {
+        self.prover.get_condensed_proof(&self.normalizer)
     }
 }

@@ -44,7 +44,7 @@ pub fn prove_with_old_codegen(
     goal_name: &str,
 ) -> (Processor, Outcome, Result<Vec<String>, Error>) {
     let (project, env, processor, outcome) = prove_helper(project, module_name, goal_name);
-    let code = match processor.prover.get_condensed_proof(&processor.normalizer) {
+    let code = match processor.get_condensed_proof() {
         Some(proof) => {
             processor.prover.print_proof(&proof, project, &env.bindings, &processor.normalizer);
             proof.to_code(&env.bindings)

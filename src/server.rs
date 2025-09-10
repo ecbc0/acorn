@@ -151,7 +151,7 @@ impl SearchTask {
             let outcome = processor.prover.partial_search();
             let status = match &outcome {
                 Outcome::Success => {
-                    let proof = processor.prover.get_condensed_proof(&processor.normalizer).unwrap();
+                    let proof = processor.get_condensed_proof().unwrap();
                     let steps = processor.prover.to_proof_info(&proof, &project, &env.bindings, &processor.normalizer);
 
                     let (code, error) = match proof.to_code(&env.bindings) {
