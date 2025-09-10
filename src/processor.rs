@@ -15,8 +15,7 @@ use tokio_util::sync::CancellationToken;
 
 /// The processor represents all of the stuff that can accept a stream of facts.
 /// We might want to rename this or refactor it away later.
-/// At the time of writing this comment, its primary motivation for existing is
-/// to handle the yaml -> jsonl build migration.
+/// It is convenient for handling the full processor vs filtered processor split.
 #[derive(Clone)]
 pub struct Processor {
     prover: Prover,
