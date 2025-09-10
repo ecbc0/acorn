@@ -617,32 +617,10 @@ impl Prover {
         }
     }
 
-    /// Attempts to convert this clause to code, but shows the clause form if that's all we can.
-    fn clause_to_code(
-        &self,
-        clause: &Clause,
-        bindings: &BindingMap,
-        normalizer: &Normalizer,
-    ) -> String {
-        let denormalized = normalizer.denormalize(clause, None);
-        match CodeGenerator::new(bindings).value_to_code(&denormalized) {
-            Ok(code) => return code,
-            Err(Error::Skolem(_)) => {
-                // TODO: is this fixed now? We at least sometimes generate skolems.
-            }
-            Err(e) => {
-                // We shouldn't run into these sorts of errors in testing.
-                if self.strict_codegen {
-                    panic!("{}: could not generate code for clause: {}", e, clause);
-                }
-            }
-        };
-        DisplayClause { clause, normalizer }.to_string()
-    }
-
     /// Convert a clause to a jsonable form
     /// We only take active ids, because the others have no external meaning.
-    /// If we are given a binding map, use it to make a nicer-looking display.
+    /// This should be used for human, not machine, consumption.
+    /// If we run into an error, do the best we can.
     fn to_clause_info(
         &self,
         clause: &Clause,
@@ -653,7 +631,12 @@ impl Prover {
         let text = if clause.is_impossible() {
             None
         } else {
-            Some(self.clause_to_code(clause, bindings, normalizer))
+            let denormalized = normalizer.denormalize(clause, None);
+            Some(
+                CodeGenerator::new(bindings)
+                    .value_to_code(&denormalized)
+                    .unwrap_or_else(|_| DisplayClause { clause, normalizer }.to_string()),
+            )
         };
         ClauseInfo { text, id }
     }
