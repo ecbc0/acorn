@@ -10,7 +10,7 @@ use crate::goal::Goal;
 use crate::normalizer::Normalizer;
 use crate::project::Project;
 use crate::proof::Proof;
-use crate::prover::Prover;
+use crate::prover::{Outcome, Prover};
 
 /// The processor represents all of the stuff that can accept a stream of facts.
 /// We might want to rename this or refactor it away later.
@@ -20,7 +20,7 @@ use crate::prover::Prover;
 pub struct Processor {
     pub prover: Prover,
     pub normalizer: Normalizer,
-    pub checker: Checker,
+    checker: Checker,
 }
 
 impl Processor {
@@ -34,6 +34,10 @@ impl Processor {
 
     pub fn prover(&self) -> &Prover {
         &self.prover
+    }
+
+    pub fn normalizer(&self) -> &Normalizer {
+        &self.normalizer
     }
 
     /// Normalizes a fact and adds the resulting proof steps to the prover.
@@ -84,5 +88,10 @@ impl Processor {
         let mut normalizer = self.normalizer.clone();
         let mut bindings = Cow::Borrowed(bindings);
         checker.check_cert(cert, project, &mut bindings, &mut normalizer)
+    }
+
+    /// Runs verification search on the prover.
+    pub fn verification_search(&mut self) -> Outcome {
+        self.prover.verification_search()
     }
 }
