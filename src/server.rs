@@ -152,14 +152,25 @@ impl SearchTask {
             let status = match &outcome {
                 Outcome::Success => {
                     let proof = processor.get_condensed_proof().unwrap();
-                    let steps = processor.prover.to_proof_info(&proof, &project, &env.bindings, &processor.normalizer);
+                    let steps = processor.prover.to_proof_info(
+                        &proof,
+                        &project,
+                        &env.bindings,
+                        &processor.normalizer,
+                    );
 
                     let (code, error) = match proof.to_code(&env.bindings) {
                         Ok(code) => (Some(code), None),
                         Err(e) => (None, Some(e.to_string())),
                     };
 
-                    SearchStatus::success(code, error, steps, proof.needs_simplification(), &processor.prover)
+                    SearchStatus::success(
+                        code,
+                        error,
+                        steps,
+                        proof.needs_simplification(),
+                        &processor.prover,
+                    )
                 }
 
                 Outcome::Inconsistent | Outcome::Exhausted | Outcome::Constrained => {
@@ -703,7 +714,7 @@ impl Backend {
         let cursor = NodeCursor::from_path(env, &path);
         let goal = cursor.goal()?;
         let superseded = Arc::new(AtomicBool::new(false));
-        let mut processor = Processor::new(&project);
+        let mut processor = Processor::with_prover(&project);
         for fact in cursor.usable_facts(&project) {
             processor.add_fact(fact)?;
         }
@@ -769,7 +780,12 @@ impl Backend {
                 return self.info_fail(params, "no environment available");
             }
         };
-        let result = processor.prover.info_result(params.clause_id, &project, &env.bindings, &processor.normalizer);
+        let result = processor.prover.info_result(
+            params.clause_id,
+            &project,
+            &env.bindings,
+            &processor.normalizer,
+        );
         let failure = match result {
             Some(_) => None,
             None => Some(format!("no info available for clause {}", params.clause_id)),

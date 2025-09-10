@@ -567,7 +567,7 @@ impl<'a> Builder<'a> {
             };
             premises.insert(module_id, premise_set.iter().cloned().collect());
         }
-        let mut processor = Processor::new(self.project);
+        let mut processor = Processor::with_prover(self.project);
 
         // Add facts from the dependencies
         let empty = HashSet::new();
@@ -678,17 +678,11 @@ impl<'a> Builder<'a> {
             let outcome = filtered_processor.verification_search();
             if outcome == Outcome::Success {
                 if let Some(new_certs) = new_certs {
-                    match filtered_processor.make_cert(
-                        self.project,
-                        &env.bindings,
-                        self.verbose,
-                    ) {
+                    match filtered_processor.make_cert(self.project, &env.bindings, self.verbose) {
                         Ok(cert) => {
-                            if let Err(e) = full_processor.check_cert(
-                                &cert,
-                                self.project,
-                                &env.bindings,
-                            ) {
+                            if let Err(e) =
+                                full_processor.check_cert(&cert, self.project, &env.bindings)
+                            {
                                 return Err(BuildError::goal(
                                     &goal,
                                     &format!("filtered prover created cert that the full prover rejected: {}", e),
@@ -717,11 +711,7 @@ impl<'a> Builder<'a> {
         let outcome = full_processor.verification_search();
         if outcome == Outcome::Success {
             if let Some(new_certs) = new_certs {
-                match full_processor.make_cert(
-                    self.project,
-                    &env.bindings,
-                    self.verbose,
-                ) {
+                match full_processor.make_cert(self.project, &env.bindings, self.verbose) {
                     Ok(cert) => new_certs.push(cert),
                     Err(e) => {
                         return Err(BuildError::goal(
@@ -833,7 +823,7 @@ impl<'a> Builder<'a> {
         self.module_proving_started(target.clone());
 
         // The full processor has access to all imported facts.
-        let mut full_processor = Processor::new(&self.project);
+        let mut full_processor = Processor::with_prover(&self.project);
         for fact in self.project.imported_facts(env.module_id, None) {
             full_processor.add_fact(fact.clone())?;
         }

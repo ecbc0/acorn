@@ -24,7 +24,7 @@ fn prove_helper<'a>(
     let node = env.get_node_by_goal_name(goal_name);
     let facts = node.usable_facts(project);
     let goal = node.goal().unwrap();
-    let mut processor = Processor::new(&project);
+    let mut processor = Processor::with_prover(&project);
     for fact in facts {
         processor.add_fact(fact).unwrap();
     }
@@ -104,7 +104,7 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
         let goal = cursor.goal().unwrap();
         println!("proving: {}", goal.name);
 
-        let mut processor = Processor::new(&project);
+        let mut processor = Processor::with_prover(&project);
         for fact in facts {
             processor.add_fact(fact)?;
         }

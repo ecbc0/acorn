@@ -26,14 +26,20 @@ pub struct Processor {
 }
 
 impl Processor {
-    /// Creates a new Processor with a fresh Prover and Normalizer.
-    pub fn new(project: &Project) -> Processor {
+    /// Creates a new Processor that has a Prover.
+    pub fn with_prover(project: &Project) -> Processor {
         Processor {
             prover: Prover::new(project),
             normalizer: Normalizer::new(),
             checker: Checker::new(),
         }
     }
+
+    /// Creates a new Processor that does not have a Prover.
+    pub fn without_prover() -> Processor {
+        todo!();
+    }
+
     /// Normalizes a fact and adds the resulting proof steps to the prover.
     pub fn add_fact(&mut self, fact: Fact) -> Result<(), BuildError> {
         let steps = self.normalizer.normalize_fact(fact)?;
@@ -71,7 +77,8 @@ impl Processor {
         bindings: &BindingMap,
         print: bool,
     ) -> Result<Certificate, Error> {
-        self.prover.make_cert(project, bindings, &self.normalizer, print)
+        self.prover
+            .make_cert(project, bindings, &self.normalizer, print)
     }
 
     /// Gets the useful source names from the prover.
