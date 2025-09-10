@@ -236,7 +236,7 @@ mod tests {
         // Verify again
         let mut verifier2 = Verifier::new(
             acornlib.path().to_path_buf(),
-            config,
+            config.clone(),
             Some("foo".to_string()),
         )
         .unwrap();
@@ -262,6 +262,32 @@ mod tests {
         let jsonl_content = std::fs::read_to_string(cert_file.path()).unwrap();
         let line_count = jsonl_content.lines().count();
         assert_eq!(line_count, 1,);
+
+        // Now test reverify mode with verifier3
+        let mut verifier3 = Verifier::new(
+            acornlib.path().to_path_buf(),
+            config.clone(),
+            Some("foo".to_string()),
+        )
+        .unwrap();
+        verifier3.builder.check_hashes = false;
+        verifier3.builder.reverify = true;
+        let result3 = verifier3.run();
+        assert!(
+            result3.is_ok(),
+            "Third verifier in reverify mode should successfully run: {:?}",
+            result3
+        );
+
+        // Check that we proved one goal in reverify mode, via cached cert
+        let output3 = result3.unwrap();
+        assert_eq!(output3.status, BuildStatus::Good);
+        assert_eq!(output3.metrics.goals_total, 1);
+        assert_eq!(output3.metrics.goals_success, 1);
+        assert_eq!(output3.metrics.cached_certs, 1);
+        assert_eq!(output3.metrics.unused_certs, 0);
+        // In reverify mode, we should never reach the search phase
+        assert_eq!(output3.metrics.searches_total, 0);
 
         acornlib.close().unwrap();
     }
