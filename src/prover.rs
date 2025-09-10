@@ -83,6 +83,48 @@ impl fmt::Display for Outcome {
     }
 }
 
+/// Parameters for controlling proof search behavior
+#[derive(Clone, Copy, Debug)]
+pub struct ProverParams {
+    pub activation_limit: i32,
+    pub seconds: f32,
+    pub shallow_only: bool,
+}
+
+impl ProverParams {
+    /// Searches with a short duration.
+    /// Designed to be called multiple times in succession.
+    /// The time-based limit is set low, so that it feels interactive.
+    pub const PARTIAL: ProverParams = ProverParams {
+        activation_limit: 5000,
+        seconds: 0.1,
+        shallow_only: false,
+    };
+
+    /// Search in verification mode to see if this goal can be easily proven.
+    /// The time-based limit is set high enough so that hopefully it will not apply,
+    /// because we don't want the result of verification to be machine-dependent.
+    pub const VERIFICATION: ProverParams = ProverParams {
+        activation_limit: 2000,
+        seconds: 5.0,
+        shallow_only: false,
+    };
+
+    /// A fast search, for testing.
+    pub const QUICK: ProverParams = ProverParams {
+        activation_limit: 500,
+        seconds: 0.3,
+        shallow_only: false,
+    };
+
+    /// A fast search that only uses shallow steps, for testing.
+    pub const SHALLOW: ProverParams = ProverParams {
+        activation_limit: 500,
+        seconds: 0.3,
+        shallow_only: true,
+    };
+}
+
 impl Prover {
     /// Creates a new Prover instance
     pub fn new(project: &Project) -> Prover {
@@ -280,15 +322,16 @@ impl Prover {
             _ => return None,
         };
 
-        let difficulty = if self.nonfactual_activations > Self::VERIFICATION_LIMIT {
-            // Verification mode won't find this proof, so we definitely need a shorter one
-            Difficulty::Complicated
-        } else if self.nonfactual_activations > 500 {
-            // Arbitrary heuristic
-            Difficulty::Intermediate
-        } else {
-            Difficulty::Simple
-        };
+        let difficulty =
+            if self.nonfactual_activations > ProverParams::VERIFICATION.activation_limit {
+                // Verification mode won't find this proof, so we definitely need a shorter one
+                Difficulty::Complicated
+            } else if self.nonfactual_activations > 500 {
+                // Arbitrary heuristic
+                Difficulty::Intermediate
+            } else {
+                Difficulty::Simple
+            };
 
         let mut proof = Proof::new(&normalizer, negated_goal, difficulty);
         let mut active_ids: Vec<_> = useful_active.iter().collect();
@@ -519,41 +562,38 @@ impl Prover {
         false
     }
 
-    /// The activation_limit to use for verification mode.
-    const VERIFICATION_LIMIT: i32 = 2000;
-
     /// Searches with a short duration.
     /// Designed to be called multiple times in succession.
     /// The time-based limit is set low, so that it feels interactive.
     pub fn partial_search(&mut self) -> Outcome {
-        self.search(5000, 0.1, false)
+        self.search(ProverParams::PARTIAL)
     }
 
     /// Search in verification mode to see if this goal can be easily proven.
     /// The time-based limit is set high enough so that hopefully it will not apply,
     /// because we don't want the result of verification to be machine-dependent.
     pub fn verification_search(&mut self) -> Outcome {
-        self.search(Self::VERIFICATION_LIMIT, 5.0, false)
+        self.search(ProverParams::VERIFICATION)
     }
 
     /// A fast search, for testing.
     pub fn quick_search(&mut self) -> Outcome {
-        self.search(500, 0.3, false)
+        self.search(ProverParams::QUICK)
     }
 
     /// A fast search that only uses shallow steps, for testing.
     pub fn quick_shallow_search(&mut self) -> Outcome {
-        self.search(500, 0.3, true)
+        self.search(ProverParams::SHALLOW)
     }
 
     /// The prover will exit with Outcome::Constrained if it hits a constraint:
     ///   Activating activation_limit nonfactual clauses
     ///   Going over the time limit, in seconds
     ///   Activating all shallow steps, if shallow_only is set
-    fn search(&mut self, activation_limit: i32, seconds: f32, shallow_only: bool) -> Outcome {
+    pub fn search(&mut self, params: ProverParams) -> Outcome {
         let start_time = std::time::Instant::now();
         loop {
-            if shallow_only && !self.passive_set.all_shallow {
+            if params.shallow_only && !self.passive_set.all_shallow {
                 return Outcome::Exhausted;
             }
             if self.activate_next() {
@@ -579,11 +619,11 @@ impl Prover {
                     return Outcome::Interrupted;
                 }
             }
-            if self.nonfactual_activations >= activation_limit {
+            if self.nonfactual_activations >= params.activation_limit {
                 return Outcome::Constrained;
             }
             let elapsed = start_time.elapsed().as_secs_f32();
-            if elapsed >= seconds {
+            if elapsed >= params.seconds {
                 return Outcome::Timeout;
             }
         }
