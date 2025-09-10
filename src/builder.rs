@@ -380,9 +380,9 @@ impl<'a> Builder<'a> {
         self.metrics.goals_done += 1;
         self.metrics.searches_total += 1;
         self.metrics.search_time += elapsed_f64;
-        let clauses_activated = processor.prover.num_activated() as i32;
+        let clauses_activated = processor.prover().num_activated() as i32;
         self.metrics.clauses_activated += clauses_activated;
-        let num_passive = processor.prover.num_passive() as i32;
+        let num_passive = processor.prover().num_passive() as i32;
         self.metrics.clauses_total += clauses_activated + num_passive;
         self.metrics.clauses_sum_square_activated += (clauses_activated * clauses_activated) as u64;
 
@@ -700,8 +700,8 @@ impl<'a> Builder<'a> {
                 }
                 self.search_finished(&mut filtered_processor, goal, outcome, start.elapsed());
                 filtered_processor
-                    .prover
-                    .get_useful_source_names(new_premises, &filtered_processor.normalizer);
+                    .prover()
+                    .get_useful_source_names(new_premises, filtered_processor.normalizer());
                 return Ok(());
             }
             self.metrics.searches_fallback += 1;
@@ -726,8 +726,8 @@ impl<'a> Builder<'a> {
         }
         self.search_finished(&mut full_processor, goal, outcome, start.elapsed());
         full_processor
-            .prover
-            .get_useful_source_names(new_premises, &full_processor.normalizer);
+            .prover()
+            .get_useful_source_names(new_premises, full_processor.normalizer());
         Ok(())
     }
 

@@ -148,15 +148,15 @@ impl SearchTask {
             // Each iteration through the loop reacquires the write lock on the prover.
             // This lets other threads access the prover in between iterations.
             let processor = &mut *self.processor.write().await;
-            let outcome = processor.prover.partial_search();
+            let outcome = processor.prover_mut().partial_search();
             let status = match &outcome {
                 Outcome::Success => {
                     let proof = processor.get_condensed_proof().unwrap();
-                    let steps = processor.prover.to_proof_info(
+                    let steps = processor.prover().to_proof_info(
                         &proof,
                         &project,
                         &env.bindings,
-                        &processor.normalizer,
+                        processor.normalizer(),
                     );
 
                     let (code, error) = match proof.to_code(&env.bindings) {
@@ -169,15 +169,15 @@ impl SearchTask {
                         error,
                         steps,
                         proof.needs_simplification(),
-                        &processor.prover,
+                        processor.prover(),
                     )
                 }
 
                 Outcome::Inconsistent | Outcome::Exhausted | Outcome::Constrained => {
-                    SearchStatus::stopped(&processor.prover, &outcome)
+                    SearchStatus::stopped(processor.prover(), &outcome)
                 }
 
-                Outcome::Timeout => SearchStatus::pending(&processor.prover),
+                Outcome::Timeout => SearchStatus::pending(processor.prover()),
 
                 Outcome::Interrupted => {
                     // No point in providing a result for this task, since nobody is listening.
@@ -719,8 +719,8 @@ impl Backend {
             processor.add_fact(fact)?;
         }
         processor.set_goal(&goal)?;
-        processor.prover.stop_flags.push(superseded.clone());
-        let status = SearchStatus::pending(&processor.prover);
+        processor.prover_mut().stop_flags.push(superseded.clone());
+        let status = SearchStatus::pending(processor.prover());
 
         // Create a new search task
         let new_task = SearchTask {
@@ -780,11 +780,11 @@ impl Backend {
                 return self.info_fail(params, "no environment available");
             }
         };
-        let result = processor.prover.info_result(
+        let result = processor.prover().info_result(
             params.clause_id,
             &project,
             &env.bindings,
-            &processor.normalizer,
+            processor.normalizer(),
         );
         let failure = match result {
             Some(_) => None,

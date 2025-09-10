@@ -885,7 +885,7 @@ fn test_useful_fact_extraction() {
     let (processor, outcome, _) = prove_with_old_codegen(&mut p, "main", "goal");
     assert_eq!(outcome, Outcome::Success);
     let mut name_set = HashSet::new();
-    processor.prover.get_useful_source_names(&mut name_set, &processor.normalizer);
+    processor.prover().get_useful_source_names(&mut name_set, processor.normalizer());
     let mut names = name_set
         .into_iter()
         .map(|(_, name)| name)

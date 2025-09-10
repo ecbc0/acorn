@@ -29,8 +29,8 @@ fn prove_helper<'a>(
         processor.add_fact(fact).unwrap();
     }
     processor.set_goal(&goal).unwrap();
-    processor.prover.strict_codegen = true;
-    let outcome = processor.prover.quick_search();
+    processor.prover_mut().strict_codegen = true;
+    let outcome = processor.prover_mut().quick_search();
     (project, env, processor, outcome)
 }
 
@@ -45,8 +45,8 @@ pub fn prove_with_old_codegen(
     let code = match processor.get_condensed_proof() {
         Some(proof) => {
             processor
-                .prover
-                .print_proof(&proof, project, &env.bindings, &processor.normalizer);
+                .prover()
+                .print_proof(&proof, project, &env.bindings, processor.normalizer());
             proof.to_code(&env.bindings)
         }
         None => {
@@ -65,8 +65,8 @@ pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certi
     let env = cursor.goal_env().unwrap();
 
     let cert = match processor
-        .prover
-        .make_cert(project, &env.bindings, &processor.normalizer, true)
+        .prover()
+        .make_cert(project, &env.bindings, processor.normalizer(), true)
     {
         Ok(cert) => cert,
         Err(e) => panic!("make_cert failed: {}", e),
@@ -117,7 +117,7 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
         // This is a key difference between our verification tests, and our real verification.
         // This helps us test that verification fails in cases where we do have an
         // infinite rabbit hole we could go down.
-        let outcome = processor.prover.quick_shallow_search();
+        let outcome = processor.prover_mut().quick_shallow_search();
         if outcome != Outcome::Success {
             return Ok(outcome);
         }

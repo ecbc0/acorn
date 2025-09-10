@@ -526,36 +526,31 @@ impl Prover {
     /// Designed to be called multiple times in succession.
     /// The time-based limit is set low, so that it feels interactive.
     pub fn partial_search(&mut self) -> Outcome {
-        self.search_for_contradiction(5000, 0.1, false)
+        self.search(5000, 0.1, false)
     }
 
     /// Search in verification mode to see if this goal can be easily proven.
     /// The time-based limit is set high enough so that hopefully it will not apply,
     /// because we don't want the result of verification to be machine-dependent.
     pub fn verification_search(&mut self) -> Outcome {
-        self.search_for_contradiction(Self::VERIFICATION_LIMIT, 5.0, false)
+        self.search(Self::VERIFICATION_LIMIT, 5.0, false)
     }
 
     /// A fast search, for testing.
     pub fn quick_search(&mut self) -> Outcome {
-        self.search_for_contradiction(500, 0.3, false)
+        self.search(500, 0.3, false)
     }
 
     /// A fast search that only uses shallow steps, for testing.
     pub fn quick_shallow_search(&mut self) -> Outcome {
-        self.search_for_contradiction(500, 0.3, true)
+        self.search(500, 0.3, true)
     }
 
     /// The prover will exit with Outcome::Constrained if it hits a constraint:
     ///   Activating activation_limit nonfactual clauses
     ///   Going over the time limit, in seconds
     ///   Activating all shallow steps, if shallow_only is set
-    pub fn search_for_contradiction(
-        &mut self,
-        activation_limit: i32,
-        seconds: f32,
-        shallow_only: bool,
-    ) -> Outcome {
+    fn search(&mut self, activation_limit: i32, seconds: f32, shallow_only: bool) -> Outcome {
         let start_time = std::time::Instant::now();
         loop {
             if shallow_only && !self.passive_set.all_shallow {

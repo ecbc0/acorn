@@ -18,8 +18,8 @@ use crate::prover::{Outcome, Prover};
 /// to handle the yaml -> jsonl build migration.
 #[derive(Clone)]
 pub struct Processor {
-    pub prover: Prover,
-    pub normalizer: Normalizer,
+    prover: Prover,
+    normalizer: Normalizer,
     checker: Checker,
 }
 
@@ -34,6 +34,10 @@ impl Processor {
 
     pub fn prover(&self) -> &Prover {
         &self.prover
+    }
+
+    pub fn prover_mut(&mut self) -> &mut Prover {
+        &mut self.prover
     }
 
     pub fn normalizer(&self) -> &Normalizer {
