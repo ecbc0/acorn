@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicU32;
 use std::time::Duration;
@@ -621,8 +622,8 @@ impl<'a> Builder<'a> {
     /// env should be the environment that the proof happens in.
     fn verify_with_fallback(
         &mut self,
-        mut full_processor: Processor,
-        filtered_processor: Option<Processor>,
+        full_processor: Cow<Processor>,
+        filtered_processor: Option<Cow<Processor>>,
         goal: &Goal,
         env: &Environment,
         new_certs: &mut Option<Vec<Certificate>>,
@@ -634,7 +635,7 @@ impl<'a> Builder<'a> {
             let indexes = worklist.get_indexes(&goal.name);
             for i in indexes {
                 let cert = worklist.get_cert(*i).unwrap();
-                match full_processor.check_cert(cert, Some(goal), self.project, &env.bindings) {
+                match full_processor.as_ref().check_cert(cert, Some(goal), self.project, &env.bindings) {
                     Ok(()) => {
                         self.metrics.cached_certs += 1;
                         self.metrics.goals_done += 1;
@@ -669,8 +670,9 @@ impl<'a> Builder<'a> {
         }
 
         // Try the filtered prover
-        if let Some(mut filtered_processor) = filtered_processor {
+        if let Some(filtered_processor) = filtered_processor {
             self.metrics.searches_filtered += 1;
+            let mut filtered_processor = filtered_processor.into_owned();
             filtered_processor.set_goal(goal)?;
             let start = std::time::Instant::now();
             let outcome = filtered_processor.search(ProverParams::VERIFICATION);
@@ -698,6 +700,7 @@ impl<'a> Builder<'a> {
         }
 
         // Try the full prover
+        let mut full_processor = full_processor.into_owned();
         full_processor.set_goal(goal)?;
         self.metrics.searches_full += 1;
         let start = std::time::Instant::now();
@@ -778,8 +781,8 @@ impl<'a> Builder<'a> {
                 }
             }
             self.verify_with_fallback(
-                full_processor,
-                filtered_processor,
+                Cow::Owned(full_processor),
+                filtered_processor.map(Cow::Owned),
                 &goal,
                 cursor.goal_env().unwrap(),
                 new_certs,
