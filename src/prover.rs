@@ -562,30 +562,6 @@ impl Prover {
         false
     }
 
-    /// Searches with a short duration.
-    /// Designed to be called multiple times in succession.
-    /// The time-based limit is set low, so that it feels interactive.
-    pub fn partial_search(&mut self) -> Outcome {
-        self.search(ProverParams::PARTIAL)
-    }
-
-    /// Search in verification mode to see if this goal can be easily proven.
-    /// The time-based limit is set high enough so that hopefully it will not apply,
-    /// because we don't want the result of verification to be machine-dependent.
-    pub fn verification_search(&mut self) -> Outcome {
-        self.search(ProverParams::VERIFICATION)
-    }
-
-    /// A fast search, for testing.
-    pub fn quick_search(&mut self) -> Outcome {
-        self.search(ProverParams::QUICK)
-    }
-
-    /// A fast search that only uses shallow steps, for testing.
-    pub fn quick_shallow_search(&mut self) -> Outcome {
-        self.search(ProverParams::SHALLOW)
-    }
-
     /// The prover will exit with Outcome::Constrained if it hits a constraint:
     ///   Activating activation_limit nonfactual clauses
     ///   Going over the time limit, in seconds

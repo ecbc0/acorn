@@ -10,7 +10,7 @@ use crate::goal::Goal;
 use crate::normalizer::Normalizer;
 use crate::project::Project;
 use crate::proof::Proof;
-use crate::prover::{Outcome, Prover};
+use crate::prover::{Outcome, Prover, ProverParams};
 
 /// The processor represents all of the stuff that can accept a stream of facts.
 /// We might want to rename this or refactor it away later.
@@ -94,8 +94,8 @@ impl Processor {
         checker.check_cert(cert, project, &mut bindings, &mut normalizer)
     }
 
-    /// Runs verification search on the prover.
-    pub fn verification_search(&mut self) -> Outcome {
-        self.prover.verification_search()
+    /// Forwards a search request to the underlying prover.
+    pub fn search(&mut self, params: ProverParams) -> Outcome {
+        self.prover.search(params)
     }
 }

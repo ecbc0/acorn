@@ -23,7 +23,7 @@ use crate::interfaces::{
 };
 use crate::module::{LoadState, ModuleDescriptor};
 use crate::project::{Project, ProjectConfig};
-use crate::prover::Outcome;
+use crate::prover::{Outcome, ProverParams};
 
 pub struct ServerArgs {
     // The root folder the user has open
@@ -148,7 +148,7 @@ impl SearchTask {
             // Each iteration through the loop reacquires the write lock on the prover.
             // This lets other threads access the prover in between iterations.
             let processor = &mut *self.processor.write().await;
-            let outcome = processor.prover_mut().partial_search();
+            let outcome = processor.search(ProverParams::PARTIAL);
             let status = match &outcome {
                 Outcome::Success => {
                     let proof = processor.get_condensed_proof().unwrap();

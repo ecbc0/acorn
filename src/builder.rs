@@ -14,7 +14,7 @@ use crate::module::{LoadState, ModuleDescriptor, ModuleId};
 use crate::module_cache::ModuleCache;
 use crate::processor::Processor;
 use crate::project::Project;
-use crate::prover::Outcome;
+use crate::prover::{Outcome, ProverParams};
 
 static NEXT_BUILD_ID: AtomicU32 = AtomicU32::new(1);
 
@@ -675,7 +675,7 @@ impl<'a> Builder<'a> {
             self.metrics.searches_filtered += 1;
             filtered_processor.set_goal(goal)?;
             let start = std::time::Instant::now();
-            let outcome = filtered_processor.verification_search();
+            let outcome = filtered_processor.search(ProverParams::VERIFICATION);
             if outcome == Outcome::Success {
                 if let Some(new_certs) = new_certs {
                     match filtered_processor.make_cert(self.project, &env.bindings, self.verbose) {
@@ -710,7 +710,7 @@ impl<'a> Builder<'a> {
         // Try the full prover
         self.metrics.searches_full += 1;
         let start = std::time::Instant::now();
-        let outcome = full_processor.verification_search();
+        let outcome = full_processor.search(ProverParams::VERIFICATION);
         if outcome == Outcome::Success {
             if let Some(new_certs) = new_certs {
                 match full_processor.make_cert(self.project, &env.bindings, self.verbose) {

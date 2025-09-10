@@ -4,7 +4,7 @@ use crate::environment::Environment;
 use crate::module::LoadState;
 use crate::processor::Processor;
 use crate::project::Project;
-use crate::prover::Outcome;
+use crate::prover::{Outcome, ProverParams};
 
 // Helper to do a proof for a particular goal.
 fn prove_helper<'a>(
@@ -30,7 +30,7 @@ fn prove_helper<'a>(
     }
     processor.set_goal(&goal).unwrap();
     processor.prover_mut().strict_codegen = true;
-    let outcome = processor.prover_mut().quick_search();
+    let outcome = processor.search(ProverParams::QUICK);
     (project, env, processor, outcome)
 }
 
@@ -117,7 +117,7 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
         // This is a key difference between our verification tests, and our real verification.
         // This helps us test that verification fails in cases where we do have an
         // infinite rabbit hole we could go down.
-        let outcome = processor.prover_mut().quick_shallow_search();
+        let outcome = processor.search(ProverParams::SHALLOW);
         if outcome != Outcome::Success {
             return Ok(outcome);
         }
