@@ -24,7 +24,7 @@ fn prove_helper<'a>(
     let node = env.get_node_by_goal_name(goal_name);
     let facts = node.usable_facts(project);
     let goal = node.goal().unwrap();
-    let mut processor = Processor::with_prover(&project);
+    let mut processor = Processor::new(&project);
     for fact in facts {
         processor.add_fact(fact).unwrap();
     }
@@ -44,7 +44,9 @@ pub fn prove_with_old_codegen(
     let (project, env, processor, outcome) = prove_helper(project, module_name, goal_name);
     let code = match processor.get_condensed_proof() {
         Some(proof) => {
-            processor.prover.print_proof(&proof, project, &env.bindings, &processor.normalizer);
+            processor
+                .prover
+                .print_proof(&proof, project, &env.bindings, &processor.normalizer);
             proof.to_code(&env.bindings)
         }
         None => {
@@ -57,13 +59,15 @@ pub fn prove_with_old_codegen(
 
 /// Expects the proof to succeed, and a valid concrete proof to be generated.
 pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certificate {
-    let (project, base_env, processor, outcome) =
-        prove_helper(project, module_name, goal_name);
+    let (project, base_env, processor, outcome) = prove_helper(project, module_name, goal_name);
     assert_eq!(outcome, Outcome::Success);
     let cursor = base_env.get_node_by_goal_name(goal_name);
     let env = cursor.goal_env().unwrap();
 
-    let cert = match processor.prover.make_cert(project, &env.bindings, &processor.normalizer, true) {
+    let cert = match processor
+        .prover
+        .make_cert(project, &env.bindings, &processor.normalizer, true)
+    {
         Ok(cert) => cert,
         Err(e) => panic!("make_cert failed: {}", e),
     };
@@ -104,7 +108,7 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
         let goal = cursor.goal().unwrap();
         println!("proving: {}", goal.name);
 
-        let mut processor = Processor::with_prover(&project);
+        let mut processor = Processor::new(&project);
         for fact in facts {
             processor.add_fact(fact)?;
         }

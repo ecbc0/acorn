@@ -714,7 +714,7 @@ impl Backend {
         let cursor = NodeCursor::from_path(env, &path);
         let goal = cursor.goal()?;
         let superseded = Arc::new(AtomicBool::new(false));
-        let mut processor = Processor::with_prover(&project);
+        let mut processor = Processor::new(&project);
         for fact in cursor.usable_facts(&project) {
             processor.add_fact(fact)?;
         }

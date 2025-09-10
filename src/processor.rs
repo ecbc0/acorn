@@ -24,8 +24,7 @@ pub struct Processor {
 }
 
 impl Processor {
-    /// Creates a new Processor that has a Prover.
-    pub fn with_prover(project: &Project) -> Processor {
+    pub fn new(project: &Project) -> Processor {
         Processor {
             prover: Prover::new(project),
             normalizer: Normalizer::new(),
@@ -33,9 +32,8 @@ impl Processor {
         }
     }
 
-    /// Creates a new Processor that does not have a Prover.
-    pub fn without_prover() -> Processor {
-        todo!();
+    pub fn prover(&self) -> &Prover {
+        &self.prover
     }
 
     /// Normalizes a fact and adds the resulting proof steps to the prover.
