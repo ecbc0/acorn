@@ -635,7 +635,12 @@ impl<'a> Builder<'a> {
             let indexes = worklist.get_indexes(&goal.name);
             for i in indexes {
                 let cert = worklist.get_cert(*i).unwrap();
-                match full_processor.as_ref().check_cert(cert, Some(goal), self.project, &env.bindings) {
+                match full_processor.as_ref().check_cert(
+                    cert,
+                    Some(goal),
+                    self.project,
+                    &env.bindings,
+                ) {
                     Ok(()) => {
                         self.metrics.cached_certs += 1;
                         self.metrics.goals_done += 1;
