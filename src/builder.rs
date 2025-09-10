@@ -570,8 +570,7 @@ impl<'a> Builder<'a> {
             };
             premises.insert(module_id, premise_set.iter().cloned().collect());
         }
-        let mut prover = Prover::new(self.project);
-        let mut normalizer = Normalizer::new();
+        let mut processor = Processor::new(self.project);
 
         // Add facts from the dependencies
         let empty = HashSet::new();
@@ -584,8 +583,7 @@ impl<'a> Builder<'a> {
             // importable_facts will always include extends and instance facts,
             // even when a filter is provided
             for fact in module_env.importable_facts(Some(module_premises)) {
-                let steps = normalizer.normalize_fact(fact)?;
-                prover.add_steps(steps);
+                processor.add_fact(fact)?;
             }
         }
 
@@ -603,8 +601,7 @@ impl<'a> Builder<'a> {
 
             // Always include facts that are used in normalization.
             if fact.used_in_normalization() {
-                let steps = normalizer.normalize_fact(fact)?;
-                prover.add_steps(steps);
+                processor.add_fact(fact)?;
                 continue;
             }
 
@@ -616,12 +613,11 @@ impl<'a> Builder<'a> {
             };
 
             if local_premises.contains(&name) {
-                let steps = normalizer.normalize_fact(fact)?;
-                prover.add_steps(steps);
+                processor.add_fact(fact)?;
             }
         }
 
-        Ok(Some(Processor { prover, normalizer }))
+        Ok(Some(processor))
     }
 
     /// Verifies a goal with fallback from filtered to full prover.
@@ -865,10 +861,7 @@ impl<'a> Builder<'a> {
         self.module_proving_started(target.clone());
 
         // The full processor has access to all imported facts.
-        let mut full_processor = Processor {
-            prover: Prover::new(&self.project),
-            normalizer: Normalizer::new(),
-        };
+        let mut full_processor = Processor::new(&self.project);
         for fact in self.project.imported_facts(env.module_id, None) {
             full_processor.add_fact(fact.clone())?;
         }

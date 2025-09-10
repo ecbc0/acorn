@@ -2,6 +2,7 @@ use crate::builder::BuildError;
 use crate::fact::Fact;
 use crate::goal::Goal;
 use crate::normalizer::Normalizer;
+use crate::project::Project;
 use crate::prover::Prover;
 
 /// The processor represents all of the stuff that can accept a stream of facts.
@@ -15,6 +16,13 @@ pub struct Processor {
 }
 
 impl Processor {
+    /// Creates a new Processor with a fresh Prover and Normalizer.
+    pub fn new(project: &Project) -> Processor {
+        Processor {
+            prover: Prover::new(project),
+            normalizer: Normalizer::new(),
+        }
+    }
     /// Normalizes a fact and adds the resulting proof steps to the prover.
     pub fn add_fact(&mut self, fact: Fact) -> Result<(), BuildError> {
         let steps = self.normalizer.normalize_fact(fact)?;
