@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::builder::{BuildEvent, Builder};
 use crate::live_document::LiveDocument;
-use crate::normalizer::Normalizer;
+use crate::processor::Processor;
 use chrono;
 use color_backtrace::BacktracePrinter;
 use dashmap::DashMap;
@@ -23,7 +23,7 @@ use crate::interfaces::{
 };
 use crate::module::{LoadState, ModuleDescriptor};
 use crate::project::{Project, ProjectConfig};
-use crate::prover::{Outcome, Prover};
+use crate::prover::Outcome;
 
 pub struct ServerArgs {
     // The root folder the user has open
@@ -73,7 +73,7 @@ struct SearchTask {
     // will hold a write lock on the prover.
     // The task will release and reacquire the lock intermittently, and the RwLock is fair so other
     // threads get a chance to use the prover.
-    prover: Arc<RwLock<(Prover, Normalizer)>>,
+    processor: Arc<RwLock<Processor>>,
 
     // The module that we're searching for a proof in
     descriptor: ModuleDescriptor,
@@ -147,26 +147,26 @@ impl SearchTask {
         loop {
             // Each iteration through the loop reacquires the write lock on the prover.
             // This lets other threads access the prover in between iterations.
-            let (prover, normalizer) = &mut *self.prover.write().await;
-            let outcome = prover.partial_search();
+            let processor = &mut *self.processor.write().await;
+            let outcome = processor.prover.partial_search();
             let status = match &outcome {
                 Outcome::Success => {
-                    let proof = prover.get_condensed_proof(&normalizer).unwrap();
-                    let steps = prover.to_proof_info(&proof, &project, &env.bindings, &normalizer);
+                    let proof = processor.prover.get_condensed_proof(&processor.normalizer).unwrap();
+                    let steps = processor.prover.to_proof_info(&proof, &project, &env.bindings, &processor.normalizer);
 
                     let (code, error) = match proof.to_code(&env.bindings) {
                         Ok(code) => (Some(code), None),
                         Err(e) => (None, Some(e.to_string())),
                     };
 
-                    SearchStatus::success(code, error, steps, proof.needs_simplification(), &prover)
+                    SearchStatus::success(code, error, steps, proof.needs_simplification(), &processor.prover)
                 }
 
                 Outcome::Inconsistent | Outcome::Exhausted | Outcome::Constrained => {
-                    SearchStatus::stopped(&prover, &outcome)
+                    SearchStatus::stopped(&processor.prover, &outcome)
                 }
 
-                Outcome::Timeout => SearchStatus::pending(&prover),
+                Outcome::Timeout => SearchStatus::pending(&processor.prover),
 
                 Outcome::Interrupted => {
                     // No point in providing a result for this task, since nobody is listening.
@@ -703,23 +703,23 @@ impl Backend {
         let cursor = NodeCursor::from_path(env, &path);
         let goal = cursor.goal()?;
         let superseded = Arc::new(AtomicBool::new(false));
-        let mut prover = Prover::new(&project);
-        let mut normalizer = Normalizer::new();
+        let mut processor = Processor {
+            prover: crate::prover::Prover::new(&project),
+            normalizer: crate::normalizer::Normalizer::new(),
+        };
         for fact in cursor.usable_facts(&project) {
-            let steps = normalizer.normalize_fact(fact)?;
-            prover.add_steps(steps);
+            processor.add_fact(fact)?;
         }
-        let (ng, steps) = normalizer.normalize_goal(&goal)?;
-        prover.set_goal(ng, steps);
-        prover.stop_flags.push(superseded.clone());
-        let status = SearchStatus::pending(&prover);
+        processor.set_goal(&goal)?;
+        processor.prover.stop_flags.push(superseded.clone());
+        let status = SearchStatus::pending(&processor.prover);
 
         // Create a new search task
         let new_task = SearchTask {
             project: self.project.clone(),
             url: params.uri.clone(),
             version: doc.saved_version(),
-            prover: Arc::new(RwLock::new((prover, normalizer))),
+            processor: Arc::new(RwLock::new(processor)),
             descriptor,
             selected_line: params.selected_line,
             path,
@@ -765,14 +765,14 @@ impl Backend {
             return self.info_fail(params, &failure);
         }
         let project = self.project.read().await;
-        let (prover, normalizer) = &*task.prover.read().await;
+        let processor = &*task.processor.read().await;
         let env = match project.get_env(&task.descriptor) {
             Some(env) => env,
             None => {
                 return self.info_fail(params, "no environment available");
             }
         };
-        let result = prover.info_result(params.clause_id, &project, &env.bindings, &normalizer);
+        let result = processor.prover.info_result(params.clause_id, &project, &env.bindings, &processor.normalizer);
         let failure = match result {
             Some(_) => None,
             None => Some(format!("no info available for clause {}", params.clause_id)),
