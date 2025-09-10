@@ -92,14 +92,24 @@ impl Processor {
 
     /// Checks a certificate by cloning the checker and normalizer, and creating a Cow for bindings.
     /// This encapsulates the pattern used throughout the codebase.
+    /// If the goal is provided, it is added to the checker before checking the certificate.
     pub fn check_cert(
         &self,
         cert: &Certificate,
+        goal: Option<&Goal>,
         project: &Project,
         bindings: &BindingMap,
     ) -> Result<(), Error> {
         let mut checker = self.checker.clone();
         let mut normalizer = self.normalizer.clone();
+
+        if let Some(goal) = goal {
+            let (_, steps) = normalizer.normalize_goal(goal).map_err(|e| e.message)?;
+            for step in &steps {
+                checker.insert_clause(&step.clause);
+            }
+        }
+
         let mut bindings = Cow::Borrowed(bindings);
         checker.check_cert(cert, project, &mut bindings, &mut normalizer)
     }

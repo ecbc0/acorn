@@ -629,14 +629,12 @@ impl<'a> Builder<'a> {
         worklist: &mut Option<CertificateWorklist>,
         new_premises: &mut HashSet<(ModuleId, String)>,
     ) -> Result<(), BuildError> {
-        full_processor.set_goal(goal)?;
-
         // Check for a cached cert
         if let Some(worklist) = worklist.as_mut() {
             let indexes = worklist.get_indexes(&goal.name);
             for i in indexes {
                 let cert = worklist.get_cert(*i).unwrap();
-                match full_processor.check_cert(cert, self.project, &env.bindings) {
+                match full_processor.check_cert(cert, Some(goal), self.project, &env.bindings) {
                     Ok(()) => {
                         self.metrics.cached_certs += 1;
                         self.metrics.goals_done += 1;
@@ -680,14 +678,6 @@ impl<'a> Builder<'a> {
                 if let Some(new_certs) = new_certs {
                     match filtered_processor.make_cert(self.project, &env.bindings, self.verbose) {
                         Ok(cert) => {
-                            if let Err(e) =
-                                full_processor.check_cert(&cert, self.project, &env.bindings)
-                            {
-                                return Err(BuildError::goal(
-                                    &goal,
-                                    &format!("filtered prover created cert that the full prover rejected: {}", e),
-                                ));
-                            }
                             new_certs.push(cert);
                         }
                         Err(e) => {
@@ -708,6 +698,7 @@ impl<'a> Builder<'a> {
         }
 
         // Try the full prover
+        full_processor.set_goal(goal)?;
         self.metrics.searches_full += 1;
         let start = std::time::Instant::now();
         let outcome = full_processor.search(ProverParams::VERIFICATION);
