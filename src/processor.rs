@@ -18,7 +18,7 @@ use crate::prover::Prover;
 /// to handle the yaml -> jsonl build migration.
 #[derive(Clone)]
 pub struct Processor {
-    pub prover: Prover,
+    pub prover: Option<Prover>,
     pub normalizer: Normalizer,
     pub checker: Checker,
 }
@@ -27,7 +27,7 @@ impl Processor {
     /// Creates a new Processor that has a Prover.
     pub fn with_prover(project: &Project) -> Processor {
         Processor {
-            prover: Prover::new(project),
+            prover: Some(Prover::new(project)),
             normalizer: Normalizer::new(),
             checker: Checker::new(),
         }
@@ -35,7 +35,11 @@ impl Processor {
 
     /// Creates a new Processor that does not have a Prover.
     pub fn without_prover() -> Processor {
-        todo!();
+        Processor {
+            prover: None,
+            normalizer: Normalizer::new(),
+            checker: Checker::new(),
+        }
     }
 
     /// Normalizes a fact and adds the resulting proof steps to the prover.
@@ -44,7 +48,7 @@ impl Processor {
         for step in &steps {
             self.checker.insert_clause(&step.clause);
         }
-        self.prover.add_steps(steps);
+        self.prover.as_mut().unwrap().add_steps(steps);
         Ok(())
     }
 
@@ -54,13 +58,13 @@ impl Processor {
         for step in &steps {
             self.checker.insert_clause(&step.clause);
         }
-        self.prover.set_goal(ng, steps);
+        self.prover.as_mut().unwrap().set_goal(ng, steps);
         Ok(())
     }
 
     /// Gets the condensed proof from the prover using the normalizer.
     pub fn get_condensed_proof(&self) -> Option<Proof> {
-        self.prover.get_condensed_proof(&self.normalizer)
+        self.prover.as_ref().unwrap().get_condensed_proof(&self.normalizer)
     }
 
     /// Creates a certificate from the current proof state.
@@ -71,6 +75,8 @@ impl Processor {
         print: bool,
     ) -> Result<Certificate, Error> {
         self.prover
+            .as_ref()
+            .unwrap()
             .make_cert(project, bindings, &self.normalizer, print)
     }
 

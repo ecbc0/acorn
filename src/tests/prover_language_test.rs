@@ -988,7 +988,7 @@ fn test_normalizing_instance_aliases() {
         "#;
     let (processor, outcome, _) = prove_as_main(text, "goal");
     assert_eq!(outcome, Outcome::Success);
-    if let Some(final_step) = processor.prover.get_final_step() {
+    if let Some(final_step) = processor.prover.as_ref().unwrap().get_final_step() {
         // TODO: the goal should have just normalized to Foo.mul(x0, x0) = Foo.mul(x0, x0)
         // i.e. a trivial one.
         if !final_step.rule.is_assumption() {

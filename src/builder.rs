@@ -380,9 +380,9 @@ impl<'a> Builder<'a> {
         self.metrics.goals_done += 1;
         self.metrics.searches_total += 1;
         self.metrics.search_time += elapsed_f64;
-        let clauses_activated = processor.prover.num_activated() as i32;
+        let clauses_activated = processor.prover.as_ref().unwrap().num_activated() as i32;
         self.metrics.clauses_activated += clauses_activated;
-        let num_passive = processor.prover.num_passive() as i32;
+        let num_passive = processor.prover.as_ref().unwrap().num_passive() as i32;
         self.metrics.clauses_total += clauses_activated + num_passive;
         self.metrics.clauses_sum_square_activated += (clauses_activated * clauses_activated) as u64;
 
@@ -675,7 +675,7 @@ impl<'a> Builder<'a> {
             self.metrics.searches_filtered += 1;
             filtered_processor.set_goal(goal)?;
             let start = std::time::Instant::now();
-            let outcome = filtered_processor.prover.verification_search();
+            let outcome = filtered_processor.prover.as_mut().unwrap().verification_search();
             if outcome == Outcome::Success {
                 if let Some(new_certs) = new_certs {
                     match filtered_processor.make_cert(self.project, &env.bindings, self.verbose) {
@@ -701,6 +701,8 @@ impl<'a> Builder<'a> {
                 self.search_finished(&mut filtered_processor, goal, outcome, start.elapsed());
                 filtered_processor
                     .prover
+                    .as_ref()
+                    .unwrap()
                     .get_useful_source_names(new_premises, &filtered_processor.normalizer);
                 return Ok(());
             }
@@ -710,7 +712,7 @@ impl<'a> Builder<'a> {
         // Try the full prover
         self.metrics.searches_full += 1;
         let start = std::time::Instant::now();
-        let outcome = full_processor.prover.verification_search();
+        let outcome = full_processor.prover.as_mut().unwrap().verification_search();
         if outcome == Outcome::Success {
             if let Some(new_certs) = new_certs {
                 match full_processor.make_cert(self.project, &env.bindings, self.verbose) {
@@ -727,6 +729,8 @@ impl<'a> Builder<'a> {
         self.search_finished(&mut full_processor, goal, outcome, start.elapsed());
         full_processor
             .prover
+            .as_ref()
+            .unwrap()
             .get_useful_source_names(new_premises, &full_processor.normalizer);
         Ok(())
     }
