@@ -134,6 +134,13 @@ impl Prover {
         }
     }
 
+    /// Creates a new Prover instance with an additional cancellation token
+    pub fn with_token(project: &Project, extra_token: CancellationToken) -> Prover {
+        let mut prover = Self::new(project);
+        prover.cancellation_tokens.push(extra_token);
+        prover
+    }
+
     /// Add proof steps to the prover.
     /// These can be used as initial facts for starting the proof.
     pub fn add_steps(&mut self, steps: Vec<ProofStep>) {

@@ -713,15 +713,11 @@ impl Backend {
         let cursor = NodeCursor::from_path(env, &path);
         let goal = cursor.goal()?;
         let cancellation_token = CancellationToken::new();
-        let mut processor = Processor::new(&project);
+        let mut processor = Processor::with_token(&project, cancellation_token.clone());
         for fact in cursor.usable_facts(&project) {
             processor.add_fact(fact)?;
         }
         processor.set_goal(&goal)?;
-        processor
-            .prover_mut()
-            .cancellation_tokens
-            .push(cancellation_token.clone());
         let status = SearchStatus::pending(processor.prover());
 
         // Create a new search task
