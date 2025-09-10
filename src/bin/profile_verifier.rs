@@ -17,7 +17,6 @@ fn main() {
         };
         let mut verifier =
             Verifier::new(current_dir.clone(), config, None).expect("Failed to create verifier");
-        verifier.builder.reverify = true;
         verifier.builder.check_hashes = false;
 
         let output = verifier.run().unwrap();
