@@ -45,10 +45,6 @@ impl Processor {
         &self.prover
     }
 
-    pub fn prover_mut(&mut self) -> &mut Prover {
-        &mut self.prover
-    }
-
     pub fn normalizer(&self) -> &Normalizer {
         &self.normalizer
     }
