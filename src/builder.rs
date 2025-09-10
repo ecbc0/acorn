@@ -626,8 +626,8 @@ impl<'a> Builder<'a> {
         filtered_processor: Option<Cow<Processor>>,
         goal: &Goal,
         env: &Environment,
-        new_certs: &mut Option<Vec<Certificate>>,
-        worklist: &mut Option<CertificateWorklist>,
+        mut new_certs: Option<&mut Vec<Certificate>>,
+        mut worklist: Option<&mut CertificateWorklist>,
         new_premises: &mut HashSet<(ModuleId, String)>,
     ) -> Result<(), BuildError> {
         // Check for a cached cert
@@ -646,7 +646,7 @@ impl<'a> Builder<'a> {
                         self.metrics.goals_done += 1;
                         self.metrics.goals_success += 1;
                         self.log_verified(goal.first_line, goal.last_line);
-                        if let Some(new_certs) = new_certs {
+                        if let Some(new_certs) = new_certs.as_mut() {
                             new_certs.push(cert.clone());
                         }
                         worklist.remove(&goal.name, *i);
@@ -682,7 +682,7 @@ impl<'a> Builder<'a> {
             let start = std::time::Instant::now();
             let outcome = filtered_processor.search(ProverParams::VERIFICATION);
             if outcome == Outcome::Success {
-                if let Some(new_certs) = new_certs {
+                if let Some(new_certs) = new_certs.as_mut() {
                     match filtered_processor.make_cert(self.project, &env.bindings, self.verbose) {
                         Ok(cert) => {
                             new_certs.push(cert);
@@ -711,7 +711,7 @@ impl<'a> Builder<'a> {
         let start = std::time::Instant::now();
         let outcome = full_processor.search(ProverParams::VERIFICATION);
         if outcome == Outcome::Success {
-            if let Some(new_certs) = new_certs {
+            if let Some(new_certs) = new_certs.as_mut() {
                 match full_processor.make_cert(self.project, &env.bindings, self.verbose) {
                     Ok(cert) => new_certs.push(cert),
                     Err(e) => {
@@ -739,8 +739,8 @@ impl<'a> Builder<'a> {
         filtered_processor: Option<&Processor>,
         cursor: &mut NodeCursor,
         new_premises: &mut HashSet<(ModuleId, String)>,
-        new_certs: &mut Option<Vec<Certificate>>,
-        worklist: &mut Option<CertificateWorklist>,
+        mut new_certs: Option<&mut Vec<Certificate>>,
+        mut worklist: Option<&mut CertificateWorklist>,
     ) -> Result<(), BuildError> {
         if !cursor.requires_verification() {
             return Ok(());
@@ -757,8 +757,8 @@ impl<'a> Builder<'a> {
                     filtered_processor.as_ref(),
                     cursor,
                     new_premises,
-                    new_certs,
-                    worklist,
+                    new_certs.as_deref_mut(),
+                    worklist.as_deref_mut(),
                 )?;
 
                 if let Some(fact) = cursor.node().get_fact() {
@@ -871,8 +871,8 @@ impl<'a> Builder<'a> {
                         filtered_processor.as_ref(),
                         &mut cursor,
                         &mut new_premises,
-                        &mut new_certs,
-                        &mut worklist,
+                        new_certs.as_mut(),
+                        worklist.as_mut(),
                     )?;
                     match self
                         .project
