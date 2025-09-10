@@ -1,11 +1,17 @@
+use std::collections::HashSet;
+
+use crate::binding_map::BindingMap;
 use crate::builder::BuildError;
+use crate::certificate::Certificate;
 use crate::checker::Checker;
+use crate::code_generator::Error;
 use crate::fact::Fact;
 use crate::goal::Goal;
+use crate::module::ModuleId;
 use crate::normalizer::Normalizer;
 use crate::project::Project;
 use crate::proof::Proof;
-use crate::prover::Prover;
+use crate::prover::{Outcome, Prover};
 
 /// The processor represents all of the stuff that can accept a stream of facts.
 /// We might want to rename this or refactor it away later.
@@ -50,5 +56,25 @@ impl Processor {
     /// Gets the condensed proof from the prover using the normalizer.
     pub fn get_condensed_proof(&self) -> Option<Proof> {
         self.prover.get_condensed_proof(&self.normalizer)
+    }
+
+    /// Runs verification search on the prover.
+    pub fn verification_search(&mut self) -> Outcome {
+        self.prover.verification_search()
+    }
+
+    /// Creates a certificate from the current proof state.
+    pub fn make_cert(
+        &self,
+        project: &Project,
+        bindings: &BindingMap,
+        print: bool,
+    ) -> Result<Certificate, Error> {
+        self.prover.make_cert(project, bindings, &self.normalizer, print)
+    }
+
+    /// Gets the useful source names from the prover.
+    pub fn get_useful_source_names(&self, names: &mut HashSet<(ModuleId, String)>) {
+        self.prover.get_useful_source_names(names, &self.normalizer)
     }
 }
