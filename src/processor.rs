@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 use crate::binding_map::BindingMap;
@@ -76,5 +77,19 @@ impl Processor {
     /// Gets the useful source names from the prover.
     pub fn get_useful_source_names(&self, names: &mut HashSet<(ModuleId, String)>) {
         self.prover.get_useful_source_names(names, &self.normalizer)
+    }
+
+    /// Checks a certificate by cloning the checker and normalizer, and creating a Cow for bindings.
+    /// This encapsulates the pattern used throughout the codebase.
+    pub fn check_cert(
+        &self,
+        cert: &Certificate,
+        project: &Project,
+        bindings: &BindingMap,
+    ) -> Result<(), Error> {
+        let mut checker = self.checker.clone();
+        let mut normalizer = self.normalizer.clone();
+        let mut bindings = Cow::Borrowed(bindings);
+        checker.check_cert(cert, project, &mut bindings, &mut normalizer)
     }
 }

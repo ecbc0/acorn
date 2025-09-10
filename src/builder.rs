@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicU32;
 use std::time::Duration;
@@ -637,10 +636,7 @@ impl<'a> Builder<'a> {
             let indexes = worklist.get_indexes(&goal.name);
             for i in indexes {
                 let cert = worklist.get_cert(*i).unwrap();
-                let mut checker = full_processor.checker.clone();
-                let mut normalizer = full_processor.normalizer.clone();
-                let mut bindings = Cow::Borrowed(&env.bindings);
-                match checker.check_cert(cert, self.project, &mut bindings, &mut normalizer) {
+                match full_processor.check_cert(cert, self.project, &env.bindings) {
                     Ok(()) => {
                         self.metrics.cached_certs += 1;
                         self.metrics.goals_done += 1;
@@ -688,14 +684,10 @@ impl<'a> Builder<'a> {
                         self.verbose,
                     ) {
                         Ok(cert) => {
-                            let mut checker = full_processor.checker.clone();
-                            let mut normalizer = full_processor.normalizer.clone();
-                            let mut bindings = Cow::Borrowed(&env.bindings);
-                            if let Err(e) = checker.check_cert(
+                            if let Err(e) = full_processor.check_cert(
                                 &cert,
                                 self.project,
-                                &mut bindings,
-                                &mut normalizer,
+                                &env.bindings,
                             ) {
                                 return Err(BuildError::goal(
                                     &goal,
