@@ -29,7 +29,6 @@ fn prove_helper<'a>(
         processor.add_fact(fact).unwrap();
     }
     processor.set_goal(&goal).unwrap();
-    processor.prover_mut().strict_codegen = true;
     let outcome = processor.search(ProverParams::QUICK);
     (project, env, processor, outcome)
 }

@@ -47,10 +47,6 @@ pub struct Prover {
     /// If this is None, the goal hasn't been set yet.
     goal: Option<NormalizedGoal>,
 
-    /// If strict codegen is set, we panic when we can't generate code correctly.
-    /// Good for testing.
-    /// Otherwise, we kinda guess. Good for production.
-    pub strict_codegen: bool,
 }
 
 /// The outcome of a prover operation.
@@ -136,7 +132,6 @@ impl Prover {
             useful_passive: vec![],
             nonfactual_activations: 0,
             goal: None,
-            strict_codegen: false,
         }
     }
 
