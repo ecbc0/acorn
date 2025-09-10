@@ -2,8 +2,7 @@ use core::panic;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 use std::{fmt, io};
 
 use regex::Regex;
@@ -62,8 +61,8 @@ pub struct Project {
     // The cache contains a hash for each module from the last time it was cleanly built.
     pub module_caches: ModuleCacheSet,
 
-    // Used as a flag to stop a build in progress.
-    pub build_stopped: Arc<AtomicBool>,
+    // Used as a token to cancel a build in progress.
+    pub build_stopped: CancellationToken,
 
     // The last known-good build cache.
     // This is "some" iff we are using certs.
@@ -210,7 +209,7 @@ impl Project {
             module_map: HashMap::new(),
             targets: HashSet::new(),
             module_caches,
-            build_stopped: Arc::new(AtomicBool::new(false)),
+            build_stopped: CancellationToken::new(),
             build_cache,
             cache_dir,
         }
@@ -311,8 +310,7 @@ impl Project {
     // finish any long-running process with an "interrupted" behavior, and give up their
     // locks on the project.
     pub fn stop_build(&self) {
-        self.build_stopped
-            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.build_stopped.cancel();
     }
 
     // You need to have write access to a RwLock<Project> to re-allow the build.
@@ -323,7 +321,7 @@ impl Project {
     // This asymmetry ensures that when we quickly stop and re-allow the build, any build in
     // progress will in fact stop.
     pub fn allow_build(&mut self) {
-        self.build_stopped = Arc::new(AtomicBool::new(false));
+        self.build_stopped = CancellationToken::new();
     }
 
     // Returns Ok(()) if the module loaded successfully, or an ImportError if not.

@@ -27,6 +27,7 @@ dependencies = [
  "serde_yaml",
  "tempfile",
  "tokio",
+ "tokio-util",
  "tower-lsp",
  "walkdir",
 ]

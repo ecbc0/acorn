@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::fmt;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
 use tower_lsp::lsp_types::Url;
 
@@ -37,8 +36,8 @@ pub struct Prover {
     /// Clauses that we never activated, but we did use to find a contradiction.
     useful_passive: Vec<ProofStep>,
 
-    /// Setting any of these flags to true externally will stop the prover.
-    pub stop_flags: Vec<Arc<AtomicBool>>,
+    /// Cancellation tokens that will stop the prover when cancelled.
+    pub stop_flags: Vec<CancellationToken>,
 
     /// Number of proof steps activated, not counting Factual ones.
     nonfactual_activations: i32,
@@ -586,7 +585,7 @@ impl Prover {
                 return Outcome::Exhausted;
             }
             for stop_flag in &self.stop_flags {
-                if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                if stop_flag.is_cancelled() {
                     return Outcome::Interrupted;
                 }
             }

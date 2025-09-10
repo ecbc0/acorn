@@ -2,8 +2,9 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+
+use tokio_util::sync::CancellationToken;
 
 use crate::builder::{BuildEvent, Builder};
 use crate::live_document::LiveDocument;
@@ -94,8 +95,8 @@ struct SearchTask {
     // It can indicate either partial progress or completion.
     status: Arc<RwLock<SearchStatus>>,
 
-    // Set this flag to true when a subsequent search task has been created
-    superseded: Arc<AtomicBool>,
+    // Cancel this token when a subsequent search task has been created
+    superseded: CancellationToken,
 
     // Zero-based line where we would insert a proof for this goal
     proof_insertion_line: u32,
@@ -606,9 +607,7 @@ impl Backend {
             let mut locked_task = self.search_task.write().await;
             if let Some(old_task) = locked_task.as_ref() {
                 // Cancel the old task
-                old_task
-                    .superseded
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                old_task.superseded.cancel();
             }
             *locked_task = new_task.clone();
         }
@@ -713,7 +712,7 @@ impl Backend {
         }
         let cursor = NodeCursor::from_path(env, &path);
         let goal = cursor.goal()?;
-        let superseded = Arc::new(AtomicBool::new(false));
+        let superseded = CancellationToken::new();
         let mut processor = Processor::new(&project);
         for fact in cursor.usable_facts(&project) {
             processor.add_fact(fact)?;
