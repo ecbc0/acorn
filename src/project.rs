@@ -2,8 +2,8 @@ use core::panic;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
-use tokio_util::sync::CancellationToken;
 use std::{fmt, io};
+use tokio_util::sync::CancellationToken;
 
 use regex::Regex;
 use tower_lsp::lsp_types::{CompletionItem, Hover, HoverContents, MarkedString, Url};
@@ -62,7 +62,7 @@ pub struct Project {
     pub module_caches: ModuleCacheSet,
 
     // Used as a token to cancel a build in progress.
-    pub build_stopped: CancellationToken,
+    pub build_cancellation_token: CancellationToken,
 
     // The last known-good build cache.
     // This is "some" iff we are using certs.
@@ -209,7 +209,7 @@ impl Project {
             module_map: HashMap::new(),
             targets: HashSet::new(),
             module_caches,
-            build_stopped: CancellationToken::new(),
+            build_cancellation_token: CancellationToken::new(),
             build_cache,
             cache_dir,
         }
@@ -305,23 +305,22 @@ impl Project {
         self.module_map = HashMap::new();
     }
 
-    // You only need read access to an RwLock<Project> to stop the build.
-    // When the build is stopped, threads that didn't stop the build themselves should
-    // finish any long-running process with an "interrupted" behavior, and give up their
-    // locks on the project.
-    pub fn stop_build(&self) {
-        self.build_stopped.cancel();
+    // You only need read access to an RwLock<Project> to stop builds.
+    // When builds are stopped, tasks running a build should finish with an
+    // "interrupted" behavior, and release locks on the project.
+    pub fn stop_builds(&self) {
+        self.build_cancellation_token.cancel();
     }
 
-    // You need to have write access to a RwLock<Project> to re-allow the build.
+    // You need to have write access to a RwLock<Project> to re-allow builds.
     //
-    // To change the project, acquire a read lock, stop the build, acquire a write lock, mess
-    // around with the project state however you wanted, then re-allow the build.
+    // To mutate a shared project, acquire a read lock, stop builds, acquire a write lock,
+    // mutate the project state to your heart's content, then re-allow builds.
     //
-    // This asymmetry ensures that when we quickly stop and re-allow the build, any build in
+    // This asymmetry ensures that when we quickly stop and re-allow builds, any build in
     // progress will in fact stop.
-    pub fn allow_build(&mut self) {
-        self.build_stopped = CancellationToken::new();
+    pub fn allow_builds(&mut self) {
+        self.build_cancellation_token = CancellationToken::new();
     }
 
     // Returns Ok(()) if the module loaded successfully, or an ImportError if not.

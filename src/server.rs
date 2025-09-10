@@ -96,7 +96,7 @@ struct SearchTask {
     status: Arc<RwLock<SearchStatus>>,
 
     // Cancel this token when a subsequent search task has been created
-    superseded: CancellationToken,
+    cancellation_token: CancellationToken,
 
     // Zero-based line where we would insert a proof for this goal
     proof_insertion_line: u32,
@@ -583,11 +583,11 @@ impl Backend {
     async fn stop_build_and_get_project(&self) -> RwLockWriteGuard<Project> {
         {
             let project = self.project.read().await;
-            project.stop_build();
+            project.stop_builds();
         }
         // Reallow the build once we acquire the write lock
         let mut project = self.project.write().await;
-        project.allow_build();
+        project.allow_builds();
         project
     }
 
@@ -607,7 +607,7 @@ impl Backend {
             let mut locked_task = self.search_task.write().await;
             if let Some(old_task) = locked_task.as_ref() {
                 // Cancel the old task
-                old_task.superseded.cancel();
+                old_task.cancellation_token.cancel();
             }
             *locked_task = new_task.clone();
         }
@@ -712,13 +712,16 @@ impl Backend {
         }
         let cursor = NodeCursor::from_path(env, &path);
         let goal = cursor.goal()?;
-        let superseded = CancellationToken::new();
+        let cancellation_token = CancellationToken::new();
         let mut processor = Processor::new(&project);
         for fact in cursor.usable_facts(&project) {
             processor.add_fact(fact)?;
         }
         processor.set_goal(&goal)?;
-        processor.prover_mut().stop_flags.push(superseded.clone());
+        processor
+            .prover_mut()
+            .cancellation_tokens
+            .push(cancellation_token.clone());
         let status = SearchStatus::pending(processor.prover());
 
         // Create a new search task
@@ -733,7 +736,7 @@ impl Backend {
             goal_name: goal.name.clone(),
             goal_range: goal.proposition.source.range,
             status: Arc::new(RwLock::new(status)),
-            superseded,
+            cancellation_token,
             proof_insertion_line: goal.proof_insertion_line,
             insert_block: goal.insert_block,
             id: params.id,

@@ -36,8 +36,9 @@ pub struct Prover {
     /// Clauses that we never activated, but we did use to find a contradiction.
     useful_passive: Vec<ProofStep>,
 
-    /// Cancellation tokens that will stop the prover when cancelled.
-    pub stop_flags: Vec<CancellationToken>,
+    /// If any one of these tokens is canceled, the prover should stop working and exit
+    /// with an Outcome::Interrupted.
+    pub cancellation_tokens: Vec<CancellationToken>,
 
     /// Number of proof steps activated, not counting Factual ones.
     nonfactual_activations: i32,
@@ -45,7 +46,6 @@ pub struct Prover {
     /// The goal of the prover.
     /// If this is None, the goal hasn't been set yet.
     goal: Option<NormalizedGoal>,
-
 }
 
 /// The outcome of a prover operation.
@@ -127,7 +127,7 @@ impl Prover {
             active_set: ActiveSet::new(),
             passive_set: PassiveSet::new(),
             final_step: None,
-            stop_flags: vec![project.build_stopped.clone()],
+            cancellation_tokens: vec![project.build_cancellation_token.clone()],
             useful_passive: vec![],
             nonfactual_activations: 0,
             goal: None,
@@ -584,8 +584,8 @@ impl Prover {
                 }
                 return Outcome::Exhausted;
             }
-            for stop_flag in &self.stop_flags {
-                if stop_flag.is_cancelled() {
+            for token in &self.cancellation_tokens {
+                if token.is_cancelled() {
                     return Outcome::Interrupted;
                 }
             }
