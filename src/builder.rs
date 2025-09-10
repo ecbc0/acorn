@@ -736,7 +736,7 @@ impl<'a> Builder<'a> {
     pub fn verify_node(
         &mut self,
         full_processor: &Processor,
-        filtered_processor: &Option<Processor>,
+        filtered_processor: Option<&Processor>,
         cursor: &mut NodeCursor,
         new_premises: &mut HashSet<(ModuleId, String)>,
         new_certs: &mut Option<Vec<Certificate>>,
@@ -747,14 +747,14 @@ impl<'a> Builder<'a> {
         }
 
         let mut full_processor = full_processor.clone();
-        let mut filtered_processor = filtered_processor.clone();
+        let mut filtered_processor = filtered_processor.cloned();
         if cursor.num_children() > 0 {
             // We need to recurse into children
             cursor.descend(0);
             loop {
                 self.verify_node(
                     &full_processor,
-                    &filtered_processor,
+                    filtered_processor.as_ref(),
                     cursor,
                     new_premises,
                     new_certs,
@@ -868,7 +868,7 @@ impl<'a> Builder<'a> {
                     // This call will recurse and verify everything within this top-level block.
                     self.verify_node(
                         &full_processor,
-                        &filtered_processor,
+                        filtered_processor.as_ref(),
                         &mut cursor,
                         &mut new_premises,
                         &mut new_certs,
