@@ -746,15 +746,15 @@ impl<'a> Builder<'a> {
             return Ok(());
         }
 
-        let mut full_processor = full_processor.clone();
-        let mut filtered_processor = filtered_processor.cloned();
+        let mut full_processor = Cow::Borrowed(full_processor);
+        let mut filtered_processor = filtered_processor.map(Cow::Borrowed);
         if cursor.num_children() > 0 {
             // We need to recurse into children
             cursor.descend(0);
             loop {
                 self.verify_node(
                     &full_processor,
-                    filtered_processor.as_ref(),
+                    filtered_processor.as_deref(),
                     cursor,
                     new_premises,
                     new_certs.as_deref_mut(),
@@ -763,9 +763,9 @@ impl<'a> Builder<'a> {
 
                 if let Some(fact) = cursor.node().get_fact() {
                     if let Some(ref mut filtered_processor) = filtered_processor {
-                        filtered_processor.add_fact(fact.clone())?;
+                        filtered_processor.to_mut().add_fact(fact.clone())?;
                     }
-                    full_processor.add_fact(fact)?;
+                    full_processor.to_mut().add_fact(fact)?;
                 }
 
                 if cursor.has_next() {
@@ -786,8 +786,8 @@ impl<'a> Builder<'a> {
                 }
             }
             self.verify_with_fallback(
-                Cow::Owned(full_processor),
-                filtered_processor.map(Cow::Owned),
+                full_processor,
+                filtered_processor,
                 &goal,
                 cursor.goal_env().unwrap(),
                 new_certs,
