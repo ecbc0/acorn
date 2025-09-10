@@ -69,6 +69,11 @@ impl Processor {
         Ok(())
     }
 
+    /// Forwards a search request to the underlying prover.
+    pub fn search(&mut self, params: ProverParams) -> Outcome {
+        self.prover.search(params)
+    }
+
     /// Gets the condensed proof from the prover using the normalizer.
     pub fn get_condensed_proof(&self) -> Option<Proof> {
         self.prover.get_condensed_proof(&self.normalizer)
@@ -97,10 +102,5 @@ impl Processor {
         let mut normalizer = self.normalizer.clone();
         let mut bindings = Cow::Borrowed(bindings);
         checker.check_cert(cert, project, &mut bindings, &mut normalizer)
-    }
-
-    /// Forwards a search request to the underlying prover.
-    pub fn search(&mut self, params: ProverParams) -> Outcome {
-        self.prover.search(params)
     }
 }
