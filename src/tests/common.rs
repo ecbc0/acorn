@@ -70,7 +70,7 @@ pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certi
         Err(e) => panic!("make_cert failed: {}", e),
     };
 
-    let mut checker = processor.prover.checker.clone();
+    let mut checker = processor.checker.clone();
     let mut normalizer = processor.normalizer.clone();
     let mut bindings = Cow::Borrowed(&env.bindings);
     if let Err(e) = checker.check_cert(&cert, project, &mut bindings, &mut normalizer) {

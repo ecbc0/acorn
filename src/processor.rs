@@ -1,4 +1,5 @@
 use crate::builder::BuildError;
+use crate::checker::Checker;
 use crate::fact::Fact;
 use crate::goal::Goal;
 use crate::normalizer::Normalizer;
@@ -13,6 +14,7 @@ use crate::prover::Prover;
 pub struct Processor {
     pub prover: Prover,
     pub normalizer: Normalizer,
+    pub checker: Checker,
 }
 
 impl Processor {
@@ -21,11 +23,15 @@ impl Processor {
         Processor {
             prover: Prover::new(project),
             normalizer: Normalizer::new(),
+            checker: Checker::new(),
         }
     }
     /// Normalizes a fact and adds the resulting proof steps to the prover.
     pub fn add_fact(&mut self, fact: Fact) -> Result<(), BuildError> {
         let steps = self.normalizer.normalize_fact(fact)?;
+        for step in &steps {
+            self.checker.insert_clause(&step.clause);
+        }
         self.prover.add_steps(steps);
         Ok(())
     }
@@ -33,6 +39,9 @@ impl Processor {
     /// Normalizes a goal and sets it as the prover's goal.
     pub fn set_goal(&mut self, goal: &Goal) -> Result<(), BuildError> {
         let (ng, steps) = self.normalizer.normalize_goal(goal)?;
+        for step in &steps {
+            self.checker.insert_clause(&step.clause);
+        }
         self.prover.set_goal(ng, steps);
         Ok(())
     }

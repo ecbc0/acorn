@@ -639,7 +639,7 @@ impl<'a> Builder<'a> {
             let indexes = worklist.get_indexes(&goal.name);
             for i in indexes {
                 let cert = worklist.get_cert(*i).unwrap();
-                let mut checker = full_processor.prover.checker.clone();
+                let mut checker = full_processor.checker.clone();
                 let mut normalizer = full_processor.normalizer.clone();
                 let mut bindings = Cow::Borrowed(&env.bindings);
                 match checker.check_cert(cert, self.project, &mut bindings, &mut normalizer) {
@@ -691,7 +691,7 @@ impl<'a> Builder<'a> {
                         self.verbose,
                     ) {
                         Ok(cert) => {
-                            let mut checker = full_processor.prover.checker.clone();
+                            let mut checker = full_processor.checker.clone();
                             let mut normalizer = full_processor.normalizer.clone();
                             let mut bindings = Cow::Borrowed(&env.bindings);
                             if let Err(e) = checker.check_cert(

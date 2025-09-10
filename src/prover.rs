@@ -8,7 +8,6 @@ use tower_lsp::lsp_types::Url;
 use crate::active_set::ActiveSet;
 use crate::binding_map::BindingMap;
 use crate::certificate::Certificate;
-use crate::checker::Checker;
 use crate::clause::Clause;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::display::DisplayClause;
@@ -24,10 +23,6 @@ use crate::term_graph::TermGraphContradiction;
 
 #[derive(Clone)]
 pub struct Prover {
-    /// The checker validates a proof certificate, after the prover creates it.
-    /// TODO: make the checker not live inside the prover.
-    pub checker: Checker,
-
     /// The "active" clauses are the ones we use for reasoning.
     active_set: ActiveSet,
 
@@ -94,7 +89,6 @@ impl Prover {
         Prover {
             active_set: ActiveSet::new(),
             passive_set: PassiveSet::new(),
-            checker: Checker::new(),
             final_step: None,
             stop_flags: vec![project.build_stopped.clone()],
             useful_passive: vec![],
@@ -107,9 +101,6 @@ impl Prover {
     /// Add proof steps to the prover.
     /// These can be used as initial facts for starting the proof.
     pub fn add_steps(&mut self, steps: Vec<ProofStep>) {
-        for step in &steps {
-            self.checker.insert_clause(&step.clause);
-        }
         self.passive_set.push_batch(steps);
     }
 
