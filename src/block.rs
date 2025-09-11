@@ -8,7 +8,7 @@ use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::AtomId;
 use crate::compilation::{self, ErrorSource};
 use crate::environment::{Environment, LineType};
-use crate::fact::{Fact, FactRef};
+use crate::fact::Fact;
 use crate::goal::Goal;
 use crate::names::DefinedName;
 use crate::potential_value::PotentialValue;
@@ -512,22 +512,11 @@ impl Node {
     }
 
     /// Returns the fact at this node, if there is one.
-    /// TODO: this clones too much. See if we can use get_fact_ref instead.
     pub fn get_fact(&self) -> Option<Fact> {
         match self {
             Node::Structural(f) => Some(f.clone()),
             Node::Claim(p) => Some(Fact::Proposition(p.clone())),
             Node::Block(_, Some(f)) => Some(f.clone()),
-            _ => None,
-        }
-    }
-
-    /// Returns a reference to the fact at this node, if there is one.
-    pub fn get_fact_ref(&self) -> Option<FactRef> {
-        match self {
-            Node::Structural(f) => Some(FactRef::Fact(f)),
-            Node::Claim(p) => Some(FactRef::Proposition(p)),
-            Node::Block(_, Some(f)) => Some(FactRef::Fact(f)),
             _ => None,
         }
     }
