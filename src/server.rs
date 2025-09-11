@@ -400,14 +400,14 @@ struct Backend {
 
 // Finds the acorn library to use, given the root folder for the current workspace.
 // Falls back to the library bundled with the extension.
-// Returns (library_root, build_dir, cache_writable).
+// Returns (src_dir, build_dir, cache_writable).
 // Panics if we can't find either.
 fn find_acorn_library(args: &ServerArgs) -> (PathBuf, PathBuf, bool) {
     // Check for a local library, near the code
     if let Some(workspace_root) = &args.workspace_root {
         let path = PathBuf::from(&workspace_root);
-        if let Some((library_root, build_dir)) = Project::find_local_acorn_library(&path) {
-            return (library_root, build_dir, true);
+        if let Some((src_dir, build_dir)) = Project::find_local_acorn_library(&path) {
+            return (src_dir, build_dir, true);
         }
     }
 
@@ -416,8 +416,8 @@ fn find_acorn_library(args: &ServerArgs) -> (PathBuf, PathBuf, bool) {
     if !path.exists() {
         panic!("packaging error: no acorn library at {}", path.display());
     }
-    if let Some((library_root, build_dir)) = Project::find_local_acorn_library(&path) {
-        (library_root, build_dir, false)
+    if let Some((src_dir, build_dir)) = Project::find_local_acorn_library(&path) {
+        (src_dir, build_dir, false)
     } else {
         panic!(
             "packaging error: find_local_acorn_library failed for {}",
@@ -432,7 +432,7 @@ impl Backend {
     // If we can't find one in a logical location based on the editor, we use
     // the library bundled with the extension.
     fn new(client: Client, args: &ServerArgs) -> Backend {
-        let (library_root, build_dir, write_cache) = find_acorn_library(&args);
+        let (src_dir, build_dir, write_cache) = find_acorn_library(&args);
 
         log(&format!(
             "using acorn server version {}",
@@ -440,7 +440,7 @@ impl Backend {
         ));
         log(&format!(
             "using acorn library at {}",
-            library_root.display()
+            src_dir.display()
         ));
 
         // The cache is always readable, only sometimes writable.
@@ -448,7 +448,7 @@ impl Backend {
             write_cache,
             ..Default::default()
         };
-        let project = Project::new(library_root, build_dir, config);
+        let project = Project::new(src_dir, build_dir, config);
         Backend {
             project: Arc::new(RwLock::new(project)),
             client,

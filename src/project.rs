@@ -30,11 +30,11 @@ pub struct Project {
     // Flags that affect project behavior
     pub config: ProjectConfig,
 
-    // The root directory of the library.
+    // The source directory of the library.
     // This is used to resolve all imports.
     // Note that it may be different from the editor root, which is where the user is working.
     // Set to "/mock" for mock projects.
-    library_root: PathBuf,
+    src_dir: PathBuf,
 
     // The directory where build artifacts are stored
     pub build_dir: PathBuf,
@@ -182,7 +182,7 @@ fn check_valid_module_part(s: &str, error_name: &str) -> Result<(), ImportError>
 
 impl Project {
     // Create a new project.
-    pub fn new(library_root: PathBuf, build_dir: PathBuf, config: ProjectConfig) -> Project {
+    pub fn new(src_dir: PathBuf, build_dir: PathBuf, config: ProjectConfig) -> Project {
         // Check if the directory exists
         let module_caches = if config.read_cache && build_dir.is_dir() {
             ModuleCacheSet::new(Some(build_dir.clone()), config.write_cache)
@@ -203,7 +203,7 @@ impl Project {
 
         Project {
             config,
-            library_root,
+            src_dir,
             open_files: HashMap::new(),
             modules: vec![],
             module_map: HashMap::new(),
@@ -220,7 +220,7 @@ impl Project {
     //   - a parent directory named "acornlib" (with acorn.toml)
     //   - a parent directory containing "acorn.toml"
     //   - a directory named "acornlib" next to one named "acorn" (with acorn.toml)
-    // Returns (library_root, build_dir) where library_root is src/, build_dir is build/
+    // Returns (src_dir, build_dir) where src_dir is src/, build_dir is build/
     pub fn find_local_acorn_library(start: &Path) -> Option<(PathBuf, PathBuf)> {
         let mut current = Some(start);
 
@@ -256,7 +256,7 @@ impl Project {
         let src_dir = acornlib_path.join("src");
 
         if acorn_toml.is_file() && src_dir.is_dir() {
-            // Library root is src/, build dir is build/ at same level as src/
+            // Src dir is src/, build dir is build/ at same level as src/
             let build_dir = acornlib_path.join("build");
             Some((src_dir, build_dir))
         } else {
@@ -267,7 +267,7 @@ impl Project {
     // A Project based on the provided starting path.
     // Returns an error if we can't find an acorn library.
     pub fn new_local(start_path: &Path, config: ProjectConfig) -> Result<Project, ProjectError> {
-        let (library_root, build_dir) =
+        let (src_dir, build_dir) =
             Project::find_local_acorn_library(start_path).ok_or_else(|| {
                 ProjectError(
                     "Could not find acornlib.\n\
@@ -276,7 +276,7 @@ impl Project {
                         .to_string(),
                 )
             })?;
-        let project = Project::new(library_root, build_dir, config);
+        let project = Project::new(src_dir, build_dir, config);
         Ok(project)
     }
 
@@ -350,7 +350,7 @@ impl Project {
         if !self.config.use_filesystem {
             panic!("cannot add all targets without filesystem access")
         }
-        for entry in WalkDir::new(&self.library_root)
+        for entry in WalkDir::new(&self.src_dir)
             .into_iter()
             .filter_map(|e| e.ok())
         {
@@ -617,8 +617,8 @@ impl Project {
         // Get the path for the module
         let path = self.path_from_descriptor(descriptor).ok()?;
 
-        // Make it relative to the library root
-        let relative_path = path.strip_prefix(&self.library_root).ok()?;
+        // Make it relative to the src dir
+        let relative_path = path.strip_prefix(&self.src_dir).ok()?;
 
         // Convert to string with forward slashes
         let path_str = relative_path.to_str()?;
@@ -906,7 +906,7 @@ impl Project {
     // Returns the canonical descriptor for a path.
     // Returns a load error if this isn't a valid path for an acorn file.
     pub fn descriptor_from_path(&self, path: &Path) -> Result<ModuleDescriptor, ImportError> {
-        let relative = match path.strip_prefix(&self.library_root) {
+        let relative = match path.strip_prefix(&self.src_dir) {
             Ok(relative) => relative,
             Err(_) => return Ok(ModuleDescriptor::File(path.to_path_buf())),
         };
@@ -946,7 +946,7 @@ impl Project {
     }
 
     pub fn path_from_module_name(&self, module_name: &str) -> Result<PathBuf, ImportError> {
-        let mut path = self.library_root.clone();
+        let mut path = self.src_dir.clone();
         let parts: Vec<&str> = module_name.split('.').collect();
 
         for (i, part) in parts.iter().enumerate() {
@@ -1012,15 +1012,15 @@ impl Project {
     }
 
     /// Get a display-friendly path string for a module descriptor.
-    /// Returns the path relative to the library root, suitable for error messages.
+    /// Returns the path relative to the src dir, suitable for error messages.
     pub fn display_path(&self, descriptor: &ModuleDescriptor) -> String {
         match self.path_from_descriptor(descriptor) {
             Ok(full_path) => {
-                // Try to make it relative to the library root
-                match full_path.strip_prefix(&self.library_root) {
+                // Try to make it relative to the src dir
+                match full_path.strip_prefix(&self.src_dir) {
                     Ok(relative_path) => relative_path.to_string_lossy().to_string(),
                     Err(_) => {
-                        // If it's not under library root, just use the full path
+                        // If it's not under src dir, just use the full path
                         full_path.to_string_lossy().to_string()
                     }
                 }
