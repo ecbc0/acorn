@@ -85,3 +85,11 @@ impl Fact {
         None
     }
 }
+
+pub enum FactRef<'a> {
+    /// The normal sort of fact reference that's basically a reference to a fact.
+    Fact(&'a Fact),
+
+    /// Like Fact::Proposition(p) without one level of indirection.
+    Proposition(&'a Proposition),
+}
