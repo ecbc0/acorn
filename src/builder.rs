@@ -803,7 +803,7 @@ impl<'a> Builder<'a> {
             return Ok(());
         }
 
-        let module_hash = self.project.get_hash(env.module_id).unwrap();
+        let module_hash = self.project.get_module_hash(env.module_id).unwrap();
         let old_module_cache = self.project.module_caches.get_cloned_module_cache(target);
         let mut new_module_cache = ModuleCache::new(module_hash);
 

@@ -9,7 +9,8 @@ use std::path::Path;
 
 use crate::module::{Module, ModuleDescriptor};
 
-// The ModuleHash reflects the state of a module that is loadable, but may or may not be verifiable.
+/// The ModuleHash reflects the state of a module that is loadable, but may or may not be verifiable.
+/// It covers the module itself, as well as all of its dependencies.
 #[derive(Debug)]
 pub struct ModuleHash {
     // The dependencies hash represents all dependencies.
@@ -31,7 +32,7 @@ impl ModuleHash {
     fn hash_dependencies<'a>(deps: impl IntoIterator<Item = &'a Module>) -> u64 {
         let mut hasher = FxHasher::default();
         for dep in deps {
-            if let Some(h) = &dep.hash {
+            if let Some(h) = &dep.module_hash {
                 h.dependencies.hash(&mut hasher);
                 h.content.hash(&mut hasher);
             }

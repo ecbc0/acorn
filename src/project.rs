@@ -48,7 +48,7 @@ pub struct Project {
     // From vscode, it'll be the vscode version number.
     open_files: HashMap<PathBuf, (String, i32)>,
 
-    // modules[module_id] is the (ref, Module, hash) for the given module id.
+    // modules[module_id] is the Module for the given module id.
     // Built-in modules have no name.
     modules: Vec<Module>,
 
@@ -386,8 +386,8 @@ impl Project {
     }
 
     // The ModuleHash corresponding to the current build, *not* the known-good build.
-    pub fn get_hash(&self, module_id: ModuleId) -> Option<&ModuleHash> {
-        self.modules[module_id.get() as usize].hash.as_ref()
+    pub fn get_module_hash(&self, module_id: ModuleId) -> Option<&ModuleHash> {
+        self.modules[module_id.get() as usize].module_hash.as_ref()
     }
 
     // Updating a file makes us treat it as "open". When a file is open, we use the

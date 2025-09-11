@@ -30,13 +30,13 @@ pub struct Module {
     // The state of the module, whether it's been loaded or not.
     pub state: LoadState,
 
-    // A hash of the state of the module, to use for the cache.
+    // A hash of the state of the module, plus all its dependencies.
     // This corresponds to the current state of the module.
     // This may not match the cache held by the ModuleCacheSet.
     // In particular, when we have made some changes and are rebuilding, this hash will
     // reflect the current state of the module, while the ModuleCacheSet will have a previous good state.
     // None before the module is loaded.
-    pub hash: Option<ModuleHash>,
+    pub module_hash: Option<ModuleHash>,
 }
 
 impl Module {
@@ -44,7 +44,7 @@ impl Module {
         Module {
             descriptor: ModuleDescriptor::Anonymous,
             state: LoadState::None,
-            hash: None,
+            module_hash: None,
         }
     }
 
@@ -53,7 +53,7 @@ impl Module {
         Module {
             descriptor,
             state: LoadState::Loading,
-            hash: None,
+            module_hash: None,
         }
     }
 
@@ -64,7 +64,7 @@ impl Module {
     // Called when a module load succeeds.
     pub fn load_ok(&mut self, env: Environment, hash: ModuleHash) {
         self.state = LoadState::Ok(env);
-        self.hash = Some(hash);
+        self.module_hash = Some(hash);
     }
 
     pub fn name(&self) -> Option<String> {
