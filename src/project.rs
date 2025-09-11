@@ -390,6 +390,10 @@ impl Project {
         self.modules[module_id.get() as usize].module_hash.as_ref()
     }
 
+    pub fn get_module_content_hash(&self, module_id: ModuleId) -> Option<blake3::Hash> {
+        self.modules[module_id.get() as usize].hash
+    }
+
     // Updating a file makes us treat it as "open". When a file is open, we use the
     // content in memory for it, rather than the content on disk.
     // Updated files are also added as build targets.

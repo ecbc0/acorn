@@ -917,10 +917,13 @@ impl<'a> Builder<'a> {
             if let Some(certs) = new_certs {
                 // Insert the new CertificateStore into the build cache
                 let cert_store = CertificateStore { certs };
-                self.build_cache
-                    .as_mut()
-                    .unwrap()
-                    .insert(target.clone(), cert_store);
+                // Get the content hash for this module
+                if let Some(content_hash) = self.project.get_module_content_hash(env.module_id) {
+                    self.build_cache
+                        .as_mut()
+                        .unwrap()
+                        .insert(target.clone(), cert_store, content_hash);
+                }
             }
         }
         Ok(())

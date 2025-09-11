@@ -4,18 +4,21 @@ use std::path::PathBuf;
 use walkdir::WalkDir;
 
 use crate::certificate::{CertificateStore, CertificateWorklist};
+use crate::manifest::Manifest;
 use crate::module::ModuleDescriptor;
 
 /// Cached information about a successful build.
 /// Stored in the 'build' directory.
 pub struct BuildCache {
     cache: HashMap<ModuleDescriptor, CertificateStore>,
+    manifest: Manifest,
 }
 
 impl BuildCache {
     pub fn new() -> Self {
         BuildCache {
             cache: HashMap::new(),
+            manifest: Manifest::new(),
         }
     }
 
@@ -36,11 +39,24 @@ impl BuildCache {
             }
         }
 
-        BuildCache { cache }
+        let manifest = Manifest::load_or_create(build_dir);
+
+        BuildCache { cache, manifest }
     }
 
-    pub fn insert(&mut self, module: ModuleDescriptor, certificates: CertificateStore) {
-        self.cache.insert(module, certificates);
+    pub fn insert(
+        &mut self,
+        module: ModuleDescriptor,
+        certificates: CertificateStore,
+        hash: blake3::Hash,
+    ) {
+        // Update the certificate cache
+        self.cache.insert(module.clone(), certificates);
+
+        // Update the manifest with the module hash
+        if let ModuleDescriptor::Name(parts) = &module {
+            self.manifest.insert(parts, hash);
+        }
     }
 
     pub fn make_worklist(&self, descriptor: &ModuleDescriptor) -> Option<CertificateWorklist> {
@@ -50,6 +66,7 @@ impl BuildCache {
     }
 
     pub fn save(&self, build_dir: PathBuf) -> Result<(), Box<dyn Error>> {
+        // Save all the certificate stores
         for (descriptor, cert_store) in &self.cache {
             if let ModuleDescriptor::Name(parts) = descriptor {
                 if parts.is_empty() {
@@ -72,6 +89,10 @@ impl BuildCache {
                 cert_store.save(&path)?;
             }
         }
+
+        // Save the manifest
+        self.manifest.save(&build_dir)?;
+
         Ok(())
     }
 }
