@@ -89,11 +89,25 @@ impl Manifest {
         self.modules.contains_key(&module_name)
     }
 
-    /// Save the manifest to a JSON file
+    /// Save the manifest to a JSON file atomically
+    /// Writes to a temporary file first, then renames it to avoid corruption
     pub fn save(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         let json = serde_json::to_string_pretty(&self)?;
-        let mut file = File::create(path)?;
+        
+        // Create a temporary file in the same directory as the target
+        let parent = path.parent().ok_or("Invalid path: no parent directory")?;
+        let temp_path = parent.join(format!(".{}.tmp", path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("manifest")));
+        
+        // Write to the temporary file
+        let mut file = File::create(&temp_path)?;
         file.write_all(json.as_bytes())?;
+        file.sync_all()?; // Ensure data is flushed to disk
+        
+        // Atomically rename the temp file to the target path
+        std::fs::rename(&temp_path, path)?;
+        
         Ok(())
     }
 
