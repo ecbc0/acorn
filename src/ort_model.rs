@@ -1,6 +1,5 @@
 use std::error::Error;
-use std::path::Path;
-use std::sync::Once;
+use std::sync::{Arc, OnceLock};
 
 use ndarray::{Axis, IxDyn};
 use ort::execution_providers::CPUExecutionProvider;
@@ -13,47 +12,36 @@ use crate::scorer::Scorer;
 // The OrtModel uses ort to load an onnx model and uses it to score feature vectors.
 pub struct OrtModel {
     // The ONNX model.
-    session: Session,
+    session: Arc<Session>,
 }
 
-static ORT_INIT: Once = Once::new();
+static GLOBAL_SESSION: OnceLock<Arc<Session>> = OnceLock::new();
 
 const MODEL_BYTES: &[u8] = include_bytes!("../files/models/model-2024-09-25-15-33-10.onnx");
 
+fn make_session(bytes: &[u8]) -> Result<Arc<Session>, Box<dyn Error>> {
+    ort::init()
+        .with_execution_providers([CPUExecutionProvider::default()
+            .build()
+            .error_on_failure()])
+        .commit()?;
+
+    let session = Session::builder()?
+        .with_intra_threads(1)?
+        .with_inter_threads(1)?
+        .with_optimization_level(GraphOptimizationLevel::Level3)?
+        .commit_from_memory(bytes)?;
+    Ok(Arc::new(session))
+}
+
 impl OrtModel {
-    // Loads a model from a specific file.
-    pub fn load_file(p: impl AsRef<Path>) -> Result<Self, Box<dyn Error>> {
-        ORT_INIT.call_once(|| {
-            ort::init()
-                .with_execution_providers([CPUExecutionProvider::default()
-                    .build()
-                    .error_on_failure()])
-                .commit()
-                .unwrap();
-        });
-
-        let session = Session::builder()?
-            .with_optimization_level(GraphOptimizationLevel::Level3)?
-            .commit_from_file(p)?;
-        Ok(OrtModel { session })
-    }
-
+    // Loads a model from bytes.
+    // The bytes are typically preloaded into the binary with include_bytes!.
     fn load_bytes(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
-        ORT_INIT.call_once(|| {
-            ort::init()
-                .with_execution_providers([CPUExecutionProvider::default()
-                    .build()
-                    .error_on_failure()])
-                .commit()
-                .unwrap();
+        let session = GLOBAL_SESSION.get_or_init(|| {
+            make_session(bytes).expect("Failed to initialize ORT session")
         });
-
-        let session = Session::builder()?
-            .with_intra_threads(1)?
-            .with_inter_threads(1)?
-            .with_optimization_level(GraphOptimizationLevel::Level3)?
-            .commit_from_memory(bytes)?;
-        Ok(OrtModel { session })
+        Ok(OrtModel { session: Arc::clone(session) })
     }
 
     // Loads the hardcoded model.
