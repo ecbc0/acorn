@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use crate::acorn_type::AcornType;
 use crate::acorn_value::AcornValue;
@@ -23,7 +24,7 @@ pub struct Checker {
     term_graph: TermGraph,
 
     /// For looking up specializations of clauses with free variables.
-    generalization_set: GeneralizationSet,
+    generalization_set: Arc<GeneralizationSet>,
 
     next_step_id: usize,
 
@@ -41,7 +42,7 @@ impl Checker {
     pub fn new() -> Self {
         Checker {
             term_graph: TermGraph::new(),
-            generalization_set: GeneralizationSet::new(),
+            generalization_set: Arc::new(GeneralizationSet::new()),
             next_step_id: 0,
             direct_contradiction: false,
             verbose: false,
@@ -71,7 +72,7 @@ impl Checker {
 
         if clause.has_any_variable() {
             // The clause has free variables, so it can be a generalization.
-            self.generalization_set.insert(clause.clone(), step_id);
+            Arc::make_mut(&mut self.generalization_set).insert(clause.clone(), step_id);
 
             // We only need to do equality resolution for clauses with free variables,
             // because resolvable concrete literals would already have been simplified out.
