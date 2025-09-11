@@ -1143,7 +1143,9 @@ impl Project {
                 .iter()
                 .map(|dep_id| &self.modules[dep_id.get() as usize]),
         );
-        self.modules[module_id.get() as usize].load_ok(env, module_hash);
+        // Compute simple blake3 hash of just the file contents
+        let content_hash = blake3::hash(text.as_bytes());
+        self.modules[module_id.get() as usize].load_ok(env, module_hash, content_hash);
         Ok(module_id)
     }
 

@@ -37,6 +37,10 @@ pub struct Module {
     // reflect the current state of the module, while the ModuleCacheSet will have a previous good state.
     // None before the module is loaded.
     pub module_hash: Option<ModuleHash>,
+
+    // A simple blake3 hash of just the file contents.
+    // None before the module is loaded.
+    pub hash: Option<blake3::Hash>,
 }
 
 impl Module {
@@ -45,6 +49,7 @@ impl Module {
             descriptor: ModuleDescriptor::Anonymous,
             state: LoadState::None,
             module_hash: None,
+            hash: None,
         }
     }
 
@@ -54,6 +59,7 @@ impl Module {
             descriptor,
             state: LoadState::Loading,
             module_hash: None,
+            hash: None,
         }
     }
 
@@ -62,9 +68,10 @@ impl Module {
     }
 
     // Called when a module load succeeds.
-    pub fn load_ok(&mut self, env: Environment, hash: ModuleHash) {
+    pub fn load_ok(&mut self, env: Environment, module_hash: ModuleHash, content_hash: blake3::Hash) {
         self.state = LoadState::Ok(env);
-        self.module_hash = Some(hash);
+        self.module_hash = Some(module_hash);
+        self.hash = Some(content_hash);
     }
 
     pub fn name(&self) -> Option<String> {
