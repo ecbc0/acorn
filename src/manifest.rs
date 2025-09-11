@@ -68,13 +68,25 @@ impl Manifest {
     }
 
     /// Add or update a module hash in the manifest
-    pub fn insert(&mut self, module_name: ModuleName, hash: HexHash) {
-        self.modules.insert(module_name, hash);
+    pub fn insert(&mut self, parts: &[String], hash: blake3::Hash) {
+        let module_name = ModuleName::new(parts);
+        let hex_hash = HexHash::new(hash);
+        self.modules.insert(module_name, hex_hash);
     }
 
-    /// Get the hash for a module if it exists
-    pub fn get(&self, module_name: &ModuleName) -> Option<&HexHash> {
-        self.modules.get(module_name)
+    /// Check if an entry matches the given module and hash
+    pub fn matches_entry(&self, parts: &[String], hash: blake3::Hash) -> bool {
+        let module_name = ModuleName::new(parts);
+        match self.modules.get(&module_name) {
+            Some(stored_hash) => stored_hash == &HexHash::new(hash),
+            None => false,
+        }
+    }
+
+    /// Check if a module exists in the manifest (regardless of hash)
+    pub fn contains(&self, parts: &[String]) -> bool {
+        let module_name = ModuleName::new(parts);
+        self.modules.contains_key(&module_name)
     }
 
     /// Save the manifest to a JSON file
@@ -122,9 +134,9 @@ mod tests {
         let mut manifest = Manifest::new();
 
         // Add some test data
-        let module_name = ModuleName::new(&["test".to_string(), "module".to_string()]);
-        let hash = HexHash::new(blake3::hash(b"test content"));
-        manifest.insert(module_name.clone(), hash.clone());
+        let parts = vec!["test".to_string(), "module".to_string()];
+        let hash = blake3::hash(b"test content");
+        manifest.insert(&parts, hash);
 
         // Save the manifest
         manifest
@@ -137,6 +149,6 @@ mod tests {
         // Verify it matches
         assert_eq!(loaded.version, manifest.version);
         assert_eq!(loaded.modules.len(), 1);
-        assert_eq!(loaded.get(&module_name), Some(&hash));
+        assert!(loaded.matches_entry(&parts, hash));
     }
 }
