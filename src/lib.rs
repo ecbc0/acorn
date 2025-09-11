@@ -27,6 +27,7 @@ pub mod goal;
 pub mod interfaces;
 pub mod literal;
 pub mod live_document;
+pub mod manifest;
 pub mod maybe_owned;
 pub mod module;
 pub mod module_cache;
