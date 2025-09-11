@@ -6,6 +6,8 @@ use walkdir::WalkDir;
 use crate::certificate::{CertificateStore, CertificateWorklist};
 use crate::module::ModuleDescriptor;
 
+/// Cached information about a successful build.
+/// Stored in the 'build' directory.
 pub struct BuildCache {
     cache: HashMap<ModuleDescriptor, CertificateStore>,
 }
@@ -18,20 +20,22 @@ impl BuildCache {
     }
 
     /// Load a build cache from a directory containing JSONL files
-    pub fn load(directory: &PathBuf) -> Self {
+    pub fn load(build_dir: &PathBuf) -> Self {
         let mut cache = HashMap::new();
-        
-        if directory.exists() {
-            for entry in WalkDir::new(directory).into_iter().filter_map(Result::ok) {
+
+        if build_dir.exists() {
+            for entry in WalkDir::new(build_dir).into_iter().filter_map(Result::ok) {
                 let path = entry.path();
                 if path.extension().and_then(|ext| ext.to_str()) == Some("jsonl") {
-                    if let Some((desc, cert_store)) = CertificateStore::load_relative(directory, path) {
+                    if let Some((desc, cert_store)) =
+                        CertificateStore::load_relative(build_dir, path)
+                    {
                         cache.insert(desc, cert_store);
                     }
                 }
             }
         }
-        
+
         BuildCache { cache }
     }
 
@@ -45,7 +49,7 @@ impl BuildCache {
             .map(|store| CertificateWorklist::new(store.clone()))
     }
 
-    pub fn save(&self, directory: PathBuf) -> Result<(), Box<dyn Error>> {
+    pub fn save(&self, build_dir: PathBuf) -> Result<(), Box<dyn Error>> {
         for (descriptor, cert_store) in &self.cache {
             if let ModuleDescriptor::Name(parts) = descriptor {
                 if parts.is_empty() {
@@ -53,8 +57,8 @@ impl BuildCache {
                 }
                 let mut parts = parts.clone();
                 let last = parts.pop().unwrap();
-                let mut path = directory.clone();
-                
+                let mut path = build_dir.clone();
+
                 // Create directory structure for nested modules
                 for part in parts {
                     path.push(part);
@@ -62,7 +66,7 @@ impl BuildCache {
                         std::fs::create_dir(&path)?;
                     }
                 }
-                
+
                 // Create the JSONL file for this module's certificates
                 path.push(format!("{}.jsonl", last));
                 cert_store.save(&path)?;

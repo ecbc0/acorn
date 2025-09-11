@@ -5,6 +5,10 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 
+/// The current version of the manifest format.
+/// Increment this when making breaking changes to the manifest structure.
+const MANIFEST_VERSION: u32 = 1;
+
 /// A newtype wrapper for module names, created by joining parts with "."
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ModuleName(String);
@@ -63,7 +67,7 @@ impl Manifest {
     /// Create a new empty manifest with the current version
     pub fn new() -> Self {
         Manifest {
-            version: 1,
+            version: MANIFEST_VERSION,
             modules: BTreeMap::new(),
         }
     }
@@ -95,32 +99,44 @@ impl Manifest {
     pub fn save(&self, build_dir: &Path) -> Result<(), Box<dyn Error>> {
         let path = build_dir.join("manifest.json");
         let json = serde_json::to_string_pretty(&self)?;
-        
+
         // Create a temporary file in the same directory as the target
         let temp_path = build_dir.join(".manifest.json.tmp");
-        
+
         // Write to the temporary file
         let mut file = File::create(&temp_path)?;
         file.write_all(json.as_bytes())?;
         file.sync_all()?; // Ensure data is flushed to disk
-        
+
         // Atomically rename the temp file to the target path
         std::fs::rename(&temp_path, path)?;
-        
+
         Ok(())
     }
 
-    /// Load a manifest from manifest.json in the build directory
+    /// Load a manifest from manifest.json in the build directory.
+    /// If there is no such file, return an empty manifest.
     pub fn load(build_dir: &Path) -> Result<Self, Box<dyn Error>> {
         let path = build_dir.join("manifest.json");
         let mut file = File::open(path)?;
         let mut contents = String::new();
         file.read_to_string(&mut contents)?;
-        let manifest = serde_json::from_str(&contents)?;
+        let manifest: Manifest = serde_json::from_str(&contents)?;
+
+        // Check version compatibility
+        if manifest.version != MANIFEST_VERSION {
+            return Err(format!(
+                "found manifest version {}. current version is {}",
+                manifest.version, MANIFEST_VERSION
+            )
+            .into());
+        }
+
         Ok(manifest)
     }
 
-    /// Load a manifest from the build directory, or create a new one if it doesn't exist
+    /// Load a manifest from the build directory, or create a new one if it doesn't exist.
+    /// Swallows any errors.
     pub fn load_or_create(build_dir: &Path) -> Self {
         match Self::load(build_dir) {
             Ok(manifest) => manifest,
@@ -153,9 +169,7 @@ mod tests {
         manifest.insert(&parts, hash);
 
         // Save the manifest
-        manifest
-            .save(build_dir)
-            .expect("Failed to save manifest");
+        manifest.save(build_dir).expect("Failed to save manifest");
 
         // Load it back
         let loaded = Manifest::load(build_dir).expect("Failed to load manifest");
@@ -164,11 +178,11 @@ mod tests {
         assert_eq!(loaded.version, manifest.version);
         assert_eq!(loaded.modules.len(), 1);
         assert!(loaded.matches_entry(&parts, hash));
-        
+
         // Test load_or_create with existing manifest
         let loaded2 = Manifest::load_or_create(build_dir);
         assert_eq!(loaded2.modules.len(), 1);
-        
+
         // Test load_or_create with non-existent directory
         let new_dir = temp_dir.path().join("nonexistent");
         let created = Manifest::load_or_create(&new_dir);
