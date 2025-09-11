@@ -21,7 +21,7 @@ pub struct ModuleCacheSet {
     // A directory to persist the cache in.
     directory: Option<PathBuf>,
 
-    // Whether it's okay to write to the cache directory.
+    // Whether it's okay to write to the build directory.
     // If false, the cache will not be saved to disk.
     writable: bool,
 }

@@ -1010,7 +1010,7 @@ impl<'a> Builder<'a> {
             && self.single_goal.is_none()
         {
             let build_cache = self.build_cache.as_ref().unwrap();
-            if let Err(e) = build_cache.save(self.project.cache_dir.clone()) {
+            if let Err(e) = build_cache.save(self.project.build_dir.clone()) {
                 self.log_global(format!("error saving build cache: {}", e));
             }
         }

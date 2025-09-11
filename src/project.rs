@@ -36,8 +36,8 @@ pub struct Project {
     // Set to "/mock" for mock projects.
     library_root: PathBuf,
 
-    // The directory where caches are stored
-    pub cache_dir: PathBuf,
+    // The directory where build artifacts are stored
+    pub build_dir: PathBuf,
 
     // For "open" files, we use the content we are storing rather than the content on disk.
     // This can store either test data that doesn't exist on the filesystem at all, or
@@ -182,10 +182,10 @@ fn check_valid_module_part(s: &str, error_name: &str) -> Result<(), ImportError>
 
 impl Project {
     // Create a new project.
-    pub fn new(library_root: PathBuf, cache_dir: PathBuf, config: ProjectConfig) -> Project {
+    pub fn new(library_root: PathBuf, build_dir: PathBuf, config: ProjectConfig) -> Project {
         // Check if the directory exists
-        let module_caches = if config.read_cache && cache_dir.is_dir() {
-            ModuleCacheSet::new(Some(cache_dir.clone()), config.write_cache)
+        let module_caches = if config.read_cache && build_dir.is_dir() {
+            ModuleCacheSet::new(Some(build_dir.clone()), config.write_cache)
         } else {
             ModuleCacheSet::new(None, false)
         };
@@ -193,7 +193,7 @@ impl Project {
         // Load the build cache if we're using certificates
         let build_cache = if config.use_certs {
             if config.read_cache {
-                Some(BuildCache::load(&cache_dir))
+                Some(BuildCache::load(&build_dir))
             } else {
                 Some(BuildCache::new())
             }
@@ -211,7 +211,7 @@ impl Project {
             module_caches,
             build_cancellation_token: CancellationToken::new(),
             build_cache,
-            cache_dir,
+            build_dir,
         }
     }
 
@@ -220,7 +220,7 @@ impl Project {
     //   - a parent directory named "acornlib" (with acorn.toml)
     //   - a parent directory containing "acorn.toml"
     //   - a directory named "acornlib" next to one named "acorn" (with acorn.toml)
-    // Returns (library_root, cache_dir) where library_root is src/, cache_dir is build/
+    // Returns (library_root, build_dir) where library_root is src/, build_dir is build/
     pub fn find_local_acorn_library(start: &Path) -> Option<(PathBuf, PathBuf)> {
         let mut current = Some(start);
 
@@ -256,9 +256,9 @@ impl Project {
         let src_dir = acornlib_path.join("src");
 
         if acorn_toml.is_file() && src_dir.is_dir() {
-            // Library root is src/, cache dir is build/ at same level as src/
-            let cache_dir = acornlib_path.join("build");
-            Some((src_dir, cache_dir))
+            // Library root is src/, build dir is build/ at same level as src/
+            let build_dir = acornlib_path.join("build");
+            Some((src_dir, build_dir))
         } else {
             None
         }
@@ -267,7 +267,7 @@ impl Project {
     // A Project based on the provided starting path.
     // Returns an error if we can't find an acorn library.
     pub fn new_local(start_path: &Path, config: ProjectConfig) -> Result<Project, ProjectError> {
-        let (library_root, cache_dir) =
+        let (library_root, build_dir) =
             Project::find_local_acorn_library(start_path).ok_or_else(|| {
                 ProjectError(
                     "Could not find acornlib.\n\
@@ -276,21 +276,21 @@ impl Project {
                         .to_string(),
                 )
             })?;
-        let project = Project::new(library_root, cache_dir, config);
+        let project = Project::new(library_root, build_dir, config);
         Ok(project)
     }
 
     // Create a Project where nothing can be imported.
     pub fn new_mock() -> Project {
         let mock_dir = PathBuf::from("/mock");
-        let cache_dir = mock_dir.join("build");
+        let build_dir = mock_dir.join("build");
         let config = ProjectConfig {
             use_filesystem: false,
             read_cache: false,
             write_cache: false,
             ..Default::default()
         };
-        Project::new(mock_dir, cache_dir, config)
+        Project::new(mock_dir, build_dir, config)
     }
 
     // Returns true if we are using certificates (indicated by having a build cache)
