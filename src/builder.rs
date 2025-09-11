@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::atomic::AtomicU32;
@@ -623,7 +622,7 @@ impl<'a> Builder<'a> {
     /// env should be the environment that the proof happens in.
     fn verify_with_fallback(
         &mut self,
-        full_processor: Cow<Processor>,
+        mut full_processor: Rc<Processor>,
         filtered_processor: Option<Rc<Processor>>,
         goal: &Goal,
         env: &Environment,
@@ -636,12 +635,7 @@ impl<'a> Builder<'a> {
             let indexes = worklist.get_indexes(&goal.name);
             for i in indexes {
                 let cert = worklist.get_cert(*i).unwrap();
-                match full_processor.as_ref().check_cert(
-                    cert,
-                    Some(goal),
-                    self.project,
-                    &env.bindings,
-                ) {
+                match full_processor.check_cert(cert, Some(goal), self.project, &env.bindings) {
                     Ok(()) => {
                         self.metrics.cached_certs += 1;
                         self.metrics.goals_done += 1;
@@ -706,7 +700,7 @@ impl<'a> Builder<'a> {
         }
 
         // Try the full prover
-        let mut full_processor = full_processor.into_owned();
+        let full_processor = Rc::make_mut(&mut full_processor);
         full_processor.set_goal(goal)?;
         self.metrics.searches_full += 1;
         let start = std::time::Instant::now();
@@ -724,7 +718,7 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        self.search_finished(&mut full_processor, goal, outcome, start.elapsed());
+        self.search_finished(full_processor, goal, outcome, start.elapsed());
         full_processor
             .prover()
             .get_useful_source_names(new_premises, full_processor.normalizer());
@@ -736,8 +730,8 @@ impl<'a> Builder<'a> {
     /// If verify_node encounters an error, it stops, leaving node in a borked state.
     pub fn verify_node(
         &mut self,
-        full_processor: &Processor,
-        filtered_processor: Option<Rc<Processor>>,
+        mut full_processor: Rc<Processor>,
+        mut filtered_processor: Option<Rc<Processor>>,
         cursor: &mut NodeCursor,
         new_premises: &mut HashSet<(ModuleId, String)>,
         mut new_certs: Option<&mut Vec<Certificate>>,
@@ -747,15 +741,13 @@ impl<'a> Builder<'a> {
             return Ok(());
         }
 
-        let mut full_processor = Cow::Borrowed(full_processor);
-        let mut filtered_processor = filtered_processor;
         if cursor.num_children() > 0 {
             // We need to recurse into children
             cursor.descend(0);
             loop {
                 self.verify_node(
-                    &full_processor,
-                    filtered_processor.clone(),
+                    Rc::clone(&full_processor),
+                    filtered_processor.clone(), // cheap clone of Option<Rc<_>>
                     cursor,
                     new_premises,
                     new_certs.as_deref_mut(),
@@ -766,7 +758,7 @@ impl<'a> Builder<'a> {
                     if let Some(ref mut fp) = filtered_processor {
                         Rc::make_mut(fp).add_fact(fact.clone())?;
                     }
-                    full_processor.to_mut().add_fact(fact)?;
+                    Rc::make_mut(&mut full_processor).add_fact(fact)?;
                 }
 
                 if cursor.has_next() {
@@ -831,6 +823,7 @@ impl<'a> Builder<'a> {
         for fact in self.project.imported_facts(env.module_id, None) {
             full_processor.add_fact(fact.clone())?;
         }
+        let mut full_processor = Rc::new(full_processor);
         let mut cursor = NodeCursor::new(&env, 0);
 
         // Loop over all the nodes that are right below the top level.
@@ -868,7 +861,7 @@ impl<'a> Builder<'a> {
 
                     // This call will recurse and verify everything within this top-level block.
                     self.verify_node(
-                        &full_processor,
+                        Rc::clone(&full_processor),
                         filtered_processor,
                         &mut cursor,
                         &mut new_premises,
@@ -902,7 +895,7 @@ impl<'a> Builder<'a> {
                 break;
             }
             if let Some(fact) = cursor.node().get_fact() {
-                full_processor.add_fact(fact.clone())?;
+                Rc::make_mut(&mut full_processor).add_fact(fact.clone())?;
             }
             cursor.next();
         }
