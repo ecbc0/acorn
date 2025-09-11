@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
+use std::sync::Arc;
 
 use tower_lsp::lsp_types::Range;
 
@@ -375,7 +376,7 @@ pub enum Node {
     Structural(Fact),
 
     /// A claim is something that we need to prove, and then we can subsequently use it.
-    Claim(Proposition),
+    Claim(Arc<Proposition>),
 
     /// A block has its own environment inside. We need to validate everything in the block.
     /// The block might not exist in the code, but it at least needs to exist for the prover.
@@ -399,12 +400,12 @@ impl fmt::Display for Node {
 impl Node {
     pub fn structural(project: &Project, env: &Environment, prop: Proposition) -> Node {
         let prop = env.bindings.expand_theorems(prop, project);
-        Node::Structural(Fact::Proposition(prop))
+        Node::Structural(Fact::Proposition(Arc::new(prop)))
     }
 
     pub fn claim(project: &Project, env: &Environment, prop: Proposition) -> Node {
         let prop = env.bindings.expand_theorems(prop, project);
-        Node::Claim(prop)
+        Node::Claim(Arc::new(prop))
     }
 
     /// This does not expand theorems. I can imagine this coming up, but it would be weird.
@@ -423,7 +424,7 @@ impl Node {
     ) -> Node {
         let fact = match prop {
             Some(prop) => Some(Fact::Proposition(
-                env.bindings.expand_theorems(prop, project),
+                Arc::new(env.bindings.expand_theorems(prop, project)),
             )),
             None => None,
         };
@@ -482,9 +483,9 @@ impl Node {
     /// The proposition at this node, if there is one.
     pub fn proposition(&self) -> Option<&Proposition> {
         match self {
-            Node::Structural(Fact::Proposition(p)) => Some(p),
-            Node::Claim(p) => Some(p),
-            Node::Block(_, Some(Fact::Proposition(p))) => Some(p),
+            Node::Structural(Fact::Proposition(p)) => Some(p.as_ref()),
+            Node::Claim(p) => Some(p.as_ref()),
+            Node::Block(_, Some(Fact::Proposition(p))) => Some(p.as_ref()),
             _ => None,
         }
     }

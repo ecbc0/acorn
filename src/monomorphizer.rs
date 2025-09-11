@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::sync::Arc;
 
 use crate::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::acorn_value::{AcornValue, ConstantInstance};
@@ -44,7 +45,7 @@ impl PropParams {
 #[derive(Clone)]
 struct GenericPropInfo {
     /// A generic value that is true, along with information about where it came from.
-    proposition: Proposition,
+    proposition: Arc<Proposition>,
 
     /// All of the instantiations that we have done for this proposition.
     /// Currently, all of these instantiations are monomorphizations.
@@ -219,13 +220,13 @@ impl Monomorphizer {
                 };
 
                 let claim = constant.inflate_function_definition(definition);
-                let prop = Proposition::new(claim, params, source);
+                let prop = Arc::new(Proposition::new(claim, params, source));
                 self.add_proposition(prop);
             }
         }
     }
 
-    fn add_proposition(&mut self, proposition: Proposition) {
+    fn add_proposition(&mut self, proposition: Arc<Proposition>) {
         // We don't monomorphize to match constants in global facts, because it would blow up.
         if proposition.source.truthiness() != Truthiness::Factual {
             self.add_monomorphs(&proposition.value);
@@ -248,7 +249,7 @@ impl Monomorphizer {
 
         let i = self.prop_info.len();
         self.prop_info.push(GenericPropInfo {
-            proposition,
+            proposition: proposition.clone(),
             instantiations: vec![],
         });
 

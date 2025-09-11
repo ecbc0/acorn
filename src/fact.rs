@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::fmt;
+use std::sync::Arc;
 
 use crate::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::acorn_value::{AcornValue, ConstantInstance};
@@ -12,7 +13,7 @@ use crate::source::Source;
 #[derive(Clone, Debug)]
 pub enum Fact {
     /// A true statement representable as a boolean value.
-    Proposition(Proposition),
+    Proposition(Arc<Proposition>),
 
     /// The first typeclass extends this set of typeclasses.
     Extends(Typeclass, HashSet<Typeclass>, Source),
@@ -49,7 +50,7 @@ impl fmt::Display for Fact {
 
 impl Fact {
     pub fn proposition(value: AcornValue, source: Source) -> Fact {
-        Fact::Proposition(Proposition::monomorphic(value, source))
+        Fact::Proposition(Arc::new(Proposition::monomorphic(value, source)))
     }
 
     pub fn source(&self) -> &Source {
