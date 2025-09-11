@@ -49,6 +49,8 @@ impl OrtModel {
         });
 
         let session = Session::builder()?
+            .with_intra_threads(1)?
+            .with_inter_threads(1)?
             .with_optimization_level(GraphOptimizationLevel::Level3)?
             .commit_from_memory(bytes)?;
         Ok(OrtModel { session })
