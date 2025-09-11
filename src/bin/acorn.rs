@@ -6,6 +6,10 @@ use acorn::project::{Project, ProjectConfig};
 use acorn::server::{run_server, ServerArgs};
 use acorn::verifier::Verifier;
 use clap::Parser;
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 #[derive(Parser)]
 #[clap(

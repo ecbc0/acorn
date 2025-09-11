@@ -9,6 +9,10 @@ use acorn::features::Features;
 use acorn::ort_model::OrtModel;
 use acorn::proof_step::ProofStep;
 use acorn::scorer::Scorer;
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 fn main() {
     let m = 10;

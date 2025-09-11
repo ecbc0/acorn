@@ -9,6 +9,10 @@ use acorn::{
     builder::Builder,
     project::{Project, ProjectConfig},
 };
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 fn main() {
     let current_dir = std::env::current_dir().unwrap();
