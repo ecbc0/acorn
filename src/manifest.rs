@@ -89,16 +89,14 @@ impl Manifest {
         self.modules.contains_key(&module_name)
     }
 
-    /// Save the manifest to a JSON file atomically
+    /// Save the manifest to manifest.json in the cache directory atomically
     /// Writes to a temporary file first, then renames it to avoid corruption
-    pub fn save(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save(&self, cache_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        let path = cache_dir.join("manifest.json");
         let json = serde_json::to_string_pretty(&self)?;
         
         // Create a temporary file in the same directory as the target
-        let parent = path.parent().ok_or("Invalid path: no parent directory")?;
-        let temp_path = parent.join(format!(".{}.tmp", path.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("manifest")));
+        let temp_path = cache_dir.join(".manifest.json.tmp");
         
         // Write to the temporary file
         let mut file = File::create(&temp_path)?;
@@ -111,8 +109,9 @@ impl Manifest {
         Ok(())
     }
 
-    /// Load a manifest from a JSON file
-    pub fn load(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+    /// Load a manifest from manifest.json in the cache directory
+    pub fn load(cache_dir: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        let path = cache_dir.join("manifest.json");
         let mut file = File::open(path)?;
         let mut contents = String::new();
         file.read_to_string(&mut contents)?;
@@ -120,9 +119,9 @@ impl Manifest {
         Ok(manifest)
     }
 
-    /// Load a manifest from a file, or create a new one if the file doesn't exist
-    pub fn load_or_create(path: &Path) -> Self {
-        match Self::load(path) {
+    /// Load a manifest from the cache directory, or create a new one if it doesn't exist
+    pub fn load_or_create(cache_dir: &Path) -> Self {
+        match Self::load(cache_dir) {
             Ok(manifest) => manifest,
             Err(_) => Self::new(),
         }
@@ -143,7 +142,7 @@ mod tests {
     #[test]
     fn test_manifest_save_load() {
         let temp_dir = tempdir().expect("Failed to create temp directory");
-        let manifest_path = temp_dir.path().join("manifest.json");
+        let cache_dir = temp_dir.path();
 
         let mut manifest = Manifest::new();
 
@@ -154,15 +153,24 @@ mod tests {
 
         // Save the manifest
         manifest
-            .save(&manifest_path)
+            .save(cache_dir)
             .expect("Failed to save manifest");
 
         // Load it back
-        let loaded = Manifest::load(&manifest_path).expect("Failed to load manifest");
+        let loaded = Manifest::load(cache_dir).expect("Failed to load manifest");
 
         // Verify it matches
         assert_eq!(loaded.version, manifest.version);
         assert_eq!(loaded.modules.len(), 1);
         assert!(loaded.matches_entry(&parts, hash));
+        
+        // Test load_or_create with existing manifest
+        let loaded2 = Manifest::load_or_create(cache_dir);
+        assert_eq!(loaded2.modules.len(), 1);
+        
+        // Test load_or_create with non-existent directory
+        let new_dir = temp_dir.path().join("nonexistent");
+        let created = Manifest::load_or_create(&new_dir);
+        assert_eq!(created.modules.len(), 0);
     }
 }
