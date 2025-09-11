@@ -233,6 +233,8 @@ mod tests {
         let line_count = jsonl_content.lines().count();
         assert_eq!(line_count, 1,);
 
+        assert!(build.child("manifest.json").exists());
+
         // Verify again
         let mut verifier2 = Verifier::new(
             acornlib.path().to_path_buf(),
@@ -354,6 +356,8 @@ mod tests {
             cert_file.exists(),
             "Certificate file should exist at build/foo/bar.jsonl"
         );
+
+        assert!(build.child("manifest.json").exists());
 
         // Verify again
         let mut verifier2 = Verifier::new(
