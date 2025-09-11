@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use std::sync::atomic::AtomicU32;
 use std::time::Duration;
 
@@ -551,7 +552,7 @@ impl<'a> Builder<'a> {
         env: &Environment,
         block_name: &str,
         module_cache: &Option<ModuleCache>,
-    ) -> Result<Option<Processor>, BuildError> {
+    ) -> Result<Option<Rc<Processor>>, BuildError> {
         // Load the premises from the cache
         let Some(normalized) = module_cache
             .as_ref()
@@ -615,7 +616,7 @@ impl<'a> Builder<'a> {
             }
         }
 
-        Ok(Some(processor))
+        Ok(Some(Rc::new(processor)))
     }
 
     /// Verifies a goal with fallback from filtered to full prover.
@@ -623,7 +624,7 @@ impl<'a> Builder<'a> {
     fn verify_with_fallback(
         &mut self,
         full_processor: Cow<Processor>,
-        filtered_processor: Option<Cow<Processor>>,
+        filtered_processor: Option<Rc<Processor>>,
         goal: &Goal,
         env: &Environment,
         mut new_certs: Option<&mut Vec<Certificate>>,
@@ -675,9 +676,9 @@ impl<'a> Builder<'a> {
         }
 
         // Try the filtered prover
-        if let Some(filtered_processor) = filtered_processor {
+        if let Some(mut filtered_processor) = filtered_processor {
             self.metrics.searches_filtered += 1;
-            let mut filtered_processor = filtered_processor.into_owned();
+            let filtered_processor = Rc::make_mut(&mut filtered_processor);
             filtered_processor.set_goal(goal)?;
             let start = std::time::Instant::now();
             let outcome = filtered_processor.search(ProverParams::VERIFICATION);
@@ -695,7 +696,7 @@ impl<'a> Builder<'a> {
                         }
                     }
                 }
-                self.search_finished(&mut filtered_processor, goal, outcome, start.elapsed());
+                self.search_finished(filtered_processor, goal, outcome, start.elapsed());
                 filtered_processor
                     .prover()
                     .get_useful_source_names(new_premises, filtered_processor.normalizer());
@@ -736,7 +737,7 @@ impl<'a> Builder<'a> {
     pub fn verify_node(
         &mut self,
         full_processor: &Processor,
-        filtered_processor: Option<&Processor>,
+        filtered_processor: Option<Rc<Processor>>,
         cursor: &mut NodeCursor,
         new_premises: &mut HashSet<(ModuleId, String)>,
         mut new_certs: Option<&mut Vec<Certificate>>,
@@ -747,14 +748,14 @@ impl<'a> Builder<'a> {
         }
 
         let mut full_processor = Cow::Borrowed(full_processor);
-        let mut filtered_processor = filtered_processor.map(Cow::Borrowed);
+        let mut filtered_processor = filtered_processor;
         if cursor.num_children() > 0 {
             // We need to recurse into children
             cursor.descend(0);
             loop {
                 self.verify_node(
                     &full_processor,
-                    filtered_processor.as_deref(),
+                    filtered_processor.clone(),
                     cursor,
                     new_premises,
                     new_certs.as_deref_mut(),
@@ -762,8 +763,8 @@ impl<'a> Builder<'a> {
                 )?;
 
                 if let Some(fact) = cursor.node().get_fact() {
-                    if let Some(ref mut filtered_processor) = filtered_processor {
-                        filtered_processor.to_mut().add_fact(fact.clone())?;
+                    if let Some(ref mut fp) = filtered_processor {
+                        Rc::make_mut(fp).add_fact(fact.clone())?;
                     }
                     full_processor.to_mut().add_fact(fact)?;
                 }
@@ -868,7 +869,7 @@ impl<'a> Builder<'a> {
                     // This call will recurse and verify everything within this top-level block.
                     self.verify_node(
                         &full_processor,
-                        filtered_processor.as_ref(),
+                        filtered_processor,
                         &mut cursor,
                         &mut new_premises,
                         new_certs.as_mut(),
