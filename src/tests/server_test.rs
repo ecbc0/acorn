@@ -31,7 +31,7 @@ impl MockClient {
     /// Returns the diagnostics if they arrive within the timeout
     async fn wait_for_diagnostics(&self, url: &Url, timeout_secs: u64) -> Option<Vec<Diagnostic>> {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout_secs);
-        
+
         while tokio::time::Instant::now() < deadline {
             {
                 let diags = self.diagnostics.read().await;
@@ -108,7 +108,7 @@ impl TestFixture {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_server_basic() {
     let fx = TestFixture::new();
 
@@ -154,13 +154,22 @@ async fn test_server_basic() {
 
     // Wait for diagnostics to verify the build happened
     let diagnostics = fx.client.wait_for_diagnostics(&url, 5).await;
-    assert!(diagnostics.is_some(), "Expected to receive diagnostics from build");
-    
+    assert!(
+        diagnostics.is_some(),
+        "Expected to receive diagnostics from build"
+    );
+
     // The build should complete with no errors for this simple valid theorem
     let diags = diagnostics.unwrap();
-    assert!(diags.is_empty(), "Expected no diagnostic errors, got: {:?}", diags);
+    assert!(
+        diags.is_empty(),
+        "Expected no diagnostic errors, got: {:?}",
+        diags
+    );
 
-    // Verify the server processed the project
-    assert!(fx.src_dir.path().exists());
-    assert!(fx.build_dir.path().exists());
+    // Give the build a bit more time to write cache files
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Check that a cache was created
+    assert!(fx.build_dir.child("foo.yaml").exists());
 }
