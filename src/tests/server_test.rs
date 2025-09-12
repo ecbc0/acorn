@@ -3,7 +3,12 @@ use assert_fs::fixture::ChildPath;
 use assert_fs::prelude::*;
 use assert_fs::TempDir;
 use std::sync::Arc;
-use tower_lsp::lsp_types::{Diagnostic, Url};
+use tower_lsp::lsp_types::{
+    Diagnostic, DidChangeTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
+    TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem, Url,
+    VersionedTextDocumentIdentifier,
+};
+use tower_lsp::LanguageServer;
 
 /// Mock implementation of LspClient for testing
 #[derive(Clone)]
@@ -73,10 +78,44 @@ impl TestFixture {
 async fn test_server_basic() {
     let fx = TestFixture::new();
 
-    // Use the url method to get a proper file:// URL and call set_full_text
+    let text1 = "theorem foo { true }";
+    let text2 = "theorem bar { true }";
+
     let url = fx.url("foo.ac");
+
+    // First, open the document with text1
     fx.server
-        .set_full_text(url, "theorem foo { true }".to_string(), Some(1))
+        .did_open(DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: url.clone(),
+                language_id: "acorn".to_string(),
+                version: 1,
+                text: text1.to_string(),
+            },
+        })
+        .await;
+
+    // Then, change the document to text2 (replacing entire content)
+    fx.server
+        .did_change(DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: url.clone(),
+                version: 2,
+            },
+            content_changes: vec![TextDocumentContentChangeEvent {
+                range: None,
+                range_length: None,
+                text: text2.to_string(),
+            }],
+        })
+        .await;
+
+    // Finally, save the document with text2
+    fx.server
+        .did_save(DidSaveTextDocumentParams {
+            text_document: TextDocumentIdentifier { uri: url.clone() },
+            text: Some(text2.to_string()),
+        })
         .await;
 
     // Verify the server processed the project
