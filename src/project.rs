@@ -298,6 +298,21 @@ impl Project {
         self.build_cache.is_some()
     }
 
+    /// Updates the build cache with a new one and optionally writes it to disk.
+    /// Panics if the project doesn't already have a build cache.
+    pub fn update_build_cache(&mut self, new_cache: BuildCache) {
+        if self.build_cache.is_none() {
+            panic!("Cannot update build cache on a project that doesn't have one");
+        }
+
+        if self.config.write_cache {
+            // TODO: how should we handle errors here?
+            let _ = new_cache.save();
+        }
+
+        self.build_cache = Some(new_cache);
+    }
+
     // Dropping existing modules lets you update the project for new data.
     // TODO: do this incrementally instead of dropping everything.
     fn drop_modules(&mut self) {
