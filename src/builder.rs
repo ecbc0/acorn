@@ -75,7 +75,7 @@ pub struct Builder<'a> {
 }
 
 /// Metrics collected during a build.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct BuildMetrics {
     /// The total number of goals to be verified.
     pub goals_total: i32,
@@ -938,7 +938,7 @@ impl<'a> Builder<'a> {
 
         // Initialize the build cache if we're using certificates
         if self.project.using_certs() {
-            self.build_cache = Some(BuildCache::new());
+            self.build_cache = Some(BuildCache::new(self.project.build_dir.clone()));
         }
 
         // Build in alphabetical order by module name for consistency.
@@ -1006,16 +1006,20 @@ impl<'a> Builder<'a> {
             }
         }
 
+    }
+
+    /// Consumes the builder and returns the build cache if the build was successful
+    /// and we should update the cache.
+    pub fn into_build_cache(self) -> Option<BuildCache> {
         // There's a lot of conditions for when we actually write to the cache
         if self.project.using_certs()
             && self.status.is_good()
             && self.project.config.write_cache
             && self.single_goal.is_none()
         {
-            let build_cache = self.build_cache.as_ref().unwrap();
-            if let Err(e) = build_cache.save(self.project.build_dir.clone()) {
-                self.log_global(format!("error saving build cache: {}", e));
-            }
+            self.build_cache
+        } else {
+            None
         }
     }
 }

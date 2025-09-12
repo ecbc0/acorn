@@ -193,9 +193,9 @@ impl Project {
         // Load the build cache if we're using certificates
         let build_cache = if config.use_certs {
             if config.read_cache {
-                Some(BuildCache::load(&build_dir))
+                Some(BuildCache::load(build_dir.clone()))
             } else {
-                Some(BuildCache::new())
+                Some(BuildCache::new(build_dir.clone()))
             }
         } else {
             None

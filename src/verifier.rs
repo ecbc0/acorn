@@ -135,12 +135,23 @@ impl Verifier {
         // Build
         self.builder.build();
         self.builder.metrics.print(self.builder.status);
+        
+        // Create the output and extract the build cache
+        let status = self.builder.status;
+        let metrics = self.builder.metrics.clone();
+        let events = self.events.take();
+        
+        // Extract the build cache and save it if the build was successful
+        if let Some(build_cache) = self.builder.into_build_cache() {
+            if let Err(e) = build_cache.save() {
+                eprintln!("error saving build cache: {}", e);
+            }
+        }
 
-        // Create the output
         let output = VerifierOutput {
-            status: self.builder.status,
-            metrics: self.builder.metrics,
-            events: self.events.take(),
+            status,
+            metrics,
+            events,
         };
 
         // Clean up the project

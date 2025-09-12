@@ -12,26 +12,28 @@ use crate::module::ModuleDescriptor;
 pub struct BuildCache {
     cache: HashMap<ModuleDescriptor, CertificateStore>,
     manifest: Manifest,
+    build_dir: PathBuf,
 }
 
 impl BuildCache {
-    pub fn new() -> Self {
+    pub fn new(build_dir: PathBuf) -> Self {
         BuildCache {
             cache: HashMap::new(),
             manifest: Manifest::new(),
+            build_dir,
         }
     }
 
     /// Load a build cache from a directory containing JSONL files
-    pub fn load(build_dir: &PathBuf) -> Self {
+    pub fn load(build_dir: PathBuf) -> Self {
         let mut cache = HashMap::new();
 
         if build_dir.exists() {
-            for entry in WalkDir::new(build_dir).into_iter().filter_map(Result::ok) {
+            for entry in WalkDir::new(&build_dir).into_iter().filter_map(Result::ok) {
                 let path = entry.path();
                 if path.extension().and_then(|ext| ext.to_str()) == Some("jsonl") {
                     if let Some((desc, cert_store)) =
-                        CertificateStore::load_relative(build_dir, path)
+                        CertificateStore::load_relative(&build_dir, path)
                     {
                         cache.insert(desc, cert_store);
                     }
@@ -39,9 +41,13 @@ impl BuildCache {
             }
         }
 
-        let manifest = Manifest::load_or_create(build_dir);
+        let manifest = Manifest::load_or_create(&build_dir);
 
-        BuildCache { cache, manifest }
+        BuildCache { 
+            cache, 
+            manifest,
+            build_dir,
+        }
     }
 
     pub fn insert(
@@ -65,7 +71,7 @@ impl BuildCache {
             .map(|store| CertificateWorklist::new(store.clone()))
     }
 
-    pub fn save(&self, build_dir: PathBuf) -> Result<(), Box<dyn Error>> {
+    pub fn save(&self) -> Result<(), Box<dyn Error>> {
         // Save all the certificate stores
         for (descriptor, cert_store) in &self.cache {
             if let ModuleDescriptor::Name(parts) = descriptor {
@@ -74,7 +80,7 @@ impl BuildCache {
                 }
                 let mut parts = parts.clone();
                 let last = parts.pop().unwrap();
-                let mut path = build_dir.clone();
+                let mut path = self.build_dir.clone();
 
                 // Create directory structure for nested modules
                 for part in parts {
@@ -91,7 +97,7 @@ impl BuildCache {
         }
 
         // Save the manifest
-        self.manifest.save(&build_dir)?;
+        self.manifest.save(&self.build_dir)?;
 
         Ok(())
     }
