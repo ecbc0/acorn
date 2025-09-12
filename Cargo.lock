@@ -7,6 +7,7 @@ name = "acorn"
 version = "0.0.47"
 dependencies = [
  "assert_fs",
+ "async-trait",
  "blake3",
  "chrono",
  "clap",

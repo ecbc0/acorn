@@ -5,6 +5,7 @@ edition = "2021"
 default-run = "acorn"
 
 [dependencies]
+async-trait = "0.1"
 blake3 = "1.5"
 chrono = "0.4.31"
 clap = { version = "4.5.17", features = ["derive"] }

@@ -24,6 +24,20 @@ use crate::module::{LoadState, ModuleDescriptor};
 use crate::project::{Project, ProjectConfig};
 use crate::prover::{Outcome, ProverParams};
 
+// Trait abstracting the LSP client methods we need
+#[async_trait::async_trait]
+pub trait LspClient: Send + Sync {
+    async fn publish_diagnostics(&self, uri: Url, diagnostics: Vec<Diagnostic>, version: Option<i32>);
+}
+
+// Implement LspClient for tower_lsp::Client
+#[async_trait::async_trait]
+impl LspClient for Client {
+    async fn publish_diagnostics(&self, uri: Url, diagnostics: Vec<Diagnostic>, version: Option<i32>) {
+        self.publish_diagnostics(uri, diagnostics, version).await;
+    }
+}
+
 pub struct ServerArgs {
     // The root folder the user has open
     pub workspace_root: Option<String>,
@@ -325,7 +339,7 @@ impl BuildInfo {
 
     // Clears everything in preparation for a new build.
     // Then sets docs for the open documents.
-    async fn reset(&mut self, project: &Project, client: &Client) {
+    async fn reset(&mut self, project: &Project, client: &Arc<dyn LspClient>) {
         // Clear the diagnostics for all the open documents.
         let mut new_docs = HashMap::new();
         for (url, version) in project.open_urls() {
@@ -344,7 +358,7 @@ impl BuildInfo {
         self.docs = new_docs;
     }
 
-    async fn handle_event(&mut self, project: &Project, client: &Client, event: &BuildEvent) {
+    async fn handle_event(&mut self, project: &Project, client: &Arc<dyn LspClient>, event: &BuildEvent) {
         if Some(event.build_id) != self.id {
             if self.id.is_some() {
                 log("warning: a new build started without clearing the old one");
@@ -379,7 +393,7 @@ impl BuildInfo {
 
 // VS Code will create separate language servers for each of its workspace folders.
 struct AcornLanguageServer {
-    client: Client,
+    client: Arc<dyn LspClient>,
 
     // The project we're working on
     project: Arc<RwLock<Project>>,
@@ -427,7 +441,7 @@ impl AcornLanguageServer {
     // Determines which library to use based on the root of the current workspace.
     // If we can't find one in a logical location based on the editor, we use
     // the library bundled with the extension.
-    fn new(client: Client, args: &ServerArgs) -> AcornLanguageServer {
+    fn new(client: Arc<dyn LspClient>, args: &ServerArgs) -> AcornLanguageServer {
         let (src_dir, build_dir, write_cache) = find_acorn_library(&args);
 
         log(&format!(
@@ -485,7 +499,7 @@ impl AcornLanguageServer {
         // Spawn a thread to process the build events.
         let project = self.project.clone();
         let build = self.build.clone();
-        let client = self.client.clone();
+        let client = Arc::clone(&self.client);
         tokio::spawn(async move {
             let project = project.read().await;
             build.write().await.reset(&project, &client).await;
@@ -946,7 +960,7 @@ pub async fn run_server(args: &ServerArgs) {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    let (service, socket) = LspService::build(move |client| AcornLanguageServer::new(client, args))
+    let (service, socket) = LspService::build(move |client| AcornLanguageServer::new(Arc::new(client), args))
         .custom_method("acorn/info", AcornLanguageServer::handle_info_request)
         .custom_method(
             "acorn/progress",
