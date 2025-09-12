@@ -2,7 +2,10 @@ use crate::server::{AcornLanguageServer, LspClient, ServerArgs};
 use assert_fs::fixture::ChildPath;
 use assert_fs::prelude::*;
 use assert_fs::TempDir;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::RwLock;
 use tower_lsp::lsp_types::{
     Diagnostic, DidChangeTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
     TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem, Url,
@@ -13,18 +16,49 @@ use tower_lsp::LanguageServer;
 /// Mock implementation of LspClient for testing
 #[derive(Clone)]
 struct MockClient {
-    // We can add fields here later to track what methods were called
+    // Store diagnostics by URL
+    diagnostics: Arc<RwLock<HashMap<Url, Vec<Diagnostic>>>>,
+}
+
+impl MockClient {
+    fn new() -> Self {
+        MockClient {
+            diagnostics: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Wait for diagnostics to be published for a given URL
+    /// Returns the diagnostics if they arrive within the timeout
+    async fn wait_for_diagnostics(&self, url: &Url, timeout_secs: u64) -> Option<Vec<Diagnostic>> {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout_secs);
+        
+        while tokio::time::Instant::now() < deadline {
+            {
+                let diags = self.diagnostics.read().await;
+                if let Some(diagnostics) = diags.get(url) {
+                    if !diagnostics.is_empty() || diags.contains_key(url) {
+                        // Return if we have diagnostics or an explicit empty list
+                        return Some(diagnostics.clone());
+                    }
+                }
+            }
+            // Check every 10ms
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        None
+    }
 }
 
 #[async_trait::async_trait]
 impl LspClient for MockClient {
     async fn publish_diagnostics(
         &self,
-        _uri: Url,
-        _diagnostics: Vec<Diagnostic>,
+        uri: Url,
+        diagnostics: Vec<Diagnostic>,
         _version: Option<i32>,
     ) {
-        // For now, do nothing
+        let mut diags = self.diagnostics.write().await;
+        diags.insert(uri, diagnostics);
     }
 }
 
@@ -34,7 +68,7 @@ struct TestFixture {
     _temp_dir: TempDir, // Must keep this alive or the directory gets deleted!
     pub src_dir: ChildPath,
     pub build_dir: ChildPath,
-    _client: Arc<MockClient>,
+    pub client: Arc<MockClient>,
     pub server: AcornLanguageServer,
 }
 
@@ -55,14 +89,14 @@ impl TestFixture {
             extension_root: String::new(),
         };
 
-        let client = Arc::new(MockClient {});
+        let client = Arc::new(MockClient::new());
         let server = AcornLanguageServer::new(client.clone(), &args);
 
         TestFixture {
             _temp_dir: temp_dir,
             src_dir,
             build_dir,
-            _client: client,
+            client,
             server,
         }
     }
@@ -117,6 +151,14 @@ async fn test_server_basic() {
             text: Some(text2.to_string()),
         })
         .await;
+
+    // Wait for diagnostics to verify the build happened
+    let diagnostics = fx.client.wait_for_diagnostics(&url, 5).await;
+    assert!(diagnostics.is_some(), "Expected to receive diagnostics from build");
+    
+    // The build should complete with no errors for this simple valid theorem
+    let diags = diagnostics.unwrap();
+    assert!(diags.is_empty(), "Expected no diagnostic errors, got: {:?}", diags);
 
     // Verify the server processed the project
     assert!(fx.src_dir.path().exists());
