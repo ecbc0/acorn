@@ -1,5 +1,4 @@
 // The Acorn Language Server. This is typically invoked by a VS Code extension.
-
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -9,7 +8,6 @@ use tokio_util::sync::CancellationToken;
 use crate::builder::{BuildEvent, Builder};
 use crate::live_document::LiveDocument;
 use crate::processor::Processor;
-use chrono;
 use color_backtrace::BacktracePrinter;
 use dashmap::DashMap;
 use tokio::sync::{mpsc, RwLock, RwLockWriteGuard};
@@ -379,10 +377,8 @@ impl BuildInfo {
     }
 }
 
-// One Backend per root folder.
-// The Backend implements a similar API to the LanguageServer API, but it doesn't implement
-// "initialize" because that's used by the LazyBackend to create the Backend.
-struct Backend {
+// VS Code will create separate language servers for each of its workspace folders.
+struct AcornLanguageServer {
     client: Client,
 
     // The project we're working on
@@ -426,22 +422,19 @@ fn find_acorn_library(args: &ServerArgs) -> (PathBuf, PathBuf, bool) {
     }
 }
 
-impl Backend {
+impl AcornLanguageServer {
     // Creates a new backend.
     // Determines which library to use based on the root of the current workspace.
     // If we can't find one in a logical location based on the editor, we use
     // the library bundled with the extension.
-    fn new(client: Client, args: &ServerArgs) -> Backend {
+    fn new(client: Client, args: &ServerArgs) -> AcornLanguageServer {
         let (src_dir, build_dir, write_cache) = find_acorn_library(&args);
 
         log(&format!(
             "using acorn server version {}",
             env!("CARGO_PKG_VERSION")
         ));
-        log(&format!(
-            "using acorn library at {}",
-            src_dir.display()
-        ));
+        log(&format!("using acorn library at {}", src_dir.display()));
 
         // The cache is always readable, only sometimes writable.
         let config = ProjectConfig {
@@ -449,7 +442,7 @@ impl Backend {
             ..Default::default()
         };
         let project = Project::new(src_dir, build_dir, config);
-        Backend {
+        AcornLanguageServer {
             project: Arc::new(RwLock::new(project)),
             client,
             build: Arc::new(RwLock::new(BuildInfo::none())),
@@ -797,7 +790,7 @@ impl Backend {
 }
 
 #[tower_lsp::async_trait]
-impl LanguageServer for Backend {
+impl LanguageServer for AcornLanguageServer {
     async fn initialize(&self, _params: InitializeParams) -> jsonrpc::Result<InitializeResult> {
         let sync_options = TextDocumentSyncCapability::Options(TextDocumentSyncOptions {
             open_close: Some(true),
@@ -953,10 +946,13 @@ pub async fn run_server(args: &ServerArgs) {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    let (service, socket) = LspService::build(move |client| Backend::new(client, args))
-        .custom_method("acorn/info", Backend::handle_info_request)
-        .custom_method("acorn/progress", Backend::handle_progress_request)
-        .custom_method("acorn/search", Backend::handle_search_request)
+    let (service, socket) = LspService::build(move |client| AcornLanguageServer::new(client, args))
+        .custom_method("acorn/info", AcornLanguageServer::handle_info_request)
+        .custom_method(
+            "acorn/progress",
+            AcornLanguageServer::handle_progress_request,
+        )
+        .custom_method("acorn/search", AcornLanguageServer::handle_search_request)
         .finish();
 
     Server::new(stdin, stdout, socket).serve(service).await;
