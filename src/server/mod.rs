@@ -1,4 +1,6 @@
 // The Acorn Language Server. This is typically invoked by a VS Code extension.
+mod live_document;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -6,8 +8,8 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 use crate::builder::{BuildEvent, Builder};
-use crate::live_document::LiveDocument;
 use crate::processor::Processor;
+use self::live_document::LiveDocument;
 use color_backtrace::BacktracePrinter;
 use dashmap::DashMap;
 use tokio::sync::{mpsc, RwLock, RwLockWriteGuard};
