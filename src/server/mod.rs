@@ -392,7 +392,7 @@ impl BuildInfo {
 }
 
 // VS Code will create separate language servers for each of its workspace folders.
-struct AcornLanguageServer {
+pub struct AcornLanguageServer {
     client: Arc<dyn LspClient>,
 
     // The project we're working on
@@ -441,7 +441,7 @@ impl AcornLanguageServer {
     // Determines which library to use based on the root of the current workspace.
     // If we can't find one in a logical location based on the editor, we use
     // the library bundled with the extension.
-    fn new(client: Arc<dyn LspClient>, args: &ServerArgs) -> AcornLanguageServer {
+    pub fn new(client: Arc<dyn LspClient>, args: &ServerArgs) -> AcornLanguageServer {
         let (src_dir, build_dir, write_cache) = find_acorn_library(&args);
 
         log(&format!(

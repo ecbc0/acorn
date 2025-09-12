@@ -21,3 +21,6 @@ mod common;
 
 #[cfg(test)]
 mod statement_test;
+
+#[cfg(test)]
+mod server_test;
