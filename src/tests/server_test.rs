@@ -26,11 +26,11 @@ impl LspClient for MockClient {
 /// Test fixture that sets up an Acorn language server with a temp directory.
 /// Automatically cleans up when dropped.
 struct TestFixture {
-    _temp_dir: TempDir,  // Must keep this alive or the directory gets deleted!
+    _temp_dir: TempDir, // Must keep this alive or the directory gets deleted!
     pub src_dir: ChildPath,
     pub build_dir: ChildPath,
     _client: Arc<MockClient>,
-    _server: AcornLanguageServer,
+    pub server: AcornLanguageServer,
 }
 
 impl TestFixture {
@@ -58,8 +58,14 @@ impl TestFixture {
             src_dir,
             build_dir,
             _client: client,
-            _server: server,
+            server,
         }
+    }
+
+    /// Converts a relative path to a file:// URL that can be used with set_full_text
+    fn url(&self, path: &str) -> Url {
+        let full_path = self.src_dir.path().join(path);
+        Url::from_file_path(full_path).unwrap()
     }
 }
 
@@ -67,19 +73,13 @@ impl TestFixture {
 async fn test_server_basic() {
     let fx = TestFixture::new();
 
-    fx.src_dir
-        .child("foo.ac")
-        .write_str(
-            r#"
-        theorem simple_truth {
-            true
-        }
-        "#,
-        )
-        .unwrap();
+    // Use the url method to get a proper file:// URL and call set_full_text
+    let url = fx.url("foo.ac");
+    fx.server
+        .set_full_text(url, "theorem foo { true }".to_string(), Some(1))
+        .await;
 
-    // For now, just verify that we can create the server
-    // The server should have found our project structure
+    // Verify the server processed the project
     assert!(fx.src_dir.path().exists());
     assert!(fx.build_dir.path().exists());
 }

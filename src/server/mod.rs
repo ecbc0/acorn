@@ -27,13 +27,23 @@ use crate::prover::{Outcome, ProverParams};
 // Trait abstracting the LSP client methods we need
 #[async_trait::async_trait]
 pub trait LspClient: Send + Sync {
-    async fn publish_diagnostics(&self, uri: Url, diagnostics: Vec<Diagnostic>, version: Option<i32>);
+    async fn publish_diagnostics(
+        &self,
+        uri: Url,
+        diagnostics: Vec<Diagnostic>,
+        version: Option<i32>,
+    );
 }
 
 // Implement LspClient for tower_lsp::Client
 #[async_trait::async_trait]
 impl LspClient for Client {
-    async fn publish_diagnostics(&self, uri: Url, diagnostics: Vec<Diagnostic>, version: Option<i32>) {
+    async fn publish_diagnostics(
+        &self,
+        uri: Url,
+        diagnostics: Vec<Diagnostic>,
+        version: Option<i32>,
+    ) {
         self.publish_diagnostics(uri, diagnostics, version).await;
     }
 }
@@ -358,7 +368,12 @@ impl BuildInfo {
         self.docs = new_docs;
     }
 
-    async fn handle_event(&mut self, project: &Project, client: &Arc<dyn LspClient>, event: &BuildEvent) {
+    async fn handle_event(
+        &mut self,
+        project: &Project,
+        client: &Arc<dyn LspClient>,
+        event: &BuildEvent,
+    ) {
         if Some(event.build_id) != self.id {
             if self.id.is_some() {
                 log("warning: a new build started without clearing the old one");
@@ -402,7 +417,7 @@ pub struct AcornLanguageServer {
     build: Arc<RwLock<BuildInfo>>,
 
     // Maps uri to its document. The LiveDocument tracks changes.
-    documents: DashMap<Url, Arc<RwLock<LiveDocument>>>,
+    pub documents: DashMap<Url, Arc<RwLock<LiveDocument>>>,
 
     // The current search task, if any
     search_task: Arc<RwLock<Option<SearchTask>>>,
@@ -517,11 +532,10 @@ impl AcornLanguageServer {
     }
 
     // Update the full text of the document.
-    // For an open, we get the document version.
-    // For a save, we don't, but we can find the version, because the version we're saving is the same
-    // as the version of the last change we received.
-    // After this call both the live version and the saved version should be the same.
-    async fn set_full_text(&self, url: Url, text: String, version: Option<i32>) {
+    // When version is provided, this indicates we are opening a document.
+    // When version is None, this indicates we are saving the most recent version.
+    // After this call, both the live version and the saved version should be the same.
+    pub async fn set_full_text(&self, url: Url, text: String, version: Option<i32>) {
         // Update the live document in the document map
         let version = match version {
             Some(version) => {
@@ -960,14 +974,15 @@ pub async fn run_server(args: &ServerArgs) {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    let (service, socket) = LspService::build(move |client| AcornLanguageServer::new(Arc::new(client), args))
-        .custom_method("acorn/info", AcornLanguageServer::handle_info_request)
-        .custom_method(
-            "acorn/progress",
-            AcornLanguageServer::handle_progress_request,
-        )
-        .custom_method("acorn/search", AcornLanguageServer::handle_search_request)
-        .finish();
+    let (service, socket) =
+        LspService::build(move |client| AcornLanguageServer::new(Arc::new(client), args))
+            .custom_method("acorn/info", AcornLanguageServer::handle_info_request)
+            .custom_method(
+                "acorn/progress",
+                AcornLanguageServer::handle_progress_request,
+            )
+            .custom_method("acorn/search", AcornLanguageServer::handle_search_request)
+            .finish();
 
     Server::new(stdin, stdout, socket).serve(service).await;
 }
