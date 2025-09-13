@@ -351,8 +351,9 @@ impl AcornLanguageServer {
         let project_manager = self.project_manager.clone();
         tokio::spawn(async move {
             let project = project_manager.read().await;
+            let epoch = project.epoch;
 
-            tokio::task::block_in_place(move || {
+            let build_cache = tokio::task::block_in_place(move || {
                 let mut builder = Builder::new(&*project, project.cancel.clone(), move |event| {
                     tx.send(event).unwrap();
                 });
@@ -365,7 +366,22 @@ impl AcornLanguageServer {
                     builder.status.verb(),
                     seconds
                 ));
+
+                // Return the build cache if successful
+                builder.into_build_cache()
             });
+
+            // Update the build cache if the build was successful and epoch hasn't changed
+            if let Some(new_cache) = build_cache {
+                let result = project_manager.mutate_if_epoch(epoch, |project| {
+                    project.update_build_cache(new_cache);
+                }).await;
+
+                match result {
+                    Ok(()) => log("Build cache updated successfully"),
+                    Err(()) => log("Build cache update skipped (project changed during build)"),
+                }
+            }
         });
 
         // Spawn a thread to process the build events.
