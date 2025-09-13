@@ -571,6 +571,25 @@ impl Prover {
     ///   Going over the time limit, in seconds
     ///   Activating all shallow steps, if shallow_only is set
     pub fn search(&mut self, params: ProverParams) -> Outcome {
+        // Special test behavior: if we're in test mode and trying to prove "test_hang",
+        // wait for cancellation instead of actually proving
+        #[cfg(test)]
+        {
+            if let Some(goal) = &self.goal {
+                if goal.name == "test_hang" {
+                    // Wait indefinitely for cancellation
+                    loop {
+                        for token in &self.cancellation_tokens {
+                            if token.is_cancelled() {
+                                return Outcome::Interrupted;
+                            }
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                }
+            }
+        }
+
         let start_time = std::time::Instant::now();
         loop {
             if params.shallow_only && !self.passive_set.all_shallow {
