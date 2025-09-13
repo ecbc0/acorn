@@ -840,6 +840,7 @@ impl<'a> Builder<'a> {
             if cursor.requires_verification() {
                 let block_name = cursor.block_name();
                 if self.check_hashes
+                    && !self.project.config.use_certs
                     && module_hash
                         .matches_through_line(&old_module_cache, cursor.node().last_line())
                 {
@@ -928,10 +929,11 @@ impl<'a> Builder<'a> {
                 let cert_store = CertificateStore { certs };
                 // Get the content hash for this module
                 if let Some(content_hash) = self.project.get_module_content_hash(env.module_id) {
-                    self.build_cache
-                        .as_mut()
-                        .unwrap()
-                        .insert(target.clone(), cert_store, content_hash);
+                    self.build_cache.as_mut().unwrap().insert(
+                        target.clone(),
+                        cert_store,
+                        content_hash,
+                    );
                 }
             }
         }
@@ -1014,7 +1016,6 @@ impl<'a> Builder<'a> {
                 return;
             }
         }
-
     }
 
     /// Consumes the builder and returns the build cache if the build was successful
