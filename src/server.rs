@@ -325,6 +325,7 @@ impl AcornLanguageServer {
         // The cache is always readable, only sometimes writable.
         let config = ProjectConfig {
             write_cache,
+            use_certs: true,
             ..Default::default()
         };
         let project_manager = Arc::new(ProjectManager::new(src_dir, build_dir, config));
@@ -357,6 +358,8 @@ impl AcornLanguageServer {
                 let mut builder = Builder::new(&*project, project.cancel.clone(), move |event| {
                     tx.send(event).unwrap();
                 });
+                // Disable hash checking since we're using certificates
+                builder.check_hashes = false;
                 builder.build();
 
                 let duration = chrono::Local::now() - start_time;

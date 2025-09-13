@@ -203,8 +203,11 @@ async fn test_server_basic() {
     );
     assert!(fx.wait_for_build_completion(5).await);
 
-    // Check that a cache was created
-    assert!(fx.build_dir.child("foo.yaml").exists());
+    // Give a moment for certificates to be written
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Check that certificates were created
+    assert!(fx.build_dir.child("foo.jsonl").exists());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -231,9 +234,9 @@ async fn test_build_cancellation() {
         "Build did not complete after cancelling hanging build"
     );
 
-    // Give a moment for cache to be written
+    // Give a moment for certificates to be written
     tokio::time::sleep(Duration::from_millis(50)).await;
 
-    // Check that cache was created for the successful build
-    assert!(fx.build_dir.child("test.yaml").exists());
+    // Check that certificates were created for the successful build
+    assert!(fx.build_dir.child("test.jsonl").exists());
 }
