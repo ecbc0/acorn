@@ -1,3 +1,5 @@
+pub mod add_statement;
+
 use std::collections::HashSet;
 
 use tower_lsp::lsp_types::Range;
