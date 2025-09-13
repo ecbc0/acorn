@@ -422,7 +422,7 @@ pub struct AcornLanguageServer {
     pub documents: DashMap<Url, Arc<RwLock<LiveDocument>>>,
 
     // The current search job, if any
-    search_job: Arc<RwLock<Option<SearchJob>>>,
+    search_job: RwLock<Option<SearchJob>>,
 }
 
 // Finds the acorn library to use, given the root folder for the current workspace.
@@ -478,7 +478,7 @@ impl AcornLanguageServer {
             client,
             build: Arc::new(RwLock::new(BuildInfo::none())),
             documents: DashMap::new(),
-            search_job: Arc::new(RwLock::new(None)),
+            search_job: RwLock::new(None),
         }
     }
 
