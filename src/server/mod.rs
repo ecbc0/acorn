@@ -7,9 +7,9 @@ use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
 
+use self::live_document::LiveDocument;
 use crate::builder::{BuildEvent, Builder};
 use crate::processor::Processor;
-use self::live_document::LiveDocument;
 use color_backtrace::BacktracePrinter;
 use dashmap::DashMap;
 use tokio::sync::{mpsc, RwLock, RwLockWriteGuard};
@@ -842,19 +842,7 @@ impl LanguageServer for AcornLanguageServer {
         })
     }
 
-    async fn did_save(&self, params: DidSaveTextDocumentParams) {
-        let url = params.text_document.uri;
-        let text = match params.text {
-            Some(text) => text,
-            None => {
-                log("no text available in did_save");
-                return;
-            }
-        };
-
-        self.set_full_text(url, text, None).await;
-    }
-
+    /// When did_open is called, we get a version number and the whole text of the document.
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let url = params.text_document.uri;
         let text = params.text_document.text;
@@ -863,7 +851,10 @@ impl LanguageServer for AcornLanguageServer {
         self.set_full_text(url, text, Some(version)).await;
     }
 
-    // Just updates the current version, doesn't rebuild anything
+    /// When did_change is called, we get a version number and the changes to the document.
+    /// The changes are in a "change event" format, which we do apply to the document.
+    /// Currently we don't actually use the text content of the change event, though, because
+    /// we don't rebuild on change.
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         let url = params.text_document.uri;
         let version = params.text_document.version;
@@ -875,6 +866,22 @@ impl LanguageServer for AcornLanguageServer {
                 }
             }
         }
+    }
+
+    /// When did_save is called, we get the full text of the document.
+    /// We don't get a version number, which is annoying. We have to take the last version number
+    /// of the document that we saw in a change event.
+    async fn did_save(&self, params: DidSaveTextDocumentParams) {
+        let url = params.text_document.uri;
+        let text = match params.text {
+            Some(text) => text,
+            None => {
+                log("no text available in did_save");
+                return;
+            }
+        };
+
+        self.set_full_text(url, text, None).await;
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
