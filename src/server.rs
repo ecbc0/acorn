@@ -81,23 +81,23 @@ fn log_with_url(url: &Url, version: i32, message: &str) {
     log(&versioned);
 }
 
-// A search task is a long-running task that searches for a proof.
-// The language server can work on one search task at a time.
-// The SearchTask tracks information around that request.
+// A search job is a long-running job that searches for a proof.
+// The language server can work on one search job at a time.
+// The SearchJob tracks information around that request.
 // It is clonable so that it can be used both by the thread doing the task, and
 // threads handling requests.
 // The thread doing the search updates the task with its information, while threads handling
 // concurrent user requests can read it.
 #[derive(Clone)]
-struct SearchTask {
+struct SearchJob {
     project: Arc<RwLock<Project>>,
     url: Url,
     version: i32,
 
     // While we are proving, most of the time the thread running the 'run' method
-    // will hold a write lock on the prover.
+    // will hold a write lock on the processor.
     // The task will release and reacquire the lock intermittently, and the RwLock is fair so other
-    // threads get a chance to use the prover.
+    // threads get a chance to use the processor.
     processor: Arc<RwLock<Processor>>,
 
     // The module that we're searching for a proof in
@@ -119,7 +119,7 @@ struct SearchTask {
     // It can indicate either partial progress or completion.
     status: Arc<RwLock<SearchStatus>>,
 
-    // Cancel this token when a subsequent search task has been created
+    // Cancel this token when a subsequent search job has been created
     cancellation_token: CancellationToken,
 
     // Zero-based line where we would insert a proof for this goal
@@ -136,7 +136,7 @@ struct SearchTask {
     id: i32,
 }
 
-impl SearchTask {
+impl SearchJob {
     // Makes a response based on the current state of the task
     async fn response(&self) -> SearchResponse {
         let status = self.status.read().await.clone();
@@ -154,7 +154,7 @@ impl SearchTask {
         }
     }
 
-    // Runs the search task.
+    // Runs the search job.
     async fn run(&self) {
         // This holds a read lock on the project the whole time.
         // It seems like we should be able to avoid this, but maybe it's just fine.
@@ -167,7 +167,7 @@ impl SearchTask {
             }
         };
 
-        log(&format!("running search task for {}", self.goal_name));
+        log(&format!("running search job for {}", self.goal_name));
 
         loop {
             // Each iteration through the loop reacquires the write lock on the prover.
@@ -217,7 +217,7 @@ impl SearchTask {
 
             if outcome != Outcome::Timeout {
                 // We're done
-                log(&format!("search task for {} completed", self.goal_name));
+                log(&format!("search job for {} completed", self.goal_name));
                 break;
             }
         }
@@ -421,8 +421,8 @@ pub struct AcornLanguageServer {
     // Maps uri to its document. The LiveDocument tracks changes.
     pub documents: DashMap<Url, Arc<RwLock<LiveDocument>>>,
 
-    // The current search task, if any
-    search_task: Arc<RwLock<Option<SearchTask>>>,
+    // The current search job, if any
+    search_job: Arc<RwLock<Option<SearchJob>>>,
 }
 
 // Finds the acorn library to use, given the root folder for the current workspace.
@@ -478,7 +478,7 @@ impl AcornLanguageServer {
             client,
             build: Arc::new(RwLock::new(BuildInfo::none())),
             documents: DashMap::new(),
-            search_task: Arc::new(RwLock::new(None)),
+            search_job: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -622,22 +622,22 @@ impl AcornLanguageServer {
         Ok(progress)
     }
 
-    // Cancels any current search task.
-    // Runs the new task, if it is not None.
-    async fn set_search_task(&self, new_task: Option<SearchTask>) {
-        // Replace the locked singleton task
+    // Cancels any current search job.
+    // Runs the new job, if it is not None.
+    async fn set_search_job(&self, new_job: Option<SearchJob>) {
+        // Replace the locked singleton job
         {
-            let mut locked_task = self.search_task.write().await;
-            if let Some(old_task) = locked_task.as_ref() {
-                // Cancel the old task
-                old_task.cancellation_token.cancel();
+            let mut locked_job = self.search_job.write().await;
+            if let Some(old_job) = locked_job.as_ref() {
+                // Cancel the old job
+                old_job.cancellation_token.cancel();
             }
-            *locked_task = new_task.clone();
+            *locked_job = new_job.clone();
         }
 
-        if let Some(new_task) = new_task {
+        if let Some(new_job) = new_job {
             tokio::spawn(async move {
-                new_task.run().await;
+                new_job.run().await;
             });
         }
     }
@@ -669,12 +669,12 @@ impl AcornLanguageServer {
         // Check if this request matches our current task, based on the selected line.
         // This is less general than checking the full path, but we don't have the
         // full path until we acquire a lock on the project.
-        if let Some(current_task) = self.search_task.read().await.as_ref() {
-            if current_task.url == params.uri
-                && current_task.version == params.version
-                && current_task.selected_line == params.selected_line
+        if let Some(current_job) = self.search_job.read().await.as_ref() {
+            if current_job.url == params.uri
+                && current_job.version == params.version
+                && current_job.selected_line == params.selected_line
             {
-                return Ok(current_task.response().await);
+                return Ok(current_job.response().await);
             }
         }
 
@@ -725,12 +725,12 @@ impl AcornLanguageServer {
         // Check if this request matches our current task, based on the full path of the goal.
         // This is slower (because we had to acquire the project lock first)
         // but catches more situations than just checking the selected line.
-        if let Some(current_task) = self.search_task.read().await.as_ref() {
-            if current_task.url == params.uri
-                && current_task.version == params.version
-                && current_task.path == path
+        if let Some(current_job) = self.search_job.read().await.as_ref() {
+            if current_job.url == params.uri
+                && current_job.version == params.version
+                && current_job.path == path
             {
-                return Ok(current_task.response().await);
+                return Ok(current_job.response().await);
             }
         }
         let cursor = NodeCursor::from_path(env, &path);
@@ -743,8 +743,8 @@ impl AcornLanguageServer {
         processor.set_goal(&goal)?;
         let status = SearchStatus::pending(processor.prover());
 
-        // Create a new search task
-        let new_task = SearchTask {
+        // Create a new search job
+        let new_job = SearchJob {
             project: self.project.clone(),
             url: params.uri.clone(),
             version: doc.saved_version(),
@@ -762,10 +762,10 @@ impl AcornLanguageServer {
         };
 
         // A minimal response before any data has been collected
-        let mut response = new_task.response().await;
+        let mut response = new_job.response().await;
         response.loading = true;
 
-        self.set_search_task(Some(new_task)).await;
+        self.set_search_job(Some(new_job)).await;
 
         Ok(response)
     }
@@ -780,22 +780,22 @@ impl AcornLanguageServer {
     }
 
     async fn handle_info_request(&self, params: InfoParams) -> jsonrpc::Result<InfoResponse> {
-        let locked_task = self.search_task.read().await;
+        let locked_job = self.search_job.read().await;
 
-        let task = match locked_task.as_ref() {
-            Some(task) => task,
-            None => return self.info_fail(params, "no search task available"),
+        let job = match locked_job.as_ref() {
+            Some(job) => job,
+            None => return self.info_fail(params, "no search job available"),
         };
-        if task.id != params.search_id {
+        if job.id != params.search_id {
             let failure = format!(
-                "info request has search id {}, task has id {}",
-                params.search_id, task.id
+                "info request has search id {}, job has id {}",
+                params.search_id, job.id
             );
             return self.info_fail(params, &failure);
         }
         let project = self.project.read().await;
-        let processor = &*task.processor.read().await;
-        let env = match project.get_env(&task.descriptor) {
+        let processor = &*job.processor.read().await;
+        let env = match project.get_env(&job.descriptor) {
             Some(env) => env,
             None => {
                 return self.info_fail(params, "no environment available");
