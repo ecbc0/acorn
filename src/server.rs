@@ -224,6 +224,232 @@ impl SearchJob {
     }
 }
 
+// Manages search jobs for the language server
+struct SearchManager {
+    // The current search job, if any
+    current_job: RwLock<Option<SearchJob>>,
+}
+
+impl SearchManager {
+    fn new() -> Self {
+        SearchManager {
+            current_job: RwLock::new(None),
+        }
+    }
+
+    // Cancels any current search job and runs the new job, if it is not None.
+    async fn set_search_job(&self, new_job: Option<SearchJob>) {
+        // Replace the locked singleton job
+        {
+            let mut locked_job = self.current_job.write().await;
+            if let Some(old_job) = locked_job.as_ref() {
+                // Cancel the old job
+                old_job.cancellation_token.cancel();
+            }
+            *locked_job = new_job.clone();
+        }
+
+        if let Some(new_job) = new_job {
+            tokio::spawn(async move {
+                new_job.run().await;
+            });
+        }
+    }
+
+    fn search_fail(&self, params: SearchParams, message: &str) -> jsonrpc::Result<SearchResponse> {
+        log(message);
+        Ok(SearchResponse {
+            failure: Some(message.to_string()),
+            ..SearchResponse::new(params)
+        })
+    }
+
+    async fn handle_search_request(
+        &self,
+        params: SearchParams,
+        project: &Arc<RwLock<Project>>,
+        documents: &DashMap<Url, Arc<RwLock<LiveDocument>>>,
+    ) -> jsonrpc::Result<SearchResponse> {
+        match self
+            .search_request_helper(params.clone(), project, documents)
+            .await
+        {
+            Ok(response) => Ok(response),
+            Err(message) => self.search_fail(params, &message),
+        }
+    }
+
+    async fn search_request_helper(
+        &self,
+        params: SearchParams,
+        project: &Arc<RwLock<Project>>,
+        documents: &DashMap<Url, Arc<RwLock<LiveDocument>>>,
+    ) -> Result<SearchResponse, String> {
+        let doc = match documents.get(&params.uri) {
+            Some(doc) => doc,
+            None => {
+                return Err("no text available".to_string());
+            }
+        };
+        let doc = doc.read().await;
+
+        // Check if this request matches our current task, based on the selected line.
+        // This is less general than checking the full path, but we don't have the
+        // full path until we acquire a lock on the project.
+        if let Some(current_job) = self.current_job.read().await.as_ref() {
+            if current_job.url == params.uri
+                && current_job.version == params.version
+                && current_job.selected_line == params.selected_line
+            {
+                return Ok(current_job.response().await);
+            }
+        }
+
+        let project_guard = project.read().await;
+        let path = match to_path(&params.uri) {
+            Some(path) => path,
+            None => {
+                // There should be a path available, because we don't run this task without one.
+                return Err("no path available in SearchJob::run".to_string());
+            }
+        };
+        match project_guard.get_version(&path) {
+            Some(project_version) => {
+                if params.version < project_version {
+                    let message = format!(
+                        "user requested version {} but the project has version {}",
+                        params.version, project_version
+                    );
+                    return Err(message);
+                }
+                if params.version > project_version {
+                    // The requested version is not loaded yet.
+                    return Ok(SearchResponse {
+                        loading: true,
+                        ..SearchResponse::new(params)
+                    });
+                }
+            }
+            None => {
+                return Err(format!("the project has not opened {}", path.display()));
+            }
+        }
+        let descriptor = match project_guard.descriptor_from_path(&path) {
+            Ok(name) => name,
+            Err(e) => {
+                return Err(format!("descriptor_from_path failed: {:?}", e));
+            }
+        };
+        let env = match project_guard.get_module(&descriptor) {
+            LoadState::Ok(env) => env,
+            _ => {
+                return Err(format!("could not load module from {:?}", descriptor));
+            }
+        };
+
+        let path = env.path_for_line(params.selected_line)?;
+
+        // Check if this request matches our current task, based on the full path of the goal.
+        // This is slower (because we had to acquire the project lock first)
+        // but catches more situations than just checking the selected line.
+        if let Some(current_job) = self.current_job.read().await.as_ref() {
+            if current_job.url == params.uri
+                && current_job.version == params.version
+                && current_job.path == path
+            {
+                return Ok(current_job.response().await);
+            }
+        }
+        let cursor = NodeCursor::from_path(env, &path);
+        let goal = cursor.goal()?;
+        let cancellation_token = CancellationToken::new();
+        let mut processor = Processor::with_token(&project_guard, cancellation_token.clone());
+        for fact in cursor.usable_facts(&project_guard) {
+            processor.add_fact(fact)?;
+        }
+        processor.set_goal(&goal)?;
+        let status = SearchStatus::pending(processor.prover());
+
+        // Create a new search job
+        let new_job = SearchJob {
+            project: project.clone(),
+            url: params.uri.clone(),
+            version: doc.saved_version(),
+            processor: Arc::new(RwLock::new(processor)),
+            descriptor,
+            selected_line: params.selected_line,
+            path,
+            goal_name: goal.name.clone(),
+            goal_range: goal.proposition.source.range,
+            status: Arc::new(RwLock::new(status)),
+            cancellation_token,
+            proof_insertion_line: goal.proof_insertion_line,
+            insert_block: goal.insert_block,
+            id: params.id,
+        };
+
+        // A minimal response before any data has been collected
+        let mut response = new_job.response().await;
+        response.loading = true;
+
+        self.set_search_job(Some(new_job)).await;
+
+        Ok(response)
+    }
+
+    fn info_fail(&self, params: InfoParams, message: &str) -> jsonrpc::Result<InfoResponse> {
+        log(message);
+        Ok(InfoResponse {
+            search_id: params.search_id,
+            failure: Some(message.to_string()),
+            result: None,
+        })
+    }
+
+    async fn handle_info_request(
+        &self,
+        params: InfoParams,
+        project: &Arc<RwLock<Project>>,
+    ) -> jsonrpc::Result<InfoResponse> {
+        let locked_job = self.current_job.read().await;
+
+        let job = match locked_job.as_ref() {
+            Some(job) => job,
+            None => return self.info_fail(params, "no search job available"),
+        };
+        if job.id != params.search_id {
+            let failure = format!(
+                "info request has search id {}, job has id {}",
+                params.search_id, job.id
+            );
+            return self.info_fail(params, &failure);
+        }
+        let project_guard = project.read().await;
+        let processor = &*job.processor.read().await;
+        let env = match project_guard.get_env(&job.descriptor) {
+            Some(env) => env,
+            None => {
+                return self.info_fail(params, "no environment available");
+            }
+        };
+        let result = processor.prover().info_result(
+            params.clause_id,
+            &project_guard,
+            &env.bindings,
+            processor.normalizer(),
+        );
+        let failure = match result {
+            Some(_) => None,
+            None => Some(format!("no info available for clause {}", params.clause_id)),
+        };
+        Ok(InfoResponse {
+            search_id: params.search_id,
+            failure,
+            result,
+        })
+    }
+}
+
 // The part of the Build that is relevant to a single document.
 struct DocumentBuildInfo {
     // The version of the document that we built with.
@@ -421,8 +647,8 @@ pub struct AcornLanguageServer {
     // Maps uri to its document. The LiveDocument tracks changes.
     pub documents: DashMap<Url, Arc<RwLock<LiveDocument>>>,
 
-    // The current search job, if any
-    search_job: RwLock<Option<SearchJob>>,
+    // Manages search jobs
+    search_manager: SearchManager,
 }
 
 // Finds the acorn library to use, given the root folder for the current workspace.
@@ -478,7 +704,7 @@ impl AcornLanguageServer {
             client,
             build: Arc::new(RwLock::new(BuildInfo::none())),
             documents: DashMap::new(),
-            search_job: RwLock::new(None),
+            search_manager: SearchManager::new(),
         }
     }
 
@@ -622,200 +848,18 @@ impl AcornLanguageServer {
         Ok(progress)
     }
 
-    // Cancels any current search job.
-    // Runs the new job, if it is not None.
-    async fn set_search_job(&self, new_job: Option<SearchJob>) {
-        // Replace the locked singleton job
-        {
-            let mut locked_job = self.search_job.write().await;
-            if let Some(old_job) = locked_job.as_ref() {
-                // Cancel the old job
-                old_job.cancellation_token.cancel();
-            }
-            *locked_job = new_job.clone();
-        }
-
-        if let Some(new_job) = new_job {
-            tokio::spawn(async move {
-                new_job.run().await;
-            });
-        }
-    }
-
-    fn search_fail(&self, params: SearchParams, message: &str) -> jsonrpc::Result<SearchResponse> {
-        log(message);
-        Ok(SearchResponse {
-            failure: Some(message.to_string()),
-            ..SearchResponse::new(params)
-        })
-    }
+    // Delegate search-related requests to the SearchManager
 
     async fn handle_search_request(&self, params: SearchParams) -> jsonrpc::Result<SearchResponse> {
-        match self.search_request_helper(params.clone()).await {
-            Ok(response) => Ok(response),
-            Err(message) => self.search_fail(params, &message),
-        }
-    }
-
-    async fn search_request_helper(&self, params: SearchParams) -> Result<SearchResponse, String> {
-        let doc = match self.documents.get(&params.uri) {
-            Some(doc) => doc,
-            None => {
-                return Err("no text available".to_string());
-            }
-        };
-        let doc = doc.read().await;
-
-        // Check if this request matches our current task, based on the selected line.
-        // This is less general than checking the full path, but we don't have the
-        // full path until we acquire a lock on the project.
-        if let Some(current_job) = self.search_job.read().await.as_ref() {
-            if current_job.url == params.uri
-                && current_job.version == params.version
-                && current_job.selected_line == params.selected_line
-            {
-                return Ok(current_job.response().await);
-            }
-        }
-
-        let project = self.project.read().await;
-        let path = match to_path(&params.uri) {
-            Some(path) => path,
-            None => {
-                // There should be a path available, because we don't run this task without one.
-                return Err("no path available in SearchTask::run".to_string());
-            }
-        };
-        match project.get_version(&path) {
-            Some(project_version) => {
-                if params.version < project_version {
-                    let message = format!(
-                        "user requested version {} but the project has version {}",
-                        params.version, project_version
-                    );
-                    return Err(message);
-                }
-                if params.version > project_version {
-                    // The requested version is not loaded yet.
-                    return Ok(SearchResponse {
-                        loading: true,
-                        ..SearchResponse::new(params)
-                    });
-                }
-            }
-            None => {
-                return Err(format!("the project has not opened {}", path.display()));
-            }
-        }
-        let descriptor = match project.descriptor_from_path(&path) {
-            Ok(name) => name,
-            Err(e) => {
-                return Err(format!("descriptor_from_path failed: {:?}", e));
-            }
-        };
-        let env = match project.get_module(&descriptor) {
-            LoadState::Ok(env) => env,
-            _ => {
-                return Err(format!("could not load module from {:?}", descriptor));
-            }
-        };
-
-        let path = env.path_for_line(params.selected_line)?;
-
-        // Check if this request matches our current task, based on the full path of the goal.
-        // This is slower (because we had to acquire the project lock first)
-        // but catches more situations than just checking the selected line.
-        if let Some(current_job) = self.search_job.read().await.as_ref() {
-            if current_job.url == params.uri
-                && current_job.version == params.version
-                && current_job.path == path
-            {
-                return Ok(current_job.response().await);
-            }
-        }
-        let cursor = NodeCursor::from_path(env, &path);
-        let goal = cursor.goal()?;
-        let cancellation_token = CancellationToken::new();
-        let mut processor = Processor::with_token(&project, cancellation_token.clone());
-        for fact in cursor.usable_facts(&project) {
-            processor.add_fact(fact)?;
-        }
-        processor.set_goal(&goal)?;
-        let status = SearchStatus::pending(processor.prover());
-
-        // Create a new search job
-        let new_job = SearchJob {
-            project: self.project.clone(),
-            url: params.uri.clone(),
-            version: doc.saved_version(),
-            processor: Arc::new(RwLock::new(processor)),
-            descriptor,
-            selected_line: params.selected_line,
-            path,
-            goal_name: goal.name.clone(),
-            goal_range: goal.proposition.source.range,
-            status: Arc::new(RwLock::new(status)),
-            cancellation_token,
-            proof_insertion_line: goal.proof_insertion_line,
-            insert_block: goal.insert_block,
-            id: params.id,
-        };
-
-        // A minimal response before any data has been collected
-        let mut response = new_job.response().await;
-        response.loading = true;
-
-        self.set_search_job(Some(new_job)).await;
-
-        Ok(response)
-    }
-
-    fn info_fail(&self, params: InfoParams, message: &str) -> jsonrpc::Result<InfoResponse> {
-        log(message);
-        Ok(InfoResponse {
-            search_id: params.search_id,
-            failure: Some(message.to_string()),
-            result: None,
-        })
+        self.search_manager
+            .handle_search_request(params, &self.project, &self.documents)
+            .await
     }
 
     async fn handle_info_request(&self, params: InfoParams) -> jsonrpc::Result<InfoResponse> {
-        let locked_job = self.search_job.read().await;
-
-        let job = match locked_job.as_ref() {
-            Some(job) => job,
-            None => return self.info_fail(params, "no search job available"),
-        };
-        if job.id != params.search_id {
-            let failure = format!(
-                "info request has search id {}, job has id {}",
-                params.search_id, job.id
-            );
-            return self.info_fail(params, &failure);
-        }
-        let project = self.project.read().await;
-        let processor = &*job.processor.read().await;
-        let env = match project.get_env(&job.descriptor) {
-            Some(env) => env,
-            None => {
-                return self.info_fail(params, "no environment available");
-            }
-        };
-        let result = processor.prover().info_result(
-            params.clause_id,
-            &project,
-            &env.bindings,
-            processor.normalizer(),
-        );
-        let failure = match result {
-            Some(_) => None,
-            None => Some(format!("no info available for clause {}", params.clause_id)),
-        };
-        Ok(InfoResponse {
-            search_id: params.search_id,
-            failure,
-            result,
-        })
+        self.search_manager
+            .handle_info_request(params, &self.project)
+            .await
     }
 }
 
