@@ -577,7 +577,7 @@ impl<'a> Builder<'a> {
             };
             premises.insert(module_id, premise_set.iter().cloned().collect());
         }
-        let mut processor = Processor::with_token(self.project, self.cancellation_token.clone());
+        let mut processor = Processor::with_token(self.cancellation_token.clone());
 
         // Add facts from the dependencies
         let empty = HashSet::new();
@@ -828,7 +828,7 @@ impl<'a> Builder<'a> {
         self.module_proving_started(target.clone());
 
         // The full processor has access to all imported facts.
-        let mut full_processor = Processor::with_token(&self.project, self.cancellation_token.clone());
+        let mut full_processor = Processor::with_token(self.cancellation_token.clone());
         for fact in self.project.imported_facts(env.module_id, None) {
             full_processor.add_fact(fact.clone())?;
         }

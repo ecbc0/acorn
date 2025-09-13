@@ -24,28 +24,27 @@ pub struct Processor {
 }
 
 impl Processor {
-    pub fn new(project: &Project) -> Processor {
+    pub fn new() -> Processor {
         Processor {
-            prover: Prover::new(project),
+            prover: Prover::new(),
             normalizer: Normalizer::new(),
             checker: Checker::new(),
         }
     }
 
-    pub fn with_token(project: &Project, cancellation_token: CancellationToken) -> Processor {
+    pub fn with_token(cancellation_token: CancellationToken) -> Processor {
         Processor {
-            prover: Prover::with_token(project, cancellation_token),
+            prover: Prover::with_token(cancellation_token),
             normalizer: Normalizer::new(),
             checker: Checker::new(),
         }
     }
 
     pub fn with_dual_tokens(
-        project: &Project,
         token1: CancellationToken,
         token2: CancellationToken,
     ) -> Processor {
-        let mut prover = Prover::new(project);
+        let mut prover = Prover::new();
         prover.cancellation_tokens.push(token1);
         prover.cancellation_tokens.push(token2);
         Processor {

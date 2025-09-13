@@ -47,19 +47,18 @@ impl ProjectManager {
 
         // Get write access to the project
         let mut project = self.project.write().await;
-        
+
         // Call the mutation function
         let result = f(&mut project);
-        
+
         // Create a new cancellation token for future builds
         {
             let mut cancel = self.cancel.write().await;
             *cancel = CancellationToken::new();
         }
-        
+
         result
     }
-
 }
 
 // Implement Deref for ProjectView to make it easier to use
