@@ -106,6 +106,49 @@ impl TestFixture {
         let full_path = self.src_dir.path().join(path);
         Url::from_file_path(full_path).unwrap()
     }
+
+    /// Open a document with the given content
+    async fn open(&self, filename: &str, content: &str, version: i32) {
+        self.server
+            .did_open(DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: self.url(filename),
+                    language_id: "acorn".to_string(),
+                    version,
+                    text: content.to_string(),
+                },
+            })
+            .await;
+    }
+
+    /// Change a document's content (replaces entire content)
+    async fn change(&self, filename: &str, content: &str, version: i32) {
+        self.server
+            .did_change(DidChangeTextDocumentParams {
+                text_document: VersionedTextDocumentIdentifier {
+                    uri: self.url(filename),
+                    version,
+                },
+                content_changes: vec![TextDocumentContentChangeEvent {
+                    range: None,
+                    range_length: None,
+                    text: content.to_string(),
+                }],
+            })
+            .await;
+    }
+
+    /// Save a document with the given content
+    async fn save(&self, filename: &str, content: &str) {
+        self.server
+            .did_save(DidSaveTextDocumentParams {
+                text_document: TextDocumentIdentifier {
+                    uri: self.url(filename),
+                },
+                text: Some(content.to_string()),
+            })
+            .await;
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -115,44 +158,12 @@ async fn test_server_basic() {
     let text1 = "theorem foo { true }";
     let text2 = "theorem bar { true }";
 
-    let url = fx.url("foo.ac");
-
-    // First, open the document with text1
-    fx.server
-        .did_open(DidOpenTextDocumentParams {
-            text_document: TextDocumentItem {
-                uri: url.clone(),
-                language_id: "acorn".to_string(),
-                version: 1,
-                text: text1.to_string(),
-            },
-        })
-        .await;
-
-    // Then, change the document to text2 (replacing entire content)
-    fx.server
-        .did_change(DidChangeTextDocumentParams {
-            text_document: VersionedTextDocumentIdentifier {
-                uri: url.clone(),
-                version: 2,
-            },
-            content_changes: vec![TextDocumentContentChangeEvent {
-                range: None,
-                range_length: None,
-                text: text2.to_string(),
-            }],
-        })
-        .await;
-
-    // Finally, save the document with text2
-    fx.server
-        .did_save(DidSaveTextDocumentParams {
-            text_document: TextDocumentIdentifier { uri: url.clone() },
-            text: Some(text2.to_string()),
-        })
-        .await;
+    fx.open("foo.ac", text1, 1).await;
+    fx.change("foo.ac", text2, 2).await;
+    fx.save("foo.ac", text2).await;
 
     // Wait for diagnostics to verify the build happened
+    let url = fx.url("foo.ac");
     let diagnostics = fx.client.wait_for_diagnostics(&url, 5).await;
     assert!(
         diagnostics.is_some(),
