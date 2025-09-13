@@ -460,7 +460,7 @@ impl AcornLanguageServer {
         self.spawn_build();
     }
 
-    async fn handle_progress_request(
+    pub async fn handle_progress_request(
         &self,
         _params: ProgressParams,
     ) -> jsonrpc::Result<ProgressResponse> {

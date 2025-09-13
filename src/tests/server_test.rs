@@ -1,3 +1,4 @@
+use crate::interfaces::ProgressParams;
 use crate::server::{AcornLanguageServer, LspClient, ServerArgs};
 use assert_fs::fixture::ChildPath;
 use assert_fs::prelude::*;
@@ -149,6 +150,29 @@ impl TestFixture {
             })
             .await;
     }
+
+    /// Wait for the current build to complete
+    /// Returns true if build completed within timeout, false if timeout exceeded
+    async fn wait_for_build_completion(&self, timeout_secs: u64) -> bool {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout_secs);
+
+        while tokio::time::Instant::now() < deadline {
+            let progress = self
+                .server
+                .handle_progress_request(ProgressParams {})
+                .await
+                .unwrap();
+
+            if progress.finished {
+                return true;
+            }
+
+            // Poll every 10ms
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        false
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -177,9 +201,7 @@ async fn test_server_basic() {
         "Expected no diagnostic errors, got: {:?}",
         diags
     );
-
-    // Give the build a bit more time to write cache files
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(fx.wait_for_build_completion(5).await);
 
     // Check that a cache was created
     assert!(fx.build_dir.child("foo.yaml").exists());
