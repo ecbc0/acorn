@@ -38,7 +38,7 @@ pub struct Prover {
 
     /// If any one of these tokens is canceled, the prover should stop working and exit
     /// with an Outcome::Interrupted.
-    pub cancellation_tokens: Vec<CancellationToken>,
+    cancellation_tokens: Vec<CancellationToken>,
 
     /// Number of proof steps activated, not counting Factual ones.
     nonfactual_activations: i32,
@@ -123,22 +123,25 @@ impl ProverParams {
 impl Prover {
     /// Creates a new Prover instance
     pub fn new() -> Prover {
+        Self::with_tokens(vec![])
+    }
+
+    /// Creates a new Prover instance with a single cancellation token
+    pub fn with_token(token: CancellationToken) -> Prover {
+        Self::with_tokens(vec![token])
+    }
+
+    /// Creates a new Prover instance with multiple cancellation tokens
+    pub fn with_tokens(tokens: Vec<CancellationToken>) -> Prover {
         Prover {
             active_set: ActiveSet::new(),
             passive_set: PassiveSet::new(),
             final_step: None,
-            cancellation_tokens: vec![],
+            cancellation_tokens: tokens,
             useful_passive: vec![],
             nonfactual_activations: 0,
             goal: None,
         }
-    }
-
-    /// Creates a new Prover instance with a cancellation token
-    pub fn with_token(token: CancellationToken) -> Prover {
-        let mut prover = Self::new();
-        prover.cancellation_tokens.push(token);
-        prover
     }
 
     /// Add proof steps to the prover.

@@ -44,11 +44,8 @@ impl Processor {
         token1: CancellationToken,
         token2: CancellationToken,
     ) -> Processor {
-        let mut prover = Prover::new();
-        prover.cancellation_tokens.push(token1);
-        prover.cancellation_tokens.push(token2);
         Processor {
-            prover,
+            prover: Prover::with_tokens(vec![token1, token2]),
             normalizer: Normalizer::new(),
             checker: Checker::new(),
         }
