@@ -206,3 +206,34 @@ async fn test_server_basic() {
     // Check that a cache was created
     assert!(fx.build_dir.child("foo.yaml").exists());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_build_cancellation() {
+    let fx = TestFixture::new();
+
+    // Start with a theorem that will hang forever (in test mode)
+    let hanging_text = "theorem test_hang { true }";
+    fx.open("test.ac", hanging_text, 1).await;
+    fx.save("test.ac", hanging_text).await;
+
+    // Give the build a moment to start
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Now change the file to have a normal theorem
+    // This should cancel the hanging build and start a new one
+    let normal_text = "theorem foo { true }";
+    fx.change("test.ac", normal_text, 2).await;
+    fx.save("test.ac", normal_text).await;
+
+    // The new build should complete successfully
+    assert!(
+        fx.wait_for_build_completion(5).await,
+        "Build did not complete after cancelling hanging build"
+    );
+
+    // Give a moment for cache to be written
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Check that cache was created for the successful build
+    assert!(fx.build_dir.child("test.yaml").exists());
+}
