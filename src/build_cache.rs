@@ -71,6 +71,17 @@ impl BuildCache {
             .map(|store| CertificateWorklist::new(store.clone()))
     }
 
+    pub fn get_certificates(&self, descriptor: &ModuleDescriptor) -> Option<&CertificateStore> {
+        self.cache.get(descriptor)
+    }
+
+    pub fn manifest_matches(&self, descriptor: &ModuleDescriptor, hash: blake3::Hash) -> bool {
+        match descriptor {
+            ModuleDescriptor::Name(parts) => self.manifest.matches_entry(parts, hash),
+            _ => false,  // Anonymous modules can't be in the manifest
+        }
+    }
+
     pub fn save(&self) -> Result<(), Box<dyn Error>> {
         // Save all the certificate stores
         for (descriptor, cert_store) in &self.cache {

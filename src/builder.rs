@@ -942,11 +942,6 @@ impl<'a> Builder<'a> {
 
     /// Builds all open modules, logging build events.
     pub fn build(&mut self) {
-        // Check for incompatible configuration
-        if self.project.config.use_certs && self.check_hashes {
-            panic!("Cannot use both certificates and hash checking");
-        }
-
         // Initialize the build cache if we're using certificates
         if self.project.using_certs() {
             self.build_cache = Some(BuildCache::new(self.project.build_dir.clone()));
@@ -1011,11 +1006,87 @@ impl<'a> Builder<'a> {
                     continue;
                 }
             }
+
+            if self.try_skip_unchanged_module(env.module_id, &target) {
+                // Update metrics to count the goals in this module as a success
+                let goal_count = env.iter_goals().count() as i32;
+                self.metrics.goals_done += goal_count;
+                self.metrics.goals_success += goal_count;
+                self.metrics.cached_certs += goal_count;
+
+                let event = BuildEvent {
+                    progress: Some((self.metrics.goals_done, self.metrics.goals_total)),
+                    ..self.default_event()
+                };
+                (self.event_handler)(event);
+
+                continue;
+            }
+
             if let Err(e) = self.verify_module(&target, env) {
                 self.log_build_error(&e);
                 return;
             }
         }
+    }
+
+    /// Tries to skip building a module if it and all its dependencies are unchanged.
+    /// If successful, copies certificates to the new build cache and returns true.
+    /// This only works when both check_hashes and use_certs are true.
+    fn try_skip_unchanged_module(
+        &mut self,
+        module_id: ModuleId,
+        target: &ModuleDescriptor,
+    ) -> bool {
+        if !self.check_hashes || !self.project.config.use_certs {
+            return false;
+        }
+
+        let Some(build_cache) = &self.project.build_cache else {
+            return false;
+        };
+
+        let Some(descriptor) = self.project.get_module_descriptor(module_id) else {
+            return false;
+        };
+
+        let Some(current_hash) = self.project.get_module_content_hash(module_id) else {
+            return false;
+        };
+
+        if !build_cache.manifest_matches(descriptor, current_hash) {
+            return false;
+        }
+
+        // Check all dependencies recursively
+        for dep_id in self.project.all_dependencies(module_id) {
+            let Some(dep_descriptor) = self.project.get_module_descriptor(dep_id) else {
+                return false;
+            };
+
+            let Some(dep_hash) = self.project.get_module_content_hash(dep_id) else {
+                return false;
+            };
+
+            if !build_cache.manifest_matches(dep_descriptor, dep_hash) {
+                return false;
+            }
+        }
+
+        let Some(existing_certs) = build_cache.get_certificates(target) else {
+            // This is a bad case. The different build files are inconsistent.
+            // Well, just ignore it.
+            return false;
+        };
+
+        // Even though we're skipping verification, we still want to copy the certificates over.
+        self.build_cache.as_mut().unwrap().insert(
+            target.clone(),
+            existing_certs.clone(),
+            current_hash,
+        );
+
+        true
     }
 
     /// Consumes the builder and returns the build cache if the build was successful
