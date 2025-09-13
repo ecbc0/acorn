@@ -10,7 +10,7 @@ use crate::block::NodeCursor;
 use crate::interfaces::{InfoParams, InfoResponse, SearchParams, SearchResponse, SearchStatus};
 use crate::module::{LoadState, ModuleDescriptor};
 use crate::processor::Processor;
-use crate::project::Project;
+use crate::server::project_manager::ProjectManager;
 use crate::prover::{Outcome, ProverParams};
 
 use super::live_document::LiveDocument;
@@ -25,7 +25,7 @@ use super::{log, to_path};
 // concurrent user requests can read it.
 #[derive(Clone)]
 pub struct SearchJob {
-    project: Arc<RwLock<Project>>,
+    project_manager: Arc<ProjectManager>,
     url: Url,
     version: i32,
 
@@ -93,8 +93,8 @@ impl SearchJob {
     async fn run(&self) {
         // This holds a read lock on the project the whole time.
         // It seems like we should be able to avoid this, but maybe it's just fine.
-        let project = self.project.read().await;
-        let env = match project.get_env(&self.descriptor) {
+        let view = self.project_manager.read().await;
+        let env = match view.get_env(&self.descriptor) {
             Some(env) => env,
             None => {
                 log(&format!("no environment for {:?}", self.descriptor));
@@ -114,7 +114,7 @@ impl SearchJob {
                     let proof = processor.get_condensed_proof().unwrap();
                     let steps = processor.prover().to_proof_info(
                         &proof,
-                        &project,
+                        &*view,
                         &env.bindings,
                         processor.normalizer(),
                     );
@@ -202,11 +202,11 @@ impl SearchManager {
     pub async fn handle_search_request(
         &self,
         params: SearchParams,
-        project: &Arc<RwLock<Project>>,
+        project_manager: &Arc<ProjectManager>,
         documents: &DashMap<Url, Arc<RwLock<LiveDocument>>>,
     ) -> jsonrpc::Result<SearchResponse> {
         match self
-            .search_request_helper(params.clone(), project, documents)
+            .search_request_helper(params.clone(), project_manager, documents)
             .await
         {
             Ok(response) => Ok(response),
@@ -217,7 +217,7 @@ impl SearchManager {
     async fn search_request_helper(
         &self,
         params: SearchParams,
-        project: &Arc<RwLock<Project>>,
+        project_manager: &Arc<ProjectManager>,
         documents: &DashMap<Url, Arc<RwLock<LiveDocument>>>,
     ) -> Result<SearchResponse, String> {
         let doc = match documents.get(&params.uri) {
@@ -240,7 +240,7 @@ impl SearchManager {
             }
         }
 
-        let project_guard = project.read().await;
+        let view = project_manager.read().await;
         let path = match to_path(&params.uri) {
             Some(path) => path,
             None => {
@@ -248,7 +248,7 @@ impl SearchManager {
                 return Err("no path available in SearchJob::run".to_string());
             }
         };
-        match project_guard.get_version(&path) {
+        match view.get_version(&path) {
             Some(project_version) => {
                 if params.version < project_version {
                     let message = format!(
@@ -269,13 +269,13 @@ impl SearchManager {
                 return Err(format!("the project has not opened {}", path.display()));
             }
         }
-        let descriptor = match project_guard.descriptor_from_path(&path) {
+        let descriptor = match view.descriptor_from_path(&path) {
             Ok(name) => name,
             Err(e) => {
                 return Err(format!("descriptor_from_path failed: {:?}", e));
             }
         };
-        let env = match project_guard.get_module(&descriptor) {
+        let env = match view.get_module(&descriptor) {
             LoadState::Ok(env) => env,
             _ => {
                 return Err(format!("could not load module from {:?}", descriptor));
@@ -298,8 +298,8 @@ impl SearchManager {
         let cursor = NodeCursor::from_path(env, &path);
         let goal = cursor.goal()?;
         let cancellation_token = CancellationToken::new();
-        let mut processor = Processor::with_token(&project_guard, cancellation_token.clone());
-        for fact in cursor.usable_facts(&project_guard) {
+        let mut processor = Processor::with_token(&view, cancellation_token.clone());
+        for fact in cursor.usable_facts(&view) {
             processor.add_fact(fact)?;
         }
         processor.set_goal(&goal)?;
@@ -307,7 +307,7 @@ impl SearchManager {
 
         // Create a new search job
         let new_job = SearchJob {
-            project: project.clone(),
+            project_manager: project_manager.clone(),
             url: params.uri.clone(),
             version: doc.saved_version(),
             processor: Arc::new(RwLock::new(processor)),
@@ -344,7 +344,7 @@ impl SearchManager {
     pub async fn handle_info_request(
         &self,
         params: InfoParams,
-        project: &Arc<RwLock<Project>>,
+        project_manager: &Arc<ProjectManager>,
     ) -> jsonrpc::Result<InfoResponse> {
         let locked_job = self.current_job.read().await;
 
@@ -359,9 +359,9 @@ impl SearchManager {
             );
             return self.info_fail(params, &failure);
         }
-        let project_guard = project.read().await;
+        let view = project_manager.read().await;
         let processor = &*job.processor.read().await;
-        let env = match project_guard.get_env(&job.descriptor) {
+        let env = match view.get_env(&job.descriptor) {
             Some(env) => env,
             None => {
                 return self.info_fail(params, "no environment available");
@@ -369,7 +369,7 @@ impl SearchManager {
         };
         let result = processor.prover().info_result(
             params.clause_id,
-            &project_guard,
+            &view,
             &env.bindings,
             processor.normalizer(),
         );

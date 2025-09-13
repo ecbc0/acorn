@@ -1,5 +1,6 @@
 // The Acorn Language Server. This is typically invoked by a VS Code extension.
 mod live_document;
+mod project_manager;
 mod search_manager;
 
 use std::collections::HashMap;
@@ -7,11 +8,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use self::live_document::LiveDocument;
+use self::project_manager::ProjectManager;
 use self::search_manager::SearchManager;
 use crate::builder::{BuildEvent, Builder};
 use color_backtrace::BacktracePrinter;
 use dashmap::DashMap;
-use tokio::sync::{mpsc, RwLock, RwLockWriteGuard};
+use tokio::sync::{mpsc, RwLock};
 use tower_lsp::jsonrpc;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
@@ -266,7 +268,7 @@ pub struct AcornLanguageServer {
     client: Arc<dyn LspClient>,
 
     // The project we're working on
-    project: Arc<RwLock<Project>>,
+    project_manager: Arc<ProjectManager>,
 
     // Information about the most recent build to run.
     build: Arc<RwLock<BuildInfo>>,
@@ -325,9 +327,9 @@ impl AcornLanguageServer {
             write_cache,
             ..Default::default()
         };
-        let project = Project::new(src_dir, build_dir, config);
+        let project_manager = Arc::new(ProjectManager::new(src_dir, build_dir, config));
         AcornLanguageServer {
-            project: Arc::new(RwLock::new(project)),
+            project_manager,
             client,
             build: Arc::new(RwLock::new(BuildInfo::none())),
             documents: DashMap::new(),
@@ -346,12 +348,12 @@ impl AcornLanguageServer {
         let (tx, mut rx) = mpsc::unbounded_channel();
 
         // Spawn a thread to run the build.
-        let project = self.project.clone();
+        let project_manager = self.project_manager.clone();
         tokio::spawn(async move {
-            let project = project.read().await;
+            let view = project_manager.read().await;
 
             tokio::task::block_in_place(move || {
-                let mut builder = Builder::new(&project, move |event| {
+                let mut builder = Builder::new(&*view, move |event| {
                     tx.send(event).unwrap();
                 });
                 builder.build();
@@ -367,18 +369,18 @@ impl AcornLanguageServer {
         });
 
         // Spawn a thread to process the build events.
-        let project = self.project.clone();
+        let project_manager = self.project_manager.clone();
         let build = self.build.clone();
         let client = Arc::clone(&self.client);
         tokio::spawn(async move {
-            let project = project.read().await;
-            build.write().await.reset(&project, &client).await;
+            let view = project_manager.read().await;
+            build.write().await.reset(&*view, &client).await;
 
             while let Some(event) = rx.recv().await {
                 build
                     .write()
                     .await
-                    .handle_event(&project, &client, &event)
+                    .handle_event(&*view, &client, &event)
                     .await;
             }
 
@@ -434,37 +436,28 @@ impl AcornLanguageServer {
             // Check if the project already has this document state.
             // If the update is a no-op, there's no need to stop the build.
             // This can happen if we are opening a document that the project is already using.
-            let project = self.project.read().await;
-            if project.has_version(&path, version) {
+            let view = self.project_manager.read().await;
+            if view.has_version(&path, version) {
                 return;
             }
         }
 
-        let mut project = self.stop_build_and_get_project().await;
         log(&format!(
             "updating {} with {} bytes",
             path.display(),
             text.len()
         ));
-        match project.update_file(path, &text, version) {
+        
+        // Use mutate to update the file with automatic build cancellation
+        let result = self.project_manager.mutate(|project| {
+            project.update_file(path, &text, version)
+        }).await;
+        
+        match result {
             Ok(()) => {}
             Err(e) => log(&format!("update failed: {:?}", e)),
         }
         self.spawn_build();
-    }
-
-    // If there is a build happening, stops it.
-    // Acquires the write lock on the project.
-    // Returns a writable reference to the project.
-    async fn stop_build_and_get_project(&self) -> RwLockWriteGuard<Project> {
-        {
-            let project = self.project.read().await;
-            project.stop_builds();
-        }
-        // Reallow the build once we acquire the write lock
-        let mut project = self.project.write().await;
-        project.allow_builds();
-        project
     }
 
     async fn handle_progress_request(
@@ -479,13 +472,13 @@ impl AcornLanguageServer {
 
     async fn handle_search_request(&self, params: SearchParams) -> jsonrpc::Result<SearchResponse> {
         self.search_manager
-            .handle_search_request(params, &self.project, &self.documents)
+            .handle_search_request(params, &self.project_manager, &self.documents)
             .await
     }
 
     async fn handle_info_request(&self, params: InfoParams) -> jsonrpc::Result<InfoResponse> {
         self.search_manager
-            .handle_info_request(params, &self.project)
+            .handle_info_request(params, &self.project_manager)
             .await
     }
 }
@@ -568,8 +561,12 @@ impl LanguageServer for AcornLanguageServer {
                 return;
             }
         };
-        let mut project = self.stop_build_and_get_project().await;
-        match project.close_file(path) {
+        // Use mutate to close the file with automatic build cancellation
+        let result = self.project_manager.mutate(|project| {
+            project.close_file(path)
+        }).await;
+        
+        match result {
             Ok(()) => {}
             Err(e) => log(&format!("close failed: {:?}", e)),
         }
@@ -592,8 +589,8 @@ impl LanguageServer for AcornLanguageServer {
         let doc = doc.read().await;
         let env_line = doc.get_env_line(pos.line);
         let prefix = doc.get_prefix(pos.line, pos.character);
-        let project = self.project.read().await;
-        match project.get_completions(path.as_deref(), env_line, &prefix) {
+        let view = self.project_manager.read().await;
+        match view.get_completions(path.as_deref(), env_line, &prefix) {
             Some(items) => {
                 let response = CompletionResponse::List(CompletionList {
                     is_incomplete: false,
@@ -608,26 +605,26 @@ impl LanguageServer for AcornLanguageServer {
     async fn hover(&self, params: HoverParams) -> jsonrpc::Result<Option<Hover>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
-        let project = self.project.read().await;
+        let view = self.project_manager.read().await;
 
         // We log something in the conditions that are unexpected
         let Some(path) = to_path(&uri) else {
             log(&format!("could not convert to path: {}", uri));
             return Ok(None);
         };
-        let Ok(descriptor) = project.descriptor_from_path(&path) else {
+        let Ok(descriptor) = view.descriptor_from_path(&path) else {
             log(&format!(
                 "could not get descriptor for path: {}",
                 path.display()
             ));
             return Ok(None);
         };
-        let Some(env) = project.get_env(&descriptor) else {
+        let Some(env) = view.get_env(&descriptor) else {
             log(&format!("no environment for module: {:?}", descriptor));
             return Ok(None);
         };
 
-        Ok(project.hover(&env, pos.line, pos.character))
+        Ok(view.hover(&env, pos.line, pos.character))
     }
 
     async fn shutdown(&self) -> jsonrpc::Result<()> {
