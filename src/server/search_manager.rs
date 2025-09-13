@@ -93,8 +93,8 @@ impl SearchJob {
     async fn run(&self) {
         // This holds a read lock on the project the whole time.
         // It seems like we should be able to avoid this, but maybe it's just fine.
-        let view = self.project_manager.read().await;
-        let env = match view.get_env(&self.descriptor) {
+        let project = self.project_manager.read().await;
+        let env = match project.get_env(&self.descriptor) {
             Some(env) => env,
             None => {
                 log(&format!("no environment for {:?}", self.descriptor));
@@ -114,7 +114,7 @@ impl SearchJob {
                     let proof = processor.get_condensed_proof().unwrap();
                     let steps = processor.prover().to_proof_info(
                         &proof,
-                        &*view,
+                        &*project,
                         &env.bindings,
                         processor.normalizer(),
                     );
@@ -240,7 +240,7 @@ impl SearchManager {
             }
         }
 
-        let view = project_manager.read().await;
+        let project = project_manager.read().await;
         let path = match to_path(&params.uri) {
             Some(path) => path,
             None => {
@@ -248,7 +248,7 @@ impl SearchManager {
                 return Err("no path available in SearchJob::run".to_string());
             }
         };
-        match view.get_version(&path) {
+        match project.get_version(&path) {
             Some(project_version) => {
                 if params.version < project_version {
                     let message = format!(
@@ -269,13 +269,13 @@ impl SearchManager {
                 return Err(format!("the project has not opened {}", path.display()));
             }
         }
-        let descriptor = match view.descriptor_from_path(&path) {
+        let descriptor = match project.descriptor_from_path(&path) {
             Ok(name) => name,
             Err(e) => {
                 return Err(format!("descriptor_from_path failed: {:?}", e));
             }
         };
-        let env = match view.get_module(&descriptor) {
+        let env = match project.get_module(&descriptor) {
             LoadState::Ok(env) => env,
             _ => {
                 return Err(format!("could not load module from {:?}", descriptor));
@@ -298,8 +298,8 @@ impl SearchManager {
         let cursor = NodeCursor::from_path(env, &path);
         let goal = cursor.goal()?;
         let cancellation_token = CancellationToken::new();
-        let mut processor = Processor::with_dual_tokens(view.cancel.clone(), cancellation_token.clone());
-        for fact in cursor.usable_facts(&view) {
+        let mut processor = Processor::with_dual_tokens(project.cancel.clone(), cancellation_token.clone());
+        for fact in cursor.usable_facts(&project) {
             processor.add_fact(fact)?;
         }
         processor.set_goal(&goal)?;
@@ -359,9 +359,9 @@ impl SearchManager {
             );
             return self.info_fail(params, &failure);
         }
-        let view = project_manager.read().await;
+        let project = project_manager.read().await;
         let processor = &*job.processor.read().await;
-        let env = match view.get_env(&job.descriptor) {
+        let env = match project.get_env(&job.descriptor) {
             Some(env) => env,
             None => {
                 return self.info_fail(params, "no environment available");
@@ -369,7 +369,7 @@ impl SearchManager {
         };
         let result = processor.prover().info_result(
             params.clause_id,
-            &view,
+            &project,
             &env.bindings,
             processor.normalizer(),
         );

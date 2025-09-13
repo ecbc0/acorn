@@ -350,10 +350,10 @@ impl AcornLanguageServer {
         // Spawn a thread to run the build.
         let project_manager = self.project_manager.clone();
         tokio::spawn(async move {
-            let view = project_manager.read().await;
+            let project = project_manager.read().await;
 
             tokio::task::block_in_place(move || {
-                let mut builder = Builder::new(&*view, view.cancel.clone(), move |event| {
+                let mut builder = Builder::new(&*project, project.cancel.clone(), move |event| {
                     tx.send(event).unwrap();
                 });
                 builder.build();
@@ -373,14 +373,14 @@ impl AcornLanguageServer {
         let build = self.build.clone();
         let client = Arc::clone(&self.client);
         tokio::spawn(async move {
-            let view = project_manager.read().await;
-            build.write().await.reset(&*view, &client).await;
+            let project = project_manager.read().await;
+            build.write().await.reset(&*project, &client).await;
 
             while let Some(event) = rx.recv().await {
                 build
                     .write()
                     .await
-                    .handle_event(&*view, &client, &event)
+                    .handle_event(&*project, &client, &event)
                     .await;
             }
 
@@ -436,8 +436,8 @@ impl AcornLanguageServer {
             // Check if the project already has this document state.
             // If the update is a no-op, there's no need to stop the build.
             // This can happen if we are opening a document that the project is already using.
-            let view = self.project_manager.read().await;
-            if view.has_version(&path, version) {
+            let project = self.project_manager.read().await;
+            if project.has_version(&path, version) {
                 return;
             }
         }
@@ -589,8 +589,8 @@ impl LanguageServer for AcornLanguageServer {
         let doc = doc.read().await;
         let env_line = doc.get_env_line(pos.line);
         let prefix = doc.get_prefix(pos.line, pos.character);
-        let view = self.project_manager.read().await;
-        match view.get_completions(path.as_deref(), env_line, &prefix) {
+        let project = self.project_manager.read().await;
+        match project.get_completions(path.as_deref(), env_line, &prefix) {
             Some(items) => {
                 let response = CompletionResponse::List(CompletionList {
                     is_incomplete: false,
@@ -605,26 +605,26 @@ impl LanguageServer for AcornLanguageServer {
     async fn hover(&self, params: HoverParams) -> jsonrpc::Result<Option<Hover>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
-        let view = self.project_manager.read().await;
+        let project = self.project_manager.read().await;
 
         // We log something in the conditions that are unexpected
         let Some(path) = to_path(&uri) else {
             log(&format!("could not convert to path: {}", uri));
             return Ok(None);
         };
-        let Ok(descriptor) = view.descriptor_from_path(&path) else {
+        let Ok(descriptor) = project.descriptor_from_path(&path) else {
             log(&format!(
                 "could not get descriptor for path: {}",
                 path.display()
             ));
             return Ok(None);
         };
-        let Some(env) = view.get_env(&descriptor) else {
+        let Some(env) = project.get_env(&descriptor) else {
             log(&format!("no environment for module: {:?}", descriptor));
             return Ok(None);
         };
 
-        Ok(view.hover(&env, pos.line, pos.character))
+        Ok(project.hover(&env, pos.line, pos.character))
     }
 
     async fn shutdown(&self) -> jsonrpc::Result<()> {
