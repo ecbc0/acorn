@@ -151,10 +151,9 @@ impl TestFixture {
             .await;
     }
 
-    /// Wait for the current build to complete
-    /// Returns true if build completed within timeout, false if timeout exceeded
-    async fn wait_for_build_completion(&self, timeout_secs: u64) -> bool {
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout_secs);
+    /// Assert that the current build completes within 5 seconds
+    async fn assert_build_completes(&self) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
 
         while tokio::time::Instant::now() < deadline {
             let progress = self
@@ -164,14 +163,30 @@ impl TestFixture {
                 .unwrap();
 
             if progress.finished {
-                return true;
+                return;
             }
 
             // Poll every 10ms
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
 
-        false
+        panic!("Build did not complete within 5 seconds");
+    }
+
+    /// Assert that a file in the build directory will exist within 5 seconds
+    async fn assert_build_file_will_exist(&self, filename: &str) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let path = self.build_dir.child(filename);
+
+        while tokio::time::Instant::now() < deadline {
+            if path.exists() {
+                return;
+            }
+            // Poll every 10ms
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        panic!("Build file did not exist within 5 seconds: {}", filename);
     }
 }
 
@@ -201,13 +216,10 @@ async fn test_server_basic() {
         "Expected no diagnostic errors, got: {:?}",
         diags
     );
-    assert!(fx.wait_for_build_completion(5).await);
-
-    // Give a moment for certificates to be written
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    fx.assert_build_completes().await;
 
     // Check that certificates were created
-    assert!(fx.build_dir.child("foo.jsonl").exists());
+    fx.assert_build_file_will_exist("foo.jsonl").await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -229,14 +241,8 @@ async fn test_build_cancellation() {
     fx.save("test.ac", normal_text).await;
 
     // The new build should complete successfully
-    assert!(
-        fx.wait_for_build_completion(5).await,
-        "Build did not complete after cancelling hanging build"
-    );
-
-    // Give a moment for certificates to be written
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    fx.assert_build_completes().await;
 
     // Check that certificates were created for the successful build
-    assert!(fx.build_dir.child("test.jsonl").exists());
+    fx.assert_build_file_will_exist("test.jsonl").await;
 }
