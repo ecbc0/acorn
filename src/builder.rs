@@ -3,6 +3,7 @@ use std::rc::Rc;
 use std::sync::atomic::AtomicU32;
 use std::time::Duration;
 
+use tokio_util::sync::CancellationToken;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Range};
 
 use crate::block::NodeCursor;
@@ -72,6 +73,9 @@ pub struct Builder<'a> {
     /// The verbose flag makes us print miscellaneous debug output.
     /// Don't set it from within the language server.
     pub verbose: bool,
+
+    /// Cancellation token to stop the build.
+    cancellation_token: CancellationToken,
 }
 
 /// Metrics collected during a build.
@@ -263,7 +267,11 @@ impl BuildStatus {
 }
 
 impl<'a> Builder<'a> {
-    pub fn new(project: &'a Project, event_handler: impl FnMut(BuildEvent) + 'a) -> Self {
+    pub fn new(
+        project: &'a Project,
+        cancellation_token: CancellationToken,
+        event_handler: impl FnMut(BuildEvent) + 'a,
+    ) -> Self {
         let event_handler = Box::new(event_handler);
         Builder {
             project,
@@ -280,6 +288,7 @@ impl<'a> Builder<'a> {
             build_cache: None,
             single_goal: None,
             verbose: false,
+            cancellation_token,
         }
     }
 
@@ -568,7 +577,7 @@ impl<'a> Builder<'a> {
             };
             premises.insert(module_id, premise_set.iter().cloned().collect());
         }
-        let mut processor = Processor::new(self.project);
+        let mut processor = Processor::with_token(self.project, self.cancellation_token.clone());
 
         // Add facts from the dependencies
         let empty = HashSet::new();
@@ -819,7 +828,7 @@ impl<'a> Builder<'a> {
         self.module_proving_started(target.clone());
 
         // The full processor has access to all imported facts.
-        let mut full_processor = Processor::new(&self.project);
+        let mut full_processor = Processor::with_token(&self.project, self.cancellation_token.clone());
         for fact in self.project.imported_facts(env.module_id, None) {
             full_processor.add_fact(fact.clone())?;
         }

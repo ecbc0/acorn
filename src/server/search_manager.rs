@@ -298,7 +298,7 @@ impl SearchManager {
         let cursor = NodeCursor::from_path(env, &path);
         let goal = cursor.goal()?;
         let cancellation_token = CancellationToken::new();
-        let mut processor = Processor::with_token(&view, cancellation_token.clone());
+        let mut processor = Processor::with_dual_tokens(&view, view.cancel.clone(), cancellation_token.clone());
         for fact in cursor.usable_facts(&view) {
             processor.add_fact(fact)?;
         }

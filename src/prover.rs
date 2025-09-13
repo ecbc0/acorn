@@ -122,22 +122,22 @@ impl ProverParams {
 
 impl Prover {
     /// Creates a new Prover instance
-    pub fn new(project: &Project) -> Prover {
+    pub fn new(_project: &Project) -> Prover {
         Prover {
             active_set: ActiveSet::new(),
             passive_set: PassiveSet::new(),
             final_step: None,
-            cancellation_tokens: vec![project.build_cancellation_token.clone()],
+            cancellation_tokens: vec![],
             useful_passive: vec![],
             nonfactual_activations: 0,
             goal: None,
         }
     }
 
-    /// Creates a new Prover instance with an additional cancellation token
-    pub fn with_token(project: &Project, extra_token: CancellationToken) -> Prover {
+    /// Creates a new Prover instance with a cancellation token
+    pub fn with_token(project: &Project, token: CancellationToken) -> Prover {
         let mut prover = Self::new(project);
-        prover.cancellation_tokens.push(extra_token);
+        prover.cancellation_tokens.push(token);
         prover
     }
 

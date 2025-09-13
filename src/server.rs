@@ -353,7 +353,7 @@ impl AcornLanguageServer {
             let view = project_manager.read().await;
 
             tokio::task::block_in_place(move || {
-                let mut builder = Builder::new(&*view, move |event| {
+                let mut builder = Builder::new(&*view, view.cancel.clone(), move |event| {
                     tx.send(event).unwrap();
                 });
                 builder.build();

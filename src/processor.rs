@@ -40,6 +40,21 @@ impl Processor {
         }
     }
 
+    pub fn with_dual_tokens(
+        project: &Project,
+        token1: CancellationToken,
+        token2: CancellationToken,
+    ) -> Processor {
+        let mut prover = Prover::new(project);
+        prover.cancellation_tokens.push(token1);
+        prover.cancellation_tokens.push(token2);
+        Processor {
+            prover,
+            normalizer: Normalizer::new(),
+            checker: Checker::new(),
+        }
+    }
+
     pub fn prover(&self) -> &Prover {
         &self.prover
     }

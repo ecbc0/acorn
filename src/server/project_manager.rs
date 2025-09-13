@@ -60,10 +60,6 @@ impl ProjectManager {
         result
     }
 
-    /// Gets the current cancellation token
-    pub async fn cancellation_token(&self) -> CancellationToken {
-        self.cancel.read().await.clone()
-    }
 }
 
 // Implement Deref for ProjectView to make it easier to use

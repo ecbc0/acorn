@@ -2,6 +2,8 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use tokio_util::sync::CancellationToken;
+
 use crate::builder::{BuildEvent, BuildMetrics, BuildStatus, Builder};
 use crate::project::{Project, ProjectConfig};
 
@@ -84,7 +86,7 @@ impl Verifier {
         let events_clone = events.clone();
 
         // Set up the builder with event handler
-        let mut builder = Builder::new(project, move |event| {
+        let mut builder = Builder::new(project, CancellationToken::new(), move |event| {
             // Also print log messages as before
             if let Some(m) = &event.log_message {
                 if let Some(diagnostic) = &event.diagnostic {

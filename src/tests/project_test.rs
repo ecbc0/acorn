@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use tokio_util::sync::CancellationToken;
+
 use crate::builder::{BuildEvent, BuildStatus, Builder};
 use crate::environment::LineType;
 use crate::module::ModuleDescriptor;
@@ -10,7 +12,7 @@ use indoc::indoc;
 fn expect_build_ok(project: &Project) -> i32 {
     let mut events: Vec<BuildEvent> = vec![];
     let (status, searches_success) = {
-        let mut builder = Builder::new(&project, |event| events.push(event));
+        let mut builder = Builder::new(&project, CancellationToken::new(), |event| events.push(event));
         builder.build();
         (builder.status, builder.metrics.searches_success)
     };
@@ -218,7 +220,7 @@ fn test_repeated_verification() {
 
     {
         // The first verification should populate the cache, starting from an empty cache.
-        let mut builder = Builder::new(&p, |_| {});
+        let mut builder = Builder::new(&p, CancellationToken::new(), |_| {});
         builder.verify_module(&main_descriptor, &env).unwrap();
         assert_eq!(builder.status, BuildStatus::Good);
         assert_eq!(builder.metrics.searches_total, 5);
@@ -235,7 +237,7 @@ fn test_repeated_verification() {
 
     {
         // Run a second verification with no changes. This should use the cache.
-        let mut builder = Builder::new(&p, |_| {});
+        let mut builder = Builder::new(&p, CancellationToken::new(), |_| {});
         builder.verify_module(&main_descriptor, &env).unwrap();
         assert_eq!(builder.status, BuildStatus::Good);
         assert_eq!(builder.metrics.searches_total, 0);
@@ -254,7 +256,7 @@ fn test_repeated_verification() {
         // After we bust all the hashes, it should use the premise cache.
         p.mock("/mock/nat.ac", format!("// \n{}", nat_text).as_str());
         let env = p.get_env(&main_descriptor).unwrap();
-        let mut builder = Builder::new(&p, |_| {});
+        let mut builder = Builder::new(&p, CancellationToken::new(), |_| {});
         builder.verify_module(&main_descriptor, &env).unwrap();
         assert_eq!(builder.status, BuildStatus::Good);
         assert_eq!(builder.metrics.searches_total, 5);
@@ -273,7 +275,7 @@ fn test_repeated_verification() {
     let new_nat_text = nat_text.replace("nz_nonzero", "nz_nonzero_renamed");
     p.mock("/mock/nat.ac", new_nat_text.as_str());
     let env = p.get_env(&main_descriptor).unwrap();
-    let mut builder = Builder::new(&p, |_| {});
+    let mut builder = Builder::new(&p, CancellationToken::new(), |_| {});
     builder.verify_module(&main_descriptor, &env).unwrap();
     assert_eq!(builder.status, BuildStatus::Good);
     assert_eq!(builder.metrics.searches_total, 5);

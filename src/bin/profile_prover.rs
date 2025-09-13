@@ -10,6 +10,7 @@ use acorn::{
     project::{Project, ProjectConfig},
 };
 use mimalloc::MiMalloc;
+use tokio_util::sync::CancellationToken;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -28,7 +29,7 @@ fn main() {
         project
             .add_target_by_name("int")
             .expect("Failed to add int target");
-        let mut builder = Builder::new(&project, |event| {
+        let mut builder = Builder::new(&project, CancellationToken::new(), |event| {
             if let Some(m) = event.log_message {
                 println!("{}", m);
             }
