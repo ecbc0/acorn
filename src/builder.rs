@@ -96,11 +96,14 @@ pub struct BuildMetrics {
     /// The number of goals that were successfully proven.
     pub goals_success: i32,
 
-    /// How many goals were proven by a cached certificate.
-    pub cached_certs: i32,
+    /// How many certificates were reused from the cache.
+    pub certs_cached: i32,
 
-    /// How many cached certificates for a file we verified were unused.
-    pub unused_certs: i32,
+    /// How many cached certificates were unused.
+    pub certs_unused: i32,
+
+    /// How many new certificates were created in this build.
+    pub certs_created: i32,
 
     /// How many proof searches we did.
     pub searches_total: i32,
@@ -167,14 +170,20 @@ impl BuildMetrics {
 
     pub fn print(&self, status: BuildStatus) {
         println!();
-        if self.modules_total > 0 {
-            println!("{}/{} modules cached", self.modules_cached, self.modules_total);
+        if self.modules_cached > 0 {
+            println!(
+                "{}/{} modules cached",
+                self.modules_cached, self.modules_total
+            );
         }
-        if self.cached_certs > 0 {
-            println!("{} cached certificates", self.cached_certs);
+        if self.certs_created > 0 {
+            println!("{} certificates created", self.certs_created);
         }
-        if self.unused_certs > 0 {
-            println!("{} unused certificates", self.unused_certs);
+        if self.certs_cached > 0 {
+            println!("{} certificates cached", self.certs_cached);
+        }
+        if self.certs_unused > 0 {
+            println!("{} certificates unused", self.certs_unused);
         }
         println!(
             "{} searches performed ({} full, {} filtered, {} fallback)",
@@ -655,7 +664,7 @@ impl<'a> Builder<'a> {
                 let cert = worklist.get_cert(*i).unwrap();
                 match full_processor.check_cert(cert, Some(goal), self.project, &env.bindings) {
                     Ok(()) => {
-                        self.metrics.cached_certs += 1;
+                        self.metrics.certs_cached += 1;
                         self.metrics.goals_done += 1;
                         self.metrics.goals_success += 1;
                         self.log_verified(goal.first_line, goal.last_line);
@@ -699,6 +708,7 @@ impl<'a> Builder<'a> {
                     match filtered_processor.make_cert(self.project, &env.bindings, self.verbose) {
                         Ok(cert) => {
                             new_certs.push(cert);
+                            self.metrics.certs_created += 1;
                         }
                         Err(e) => {
                             return Err(BuildError::goal(
@@ -726,7 +736,10 @@ impl<'a> Builder<'a> {
         if outcome == Outcome::Success {
             if let Some(new_certs) = new_certs.as_mut() {
                 match full_processor.make_cert(self.project, &env.bindings, self.verbose) {
-                    Ok(cert) => new_certs.push(cert),
+                    Ok(cert) => {
+                        new_certs.push(cert);
+                        self.metrics.certs_created += 1;
+                    }
                     Err(e) => {
                         return Err(BuildError::goal(
                             &goal,
@@ -930,7 +943,7 @@ impl<'a> Builder<'a> {
             }
 
             if let Some(worklist) = worklist {
-                self.metrics.unused_certs += worklist.unused() as i32;
+                self.metrics.certs_unused += worklist.unused() as i32;
             }
 
             if let Some(certs) = new_certs {
@@ -1024,7 +1037,7 @@ impl<'a> Builder<'a> {
                 let goal_count = env.iter_goals().count() as i32;
                 self.metrics.goals_done += goal_count;
                 self.metrics.goals_success += goal_count;
-                self.metrics.cached_certs += goal_count;
+                self.metrics.certs_cached += goal_count;
                 self.metrics.modules_cached += 1;
 
                 let event = BuildEvent {
