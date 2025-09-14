@@ -81,6 +81,12 @@ pub struct Builder<'a> {
 /// Metrics collected during a build.
 #[derive(Clone, Debug, Default)]
 pub struct BuildMetrics {
+    /// The total number of modules to be built.
+    pub modules_total: i32,
+
+    /// The number of modules we skipped due to caching.
+    pub modules_cached: i32,
+
     /// The total number of goals to be verified.
     pub goals_total: i32,
 
@@ -161,6 +167,9 @@ impl BuildMetrics {
 
     pub fn print(&self, status: BuildStatus) {
         println!();
+        if self.modules_total > 0 {
+            println!("{}/{} modules cached", self.modules_cached, self.modules_total);
+        }
         if self.cached_certs > 0 {
             println!("{} cached certificates", self.cached_certs);
         }
@@ -999,6 +1008,9 @@ impl<'a> Builder<'a> {
 
         self.loading_phase_complete();
 
+        // Track the total number of modules to build
+        self.metrics.modules_total = envs.len() as i32;
+
         // The second pass is the "proving phase".
         for (target, env) in targets.into_iter().zip(envs) {
             if let Some((ref m, _)) = self.single_goal {
@@ -1013,6 +1025,7 @@ impl<'a> Builder<'a> {
                 self.metrics.goals_done += goal_count;
                 self.metrics.goals_success += goal_count;
                 self.metrics.cached_certs += goal_count;
+                self.metrics.modules_cached += 1;
 
                 let event = BuildEvent {
                     progress: Some((self.metrics.goals_done, self.metrics.goals_total)),
