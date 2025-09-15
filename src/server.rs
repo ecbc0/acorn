@@ -358,8 +358,7 @@ impl AcornLanguageServer {
                 let mut builder = Builder::new(&*project, project.cancel.clone(), move |event| {
                     tx.send(event).unwrap();
                 });
-                // Disable hash checking since we're using certificates
-                builder.check_hashes = false;
+                builder.check_hashes = true;
                 builder.build();
 
                 let duration = chrono::Local::now() - start_time;
@@ -376,9 +375,11 @@ impl AcornLanguageServer {
 
             // Update the build cache if the build was successful and epoch hasn't changed
             if let Some(new_cache) = build_cache {
-                let result = project_manager.mutate_if_epoch(epoch, |project| {
-                    project.update_build_cache(new_cache);
-                }).await;
+                let result = project_manager
+                    .mutate_if_epoch(epoch, |project| {
+                        project.update_build_cache(new_cache);
+                    })
+                    .await;
 
                 match result {
                     Ok(()) => log("Build cache updated successfully"),
@@ -466,12 +467,13 @@ impl AcornLanguageServer {
             path.display(),
             text.len()
         ));
-        
+
         // Use mutate to update the file with automatic build cancellation
-        let result = self.project_manager.mutate(|project| {
-            project.update_file(path, &text, version)
-        }).await;
-        
+        let result = self
+            .project_manager
+            .mutate(|project| project.update_file(path, &text, version))
+            .await;
+
         match result {
             Ok(()) => {}
             Err(e) => log(&format!("update failed: {:?}", e)),
@@ -581,10 +583,11 @@ impl LanguageServer for AcornLanguageServer {
             }
         };
         // Use mutate to close the file with automatic build cancellation
-        let result = self.project_manager.mutate(|project| {
-            project.close_file(path)
-        }).await;
-        
+        let result = self
+            .project_manager
+            .mutate(|project| project.close_file(path))
+            .await;
+
         match result {
             Ok(()) => {}
             Err(e) => log(&format!("close failed: {:?}", e)),
