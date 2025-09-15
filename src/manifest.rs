@@ -94,6 +94,15 @@ impl Manifest {
         self.modules.contains_key(&module_name)
     }
 
+    /// Merge entries from another manifest into this one.
+    /// Entries from the other manifest that don't exist in this one will be added.
+    /// Existing entries in this manifest are not overwritten.
+    pub fn merge_from(&mut self, other: &Self) {
+        for (module_name, hex_hash) in &other.modules {
+            self.modules.entry(module_name.clone()).or_insert(hex_hash.clone());
+        }
+    }
+
     /// Save the manifest to manifest.json in the build directory atomically
     /// Writes to a temporary file first, then renames it to avoid corruption
     pub fn save(&self, build_dir: &Path) -> Result<(), Box<dyn Error>> {

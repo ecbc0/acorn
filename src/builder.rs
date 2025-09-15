@@ -1099,18 +1099,18 @@ impl<'a> Builder<'a> {
             }
         }
 
-        let Some(existing_certs) = build_cache.get_certificates(target) else {
+        let Some(_existing_certs) = build_cache.get_certificates(target) else {
             // This is a bad case. The different build files are inconsistent.
             // Well, just ignore it.
             return false;
         };
 
-        // Even though we're skipping verification, we still want to copy the certificates over.
-        self.build_cache.as_mut().unwrap().insert(
-            target.clone(),
-            existing_certs.clone(),
-            current_hash,
-        );
+        // We verified that certificates exist, but we don't copy them to the new cache.
+        // They'll be handled during the merge in update_build_cache.
+        // We still need to update the manifest though.
+        if let ModuleDescriptor::Name(parts) = target {
+            self.build_cache.as_mut().unwrap().manifest.insert(parts, current_hash);
+        }
 
         true
     }

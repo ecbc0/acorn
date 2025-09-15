@@ -295,14 +295,21 @@ impl Project {
 
     /// Updates the build cache with a new one and optionally writes it to disk.
     /// Panics if the project doesn't already have a build cache.
-    pub fn update_build_cache(&mut self, new_cache: BuildCache) {
+    pub fn update_build_cache(&mut self, mut new_cache: BuildCache) {
         if self.build_cache.is_none() {
             panic!("Cannot update build cache on a project that doesn't have one");
         }
 
         if self.config.write_cache {
-            // TODO: how should we handle errors here?
-            let _ = new_cache.save();
+            if let Some(old_cache) = &self.build_cache {
+                // Save and merge: writes only new JSONL files, preserves complete manifest,
+                // and merges old certificates back into memory
+                // TODO: how should we handle errors here?
+                let _ = new_cache.save_and_merge(old_cache);
+            } else {
+                // No old cache to merge from, just save
+                let _ = new_cache.save();
+            }
         }
 
         self.build_cache = Some(new_cache);

@@ -11,7 +11,7 @@ use crate::module::ModuleDescriptor;
 /// Stored in the 'build' directory.
 pub struct BuildCache {
     cache: HashMap<ModuleDescriptor, CertificateStore>,
-    manifest: Manifest,
+    pub manifest: Manifest,
     build_dir: PathBuf,
 }
 
@@ -82,8 +82,32 @@ impl BuildCache {
         }
     }
 
+
+    /// Save the build cache and merge with an old cache.
+    /// This:
+    /// 1. Merges the old manifest to preserve entries for unchanged modules
+    /// 2. Saves only the new certificate files (in self.cache)
+    /// 3. Merges the old certificates back so they're available in memory
+    pub fn save_and_merge(&mut self, old_cache: &BuildCache) -> Result<(), Box<dyn Error>> {
+        // First merge the old manifest to have complete module list
+        self.manifest.merge_from(&old_cache.manifest);
+
+        // Save - only writes JSONL files for modules in self.cache
+        self.save()?;
+
+        // After saving, merge the old certificates so they're available in memory
+        for (descriptor, cert_store) in &old_cache.cache {
+            if !self.cache.contains_key(descriptor) {
+                self.cache.insert(descriptor.clone(), cert_store.clone());
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn save(&self) -> Result<(), Box<dyn Error>> {
-        // Save all the certificate stores
+        // Save only the certificate stores that are in this cache
+        // (these are the ones that were actually built/changed)
         for (descriptor, cert_store) in &self.cache {
             if let ModuleDescriptor::Name(parts) = descriptor {
                 if parts.is_empty() {

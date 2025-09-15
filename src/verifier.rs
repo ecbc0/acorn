@@ -668,6 +668,82 @@ mod tests {
     }
 
     #[test]
+    fn test_unchanged_jsonl_not_rewritten() {
+        let (acornlib, src, build) = setup();
+
+        // Create foo.ac with a theorem
+        src.child("foo.ac")
+            .write_str(
+                r#"
+                let thing: Bool = axiom
+                theorem foo_goal {
+                    thing = thing
+                }
+                "#,
+            )
+            .unwrap();
+
+        let config = ProjectConfig {
+            use_certs: true,
+            ..Default::default()
+        };
+
+        // First build with just foo.ac
+        let verifier1 = Verifier::new(
+            acornlib.path().to_path_buf(),
+            config.clone(),
+            Some("foo".to_string()),
+        )
+        .unwrap();
+        let output1 = verifier1.run().unwrap();
+        assert_eq!(output1.status, BuildStatus::Good);
+
+        // Get the modification time of the foo.jsonl file
+        let foo_jsonl = build.child("foo.jsonl");
+        assert!(foo_jsonl.exists(), "foo.jsonl should exist after first build");
+        let metadata1 = std::fs::metadata(foo_jsonl.path()).unwrap();
+        let modified1 = metadata1.modified().unwrap();
+
+        // Sleep briefly to ensure filesystem timestamp granularity
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        // Now add bar.ac that depends on foo.ac
+        src.child("bar.ac")
+            .write_str(
+                r#"
+                import foo
+                theorem bar_goal {
+                    foo.thing = foo.thing
+                }
+                "#,
+            )
+            .unwrap();
+
+        // Second build with both modules - foo should be cached
+        let verifier2 = Verifier::new(
+            acornlib.path().to_path_buf(),
+            config.clone(),
+            None, // Build all modules
+        )
+        .unwrap();
+        let output2 = verifier2.run().unwrap();
+        assert_eq!(output2.status, BuildStatus::Good);
+        assert_eq!(output2.metrics.modules_cached, 1, "foo module should have been cached");
+
+        // Check that foo.jsonl was NOT rewritten (modification time unchanged)
+        let metadata2 = std::fs::metadata(foo_jsonl.path()).unwrap();
+        let modified2 = metadata2.modified().unwrap();
+        assert_eq!(
+            modified1, modified2,
+            "foo.jsonl should not have been rewritten for unchanged module"
+        );
+
+        // Check that bar.jsonl was created
+        let bar_jsonl = build.child("bar.jsonl");
+        assert!(bar_jsonl.exists(), "bar.jsonl should exist after second build");
+    }
+
+    #[test]
     fn test_verifier_concrete_local_constants() {
         let (acornlib, src, _) = setup();
 
