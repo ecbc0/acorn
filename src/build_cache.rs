@@ -109,25 +109,37 @@ impl BuildCache {
         // Save only the certificate stores that are in this cache
         // (these are the ones that were actually built/changed)
         for (descriptor, cert_store) in &self.cache {
-            if let ModuleDescriptor::Name(parts) = descriptor {
-                if parts.is_empty() {
-                    continue;
-                }
-                let mut parts = parts.clone();
-                let last = parts.pop().unwrap();
-                let mut path = self.build_dir.clone();
+            match descriptor {
+                ModuleDescriptor::Name(parts) => {
+                    if parts.is_empty() {
+                        continue;
+                    }
+                    let mut parts = parts.clone();
+                    let last = parts.pop().unwrap();
+                    let mut path = self.build_dir.clone();
 
-                // Create directory structure for nested modules
-                for part in parts {
-                    path.push(part);
-                    if !path.exists() {
-                        std::fs::create_dir(&path)?;
+                    // Create directory structure for nested modules
+                    for part in parts {
+                        path.push(part);
+                        if !path.exists() {
+                            std::fs::create_dir(&path)?;
+                        }
+                    }
+
+                    // Create the JSONL file for this module's certificates
+                    path.push(format!("{}.jsonl", last));
+                    cert_store.save(&path)?;
+                }
+                ModuleDescriptor::File(ac_path) => {
+                    // For files outside the library, save the JSONL file alongside the .ac file
+                    if ac_path.extension() == Some(std::ffi::OsStr::new("ac")) {
+                        let jsonl_path = ac_path.with_extension("jsonl");
+                        cert_store.save(&jsonl_path)?;
                     }
                 }
-
-                // Create the JSONL file for this module's certificates
-                path.push(format!("{}.jsonl", last));
-                cert_store.save(&path)?;
+                ModuleDescriptor::Anonymous => {
+                    // Anonymous modules don't get saved
+                }
             }
         }
 

@@ -191,6 +191,69 @@ impl TestFixture {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn test_non_library_file_certificates() {
+    let fx = TestFixture::new();
+
+    // Create a file outside the src directory (simulating a file outside the library)
+    let outside_dir = fx._temp_dir.child("outside");
+    outside_dir.create_dir_all().unwrap();
+    let outside_file = outside_dir.child("external.ac");
+    let outside_path = outside_file.path();
+    let outside_url = Url::from_file_path(outside_path).unwrap();
+
+    // Write initial content
+    let content = r#"
+    let external_thing: Bool = axiom
+    theorem external_theorem {
+        external_thing = external_thing
+    }
+    "#;
+    outside_file.write_str(content).unwrap();
+
+    // Open the file in the language server
+    fx.server
+        .did_open(DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: outside_url.clone(),
+                language_id: "acorn".to_string(),
+                version: 1,
+                text: content.to_string(),
+            },
+        })
+        .await;
+
+    // Wait for the build to complete
+    fx.assert_build_completes().await;
+
+    // Give it a bit more time for file I/O
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Check that a JSONL file was created alongside the .ac file
+    let jsonl_file = outside_dir.child("external.jsonl");
+    assert!(
+        jsonl_file.exists(),
+        "JSONL file should be created alongside the .ac file for non-library files"
+    );
+
+    // Verify the JSONL file contains certificate data
+    let jsonl_content = std::fs::read_to_string(jsonl_file.path()).unwrap();
+    assert!(
+        jsonl_content.contains("external_theorem"),
+        "JSONL file should contain certificate for external_theorem"
+    );
+
+    // Verify that the manifest in the build directory does NOT contain this file
+    let manifest_file = fx.build_dir.child("manifest.json");
+    if manifest_file.exists() {
+        let manifest_content = std::fs::read_to_string(manifest_file.path()).unwrap();
+        assert!(
+            !manifest_content.contains("external"),
+            "Manifest should not contain entries for files outside the library"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn test_server_basic() {
     let fx = TestFixture::new();
 
