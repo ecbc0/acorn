@@ -90,7 +90,7 @@ impl Default for ProjectConfig {
             use_filesystem: true,
             read_cache: true,
             write_cache: true,
-            use_certs: false,
+            use_certs: true,
         }
     }
 }
@@ -283,7 +283,7 @@ impl Project {
             use_filesystem: false,
             read_cache: false,
             write_cache: false,
-            ..Default::default()
+            use_certs: false,  // Mock projects don't use certificates
         };
         Project::new(mock_dir, build_dir, config)
     }

@@ -34,9 +34,9 @@ struct Args {
     )]
     target: Option<String>,
 
-    /// Use proof certificates
-    #[clap(long, help = "Use proof certificates.")]
-    certs: bool,
+    /// Disable proof certificates
+    #[clap(long, help = "Disable proof certificates.")]
+    nocerts: bool,
 
     /// Don't skip goals based on hash checks
     #[clap(long, help = "Don't skip goals based on hash checks.")]
@@ -92,11 +92,6 @@ async fn main() {
         std::process::exit(1);
     }
 
-    if args.nohash && args.certs {
-        println!("Cannot use both --nohash and --certs.");
-        std::process::exit(1);
-    }
-
     let current_dir = match std::env::current_dir() {
         Ok(dir) => dir,
         Err(e) => {
@@ -126,7 +121,7 @@ async fn main() {
     }
 
     let config = ProjectConfig {
-        use_certs: args.certs,
+        use_certs: !args.nocerts,
         ..Default::default()
     };
 
@@ -154,7 +149,7 @@ async fn main() {
     };
     verifier.builder.verbose = args.line.is_some();
     verifier.builder.reverify = args.reverify;
-    verifier.builder.check_hashes = !args.nohash && !args.certs;
+    verifier.builder.check_hashes = !args.nohash;
     verifier.line = args.line;
     match verifier.run() {
         Err(e) => {
