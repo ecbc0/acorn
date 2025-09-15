@@ -407,6 +407,12 @@ impl Project {
             return Ok(());
         }
         let descriptor = self.descriptor_from_path(&path)?;
+
+        // Always ensure we have all targets loaded (only if using filesystem)
+        if self.config.use_filesystem && self.targets.is_empty() {
+            self.add_all_targets();
+        }
+
         let mut reload_modules = vec![descriptor];
         if self.open_files.contains_key(&path) {
             // We're changing the value of an existing file. This could invalidate
@@ -432,9 +438,9 @@ impl Project {
             return Ok(());
         }
         self.open_files.remove(&path);
-        let descriptor = self.descriptor_from_path(&path)?;
+        // Don't remove the target - we want to keep building all files
+        // even when they're closed
         self.drop_modules();
-        self.targets.remove(&descriptor);
         let targets = self.targets.clone();
         for target in targets {
             // Ignore errors when reloading

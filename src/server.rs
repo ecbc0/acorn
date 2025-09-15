@@ -338,7 +338,7 @@ impl AcornLanguageServer {
         }
     }
 
-    // Run a build in a background thread, proving the goals in all open documents.
+    // Run a build in a background thread, proving all goals in the project.
     // Both spawned threads hold a read lock on the project while doing their work.
     // This ensures that the project doesn't change for the duration of the build.
     // The caller is responsible for stopping the previous build.

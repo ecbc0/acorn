@@ -22,7 +22,12 @@ pub struct ProjectView<'a> {
 impl ProjectManager {
     /// Creates a new ProjectManager with the given project configuration
     pub fn new(src_dir: PathBuf, build_dir: PathBuf, config: ProjectConfig) -> Self {
-        let project = Project::new(src_dir, build_dir, config);
+        let mut project = Project::new(src_dir, build_dir, config.clone());
+        // Add all targets so we build everything, not just open files
+        // (only if using filesystem)
+        if config.use_filesystem {
+            project.add_all_targets();
+        }
         ProjectManager {
             project: RwLock::new(project),
             cancel: RwLock::new(CancellationToken::new()),
