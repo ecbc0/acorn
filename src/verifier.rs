@@ -303,7 +303,6 @@ mod tests {
         // In reverify mode, we should never reach the search phase
         assert_eq!(output3.metrics.searches_total, 0);
 
-        acornlib.close().unwrap();
     }
 
     #[test]
@@ -389,7 +388,6 @@ mod tests {
         let output2 = result2.unwrap();
         assert_eq!(output2.status, BuildStatus::Good);
 
-        acornlib.close().unwrap();
     }
 
     #[test]
@@ -456,7 +454,6 @@ mod tests {
         assert_eq!(output.status, BuildStatus::Good);
         assert_eq!(output.metrics.searches_fallback, 0);
 
-        acornlib.close().unwrap();
     }
 
     #[test]
@@ -516,7 +513,6 @@ mod tests {
         assert_eq!(output.metrics.searches_fallback, 0,);
         assert_eq!(output.num_verified(), 5);
 
-        acornlib.close().unwrap();
     }
 
     #[test]
@@ -553,7 +549,6 @@ mod tests {
             );
         }
 
-        acornlib.close().unwrap();
     }
 
     #[test]
@@ -601,7 +596,75 @@ mod tests {
             error_text
         );
 
-        acornlib.close().unwrap();
+    }
+
+    #[test]
+    fn test_module_skipping() {
+        let (acornlib, src, build) = setup();
+
+        // Create foo.ac with a theorem
+        src.child("foo.ac")
+            .write_str(
+                r#"
+                let thing: Bool = axiom
+                theorem foo_goal {
+                    thing = thing
+                }
+                "#,
+            )
+            .unwrap();
+
+        let config = ProjectConfig {
+            use_certs: true,
+            ..Default::default()
+        };
+
+        // First build with just foo.ac
+        let verifier1 = Verifier::new(
+            acornlib.path().to_path_buf(),
+            config.clone(),
+            Some("foo".to_string()),
+        )
+        .unwrap();
+        let output1 = verifier1.run().unwrap();
+        assert_eq!(output1.status, BuildStatus::Good);
+        assert_eq!(output1.metrics.modules_total, 1);
+        assert_eq!(output1.metrics.modules_cached, 0);
+
+        // Check that manifest was created after first run
+        let manifest = build.child("manifest.json");
+        assert!(
+            manifest.exists(),
+            "manifest.json should exist after first build"
+        );
+
+        src.child("bar.ac")
+            .write_str(
+                r#"
+                import foo
+                theorem bar_goal {
+                    foo.thing = foo.thing
+                }
+                "#,
+            )
+            .unwrap();
+
+        // Second build with both modules - foo should be cached
+        let verifier2 = Verifier::new(
+            acornlib.path().to_path_buf(),
+            config.clone(),
+            None, // Build all modules
+        )
+        .unwrap();
+        let output2 = verifier2.run().unwrap();
+        assert_eq!(output2.status, BuildStatus::Good);
+        assert_eq!(output2.metrics.modules_total, 2);
+
+        assert_eq!(
+            output2.metrics.modules_cached, 1,
+            "foo module should have been cached"
+        );
+
     }
 
     #[test]
