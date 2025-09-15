@@ -934,12 +934,15 @@ impl<'a> Builder<'a> {
 
         if self.module_proving_complete(target) && self.single_goal.is_none() {
             // The module was entirely verified. We can update the cache.
-            if let Err(e) = self
-                .project
-                .module_caches
-                .insert_module_cache(target.clone(), new_module_cache)
-            {
-                self.log_global(format!("error in module cache set: {}", e));
+            // Only update the YAML module cache if we're not using certificates
+            if !self.project.config.use_certs {
+                if let Err(e) = self
+                    .project
+                    .module_caches
+                    .insert_module_cache(target.clone(), new_module_cache)
+                {
+                    self.log_global(format!("error in module cache set: {}", e));
+                }
             }
 
             if let Some(worklist) = worklist {

@@ -231,11 +231,11 @@ mod tests {
         assert_eq!(output.metrics.certs_unused, 0);
         assert_eq!(output.metrics.searches_total, 1);
 
-        // Check that we created a file in the build directory
+        // With certificates enabled, we should NOT create YAML files
         let build_file = build.child("foo.yaml");
         assert!(
-            build_file.exists(),
-            "Module cache file should exist at build/foo.yaml"
+            !build_file.exists(),
+            "Module cache YAML file should NOT exist when using certificates"
         );
 
         // Check that the cert file has one line
@@ -353,12 +353,12 @@ mod tests {
         assert_eq!(output.metrics.goals_success, 1); // Should have successfully proven 1 theorem
         assert!(output.metrics.searches_total > 0); // Should have performed at least one search
 
-        // Check that we created a file in the nested build directory
+        // With certificates enabled, we should NOT create YAML files
         let build_foo_dir = build.child("foo");
         let build_file = build_foo_dir.child("bar.yaml");
         assert!(
-            build_file.exists(),
-            "Cache file should exist at build/foo/bar.yaml"
+            !build_file.exists(),
+            "YAML cache file should NOT exist when using certificates"
         );
 
         // Check that we created a JSONL file for certificates in the nested directory
