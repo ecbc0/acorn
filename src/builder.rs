@@ -976,14 +976,19 @@ impl<'a> Builder<'a> {
         let mut targets = self.project.targets.iter().collect::<Vec<_>>();
         targets.sort();
 
-        self.log_global(format!(
-            "verifying modules: {}",
-            targets
-                .iter()
-                .map(|t| t.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
+        let verification_message = if targets.len() > 5 {
+            format!("verifying {} modules...", targets.len())
+        } else {
+            format!(
+                "verifying modules: {}",
+                targets
+                    .iter()
+                    .map(|t| t.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        self.log_global(verification_message);
 
         // The first phase is the "loading phase". We load modules and look for errors.
         // If there are errors, we won't try to do proving.
