@@ -26,7 +26,7 @@ impl ProjectManager {
         // Add all targets so we build everything, not just open files
         // (only if using filesystem)
         if config.use_filesystem {
-            project.add_all_targets();
+            project.add_src_targets();
         }
         ProjectManager {
             project: RwLock::new(project),

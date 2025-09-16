@@ -75,7 +75,7 @@ impl Verifier {
                 project.add_target_by_name(target)?;
             }
         } else {
-            project.add_all_targets();
+            project.add_src_targets();
         }
 
         // Unsafe is to make this self-referential
@@ -302,7 +302,6 @@ mod tests {
         assert_eq!(output3.metrics.certs_unused, 0);
         // In reverify mode, we should never reach the search phase
         assert_eq!(output3.metrics.searches_total, 0);
-
     }
 
     #[test]
@@ -387,7 +386,6 @@ mod tests {
 
         let output2 = result2.unwrap();
         assert_eq!(output2.status, BuildStatus::Good);
-
     }
 
     #[test]
@@ -453,7 +451,6 @@ mod tests {
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
         assert_eq!(output.metrics.searches_fallback, 0);
-
     }
 
     #[test]
@@ -512,7 +509,6 @@ mod tests {
         assert_eq!(output.status, BuildStatus::Good,);
         assert_eq!(output.metrics.searches_fallback, 0,);
         assert_eq!(output.num_verified(), 5);
-
     }
 
     #[test]
@@ -548,7 +544,6 @@ mod tests {
                 err
             );
         }
-
     }
 
     #[test]
@@ -595,7 +590,6 @@ mod tests {
             "Expected ambiguous import error, got: {}",
             error_text
         );
-
     }
 
     #[test]
@@ -664,7 +658,6 @@ mod tests {
             output2.metrics.modules_cached, 1,
             "foo module should have been cached"
         );
-
     }
 
     #[test]
@@ -700,7 +693,10 @@ mod tests {
 
         // Get the modification time of the foo.jsonl file
         let foo_jsonl = build.child("foo.jsonl");
-        assert!(foo_jsonl.exists(), "foo.jsonl should exist after first build");
+        assert!(
+            foo_jsonl.exists(),
+            "foo.jsonl should exist after first build"
+        );
         let metadata1 = std::fs::metadata(foo_jsonl.path()).unwrap();
         let modified1 = metadata1.modified().unwrap();
 
@@ -728,7 +724,10 @@ mod tests {
         .unwrap();
         let output2 = verifier2.run().unwrap();
         assert_eq!(output2.status, BuildStatus::Good);
-        assert_eq!(output2.metrics.modules_cached, 1, "foo module should have been cached");
+        assert_eq!(
+            output2.metrics.modules_cached, 1,
+            "foo module should have been cached"
+        );
 
         // Check that foo.jsonl was NOT rewritten (modification time unchanged)
         let metadata2 = std::fs::metadata(foo_jsonl.path()).unwrap();
@@ -740,7 +739,10 @@ mod tests {
 
         // Check that bar.jsonl was created
         let bar_jsonl = build.child("bar.jsonl");
-        assert!(bar_jsonl.exists(), "bar.jsonl should exist after second build");
+        assert!(
+            bar_jsonl.exists(),
+            "bar.jsonl should exist after second build"
+        );
     }
 
     #[test]

@@ -283,7 +283,7 @@ impl Project {
             use_filesystem: false,
             read_cache: false,
             write_cache: false,
-            use_certs: false,  // Mock projects don't use certificates
+            use_certs: false, // Mock projects don't use certificates
         };
         Project::new(mock_dir, build_dir, config)
     }
@@ -344,10 +344,10 @@ impl Project {
         self.add_target_by_descriptor(&descriptor)
     }
 
-    // Adds a target for all files in this directory.
-    pub fn add_all_targets(&mut self) {
+    // Adds a target for all files in the 'src' directory.
+    pub fn add_src_targets(&mut self) {
         if !self.config.use_filesystem {
-            panic!("cannot add all targets without filesystem access")
+            panic!("cannot add_src_targets without filesystem access")
         }
         for entry in WalkDir::new(&self.src_dir)
             .into_iter()
@@ -410,7 +410,7 @@ impl Project {
 
         // Always ensure we have all targets loaded (only if using filesystem)
         if self.config.use_filesystem && self.targets.is_empty() {
-            self.add_all_targets();
+            self.add_src_targets();
         }
 
         let mut reload_modules = vec![descriptor];

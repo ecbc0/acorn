@@ -107,7 +107,7 @@ async fn main() {
             println!("Error loading project: {}", e);
             std::process::exit(1);
         });
-        project.add_all_targets();
+        project.add_src_targets();
         match DocGenerator::new(&project).generate(&doc_root) {
             Ok(count) => {
                 println!("{} files generated in {}", count, doc_root);
