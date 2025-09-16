@@ -657,6 +657,11 @@ impl<'a> Builder<'a> {
         mut worklist: Option<&mut CertificateWorklist>,
         new_premises: &mut HashSet<(ModuleId, String)>,
     ) -> Result<(), BuildError> {
+        // Check if we've been cancelled before starting any work
+        if self.cancellation_token.is_cancelled() {
+            return Err(BuildError::goal(goal, "was interrupted"));
+        }
+
         // Check for a cached cert
         if let Some(worklist) = worklist.as_mut() {
             let indexes = worklist.get_indexes(&goal.name);
