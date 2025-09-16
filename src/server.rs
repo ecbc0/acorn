@@ -422,12 +422,8 @@ impl AcornLanguageServer {
                 let doc = LiveDocument::new(&text, version);
                 self.documents
                     .insert(url.clone(), Arc::new(RwLock::new(doc)));
-                if text.is_empty() {
-                    // Opening an empty file usually happens as the first of two events, when
-                    // a previously untitled file has been saved. Let's not mess with the project yet.
-                    return;
-                }
-                version
+                // Don't update the project or trigger builds on open, only on save
+                return;
             }
             None => {
                 // This is a "save".

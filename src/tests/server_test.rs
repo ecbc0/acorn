@@ -102,7 +102,7 @@ impl TestFixture {
         }
     }
 
-    /// Converts a relative path to a file:// URL that can be used with set_full_text
+    /// Converts a relative path to a file:// URL
     fn url(&self, path: &str) -> Url {
         let full_path = self.src_dir.path().join(path);
         Url::from_file_path(full_path).unwrap()
@@ -219,6 +219,16 @@ async fn test_non_library_file_certificates() {
                 version: 1,
                 text: content.to_string(),
             },
+        })
+        .await;
+
+    // Save the file to trigger a build (opens no longer trigger builds)
+    fx.server
+        .did_save(DidSaveTextDocumentParams {
+            text_document: TextDocumentIdentifier {
+                uri: outside_url.clone(),
+            },
+            text: Some(content.to_string()),
         })
         .await;
 
