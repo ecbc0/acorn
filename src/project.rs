@@ -408,11 +408,6 @@ impl Project {
         }
         let descriptor = self.descriptor_from_path(&path)?;
 
-        // Always ensure we have all targets loaded (only if using filesystem)
-        if self.config.use_filesystem && self.targets.is_empty() {
-            self.add_src_targets();
-        }
-
         let mut reload_modules = vec![descriptor];
         if self.open_files.contains_key(&path) {
             // We're changing the value of an existing file. This could invalidate
