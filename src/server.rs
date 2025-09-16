@@ -408,75 +408,6 @@ impl AcornLanguageServer {
         });
     }
 
-    // Update the full text of the document.
-    // When version is provided, this indicates we are opening a document.
-    // When version is None, this indicates we are saving the most recent version.
-    // After this call, both the live version and the saved version should be the same.
-    pub async fn set_full_text(&self, url: Url, text: String, version: Option<i32>) {
-        // Update the live document in the document map
-        let version = match version {
-            Some(version) => {
-                // This is an "open".
-                // This document might have been open before. Just create a new one.
-                log_with_url(&url, version, "new document");
-                let doc = LiveDocument::new(&text, version);
-                self.documents
-                    .insert(url.clone(), Arc::new(RwLock::new(doc)));
-                // Don't update the project or trigger builds on open, only on save
-                return;
-            }
-            None => {
-                // This is a "save".
-                // We should have a document already, so mutate it.
-                let doc = match self.documents.get(&url) {
-                    Some(doc) => doc,
-                    None => {
-                        log(&format!("no document available for {}", url));
-                        return;
-                    }
-                };
-                let mut doc = doc.write().await;
-                doc.save(&text)
-            }
-        };
-
-        let path = match to_path(&url) {
-            Some(path) => path,
-            None => {
-                // We don't pass on untitled documents to the project.
-                return;
-            }
-        };
-
-        {
-            // Check if the project already has this document state.
-            // If the update is a no-op, there's no need to stop the build.
-            // This can happen if we are opening a document that the project is already using.
-            let project = self.project_manager.read().await;
-            if project.has_version(&path, version) {
-                return;
-            }
-        }
-
-        log(&format!(
-            "updating {} with {} bytes",
-            path.display(),
-            text.len()
-        ));
-
-        // Use mutate to update the file with automatic build cancellation
-        let result = self
-            .project_manager
-            .mutate(|project| project.update_file(path, &text, version))
-            .await;
-
-        match result {
-            Ok(()) => {}
-            Err(e) => log(&format!("update failed: {:?}", e)),
-        }
-        self.spawn_build();
-    }
-
     pub async fn handle_progress_request(
         &self,
         _params: ProgressParams,
@@ -524,12 +455,17 @@ impl LanguageServer for AcornLanguageServer {
     }
 
     /// When did_open is called, we get a version number and the whole text of the document.
+    /// We don't trigger builds on a file open.
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let url = params.text_document.uri;
         let text = params.text_document.text;
-
         let version = params.text_document.version;
-        self.set_full_text(url, text, Some(version)).await;
+
+        // Create a new live document
+        log_with_url(&url, version, "opened");
+        let doc = LiveDocument::new(&text, version);
+        self.documents
+            .insert(url.clone(), Arc::new(RwLock::new(doc)));
     }
 
     /// When did_change is called, we get a version number and the changes to the document.
@@ -552,6 +488,7 @@ impl LanguageServer for AcornLanguageServer {
     /// When did_save is called, we get the full text of the document.
     /// We don't get a version number, which is annoying. We have to take the last version number
     /// of the document that we saw in a change event.
+    /// We trigger a build on save.
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         let url = params.text_document.uri;
         let text = match params.text {
@@ -562,7 +499,54 @@ impl LanguageServer for AcornLanguageServer {
             }
         };
 
-        self.set_full_text(url, text, None).await;
+        // Update the live document's saved version
+        let version = {
+            let doc = match self.documents.get(&url) {
+                Some(doc) => doc,
+                None => {
+                    log(&format!("no document available for {}", url));
+                    return;
+                }
+            };
+            let mut doc = doc.write().await;
+            doc.save(&text)
+        };
+
+        let path = match to_path(&url) {
+            Some(path) => path,
+            None => {
+                // We don't pass on untitled documents to the project.
+                return;
+            }
+        };
+
+        {
+            // Check if the project already has this document state.
+            // If the update is a no-op, there's no need to stop the build.
+            // This can happen if we are opening a document that the project is already using.
+            let project = self.project_manager.read().await;
+            if project.has_version(&path, version) {
+                return;
+            }
+        }
+
+        log(&format!(
+            "updating {} with {} bytes",
+            path.display(),
+            text.len()
+        ));
+
+        // Use mutate to update the file with automatic build cancellation
+        let result = self
+            .project_manager
+            .mutate(|project| project.update_file(path, &text, version))
+            .await;
+
+        match result {
+            Ok(()) => {}
+            Err(e) => log(&format!("update failed: {:?}", e)),
+        }
+        self.spawn_build();
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
