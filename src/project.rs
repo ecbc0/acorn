@@ -270,7 +270,7 @@ impl Project {
             // Save and merge: writes only new JSONL files, preserves complete manifest,
             // and merges old certificates back into memory
             // TODO: how should we handle errors here?
-            let _ = new_cache.save_and_merge(&self.build_cache);
+            let _ = new_cache.save_merging_old(&self.build_cache);
         }
 
         self.build_cache = new_cache;

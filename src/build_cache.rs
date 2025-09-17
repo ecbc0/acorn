@@ -7,11 +7,16 @@ use crate::certificate::{CertificateStore, CertificateWorklist};
 use crate::manifest::Manifest;
 use crate::module::ModuleDescriptor;
 
-/// Cached information about a successful build.
+/// Cached information about a build.
 /// Stored in the 'build' directory.
 pub struct BuildCache {
+    // The certificates for each module.
     cache: HashMap<ModuleDescriptor, CertificateStore>,
+
+    // A hash for each module.
     pub manifest: Manifest,
+
+    // The directory where all the files are stored.
     build_dir: PathBuf,
 }
 
@@ -43,8 +48,8 @@ impl BuildCache {
 
         let manifest = Manifest::load_or_create(&build_dir);
 
-        BuildCache { 
-            cache, 
+        BuildCache {
+            cache,
             manifest,
             build_dir,
         }
@@ -78,36 +83,14 @@ impl BuildCache {
     pub fn manifest_matches(&self, descriptor: &ModuleDescriptor, hash: blake3::Hash) -> bool {
         match descriptor {
             ModuleDescriptor::Name(parts) => self.manifest.matches_entry(parts, hash),
-            _ => false,  // Anonymous modules can't be in the manifest
+            _ => false, // Anonymous modules can't be in the manifest
         }
     }
 
-
-    /// Save the build cache and merge with an old cache.
-    /// This:
-    /// 1. Merges the old manifest to preserve entries for unchanged modules
-    /// 2. Saves only the new certificate files (in self.cache)
-    /// 3. Merges the old certificates back so they're available in memory
-    pub fn save_and_merge(&mut self, old_cache: &BuildCache) -> Result<(), Box<dyn Error>> {
-        // First merge the old manifest to have complete module list
-        self.manifest.merge_from(&old_cache.manifest);
-
-        // Save - only writes JSONL files for modules in self.cache
-        self.save()?;
-
-        // After saving, merge the old certificates so they're available in memory
-        for (descriptor, cert_store) in &old_cache.cache {
-            if !self.cache.contains_key(descriptor) {
-                self.cache.insert(descriptor.clone(), cert_store.clone());
-            }
-        }
-
-        Ok(())
-    }
-
-    pub fn save(&self) -> Result<(), Box<dyn Error>> {
-        // Save only the certificate stores that are in this cache
-        // (these are the ones that were actually built/changed)
+    /// Save the build cache, merging in information from an old cache.
+    pub fn save_merging_old(&mut self, old_cache: &BuildCache) -> Result<(), Box<dyn Error>> {
+        // Save only the certificate stores that are in this cache.
+        // These are the ones that were actually built.
         for (descriptor, cert_store) in &self.cache {
             match descriptor {
                 ModuleDescriptor::Name(parts) => {
@@ -143,8 +126,16 @@ impl BuildCache {
             }
         }
 
-        // Save the manifest
+        // Save the new manifest
         self.manifest.save(&self.build_dir)?;
+
+        // Merge the old certificates so they're available in memory.
+        // These already exist on disk, so they don't need to be savced here.
+        for (descriptor, cert_store) in &old_cache.cache {
+            if !self.cache.contains_key(descriptor) {
+                self.cache.insert(descriptor.clone(), cert_store.clone());
+            }
+        }
 
         Ok(())
     }

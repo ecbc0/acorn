@@ -59,7 +59,8 @@ pub struct Manifest {
     /// Version of the manifest format
     pub version: u32,
 
-    /// Map from module names to their content hashes
+    /// Map from module names to their content hashes.
+    /// This only includes modules with "good" build status.
     pub modules: BTreeMap<ModuleName, HexHash>,
 }
 
@@ -99,7 +100,9 @@ impl Manifest {
     /// Existing entries in this manifest are not overwritten.
     pub fn merge_from(&mut self, other: &Self) {
         for (module_name, hex_hash) in &other.modules {
-            self.modules.entry(module_name.clone()).or_insert(hex_hash.clone());
+            self.modules
+                .entry(module_name.clone())
+                .or_insert(hex_hash.clone());
         }
     }
 
