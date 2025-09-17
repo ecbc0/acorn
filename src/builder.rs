@@ -751,22 +751,26 @@ impl<'a> Builder<'a> {
             cursor.next();
         }
 
-        if self.module_proving_good(target) && self.single_goal.is_none() {
-            // The module was entirely verified.
+        let module_good = self.module_proving_good(target);
+        if !module_good {
+            return Ok(());
+        }
+        if self.single_goal.is_some() {
+            return Ok(());
+        }
 
-            self.metrics.certs_unused += worklist.unused() as i32;
+        self.metrics.certs_unused += worklist.unused() as i32;
 
-            // Insert the new CertificateStore into the build cache
-            let cert_store = CertificateStore { certs: new_certs };
-            // Get the content hash for this module
-            if let Some(content_hash) = self.project.get_module_content_hash(env.module_id) {
-                self.build_cache.as_mut().unwrap().insert(
-                    target.clone(),
-                    cert_store,
-                    content_hash,
-                    false,
-                );
-            }
+        // Insert the new CertificateStore into the build cache
+        let cert_store = CertificateStore { certs: new_certs };
+        // Get the content hash for this module
+        if let Some(content_hash) = self.project.get_module_content_hash(env.module_id) {
+            self.build_cache.as_mut().unwrap().insert(
+                target.clone(),
+                cert_store,
+                content_hash,
+                false,
+            );
         }
         Ok(())
     }
