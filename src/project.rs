@@ -1,5 +1,5 @@
 use core::panic;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::{fmt, io};
@@ -399,36 +399,6 @@ impl Project {
         }
         Ok(())
     }
-
-    // Turns a hash set of qualified premises into its serializable form.
-    // If any premise is from an unimportable module, we return None.
-    // This can happen when Acorn is running in "detached library" mode, where the current
-    // file doesn't have any module name that can be used to refer to it.
-    pub fn normalize_premises(
-        &self,
-        theorem_module_id: ModuleId,
-        theorem_name: &str,
-        premises: &HashSet<(ModuleId, String)>,
-    ) -> Option<BTreeMap<String, BTreeSet<String>>> {
-        let mut answer = BTreeMap::new();
-        for (premise_module_id, premise_name) in premises {
-            if *premise_module_id == theorem_module_id && premise_name == theorem_name {
-                // We don't need to include the theorem itself as a premise.
-                continue;
-            }
-            let module_name = match self.get_module_name_by_id(*premise_module_id) {
-                Some(name) => name,
-                None => return None,
-            };
-            answer
-                .entry(module_name.to_string())
-                .or_insert_with(BTreeSet::new)
-                .insert(premise_name.clone());
-        }
-        Some(answer)
-    }
-
-    /// Construct a prover with only the facts that are included in the cached premises.
 
     // Set the file content. This has priority over the actual filesystem.
     pub fn mock(&mut self, filename: &str, content: &str) {

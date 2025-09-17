@@ -79,7 +79,7 @@ impl CertificateStore {
     }
 
     /// Loads a CertificateStore along with its descriptor.
-    /// Similar to ModuleCache::load_relative, this expects certificate files to have .jsonl extension
+    /// This expects certificate files to have .jsonl extensions.
     pub fn load_relative(
         root: &Path,
         full_filename: &Path,

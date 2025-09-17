@@ -15,7 +15,7 @@ use crate::names::DefinedName;
 use crate::potential_value::PotentialValue;
 use crate::project::Project;
 use crate::proposition::Proposition;
-use crate::source::{Source, SourceType};
+use crate::source::Source;
 use crate::statement::Body;
 use crate::token::Token;
 
@@ -490,22 +490,6 @@ impl Node {
         }
     }
 
-    /// The block name is used to describe the block when caching block -> premise dependencies.
-    /// good_block_name finds whether we have a comprehensible name.
-    fn good_block_name(&self) -> Option<String> {
-        match &self.source()?.source_type {
-            SourceType::Theorem(name) => match name {
-                Some(name) => Some(name.clone()),
-                None => None,
-            },
-            SourceType::ConstantDefinition(_, name) => Some(name.clone()),
-            SourceType::TypeDefinition(type_name, suffix) => {
-                Some(format!("{}.{}", type_name, suffix))
-            }
-            SourceType::Instance(c, tc) => Some(format!("{}.{}", c, tc)),
-            _ => None,
-        }
-    }
 
     /// Whether the fact at this node is importable.
     pub fn importable(&self) -> bool {
@@ -528,13 +512,6 @@ impl Node {
         self.source()?.name()
     }
 
-    /// Returns the block name for this node, using the same logic as NodeCursor::block_name
-    pub fn block_name(&self) -> String {
-        match self.good_block_name() {
-            Some(s) => s,
-            None => self.first_line().to_string(),
-        }
-    }
 
     /// Returns the name and value, if this node is a theorem.
     pub fn as_theorem(&self) -> Option<(&str, &AcornValue)> {
@@ -619,17 +596,7 @@ impl<'a> NodeCursor<'a> {
         &env.nodes[*index]
     }
 
-    /// Get the top-level node above this cursor.
-    fn top_node(&self) -> &'a Node {
-        let (env, index) = self.annotated_path[0];
-        &env.nodes[index]
-    }
 
-    /// The block name is used to describe the block when caching block -> premise dependencies.
-    /// This always returns the name of the top-level node, regardless of the current position.
-    pub fn block_name(&self) -> String {
-        self.top_node().block_name()
-    }
 
     /// Can use this as an identifier for the iterator, to compare two of them
     pub fn path(&self) -> Vec<usize> {
