@@ -459,29 +459,41 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Create a build event for a proof that was other than successful.
+    /// Create a build event for something that is localized.
     /// Short message goes into the diagnostic, long message goes into the log.
+    /// If sev is None, there message only appears in the logs, not in visible UI.
     fn make_event(
         &mut self,
         range: Range,
         short_message: &str,
-        sev: DiagnosticSeverity,
+        sev: Option<DiagnosticSeverity>,
     ) -> BuildEvent {
         let display_path = self.project.display_path(&self.module());
         let line = range.start.line + 1;
         let long_message = format!("{}, line {}: {}", display_path, line, short_message);
-        let diagnostic = Diagnostic {
+        let diagnostic = sev.map(|severity| Diagnostic {
             range,
-            severity: Some(sev),
+            severity: Some(severity),
             message: short_message.to_string(),
             ..Diagnostic::default()
-        };
+        });
         BuildEvent {
             progress: Some((self.metrics.goals_done, self.metrics.goals_total)),
             log_message: Some(long_message),
-            diagnostic: Some(diagnostic),
+            diagnostic,
             ..self.default_event()
         }
+    }
+
+    /// Logs a message associated with a goal that only appears in the logs, not in the UI.
+    fn log_silent(&mut self, goal: &Goal, message: &str) {
+        let full_message = format!("{} {}", goal.name, message);
+        let event = self.make_event(
+            goal.proposition.source.range,
+            &full_message,
+            None,
+        );
+        (self.event_handler)(event);
     }
 
     /// Note that this will blue-squiggle in VS Code, so don't just use this willy-nilly.
@@ -490,7 +502,7 @@ impl<'a> Builder<'a> {
         let event = self.make_event(
             goal.proposition.source.range,
             &full_message,
-            DiagnosticSeverity::INFORMATION,
+            Some(DiagnosticSeverity::INFORMATION),
         );
         (self.event_handler)(event);
     }
@@ -503,7 +515,7 @@ impl<'a> Builder<'a> {
         let event = self.make_event(
             goal.proposition.source.range,
             &full_message,
-            DiagnosticSeverity::WARNING,
+            Some(DiagnosticSeverity::WARNING),
         );
         (self.event_handler)(event);
         self.current_module_good = false;
@@ -517,7 +529,7 @@ impl<'a> Builder<'a> {
         let mut event = self.make_event(
             build_error.range,
             &build_error.message,
-            DiagnosticSeverity::ERROR,
+            Some(DiagnosticSeverity::ERROR),
         );
 
         // Set progress as complete, because an error will halt the build
