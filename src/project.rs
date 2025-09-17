@@ -363,17 +363,14 @@ impl Project {
             return Ok(());
         }
         let descriptor = self.descriptor_from_path(&path)?;
-
         let mut reload_modules = vec![descriptor];
-        if self.open_files.contains_key(&path) {
-            // We're changing the value of an existing file. This could invalidate
-            // current modules.
-            // For now, we just drop everything and reload the targets.
-            // TODO: figure out precisely which ones are invalidated.
-            self.drop_modules();
-            for target in &self.targets {
-                reload_modules.push(target.clone());
-            }
+
+        // This update might be invalidating current modules.
+        // For now, we just drop everything and reload the targets.
+        // TODO: figure out precisely which ones are invalidated.
+        self.drop_modules();
+        for target in &self.targets {
+            reload_modules.push(target.clone());
         }
 
         self.open_files.insert(path, (content.to_string(), version));
