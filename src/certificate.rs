@@ -98,6 +98,13 @@ impl CertificateStore {
         let cert_store = CertificateStore::load(full_filename).ok()?;
         Some((descriptor, cert_store))
     }
+
+    /// Append all unused certificates from a worklist to this certificate store
+    pub fn append(&mut self, worklist: CertificateWorklist) {
+        for cert in worklist.iter_unused() {
+            self.certs.push(cert.clone());
+        }
+    }
 }
 
 /// A collection of certificates designed to be consumed, not necessarily in linear order.
@@ -153,6 +160,14 @@ impl CertificateWorklist {
     /// Get the number of unused certificates remaining in the worklist
     pub fn unused(&self) -> usize {
         self.indexes_for_goal.values().map(|v| v.len()).sum()
+    }
+
+    /// Iterator over unused certificates in the worklist
+    pub fn iter_unused(&self) -> impl Iterator<Item = &Certificate> {
+        self.indexes_for_goal
+            .values()
+            .flat_map(|indexes| indexes.iter())
+            .filter_map(move |&index| self.store.certs.get(index))
     }
 }
 
