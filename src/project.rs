@@ -283,7 +283,7 @@ impl Project {
             use_filesystem: false,
             read_cache: false,
             write_cache: false,
-            use_certs: false, // Mock projects don't use certificates
+            use_certs: true, // Mock projects now use certificates
         };
         Project::new(mock_dir, build_dir, config)
     }

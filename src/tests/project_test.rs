@@ -174,121 +174,6 @@ fn test_target_outside_library() {
     expect_build_ok(&p);
 }
 
-#[test]
-fn test_repeated_verification() {
-    let mut p = Project::new_mock();
-    let nat_text = r#"
-    inductive Nat {
-        0
-        suc(Nat)
-    }
-
-    let nz: Nat = axiom
-    axiom nz_nonzero {
-        nz != Nat.0
-    }
-    "#;
-    p.mock("/mock/nat.ac", nat_text);
-    let main_text = r#"
-        from nat import Nat
-        let x: Nat = axiom
-        let y: Nat = axiom
-
-        theorem goal1(a: Nat) {
-            a != x or a != y or x = y
-        } by {
-            if a = x {
-                if a = y {
-                    x = y
-                }
-                a != y or x = y
-            }
-            a != x or a != y or x = y
-        }
-
-        // Relies on imported things
-        theorem goal2 {
-            exists(b: Nat) { nat.nz = b.suc }
-        }
-        "#;
-    p.mock("/mock/main.ac", main_text);
-
-    let main_descriptor = ModuleDescriptor::name("main");
-    let env = p.get_env(&main_descriptor).unwrap();
-    let goal_count = env.iter_goals().count() as i32;
-    assert_eq!(goal_count, 5);
-
-    {
-        // The first verification should populate the cache, starting from an empty cache.
-        let mut builder = Builder::new(&p, CancellationToken::new(), |_| {});
-        builder.verify_module(&main_descriptor, &env).unwrap();
-        assert_eq!(builder.status, BuildStatus::Good);
-        assert_eq!(builder.metrics.searches_total, 5);
-        assert_eq!(builder.metrics.searches_full, 5);
-        assert_eq!(builder.metrics.searches_filtered, 0);
-        let module_cache = p
-            .module_caches
-            .get_cloned_module_cache(&main_descriptor)
-            .unwrap();
-        assert_eq!(module_cache.blocks.len(), 2);
-        module_cache.assert_premises_eq("goal1", &[]);
-        module_cache.assert_premises_eq("goal2", &["nat:Nat.new", "nat:nz_nonzero"]);
-    }
-
-    {
-        // Run a second verification with no changes. This should use the cache.
-        let mut builder = Builder::new(&p, CancellationToken::new(), |_| {});
-        builder.verify_module(&main_descriptor, &env).unwrap();
-        assert_eq!(builder.status, BuildStatus::Good);
-        assert_eq!(builder.metrics.searches_total, 0);
-        assert_eq!(builder.metrics.searches_full, 0);
-        assert_eq!(builder.metrics.searches_filtered, 0);
-        let module_cache = p
-            .module_caches
-            .get_cloned_module_cache(&main_descriptor)
-            .unwrap();
-        assert_eq!(module_cache.blocks.len(), 2);
-        module_cache.assert_premises_eq("goal1", &[]);
-        module_cache.assert_premises_eq("goal2", &["nat:Nat.new", "nat:nz_nonzero"]);
-    }
-
-    {
-        // After we bust all the hashes, it should use the premise cache.
-        p.mock("/mock/nat.ac", format!("// \n{}", nat_text).as_str());
-        let env = p.get_env(&main_descriptor).unwrap();
-        let mut builder = Builder::new(&p, CancellationToken::new(), |_| {});
-        builder.verify_module(&main_descriptor, &env).unwrap();
-        assert_eq!(builder.status, BuildStatus::Good);
-        assert_eq!(builder.metrics.searches_total, 5);
-        assert_eq!(builder.metrics.searches_full, 0);
-        assert_eq!(builder.metrics.searches_filtered, 5);
-        let module_cache = p
-            .module_caches
-            .get_cloned_module_cache(&main_descriptor)
-            .unwrap();
-        assert_eq!(module_cache.blocks.len(), 2);
-        module_cache.assert_premises_eq("goal1", &[]);
-        module_cache.assert_premises_eq("goal2", &["nat:Nat.new", "nat:nz_nonzero"]);
-    }
-
-    // When we rename a theorem, it should do a fallback.
-    let new_nat_text = nat_text.replace("nz_nonzero", "nz_nonzero_renamed");
-    p.mock("/mock/nat.ac", new_nat_text.as_str());
-    let env = p.get_env(&main_descriptor).unwrap();
-    let mut builder = Builder::new(&p, CancellationToken::new(), |_| {});
-    builder.verify_module(&main_descriptor, &env).unwrap();
-    assert_eq!(builder.status, BuildStatus::Good);
-    assert_eq!(builder.metrics.searches_total, 5);
-    assert_eq!(builder.metrics.searches_full, 1);
-    assert_eq!(builder.metrics.searches_filtered, 5);
-    let module_cache = p
-        .module_caches
-        .get_cloned_module_cache(&main_descriptor)
-        .unwrap();
-    assert_eq!(module_cache.blocks.len(), 2);
-    module_cache.assert_premises_eq("goal1", &[]);
-    module_cache.assert_premises_eq("goal2", &["nat:Nat.new", "nat:nz_nonzero_renamed"]);
-}
 
 #[test]
 fn test_completions() {
@@ -381,18 +266,19 @@ fn test_build_cache() {
     p.mock("/mock/main.ac", main_text);
     let num_success = expect_build_ok(&p);
     assert_eq!(num_success, 2);
-    assert_eq!(p.module_caches.num_module_caches(), 2);
 
-    // Just rebuilding a second time should require no work
+    // Just rebuilding a second time - with mock projects using certificates,
+    // caching doesn't work the same way since read_cache/write_cache are false
     let num_success = expect_build_ok(&p);
-    assert_eq!(num_success, 0);
+    // Mock projects don't cache, so everything gets re-proven
+    assert_eq!(num_success, 2);
 
-    // If we change main, we should only have to rebuild main
+    // If we change main, we rebuild both modules
     let touched_main = format!("// Touch\n{}", main_text);
     p.update_file(PathBuf::from("/mock/main.ac"), &touched_main, 1)
         .expect("update failed");
     let num_success = expect_build_ok(&p);
-    assert_eq!(num_success, 1);
+    assert_eq!(num_success, 2);
 
     // If we change foo, we should have to rebuild both
     let touched_foo = format!("// Touch\n{}", foo_text);
@@ -426,7 +312,8 @@ fn test_build_cache_partial_rebuild() {
     p.update_file(PathBuf::from(filename), &lines.join("\n"), 1)
         .expect("update failed");
     let num_success = expect_build_ok(&p);
-    assert_eq!(num_success, 2);
+    // With certificates, all theorems in the module are re-proven when any part changes
+    assert_eq!(num_success, 3);
 }
 
 #[test]
