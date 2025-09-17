@@ -366,7 +366,7 @@ impl<'a> Builder<'a> {
     }
 
     /// Returns whether the module completed without any errors or warnings.
-    pub fn module_proving_complete(&mut self, module: &ModuleDescriptor) -> bool {
+    pub fn module_proving_good(&mut self, module: &ModuleDescriptor) -> bool {
         assert_eq!(&self.module(), module);
         let answer = self.current_module_good;
         self.current_module = None;
@@ -488,11 +488,7 @@ impl<'a> Builder<'a> {
     /// Logs a message associated with a goal that only appears in the logs, not in the UI.
     fn log_silent(&mut self, goal: &Goal, message: &str) {
         let full_message = format!("{} {}", goal.name, message);
-        let event = self.make_event(
-            goal.proposition.source.range,
-            &full_message,
-            None,
-        );
+        let event = self.make_event(goal.proposition.source.range, &full_message, None);
         (self.event_handler)(event);
     }
 
@@ -763,7 +759,7 @@ impl<'a> Builder<'a> {
             cursor.next();
         }
 
-        if self.module_proving_complete(target) && self.single_goal.is_none() {
+        if self.module_proving_good(target) && self.single_goal.is_none() {
             // The module was entirely verified.
 
             if let Some(worklist) = worklist {
@@ -779,6 +775,7 @@ impl<'a> Builder<'a> {
                         target.clone(),
                         cert_store,
                         content_hash,
+                        false,
                     );
                 }
             }

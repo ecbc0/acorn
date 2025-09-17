@@ -60,13 +60,16 @@ impl BuildCache {
         module: ModuleDescriptor,
         certificates: CertificateStore,
         hash: blake3::Hash,
+        has_warnings: bool,
     ) {
         // Update the certificate cache
         self.cache.insert(module.clone(), certificates);
 
-        // Update the manifest with the module hash
-        if let ModuleDescriptor::Name(parts) = &module {
-            self.manifest.insert(parts, hash);
+        // Update the manifest with the module hash only if there are no warnings
+        if !has_warnings {
+            if let ModuleDescriptor::Name(parts) = &module {
+                self.manifest.insert(parts, hash);
+            }
         }
     }
 
