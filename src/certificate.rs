@@ -100,7 +100,7 @@ impl CertificateStore {
     }
 
     /// Append all unused certificates from a worklist to this certificate store
-    pub fn append(&mut self, worklist: CertificateWorklist) {
+    pub fn append(&mut self, worklist: &CertificateWorklist) {
         for cert in worklist.iter_unused() {
             self.certs.push(cert.clone());
         }

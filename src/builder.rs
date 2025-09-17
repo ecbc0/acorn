@@ -761,12 +761,15 @@ impl<'a> Builder<'a> {
 
         self.metrics.certs_unused += worklist.unused() as i32;
 
-        let cert_store = CertificateStore { certs: new_certs };
+        let mut cert_store = CertificateStore { certs: new_certs };
 
         let content_hash = if module_good {
             // We successfully verified this module, so put its hash in the manifest.
             self.project.get_module_content_hash(env.module_id)
         } else {
+            // Include the unused certs, because we might want them if we undo changes.
+            cert_store.append(&worklist);
+
             // This module had warnings or errors, so don't put its hash in the manifest.
             None
         };
