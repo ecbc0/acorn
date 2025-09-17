@@ -325,7 +325,6 @@ impl AcornLanguageServer {
         // The cache is always readable, only sometimes writable.
         let config = ProjectConfig {
             write_cache,
-            use_certs: true,
             ..Default::default()
         };
         let project_manager = Arc::new(ProjectManager::new(src_dir, build_dir, config));

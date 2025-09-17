@@ -34,10 +34,6 @@ struct Args {
     )]
     target: Option<String>,
 
-    /// Disable proof certificates
-    #[clap(long, help = "Disable proof certificates.")]
-    nocerts: bool,
-
     /// Don't skip goals based on hash checks
     #[clap(long, help = "Don't skip goals based on hash checks.")]
     nohash: bool,
@@ -120,10 +116,7 @@ async fn main() {
         }
     }
 
-    let config = ProjectConfig {
-        use_certs: !args.nocerts,
-        ..Default::default()
-    };
+    let config = ProjectConfig::default();
 
     // Handle the --append_to flag
     let target = if let Some(append) = args.append_to {

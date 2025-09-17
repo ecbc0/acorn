@@ -62,7 +62,6 @@ pub struct Builder<'a> {
     current_module_good: bool,
 
     /// The new build cache, that is being produced as a result of this build.
-    /// Only populated when use_certs is true.
     pub build_cache: Option<BuildCache>,
 
     /// When this is set, the builder only builds a single goal.
@@ -416,18 +415,6 @@ impl<'a> Builder<'a> {
 
         match outcome {
             Outcome::Success => {
-                if !self.project.config.use_certs {
-                    // Old proof-generation logic
-                    let Some(proof) = processor.get_condensed_proof() else {
-                        self.log_warning(&goal, "had a missing proof");
-                        return;
-                    };
-                    if proof.needs_simplification() {
-                        self.log_warning(&goal, "needs simplification");
-                        return;
-                    }
-                }
-
                 // The search was a success.
                 self.metrics.goals_success += 1;
                 self.metrics.searches_success += 1;
@@ -865,26 +852,7 @@ impl<'a> Builder<'a> {
         // Loop over all the nodes that are right below the top level.
         loop {
             if cursor.requires_verification() {
-                let block_name = cursor.block_name();
-                if self.check_hashes
-                    && !self.project.config.use_certs
-                    && module_hash
-                        .matches_through_line(&old_module_cache, cursor.node().last_line())
                 {
-                    // We don't need to verify this, we can just treat it as verified due to the hash.
-                    // Note that this breaks certificate-gathering, so we don't do this path in certs mode.
-                    self.log_proving_cache_hit(&mut cursor);
-                    if let Some(old_mc) = &old_module_cache {
-                        // We skipped the proof of this theorem.
-                        // But we still might want its premises cached.
-                        // So we copy them over from the old module cache.
-                        if let Some(old_block_cache) = old_mc.blocks.get(&block_name) {
-                            new_module_cache
-                                .blocks
-                                .insert(block_name, old_block_cache.clone());
-                        }
-                    }
-                } else {
                     // We do need to verify this.
 
                     // If we have a cached set of premises, we use it to create a filtered prover.
@@ -938,17 +906,7 @@ impl<'a> Builder<'a> {
         }
 
         if self.module_proving_complete(target) && self.single_goal.is_none() {
-            // The module was entirely verified. We can update the cache.
-            // Only update the YAML module cache if we're not using certificates
-            if !self.project.config.use_certs {
-                if let Err(e) = self
-                    .project
-                    .module_caches
-                    .insert_module_cache(target.clone(), new_module_cache)
-                {
-                    self.log_global(format!("error in module cache set: {}", e));
-                }
-            }
+            // The module was entirely verified.
 
             if let Some(worklist) = worklist {
                 self.metrics.certs_unused += worklist.unused() as i32;
@@ -1071,13 +1029,13 @@ impl<'a> Builder<'a> {
 
     /// Tries to skip building a module if it and all its dependencies are unchanged.
     /// If successful, copies certificates to the new build cache and returns true.
-    /// This only works when both check_hashes and use_certs are true.
+    /// This only works when check_hashes is true.
     fn try_skip_unchanged_module(
         &mut self,
         module_id: ModuleId,
         target: &ModuleDescriptor,
     ) -> bool {
-        if !self.check_hashes || !self.project.config.use_certs {
+        if !self.check_hashes {
             return false;
         }
 

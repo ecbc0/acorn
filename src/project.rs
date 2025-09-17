@@ -79,9 +79,6 @@ pub struct ProjectConfig {
 
     // Whether we should write to the cache
     pub write_cache: bool,
-
-    // Whether we are using certificates
-    pub use_certs: bool,
 }
 
 impl Default for ProjectConfig {
@@ -90,7 +87,6 @@ impl Default for ProjectConfig {
             use_filesystem: true,
             read_cache: true,
             write_cache: true,
-            use_certs: true,
         }
     }
 }
@@ -186,15 +182,11 @@ impl Project {
             ModuleCacheSet::new(None, false)
         };
 
-        // Load the build cache if we're using certificates
-        let build_cache = if config.use_certs {
-            if config.read_cache {
-                Some(BuildCache::load(build_dir.clone()))
-            } else {
-                Some(BuildCache::new(build_dir.clone()))
-            }
+        // Load the build cache
+        let build_cache = if config.read_cache {
+            Some(BuildCache::load(build_dir.clone()))
         } else {
-            None
+            Some(BuildCache::new(build_dir.clone()))
         };
 
         Project {
@@ -283,7 +275,6 @@ impl Project {
             use_filesystem: false,
             read_cache: false,
             write_cache: false,
-            use_certs: true, // Mock projects now use certificates
         };
         Project::new(mock_dir, build_dir, config)
     }

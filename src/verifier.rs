@@ -202,10 +202,7 @@ mod tests {
 
         // Create a verifier starting from the acornlib directory
         // The verifier should find the src directory and use it as the root
-        let config = ProjectConfig {
-            use_certs: true,
-            ..Default::default()
-        };
+        let config = ProjectConfig::default();
         let mut verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
             config.clone(),
@@ -325,10 +322,7 @@ mod tests {
             .unwrap();
 
         // Create a verifier targeting the nested module
-        let config = ProjectConfig {
-            use_certs: true,
-            ..Default::default()
-        };
+        let config = ProjectConfig::default();
         let mut verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
             config.clone(),
@@ -427,10 +421,7 @@ mod tests {
             )
             .unwrap();
 
-        let config = ProjectConfig {
-            use_certs: true,
-            ..Default::default()
-        };
+        let config = ProjectConfig::default();
         let mut verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
             config.clone(),
@@ -484,10 +475,7 @@ mod tests {
             )
             .unwrap();
 
-        let config = ProjectConfig {
-            use_certs: true,
-            ..Default::default()
-        };
+        let config = ProjectConfig::default();
         let mut verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
             config.clone(),
@@ -518,10 +506,7 @@ mod tests {
         src.child("foo.ac").write_str("import bar").unwrap();
         src.child("bar.ac").write_str("import foo").unwrap();
 
-        let config = ProjectConfig {
-            use_certs: true,
-            ..Default::default()
-        };
+        let config = ProjectConfig::default();
         let result = Verifier::new(
             acornlib.path().to_path_buf(),
             config,
@@ -561,10 +546,7 @@ mod tests {
         // Try to import the ambiguous module
         src.child("main.ac").write_str("import foo").unwrap();
 
-        let config = ProjectConfig {
-            use_certs: true,
-            ..Default::default()
-        };
+        let config = ProjectConfig::default();
         let mut verifier = Verifier::new(
             acornlib.path().to_path_buf(),
             config,
@@ -608,10 +590,7 @@ mod tests {
             )
             .unwrap();
 
-        let config = ProjectConfig {
-            use_certs: true,
-            ..Default::default()
-        };
+        let config = ProjectConfig::default();
 
         // First build with just foo.ac
         let verifier1 = Verifier::new(
@@ -676,10 +655,7 @@ mod tests {
             )
             .unwrap();
 
-        let config = ProjectConfig {
-            use_certs: true,
-            ..Default::default()
-        };
+        let config = ProjectConfig::default();
 
         // First build with just foo.ac
         let verifier1 = Verifier::new(
@@ -778,10 +754,7 @@ mod tests {
             )
             .unwrap();
 
-        let config = ProjectConfig {
-            use_certs: true,
-            ..Default::default()
-        };
+        let config = ProjectConfig::default();
         let mut verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
             config,
