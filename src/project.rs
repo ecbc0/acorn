@@ -448,13 +448,6 @@ impl Project {
 
     /// Construct a prover with only the facts that are included in the cached premises.
 
-    // Verifies the goal at this node as well as at every child node.
-    //
-    // full_prover contains all facts that this node can use.
-    // filtered_prover contains only the facts that were cached.
-    // Our general strategy is to try the filtered prover, if we have it, and only fall back
-    // to the full prover if the filtered prover doesn't work.
-
     // Set the file content. This has priority over the actual filesystem.
     pub fn mock(&mut self, filename: &str, content: &str) {
         assert!(!self.config.use_filesystem);

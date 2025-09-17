@@ -438,7 +438,6 @@ mod tests {
         verifier2.builder.check_hashes = false;
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
-        assert_eq!(output.metrics.searches_fallback, 0);
     }
 
     #[test]
@@ -491,7 +490,6 @@ mod tests {
         verifier2.builder.check_hashes = false;
         let output = verifier2.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good,);
-        assert_eq!(output.metrics.searches_fallback, 0,);
         assert_eq!(output.num_verified(), 5);
     }
 

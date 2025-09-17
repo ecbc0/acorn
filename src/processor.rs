@@ -15,7 +15,6 @@ use tokio_util::sync::CancellationToken;
 
 /// The processor represents all of the stuff that can accept a stream of facts.
 /// We might want to rename this or refactor it away later.
-/// It is convenient for handling the full processor vs filtered processor split.
 #[derive(Clone)]
 pub struct Processor {
     prover: Prover,
@@ -40,10 +39,7 @@ impl Processor {
         }
     }
 
-    pub fn with_dual_tokens(
-        token1: CancellationToken,
-        token2: CancellationToken,
-    ) -> Processor {
+    pub fn with_dual_tokens(token1: CancellationToken, token2: CancellationToken) -> Processor {
         Processor {
             prover: Prover::with_tokens(vec![token1, token2]),
             normalizer: Normalizer::new(),

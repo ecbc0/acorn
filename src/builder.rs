@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::atomic::AtomicU32;
 use std::time::Duration;
@@ -113,12 +113,6 @@ pub struct BuildMetrics {
     /// The number of searches that we ran the full prover on.
     pub searches_full: i32,
 
-    /// The number of searches that we ran the filtered prover on.
-    pub searches_filtered: i32,
-
-    /// The number of searches where we had to do a fallback.
-    pub searches_fallback: i32,
-
     /// The total number of clauses activated.
     pub clauses_activated: i32,
 
@@ -185,8 +179,8 @@ impl BuildMetrics {
             println!("{} certificates unused", self.certs_unused);
         }
         println!(
-            "{} searches performed ({} full, {} filtered, {} fallback)",
-            self.searches_total, self.searches_full, self.searches_filtered, self.searches_fallback
+            "{} searches performed ({} full)",
+            self.searches_total, self.searches_full
         );
         if self.searches_total > 0 {
             let success_percent = 100.0 * self.searches_success as f64 / self.searches_total as f64;
@@ -558,86 +552,11 @@ impl<'a> Builder<'a> {
         Ok(())
     }
 
-    /// Returns None if we don't have cached premises for this block.
-    /// cursor points to the node we are verifying.
-    pub fn make_filtered_processor(
-        &self,
-        env: &Environment,
-        block_name: &str,
-        module_cache: &Option<ModuleCache>,
-    ) -> Result<Option<Rc<Processor>>, BuildError> {
-        // Load the premises from the cache
-        let Some(normalized) = module_cache
-            .as_ref()
-            .and_then(|mc| mc.blocks.get(block_name))
-        else {
-            return Ok(None);
-        };
-
-        let mut premises = HashMap::new();
-        for (module_name, premise_set) in normalized.iter() {
-            // A module could have been renamed, in which case the whole cache is borked.
-            let Some(module_id) = self.project.get_module_id_by_name(module_name) else {
-                return Ok(None);
-            };
-            premises.insert(module_id, premise_set.iter().cloned().collect());
-        }
-        let mut processor = Processor::with_token(self.cancellation_token.clone());
-
-        // Add facts from the dependencies
-        let empty = HashSet::new();
-        for module_id in self.project.all_dependencies(env.module_id) {
-            let module_premises = match premises.get(&module_id) {
-                Some(p) => p,
-                None => &empty,
-            };
-            let module_env = self.project.get_env_by_id(module_id).unwrap();
-            // importable_facts will always include extends and instance facts,
-            // even when a filter is provided
-            for fact in module_env.importable_facts(Some(module_premises)) {
-                processor.add_fact(fact)?;
-            }
-        }
-
-        // Find the index of the block with the given name
-        let Some(block_index) = env.get_block_index(block_name) else {
-            return Ok(None);
-        };
-
-        // Add facts from this file itself, but only up to the block we're proving
-        let local_premises = premises.get(&env.module_id);
-        for node in env.nodes.iter().take(block_index) {
-            let Some(fact) = node.get_fact() else {
-                continue;
-            };
-
-            // Always include facts that are used in normalization.
-            if fact.used_in_normalization() {
-                processor.add_fact(fact)?;
-                continue;
-            }
-
-            let Some(name) = node.source_name() else {
-                continue;
-            };
-            let Some(local_premises) = local_premises else {
-                continue;
-            };
-
-            if local_premises.contains(&name) {
-                processor.add_fact(fact)?;
-            }
-        }
-
-        Ok(Some(Rc::new(processor)))
-    }
-
-    /// Verifies a goal with fallback from filtered to full prover.
+    /// Verifies a goal.
     /// env should be the environment that the proof happens in.
-    fn verify_with_fallback(
+    fn verify_goal(
         &mut self,
-        mut full_processor: Rc<Processor>,
-        filtered_processor: Option<Rc<Processor>>,
+        mut processor: Rc<Processor>,
         goal: &Goal,
         env: &Environment,
         mut new_certs: Option<&mut Vec<Certificate>>,
@@ -654,7 +573,7 @@ impl<'a> Builder<'a> {
             let indexes = worklist.get_indexes(&goal.name);
             for i in indexes {
                 let cert = worklist.get_cert(*i).unwrap();
-                match full_processor.check_cert(cert, Some(goal), self.project, &env.bindings) {
+                match processor.check_cert(cert, Some(goal), self.project, &env.bindings) {
                     Ok(()) => {
                         self.metrics.certs_cached += 1;
                         self.metrics.goals_done += 1;
@@ -688,46 +607,15 @@ impl<'a> Builder<'a> {
             return Err(BuildError::goal(goal, "no certificate found"));
         }
 
-        // Try the filtered prover
-        if let Some(mut filtered_processor) = filtered_processor {
-            self.metrics.searches_filtered += 1;
-            let filtered_processor = Rc::make_mut(&mut filtered_processor);
-            filtered_processor.set_goal(goal)?;
-            let start = std::time::Instant::now();
-            let outcome = filtered_processor.search(ProverParams::VERIFICATION);
-            if outcome == Outcome::Success {
-                if let Some(new_certs) = new_certs.as_mut() {
-                    match filtered_processor.make_cert(self.project, &env.bindings, self.verbose) {
-                        Ok(cert) => {
-                            new_certs.push(cert);
-                            self.metrics.certs_created += 1;
-                        }
-                        Err(e) => {
-                            return Err(BuildError::goal(
-                                &goal,
-                                &format!("filtered prover failed to create certificate: {}", e),
-                            ));
-                        }
-                    }
-                }
-                self.search_finished(filtered_processor, goal, outcome, start.elapsed());
-                filtered_processor
-                    .prover()
-                    .get_useful_source_names(new_premises, filtered_processor.normalizer());
-                return Ok(());
-            }
-            self.metrics.searches_fallback += 1;
-        }
-
-        // Try the full prover
-        let full_processor = Rc::make_mut(&mut full_processor);
-        full_processor.set_goal(goal)?;
+        // Try searching
+        let processor = Rc::make_mut(&mut processor);
+        processor.set_goal(goal)?;
         self.metrics.searches_full += 1;
         let start = std::time::Instant::now();
-        let outcome = full_processor.search(ProverParams::VERIFICATION);
+        let outcome = processor.search(ProverParams::VERIFICATION);
         if outcome == Outcome::Success {
             if let Some(new_certs) = new_certs.as_mut() {
-                match full_processor.make_cert(self.project, &env.bindings, self.verbose) {
+                match processor.make_cert(self.project, &env.bindings, self.verbose) {
                     Ok(cert) => {
                         new_certs.push(cert);
                         self.metrics.certs_created += 1;
@@ -741,10 +629,10 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        self.search_finished(full_processor, goal, outcome, start.elapsed());
-        full_processor
+        self.search_finished(processor, goal, outcome, start.elapsed());
+        processor
             .prover()
-            .get_useful_source_names(new_premises, full_processor.normalizer());
+            .get_useful_source_names(new_premises, processor.normalizer());
         Ok(())
     }
 
@@ -754,7 +642,6 @@ impl<'a> Builder<'a> {
     pub fn verify_node(
         &mut self,
         mut full_processor: Rc<Processor>,
-        mut filtered_processor: Option<Rc<Processor>>,
         cursor: &mut NodeCursor,
         new_premises: &mut HashSet<(ModuleId, String)>,
         mut new_certs: Option<&mut Vec<Certificate>>,
@@ -770,7 +657,6 @@ impl<'a> Builder<'a> {
             loop {
                 self.verify_node(
                     Rc::clone(&full_processor),
-                    filtered_processor.clone(), // cheap clone of Option<Rc<_>>
                     cursor,
                     new_premises,
                     new_certs.as_deref_mut(),
@@ -778,9 +664,6 @@ impl<'a> Builder<'a> {
                 )?;
 
                 if let Some(fact) = cursor.node().get_fact() {
-                    if let Some(ref mut fp) = filtered_processor {
-                        Rc::make_mut(fp).add_fact(fact.clone())?;
-                    }
                     Rc::make_mut(&mut full_processor).add_fact(fact)?;
                 }
 
@@ -801,9 +684,8 @@ impl<'a> Builder<'a> {
                     return Ok(());
                 }
             }
-            self.verify_with_fallback(
+            self.verify_goal(
                 full_processor,
-                filtered_processor,
                 &goal,
                 cursor.goal_env().unwrap(),
                 new_certs,
@@ -827,7 +709,6 @@ impl<'a> Builder<'a> {
         }
 
         let module_hash = self.project.get_module_hash(env.module_id).unwrap();
-        let old_module_cache = self.project.module_caches.get_cloned_module_cache(target);
         let mut new_module_cache = ModuleCache::new(module_hash);
 
         // If we're using certificates, create a worklist and a vector of new certs.
@@ -850,24 +731,18 @@ impl<'a> Builder<'a> {
                 {
                     // We do need to verify this.
 
-                    // If we have a cached set of premises, we use it to create a filtered prover.
-                    // The filtered prover only contains the premises that we think it needs.
-                    let block_name = cursor.block_name();
-                    let filtered_processor =
-                        self.make_filtered_processor(env, &block_name, &old_module_cache)?;
-
                     // The premises we use while verifying this block.
                     let mut new_premises = HashSet::new();
 
                     // This call will recurse and verify everything within this top-level block.
                     self.verify_node(
                         Rc::clone(&full_processor),
-                        filtered_processor,
                         &mut cursor,
                         &mut new_premises,
                         new_certs.as_mut(),
                         worklist.as_mut(),
                     )?;
+                    let block_name = cursor.block_name();
                     match self
                         .project
                         .normalize_premises(env.module_id, &block_name, &new_premises)
