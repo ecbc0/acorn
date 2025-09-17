@@ -522,7 +522,7 @@ impl LanguageServer for AcornLanguageServer {
         {
             // Check if the project already has this document state.
             // If the update is a no-op, there's no need to stop the build.
-            // This can happen if we are opening a document that the project is already using.
+            // TODO: does this ever happen?
             let project = self.project_manager.read().await;
             if project.has_version(&path, version) {
                 return;
