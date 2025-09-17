@@ -17,8 +17,6 @@ use crate::compilation;
 use crate::environment::Environment;
 use crate::fact::Fact;
 use crate::module::{LoadState, Module, ModuleDescriptor, ModuleId};
-use crate::module_cache::{ModuleCache, ModuleHash};
-use crate::module_cache_set::ModuleCacheSet;
 use crate::named_entity::NamedEntity;
 use crate::names::ConstantName;
 use crate::token::Token;
@@ -56,9 +54,6 @@ pub struct Project {
 
     // The module names that we want to build.
     pub targets: HashSet<ModuleDescriptor>,
-
-    // The cache contains a hash for each module from the last time it was cleanly built.
-    pub module_caches: ModuleCacheSet,
 
     // The last known-good build cache.
     // This is different from the Builder's build cache, which is created during a build.
@@ -173,13 +168,6 @@ fn check_valid_module_part(s: &str, error_name: &str) -> Result<(), ImportError>
 impl Project {
     // Create a new project.
     pub fn new(src_dir: PathBuf, build_dir: PathBuf, config: ProjectConfig) -> Project {
-        // Check if the directory exists
-        let module_caches = if config.read_cache && build_dir.is_dir() {
-            ModuleCacheSet::new(Some(build_dir.clone()), config.write_cache)
-        } else {
-            ModuleCacheSet::new(None, false)
-        };
-
         // Load the build cache
         let build_cache = if config.read_cache {
             BuildCache::load(build_dir.clone())
@@ -194,7 +182,6 @@ impl Project {
             modules: vec![],
             module_map: HashMap::new(),
             targets: HashSet::new(),
-            module_caches,
             build_cache,
             build_dir,
         }
@@ -356,11 +343,6 @@ impl Project {
     // Returns None if we don't have this file at all.
     pub fn get_version(&self, path: &PathBuf) -> Option<i32> {
         self.open_files.get(path).map(|(_, version)| *version)
-    }
-
-    // The ModuleHash corresponding to the current build, *not* the known-good build.
-    pub fn get_module_hash(&self, module_id: ModuleId) -> Option<&ModuleHash> {
-        self.modules[module_id.get() as usize].module_hash.as_ref()
     }
 
     pub fn get_module_content_hash(&self, module_id: ModuleId) -> Option<blake3::Hash> {
@@ -1014,10 +996,6 @@ impl Project {
             .map(|m| &m.descriptor)
     }
 
-    pub fn get_module_cache(&self, descriptor: &ModuleDescriptor) -> Option<ModuleCache> {
-        self.module_caches.get_cloned_module_cache(descriptor)
-    }
-
     /// Iterate over all module descriptors with their corresponding module IDs.
     pub fn iter_modules(&self) -> impl Iterator<Item = (&ModuleDescriptor, ModuleId)> {
         self.module_map
@@ -1106,17 +1084,9 @@ impl Project {
             return Ok(module_id);
         }
 
-        // Hash this module, reflecting its state on disk.
-        let module_hash = ModuleHash::new(
-            &text,
-            env.bindings
-                .direct_dependencies()
-                .iter()
-                .map(|dep_id| &self.modules[dep_id.get() as usize]),
-        );
         // Compute simple blake3 hash of just the file contents
         let content_hash = blake3::hash(text.as_bytes());
-        self.modules[module_id.get() as usize].load_ok(env, module_hash, content_hash);
+        self.modules[module_id.get() as usize].load_ok(env, content_hash);
         Ok(module_id)
     }
 

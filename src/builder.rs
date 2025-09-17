@@ -13,7 +13,6 @@ use crate::compilation::CompilationError;
 use crate::environment::Environment;
 use crate::goal::Goal;
 use crate::module::{LoadState, ModuleDescriptor, ModuleId};
-use crate::module_cache::ModuleCache;
 use crate::processor::Processor;
 use crate::project::Project;
 use crate::prover::{Outcome, ProverParams};
@@ -700,11 +699,6 @@ impl<'a> Builder<'a> {
             // Nothing to prove
             return Ok(());
         }
-
-        let module_hash = self.project.get_module_hash(env.module_id).unwrap();
-        let mut new_module_cache = ModuleCache::new(module_hash);
-
-        // If we're using certificates, create a worklist and a vector of new certs.
         let mut worklist = self.project.build_cache.make_worklist(target);
         let mut new_certs = Some(vec![]);
 
@@ -734,26 +728,6 @@ impl<'a> Builder<'a> {
                         new_certs.as_mut(),
                         worklist.as_mut(),
                     )?;
-                    let block_name = cursor.block_name();
-                    match self
-                        .project
-                        .normalize_premises(env.module_id, &block_name, &new_premises)
-                    {
-                        Some(normalized) => {
-                            // We verified this block, so we can cache it.
-                            new_module_cache
-                                .blocks
-                                .insert(block_name.clone(), normalized);
-                        }
-                        None => {
-                            // We couldn't normalize the premises, so we can't cache them.
-                            // This can happen if the module is unimportable.
-                            self.log_global(format!(
-                                "could not normalize premises for {}",
-                                block_name
-                            ));
-                        }
-                    }
                 }
             } else {
                 self.log_verified(cursor.node().first_line(), cursor.node().last_line());

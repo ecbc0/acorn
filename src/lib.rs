@@ -29,8 +29,6 @@ pub mod literal;
 pub mod manifest;
 pub mod maybe_owned;
 pub mod module;
-pub mod module_cache;
-pub mod module_cache_set;
 pub mod monomorphizer;
 pub mod named_entity;
 pub mod names;

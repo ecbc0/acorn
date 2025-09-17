@@ -2,7 +2,6 @@ use std::{fmt, path::PathBuf};
 
 use crate::compilation;
 use crate::environment::Environment;
-use crate::module_cache::ModuleHash;
 
 // The code in one file is exposed to other Acorn code as a "module".
 // You could have two different types both named "MyStruct" but defined in different places.
@@ -30,14 +29,6 @@ pub struct Module {
     // The state of the module, whether it's been loaded or not.
     pub state: LoadState,
 
-    // A hash of the state of the module, plus all its dependencies.
-    // This corresponds to the current state of the module.
-    // This may not match the cache held by the ModuleCacheSet.
-    // In particular, when we have made some changes and are rebuilding, this hash will
-    // reflect the current state of the module, while the ModuleCacheSet will have a previous good state.
-    // None before the module is loaded.
-    pub module_hash: Option<ModuleHash>,
-
     // A simple blake3 hash of just the file contents.
     // None before the module is loaded.
     pub hash: Option<blake3::Hash>,
@@ -48,7 +39,6 @@ impl Module {
         Module {
             descriptor: ModuleDescriptor::Anonymous,
             state: LoadState::None,
-            module_hash: None,
             hash: None,
         }
     }
@@ -58,7 +48,6 @@ impl Module {
         Module {
             descriptor,
             state: LoadState::Loading,
-            module_hash: None,
             hash: None,
         }
     }
@@ -68,9 +57,8 @@ impl Module {
     }
 
     // Called when a module load succeeds.
-    pub fn load_ok(&mut self, env: Environment, module_hash: ModuleHash, content_hash: blake3::Hash) {
+    pub fn load_ok(&mut self, env: Environment, content_hash: blake3::Hash) {
         self.state = LoadState::Ok(env);
-        self.module_hash = Some(module_hash);
         self.hash = Some(content_hash);
     }
 
