@@ -6,7 +6,7 @@ use crate::builder::{BuildEvent, BuildStatus, Builder};
 use crate::environment::LineType;
 use crate::module::ModuleDescriptor;
 use crate::names::ConstantName;
-use crate::project::Project;
+use crate::project::{Project, ProjectConfig};
 use indoc::indoc;
 
 fn expect_build_ok(project: &Project) -> i32 {
@@ -31,6 +31,58 @@ type NotFoo: axiom
 let foo: Foo = axiom
 define fooify(x: Foo) -> Foo { foo }
 "#;
+
+
+#[test]
+fn test_update_file_first_call_drops_modules() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    // Create a temp directory for our test
+    let temp_dir = TempDir::new().unwrap();
+    let src_dir = temp_dir.path().join("src");
+    let build_dir = temp_dir.path().join("build");
+    fs::create_dir(&src_dir).unwrap();
+    fs::create_dir(&build_dir).unwrap();
+
+    // Create initial file on disk
+    let test_file = src_dir.join("test.ac");
+    let initial_content = "type Nat: axiom\nlet zero: Nat = axiom";
+    fs::write(&test_file, initial_content).unwrap();
+
+    // Step 1: Create first project and build to get baseline
+    let mut p1 = Project::new(src_dir.clone(), build_dir.clone(), ProjectConfig::default());
+    p1.add_target_by_path(&test_file).unwrap();
+    let initial_searches = expect_build_ok(&p1);
+
+    // Step 2: Create a fresh project (simulating server restart)
+    // The file exists on disk with the initial content
+    let mut p2 = Project::new(src_dir.clone(), build_dir.clone(), ProjectConfig::default());
+
+    // Load and build once - this caches the module from disk
+    p2.add_target_by_path(&test_file).unwrap();
+    expect_build_ok(&p2);
+
+    // Step 3: Now call update_file with new content that adds a theorem
+    // This simulates VS Code opening the file and making the first edit+save
+    let content_with_theorem = "type Nat: axiom\nlet zero: Nat = axiom\n\ntheorem test_theorem { true }";
+
+    // This is the FIRST update_file call for this path
+    // The bug: it won't drop modules because the file isn't in open_files yet
+    p2.update_file(test_file.clone(), content_with_theorem, 1)
+        .expect("update should succeed");
+
+    // Step 4: Build and check that the theorem was actually processed
+    let searches_after_update = expect_build_ok(&p2);
+
+    // The bug would manifest as: searches don't increase because the theorem wasn't picked up
+    assert!(
+        searches_after_update > initial_searches,
+        "BUG: First update_file didn't invalidate cache. Initial searches: {}, after update: {}",
+        initial_searches,
+        searches_after_update
+    );
+}
 
 #[test]
 fn test_basic_import() {
