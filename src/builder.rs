@@ -752,9 +752,7 @@ impl<'a> Builder<'a> {
         }
 
         let module_good = self.module_proving_good(target);
-        if !module_good {
-            return Ok(());
-        }
+
         if self.single_goal.is_some() {
             return Ok(());
         }
