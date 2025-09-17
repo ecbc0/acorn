@@ -641,7 +641,7 @@ impl<'a> Builder<'a> {
     /// If verify_node encounters an error, it stops, leaving node in a borked state.
     pub fn verify_node(
         &mut self,
-        mut full_processor: Rc<Processor>,
+        mut processor: Rc<Processor>,
         cursor: &mut NodeCursor,
         new_premises: &mut HashSet<(ModuleId, String)>,
         mut new_certs: Option<&mut Vec<Certificate>>,
@@ -656,7 +656,7 @@ impl<'a> Builder<'a> {
             cursor.descend(0);
             loop {
                 self.verify_node(
-                    Rc::clone(&full_processor),
+                    Rc::clone(&processor),
                     cursor,
                     new_premises,
                     new_certs.as_deref_mut(),
@@ -664,7 +664,7 @@ impl<'a> Builder<'a> {
                 )?;
 
                 if let Some(fact) = cursor.node().get_fact() {
-                    Rc::make_mut(&mut full_processor).add_fact(fact)?;
+                    Rc::make_mut(&mut processor).add_fact(fact)?;
                 }
 
                 if cursor.has_next() {
@@ -685,7 +685,7 @@ impl<'a> Builder<'a> {
                 }
             }
             self.verify_goal(
-                full_processor,
+                processor,
                 &goal,
                 cursor.goal_env().unwrap(),
                 new_certs,
@@ -717,12 +717,11 @@ impl<'a> Builder<'a> {
 
         self.module_proving_started(target.clone());
 
-        // The full processor has access to all imported facts.
-        let mut full_processor = Processor::with_token(self.cancellation_token.clone());
+        let mut processor = Processor::with_token(self.cancellation_token.clone());
         for fact in self.project.imported_facts(env.module_id, None) {
-            full_processor.add_fact(fact.clone())?;
+            processor.add_fact(fact.clone())?;
         }
-        let mut full_processor = Rc::new(full_processor);
+        let mut processor = Rc::new(processor);
         let mut cursor = NodeCursor::new(&env, 0);
 
         // Loop over all the nodes that are right below the top level.
@@ -736,7 +735,7 @@ impl<'a> Builder<'a> {
 
                     // This call will recurse and verify everything within this top-level block.
                     self.verify_node(
-                        Rc::clone(&full_processor),
+                        Rc::clone(&processor),
                         &mut cursor,
                         &mut new_premises,
                         new_certs.as_mut(),
@@ -770,7 +769,7 @@ impl<'a> Builder<'a> {
                 break;
             }
             if let Some(fact) = cursor.node().get_fact() {
-                Rc::make_mut(&mut full_processor).add_fact(fact.clone())?;
+                Rc::make_mut(&mut processor).add_fact(fact.clone())?;
             }
             cursor.next();
         }
