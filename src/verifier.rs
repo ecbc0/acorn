@@ -87,20 +87,9 @@ impl Verifier {
 
         // Set up the builder with event handler
         let mut builder = Builder::new(project, CancellationToken::new(), move |event| {
-            // Also print log messages as before
+            // Print log messages
             if let Some(m) = &event.log_message {
-                if let Some(diagnostic) = &event.diagnostic {
-                    // Use display_path to show a relative path
-                    let display_path = project.display_path(&event.module);
-                    println!(
-                        "{}, line {}: {}",
-                        display_path,
-                        diagnostic.range.start.line + 1,
-                        m
-                    );
-                } else {
-                    println!("{}", m);
-                }
+                println!("{}", m);
             }
 
             // Store the event

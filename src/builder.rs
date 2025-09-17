@@ -460,16 +460,25 @@ impl<'a> Builder<'a> {
     }
 
     /// Create a build event for a proof that was other than successful.
-    fn make_event(&mut self, range: Range, message: &str, sev: DiagnosticSeverity) -> BuildEvent {
+    /// Short message goes into the diagnostic, long message goes into the log.
+    fn make_event(
+        &mut self,
+        range: Range,
+        short_message: &str,
+        sev: DiagnosticSeverity,
+    ) -> BuildEvent {
+        let display_path = self.project.display_path(&self.module());
+        let line = range.start.line + 1;
+        let long_message = format!("{}, line {}: {}", display_path, line, short_message);
         let diagnostic = Diagnostic {
             range,
             severity: Some(sev),
-            message: message.to_string(),
+            message: short_message.to_string(),
             ..Diagnostic::default()
         };
         BuildEvent {
             progress: Some((self.metrics.goals_done, self.metrics.goals_total)),
-            log_message: Some(message.to_string()),
+            log_message: Some(long_message),
             diagnostic: Some(diagnostic),
             ..self.default_event()
         }
