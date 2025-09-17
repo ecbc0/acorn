@@ -569,7 +569,7 @@ impl<'a> Builder<'a> {
         mut processor: Rc<Processor>,
         goal: &Goal,
         env: &Environment,
-        mut new_certs: Option<&mut Vec<Certificate>>,
+        new_certs: &mut Vec<Certificate>,
         mut worklist: Option<&mut CertificateWorklist>,
         new_premises: &mut HashSet<(ModuleId, String)>,
     ) -> Result<(), BuildError> {
@@ -589,9 +589,7 @@ impl<'a> Builder<'a> {
                         self.metrics.goals_done += 1;
                         self.metrics.goals_success += 1;
                         self.log_verified(goal.first_line, goal.last_line);
-                        if let Some(new_certs) = new_certs.as_mut() {
-                            new_certs.push(cert.clone());
-                        }
+                        new_certs.push(cert.clone());
                         worklist.remove(&goal.name, *i);
                         return Ok(());
                     }
@@ -624,18 +622,16 @@ impl<'a> Builder<'a> {
         let start = std::time::Instant::now();
         let outcome = processor.search(ProverParams::VERIFICATION);
         if outcome == Outcome::Success {
-            if let Some(new_certs) = new_certs.as_mut() {
-                match processor.make_cert(self.project, &env.bindings, self.verbose) {
-                    Ok(cert) => {
-                        new_certs.push(cert);
-                        self.metrics.certs_created += 1;
-                    }
-                    Err(e) => {
-                        return Err(BuildError::goal(
-                            &goal,
-                            &format!("full prover failed to create certificate: {}", e),
-                        ));
-                    }
+            match processor.make_cert(self.project, &env.bindings, self.verbose) {
+                Ok(cert) => {
+                    new_certs.push(cert);
+                    self.metrics.certs_created += 1;
+                }
+                Err(e) => {
+                    return Err(BuildError::goal(
+                        &goal,
+                        &format!("full prover failed to create certificate: {}", e),
+                    ));
                 }
             }
         }
@@ -654,7 +650,7 @@ impl<'a> Builder<'a> {
         mut processor: Rc<Processor>,
         cursor: &mut NodeCursor,
         new_premises: &mut HashSet<(ModuleId, String)>,
-        mut new_certs: Option<&mut Vec<Certificate>>,
+        new_certs: &mut Vec<Certificate>,
         mut worklist: Option<&mut CertificateWorklist>,
     ) -> Result<(), BuildError> {
         if !cursor.requires_verification() {
@@ -669,7 +665,7 @@ impl<'a> Builder<'a> {
                     Rc::clone(&processor),
                     cursor,
                     new_premises,
-                    new_certs.as_deref_mut(),
+                    new_certs,
                     worklist.as_deref_mut(),
                 )?;
 
@@ -718,7 +714,7 @@ impl<'a> Builder<'a> {
             return Ok(());
         }
         let mut worklist = self.project.build_cache.make_worklist(target);
-        let mut new_certs = Some(vec![]);
+        let mut new_certs = vec![];
 
         self.module_proving_started(target.clone());
 
@@ -743,7 +739,7 @@ impl<'a> Builder<'a> {
                         Rc::clone(&processor),
                         &mut cursor,
                         &mut new_premises,
-                        new_certs.as_mut(),
+                        &mut new_certs,
                         worklist.as_mut(),
                     )?;
                 }
@@ -766,18 +762,16 @@ impl<'a> Builder<'a> {
                 self.metrics.certs_unused += worklist.unused() as i32;
             }
 
-            if let Some(certs) = new_certs {
-                // Insert the new CertificateStore into the build cache
-                let cert_store = CertificateStore { certs };
-                // Get the content hash for this module
-                if let Some(content_hash) = self.project.get_module_content_hash(env.module_id) {
-                    self.build_cache.as_mut().unwrap().insert(
-                        target.clone(),
-                        cert_store,
-                        content_hash,
-                        false,
-                    );
-                }
+            // Insert the new CertificateStore into the build cache
+            let cert_store = CertificateStore { certs: new_certs };
+            // Get the content hash for this module
+            if let Some(content_hash) = self.project.get_module_content_hash(env.module_id) {
+                self.build_cache.as_mut().unwrap().insert(
+                    target.clone(),
+                    cert_store,
+                    content_hash,
+                    false,
+                );
             }
         }
         Ok(())
