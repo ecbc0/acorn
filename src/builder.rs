@@ -110,9 +110,6 @@ pub struct BuildMetrics {
     /// Number of proof searches that ended in success.
     pub searches_success: i32,
 
-    /// The number of searches that we ran the full prover on.
-    pub searches_full: i32,
-
     /// The total number of clauses activated.
     pub clauses_activated: i32,
 
@@ -178,10 +175,7 @@ impl BuildMetrics {
         if self.certs_unused > 0 {
             println!("{} certificates unused", self.certs_unused);
         }
-        println!(
-            "{} searches performed ({} full)",
-            self.searches_total, self.searches_full
-        );
+        println!("{} searches performed", self.searches_total);
         if self.searches_total > 0 {
             let success_percent = 100.0 * self.searches_success as f64 / self.searches_total as f64;
             println!("{:.2}% search success rate", success_percent);
@@ -610,7 +604,6 @@ impl<'a> Builder<'a> {
         // Try searching
         let processor = Rc::make_mut(&mut processor);
         processor.set_goal(goal)?;
-        self.metrics.searches_full += 1;
         let start = std::time::Instant::now();
         let outcome = processor.search(ProverParams::VERIFICATION);
         if outcome == Outcome::Success {
