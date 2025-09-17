@@ -18,8 +18,7 @@ static GLOBAL: MiMalloc = MiMalloc;
 fn main() {
     let current_dir = std::env::current_dir().unwrap();
     for _ in 0..10 {
-        let config = ProjectConfig::default();
-        let mut project = Project::new_local(&current_dir, config).unwrap();
+        let mut project = Project::new_local(&current_dir, ProjectConfig::default()).unwrap();
         project
             .add_target_by_name("nat")
             .expect("Failed to add nat target");

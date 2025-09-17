@@ -98,8 +98,7 @@ async fn main() {
 
     // Handle the --doc_root flag
     if let Some(doc_root) = args.doc_root {
-        let config = ProjectConfig::default();
-        let mut project = Project::new_local(&current_dir, config).unwrap_or_else(|e| {
+        let mut project = Project::new_local(&current_dir, ProjectConfig::default()).unwrap_or_else(|e| {
             println!("Error loading project: {}", e);
             std::process::exit(1);
         });
@@ -116,8 +115,6 @@ async fn main() {
         }
     }
 
-    let config = ProjectConfig::default();
-
     // Handle the --append_to flag
     let target = if let Some(append) = args.append_to {
         let Some(target) = &args.target else {
@@ -133,7 +130,7 @@ async fn main() {
         args.target.clone()
     };
 
-    let mut verifier = match Verifier::new(current_dir, config, target) {
+    let mut verifier = match Verifier::new(current_dir, ProjectConfig::default(), target) {
         Ok(v) => v,
         Err(e) => {
             println!("{}", e);

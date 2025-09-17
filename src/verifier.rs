@@ -202,10 +202,9 @@ mod tests {
 
         // Create a verifier starting from the acornlib directory
         // The verifier should find the src directory and use it as the root
-        let config = ProjectConfig::default();
         let mut verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
-            config.clone(),
+            ProjectConfig::default(),
             Some("foo".to_string()),
         )
         .unwrap();
@@ -247,7 +246,7 @@ mod tests {
         // Verify again
         let mut verifier2 = Verifier::new(
             acornlib.path().to_path_buf(),
-            config.clone(),
+            ProjectConfig::default(),
             Some("foo".to_string()),
         )
         .unwrap();
@@ -277,7 +276,7 @@ mod tests {
         // Now test reverify mode with verifier3
         let mut verifier3 = Verifier::new(
             acornlib.path().to_path_buf(),
-            config.clone(),
+            ProjectConfig::default(),
             Some("foo".to_string()),
         )
         .unwrap();
@@ -322,10 +321,9 @@ mod tests {
             .unwrap();
 
         // Create a verifier targeting the nested module
-        let config = ProjectConfig::default();
         let mut verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
-            config.clone(),
+            ProjectConfig::default(),
             Some("foo.bar".to_string()),
         )
         .unwrap();
@@ -366,7 +364,7 @@ mod tests {
         // Verify again
         let mut verifier2 = Verifier::new(
             acornlib.path().to_path_buf(),
-            config,
+            ProjectConfig::default(),
             Some("foo.bar".to_string()),
         )
         .unwrap();
@@ -421,10 +419,9 @@ mod tests {
             )
             .unwrap();
 
-        let config = ProjectConfig::default();
         let mut verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
-            config.clone(),
+            ProjectConfig::default(),
             Some("main".to_string()),
         )
         .unwrap();
@@ -434,7 +431,7 @@ mod tests {
 
         let mut verifier2 = Verifier::new(
             acornlib.path().to_path_buf(),
-            config,
+            ProjectConfig::default(),
             Some("main".to_string()),
         )
         .unwrap();
@@ -475,10 +472,9 @@ mod tests {
             )
             .unwrap();
 
-        let config = ProjectConfig::default();
         let mut verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
-            config.clone(),
+            ProjectConfig::default(),
             Some("main".to_string()),
         )
         .unwrap();
@@ -488,7 +484,7 @@ mod tests {
 
         let mut verifier2 = Verifier::new(
             acornlib.path().to_path_buf(),
-            config,
+            ProjectConfig::default(),
             Some("main".to_string()),
         )
         .unwrap();
@@ -506,10 +502,9 @@ mod tests {
         src.child("foo.ac").write_str("import bar").unwrap();
         src.child("bar.ac").write_str("import foo").unwrap();
 
-        let config = ProjectConfig::default();
         let result = Verifier::new(
             acornlib.path().to_path_buf(),
-            config,
+            ProjectConfig::default(),
             Some("foo".to_string()),
         );
 
@@ -546,10 +541,9 @@ mod tests {
         // Try to import the ambiguous module
         src.child("main.ac").write_str("import foo").unwrap();
 
-        let config = ProjectConfig::default();
         let mut verifier = Verifier::new(
             acornlib.path().to_path_buf(),
-            config,
+            ProjectConfig::default(),
             Some("main".to_string()),
         )
         .unwrap();
@@ -754,10 +748,9 @@ mod tests {
             )
             .unwrap();
 
-        let config = ProjectConfig::default();
         let mut verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
-            config,
+            ProjectConfig::default(),
             Some("main".to_string()),
         )
         .unwrap();
