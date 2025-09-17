@@ -831,13 +831,8 @@ impl<'a> Builder<'a> {
         let mut new_module_cache = ModuleCache::new(module_hash);
 
         // If we're using certificates, create a worklist and a vector of new certs.
-        let (mut new_certs, mut worklist) = match self.project.build_cache.as_ref() {
-            Some(bc) => {
-                let worklist = bc.make_worklist(target);
-                (Some(vec![]), worklist)
-            }
-            None => (None, None),
-        };
+        let mut worklist = self.project.build_cache.make_worklist(target);
+        let mut new_certs = Some(vec![]);
 
         self.module_proving_started(target.clone());
 
@@ -930,10 +925,8 @@ impl<'a> Builder<'a> {
 
     /// Builds all open modules, logging build events.
     pub fn build(&mut self) {
-        // Initialize the build cache if we're using certificates
-        if self.project.using_certs() {
-            self.build_cache = Some(BuildCache::new(self.project.build_dir.clone()));
-        }
+        // Initialize the build cache
+        self.build_cache = Some(BuildCache::new(self.project.build_dir.clone()));
 
         // Build in alphabetical order by module name for consistency.
         let mut targets = self.project.targets.iter().collect::<Vec<_>>();
@@ -1039,10 +1032,6 @@ impl<'a> Builder<'a> {
             return false;
         }
 
-        let Some(build_cache) = &self.project.build_cache else {
-            return false;
-        };
-
         let Some(descriptor) = self.project.get_module_descriptor(module_id) else {
             return false;
         };
@@ -1051,7 +1040,11 @@ impl<'a> Builder<'a> {
             return false;
         };
 
-        if !build_cache.manifest_matches(descriptor, current_hash) {
+        if !self
+            .project
+            .build_cache
+            .manifest_matches(descriptor, current_hash)
+        {
             return false;
         }
 
@@ -1065,12 +1058,16 @@ impl<'a> Builder<'a> {
                 return false;
             };
 
-            if !build_cache.manifest_matches(dep_descriptor, dep_hash) {
+            if !self
+                .project
+                .build_cache
+                .manifest_matches(dep_descriptor, dep_hash)
+            {
                 return false;
             }
         }
 
-        let Some(_existing_certs) = build_cache.get_certificates(target) else {
+        let Some(_existing_certs) = self.project.build_cache.get_certificates(target) else {
             // This is a bad case. The different build files are inconsistent.
             // Well, just ignore it.
             return false;
@@ -1080,7 +1077,11 @@ impl<'a> Builder<'a> {
         // They'll be handled during the merge in update_build_cache.
         // We still need to update the manifest though.
         if let ModuleDescriptor::Name(parts) = target {
-            self.build_cache.as_mut().unwrap().manifest.insert(parts, current_hash);
+            self.build_cache
+                .as_mut()
+                .unwrap()
+                .manifest
+                .insert(parts, current_hash);
         }
 
         true
@@ -1090,11 +1091,7 @@ impl<'a> Builder<'a> {
     /// and we should update the cache.
     pub fn into_build_cache(self) -> Option<BuildCache> {
         // There's a lot of conditions for when we actually write to the cache
-        if self.project.using_certs()
-            && self.status.is_good()
-            && self.project.config.write_cache
-            && self.single_goal.is_none()
-        {
+        if self.status.is_good() && self.project.config.write_cache && self.single_goal.is_none() {
             self.build_cache
         } else {
             None

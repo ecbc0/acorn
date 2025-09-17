@@ -61,10 +61,8 @@ pub struct Project {
     pub module_caches: ModuleCacheSet,
 
     // The last known-good build cache.
-    // This is "some" iff we are using certs.
     // This is different from the Builder's build cache, which is created during a build.
-    // TODO: When a build succeeds, this build cache should get updated.
-    pub build_cache: Option<BuildCache>,
+    pub build_cache: BuildCache,
 }
 
 /// Configuration options for the project.
@@ -184,9 +182,9 @@ impl Project {
 
         // Load the build cache
         let build_cache = if config.read_cache {
-            Some(BuildCache::load(build_dir.clone()))
+            BuildCache::load(build_dir.clone())
         } else {
-            Some(BuildCache::new(build_dir.clone()))
+            BuildCache::new(build_dir.clone())
         };
 
         Project {
@@ -279,31 +277,16 @@ impl Project {
         Project::new(mock_dir, build_dir, config)
     }
 
-    // Returns true if we are using certificates (indicated by having a build cache)
-    pub fn using_certs(&self) -> bool {
-        self.build_cache.is_some()
-    }
-
     /// Updates the build cache with a new one and optionally writes it to disk.
-    /// Panics if the project doesn't already have a build cache.
     pub fn update_build_cache(&mut self, mut new_cache: BuildCache) {
-        if self.build_cache.is_none() {
-            panic!("Cannot update build cache on a project that doesn't have one");
-        }
-
         if self.config.write_cache {
-            if let Some(old_cache) = &self.build_cache {
-                // Save and merge: writes only new JSONL files, preserves complete manifest,
-                // and merges old certificates back into memory
-                // TODO: how should we handle errors here?
-                let _ = new_cache.save_and_merge(old_cache);
-            } else {
-                // No old cache to merge from, just save
-                let _ = new_cache.save();
-            }
+            // Save and merge: writes only new JSONL files, preserves complete manifest,
+            // and merges old certificates back into memory
+            // TODO: how should we handle errors here?
+            let _ = new_cache.save_and_merge(&self.build_cache);
         }
 
-        self.build_cache = Some(new_cache);
+        self.build_cache = new_cache;
     }
 
     // Dropping existing modules lets you update the project for new data.
