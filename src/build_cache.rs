@@ -73,10 +73,11 @@ impl BuildCache {
         }
     }
 
-    pub fn make_worklist(&self, descriptor: &ModuleDescriptor) -> Option<CertificateWorklist> {
+    pub fn make_worklist(&self, descriptor: &ModuleDescriptor) -> CertificateWorklist {
         self.cache
             .get(descriptor)
             .map(|store| CertificateWorklist::new(store.clone()))
+            .unwrap_or_else(|| CertificateWorklist::new(CertificateStore { certs: vec![] }))
     }
 
     pub fn get_certificates(&self, descriptor: &ModuleDescriptor) -> Option<&CertificateStore> {

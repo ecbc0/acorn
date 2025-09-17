@@ -570,7 +570,7 @@ impl<'a> Builder<'a> {
         goal: &Goal,
         env: &Environment,
         new_certs: &mut Vec<Certificate>,
-        mut worklist: Option<&mut CertificateWorklist>,
+        worklist: &mut CertificateWorklist,
         new_premises: &mut HashSet<(ModuleId, String)>,
     ) -> Result<(), BuildError> {
         // Check if we've been cancelled before starting any work
@@ -579,35 +579,31 @@ impl<'a> Builder<'a> {
         }
 
         // Check for a cached cert
-        if let Some(worklist) = worklist.as_mut() {
-            let indexes = worklist.get_indexes(&goal.name);
-            for i in indexes {
-                let cert = worklist.get_cert(*i).unwrap();
-                match processor.check_cert(cert, Some(goal), self.project, &env.bindings) {
-                    Ok(()) => {
-                        self.metrics.certs_cached += 1;
-                        self.metrics.goals_done += 1;
-                        self.metrics.goals_success += 1;
-                        self.log_verified(goal.first_line, goal.last_line);
-                        new_certs.push(cert.clone());
-                        worklist.remove(&goal.name, *i);
-                        return Ok(());
-                    }
-                    Err(e) if self.reverify => {
-                        // In reverify mode, a bad cert is an error
-                        return Err(BuildError::goal(
-                            goal,
-                            &format!("certificate failed to verify: {}", e),
-                        ));
-                    }
-                    Err(_) => {
-                        // The cert is bad, but maybe another one is good.
-                        // That can happen with code edits.
-                    }
+        let indexes = worklist.get_indexes(&goal.name);
+        for i in indexes {
+            let cert = worklist.get_cert(*i).unwrap();
+            match processor.check_cert(cert, Some(goal), self.project, &env.bindings) {
+                Ok(()) => {
+                    self.metrics.certs_cached += 1;
+                    self.metrics.goals_done += 1;
+                    self.metrics.goals_success += 1;
+                    self.log_verified(goal.first_line, goal.last_line);
+                    new_certs.push(cert.clone());
+                    worklist.remove(&goal.name, *i);
+                    return Ok(());
+                }
+                Err(e) if self.reverify => {
+                    // In reverify mode, a bad cert is an error
+                    return Err(BuildError::goal(
+                        goal,
+                        &format!("certificate failed to verify: {}", e),
+                    ));
+                }
+                Err(_) => {
+                    // The cert is bad, but maybe another one is good.
+                    // That can happen with code edits.
                 }
             }
-        } else if self.reverify {
-            return Err(BuildError::goal(goal, "no worklist found"));
         }
 
         // In reverify mode, we should never reach the search phase
@@ -651,7 +647,7 @@ impl<'a> Builder<'a> {
         cursor: &mut NodeCursor,
         new_premises: &mut HashSet<(ModuleId, String)>,
         new_certs: &mut Vec<Certificate>,
-        mut worklist: Option<&mut CertificateWorklist>,
+        worklist: &mut CertificateWorklist,
     ) -> Result<(), BuildError> {
         if !cursor.requires_verification() {
             return Ok(());
@@ -666,7 +662,7 @@ impl<'a> Builder<'a> {
                     cursor,
                     new_premises,
                     new_certs,
-                    worklist.as_deref_mut(),
+                    worklist,
                 )?;
 
                 if let Some(fact) = cursor.node().get_fact() {
@@ -740,7 +736,7 @@ impl<'a> Builder<'a> {
                         &mut cursor,
                         &mut new_premises,
                         &mut new_certs,
-                        worklist.as_mut(),
+                        &mut worklist,
                     )?;
                 }
             } else {
@@ -758,9 +754,7 @@ impl<'a> Builder<'a> {
         if self.module_proving_good(target) && self.single_goal.is_none() {
             // The module was entirely verified.
 
-            if let Some(worklist) = worklist {
-                self.metrics.certs_unused += worklist.unused() as i32;
-            }
+            self.metrics.certs_unused += worklist.unused() as i32;
 
             // Insert the new CertificateStore into the build cache
             let cert_store = CertificateStore { certs: new_certs };
