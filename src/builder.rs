@@ -763,13 +763,18 @@ impl<'a> Builder<'a> {
 
         let cert_store = CertificateStore { certs: new_certs };
 
-        if let Some(content_hash) = self.project.get_module_content_hash(env.module_id) {
-            self.build_cache.as_mut().unwrap().insert(
-                target.clone(),
-                cert_store,
-                Some(content_hash),
-            );
-        }
+        let content_hash = if module_good {
+            // We successfully verified this module, so put its hash in the manifest.
+            self.project.get_module_content_hash(env.module_id)
+        } else {
+            // This module had warnings or errors, so don't put its hash in the manifest.
+            None
+        };
+
+        self.build_cache
+            .as_mut()
+            .unwrap()
+            .insert(target.clone(), cert_store, content_hash);
 
         Ok(())
     }
