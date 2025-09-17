@@ -10,8 +10,8 @@ use crate::block::NodeCursor;
 use crate::interfaces::{InfoParams, InfoResponse, SearchParams, SearchResponse, SearchStatus};
 use crate::module::{LoadState, ModuleDescriptor};
 use crate::processor::Processor;
-use crate::server::project_manager::ProjectManager;
 use crate::prover::{Outcome, ProverParams};
+use crate::server::project_manager::ProjectManager;
 
 use super::live_document::LiveDocument;
 use super::{log, to_path};
@@ -266,7 +266,9 @@ impl SearchManager {
                 }
             }
             None => {
-                return Err(format!("the project has not opened {}", path.display()));
+                // We don't have any version of this file.
+                // Probably this indicates a file that is open in VS Code but unchanged.
+                // Just fall through.
             }
         }
         let descriptor = match project.descriptor_from_path(&path) {
@@ -298,7 +300,8 @@ impl SearchManager {
         let cursor = NodeCursor::from_path(env, &path);
         let goal = cursor.goal()?;
         let cancellation_token = CancellationToken::new();
-        let mut processor = Processor::with_dual_tokens(project.cancel.clone(), cancellation_token.clone());
+        let mut processor =
+            Processor::with_dual_tokens(project.cancel.clone(), cancellation_token.clone());
         for fact in cursor.usable_facts(&project) {
             processor.add_fact(fact)?;
         }

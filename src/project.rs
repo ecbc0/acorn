@@ -375,6 +375,7 @@ impl Project {
                 reload_modules.push(target.clone());
             }
         }
+        eprintln!("XXX update_file: {} (version {})", path.display(), version);
         self.open_files.insert(path, (content.to_string(), version));
         for descriptor in &reload_modules {
             // Ignore errors when reloading
