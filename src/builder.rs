@@ -622,6 +622,7 @@ impl<'a> Builder<'a> {
         }
 
         // Try searching
+        self.log_silent(goal, "- searching for a proof...");
         let processor = Rc::make_mut(&mut processor);
         processor.set_goal(goal)?;
         let start = std::time::Instant::now();
