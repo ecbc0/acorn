@@ -18,6 +18,13 @@ use crate::statement::{Statement, StatementInfo};
 use crate::term_graph::{StepId, TermGraph};
 
 /// The checker quickly checks if a clause can be proven in a single step from known clauses.
+///
+/// The types of single-step we support are:
+///
+///   Exact substitutions into a known theorem. Handled by the GeneralizationSet.
+///   "Congruence closure" of equalities and subterm relationships. Handled by the TermGraph.
+///   Propositional calculus on concrete literals. Handled by the TermGraph.
+///   Introducing variables for existential quantifiers. Handled weirdly through a Normalizer.
 #[derive(Clone)]
 pub struct Checker {
     /// For deductions among concrete clauses.
