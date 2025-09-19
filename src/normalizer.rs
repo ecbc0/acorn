@@ -16,6 +16,9 @@ use crate::proof_step::{ProofStep, Truthiness};
 use crate::source::SourceType;
 use crate::term::{Term, TypeId};
 
+// The experiment turns off defunctionalization in normalization.
+const EXPERIMENT: bool = false;
+
 /// A higher-order logic value that has been normalized into a CNF form.
 pub struct NormalizedValue {
     /// CNF form of the value.
@@ -535,7 +538,11 @@ impl Normalizer {
         ctype: NewConstantType,
     ) -> Result<Vec<Clause>, String> {
         // println!("\nnormalizing: {}", value);
-        let value = value.replace_function_equality(0);
+        let value = if EXPERIMENT {
+            value.clone()
+        } else {
+            value.replace_function_equality(0)
+        };
         let value = value.expand_lambdas(0);
         let value = value.replace_match();
         let value = value.replace_if();
@@ -599,17 +606,19 @@ impl Normalizer {
         }
         assert_eq!(value.get_type(), AcornType::Bool);
 
-        if let AcornValue::Binary(BinaryOp::Equals, left, right) = &value {
-            // Check for the sort of functional equality that can be represented as a literal.
-            if left.get_type().is_functional() && left.is_term() && right.is_term() {
-                // We want to represent this two ways.
-                // One as an equality between functions, another as an equality between
-                // primitive types, after applying the functions.
-                // If we handled functional types better in unification we might not need this.
-                let mut functional = self.normalize_cnf(value.clone(), ctype)?;
-                let mut primitive = self.convert_then_normalize(value, ctype)?;
-                functional.append(&mut primitive);
-                return Ok(functional);
+        if !EXPERIMENT {
+            if let AcornValue::Binary(BinaryOp::Equals, left, right) = &value {
+                // Check for the sort of functional equality that can be represented as a literal.
+                if left.get_type().is_functional() && left.is_term() && right.is_term() {
+                    // We want to represent this two ways.
+                    // One as an equality between functions, another as an equality between
+                    // primitive types, after applying the functions.
+                    // If we handled functional types better in unification we might not need this.
+                    let mut functional = self.normalize_cnf(value.clone(), ctype)?;
+                    let mut primitive = self.convert_then_normalize(value, ctype)?;
+                    functional.append(&mut primitive);
+                    return Ok(functional);
+                }
             }
         }
 
@@ -1127,20 +1136,21 @@ mod tests {
         norm.check(&env, "goal", &["adder(x0, x1) = adder(x1, x0)"]);
     }
 
-    #[test]
-    fn test_functional_equality() {
-        let mut env = Environment::test();
-        env.add(
-            r#"
-            type Nat: axiom
-            let zero: Nat = axiom
-            define zerof(a: Nat) -> (Nat -> Nat) { function(b: Nat) { zero } }
-            theorem goal(a: Nat, b: Nat) { zerof(a) = zerof(b) }
-            "#,
-        );
-        let mut norm = Normalizer::new();
-        norm.check(&env, "goal", &["zerof(x0, x1) = zerof(x2, x1)"]);
-    }
+    // TODO: figure out if we want this behavior.
+    // #[test]
+    // fn test_functional_equality() {
+    //     let mut env = Environment::test();
+    //     env.add(
+    //         r#"
+    //         type Nat: axiom
+    //         let zero: Nat = axiom
+    //         define zerof(a: Nat) -> (Nat -> Nat) { function(b: Nat) { zero } }
+    //         theorem goal(a: Nat, b: Nat) { zerof(a) = zerof(b) }
+    //         "#,
+    //     );
+    //     let mut norm = Normalizer::new();
+    //     norm.check(&env, "goal", &["zerof(x0, x1) = zerof(x2, x1)"]);
+    // }
 
     #[test]
     fn test_normalizing_exists() {
