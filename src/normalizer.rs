@@ -543,14 +543,14 @@ impl Normalizer {
 
         // println!("pre-skolemize: {}", value);
         let mut next_synthetic_id = self.synthetic_definitions.len() as AtomId;
-        let mut created = vec![];
-        let value = self.skolemize(&vec![], value, &mut next_synthetic_id, &mut created)?;
+        let mut skolem_atoms = vec![];
+        let value = self.skolemize(&vec![], value, &mut next_synthetic_id, &mut skolem_atoms)?;
 
         let clauses = self.normalize_cnf(value, ctype)?;
 
-        if !created.is_empty() {
+        if !skolem_atoms.is_empty() {
             let mut synthetic_ids = vec![];
-            for (synthetic_id, synthetic_type) in created {
+            for (synthetic_id, synthetic_type) in skolem_atoms {
                 self.synthetic_types.push(synthetic_type);
                 synthetic_ids.push(synthetic_id);
             }
