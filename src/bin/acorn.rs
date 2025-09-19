@@ -139,7 +139,7 @@ async fn main() {
     };
     verifier.builder.verbose = args.line.is_some();
     verifier.builder.reverify = args.reverify;
-    verifier.builder.check_hashes = !args.nohash;
+    verifier.builder.check_hashes = !args.nohash && !args.reverify;
     verifier.line = args.line;
     match verifier.run() {
         Err(e) => {
