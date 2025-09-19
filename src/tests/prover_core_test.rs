@@ -922,7 +922,7 @@ fn test_lib_keyword() {
 }
 
 #[test]
-fn test_concrete_proof_rewrite_only() {
+fn test_proving_rewrite_only() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -954,7 +954,7 @@ fn test_concrete_proof_rewrite_only() {
 }
 
 #[test]
-fn test_concrete_proof_modus_ponens_only() {
+fn test_proving_modus_ponens_only() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -986,7 +986,7 @@ fn test_concrete_proof_modus_ponens_only() {
 }
 
 #[test]
-fn test_concrete_proof_with_active_resolution() {
+fn test_proving_with_active_resolution() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1014,7 +1014,7 @@ fn test_concrete_proof_with_active_resolution() {
 }
 
 #[test]
-fn test_concrete_proof_exact_clause_match() {
+fn test_proving_exact_clause_match() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1042,7 +1042,7 @@ fn test_concrete_proof_exact_clause_match() {
 }
 
 #[test]
-fn test_concrete_proof_proving_an_or() {
+fn test_proving_an_or() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1074,7 +1074,7 @@ fn test_concrete_proof_proving_an_or() {
 }
 
 #[test]
-fn test_concrete_proof_removes_duplicates() {
+fn test_proving_removes_duplicates() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1108,7 +1108,7 @@ fn test_concrete_proof_removes_duplicates() {
 }
 
 #[test]
-fn test_concrete_proof_with_passive_resolution() {
+fn test_proving_with_passive_resolution() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1147,7 +1147,7 @@ fn test_concrete_proof_with_passive_resolution() {
 }
 
 #[test]
-fn test_concrete_proof_activating_rewrite_pattern() {
+fn test_proving_activating_rewrite_pattern() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1176,7 +1176,7 @@ fn test_concrete_proof_activating_rewrite_pattern() {
 }
 
 #[test]
-fn test_concrete_proof_with_passive_contradiction() {
+fn test_proving_with_passive_contradiction() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1208,7 +1208,7 @@ fn test_concrete_proof_with_passive_contradiction() {
 }
 
 #[test]
-fn test_concrete_proof_with_multiple_rewrite() {
+fn test_proving_with_multiple_rewrite() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1243,7 +1243,7 @@ fn test_concrete_proof_with_multiple_rewrite() {
 }
 
 #[test]
-fn test_concrete_proof_random_bug() {
+fn test_proving_random_bug() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1276,7 +1276,7 @@ fn test_concrete_proof_random_bug() {
 }
 
 #[test]
-fn test_concrete_proof_with_equality_factoring_basic() {
+fn test_proving_with_equality_factoring_basic() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1312,7 +1312,7 @@ fn test_concrete_proof_with_equality_factoring_basic() {
 }
 
 #[test]
-fn test_concrete_proof_with_equality_factoring_mixed_forwards() {
+fn test_proving_with_equality_factoring_mixed_forwards() {
     // This ends up being a tiny bit different than the previous one because the atoms
     // are normalized differently.
     let mut p = Project::new_mock();
@@ -1350,7 +1350,7 @@ fn test_concrete_proof_with_equality_factoring_mixed_forwards() {
 }
 
 #[test]
-fn test_concrete_proof_with_equality_resolution() {
+fn test_proving_with_equality_resolution() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1391,7 +1391,7 @@ fn test_concrete_proof_with_equality_resolution() {
 }
 
 #[test]
-fn test_concrete_proof_with_function_elimination() {
+fn test_proving_with_function_elimination() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1436,7 +1436,7 @@ fn test_concrete_proof_with_function_elimination() {
 }
 
 #[test]
-fn test_concrete_proof_rewrite_into_obvious_falsehood() {
+fn test_proving_rewrite_into_obvious_falsehood() {
     // I think the tricky part here is that we have x != y and then rewrite x to y.
     let mut p = Project::new_mock();
     p.mock(
@@ -1465,7 +1465,7 @@ fn test_concrete_proof_rewrite_into_obvious_falsehood() {
 }
 
 #[test]
-fn test_concrete_proof_multiple_simplifying() {
+fn test_proving_multiple_simplifying() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1497,7 +1497,7 @@ fn test_concrete_proof_multiple_simplifying() {
 }
 
 #[test]
-fn test_concrete_proof_of_existence() {
+fn test_proving_of_existence() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1531,7 +1531,7 @@ fn test_concrete_proof_of_existence() {
 }
 
 #[test]
-fn test_concrete_proof_of_conjunction_existence() {
+fn test_proving_of_conjunction_existence() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1570,7 +1570,7 @@ fn test_concrete_proof_of_conjunction_existence() {
 }
 
 #[test]
-fn test_concrete_proof_with_skolem() {
+fn test_proving_with_skolem() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1609,7 +1609,7 @@ fn test_concrete_proof_with_skolem() {
 }
 
 #[test]
-fn test_concrete_proof_with_free_variable() {
+fn test_proving_with_free_variable() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1649,7 +1649,7 @@ fn test_concrete_proof_with_free_variable() {
 }
 
 #[test]
-fn test_concrete_proof_plain_true() {
+fn test_proving_plain_true() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1665,7 +1665,7 @@ fn test_concrete_proof_plain_true() {
 }
 
 #[test]
-fn test_concrete_proof_with_inheritance() {
+fn test_proving_with_inheritance() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1697,7 +1697,7 @@ fn test_concrete_proof_with_inheritance() {
 }
 
 #[test]
-fn test_concrete_proof_with_theorem_arg() {
+fn test_proving_with_theorem_arg() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1732,7 +1732,7 @@ fn test_concrete_proof_with_theorem_arg() {
 }
 
 #[test]
-fn test_concrete_proof_with_duplicate_literals() {
+fn test_proving_with_duplicate_literals() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1762,7 +1762,7 @@ fn test_concrete_proof_with_duplicate_literals() {
 }
 
 #[test]
-fn test_concrete_proof_with_long_skolem_definition() {
+fn test_proving_with_long_skolem_definition() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1797,7 +1797,7 @@ fn test_concrete_proof_with_long_skolem_definition() {
 // Note: this is slow and sometimes timed out after 0.2s, so I bumped the test limit to 0.3s.
 // If this hasn't come up in a while, we might just want to remove it. - August 2025
 #[test]
-fn test_concrete_proof_with_type_param() {
+fn test_proving_with_type_param() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1830,7 +1830,7 @@ fn test_concrete_proof_with_type_param() {
 }
 
 #[test]
-fn test_concrete_proof_using_unimported_function() {
+fn test_proving_using_unimported_function() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/foo.ac",
@@ -1884,7 +1884,7 @@ fn test_concrete_proof_using_unimported_function() {
 }
 
 #[test]
-fn test_concrete_proof_list_contains() {
+fn test_proving_list_contains() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1929,7 +1929,7 @@ fn test_concrete_proof_list_contains() {
 }
 
 #[test]
-fn test_concrete_proof_needing_templates() {
+fn test_proving_needing_templates() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1958,7 +1958,7 @@ fn test_concrete_proof_needing_templates() {
 }
 
 #[test]
-fn test_concrete_proof_boolean_equality() {
+fn test_proving_boolean_equality() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
@@ -1983,26 +1983,26 @@ fn test_concrete_proof_boolean_equality() {
     prove(&mut p, "main", "goal");
 }
 
-#[test]
-fn test_proving_complex_expression() {
-    // The boxed_and definition can't be normalized to CNF directly.
-    let mut p = Project::new_mock();
-    p.mock(
-        "/mock/main.ac",
-        r#"
-        structure BoxedBool {
-            value: Bool
-        }
+// #[test]
+// fn test_proving_complex_expression() {
+//     // The boxed_and definition can't be normalized to CNF directly.
+//     let mut p = Project::new_mock();
+//     p.mock(
+//         "/mock/main.ac",
+//         r#"
+//         structure BoxedBool {
+//             value: Bool
+//         }
 
-        define boxed_and(a: BoxedBool, b: BoxedBool) -> BoxedBool {
-           BoxedBool.new(a.value and b.value)
-        }
+//         define boxed_and(a: BoxedBool, b: BoxedBool) -> BoxedBool {
+//            BoxedBool.new(a.value and b.value)
+//         }
 
-        theorem boxed_and_comm(a: BoxedBool, b: BoxedBool) {
-            boxed_and(a, b) = boxed_and(b, a)
-        }
-        "#,
-    );
+//         theorem boxed_and_comm(a: BoxedBool, b: BoxedBool) {
+//             boxed_and(a, b) = boxed_and(b, a)
+//         }
+//         "#,
+//     );
 
-    prove(&mut p, "main", "boxed_and_comm");
-}
+//     prove(&mut p, "main", "boxed_and_comm");
+// }

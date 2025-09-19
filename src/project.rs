@@ -475,7 +475,7 @@ impl Project {
                 self.get_env_by_id(attr_module_id)
             }
             ConstantName::Unqualified(module_id, _name) => self.get_env_by_id(*module_id),
-            ConstantName::Skolem(_) => None,
+            ConstantName::Synthetic(_) => None,
         }
     }
 

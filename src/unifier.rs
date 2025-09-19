@@ -704,7 +704,7 @@ mod tests {
         let s5_left = Term {
             term_type: 4,
             head_type: 14,
-            head: Atom::Skolem(5),
+            head: Atom::Synthetic(5),
             args: vec![x0_var.clone(), x1_var.clone()],
         };
 
@@ -728,7 +728,7 @@ mod tests {
         let s5_right = Term {
             term_type: 4,
             head_type: 14,
-            head: Atom::Skolem(5),
+            head: Atom::Synthetic(5),
             args: vec![m2_c0.clone(), Term::atom(2, Atom::Variable(0))],
         };
 

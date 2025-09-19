@@ -5,9 +5,10 @@ use serde::{Deserialize, Serialize};
 
 pub type AtomId = u16;
 
-/// Don't let skolem ids get this high.
+/// Don't let synthetic ids get this high.
 /// We use ids in the invalid space for normalization purposes.
-pub const INVALID_SKOLEM_ID: AtomId = 65000;
+/// Bit of a hack.
+pub const INVALID_SYNTHETIC_ID: AtomId = 65000;
 
 /// An atomic value does not have any internal structure.
 /// The Atom is a lower-level representation.
@@ -33,9 +34,11 @@ pub enum Atom {
     // This does mean that you must be careful when moving values between different environments.
     Variable(AtomId),
 
-    // A skolem function or skolem constant is created by the normalizer to eliminate existential
-    // clauses. It can't be referred to directly in code.
-    Skolem(AtomId),
+    // Synthetic atoms are created by the normalizer to handle expressions that cannot be converted
+    // to CNF directly.
+    // These don't have a name in the environment, so you need to create a definition before
+    // generating code with them.
+    Synthetic(AtomId),
 }
 
 impl fmt::Display for Atom {
@@ -46,7 +49,7 @@ impl fmt::Display for Atom {
             Atom::LocalConstant(i) => write!(f, "c{}", i),
             Atom::Monomorph(i) => write!(f, "m{}", i),
             Atom::Variable(i) => write!(f, "x{}", i),
-            Atom::Skolem(i) => write!(f, "s{}", i),
+            Atom::Synthetic(i) => write!(f, "s{}", i),
         }
     }
 }
@@ -68,7 +71,7 @@ impl Atom {
             'c' => Some(Atom::LocalConstant(rest.parse().ok()?)),
             'x' => Some(Atom::Variable(rest.parse().ok()?)),
             'm' => Some(Atom::Monomorph(rest.parse().ok()?)),
-            's' => Some(Atom::Skolem(rest.parse().ok()?)),
+            's' => Some(Atom::Synthetic(rest.parse().ok()?)),
             _ => None,
         }
     }
@@ -99,8 +102,8 @@ impl Atom {
     /// Renumbers skolems from the provided list into the invalid range.
     pub fn invalidate_skolems(&self, from: &[AtomId]) -> Atom {
         match self {
-            Atom::Skolem(i) => match from.iter().position(|x| x == i) {
-                Some(j) => Atom::Skolem((INVALID_SKOLEM_ID as usize + j) as AtomId),
+            Atom::Synthetic(i) => match from.iter().position(|x| x == i) {
+                Some(j) => Atom::Synthetic((INVALID_SYNTHETIC_ID as usize + j) as AtomId),
                 None => *self,
             },
             a => *a,
@@ -112,7 +115,7 @@ impl Atom {
         match self {
             Atom::Variable(i) => {
                 if (*i as usize) < num_existential {
-                    Atom::Skolem((INVALID_SKOLEM_ID as usize + *i as usize) as AtomId)
+                    Atom::Synthetic((INVALID_SYNTHETIC_ID as usize + *i as usize) as AtomId)
                 } else {
                     Atom::Variable(*i - num_existential as AtomId)
                 }

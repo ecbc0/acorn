@@ -205,7 +205,7 @@ impl ConstantInstance {
         module_id: ModuleId,
         skolem_names: &HashMap<AtomId, String>,
     ) -> Option<ConstantInstance> {
-        let id = self.name.skolem_id()?;
+        let id = self.name.synthetic_id()?;
         let name = skolem_names.get(&id)?;
         assert!(self.params.is_empty());
         Some(ConstantInstance {
@@ -1643,10 +1643,10 @@ impl AcornValue {
     /// May contain duplicates.
     pub fn find_skolems(&self) -> Vec<AtomId> {
         let mut consts = vec![];
-        self.find_constants(&|c| c.name.is_skolem(), &mut consts);
+        self.find_constants(&|c| c.name.is_synthetic(), &mut consts);
         let mut answer = vec![];
         for c in consts {
-            if let ConstantName::Skolem(id) = c.name {
+            if let ConstantName::Synthetic(id) = c.name {
                 answer.push(id);
             }
         }

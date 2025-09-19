@@ -251,7 +251,7 @@ impl Term {
     }
 
     pub fn has_skolem(&self) -> bool {
-        if matches!(self.head, Atom::Skolem(_)) {
+        if matches!(self.head, Atom::Synthetic(_)) {
             return true;
         }
         for arg in &self.args {
@@ -463,7 +463,7 @@ impl Term {
                 weight1 += 1;
                 weight2 += 2 + 4 * i as u32;
             }
-            Atom::Skolem(i) => {
+            Atom::Synthetic(i) => {
                 weight1 += 1;
                 weight2 += 3 + 4 * i as u32;
             }

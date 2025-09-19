@@ -44,8 +44,8 @@ pub enum ConstantName {
     /// A name for a constant that is not an attribute.
     Unqualified(ModuleId, String),
 
-    /// A skolem constant, created by the normalizer to eliminate existential variables.
-    Skolem(AtomId),
+    /// A synthetic constant, created by the normalizer to simplify expressions.
+    Synthetic(AtomId),
 }
 
 impl ConstantName {
@@ -68,7 +68,7 @@ impl ConstantName {
             }
             ConstantName::TypeclassAttribute(tc, attr) => Some((tc.module_id, &tc.name, attr)),
             ConstantName::Unqualified(..) => None,
-            ConstantName::Skolem(_) => None,
+            ConstantName::Synthetic(_) => None,
         }
     }
 
@@ -83,16 +83,16 @@ impl ConstantName {
         }
     }
 
-    pub fn is_skolem(&self) -> bool {
+    pub fn is_synthetic(&self) -> bool {
         match self {
-            ConstantName::Skolem(_) => true,
+            ConstantName::Synthetic(_) => true,
             _ => false,
         }
     }
 
-    pub fn skolem_id(&self) -> Option<AtomId> {
+    pub fn synthetic_id(&self) -> Option<AtomId> {
         match self {
-            ConstantName::Skolem(id) => Some(*id),
+            ConstantName::Synthetic(id) => Some(*id),
             _ => None,
         }
     }
@@ -102,7 +102,7 @@ impl ConstantName {
             ConstantName::DatatypeAttribute(datatype, _) => datatype.module_id,
             ConstantName::TypeclassAttribute(tc, _) => tc.module_id,
             ConstantName::Unqualified(module_id, _) => *module_id,
-            ConstantName::Skolem(_) => panic!("skolem constants do not have a module id"),
+            ConstantName::Synthetic(_) => panic!("synthetic constants do not have a module id"),
         }
     }
 
@@ -124,7 +124,7 @@ impl fmt::Display for ConstantName {
                 write!(f, "{}.{}", tc.name, attr)
             }
             ConstantName::Unqualified(_, name) => write!(f, "{}", name),
-            ConstantName::Skolem(i) => write!(f, "s{}", i),
+            ConstantName::Synthetic(i) => write!(f, "s{}", i),
         }
     }
 }

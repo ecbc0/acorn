@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::acorn_type::AcornType;
 use crate::acorn_value::{AcornValue, BinaryOp, FunctionApplication};
-use crate::atom::{Atom, AtomId, INVALID_SKOLEM_ID};
+use crate::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
 use crate::builder::BuildError;
 use crate::clause::Clause;
 use crate::fact::Fact;
@@ -115,7 +115,7 @@ impl Normalizer {
     }
 
     pub fn is_skolem(&self, atom: &Atom) -> bool {
-        matches!(atom, Atom::Skolem(_))
+        matches!(atom, Atom::Synthetic(_))
     }
 
     pub fn get_skolem_type(&self, id: AtomId) -> &AcornType {
@@ -211,10 +211,10 @@ impl Normalizer {
                 for quant in quants {
                     // Make a new skolem atom
                     let skolem_type = AcornType::functional(stack.clone(), quant);
-                    if *next_skolem_id >= INVALID_SKOLEM_ID {
+                    if *next_skolem_id >= INVALID_SYNTHETIC_ID {
                         return Err(format!("ran out of skolem ids (used {})", next_skolem_id));
                     }
-                    let skolem_name = ConstantName::Skolem(*next_skolem_id);
+                    let skolem_name = ConstantName::Synthetic(*next_skolem_id);
                     let skolem_value =
                         AcornValue::constant(skolem_name, vec![], skolem_type.clone());
                     created.push((*next_skolem_id, skolem_type));
@@ -304,8 +304,8 @@ impl Normalizer {
         name: &ConstantName,
         ctype: NewConstantType,
     ) -> Result<Atom, String> {
-        if let ConstantName::Skolem(i) = name {
-            return Ok(Atom::Skolem(*i));
+        if let ConstantName::Synthetic(i) = name {
+            return Ok(Atom::Synthetic(*i));
         };
 
         if let Some(atom) = self.normalization_map.get_atom(name) {
@@ -729,9 +729,9 @@ impl Normalizer {
                 }
                 AcornValue::Variable(*i, acorn_type)
             }
-            Atom::Skolem(i) => {
+            Atom::Synthetic(i) => {
                 let acorn_type = self.skolem_types[*i as usize].clone();
-                let name = ConstantName::Skolem(*i);
+                let name = ConstantName::Synthetic(*i);
                 AcornValue::constant(name, vec![], acorn_type)
             }
         }
@@ -839,7 +839,7 @@ impl Normalizer {
                 format!("{}", self.normalization_map.get_monomorph(*i))
             }
             Atom::Variable(i) => format!("x{}", i),
-            Atom::Skolem(i) => format!("s{}", i),
+            Atom::Synthetic(i) => format!("s{}", i),
         }
     }
 

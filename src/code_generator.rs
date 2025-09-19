@@ -367,8 +367,8 @@ impl CodeGenerator<'_> {
     /// Given a constant instance, create an expression that refers to it.
     /// This does *not* include the parameters.
     fn const_to_expr(&self, ci: &ConstantInstance) -> Result<Expression> {
-        if ci.name.is_skolem() {
-            if let Some(id) = ci.name.skolem_id() {
+        if ci.name.is_synthetic() {
+            if let Some(id) = ci.name.synthetic_id() {
                 if let Some(skolem_name) = self.skolem_names.get(&id) {
                     return Ok(Expression::generate_identifier(skolem_name));
                 }
@@ -410,7 +410,7 @@ impl CodeGenerator<'_> {
                 ConstantName::TypeclassAttribute(tc, attr) => {
                     Expression::generate_identifier(&tc.name).add_dot_str(attr)
                 }
-                ConstantName::Skolem(_) => panic!("control should not get here"),
+                ConstantName::Synthetic(_) => panic!("control should not get here"),
             });
         }
 
@@ -453,7 +453,7 @@ impl CodeGenerator<'_> {
             ConstantName::TypeclassAttribute(tc, attr) => {
                 Ok(module.add_dot_str(&tc.name).add_dot_str(attr))
             }
-            ConstantName::Skolem(_) => panic!("control should not get here"),
+            ConstantName::Synthetic(_) => panic!("control should not get here"),
         }
     }
 

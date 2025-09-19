@@ -197,7 +197,7 @@ impl BindingMap {
                         // This doesn't seem right!
                         false
                     }
-                    ConstantName::Skolem(i) => {
+                    ConstantName::Synthetic(i) => {
                         let name = format!("s{}", i);
                         self.unqualified.contains_key(&name)
                             || self.name_to_module.contains_key(&name)
@@ -454,7 +454,7 @@ impl BindingMap {
             ConstantName::TypeclassAttribute(typeclass, attr) => self
                 .resolve_typeclass_attr(typeclass, attr)
                 .map(|(module_id, name)| (module_id, name)),
-            ConstantName::Skolem(_) => None,
+            ConstantName::Synthetic(_) => None,
         }
     }
 
@@ -996,7 +996,7 @@ impl BindingMap {
             ConstantName::Unqualified(_, name) => {
                 self.unqualified.insert(name.clone(), ());
             }
-            ConstantName::Skolem(i) => {
+            ConstantName::Synthetic(i) => {
                 let name = format!("s{}", i);
                 self.unqualified.insert(name, ());
             }
