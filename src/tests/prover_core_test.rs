@@ -1436,6 +1436,31 @@ fn test_proving_with_injectivity() {
 }
 
 #[test]
+fn test_proving_with_extensionality() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        type Foo: axiom
+
+        let f: Foo -> Foo = axiom
+        let g: Foo -> Foo = axiom
+        let h: (Foo -> Foo, Foo -> Foo) -> Foo = axiom
+
+        axiom rule1(x: Foo) {
+            f(x) = g(x)
+        }
+
+        theorem goal {
+            h(f, g) = h(g, f)
+        }
+        "#,
+    );
+
+    prove(&mut p, "main", "goal");
+}
+
+#[test]
 fn test_proving_rewrite_into_obvious_falsehood() {
     // I think the tricky part here is that we have x != y and then rewrite x to y.
     let mut p = Project::new_mock();
