@@ -584,6 +584,8 @@ impl Normalizer {
     /// Each Clause represents an implicit "forall", plus an "or" of its literals.
     /// "true" is represented by an empty list, which is always satisfied.
     /// "false" is represented by a single impossible clause.
+    /// This is kind of just a wrapper around convert_then_normalize which adds on
+    /// some verification and a hack for functional equality.
     fn normalize_value(
         &mut self,
         value: &AcornValue,
