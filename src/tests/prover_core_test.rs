@@ -1461,6 +1461,32 @@ fn test_proving_with_extensionality() {
 }
 
 #[test]
+fn test_proving_with_unbalanced_extensionality() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        type Foo: axiom
+
+        let f: (Foo, Foo) -> Foo = axiom
+        let g: Foo = axiom
+        let h: Foo -> Foo = axiom
+        let p: (Foo -> Foo, Foo -> Foo) -> Foo = axiom
+
+        axiom rule1(x: Foo) {
+            f(g, x) = h(x)
+        }
+
+        theorem goal {
+            p(f(g), h) = p(h, f(g))
+        }
+        "#,
+    );
+
+    prove(&mut p, "main", "goal");
+}
+
+#[test]
 fn test_proving_rewrite_into_obvious_falsehood() {
     // I think the tricky part here is that we have x != y and then rewrite x to y.
     let mut p = Project::new_mock();

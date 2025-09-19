@@ -4,6 +4,7 @@ use std::fmt;
 use crate::atom::{Atom, AtomId};
 use crate::literal::Literal;
 use crate::proof_step::{EFLiteralTrace, EFTermTrace};
+use crate::term::Term;
 use crate::unifier::{Scope, Unifier};
 
 // A record of what happened to a single literal during a single proof step.
@@ -514,12 +515,10 @@ impl Clause {
     /// Returns the resulting literals if extensionality applies.
     /// Only works on single-literal clauses.
     pub fn find_extensionality(&self) -> Option<Vec<Literal>> {
-
         // Extensionality only works on single-literal clauses
         if self.literals.len() != 1 {
             return None;
         }
-
         let literal = &self.literals[0];
 
         // Extensionality only applies to positive equality literals
@@ -527,52 +526,54 @@ impl Clause {
             return None;
         }
 
-            // Check if this is f(x1, x2, ...) = g(x1, x2, ...)
-            // where f and g are different functions and all arguments are the same variables
-            let left = &literal.left;
-            let right = &literal.right;
+        // Check if this is f(a, b, c, x1, x2, ..., xn) = g(x1, x2, ..., xn)
+        let (longer, shorter) = if literal.left.args.len() >= literal.right.args.len() {
+            (&literal.left, &literal.right)
+        } else {
+            (&literal.right, &literal.left)
+        };
 
         // Both sides must be function applications
-        if left.args.is_empty() || right.args.is_empty() {
+        if longer.args.is_empty() || shorter.args.is_empty() {
             return None;
         }
 
         // Functions must be different
-        if left.head == right.head {
+        if longer.head == shorter.head {
             return None;
         }
 
-        // All arguments must be the same
-        if left.args != right.args {
+        // The extra args on the longer side must have no variables
+        let diff = longer.args.len() - shorter.args.len();
+        if longer.args[0..diff].iter().any(|arg| arg.is_variable()) {
             return None;
         }
 
-        // Check that all arguments are variables (not complex terms)
-        // This ensures we have the extensionality pattern
-        let all_vars = left.args.iter().all(|arg| arg.args.is_empty());
-        if !all_vars {
+        // Remaining arguments must be the same
+        if longer.args[diff..] != shorter.args {
             return None;
         }
 
         // Check that variables are distinct (0, 1, 2, ... in normalized form)
-        for (i, arg) in left.args.iter().enumerate() {
-            if let crate::atom::Atom::Variable(id) = arg.head {
-                if id != i as crate::atom::AtomId {
-                    // Variables are not in ascending order, so they're not all distinct
-                    return None;
-                }
-            } else {
-                // Not a variable
+        for (i, arg) in shorter.args.iter().enumerate() {
+            let Atom::Variable(id) = arg.head else {
+                return None;
+            };
+            if id != i as AtomId {
                 return None;
             }
         }
 
-        // Create the new literal: f = g
-        let new_literal = Literal::new(
-            true,
-            left.get_head_term(),
-            right.get_head_term(),
+        // Create the new literal.
+        // We need to take the type from the head of the shorter term.
+        let new_left = shorter.get_head_term();
+        let new_right = Term::new(
+            new_left.term_type,
+            longer.head_type,
+            longer.head,
+            longer.args[0..diff].to_vec(),
         );
+        let new_literal = Literal::new(true, new_left, new_right);
         Some(vec![new_literal])
     }
 
