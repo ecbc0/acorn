@@ -199,7 +199,7 @@ impl Checker {
                     let exists_value = AcornValue::exists(types, condition_value);
 
                     // Check if this matches any existing skolem
-                    if !normalizer.has_exact_synthetic_info(&exists_value) {
+                    if !normalizer.has_synthetic_definition(&exists_value) {
                         return Err(Error::GeneratedBadCode(format!(
                             "statement '{}' does not match any skolem definition",
                             code

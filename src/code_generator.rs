@@ -182,7 +182,7 @@ impl CodeGenerator<'_> {
         let infos = normalizer.find_covering_synthetic_info(&skolem_ids);
         for info in &infos {
             let mut decl = vec![];
-            for id in &info.ids {
+            for id in &info.synthetic {
                 if self.synthetic_names.contains_key(id) {
                     // We already have a name for this synthetic atom
                     continue;

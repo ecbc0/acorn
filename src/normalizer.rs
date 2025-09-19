@@ -16,41 +16,36 @@ use crate::proof_step::{ProofStep, Truthiness};
 use crate::source::SourceType;
 use crate::term::{Term, TypeId};
 
-#[derive(Clone)]
-pub struct NormalizedGoal {
-    /// The name of the goal being proved.
-    pub name: String,
+/// A higher-order logic value that has been normalized into a CNF form.
+pub struct NormalizedValue {
+    /// CNF form of the value.
+    /// Any variable here is a universal, "forall" quantifier.
+    pub clauses: Vec<Clause>,
 
-    /// The value expresses the negation of the goal we are trying to prove.
-    /// It is normalized in the sense that hypothesis and counterfactual have been separated.
-    /// There is still more normalization that will happen when it is converted to Clause.
-    pub counterfactual: AcornValue,
-
-    /// Whether inconsistencies are okay.
-    /// If true, finding a contradiction results in Outcome::Success.
-    /// If false, finding a contradiction results in Outcome::Inconsistent.
-    pub inconsistency_okay: bool,
+    /// Synthetic atoms that were created for this value.
+    /// Each of these should be present in clauses.
+    /// These atoms are existential, "exists" quantifiers.
+    /// They are essentially "outside" the forall quantifiers.
+    /// A normalized value does not need to have any synthetic atoms.
+    pub synthetic: Vec<AtomId>,
 }
 
-#[derive(Clone)]
-pub struct Normalizer {
-    monomorphizer: Monomorphizer,
-
-    /// Types of the synthetic atoms that we synthesized
-    synthetic_types: Vec<AcornType>,
-
-    /// synthetic_info[id] contains the information about why this synthetic atom was created.
-    synthetic_info: Vec<Arc<SyntheticInfo>>,
-
-    /// Same information as `synthetic_info`, but indexed by SyntheticKey.
-    /// This is used to avoid defining the same thing multiple times.
-    synthetic_map: HashMap<SyntheticKey, Arc<SyntheticInfo>>,
-
-    normalization_map: NormalizationMap,
+impl std::fmt::Display for NormalizedValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Join all the clauses with "and"
+        let clauses_str: Vec<String> = self.clauses.iter().map(|c| c.to_string()).collect();
+        let clauses = clauses_str.join(" and ");
+        write!(
+            f,
+            "NormalizedValue(ids: {:?}, clauses: {})",
+            self.synthetic, clauses
+        )
+    }
 }
 
-/// A normalized representation of the definition of some synthetic atoms.
-/// This lets us check if we have a particular definition.
+/// The SyntheticKey normalizes out the specific choice of id for the synthetic atoms
+/// in the NormalizedValue.
+/// This lets us check if two different synthetic atoms would be "defined the same way".
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 struct SyntheticKey {
     /// CNF form of the proposition that we defines these synthetic atoms.
@@ -81,29 +76,21 @@ impl SyntheticKey {
     }
 }
 
-/// Information about a particular synthetic atom that we created.
-/// We will need to look this up both by synthetic key, and by atom id.
-pub struct SyntheticInfo {
-    /// CNF form of the proposition that we defined.
-    /// Here, the synthetic constants exist in the clauses.
-    pub clauses: Vec<Clause>,
+#[derive(Clone)]
+pub struct Normalizer {
+    monomorphizer: Monomorphizer,
 
-    /// Which synthetic atoms were created in this definition.
-    /// Each of these should be present in clauses.
-    pub ids: Vec<AtomId>,
-}
+    /// Types of the synthetic atoms that we synthesized
+    synthetic_types: Vec<AcornType>,
 
-impl std::fmt::Display for SyntheticInfo {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Join all the clauses with "and"
-        let clauses_str: Vec<String> = self.clauses.iter().map(|c| c.to_string()).collect();
-        let clauses = clauses_str.join(" and ");
-        write!(
-            f,
-            "SyntheticInfo(ids: {:?}, clauses: {})",
-            self.ids, clauses
-        )
-    }
+    /// The definition for each synthetic atom.
+    synthetic_definitions: Vec<Arc<NormalizedValue>>,
+
+    /// Same information as `synthetic_info`, but indexed by SyntheticKey.
+    /// This is used to avoid defining the same thing multiple times.
+    synthetic_map: HashMap<SyntheticKey, Arc<NormalizedValue>>,
+
+    normalization_map: NormalizationMap,
 }
 
 impl Normalizer {
@@ -111,14 +98,10 @@ impl Normalizer {
         Normalizer {
             monomorphizer: Monomorphizer::new(),
             synthetic_types: vec![],
-            synthetic_info: vec![],
+            synthetic_definitions: vec![],
             synthetic_map: HashMap::new(),
             normalization_map: NormalizationMap::new(),
         }
-    }
-
-    pub fn is_synthetic(&self, atom: &Atom) -> bool {
-        matches!(atom, Atom::Synthetic(_))
     }
 
     pub fn get_synthetic_type(&self, id: AtomId) -> &AcornType {
@@ -127,7 +110,7 @@ impl Normalizer {
 
     /// Checks if there's an exact match for a synthetic definition for the given value.
     /// The value should be of the form "exists ___ (forall x and forall y and ...)".
-    pub fn has_exact_synthetic_info(&mut self, value: &AcornValue) -> bool {
+    pub fn has_synthetic_definition(&mut self, value: &AcornValue) -> bool {
         // Remove exists quantifiers if present
         let (num_definitions, after_exists) = match value {
             AcornValue::Exists(quants, subvalue) => (quants.len(), subvalue.as_ref().clone()),
@@ -559,7 +542,7 @@ impl Normalizer {
         let value = value.move_negation_inwards(true, false);
 
         // println!("pre-skolemize: {}", value);
-        let mut next_synthetic_id = self.synthetic_info.len() as AtomId;
+        let mut next_synthetic_id = self.synthetic_definitions.len() as AtomId;
         let mut created = vec![];
         let value = self.skolemize(&vec![], value, &mut next_synthetic_id, &mut created)?;
 
@@ -582,12 +565,12 @@ impl Normalizer {
                 clauses: synthetic_key_form.clone(),
                 num_definitions,
             };
-            let info = Arc::new(SyntheticInfo {
+            let info = Arc::new(NormalizedValue {
                 clauses: clauses.clone(),
-                ids: synthetic_ids,
+                synthetic: synthetic_ids,
             });
             for _ in 0..num_definitions {
-                self.synthetic_info.push(info.clone());
+                self.synthetic_definitions.push(info.clone());
             }
             self.synthetic_map.insert(key, info);
         }
@@ -601,7 +584,7 @@ impl Normalizer {
     /// Each Clause represents an implicit "forall", plus an "or" of its literals.
     /// "true" is represented by an empty list, which is always satisfied.
     /// "false" is represented by a single impossible clause.
-    pub fn normalize_value(
+    fn normalize_value(
         &mut self,
         value: &AcornValue,
         ctype: NewConstantType,
@@ -671,7 +654,25 @@ impl Normalizer {
         }
         Ok(steps)
     }
+}
 
+#[derive(Clone)]
+pub struct NormalizedGoal {
+    /// The name of the goal being proved.
+    pub name: String,
+
+    /// The value expresses the negation of the goal we are trying to prove.
+    /// It is normalized in the sense that hypothesis and counterfactual have been separated.
+    /// There is still more normalization that will happen when it is converted to Clause.
+    pub counterfactual: AcornValue,
+
+    /// Whether inconsistencies are okay.
+    /// If true, finding a contradiction results in Outcome::Success.
+    /// If false, finding a contradiction results in Outcome::Inconsistent.
+    pub inconsistency_okay: bool,
+}
+
+impl Normalizer {
     /// Normalizes a goal into a NormalizedGoal and proof steps that includes
     /// both positive versions of the hypotheses and negated versions of the conclusion.
     pub fn normalize_goal(
@@ -820,15 +821,15 @@ impl Normalizer {
     /// of SyntheticInfo that covers them.
     /// The output may have synthetic atoms that aren't used in the input.
     /// The input doesn't have to be in order and may contain duplicates.
-    pub fn find_covering_synthetic_info(&self, ids: &[AtomId]) -> Vec<Arc<SyntheticInfo>> {
+    pub fn find_covering_synthetic_info(&self, ids: &[AtomId]) -> Vec<Arc<NormalizedValue>> {
         let mut covered = HashSet::new();
         let mut output = vec![];
         for id in ids {
             if covered.contains(id) {
                 continue;
             }
-            let info = self.synthetic_info[*id as usize].clone();
-            for synthetic_id in &info.ids {
+            let info = self.synthetic_definitions[*id as usize].clone();
+            for synthetic_id in &info.synthetic {
                 covered.insert(*synthetic_id);
             }
             output.push(info);
@@ -1154,7 +1155,7 @@ mod tests {
         let mut norm = Normalizer::new();
         norm.check(&env, "goal", &["addx(s0, zero) = one"]);
         assert_eq!(norm.synthetic_types.len(), 1);
-        assert_eq!(norm.synthetic_info.len(), 1);
+        assert_eq!(norm.synthetic_definitions.len(), 1);
         assert_eq!(norm.synthetic_map.len(), 1);
     }
 
