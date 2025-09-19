@@ -179,7 +179,7 @@ impl CodeGenerator<'_> {
     ) -> Result<()> {
         // TODO: currently all synthetics are skolems, so we can assume this catches all of them,
         // but we need to change that.
-        let infos = normalizer.find_covering_skolem_info(&skolem_ids);
+        let infos = normalizer.find_covering_synthetic_info(&skolem_ids);
         for info in &infos {
             let mut decl = vec![];
             for id in &info.ids {
@@ -189,7 +189,7 @@ impl CodeGenerator<'_> {
                 }
                 let name = self.bindings.next_indexed_var('s', &mut self.next_s);
                 self.synthetic_names.insert(*id, name.clone());
-                decl.push((name, normalizer.get_skolem_type(*id).clone()));
+                decl.push((name, normalizer.get_synthetic_type(*id).clone()));
             }
             if decl.is_empty() {
                 continue;
