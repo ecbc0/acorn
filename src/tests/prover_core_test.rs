@@ -885,7 +885,9 @@ fn test_useful_fact_extraction() {
     let (processor, outcome, _) = prove_with_old_codegen(&mut p, "main", "goal");
     assert_eq!(outcome, Outcome::Success);
     let mut name_set = HashSet::new();
-    processor.prover().get_useful_source_names(&mut name_set, processor.normalizer());
+    processor
+        .prover()
+        .get_useful_source_names(&mut name_set, processor.normalizer());
     let mut names = name_set
         .into_iter()
         .map(|(_, name)| name)
@@ -1979,4 +1981,28 @@ fn test_concrete_proof_boolean_equality() {
     );
 
     prove(&mut p, "main", "goal");
+}
+
+#[test]
+fn test_proving_complex_expression() {
+    // The boxed_and definition can't be normalized to CNF directly.
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        structure BoxedBool {
+            value: Bool
+        }
+
+        define boxed_and(a: BoxedBool, b: BoxedBool) -> BoxedBool {
+           BoxedBool.new(a.value and b.value)
+        }
+
+        theorem boxed_and_comm(a: BoxedBool, b: BoxedBool) {
+            boxed_and(a, b) = boxed_and(b, a)
+        }
+        "#,
+    );
+
+    prove(&mut p, "main", "boxed_and_comm");
 }
