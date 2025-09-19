@@ -577,16 +577,16 @@ impl Normalizer {
                 .iter()
                 .map(|c| c.invalidate_synthetics(&synthetic_ids))
                 .collect();
-            let num_existential = synthetic_ids.len();
+            let num_definitions = synthetic_ids.len();
             let key = SyntheticKey {
                 clauses: synthetic_key_form.clone(),
-                num_definitions: num_existential,
+                num_definitions,
             };
             let info = Arc::new(SyntheticInfo {
                 clauses: clauses.clone(),
                 ids: synthetic_ids,
             });
-            for _ in 0..num_existential {
+            for _ in 0..num_definitions {
                 self.synthetic_info.push(info.clone());
             }
             self.synthetic_map.insert(key, info);
