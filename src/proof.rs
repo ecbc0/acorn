@@ -1032,6 +1032,13 @@ impl<'a> Proof<'a> {
                     self.add_var_map(base_id, map, concrete_steps);
                 }
             }
+            Rule::Extensionality(info) => {
+                // For extensionality, the output is always concrete (f = g with no variables).
+                // Since there are no variables in the output, we add an empty variable map.
+                let base_id = ProofStepId::Active(info.id);
+                let map = VariableMap::new();
+                self.add_var_map(base_id, map, concrete_steps);
+            }
             Rule::Resolution(info) => {
                 let long_id = ProofStepId::Active(info.long_id);
                 let long_clause = self.get_clause(long_id)?;

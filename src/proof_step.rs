@@ -223,6 +223,16 @@ pub struct InjectivityInfo {
     pub arg: usize,
 }
 
+/// Information about an extensionality inference.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtensionalityInfo {
+    /// The id of the clause that had extensionality applied.
+    pub id: usize,
+
+    /// The literals that we got immediately after applying extensionality.
+    pub literals: Vec<Literal>,
+}
+
 /// The rules that can generate new clauses, along with the clause ids used to generate.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Rule {
@@ -237,6 +247,7 @@ pub enum Rule {
     EqualityFactoring(EqualityFactoringInfo),
     EqualityResolution(EqualityResolutionInfo),
     Injectivity(InjectivityInfo),
+    Extensionality(ExtensionalityInfo),
 
     /// A contradiction found by repeatedly rewriting identical terms.
     MultipleRewrite(MultipleRewriteInfo),
@@ -261,6 +272,7 @@ impl Rule {
             Rule::EqualityFactoring(info) => vec![ProofStepId::Active(info.id)],
             Rule::EqualityResolution(info) => vec![ProofStepId::Active(info.id)],
             Rule::Injectivity(info) => vec![ProofStepId::Active(info.id)],
+            Rule::Extensionality(info) => vec![ProofStepId::Active(info.id)],
             Rule::Specialization(info) => vec![ProofStepId::Active(info.pattern_id)],
             Rule::MultipleRewrite(multi_rewrite_info) => {
                 let mut answer = vec![ProofStepId::Active(multi_rewrite_info.inequality_id)];
@@ -285,6 +297,7 @@ impl Rule {
             Rule::EqualityFactoring(_) => "Equality Factoring",
             Rule::EqualityResolution(_) => "Equality Resolution",
             Rule::Injectivity(_) => "Injectivity",
+            Rule::Extensionality(_) => "Extensionality",
             Rule::Specialization(_) => "Specialization",
             Rule::MultipleRewrite(..) => "Multiple Rewrite",
             Rule::PassiveContradiction(..) => "Passive Contradiction",

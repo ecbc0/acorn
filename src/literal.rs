@@ -237,7 +237,7 @@ impl Literal {
 
     // Whether either side of the literal has this as its head.
     pub fn has_head(&self, head: &Atom) -> bool {
-        self.left.get_head() == head || self.right.get_head() == head
+        self.left.get_head_atom() == head || self.right.get_head_atom() == head
     }
 
     // Keep in mind this will denormalize the literal.

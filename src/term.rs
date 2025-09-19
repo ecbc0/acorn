@@ -99,8 +99,19 @@ impl Term {
         self.head_type
     }
 
-    pub fn get_head(&self) -> &Atom {
+    pub fn get_head_atom(&self) -> &Atom {
         &self.head
+    }
+
+    /// Returns the head of this term as a Term with no arguments.
+    /// The term_type becomes the head_type since we're removing all arguments.
+    pub fn get_head_term(&self) -> Term {
+        Term {
+            term_type: self.head_type,
+            head_type: self.head_type,
+            head: self.head.clone(),
+            args: vec![],
+        }
     }
 
     pub fn iter_args(&self) -> impl Iterator<Item = &Term> {

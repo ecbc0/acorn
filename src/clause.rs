@@ -450,17 +450,17 @@ impl Clause {
             .collect()
     }
 
-    /// Finds all possible function eliminations for this clause.
+    /// Finds all possible injectivity applications for this clause.
     /// Returns a vector of (index, arg_index, literals, flipped) tuples.
-    /// - index: the literal index where function elimination can be applied
+    /// - index: the literal index where injectivity can be applied
     /// - arg_index: which argument position differs
-    /// - literals: the resulting literals after function elimination
+    /// - literals: the resulting literals after applying injectivity
     /// - flipped: whether the resulting literal was flipped
-    pub fn find_function_eliminations(&self) -> Vec<(usize, usize, Vec<Literal>, bool)> {
+    pub fn find_injectivities(&self) -> Vec<(usize, usize, Vec<Literal>, bool)> {
         let mut results = vec![];
 
         for (i, target) in self.literals.iter().enumerate() {
-            // Check if we can eliminate the functions from the ith literal.
+            // Check if we can apply injectivity to the ith literal.
             if target.positive {
                 // Negative literals come before positive ones so we're done
                 break;
@@ -500,14 +500,80 @@ impl Clause {
         results
     }
 
-    /// Generates all clauses that can be derived from this clause using function elimination.
+    /// Generates all clauses that can be derived from this clause using injectivity.
     /// This is a convenience method that returns just the normalized clauses.
-    pub fn function_eliminations(&self) -> Vec<Clause> {
-        self.find_function_eliminations()
+    pub fn injectivities(&self) -> Vec<Clause> {
+        self.find_injectivities()
             .into_iter()
             .map(|(_, _, literals, _)| Clause::new(literals))
             .filter(|clause| !clause.is_tautology())
             .collect()
+    }
+
+    /// Finds if extensionality can be applied to this clause.
+    /// Returns the resulting literals if extensionality applies.
+    /// Only works on single-literal clauses.
+    pub fn find_extensionality(&self) -> Option<Vec<Literal>> {
+
+        // Extensionality only works on single-literal clauses
+        if self.literals.len() != 1 {
+            return None;
+        }
+
+        let literal = &self.literals[0];
+
+        // Extensionality only applies to positive equality literals
+        if !literal.positive {
+            return None;
+        }
+
+            // Check if this is f(x1, x2, ...) = g(x1, x2, ...)
+            // where f and g are different functions and all arguments are the same variables
+            let left = &literal.left;
+            let right = &literal.right;
+
+        // Both sides must be function applications
+        if left.args.is_empty() || right.args.is_empty() {
+            return None;
+        }
+
+        // Functions must be different
+        if left.head == right.head {
+            return None;
+        }
+
+        // All arguments must be the same
+        if left.args != right.args {
+            return None;
+        }
+
+        // Check that all arguments are variables (not complex terms)
+        // This ensures we have the extensionality pattern
+        let all_vars = left.args.iter().all(|arg| arg.args.is_empty());
+        if !all_vars {
+            return None;
+        }
+
+        // Check that variables are distinct (0, 1, 2, ... in normalized form)
+        for (i, arg) in left.args.iter().enumerate() {
+            if let crate::atom::Atom::Variable(id) = arg.head {
+                if id != i as crate::atom::AtomId {
+                    // Variables are not in ascending order, so they're not all distinct
+                    return None;
+                }
+            } else {
+                // Not a variable
+                return None;
+            }
+        }
+
+        // Create the new literal: f = g
+        let new_literal = Literal::new(
+            true,
+            left.get_head_term(),
+            right.get_head_term(),
+        );
+        Some(vec![new_literal])
     }
 
     /// Extracts the polarity of each literal and returns a new clause with sorted positive literals

@@ -6,8 +6,8 @@ use crate::fingerprint::FingerprintUnifier;
 use crate::literal::Literal;
 use crate::pattern_tree::LiteralSet;
 use crate::proof_step::{
-    EqualityFactoringInfo, EqualityResolutionInfo, InjectivityInfo, ProofStep, Rule,
-    Truthiness,
+    EqualityFactoringInfo, EqualityResolutionInfo, ExtensionalityInfo, InjectivityInfo, ProofStep,
+    Rule, Truthiness,
 };
 use crate::rewrite_tree::{Rewrite, RewriteTree};
 use crate::term::Term;
@@ -519,7 +519,7 @@ impl ActiveSet {
         let clause = &activated_step.clause;
         let mut answer = vec![];
 
-        for (index, arg, literals, flipped) in clause.find_function_eliminations() {
+        for (index, arg, literals, flipped) in clause.find_injectivities() {
             let info = InjectivityInfo {
                 id: activated_id,
                 index,
@@ -532,6 +532,31 @@ impl ActiveSet {
                 activated_id,
                 activated_step,
                 Rule::Injectivity(info),
+                clause,
+                traces,
+            );
+            answer.push(step);
+        }
+
+        answer
+    }
+
+    /// Apply extensionality to derive function equality from pointwise equality.
+    /// When f(x1, x2, ...) = g(x1, x2, ...) for all arguments, that implies f = g.
+    pub fn extensionality(activated_id: usize, activated_step: &ProofStep) -> Vec<ProofStep> {
+        let clause = &activated_step.clause;
+        let mut answer = vec![];
+
+        if let Some(literals) = clause.find_extensionality() {
+            let info = ExtensionalityInfo {
+                id: activated_id,
+                literals: literals.clone(),
+            };
+            let (clause, traces) = Clause::normalize_with_trace(literals);
+            let step = ProofStep::direct(
+                activated_id,
+                activated_step,
+                Rule::Extensionality(info),
                 clause,
                 traces,
             );
@@ -814,6 +839,10 @@ impl ActiveSet {
         }
 
         for proof_step in ActiveSet::injectivity(activated_id, &activated_step) {
+            output.push(proof_step);
+        }
+
+        for proof_step in ActiveSet::extensionality(activated_id, &activated_step) {
             output.push(proof_step);
         }
 

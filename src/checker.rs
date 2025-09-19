@@ -86,6 +86,11 @@ impl Checker {
             for resolution in clause.equality_resolutions() {
                 self.insert_clause(&resolution);
             }
+
+            if let Some(extensionality) = clause.find_extensionality() {
+                let clause = Clause::new(extensionality);
+                self.insert_clause(&clause);
+            }
         } else {
             // The clause is concrete.
 
@@ -97,8 +102,8 @@ impl Checker {
             self.insert_clause(&factoring);
         }
 
-        for elim in clause.function_eliminations() {
-            self.insert_clause(&elim);
+        for injectivity in clause.injectivities() {
+            self.insert_clause(&injectivity);
         }
     }
 

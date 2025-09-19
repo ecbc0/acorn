@@ -199,6 +199,9 @@ impl Prover {
             Rule::Injectivity(info) => {
                 answer.push(("source".to_string(), ProofStepId::Active(info.id)));
             }
+            Rule::Extensionality(info) => {
+                answer.push(("source".to_string(), ProofStepId::Active(info.id)));
+            }
             Rule::Specialization(info) => {
                 answer.push(("pattern".to_string(), ProofStepId::Active(info.pattern_id)));
             }

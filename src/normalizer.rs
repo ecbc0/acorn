@@ -647,7 +647,7 @@ impl Normalizer {
                     let term = self
                         .term_from_value(&value, ctype)
                         .map_err(|msg| BuildError::new(range, msg))?;
-                    Some(term.get_head().clone())
+                    Some(term.get_head_atom().clone())
                 }
                 _ => None,
             };
