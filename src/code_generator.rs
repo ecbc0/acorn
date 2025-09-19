@@ -30,14 +30,14 @@ pub struct CodeGenerator<'a> {
     /// We use variables named k0, k1, k2, etc for existential variables.
     next_k: u32,
 
-    /// We use variables named s0, s1, s2, etc for skolem variables.
+    /// We use variables named s0, s1, s2, etc for synthetic atoms.
     next_s: u32,
 
     /// The names we have assigned to stack variables so far.
     var_names: Vec<String>,
 
-    /// The names we have assigned to skolem variables so far.
-    skolem_names: HashMap<AtomId, String>,
+    /// The names we have assigned to synthetic atoms so far.
+    synthetic_names: HashMap<AtomId, String>,
 
     /// The names for whenever we need an arbitrary member of a type.
     arbitrary_names: HashMap<TypeId, ConstantName>,
@@ -52,7 +52,7 @@ impl CodeGenerator<'_> {
             next_k: 0,
             next_s: 0,
             var_names: vec![],
-            skolem_names: HashMap::new(),
+            synthetic_names: HashMap::new(),
             arbitrary_names: HashMap::new(),
         }
     }
@@ -169,24 +169,26 @@ impl CodeGenerator<'_> {
         Ok(expr.to_string())
     }
 
-    /// Generates definitions for the given Skolem IDs and appends them to codes.
-    /// Updates self.skolem_names with names for all provided Skolem IDs.
-    fn define_skolems(
+    /// Generates definitions for the given synthetic atom IDs and appends them to codes.
+    /// Updates self.synthetic_names with names for all provided synthetic atom IDs.
+    fn define_synthetics(
         &mut self,
         skolem_ids: Vec<AtomId>,
         normalizer: &Normalizer,
         codes: &mut Vec<String>,
     ) -> Result<()> {
+        // TODO: currently all synthetics are skolems, so we can assume this catches all of them,
+        // but we need to change that.
         let infos = normalizer.find_covering_skolem_info(&skolem_ids);
         for info in &infos {
             let mut decl = vec![];
             for id in &info.ids {
-                if self.skolem_names.contains_key(id) {
-                    // We already have a name for this skolem
+                if self.synthetic_names.contains_key(id) {
+                    // We already have a name for this synthetic atom
                     continue;
                 }
                 let name = self.bindings.next_indexed_var('s', &mut self.next_s);
-                self.skolem_names.insert(*id, name.clone());
+                self.synthetic_names.insert(*id, name.clone());
                 decl.push((name, normalizer.get_skolem_type(*id).clone()));
             }
             if decl.is_empty() {
@@ -221,8 +223,8 @@ impl CodeGenerator<'_> {
     }
 
     /// Convert to a clause to code strings.
-    /// This will generate skolem definitions if necessary.
-    /// Appends let statements that define arbitrary variables and skolems to definitions,
+    /// This will generate synthetic atom definitions if necessary.
+    /// Appends let statements that define arbitrary variables and synthetic atoms to definitions,
     /// and appends the actual clause content to codes.
     fn specialization_to_code(
         &mut self,
@@ -243,11 +245,11 @@ impl CodeGenerator<'_> {
             definitions.push(decl);
         }
 
-        // Create a name and definition for each skolem variable.
-        let skolem_ids = value.find_skolems();
-        self.define_skolems(skolem_ids, normalizer, definitions)?;
+        // Create a name and definition for each synthetic atom.
+        let synthetic_ids = value.find_synthetics();
+        self.define_synthetics(synthetic_ids, normalizer, definitions)?;
 
-        value = value.replace_skolems(self.bindings.module_id(), &self.skolem_names);
+        value = value.replace_synthetics(self.bindings.module_id(), &self.synthetic_names);
         let subvalues = value.remove_and();
         for subvalue in subvalues {
             codes.push(self.value_to_code(&subvalue)?);
@@ -257,7 +259,7 @@ impl CodeGenerator<'_> {
 
     /// Converts a ConcreteStep to code.
     /// Returns (definitions, code) where definitions are let statements that define
-    /// arbitrary variables and skolems, and code is the actual clause content.
+    /// arbitrary variables and synthetic atoms, and code is the actual clause content.
     pub fn concrete_step_to_code(
         &mut self,
         step: &ConcreteStep,
@@ -369,11 +371,11 @@ impl CodeGenerator<'_> {
     fn const_to_expr(&self, ci: &ConstantInstance) -> Result<Expression> {
         if ci.name.is_synthetic() {
             if let Some(id) = ci.name.synthetic_id() {
-                if let Some(skolem_name) = self.skolem_names.get(&id) {
-                    return Ok(Expression::generate_identifier(skolem_name));
+                if let Some(synthetic_name) = self.synthetic_names.get(&id) {
+                    return Ok(Expression::generate_identifier(synthetic_name));
                 }
             }
-            return Err(Error::skolem(&ci.name.to_string()));
+            return Err(Error::synthetic(&ci.name.to_string()));
         }
 
         // Handle numeric literals
@@ -761,8 +763,8 @@ impl CodeGenerator<'_> {
 
 #[derive(Debug)]
 pub enum Error {
-    // Trouble expressing a skolem function created during normalization.
-    Skolem(String),
+    // Trouble expressing a synthetic atom created during normalization.
+    Synthetic(String),
 
     // Trouble referencing a module that has not been directly imported.
     UnimportedModule(ModuleId, String),
@@ -787,8 +789,8 @@ pub enum Error {
 }
 
 impl Error {
-    pub fn skolem(s: &str) -> Error {
-        Error::Skolem(s.to_string())
+    pub fn synthetic(s: &str) -> Error {
+        Error::Synthetic(s.to_string())
     }
 
     pub fn unnamed_type(datatype: &Datatype) -> Error {
@@ -805,7 +807,7 @@ impl Error {
 
     pub fn error_type(&self) -> &'static str {
         match self {
-            Error::Skolem(_) => "Skolem",
+            Error::Synthetic(_) => "Synthetic",
             Error::UnimportedModule(..) => "UnimportedModule",
             Error::UnnamedType(_) => "UnnamedType",
             Error::UnhandledValue(_) => "UnhandledValue",
@@ -820,8 +822,8 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::Skolem(s) => {
-                write!(f, "could not find a name for the skolem constant: {}", s)
+            Error::Synthetic(s) => {
+                write!(f, "could not find a name for the synthetic constant: {}", s)
             }
             Error::UnimportedModule(_, name) => {
                 write!(

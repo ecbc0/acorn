@@ -199,14 +199,14 @@ impl ConstantInstance {
         None
     }
 
-    /// Returns None if this is not a skolem, or if its id is not in the map.
-    fn replace_skolem(
+    /// Returns None if this is not a synthetic atom, or if its id is not in the map.
+    fn replace_synthetic(
         &self,
         module_id: ModuleId,
-        skolem_names: &HashMap<AtomId, String>,
+        synthetic_names: &HashMap<AtomId, String>,
     ) -> Option<ConstantInstance> {
         let id = self.name.synthetic_id()?;
-        let name = skolem_names.get(&id)?;
+        let name = synthetic_names.get(&id)?;
         assert!(self.params.is_empty());
         Some(ConstantInstance {
             name: ConstantName::unqualified(module_id, name),
@@ -1400,13 +1400,13 @@ impl AcornValue {
         }
     }
 
-    pub fn replace_skolems(
+    pub fn replace_synthetics(
         &self,
         module_id: ModuleId,
         map: &HashMap<AtomId, String>,
     ) -> AcornValue {
         self.replace_constants(0, &|old_ci| {
-            if let Some(new_ci) = old_ci.replace_skolem(module_id, &map) {
+            if let Some(new_ci) = old_ci.replace_synthetic(module_id, &map) {
                 Some(AcornValue::Constant(new_ci))
             } else {
                 None
@@ -1639,9 +1639,9 @@ impl AcornValue {
         }
     }
 
-    /// Finds all skolem ids in this value.
+    /// Finds all synthetic atom ids in this value.
     /// May contain duplicates.
-    pub fn find_skolems(&self) -> Vec<AtomId> {
+    pub fn find_synthetics(&self) -> Vec<AtomId> {
         let mut consts = vec![];
         self.find_constants(&|c| c.name.is_synthetic(), &mut consts);
         let mut answer = vec![];

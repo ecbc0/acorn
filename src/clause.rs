@@ -233,8 +233,8 @@ impl Clause {
         self.literals.iter().any(|x| x.has_any_applied_variable())
     }
 
-    pub fn has_skolem(&self) -> bool {
-        self.literals.iter().any(|x| x.has_skolem())
+    pub fn has_synthetic(&self) -> bool {
+        self.literals.iter().any(|x| x.has_synthetic())
     }
 
     pub fn has_local_constant(&self) -> bool {
@@ -273,29 +273,30 @@ impl Clause {
         if self.len() > 1 {
             return false;
         }
-        if self.has_skolem() {
+        if self.has_synthetic() {
             return false;
         }
         true
     }
 
-    /// Renumbers skolems from the provided list into the invalid range.
+    /// Renumbers synthetic atoms from the provided list into the invalid range.
     /// This does renormalize, so it could reorder literals and renumber variables.
-    pub fn invalidate_skolems(&self, from: &[AtomId]) -> Clause {
+    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> Clause {
         let new_literals: Vec<Literal> = self
             .literals
             .iter()
-            .map(|lit| lit.invalidate_skolems(from))
+            .map(|lit| lit.invalidate_synthetics(from))
             .collect();
         Clause::new(new_literals)
     }
 
-    /// Replace the first `num_existential` variables with invalid skolems, renormalizing.
-    pub fn instantiate_invalid_skolems(&self, num_existential: usize) -> Clause {
+    /// Replace the first `num_to_replace` variables with invalid synthetic atoms, adjusting
+    /// the subsequent variable ids accordingly.
+    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> Clause {
         let new_literals: Vec<Literal> = self
             .literals
             .iter()
-            .map(|lit| lit.instantiate_invalid_skolems(num_existential))
+            .map(|lit| lit.instantiate_invalid_synthetics(num_to_replace))
             .collect();
         Clause::new(new_literals)
     }

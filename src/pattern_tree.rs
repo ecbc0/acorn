@@ -322,7 +322,7 @@ const GLOBAL_CONSTANT: u8 = 102;
 const LOCAL_CONSTANT: u8 = 103;
 const MONOMORPH: u8 = 104;
 const VARIABLE: u8 = 105;
-const SKOLEM: u8 = 106;
+const SYNTHETIC: u8 = 106;
 const TERM: u8 = 107;
 const TERM_PAIR: u8 = 108;
 const POSITIVE_LITERAL: u8 = 109;
@@ -338,7 +338,7 @@ impl Edge {
                 Atom::LocalConstant(_) => LOCAL_CONSTANT,
                 Atom::Monomorph(_) => MONOMORPH,
                 Atom::Variable(_) => VARIABLE,
-                Atom::Synthetic(_) => SKOLEM,
+                Atom::Synthetic(_) => SYNTHETIC,
             },
             Edge::TermCategory(..) => TERM,
             Edge::TermPairCategory(..) => TERM_PAIR,
@@ -375,7 +375,7 @@ impl Edge {
             LOCAL_CONSTANT => Edge::Atom(Atom::LocalConstant(id)),
             MONOMORPH => Edge::Atom(Atom::Monomorph(id)),
             VARIABLE => Edge::Atom(Atom::Variable(id)),
-            SKOLEM => Edge::Atom(Atom::Synthetic(id)),
+            SYNTHETIC => Edge::Atom(Atom::Synthetic(id)),
             TERM_PAIR => Edge::TermPairCategory(id),
             POSITIVE_LITERAL => Edge::PositiveLiteral(id),
             NEGATIVE_LITERAL => Edge::NegativeLiteral(id),

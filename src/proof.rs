@@ -711,7 +711,7 @@ impl<'a> Proof<'a> {
         // TODO: should we actually be skipping the original assumptions rather than
         // the simplified versions?
         let mut skip_code = HashSet::new();
-        let mut skolem_definitions = Vec::new();
+        let mut synthetic_definitions = Vec::new();
         for (ps_id, step) in &self.all_steps {
             let concrete_id = ConcreteStepId::ProofStep(*ps_id);
             if step.rule.is_assumption() && !step.clause.has_any_variable() {
@@ -719,10 +719,10 @@ impl<'a> Proof<'a> {
                     continue;
                 };
                 let (definitions, codes) = generator.concrete_step_to_code(&cs, self.normalizer)?;
-                // Collect all skolem definitions
+                // Collect all synthetic atom definitions
                 for def in definitions {
-                    if !skolem_definitions.contains(&def) {
-                        skolem_definitions.push(def);
+                    if !synthetic_definitions.contains(&def) {
+                        synthetic_definitions.push(def);
                     }
                 }
                 // Skip the actual clause codes from concrete assumptions
@@ -732,8 +732,8 @@ impl<'a> Proof<'a> {
             }
         }
 
-        // Start with skolem definitions
-        let mut answer = skolem_definitions;
+        // Start with synthetic atom definitions
+        let mut answer = synthetic_definitions;
         for (ps_id, _) in &self.all_steps {
             for concrete_id in concrete_ids_for(*ps_id) {
                 let Some(cs) = concrete_steps.remove(&concrete_id) else {

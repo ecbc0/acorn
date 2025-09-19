@@ -99,8 +99,8 @@ impl Atom {
         }
     }
 
-    /// Renumbers skolems from the provided list into the invalid range.
-    pub fn invalidate_skolems(&self, from: &[AtomId]) -> Atom {
+    /// Renumbers synthetic atoms from the provided list into the invalid range.
+    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> Atom {
         match self {
             Atom::Synthetic(i) => match from.iter().position(|x| x == i) {
                 Some(j) => Atom::Synthetic((INVALID_SYNTHETIC_ID as usize + j) as AtomId),
@@ -110,14 +110,15 @@ impl Atom {
         }
     }
 
-    /// Replace the first `num_existential` variables with invalid skolems, renormalizing.
-    pub fn instantiate_invalid_skolems(&self, num_existential: usize) -> Atom {
+    /// Replace the first `num_to_replace` variables with invalid synthetic atoms, adjusting
+    /// the subsequent variable ids accordingly.
+    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> Atom {
         match self {
             Atom::Variable(i) => {
-                if (*i as usize) < num_existential {
+                if (*i as usize) < num_to_replace {
                     Atom::Synthetic((INVALID_SYNTHETIC_ID as usize + *i as usize) as AtomId)
                 } else {
-                    Atom::Variable(*i - num_existential as AtomId)
+                    Atom::Variable(*i - num_to_replace as AtomId)
                 }
             }
             a => *a,

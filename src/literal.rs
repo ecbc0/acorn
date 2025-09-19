@@ -231,8 +231,8 @@ impl Literal {
         self.right.extended_kbo_cmp(&other.right)
     }
 
-    pub fn has_skolem(&self) -> bool {
-        self.left.has_skolem() || self.right.has_skolem()
+    pub fn has_synthetic(&self) -> bool {
+        self.left.has_synthetic() || self.right.has_synthetic()
     }
 
     // Whether either side of the literal has this as its head.
@@ -300,18 +300,19 @@ impl Ord for Literal {
 }
 
 impl Literal {
-    /// Renumbers skolems from the provided list into the invalid range.
+    /// Renumbers synthetic atoms from the provided list into the invalid range.
     /// This does renormalize, so it could be swapping the order.
-    pub fn invalidate_skolems(&self, from: &[AtomId]) -> Literal {
-        let new_left = self.left.invalidate_skolems(from);
-        let new_right = self.right.invalidate_skolems(from);
+    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> Literal {
+        let new_left = self.left.invalidate_synthetics(from);
+        let new_right = self.right.invalidate_synthetics(from);
         Literal::new(self.positive, new_left, new_right)
     }
 
-    /// Replace the first `num_existential` variables with invalid skolems, renormalizing.
-    pub fn instantiate_invalid_skolems(&self, num_existential: usize) -> Literal {
-        let new_left = self.left.instantiate_invalid_skolems(num_existential);
-        let new_right = self.right.instantiate_invalid_skolems(num_existential);
+    /// Replace the first `num_to_replace` variables with invalid synthetic atoms, adjusting
+    /// the subsequent variable ids accordingly.
+    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> Literal {
+        let new_left = self.left.instantiate_invalid_synthetics(num_to_replace);
+        let new_right = self.right.instantiate_invalid_synthetics(num_to_replace);
         Literal::new(self.positive, new_left, new_right)
     }
 }

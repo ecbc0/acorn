@@ -250,12 +250,12 @@ impl Term {
         false
     }
 
-    pub fn has_skolem(&self) -> bool {
+    pub fn has_synthetic(&self) -> bool {
         if matches!(self.head, Atom::Synthetic(_)) {
             return true;
         }
         for arg in &self.args {
-            if arg.has_skolem() {
+            if arg.has_synthetic() {
                 return true;
             }
         }
@@ -381,13 +381,13 @@ impl Term {
         }
     }
 
-    /// Renumbers skolems from the provided list into the invalid range.
-    pub fn invalidate_skolems(&self, from: &[AtomId]) -> Term {
-        let new_head = self.head.invalidate_skolems(from);
+    /// Renumbers synthetic atoms from the provided list into the invalid range.
+    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> Term {
+        let new_head = self.head.invalidate_synthetics(from);
         let new_args = self
             .args
             .iter()
-            .map(|arg| arg.invalidate_skolems(from))
+            .map(|arg| arg.invalidate_synthetics(from))
             .collect();
         Term {
             term_type: self.term_type,
@@ -397,13 +397,14 @@ impl Term {
         }
     }
 
-    /// Replace the first `num_existential` variables with invalid skolems, renormalizing.
-    pub fn instantiate_invalid_skolems(&self, num_existential: usize) -> Term {
-        let new_head = self.head.instantiate_invalid_skolems(num_existential);
+    /// Replace the first `num_to_replace` variables with invalid synthetic atoms, adjusting
+    /// the subsequent variable ids accordingly.
+    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> Term {
+        let new_head = self.head.instantiate_invalid_synthetics(num_to_replace);
         let new_args = self
             .args
             .iter()
-            .map(|arg| arg.instantiate_invalid_skolems(num_existential))
+            .map(|arg| arg.instantiate_invalid_synthetics(num_to_replace))
             .collect();
         Term {
             term_type: self.term_type,

@@ -74,7 +74,7 @@ impl NormalizationMap {
     /// local determines whether the constant will be represented as a local or global atom.
     pub fn add_constant(&mut self, name: ConstantName, local: bool) -> Atom {
         if name.is_synthetic() {
-            panic!("skolem constants should not be stored in the ConstantMap");
+            panic!("synthetic atoms should not be stored in the ConstantMap");
         }
         if let Some(&atom) = self.name_to_atom.get(&name) {
             return atom;

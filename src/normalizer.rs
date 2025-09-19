@@ -136,7 +136,7 @@ impl Normalizer {
         };
         let clauses = uninstantiated
             .iter()
-            .map(|c| c.instantiate_invalid_skolems(num_existential))
+            .map(|c| c.instantiate_invalid_synthetics(num_existential))
             .collect();
         let key = SkolemKey {
             clauses,
@@ -569,7 +569,7 @@ impl Normalizer {
             // In the skolem key, we normalize skolem ids by renumbering them.
             let skolem_key_form: Vec<_> = clauses
                 .iter()
-                .map(|c| c.invalidate_skolems(&skolem_ids))
+                .map(|c| c.invalidate_synthetics(&skolem_ids))
                 .collect();
             let num_existential = skolem_ids.len();
             let key = SkolemKey {

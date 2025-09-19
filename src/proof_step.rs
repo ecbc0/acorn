@@ -345,7 +345,7 @@ pub struct ProofStep {
 
     /// A printable proof step is one that we are willing to turn into a line of code in a proof.
     /// Unprintable proof steps are things like halfway resolved theorems, or expressions
-    /// that use anonymous skolem variables.
+    /// that use anonymous synthetic atoms.
     pub printable: bool,
 
     /// Information about this step that will let us reconstruct the variable mappings.
