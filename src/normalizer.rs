@@ -16,7 +16,7 @@ use crate::proof_step::{ProofStep, Truthiness};
 use crate::source::SourceType;
 use crate::term::{Term, TypeId};
 
-// The experiment turns off defunctionalization in normalization.
+// The experiment turns off function duplication in normalization.
 const EXPERIMENT: bool = false;
 
 /// A higher-order logic value that has been normalized into a CNF form.
@@ -538,11 +538,7 @@ impl Normalizer {
         ctype: NewConstantType,
     ) -> Result<Vec<Clause>, String> {
         // println!("\nnormalizing: {}", value);
-        let value = if EXPERIMENT {
-            value.clone()
-        } else {
-            value.replace_function_equality(0)
-        };
+        let value = value.replace_function_equality(0);
         let value = value.expand_lambdas(0);
         let value = value.replace_match();
         let value = value.replace_if();
