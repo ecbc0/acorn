@@ -196,7 +196,7 @@ impl Prover {
             Rule::EqualityResolution(info) => {
                 answer.push(("source".to_string(), ProofStepId::Active(info.id)));
             }
-            Rule::FunctionElimination(info) => {
+            Rule::Injectivity(info) => {
                 answer.push(("source".to_string(), ProofStepId::Active(info.id)));
             }
             Rule::Specialization(info) => {

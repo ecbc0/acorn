@@ -979,8 +979,8 @@ impl<'a> Proof<'a> {
                     self.add_var_map(base_id, map, concrete_steps);
                 }
             }
-            Rule::FunctionElimination(info) => {
-                // For FE, the trace applies to the stored literals.
+            Rule::Injectivity(info) => {
+                // For injectivity, the trace applies to the stored literals.
                 let var_maps = self.reconstruct_trace(
                     &info.literals,
                     traces,

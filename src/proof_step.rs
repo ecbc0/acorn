@@ -204,10 +204,10 @@ pub struct EqualityResolutionInfo {
     pub flipped: Vec<bool>,
 }
 
-/// Information about a function elimination inference.
+/// Information about an injectivity inference.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FunctionEliminationInfo {
-    /// The id of the clause that had a function eliminated.
+pub struct InjectivityInfo {
+    /// The id of the clause that had injectivity applied.
     pub id: usize,
 
     /// The literal that was eliminated.
@@ -236,7 +236,7 @@ pub enum Rule {
     /// Rules with only one source clause
     EqualityFactoring(EqualityFactoringInfo),
     EqualityResolution(EqualityResolutionInfo),
-    FunctionElimination(FunctionEliminationInfo),
+    Injectivity(InjectivityInfo),
 
     /// A contradiction found by repeatedly rewriting identical terms.
     MultipleRewrite(MultipleRewriteInfo),
@@ -260,7 +260,7 @@ impl Rule {
             ],
             Rule::EqualityFactoring(info) => vec![ProofStepId::Active(info.id)],
             Rule::EqualityResolution(info) => vec![ProofStepId::Active(info.id)],
-            Rule::FunctionElimination(info) => vec![ProofStepId::Active(info.id)],
+            Rule::Injectivity(info) => vec![ProofStepId::Active(info.id)],
             Rule::Specialization(info) => vec![ProofStepId::Active(info.pattern_id)],
             Rule::MultipleRewrite(multi_rewrite_info) => {
                 let mut answer = vec![ProofStepId::Active(multi_rewrite_info.inequality_id)];
@@ -284,7 +284,7 @@ impl Rule {
             Rule::Rewrite(_) => "Rewrite",
             Rule::EqualityFactoring(_) => "Equality Factoring",
             Rule::EqualityResolution(_) => "Equality Resolution",
-            Rule::FunctionElimination(_) => "Function Elimination",
+            Rule::Injectivity(_) => "Injectivity",
             Rule::Specialization(_) => "Specialization",
             Rule::MultipleRewrite(..) => "Multiple Rewrite",
             Rule::PassiveContradiction(..) => "Passive Contradiction",

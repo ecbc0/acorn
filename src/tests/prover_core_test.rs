@@ -1391,7 +1391,7 @@ fn test_proving_with_equality_resolution() {
 }
 
 #[test]
-fn test_proving_with_function_elimination() {
+fn test_proving_with_injectivity() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",

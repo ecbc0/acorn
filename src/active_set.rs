@@ -6,7 +6,7 @@ use crate::fingerprint::FingerprintUnifier;
 use crate::literal::Literal;
 use crate::pattern_tree::LiteralSet;
 use crate::proof_step::{
-    EqualityFactoringInfo, EqualityResolutionInfo, FunctionEliminationInfo, ProofStep, Rule,
+    EqualityFactoringInfo, EqualityResolutionInfo, InjectivityInfo, ProofStep, Rule,
     Truthiness,
 };
 use crate::rewrite_tree::{Rewrite, RewriteTree};
@@ -512,15 +512,15 @@ impl ActiveSet {
 
     /// Tries to do inference using the function elimination (FE) rule.
     /// Note that I just made up this rule, it isn't part of standard superposition.
-    /// It's pretty simple, though.
+    /// Apply injectivity to derive inequalities from function inequalities.
     /// When f(a, b, d) != f(a, c, d), that implies that b != c.
     /// We can run this operation on any negative literal in the clause.
-    pub fn function_elimination(activated_id: usize, activated_step: &ProofStep) -> Vec<ProofStep> {
+    pub fn injectivity(activated_id: usize, activated_step: &ProofStep) -> Vec<ProofStep> {
         let clause = &activated_step.clause;
         let mut answer = vec![];
 
         for (index, arg, literals, flipped) in clause.find_function_eliminations() {
-            let info = FunctionEliminationInfo {
+            let info = InjectivityInfo {
                 id: activated_id,
                 index,
                 arg,
@@ -531,7 +531,7 @@ impl ActiveSet {
             let step = ProofStep::direct(
                 activated_id,
                 activated_step,
-                Rule::FunctionElimination(info),
+                Rule::Injectivity(info),
                 clause,
                 traces,
             );
@@ -813,7 +813,7 @@ impl ActiveSet {
             output.push(proof_step);
         }
 
-        for proof_step in ActiveSet::function_elimination(activated_id, &activated_step) {
+        for proof_step in ActiveSet::injectivity(activated_id, &activated_step) {
             output.push(proof_step);
         }
 
