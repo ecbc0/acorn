@@ -2034,6 +2034,34 @@ fn test_proving_boolean_equality() {
     prove(&mut p, "main", "goal");
 }
 
+#[test]
+fn test_proving_functional_structure_identity() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        type Foo: axiom
+
+        structure Bar {
+            value: Foo -> Foo
+        }
+
+        let a: Bar = axiom
+        let b: Bar = axiom
+
+        axiom rule1 {
+            a.value = b.value
+        }
+
+        theorem goal {
+            a = b
+        }
+        "#,
+    );
+
+    prove(&mut p, "main", "goal");
+}
+
 // #[test]
 // fn test_proving_complex_expression() {
 //     // The boxed_and definition can't be normalized to CNF directly.
