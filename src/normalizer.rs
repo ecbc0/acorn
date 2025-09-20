@@ -616,14 +616,16 @@ impl Normalizer {
                     // In most cases, we can get this in the prover by the extensionality rule.
                     // However, in this specific case we can't, because in the Clause,
                     // the type of f(a) has been erased.
+                    // So we add back in the plain literal version that hasn't been normalized.
                     //
                     // Ideally, we would either:
                     //   1. Represent functional types better in unification, so that we
                     //      don't have to normalize by adding args, and we can keep it as
                     //      f(a) = g(b)
                     //   2. Make extensionality more powerful, so that it can deduce f(a) = g(b).
-                    let mut func_eq = self.normalize_cnf(value.clone(), ctype)?;
-                    clauses.append(&mut func_eq);
+                    let func_eq = self.literal_from_value(value, ctype)?;
+                    let clause = Clause::new(vec![func_eq]);
+                    clauses.push(clause);
                 }
             }
         }
