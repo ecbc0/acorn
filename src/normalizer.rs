@@ -602,23 +602,33 @@ impl Normalizer {
         }
         assert_eq!(value.get_type(), AcornType::Bool);
 
+        let mut clauses = self.convert_then_normalize(value, ctype)?;
+
         if !EXPERIMENT {
             if let AcornValue::Binary(BinaryOp::Equals, left, right) = &value {
-                // Check for the sort of functional equality that can be represented as a literal.
                 if left.get_type().is_functional() && left.is_term() && right.is_term() {
-                    // We want to represent this two ways.
-                    // One as an equality between functions, another as an equality between
-                    // primitive types, after applying the functions.
-                    // If we handled functional types better in unification we might not need this.
-                    let mut functional = self.normalize_cnf(value.clone(), ctype)?;
-                    let mut primitive = self.convert_then_normalize(value, ctype)?;
-                    functional.append(&mut primitive);
-                    return Ok(functional);
+                    // This is an annoying case.
+                    // If we are expressing, say,
+                    //   f(a) = g(b)
+                    // where the return value is a functional type, that gets normalized into:
+                    //   f(a, x0) = g(b, x0)
+                    // The problem is that we do also want the functional equality.
+                    // In most cases, we can get this in the prover by the extensionality rule.
+                    // However, in this specific case we can't, because in the Clause,
+                    // the type of f(a) has been erased.
+                    //
+                    // Ideally, we would either:
+                    //   1. Represent functional types better in unification, so that we
+                    //      don't have to normalize by adding args, and we can keep it as
+                    //      f(a) = g(b)
+                    //   2. Make extensionality more powerful, so that it can deduce f(a) = g(b).
+                    let mut func_eq = self.normalize_cnf(value.clone(), ctype)?;
+                    clauses.append(&mut func_eq);
                 }
             }
         }
 
-        self.convert_then_normalize(value, ctype)
+        Ok(clauses)
     }
 
     /// A single fact can turn into a bunch of proof steps.
