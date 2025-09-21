@@ -140,6 +140,18 @@ impl Normalizer {
         }
     }
 
+    // This declares a synthetic atom, but does not define it.
+    // This weird two-step is necessary since we need to do some constructions
+    // before we actually have the definition.
+    fn declare_synthetic_atom(&mut self, atom_type: AcornType) -> Result<AtomId, String> {
+        let id = self.synthetic_types.len() as AtomId;
+        if id >= INVALID_SYNTHETIC_ID {
+            return Err(format!("ran out of synthetic ids (used {})", id));
+        }
+        self.synthetic_types.push(atom_type);
+        Ok(id)
+    }
+
     // Useful for debugging
     #[allow(dead_code)]
     fn debug_failed_lookup(&self, key: &SyntheticKey) {
@@ -154,7 +166,7 @@ impl Normalizer {
 
     /// The input should already have negations moved inwards.
     /// The stack must be entirely universal quantifiers.
-    /// Outputs the new synthetic atoms that were created.
+    /// Outputs the new synthetic atoms that were declared.
     ///
     /// The value does *not* need to be in prenex normal form.
     /// I.e., it can still have quantifier nodes, either "exists" or "forall", inside of
@@ -171,18 +183,16 @@ impl Normalizer {
     ///   forall(x, f(x) & g(skolem()))
     /// which is what we get if we don't convert to prenex first.
     pub fn skolemize(
-        &self,
+        &mut self,
         stack: &Vec<AcornType>,
         value: AcornValue,
-        next_synthetic_id: &mut AtomId,
-        created: &mut Vec<(AtomId, AcornType)>,
+        declared: &mut Vec<AtomId>,
     ) -> Result<AcornValue, String> {
         Ok(match value {
             AcornValue::ForAll(quants, subvalue) => {
                 let mut new_stack = stack.clone();
                 new_stack.extend(quants.clone());
-                let new_subvalue =
-                    self.skolemize(&new_stack, *subvalue, next_synthetic_id, created)?;
+                let new_subvalue = self.skolemize(&new_stack, *subvalue, declared)?;
                 AcornValue::ForAll(quants, Box::new(new_subvalue))
             }
 
@@ -197,19 +207,12 @@ impl Normalizer {
                 // Each one will be a skolem function applied to the current stack.
                 let mut replacements = vec![];
                 for quant in quants {
-                    // Make a new skolem atom
+                    // Declare a new skolem atom
                     let skolem_type = AcornType::functional(stack.clone(), quant);
-                    if *next_synthetic_id >= INVALID_SYNTHETIC_ID {
-                        return Err(format!(
-                            "ran out of synthetic ids (used {})",
-                            next_synthetic_id
-                        ));
-                    }
-                    let skolem_name = ConstantName::Synthetic(*next_synthetic_id);
-                    let skolem_value =
-                        AcornValue::constant(skolem_name, vec![], skolem_type.clone());
-                    created.push((*next_synthetic_id, skolem_type));
-                    *next_synthetic_id += 1;
+                    let skolem_id = self.declare_synthetic_atom(skolem_type.clone())?;
+                    declared.push(skolem_id);
+                    let skolem_name = ConstantName::Synthetic(skolem_id);
+                    let skolem_value = AcornValue::constant(skolem_name, vec![], skolem_type);
                     let replacement = AcornValue::apply(skolem_value, args.clone());
                     replacements.push(replacement);
                 }
@@ -219,20 +222,19 @@ impl Normalizer {
                 return self.skolemize(
                     stack,
                     subvalue.bind_values(stack_size, stack_size, &replacements),
-                    next_synthetic_id,
-                    created,
+                    declared,
                 );
             }
 
             AcornValue::Binary(BinaryOp::And, left, right) => {
-                let left = self.skolemize(stack, *left, next_synthetic_id, created)?;
-                let right = self.skolemize(stack, *right, next_synthetic_id, created)?;
+                let left = self.skolemize(stack, *left, declared)?;
+                let right = self.skolemize(stack, *right, declared)?;
                 AcornValue::Binary(BinaryOp::And, Box::new(left), Box::new(right))
             }
 
             AcornValue::Binary(BinaryOp::Or, left, right) => {
-                let left = self.skolemize(stack, *left, next_synthetic_id, created)?;
-                let right = self.skolemize(stack, *right, next_synthetic_id, created)?;
+                let left = self.skolemize(stack, *left, declared)?;
+                let right = self.skolemize(stack, *right, declared)?;
                 AcornValue::Binary(BinaryOp::Or, Box::new(left), Box::new(right))
             }
 
@@ -544,34 +546,29 @@ impl Normalizer {
         let value = value.move_negation_inwards(true, false);
 
         // println!("pre-skolemize: {}", value);
-        let mut next_synthetic_id = self.synthetic_definitions.len() as AtomId;
-        let mut skolem_atoms = vec![];
-        let value = self.skolemize(&vec![], value, &mut next_synthetic_id, &mut skolem_atoms)?;
+        let mut skolem_ids = vec![];
+        let value = self.skolemize(&vec![], value, &mut skolem_ids)?;
 
         let clauses = self.normalize_cnf(value, ctype)?;
 
-        if !skolem_atoms.is_empty() {
-            let mut synthetic_ids = vec![];
-            for (synthetic_id, synthetic_type) in skolem_atoms {
-                self.synthetic_types.push(synthetic_type);
-                synthetic_ids.push(synthetic_id);
-            }
+        if !skolem_ids.is_empty() {
+            // We have to define the skolem atoms that were declared during skolemization.
 
             // In the synthetic key, we normalize synthetic ids by renumbering them.
             let synthetic_key_form: Vec<_> = clauses
                 .iter()
-                .map(|c| c.invalidate_synthetics(&synthetic_ids))
+                .map(|c| c.invalidate_synthetics(&skolem_ids))
                 .collect();
-            let num_definitions = synthetic_ids.len();
+            let num_atoms = skolem_ids.len();
             let key = SyntheticKey {
                 clauses: synthetic_key_form.clone(),
-                num_atoms: num_definitions,
+                num_atoms,
             };
             let info = Arc::new(SyntheticDefinition {
                 clauses: clauses.clone(),
-                atoms: synthetic_ids,
+                atoms: skolem_ids,
             });
-            for _ in 0..num_definitions {
+            for _ in 0..num_atoms {
                 self.synthetic_definitions.push(info.clone());
             }
             self.synthetic_map.insert(key, info);
