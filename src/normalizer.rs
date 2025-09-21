@@ -19,45 +19,42 @@ use crate::term::{Term, TypeId};
 // The experiment turns off function duplication in normalization.
 const EXPERIMENT: bool = false;
 
-/// A higher-order logic value that has been normalized into a CNF form.
-pub struct NormalizedValue {
-    /// CNF form of the value.
-    /// Any variable here is a universal, "forall" quantifier.
-    pub clauses: Vec<Clause>,
-
-    /// Synthetic atoms that were created for this value.
+/// Information about the definition of a set of synthetic atoms.
+pub struct SyntheticDefinition {
+    /// The synthetic atoms that are defined in this definition.
     /// Each of these should be present in clauses.
-    /// These atoms are existential, "exists" quantifiers.
-    /// They are essentially "outside" the forall quantifiers.
-    /// A normalized value does not need to have any synthetic atoms.
-    pub synthetic: Vec<AtomId>,
+    pub atoms: Vec<AtomId>,
+
+    /// The clauses are true by construction and describe the synthetic atoms.
+    /// Variables here, like everywhere, are universal, "forall" quantifier.
+    pub clauses: Vec<Clause>,
 }
 
-impl std::fmt::Display for NormalizedValue {
+impl std::fmt::Display for SyntheticDefinition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Join all the clauses with "and"
         let clauses_str: Vec<String> = self.clauses.iter().map(|c| c.to_string()).collect();
         let clauses = clauses_str.join(" and ");
         write!(
             f,
-            "NormalizedValue(ids: {:?}, clauses: {})",
-            self.synthetic, clauses
+            "SyntheticDefinition(atoms: {:?}, clauses: {})",
+            self.atoms, clauses
         )
     }
 }
 
 /// The SyntheticKey normalizes out the specific choice of id for the synthetic atoms
-/// in the NormalizedValue.
+/// in the SyntheticDefinition.
 /// This lets us check if two different synthetic atoms would be "defined the same way".
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 struct SyntheticKey {
+    /// How many synthetic atoms are defined here.
+    num_atoms: usize,
+
     /// CNF form of the proposition that we defines these synthetic atoms.
     /// Here, the synthetic atoms have been remapped to the invalid range,
     /// in order to normalize away the specific choice of synthetic ids.
     clauses: Vec<Clause>,
-
-    /// How many synthetic atoms this key is defining.
-    num_definitions: usize,
 }
 
 impl std::fmt::Display for SyntheticKey {
@@ -67,15 +64,15 @@ impl std::fmt::Display for SyntheticKey {
         let clauses = clauses_str.join(" and ");
         write!(
             f,
-            "SyntheticKey(num_definitions: {}, clauses: {})",
-            self.num_definitions, clauses
+            "SyntheticKey(num_atoms: {}, clauses: {})",
+            self.num_atoms, clauses
         )
     }
 }
 
 impl SyntheticKey {
     fn bucket(&self) -> (usize, usize) {
-        (self.num_definitions, self.clauses.len())
+        (self.num_atoms, self.clauses.len())
     }
 }
 
@@ -87,11 +84,11 @@ pub struct Normalizer {
     synthetic_types: Vec<AcornType>,
 
     /// The definition for each synthetic atom.
-    synthetic_definitions: Vec<Arc<NormalizedValue>>,
+    synthetic_definitions: Vec<Arc<SyntheticDefinition>>,
 
     /// Same information as `synthetic_info`, but indexed by SyntheticKey.
     /// This is used to avoid defining the same thing multiple times.
-    synthetic_map: HashMap<SyntheticKey, Arc<NormalizedValue>>,
+    synthetic_map: HashMap<SyntheticKey, Arc<SyntheticDefinition>>,
 
     normalization_map: NormalizationMap,
 }
@@ -129,7 +126,7 @@ impl Normalizer {
             .collect();
         let key = SyntheticKey {
             clauses,
-            num_definitions,
+            num_atoms: num_definitions,
         };
         if self.synthetic_map.contains_key(&key) {
             true
@@ -566,11 +563,11 @@ impl Normalizer {
             let num_definitions = synthetic_ids.len();
             let key = SyntheticKey {
                 clauses: synthetic_key_form.clone(),
-                num_definitions,
+                num_atoms: num_definitions,
             };
-            let info = Arc::new(NormalizedValue {
+            let info = Arc::new(SyntheticDefinition {
                 clauses: clauses.clone(),
-                synthetic: synthetic_ids,
+                atoms: synthetic_ids,
             });
             for _ in 0..num_definitions {
                 self.synthetic_definitions.push(info.clone());
@@ -840,7 +837,7 @@ impl Normalizer {
     /// of SyntheticInfo that covers them.
     /// The output may have synthetic atoms that aren't used in the input.
     /// The input doesn't have to be in order and may contain duplicates.
-    pub fn find_covering_synthetic_info(&self, ids: &[AtomId]) -> Vec<Arc<NormalizedValue>> {
+    pub fn find_covering_synthetic_info(&self, ids: &[AtomId]) -> Vec<Arc<SyntheticDefinition>> {
         let mut covered = HashSet::new();
         let mut output = vec![];
         for id in ids {
@@ -848,7 +845,7 @@ impl Normalizer {
                 continue;
             }
             let info = self.synthetic_definitions[*id as usize].clone();
-            for synthetic_id in &info.synthetic {
+            for synthetic_id in &info.atoms {
                 covered.insert(*synthetic_id);
             }
             output.push(info);
