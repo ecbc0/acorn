@@ -16,9 +16,6 @@ use crate::proof_step::{ProofStep, Truthiness};
 use crate::source::SourceType;
 use crate::term::{Term, TypeId};
 
-// The experiment turns off function duplication in normalization.
-const EXPERIMENT: bool = false;
-
 /// Information about the definition of a set of synthetic atoms.
 pub struct SyntheticDefinition {
     /// The synthetic atoms that are defined in this definition.
@@ -610,29 +607,27 @@ impl Normalizer {
 
         let mut clauses = self.convert_then_normalize(value, ctype)?;
 
-        if !EXPERIMENT {
-            if let AcornValue::Binary(BinaryOp::Equals, left, right) = &value {
-                if left.get_type().is_functional() && left.is_term() && right.is_term() {
-                    // This is an annoying case.
-                    // If we are expressing, say,
-                    //   f(a) = g(b)
-                    // where the return value is a functional type, that gets normalized into:
-                    //   f(a, x0) = g(b, x0)
-                    // The problem is that we do also want the functional equality.
-                    // In most cases, we can get this in the prover by the extensionality rule.
-                    // However, in this specific case we can't, because in the Clause,
-                    // the type of f(a) has been erased.
-                    // So we add back in the plain literal version that hasn't been normalized.
-                    //
-                    // Ideally, we would either:
-                    //   1. Represent functional types better in unification, so that we
-                    //      don't have to normalize by adding args, and we can keep it as
-                    //      f(a) = g(b)
-                    //   2. Make extensionality more powerful, so that it can deduce f(a) = g(b).
-                    let func_eq = self.literal_from_value(value, ctype)?;
-                    let clause = Clause::new(vec![func_eq]);
-                    clauses.push(clause);
-                }
+        if let AcornValue::Binary(BinaryOp::Equals, left, right) = &value {
+            if left.get_type().is_functional() && left.is_term() && right.is_term() {
+                // This is an annoying case.
+                // If we are expressing, say,
+                //   f(a) = g(b)
+                // where the return value is a functional type, that gets normalized into:
+                //   f(a, x0) = g(b, x0)
+                // The problem is that we do also want the functional equality.
+                // In most cases, we can get this in the prover by the extensionality rule.
+                // However, in this specific case we can't, because in the Clause,
+                // the type of f(a) has been erased.
+                // So we add back in the plain literal version that hasn't been normalized.
+                //
+                // Ideally, we would either:
+                //   1. Represent functional types better in unification, so that we
+                //      don't have to normalize by adding args, and we can keep it as
+                //      f(a) = g(b)
+                //   2. Make extensionality more powerful, so that it can deduce f(a) = g(b).
+                let func_eq = self.literal_from_value(value, ctype)?;
+                let clause = Clause::new(vec![func_eq]);
+                clauses.push(clause);
             }
         }
 
