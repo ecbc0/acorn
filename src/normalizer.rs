@@ -26,7 +26,9 @@ pub struct SyntheticDefinition {
     pub atoms: Vec<AtomId>,
 
     /// The clauses are true by construction and describe the synthetic atoms.
-    /// Variables here, like everywhere, are universal, "forall" quantifier.
+    /// We do need a definition to be a bunch of clauses instead of just one, even
+    /// for "let x = ___" type definitions, because it might be a value that expands
+    /// to multiple clauses.
     pub clauses: Vec<Clause>,
 }
 
