@@ -531,7 +531,32 @@ impl Normalizer {
         clauses
     }
 
-    /// Converts a value to CNF, then to Vec<Clause>.
+    /// Adds the definition for these synthetic atoms.
+    /// This must be done in the same order they are declared in.
+    fn define_synthetic_atoms(&mut self, atoms: Vec<AtomId>, clauses: Vec<Clause>) {
+        // In the synthetic key, we normalize synthetic ids by renumbering them.
+        let synthetic_key_form: Vec<_> = clauses
+            .iter()
+            .map(|c| c.invalidate_synthetics(&atoms))
+            .collect();
+        let num_atoms = atoms.len();
+        let key = SyntheticKey {
+            clauses: synthetic_key_form,
+            num_atoms,
+        };
+        let info = Arc::new(SyntheticDefinition {
+            clauses,
+            atoms: atoms.clone(),
+        });
+        for atom in atoms {
+            if atom as usize != self.synthetic_definitions.len() {
+                panic!("synthetic atoms must be defined in order");
+            }
+            self.synthetic_definitions.push(info.clone());
+        }
+        self.synthetic_map.insert(key, info);
+    }
+
     /// Does not handle the "definition" sorts of values.
     fn convert_then_normalize(
         &mut self,
@@ -553,26 +578,11 @@ impl Normalizer {
 
         if !skolem_ids.is_empty() {
             // We have to define the skolem atoms that were declared during skolemization.
-
-            // In the synthetic key, we normalize synthetic ids by renumbering them.
-            let synthetic_key_form: Vec<_> = clauses
-                .iter()
-                .map(|c| c.invalidate_synthetics(&skolem_ids))
-                .collect();
-            let num_atoms = skolem_ids.len();
-            let key = SyntheticKey {
-                clauses: synthetic_key_form.clone(),
-                num_atoms,
-            };
-            let info = Arc::new(SyntheticDefinition {
-                clauses: clauses.clone(),
-                atoms: skolem_ids,
-            });
-            for _ in 0..num_atoms {
-                self.synthetic_definitions.push(info.clone());
-            }
-            self.synthetic_map.insert(key, info);
+            self.define_synthetic_atoms(skolem_ids, clauses.clone());
         }
+
+        // We should have defined all the synthetic atoms we declared at this point.
+        assert!(self.synthetic_definitions.len() == self.synthetic_types.len());
 
         Ok(clauses)
     }
