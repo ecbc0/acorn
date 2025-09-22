@@ -44,6 +44,7 @@ pub mod proof;
 pub mod proof_step;
 pub mod proposition;
 pub mod prover;
+pub mod qcf;
 pub mod rewrite_tree;
 pub mod score;
 pub mod scorer;
