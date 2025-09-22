@@ -1,5 +1,5 @@
 use crate::acorn_type::AcornType;
-use crate::clause::Clause;
+use crate::literal::Literal;
 
 /// A quantified formula over clauses: a tree of and/or/forall/exists whose leaves are clauses
 /// (disjunctions of literals), with negations only at literals.
@@ -18,7 +18,12 @@ pub enum QCF {
     Or(Box<QCF>, Box<QCF>),
 
     /// Conjunctive Normal Form - a conjunction of clauses (leaf node)
-    CNF(Vec<Clause>),
+    /// An empty list represents "true".
+    /// Each inner Vec<Literal> is a disjunction, like a Clause that is not normalized.
+    CNF(Vec<Vec<Literal>>),
+
+    /// False literal (leaf node)
+    False,
 }
 
 impl QCF {
@@ -43,7 +48,7 @@ impl QCF {
     }
 
     /// Create a CNF leaf node
-    pub fn cnf(clauses: Vec<Clause>) -> Self {
+    pub fn cnf(clauses: Vec<Vec<Literal>>) -> Self {
         QCF::CNF(clauses)
     }
 }
