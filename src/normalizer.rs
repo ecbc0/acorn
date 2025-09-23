@@ -163,94 +163,6 @@ impl Normalizer {
         }
     }
 
-    /// The input should already have negations moved inwards.
-    /// The stack must be entirely universal quantifiers.
-    /// Outputs the new synthetic atoms that were declared.
-    ///
-    /// The value does *not* need to be in prenex normal form.
-    /// I.e., it can still have quantifier nodes, either "exists" or "forall", inside of
-    /// logical nodes, like "and" and "or".
-    /// All negations must be moved inside quantifiers, though.
-    ///
-    /// In general I think converting to prenex seems bad. Consider:
-    ///   forall(x, f(x)) & exists(y, g(y))
-    /// If we convert to prenex, we get:
-    ///   forall(x, exists(y, f(x) & g(y)))
-    /// which skolemizes to
-    ///   forall(x, f(x) & g(skolem(x)))
-    /// But there's a redundant arg here. The simpler form is just
-    ///   forall(x, f(x) & g(skolem()))
-    /// which is what we get if we don't convert to prenex first.
-    fn skolemize(
-        &mut self,
-        stack: &Vec<AcornType>,
-        value: AcornValue,
-        synthesized: &mut Vec<AtomId>,
-    ) -> Result<AcornValue, String> {
-        Ok(match value {
-            AcornValue::ForAll(quants, subvalue) => {
-                let mut new_stack = stack.clone();
-                new_stack.extend(quants.clone());
-                let new_subvalue = self.skolemize(&new_stack, *subvalue, synthesized)?;
-                AcornValue::ForAll(quants, Box::new(new_subvalue))
-            }
-
-            AcornValue::Exists(quants, subvalue) => {
-                // The current stack will be the arguments for the skolem functions
-                let mut args = vec![];
-                for (i, univ) in stack.iter().enumerate() {
-                    args.push(AcornValue::Variable(i as AtomId, univ.clone()));
-                }
-
-                // Find a replacement for each of the quantifiers.
-                // Each one will be a skolem function applied to the current stack.
-                let mut replacements = vec![];
-                for quant in quants {
-                    // Declare a new skolem atom
-                    let skolem_type = AcornType::functional(stack.clone(), quant);
-                    let skolem_id = self.declare_synthetic_atom(skolem_type.clone())?;
-                    synthesized.push(skolem_id);
-                    let skolem_name = ConstantName::Synthetic(skolem_id);
-                    let skolem_value = AcornValue::constant(skolem_name, vec![], skolem_type);
-                    let replacement = AcornValue::apply(skolem_value, args.clone());
-                    replacements.push(replacement);
-                }
-
-                // Replace references to the existential quantifiers
-                let stack_size = stack.len() as AtomId;
-                return self.skolemize(
-                    stack,
-                    subvalue.bind_values(stack_size, stack_size, &replacements),
-                    synthesized,
-                );
-            }
-
-            AcornValue::Binary(BinaryOp::And, left, right) => {
-                let left = self.skolemize(stack, *left, synthesized)?;
-                let right = self.skolemize(stack, *right, synthesized)?;
-                AcornValue::Binary(BinaryOp::And, Box::new(left), Box::new(right))
-            }
-
-            AcornValue::Binary(BinaryOp::Or, left, right) => {
-                let left = self.skolemize(stack, *left, synthesized)?;
-                let right = self.skolemize(stack, *right, synthesized)?;
-                AcornValue::Binary(BinaryOp::Or, Box::new(left), Box::new(right))
-            }
-
-            // Acceptable terminal nodes for the skolemization algorithm
-            AcornValue::Application(_)
-            | AcornValue::Not(_)
-            | AcornValue::Binary(_, _, _)
-            | AcornValue::Variable(_, _)
-            | AcornValue::Bool(_)
-            | AcornValue::Constant(_) => value,
-
-            _ => {
-                return Err(format!("failed to normalize value: {}", value));
-            }
-        })
-    }
-
     /// Constructs a new term from a function application
     /// Function applications that are nested like f(x)(y) are flattened to f(x, y)
     fn term_from_application(&self, application: &FunctionApplication) -> Result<Term, String> {
@@ -360,8 +272,6 @@ impl Normalizer {
     /// Converts a value into a Vec<Literal> if possible.
     /// Ignores leading "forall" since the Clause leaves those implicit.
     /// Does not change variable ids or sort literals but does sort terms within literals.
-    /// TODO: this shouldn't mutate self, but the helper functions do when called with
-    /// different arguments, so the signature is mut.
     fn literals_from_value(&self, value: &AcornValue) -> Result<Vec<Literal>, String> {
         match value {
             AcornValue::ForAll(_, subvalue) => self.literals_from_value(subvalue),
@@ -402,96 +312,9 @@ impl Normalizer {
             .add_constant(cname, NewConstantType::Local)
     }
 
-    /// Converts a value that is already in CNF into lists of literals.
-    /// Each Vec<Literal> is a conjunction, an "or" node.
-    /// The CNF form is expressing that each of these conjunctions are true.
-    /// Returns Ok(Some(cnf)) if it can be turned into CNF.
-    /// Returns Ok(None) if it's an impossibility.
-    /// Returns an error if we failed in some user-reportable way.
-    fn into_literal_lists(
-        &mut self,
-        value: &AcornValue,
-    ) -> Result<Option<Vec<Vec<Literal>>>, String> {
-        match value {
-            AcornValue::Binary(BinaryOp::And, left, right) => {
-                let mut left = match self.into_literal_lists(left)? {
-                    Some(left) => left,
-                    None => return Ok(None),
-                };
-                let right = match self.into_literal_lists(right)? {
-                    Some(right) => right,
-                    None => return Ok(None),
-                };
-                left.extend(right);
-                Ok(Some(left))
-            }
-            AcornValue::Binary(BinaryOp::Or, left, right) => {
-                let left = self.into_literal_lists(left)?;
-                let right = self.into_literal_lists(right)?;
-                match (left, right) {
-                    (None, None) => Ok(None),
-                    (Some(result), None) | (None, Some(result)) => Ok(Some(result)),
-                    (Some(left), Some(right)) => {
-                        let mut results = vec![];
-                        for left_result in &left {
-                            for right_result in &right {
-                                let mut combined = left_result.clone();
-                                combined.extend(right_result.clone());
-                                results.push(combined);
-                            }
-                        }
-                        Ok(Some(results))
-                    }
-                }
-            }
-            AcornValue::Bool(true) => Ok(Some(vec![])),
-            AcornValue::Bool(false) => Ok(None),
-            _ => {
-                let literal = self.literal_from_value(&value)?;
-                if literal.is_tautology() {
-                    Ok(Some(vec![]))
-                } else {
-                    Ok(Some(vec![vec![literal]]))
-                }
-            }
-        }
-    }
-
-    /// Converts AcornValue to Vec<Clause> without changing the tree structure.
-    /// The tree structure should already be manipulated before calling this.
-    fn normalize_cnf(&mut self, value: AcornValue) -> Result<Vec<Clause>, String> {
-        let mut universal = vec![];
-        let value = value.remove_forall(&mut universal);
-        match self.into_literal_lists(&value) {
-            Ok(Some(lists)) => Ok(self.normalize_literal_lists(lists)),
-            Ok(None) => Ok(vec![Clause::impossible()]),
-            Err(s) => {
-                // value is essentially a subvalue with the universal quantifiers removed,
-                // so reconstruct it to display it nicely.
-                let reconstructed = AcornValue::forall(universal, value);
-                Err(format!(
-                    "\nerror converting {} to CNF:\n{}",
-                    reconstructed, s
-                ))
-            }
-        }
-    }
-
-    // Note that this can normalize the variable ids for each clause differently.
-    // This is valid because clauses are separately universally quantified.
-    fn normalize_literal_lists(&self, literal_lists: Vec<Vec<Literal>>) -> Vec<Clause> {
-        let mut clauses = vec![];
-        for literals in literal_lists {
-            assert!(literals.len() > 0);
-            let clause = Clause::new(literals);
-            // println!("clause: {}", clause);
-            clauses.push(clause);
-        }
-        clauses
-    }
-
     /// Wrapper around value_to_literal_lists.
-    pub fn value_to_clauses(
+    /// Note that this only works on values that have already been "cleaned up" to some extent.
+    pub fn nice_value_to_clauses(
         &mut self,
         value: &AcornValue,
         synthesized: &mut Vec<AtomId>,
@@ -720,8 +543,9 @@ impl Normalizer {
         self.synthetic_map.insert(key, info);
     }
 
-    /// Does not handle the "definition" sorts of values.
-    fn convert_then_normalize(
+    /// This should handle any sort of boolean value.
+    /// TODO: port edge cases into the "nice" value to clauses so that we only have one of these.
+    fn ugly_value_to_clauses(
         &mut self,
         value: &AcornValue,
         ctype: NewConstantType,
@@ -735,9 +559,7 @@ impl Normalizer {
         self.normalization_map.add_from(&value, ctype);
 
         let mut skolem_ids = vec![];
-        let value = self.skolemize(&vec![], value, &mut skolem_ids)?;
-
-        let clauses = self.normalize_cnf(value)?;
+        let clauses = self.nice_value_to_clauses(&value, &mut skolem_ids)?;
 
         if !skolem_ids.is_empty() {
             // We have to define the skolem atoms that were declared during skolemization.
@@ -771,7 +593,7 @@ impl Normalizer {
         }
         assert_eq!(value.get_type(), AcornType::Bool);
 
-        let mut clauses = self.convert_then_normalize(value, ctype)?;
+        let mut clauses = self.ugly_value_to_clauses(value, ctype)?;
 
         if let AcornValue::Binary(BinaryOp::Equals, left, right) = &value {
             if left.get_type().is_functional() && left.is_term() && right.is_term() {
