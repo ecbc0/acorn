@@ -257,10 +257,7 @@ impl Normalizer {
 
     /// Constructs a new term from a function application
     /// Function applications that are nested like f(x)(y) are flattened to f(x, y)
-    fn term_from_application(
-        &mut self,
-        application: &FunctionApplication,
-    ) -> Result<Term, String> {
+    fn term_from_application(&mut self, application: &FunctionApplication) -> Result<Term, String> {
         let application_type = application.get_type();
         check_normalized_type(&application_type)?;
         let term_type = self.normalization_map.add_type(&application_type);
@@ -276,10 +273,7 @@ impl Normalizer {
 
     /// Constructs a new term from an AcornValue
     /// Returns an error if it's inconvertible.
-    fn term_from_value(
-        &mut self,
-        value: &AcornValue,
-    ) -> Result<Term, String> {
+    fn term_from_value(&mut self, value: &AcornValue) -> Result<Term, String> {
         let (t, negated) = self.maybe_negated_term_from_value(value)?;
         if negated {
             Err(format!(
@@ -291,11 +285,7 @@ impl Normalizer {
         }
     }
 
-    fn atom_from_name(
-        &mut self,
-        name: &ConstantName,
-        ctype: NewConstantType,
-    ) -> Result<Atom, String> {
+    fn atom_from_name(&mut self, name: &ConstantName) -> Result<Atom, String> {
         if let ConstantName::Synthetic(i) = name {
             return Ok(Atom::Synthetic(*i));
         };
@@ -305,29 +295,20 @@ impl Normalizer {
         }
 
         // We have to create a new atom
-        let local = match ctype {
-            NewConstantType::Global => false,
-            NewConstantType::Local => true,
-            NewConstantType::Disallowed => return Err(format!("unrecognized name: {}", name)),
-        };
-        Ok(self.normalization_map.add_constant(name.clone(), local))
+        // Unrecognized names are errors
+        Err(format!("unrecognized name: {}", name))
     }
 
     /// Adds all constants from a value to the normalizer.
     /// This ensures that all constants in the value are registered in the normalization map.
     fn add_constants(&mut self, value: &AcornValue, ctype: NewConstantType) -> Result<(), String> {
-        let mut error = None;
         value.for_each_constant(&mut |c| {
-            if error.is_some() {
+            if c.name.is_synthetic() || self.normalization_map.get_atom(&c.name).is_some() {
                 return;
             }
-            if let Err(e) = self.atom_from_name(&c.name, ctype) {
-                error = Some(e);
-            }
+
+            self.normalization_map.add_constant(c.name.clone(), ctype);
         });
-        if let Some(e) = error {
-            return Err(e);
-        }
         Ok(())
     }
 
@@ -354,7 +335,7 @@ impl Normalizer {
                 if c.params.is_empty() {
                     check_normalized_type(&c.instance_type)?;
                     let type_id = self.normalization_map.add_type(&c.instance_type);
-                    let constant_atom = self.atom_from_name(&c.name, NewConstantType::Disallowed)?;
+                    let constant_atom = self.atom_from_name(&c.name)?;
                     Ok((Term::new(type_id, type_id, constant_atom, vec![]), false))
                 } else {
                     Ok((self.normalization_map.term_from_monomorph(&c), false))
@@ -375,31 +356,23 @@ impl Normalizer {
     /// to do rewrite-type lookups, on the larger literal first.
     pub fn literal_from_value(&mut self, value: &AcornValue) -> Result<Literal, String> {
         match value {
-            AcornValue::Variable(_, _) | AcornValue::Constant(_) => Ok(Literal::positive(
-                self.term_from_value(value)?,
-            )),
-            AcornValue::Application(app) => Ok(Literal::positive(
-                self.term_from_application(app)?,
-            )),
+            AcornValue::Variable(_, _) | AcornValue::Constant(_) => {
+                Ok(Literal::positive(self.term_from_value(value)?))
+            }
+            AcornValue::Application(app) => Ok(Literal::positive(self.term_from_application(app)?)),
             AcornValue::Binary(BinaryOp::Equals, left, right) => {
-                let (left_term, left_negated) =
-                    self.maybe_negated_term_from_value(&*left)?;
-                let (right_term, right_negated) =
-                    self.maybe_negated_term_from_value(&*right)?;
+                let (left_term, left_negated) = self.maybe_negated_term_from_value(&*left)?;
+                let (right_term, right_negated) = self.maybe_negated_term_from_value(&*right)?;
                 let negated = left_negated ^ right_negated;
                 Ok(Literal::new(!negated, left_term, right_term))
             }
             AcornValue::Binary(BinaryOp::NotEquals, left, right) => {
-                let (left_term, left_negated) =
-                    self.maybe_negated_term_from_value(&*left)?;
-                let (right_term, right_negated) =
-                    self.maybe_negated_term_from_value(&*right)?;
+                let (left_term, left_negated) = self.maybe_negated_term_from_value(&*left)?;
+                let (right_term, right_negated) = self.maybe_negated_term_from_value(&*right)?;
                 let negated = left_negated ^ right_negated;
                 Ok(Literal::new(negated, left_term, right_term))
             }
-            AcornValue::Not(subvalue) => Ok(Literal::negative(
-                self.term_from_value(subvalue)?,
-            )),
+            AcornValue::Not(subvalue) => Ok(Literal::negative(self.term_from_value(subvalue)?)),
             _ => Err(format!("Cannot convert {} to literal", value)),
         }
     }
@@ -445,7 +418,7 @@ impl Normalizer {
     }
 
     pub fn add_local_constant(&mut self, cname: ConstantName) -> Atom {
-        self.normalization_map.add_constant(cname, true)
+        self.normalization_map.add_constant(cname, NewConstantType::Local)
     }
 
     /// Converts a value that is already in CNF into lists of literals.

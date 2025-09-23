@@ -10,9 +10,6 @@ use crate::term::{Term, TypeId};
 pub enum NewConstantType {
     Global,
     Local,
-
-    /// No making new constants.
-    Disallowed,
 }
 
 /// In the Acorn language, constants and types have names, scoped by modules. They can be rich values
@@ -72,21 +69,24 @@ impl NormalizationMap {
 
     /// Assigns an id to this (module, name) pair if it doesn't already have one.
     /// local determines whether the constant will be represented as a local or global atom.
-    pub fn add_constant(&mut self, name: ConstantName, local: bool) -> Atom {
+    pub fn add_constant(&mut self, name: ConstantName, ctype: NewConstantType) -> Atom {
         if name.is_synthetic() {
             panic!("synthetic atoms should not be stored in the ConstantMap");
         }
         if let Some(&atom) = self.name_to_atom.get(&name) {
             return atom;
         }
-        let atom = if local {
-            let atom_id = self.local_constants.len() as AtomId;
-            self.local_constants.push(Some(name.clone()));
-            Atom::LocalConstant(atom_id)
-        } else {
-            let atom_id = self.global_constants.len() as AtomId;
-            self.global_constants.push(Some(name.clone()));
-            Atom::GlobalConstant(atom_id)
+        let atom = match ctype {
+            NewConstantType::Local => {
+                let atom_id = self.local_constants.len() as AtomId;
+                self.local_constants.push(Some(name.clone()));
+                Atom::LocalConstant(atom_id)
+            }
+            NewConstantType::Global => {
+                let atom_id = self.global_constants.len() as AtomId;
+                self.global_constants.push(Some(name.clone()));
+                Atom::GlobalConstant(atom_id)
+            }
         };
         self.name_to_atom.insert(name, atom);
         atom
@@ -128,7 +128,8 @@ impl NormalizationMap {
         local: bool,
     ) {
         let type_id = self.add_type(constant_type);
-        let atom = self.add_constant(name.clone(), local);
+        let ctype = if local { NewConstantType::Local } else { NewConstantType::Global };
+        let atom = self.add_constant(name.clone(), ctype);
         self.monomorph_to_id.insert(c, (atom, type_id));
     }
 
