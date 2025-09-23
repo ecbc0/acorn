@@ -145,6 +145,8 @@ impl Normalizer {
         if id >= INVALID_SYNTHETIC_ID {
             return Err(format!("ran out of synthetic ids (used {})", id));
         }
+        // Add the synthetic atom type to the normalization map
+        self.normalization_map.add_type(&atom_type);
         self.synthetic_types.push(atom_type);
         Ok(id)
     }
@@ -543,9 +545,6 @@ impl Normalizer {
         // Declare the synthetic atoms and verify IDs match
         let mut skolem_ids = vec![];
         for (expected_id, atom_type) in synthesized {
-            // Add the synthetic atom type to the normalization map
-            self.normalization_map.add_type(&atom_type);
-
             let actual_id = self.declare_synthetic_atom(atom_type)?;
             if actual_id != expected_id {
                 return Err(format!(
