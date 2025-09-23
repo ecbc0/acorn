@@ -92,14 +92,20 @@ impl NormalizationMap {
         atom
     }
 
-    /// Add all constants from a value to the normalization map.
-    /// This ensures that all constants in the value are registered.
+    /// Add all constants and types from a value to the normalization map.
+    /// This ensures that all constants and types in the value are registered.
     pub fn add_from(&mut self, value: &AcornValue, ctype: NewConstantType) {
+        // Add all constants
         value.for_each_constant(&mut |c| {
             if c.name.is_synthetic() || self.get_atom(&c.name).is_some() {
                 return;
             }
             self.add_constant(c.name.clone(), ctype);
+        });
+
+        // Add all types
+        value.for_each_type(&mut |t| {
+            self.add_type(t);
         });
     }
 
