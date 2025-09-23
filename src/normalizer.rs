@@ -189,7 +189,8 @@ impl Normalizer {
             AcornValue::ForAll(quants, subvalue) => {
                 let mut new_stack = stack.clone();
                 new_stack.extend(quants.clone());
-                let new_subvalue = Self::skolemize(&new_stack, *subvalue, next_synthetic_id, synthesized)?;
+                let new_subvalue =
+                    Self::skolemize(&new_stack, *subvalue, next_synthetic_id, synthesized)?;
                 AcornValue::ForAll(quants, Box::new(new_subvalue))
             }
 
@@ -253,7 +254,6 @@ impl Normalizer {
             }
         })
     }
-
 
     /// Constructs a new term from a function application
     /// Function applications that are nested like f(x)(y) are flattened to f(x, y)
@@ -319,7 +319,7 @@ impl Normalizer {
 
     /// Adds all constants from a value to the normalizer.
     /// This ensures that all constants in the value are registered in the normalization map.
-    pub fn add_constants(&mut self, value: &AcornValue, ctype: NewConstantType) -> Result<(), String> {
+    fn add_constants(&mut self, value: &AcornValue, ctype: NewConstantType) -> Result<(), String> {
         let mut error = None;
         value.for_each_constant(&mut |c| {
             if error.is_some() {
@@ -599,12 +599,16 @@ impl Normalizer {
         for (expected_id, atom_type) in synthesized {
             let actual_id = self.declare_synthetic_atom(atom_type)?;
             if actual_id != expected_id {
-                return Err(format!("Synthetic ID mismatch: expected {}, got {}", expected_id, actual_id));
+                return Err(format!(
+                    "Synthetic ID mismatch: expected {}, got {}",
+                    expected_id, actual_id
+                ));
             }
             skolem_ids.push(actual_id);
         }
 
-        let clauses = self.normalize_cnf(value, ctype)?;
+        self.add_constants(&value, ctype)?;
+        let clauses = self.normalize_cnf(value, NewConstantType::Disallowed)?;
 
         if !skolem_ids.is_empty() {
             // We have to define the skolem atoms that were declared during skolemization.
