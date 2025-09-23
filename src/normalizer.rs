@@ -13,7 +13,6 @@ use crate::monomorphizer::Monomorphizer;
 use crate::names::ConstantName;
 use crate::normalization_map::{NewConstantType, NormalizationMap};
 use crate::proof_step::{ProofStep, Truthiness};
-use crate::qcf::{replace_variables_in_qcf, QCF};
 use crate::source::SourceType;
 use crate::term::{Term, TypeId};
 
@@ -250,69 +249,6 @@ impl Normalizer {
         })
     }
 
-    /// Skolemizes a QCF, replacing existential quantifiers with skolem functions.
-    /// Works just like skolemize but takes a QCF as input.
-    pub fn skolemize_qcf(
-        &mut self,
-        stack: &Vec<AcornType>,
-        qcf: QCF,
-        declared: &mut Vec<AtomId>,
-    ) -> Result<QCF, String> {
-        Ok(match qcf {
-            QCF::ForAll(quants, subqcf) => {
-                let mut new_stack = stack.clone();
-                new_stack.extend(quants.clone());
-                let new_subqcf = self.skolemize_qcf(&new_stack, *subqcf, declared)?;
-                QCF::ForAll(quants, Box::new(new_subqcf))
-            }
-            QCF::Exists(quants, subqcf) => {
-                // Create skolem terms for the existential variables
-                let mut skolem_terms = vec![];
-                for quant in quants {
-                    // Declare a new skolem atom
-                    let skolem_type = AcornType::functional(stack.clone(), quant.clone());
-                    let type_id = self.normalization_map.add_type(&skolem_type);
-                    let skolem_id = self.declare_synthetic_atom(skolem_type)?;
-                    declared.push(skolem_id);
-
-                    // Build the skolem term with arguments from the stack
-                    let mut args = vec![];
-                    for (i, arg_type) in stack.iter().enumerate() {
-                        let arg_type_id = self.normalization_map.add_type(arg_type);
-                        args.push(Term::new(
-                            arg_type_id,
-                            arg_type_id,
-                            Atom::Variable(i as AtomId),
-                            vec![],
-                        ));
-                    }
-
-                    let result_type_id = self.normalization_map.add_type(&quant);
-                    let skolem_term =
-                        Term::new(result_type_id, type_id, Atom::Synthetic(skolem_id), args);
-                    skolem_terms.push(skolem_term);
-                }
-
-                // Replace existential variables with skolem terms in the body
-                let stack_size = stack.len() as AtomId;
-                let replaced_qcf =
-                    replace_variables_in_qcf(*subqcf, stack_size, stack_size, &skolem_terms);
-                self.skolemize_qcf(stack, replaced_qcf, declared)?
-            }
-            QCF::And(left, right) => {
-                let left = self.skolemize_qcf(stack, *left, declared)?;
-                let right = self.skolemize_qcf(stack, *right, declared)?;
-                QCF::And(Box::new(left), Box::new(right))
-            }
-            QCF::Or(left, right) => {
-                let left = self.skolemize_qcf(stack, *left, declared)?;
-                let right = self.skolemize_qcf(stack, *right, declared)?;
-                QCF::Or(Box::new(left), Box::new(right))
-            }
-            // Terminal nodes - no existential quantifiers to replace
-            QCF::CNF(_) | QCF::False => qcf,
-        })
-    }
 
     /// Constructs a new term from a function application
     /// Function applications that are nested like f(x)(y) are flattened to f(x, y)
