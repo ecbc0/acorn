@@ -109,14 +109,17 @@ impl Normalizer {
 
     /// Checks if there's an exact match for a synthetic definition for the given value.
     /// The value should be of the form "exists ___ (forall x and forall y and ...)".
+    /// This is a really wacky algorithm, it seems like we should clean it up.
     pub fn has_synthetic_definition(&mut self, value: &AcornValue) -> bool {
-        // Remove exists quantifiers if present
-        let (num_definitions, after_exists) = match value {
-            AcornValue::Exists(quants, subvalue) => (quants.len(), subvalue.as_ref().clone()),
+        let (num_definitions, alt_value) = match value {
+            AcornValue::Exists(quants, subvalue) => (
+                quants.len(),
+                AcornValue::ForAll(quants.clone(), subvalue.clone()),
+            ),
             _ => (0, value.clone()),
         };
-
-        let Ok(uninstantiated) = self.clauses_from_value(&after_exists) else {
+        let mut view = NormalizerView::Ref(self);
+        let Ok(uninstantiated) = view.value_to_denormalized_clauses(&alt_value) else {
             return false;
         };
         let clauses = uninstantiated
@@ -127,14 +130,7 @@ impl Normalizer {
             clauses,
             num_atoms: num_definitions,
         };
-        if self.synthetic_map.contains_key(&key) {
-            true
-        } else {
-            // Uncomment to debug lookups
-            // self.debug_failed_lookup(&key);
-
-            false
-        }
+        self.synthetic_map.contains_key(&key)
     }
 
     // This declares a synthetic atom, but does not define it.
@@ -267,44 +263,6 @@ impl Normalizer {
             AcornValue::Not(subvalue) => Ok(Literal::negative(self.term_from_value(subvalue)?)),
             _ => Err(format!("Cannot convert {} to literal", value)),
         }
-    }
-
-    /// Converts a value into a Vec<Literal> if possible.
-    /// Ignores leading "forall" since the Clause leaves those implicit.
-    /// Does not change variable ids or sort literals but does sort terms within literals.
-    fn literals_from_value(&self, value: &AcornValue) -> Result<Vec<Literal>, String> {
-        match value {
-            AcornValue::ForAll(_, subvalue) => self.literals_from_value(subvalue),
-            AcornValue::Binary(BinaryOp::Or, left_v, right_v) => {
-                let mut lits = self.literals_from_value(left_v)?;
-                let right_lits = self.literals_from_value(right_v)?;
-                lits.extend(right_lits);
-                Ok(lits)
-            }
-            _ => {
-                let lit = self.literal_from_value(value)?;
-                Ok(vec![lit])
-            }
-        }
-    }
-
-    /// Does not change variable ids but does sort literals.
-    fn clause_from_value(&self, value: &AcornValue) -> Result<Clause, String> {
-        let mut literals = self.literals_from_value(value)?;
-        literals.sort();
-        Ok(Clause { literals })
-    }
-
-    /// Does not change variable ids but does sort literals.
-    fn clauses_from_value(&self, value: &AcornValue) -> Result<Vec<Clause>, String> {
-        if *value == AcornValue::Bool(true) {
-            return Ok(vec![]);
-        }
-        let subvalues = value.remove_and();
-        subvalues
-            .into_iter()
-            .map(|subvalue| self.clause_from_value(&subvalue))
-            .collect()
     }
 
     pub fn add_local_constant(&mut self, cname: ConstantName) -> Atom {
