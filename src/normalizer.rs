@@ -360,8 +360,13 @@ impl NormalizerView<'_> {
                 }
                 Ok(results)
             }
-            AcornValue::Bool(true) => Ok(vec![]),
-            AcornValue::Bool(false) => Ok(vec![vec![]]),
+            AcornValue::Bool(value) => {
+                if *value ^ negate {
+                    Ok(vec![])
+                } else {
+                    Ok(vec![vec![]])
+                }
+            }
             _ => {
                 assert!(!negate);
                 let literal = self.value_to_literal(value, stack)?;
