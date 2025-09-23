@@ -317,6 +317,24 @@ impl Normalizer {
         Ok(self.normalization_map.add_constant(name.clone(), local))
     }
 
+    /// Adds all constants from a value to the normalizer.
+    /// This ensures that all constants in the value are registered in the normalization map.
+    pub fn add_constants(&mut self, value: &AcornValue, ctype: NewConstantType) -> Result<(), String> {
+        let mut error = None;
+        value.for_each_constant(&mut |c| {
+            if error.is_some() {
+                return;
+            }
+            if let Err(e) = self.atom_from_name(&c.name, ctype) {
+                error = Some(e);
+            }
+        });
+        if let Some(e) = error {
+            return Err(e);
+        }
+        Ok(())
+    }
+
     /// Constructs a new term or negated term from an AcornValue
     /// Returns an error if it's inconvertible.
     /// The "ctype" parameter controls whether any newly discovered constants
