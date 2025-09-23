@@ -418,7 +418,8 @@ impl Normalizer {
     }
 
     pub fn add_local_constant(&mut self, cname: ConstantName) -> Atom {
-        self.normalization_map.add_constant(cname, NewConstantType::Local)
+        self.normalization_map
+            .add_constant(cname, NewConstantType::Local)
     }
 
     /// Converts a value that is already in CNF into lists of literals.
@@ -546,6 +547,7 @@ impl Normalizer {
         let value = value.replace_match();
         let value = value.replace_if();
         let value = value.move_negation_inwards(true, false);
+        self.add_constants(&value, ctype)?;
 
         let mut next_synthetic_id = self.synthetic_types.len() as AtomId;
         let mut synthesized = vec![];
@@ -564,7 +566,6 @@ impl Normalizer {
             skolem_ids.push(actual_id);
         }
 
-        self.add_constants(&value, ctype)?;
         let clauses = self.normalize_cnf(value)?;
 
         if !skolem_ids.is_empty() {
