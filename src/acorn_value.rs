@@ -1598,45 +1598,50 @@ impl AcornValue {
         }
     }
 
+    /// Apply a function to each constant in this value.
+    pub fn for_each_constant(&self, f: &mut impl FnMut(&ConstantInstance)) {
+        match self {
+            AcornValue::Variable(_, _) | AcornValue::Bool(_) => {}
+            AcornValue::Application(app) => {
+                app.function.for_each_constant(f);
+                for arg in &app.args {
+                    arg.for_each_constant(f);
+                }
+            }
+            AcornValue::Lambda(_, value)
+            | AcornValue::ForAll(_, value)
+            | AcornValue::Exists(_, value) => value.for_each_constant(f),
+            AcornValue::Binary(_, left, right) => {
+                left.for_each_constant(f);
+                right.for_each_constant(f);
+            }
+            AcornValue::IfThenElse(cond, if_value, else_value) => {
+                cond.for_each_constant(f);
+                if_value.for_each_constant(f);
+                else_value.for_each_constant(f);
+            }
+            AcornValue::Match(scrutinee, cases) => {
+                scrutinee.for_each_constant(f);
+                for (_, pattern, result) in cases {
+                    pattern.for_each_constant(f);
+                    result.for_each_constant(f);
+                }
+            }
+            AcornValue::Not(x) => x.for_each_constant(f),
+            AcornValue::Constant(c) => f(c),
+        }
+    }
+
     pub fn find_constants(
         &self,
         filter: &impl Fn(&ConstantInstance) -> bool,
         output: &mut Vec<ConstantInstance>,
     ) {
-        match self {
-            AcornValue::Variable(_, _) | AcornValue::Bool(_) => {}
-            AcornValue::Application(app) => {
-                app.function.find_constants(filter, output);
-                for arg in &app.args {
-                    arg.find_constants(filter, output);
-                }
+        self.for_each_constant(&mut |c| {
+            if filter(c) {
+                output.push(c.clone());
             }
-            AcornValue::Lambda(_, value)
-            | AcornValue::ForAll(_, value)
-            | AcornValue::Exists(_, value) => value.find_constants(filter, output),
-            AcornValue::Binary(_, left, right) => {
-                left.find_constants(filter, output);
-                right.find_constants(filter, output);
-            }
-            AcornValue::IfThenElse(cond, if_value, else_value) => {
-                cond.find_constants(filter, output);
-                if_value.find_constants(filter, output);
-                else_value.find_constants(filter, output);
-            }
-            AcornValue::Match(scrutinee, cases) => {
-                scrutinee.find_constants(filter, output);
-                for (_, pattern, result) in cases {
-                    pattern.find_constants(filter, output);
-                    result.find_constants(filter, output);
-                }
-            }
-            AcornValue::Not(x) => x.find_constants(filter, output),
-            AcornValue::Constant(c) => {
-                if filter(c) {
-                    output.push(c.clone());
-                }
-            }
-        }
+        });
     }
 
     /// Finds all synthetic atom ids in this value.
