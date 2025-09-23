@@ -309,7 +309,7 @@ impl Normalizer {
         match value {
             AcornValue::Variable(i, var_type) => {
                 check_normalized_type(var_type)?;
-                let type_id = self.normalization_map.add_type(var_type);
+                let type_id = self.normalization_map.get_type_id(var_type)?;
                 Ok((
                     Term::new(type_id, type_id, Atom::Variable(*i), vec![]),
                     false,
