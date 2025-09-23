@@ -92,15 +92,20 @@ impl NormalizationMap {
         atom
     }
 
-    /// Add all constants and types from a value to the normalization map.
+    /// Add all constant names, monomorphs, and types from a value to the normalization map.
     /// This ensures that all constants and types in the value are registered.
     pub fn add_from(&mut self, value: &AcornValue, ctype: NewConstantType) {
         // Add all constants
         value.for_each_constant(&mut |c| {
-            if c.name.is_synthetic() || self.get_atom(&c.name).is_some() {
+            if c.name.is_synthetic() {
                 return;
             }
-            self.add_constant(c.name.clone(), ctype);
+            if self.get_atom(&c.name).is_none() {
+                self.add_constant(c.name.clone(), ctype);
+            }
+            if !c.params.is_empty() {
+                self.add_monomorph(c);
+            }
         });
 
         // Add all types
@@ -174,30 +179,45 @@ impl NormalizationMap {
         local: bool,
     ) {
         let type_id = self.add_type(constant_type);
-        let ctype = if local { NewConstantType::Local } else { NewConstantType::Global };
+        let ctype = if local {
+            NewConstantType::Local
+        } else {
+            NewConstantType::Global
+        };
         let atom = self.add_constant(name.clone(), ctype);
         self.monomorph_to_id.insert(c, (atom, type_id));
     }
 
-    /// The provided constant instance should be monomorphized.
-    pub fn term_from_monomorph(&mut self, c: &ConstantInstance) -> Term {
-        let (atom, type_id) = if let Some((atom, type_id)) = self.monomorph_to_id.get(&c) {
-            (*atom, *type_id)
-        } else {
-            // Construct an atom and appropriate entries for this monomorph
-            let type_id = self.add_type(&c.instance_type);
-            let monomorph_id = self.id_to_monomorph.len() as AtomId;
-            let atom = Atom::Monomorph(monomorph_id);
-            self.id_to_monomorph.push(c.clone());
-            self.monomorph_to_id.insert(c.clone(), (atom, type_id));
-            (atom, type_id)
-        };
+    /// Should only be called when c has params.
+    fn add_monomorph(&mut self, c: &ConstantInstance) {
+        assert!(!c.params.is_empty());
+        if self.monomorph_to_id.get(c).is_some() {
+            // We already have it
+            return;
+        }
 
-        Term {
-            term_type: type_id,
-            head_type: type_id,
-            head: atom,
-            args: vec![],
+        // Construct an atom and appropriate entries for this monomorph
+        let type_id = self.add_type(&c.instance_type);
+        let monomorph_id = self.id_to_monomorph.len() as AtomId;
+        let atom = Atom::Monomorph(monomorph_id);
+        self.id_to_monomorph.push(c.clone());
+        self.monomorph_to_id.insert(c.clone(), (atom, type_id));
+    }
+
+    /// The monomorph should already have been added.
+    pub fn term_from_monomorph(&self, c: &ConstantInstance) -> Result<Term, String> {
+        if let Some((atom, type_id)) = self.monomorph_to_id.get(&c) {
+            Ok(Term {
+                term_type: *type_id,
+                head_type: *type_id,
+                head: *atom,
+                args: vec![],
+            })
+        } else {
+            Err(format!(
+                "Monomorphized constant {} not found in normalization map",
+                c
+            ))
         }
     }
 

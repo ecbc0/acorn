@@ -321,7 +321,7 @@ impl Normalizer {
                     let constant_atom = self.atom_from_name(&c.name)?;
                     Ok((Term::new(type_id, type_id, constant_atom, vec![]), false))
                 } else {
-                    Ok((self.normalization_map.term_from_monomorph(&c), false))
+                    Ok((self.normalization_map.term_from_monomorph(&c)?, false))
                 }
             }
             AcornValue::Bool(v) => Ok((Term::new_true(), !v)),
@@ -530,6 +530,7 @@ impl Normalizer {
         let value = value.replace_match();
         let value = value.replace_if();
         let value = value.move_negation_inwards(true, false);
+
         self.normalization_map.add_from(&value, ctype);
 
         let mut skolem_ids = vec![];
