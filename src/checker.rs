@@ -105,6 +105,10 @@ impl Checker {
         for injectivity in clause.injectivities() {
             self.insert_clause(&injectivity);
         }
+
+        for boolean_reduction in clause.boolean_reductions() {
+            self.insert_clause(&boolean_reduction);
+        }
     }
 
     /// Returns true if the clause is known to be true.

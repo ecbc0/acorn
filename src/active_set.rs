@@ -546,10 +546,10 @@ impl ActiveSet {
         let clause = &activated_step.clause;
         let mut answer = vec![];
 
-        for reduced_clause in clause.boolean_reductions() {
-            let literals = reduced_clause.literals.clone();
+        for (index, literals) in clause.find_boolean_reductions() {
             let info = BooleanReductionInfo {
                 id: activated_id,
+                index,
                 literals: literals.clone(),
             };
             let (clause, traces) = Clause::normalize_with_trace(literals);

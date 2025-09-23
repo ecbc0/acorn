@@ -229,6 +229,9 @@ pub struct BooleanReductionInfo {
     /// The id of the clause that had boolean reduction applied.
     pub id: usize,
 
+    /// The literal that got expanded into two literals.
+    pub index: usize,
+
     /// The literals that we got immediately after boolean reduction.
     pub literals: Vec<Literal>,
 }

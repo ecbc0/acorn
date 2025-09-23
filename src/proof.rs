@@ -1034,7 +1034,7 @@ impl<'a> Proof<'a> {
             }
             Rule::BooleanReduction(info) => {
                 // For boolean reduction, the trace applies to the stored literals.
-                let _var_maps = self.reconstruct_trace(
+                let var_maps = self.reconstruct_trace(
                     &info.literals,
                     traces,
                     &step.clause,
@@ -1042,7 +1042,39 @@ impl<'a> Proof<'a> {
                     concrete_steps,
                 )?;
 
-                todo!("unify boolean reduction");
+                // Unify the pre-reduction and post-reduction literals.
+                let base_id = ProofStepId::Active(info.id);
+                let base_clause = &self.get_clause(base_id)?;
+                assert!(base_clause.literals.len() + 1 == info.literals.len());
+
+                for conc_map in var_maps {
+                    let (mut unifier, conc_scope) = Unifier::with_map(conc_map);
+                    let base_scope = unifier.add_scope();
+
+                    for i in 0..info.index {
+                        let base = &base_clause.literals[i];
+                        let red = &info.literals[i];
+                        assert!(unifier.unify(base_scope, &base.left, conc_scope, &red.left));
+                        assert!(unifier.unify(base_scope, &base.right, conc_scope, &red.right));
+                    }
+
+                    let base = &base_clause.literals[info.index];
+                    let red1 = &info.literals[info.index];
+                    let red2 = &info.literals[info.index + 1];
+                    assert!(unifier.unify(base_scope, &base.left, conc_scope, &red1.left));
+                    assert!(unifier.unify(base_scope, &base.right, conc_scope, &red2.left));
+
+                    for i in (info.index + 1)..base_clause.literals.len() {
+                        let base = &base_clause.literals[i];
+                        let red = &info.literals[i + 1];
+                        assert!(unifier.unify(base_scope, &base.left, conc_scope, &red.left));
+                        assert!(unifier.unify(base_scope, &base.right, conc_scope, &red.right));
+                    }
+
+                    // Report the concrete base
+                    let map = unifier.into_one_map(base_scope);
+                    self.add_var_map(base_id, map, concrete_steps);
+                }
             }
             Rule::Extensionality(info) => {
                 // For extensionality, the output is always concrete (f = g with no variables).
