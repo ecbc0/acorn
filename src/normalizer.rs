@@ -253,7 +253,7 @@ impl Normalizer {
 
     /// Constructs a new term from a function application
     /// Function applications that are nested like f(x)(y) are flattened to f(x, y)
-    fn term_from_application(&mut self, application: &FunctionApplication) -> Result<Term, String> {
+    fn term_from_application(&self, application: &FunctionApplication) -> Result<Term, String> {
         let application_type = application.get_type();
         check_normalized_type(&application_type)?;
         let term_type = self.normalization_map.get_type_id(&application_type)?;
@@ -269,7 +269,7 @@ impl Normalizer {
 
     /// Constructs a new term from an AcornValue
     /// Returns an error if it's inconvertible.
-    fn term_from_value(&mut self, value: &AcornValue) -> Result<Term, String> {
+    fn term_from_value(&self, value: &AcornValue) -> Result<Term, String> {
         let (t, negated) = self.maybe_negated_term_from_value(value)?;
         if negated {
             Err(format!(
@@ -299,7 +299,7 @@ impl Normalizer {
     /// Returns an error if it's inconvertible.
     /// The flag returned is whether the term is negated.
     fn maybe_negated_term_from_value(
-        &mut self,
+        &self,
         value: &AcornValue,
     ) -> Result<(Term, bool), String> {
         match value {
@@ -337,7 +337,7 @@ impl Normalizer {
     /// Swaps left and right if needed, to sort.
     /// Normalizes literals to <larger> = <smaller>, because that's the logical direction
     /// to do rewrite-type lookups, on the larger literal first.
-    pub fn literal_from_value(&mut self, value: &AcornValue) -> Result<Literal, String> {
+    pub fn literal_from_value(&self, value: &AcornValue) -> Result<Literal, String> {
         match value {
             AcornValue::Variable(_, _) | AcornValue::Constant(_) => {
                 Ok(Literal::positive(self.term_from_value(value)?))
@@ -365,7 +365,7 @@ impl Normalizer {
     /// Does not change variable ids or sort literals but does sort terms within literals.
     /// TODO: this shouldn't mutate self, but the helper functions do when called with
     /// different arguments, so the signature is mut.
-    fn literals_from_value(&mut self, value: &AcornValue) -> Result<Vec<Literal>, String> {
+    fn literals_from_value(&self, value: &AcornValue) -> Result<Vec<Literal>, String> {
         match value {
             AcornValue::ForAll(_, subvalue) => self.literals_from_value(subvalue),
             AcornValue::Binary(BinaryOp::Or, left_v, right_v) => {
@@ -382,14 +382,14 @@ impl Normalizer {
     }
 
     /// Does not change variable ids but does sort literals.
-    pub fn clause_from_value(&mut self, value: &AcornValue) -> Result<Clause, String> {
+    pub fn clause_from_value(&self, value: &AcornValue) -> Result<Clause, String> {
         let mut literals = self.literals_from_value(value)?;
         literals.sort();
         Ok(Clause { literals })
     }
 
     /// Does not change variable ids but does sort literals.
-    pub fn clauses_from_value(&mut self, value: &AcornValue) -> Result<Vec<Clause>, String> {
+    pub fn clauses_from_value(&self, value: &AcornValue) -> Result<Vec<Clause>, String> {
         if *value == AcornValue::Bool(true) {
             return Ok(vec![]);
         }
