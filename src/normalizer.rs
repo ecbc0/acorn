@@ -320,31 +320,46 @@ impl NormalizerView<'_> {
                 }
             }
             AcornValue::Binary(BinaryOp::And, left, right) => {
-                assert!(!negate);
-
-                let mut left =
-                    self.value_to_literal_lists(left, false, stack, next_var_id, synthesized)?;
-                let right =
-                    self.value_to_literal_lists(right, false, stack, next_var_id, synthesized)?;
-                left.extend(right);
-                Ok(left)
+                if !negate {
+                    self.and_to_literal_lists(
+                        left,
+                        right,
+                        false,
+                        stack,
+                        next_var_id,
+                        synthesized,
+                    )
+                } else {
+                    self.or_to_literal_lists(
+                        left,
+                        right,
+                        true,
+                        stack,
+                        next_var_id,
+                        synthesized,
+                    )
+                }
             }
             AcornValue::Binary(BinaryOp::Or, left, right) => {
-                assert!(!negate);
-
-                let left =
-                    self.value_to_literal_lists(left, false, stack, next_var_id, synthesized)?;
-                let right =
-                    self.value_to_literal_lists(right, false, stack, next_var_id, synthesized)?;
-                let mut results = vec![];
-                for left_result in &left {
-                    for right_result in &right {
-                        let mut combined = left_result.clone();
-                        combined.extend(right_result.clone());
-                        results.push(combined);
-                    }
+                if !negate {
+                    self.or_to_literal_lists(
+                        left,
+                        right,
+                        false,
+                        stack,
+                        next_var_id,
+                        synthesized,
+                    )
+                } else {
+                    self.and_to_literal_lists(
+                        left,
+                        right,
+                        true,
+                        stack,
+                        next_var_id,
+                        synthesized,
+                    )
                 }
-                Ok(results)
             }
             AcornValue::Bool(value) => {
                 if *value ^ negate {
@@ -441,6 +456,49 @@ impl NormalizerView<'_> {
             stack.pop();
         }
         Ok(result)
+    }
+
+    // negate is whether to negate the left and right subvalues.
+    fn and_to_literal_lists(
+        &mut self,
+        left: &AcornValue,
+        right: &AcornValue,
+        negate: bool,
+        stack: &mut Vec<Term>,
+        next_var_id: &mut AtomId,
+        synthesized: &mut Vec<AtomId>,
+    ) -> Result<Vec<Vec<Literal>>, String> {
+        let mut left =
+            self.value_to_literal_lists(left, negate, stack, next_var_id, synthesized)?;
+        let right =
+            self.value_to_literal_lists(right, negate, stack, next_var_id, synthesized)?;
+        left.extend(right);
+        Ok(left)
+    }
+
+    // negate is whether to negate the left and right subvalues.
+    fn or_to_literal_lists(
+        &mut self,
+        left: &AcornValue,
+        right: &AcornValue,
+        negate: bool,
+        stack: &mut Vec<Term>,
+        next_var_id: &mut AtomId,
+        synthesized: &mut Vec<AtomId>,
+    ) -> Result<Vec<Vec<Literal>>, String> {
+        let left =
+            self.value_to_literal_lists(left, negate, stack, next_var_id, synthesized)?;
+        let right =
+            self.value_to_literal_lists(right, negate, stack, next_var_id, synthesized)?;
+        let mut results = vec![];
+        for left_result in &left {
+            for right_result in &right {
+                let mut combined = left_result.clone();
+                combined.extend(right_result.clone());
+                results.push(combined);
+            }
+        }
+        Ok(results)
     }
 
     /// Helper for value_to_literal_lists.
