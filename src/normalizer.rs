@@ -260,7 +260,7 @@ impl Normalizer {
     fn term_from_application(&mut self, application: &FunctionApplication) -> Result<Term, String> {
         let application_type = application.get_type();
         check_normalized_type(&application_type)?;
-        let term_type = self.normalization_map.add_type(&application_type);
+        let term_type = self.normalization_map.get_type_id(&application_type)?;
         let func_term = self.term_from_value(&application.function)?;
         let head = func_term.head;
         let head_type = func_term.head_type;
