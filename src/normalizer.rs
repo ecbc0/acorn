@@ -281,7 +281,7 @@ impl Normalizer {
         }
     }
 
-    fn atom_from_name(&mut self, name: &ConstantName) -> Result<Atom, String> {
+    fn atom_from_name(&self, name: &ConstantName) -> Result<Atom, String> {
         if let ConstantName::Synthetic(i) = name {
             return Ok(Atom::Synthetic(*i));
         };
