@@ -277,89 +277,36 @@ impl NormalizerView<'_> {
         synthesized: &mut Vec<AtomId>,
     ) -> Result<Vec<Vec<Literal>>, String> {
         match value {
-            AcornValue::ForAll(quants, subvalue) => {
+            AcornValue::ForAll(qs, sub) => {
                 if !negate {
-                    self.forall_to_literal_lists(
-                        quants,
-                        subvalue,
-                        false,
-                        stack,
-                        next_var_id,
-                        synthesized,
-                    )
+                    self.forall_to_literal_lists(qs, sub, false, stack, next_var_id, synthesized)
                 } else {
-                    self.exists_to_literal_lists(
-                        quants,
-                        subvalue,
-                        true,
-                        stack,
-                        next_var_id,
-                        synthesized,
-                    )
+                    self.exists_to_literal_lists(qs, sub, true, stack, next_var_id, synthesized)
                 }
             }
-            AcornValue::Exists(quants, subvalue) => {
+            AcornValue::Exists(qs, sub) => {
                 if !negate {
-                    self.exists_to_literal_lists(
-                        quants,
-                        subvalue,
-                        false,
-                        stack,
-                        next_var_id,
-                        synthesized,
-                    )
+                    self.exists_to_literal_lists(qs, sub, false, stack, next_var_id, synthesized)
                 } else {
-                    self.forall_to_literal_lists(
-                        quants,
-                        subvalue,
-                        true,
-                        stack,
-                        next_var_id,
-                        synthesized,
-                    )
+                    self.forall_to_literal_lists(qs, sub, true, stack, next_var_id, synthesized)
                 }
             }
             AcornValue::Binary(BinaryOp::And, left, right) => {
                 if !negate {
-                    self.and_to_literal_lists(
-                        left,
-                        right,
-                        false,
-                        stack,
-                        next_var_id,
-                        synthesized,
-                    )
+                    self.and_to_literal_lists(left, right, false, stack, next_var_id, synthesized)
                 } else {
-                    self.or_to_literal_lists(
-                        left,
-                        right,
-                        true,
-                        stack,
-                        next_var_id,
-                        synthesized,
-                    )
+                    self.or_to_literal_lists(left, right, true, stack, next_var_id, synthesized)
                 }
             }
             AcornValue::Binary(BinaryOp::Or, left, right) => {
                 if !negate {
-                    self.or_to_literal_lists(
-                        left,
-                        right,
-                        false,
-                        stack,
-                        next_var_id,
-                        synthesized,
-                    )
+                    self.or_to_literal_lists(left, right, false, stack, next_var_id, synthesized)
                 } else {
-                    self.and_to_literal_lists(
-                        left,
-                        right,
-                        true,
-                        stack,
-                        next_var_id,
-                        synthesized,
-                    )
+                    self.and_to_literal_lists(left, right, true, stack, next_var_id, synthesized)
                 }
+            }
+            AcornValue::Not(subvalue) => {
+                self.value_to_literal_lists(subvalue, !negate, stack, next_var_id, synthesized)
             }
             AcornValue::Bool(value) => {
                 if *value ^ negate {
@@ -470,8 +417,7 @@ impl NormalizerView<'_> {
     ) -> Result<Vec<Vec<Literal>>, String> {
         let mut left =
             self.value_to_literal_lists(left, negate, stack, next_var_id, synthesized)?;
-        let right =
-            self.value_to_literal_lists(right, negate, stack, next_var_id, synthesized)?;
+        let right = self.value_to_literal_lists(right, negate, stack, next_var_id, synthesized)?;
         left.extend(right);
         Ok(left)
     }
@@ -486,10 +432,8 @@ impl NormalizerView<'_> {
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
     ) -> Result<Vec<Vec<Literal>>, String> {
-        let left =
-            self.value_to_literal_lists(left, negate, stack, next_var_id, synthesized)?;
-        let right =
-            self.value_to_literal_lists(right, negate, stack, next_var_id, synthesized)?;
+        let left = self.value_to_literal_lists(left, negate, stack, next_var_id, synthesized)?;
+        let right = self.value_to_literal_lists(right, negate, stack, next_var_id, synthesized)?;
         let mut results = vec![];
         for left_result in &left {
             for right_result in &right {
