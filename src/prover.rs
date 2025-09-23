@@ -199,6 +199,9 @@ impl Prover {
             Rule::Injectivity(info) => {
                 answer.push(("source".to_string(), ProofStepId::Active(info.id)));
             }
+            Rule::BooleanReduction(info) => {
+                answer.push(("source".to_string(), ProofStepId::Active(info.id)));
+            }
             Rule::Extensionality(info) => {
                 answer.push(("source".to_string(), ProofStepId::Active(info.id)));
             }

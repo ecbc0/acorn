@@ -4,7 +4,7 @@ use std::fmt;
 use crate::atom::{Atom, AtomId};
 use crate::literal::Literal;
 use crate::proof_step::{EFLiteralTrace, EFTermTrace};
-use crate::term::Term;
+use crate::term::{Term, BOOL};
 use crate::unifier::{Scope, Unifier};
 
 // A record of what happened to a single literal during a single proof step.
@@ -509,6 +509,61 @@ impl Clause {
             .map(|(_, _, literals, _)| Clause::new(literals))
             .filter(|clause| !clause.is_tautology())
             .collect()
+    }
+
+    /// Generates all clauses that can be derived from this clause using boolean reduction.
+    /// Boolean reduction is replacing a boolean equality with a disjunction that it implies.
+    ///
+    /// Returns a vector of (index, resulting_literals) pairs.
+    /// The index describes the index of a literal that got replaced by two literals.
+    /// We always replace a (left ~ right) at position i with ~left at i and ~right at i+1.
+    pub fn find_boolean_reductions(&self) -> Vec<(usize, Vec<Literal>)> {
+        let mut answer = vec![];
+
+        // Experiment flag
+        if true {
+            return answer;
+        }
+
+        for i in 0..self.literals.len() {
+            let literal = &self.literals[i];
+            if literal.left.term_type != BOOL {
+                continue;
+            }
+            if literal.right.is_true() {
+                continue;
+            }
+            // We make two copies since there are two ways to do it
+            let mut first = self.literals[..i].to_vec();
+            let mut second = self.literals[..i].to_vec();
+            if literal.positive {
+                first.push(Literal::positive(literal.left.clone()));
+                first.push(Literal::negative(literal.right.clone()));
+                second.push(Literal::negative(literal.left.clone()));
+                second.push(Literal::positive(literal.right.clone()));
+            } else {
+                first.push(Literal::negative(literal.left.clone()));
+                first.push(Literal::negative(literal.right.clone()));
+                second.push(Literal::positive(literal.left.clone()));
+                second.push(Literal::positive(literal.right.clone()));
+            }
+            first.extend_from_slice(&self.literals[i + 1..]);
+            second.extend_from_slice(&self.literals[i + 1..]);
+            answer.push((i, first));
+            answer.push((i, second));
+        }
+        answer
+    }
+
+    /// Generates all clauses that can be derived from this clause using boolean reduction.
+    /// This is a convenience method that returns just the normalized clauses.
+    pub fn boolean_reductions(&self) -> Vec<Clause> {
+        let mut answer = vec![];
+        for (_, literals) in self.find_boolean_reductions() {
+            let clause = Clause::new(literals);
+            answer.push(clause);
+        }
+        answer
     }
 
     /// Finds if extensionality can be applied to this clause.

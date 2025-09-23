@@ -989,7 +989,7 @@ impl<'a> Proof<'a> {
                     concrete_steps,
                 )?;
 
-                // Unify the pre-FE and post-FE literals.
+                // Unify the pre-injectivity and post-injectivity literals.
                 let base_id = ProofStepId::Active(info.id);
                 let base_clause = &self.get_clause(base_id)?;
                 assert!(base_clause.literals.len() == info.literals.len());
@@ -1031,6 +1031,18 @@ impl<'a> Proof<'a> {
                     let map = unifier.into_one_map(base_scope);
                     self.add_var_map(base_id, map, concrete_steps);
                 }
+            }
+            Rule::BooleanReduction(info) => {
+                // For boolean reduction, the trace applies to the stored literals.
+                let _var_maps = self.reconstruct_trace(
+                    &info.literals,
+                    traces,
+                    &step.clause,
+                    conclusion_map,
+                    concrete_steps,
+                )?;
+
+                todo!("unify boolean reduction");
             }
             Rule::Extensionality(info) => {
                 // For extensionality, the output is always concrete (f = g with no variables).

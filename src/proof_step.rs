@@ -223,6 +223,16 @@ pub struct InjectivityInfo {
     pub arg: usize,
 }
 
+/// Information about a boolean reduction inference.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BooleanReductionInfo {
+    /// The id of the clause that had boolean reduction applied.
+    pub id: usize,
+
+    /// The literals that we got immediately after boolean reduction.
+    pub literals: Vec<Literal>,
+}
+
 /// Information about an extensionality inference.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtensionalityInfo {
@@ -247,6 +257,7 @@ pub enum Rule {
     EqualityFactoring(EqualityFactoringInfo),
     EqualityResolution(EqualityResolutionInfo),
     Injectivity(InjectivityInfo),
+    BooleanReduction(BooleanReductionInfo),
     Extensionality(ExtensionalityInfo),
 
     /// A contradiction found by repeatedly rewriting identical terms.
@@ -272,6 +283,7 @@ impl Rule {
             Rule::EqualityFactoring(info) => vec![ProofStepId::Active(info.id)],
             Rule::EqualityResolution(info) => vec![ProofStepId::Active(info.id)],
             Rule::Injectivity(info) => vec![ProofStepId::Active(info.id)],
+            Rule::BooleanReduction(info) => vec![ProofStepId::Active(info.id)],
             Rule::Extensionality(info) => vec![ProofStepId::Active(info.id)],
             Rule::Specialization(info) => vec![ProofStepId::Active(info.pattern_id)],
             Rule::MultipleRewrite(multi_rewrite_info) => {
@@ -297,6 +309,7 @@ impl Rule {
             Rule::EqualityFactoring(_) => "Equality Factoring",
             Rule::EqualityResolution(_) => "Equality Resolution",
             Rule::Injectivity(_) => "Injectivity",
+            Rule::BooleanReduction(_) => "Boolean Reduction",
             Rule::Extensionality(_) => "Extensionality",
             Rule::Specialization(_) => "Specialization",
             Rule::MultipleRewrite(..) => "Multiple Rewrite",

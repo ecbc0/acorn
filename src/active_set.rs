@@ -6,8 +6,8 @@ use crate::fingerprint::FingerprintUnifier;
 use crate::literal::Literal;
 use crate::pattern_tree::LiteralSet;
 use crate::proof_step::{
-    EqualityFactoringInfo, EqualityResolutionInfo, ExtensionalityInfo, InjectivityInfo, ProofStep,
-    Rule, Truthiness,
+    BooleanReductionInfo, EqualityFactoringInfo, EqualityResolutionInfo, ExtensionalityInfo,
+    InjectivityInfo, ProofStep, Rule, Truthiness,
 };
 use crate::rewrite_tree::{Rewrite, RewriteTree};
 use crate::term::Term;
@@ -541,6 +541,31 @@ impl ActiveSet {
         answer
     }
 
+    /// Apply boolean reduction to derive new clauses.
+    pub fn boolean_reduction(activated_id: usize, activated_step: &ProofStep) -> Vec<ProofStep> {
+        let clause = &activated_step.clause;
+        let mut answer = vec![];
+
+        for reduced_clause in clause.boolean_reductions() {
+            let literals = reduced_clause.literals.clone();
+            let info = BooleanReductionInfo {
+                id: activated_id,
+                literals: literals.clone(),
+            };
+            let (clause, traces) = Clause::normalize_with_trace(literals);
+            let step = ProofStep::direct(
+                activated_id,
+                activated_step,
+                Rule::BooleanReduction(info),
+                clause,
+                traces,
+            );
+            answer.push(step);
+        }
+
+        answer
+    }
+
     /// Apply extensionality to derive function equality from pointwise equality.
     /// When f(x1, x2, ...) = g(x1, x2, ...) for all arguments, that implies f = g.
     pub fn extensionality(activated_id: usize, activated_step: &ProofStep) -> Vec<ProofStep> {
@@ -839,6 +864,10 @@ impl ActiveSet {
         }
 
         for proof_step in ActiveSet::injectivity(activated_id, &activated_step) {
+            output.push(proof_step);
+        }
+
+        for proof_step in ActiveSet::boolean_reduction(activated_id, &activated_step) {
             output.push(proof_step);
         }
 
