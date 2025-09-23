@@ -380,17 +380,14 @@ impl Normalizer {
     /// Swaps left and right if needed, to sort.
     /// Normalizes literals to <larger> = <smaller>, because that's the logical direction
     /// to do rewrite-type lookups, on the larger literal first.
-    pub fn literal_from_value(
-        &mut self,
-        value: &AcornValue,
-    ) -> Result<Literal, String> {
+    pub fn literal_from_value(&mut self, value: &AcornValue) -> Result<Literal, String> {
         match value {
-            AcornValue::Variable(_, _) | AcornValue::Constant(_) => {
-                Ok(Literal::positive(self.term_from_value(value, NewConstantType::Disallowed)?))
-            }
-            AcornValue::Application(app) => {
-                Ok(Literal::positive(self.term_from_application(app, NewConstantType::Disallowed)?))
-            }
+            AcornValue::Variable(_, _) | AcornValue::Constant(_) => Ok(Literal::positive(
+                self.term_from_value(value, NewConstantType::Disallowed)?,
+            )),
+            AcornValue::Application(app) => Ok(Literal::positive(
+                self.term_from_application(app, NewConstantType::Disallowed)?,
+            )),
             AcornValue::Binary(BinaryOp::Equals, left, right) => {
                 let (left_term, left_negated) =
                     self.maybe_negated_term_from_value(&*left, NewConstantType::Disallowed)?;
@@ -407,9 +404,9 @@ impl Normalizer {
                 let negated = left_negated ^ right_negated;
                 Ok(Literal::new(negated, left_term, right_term))
             }
-            AcornValue::Not(subvalue) => {
-                Ok(Literal::negative(self.term_from_value(subvalue, NewConstantType::Disallowed)?))
-            }
+            AcornValue::Not(subvalue) => Ok(Literal::negative(
+                self.term_from_value(subvalue, NewConstantType::Disallowed)?,
+            )),
             _ => Err(format!("Cannot convert {} to literal", value)),
         }
     }
@@ -686,18 +683,18 @@ impl Normalizer {
             } else {
                 NewConstantType::Local
             };
+            let clauses = self
+                .normalize_value(&proposition.value, ctype)
+                .map_err(|msg| BuildError::new(range, msg))?;
             let defined = match &proposition.source.source_type {
                 SourceType::ConstantDefinition(value, _) => {
                     let term = self
-                        .term_from_value(&value, ctype)
+                        .term_from_value(&value, NewConstantType::Disallowed)
                         .map_err(|msg| BuildError::new(range, msg))?;
                     Some(term.get_head_atom().clone())
                 }
                 _ => None,
             };
-            let clauses = self
-                .normalize_value(&proposition.value, ctype)
-                .map_err(|msg| BuildError::new(range, msg))?;
             for clause in clauses {
                 let step = ProofStep::assumption(&proposition, clause, defined);
                 steps.push(step);
