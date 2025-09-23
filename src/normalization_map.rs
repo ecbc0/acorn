@@ -132,6 +132,27 @@ impl NormalizationMap {
         if let Some(type_id) = self.type_to_type_id.get(acorn_type) {
             return *type_id;
         }
+
+        // First, recursively add all component types
+        match acorn_type {
+            AcornType::Function(ft) => {
+                // Add all argument types
+                for arg_type in &ft.arg_types {
+                    self.add_type(arg_type);
+                }
+                // Add the return type
+                self.add_type(&ft.return_type);
+            }
+            AcornType::Data(_, params) => {
+                // Add all type parameters
+                for param in params {
+                    self.add_type(param);
+                }
+            }
+            _ => {}
+        }
+
+        // Now add the type itself
         self.type_id_to_type.push(acorn_type.clone());
         let id = (self.type_id_to_type.len() - 1) as TypeId;
         self.type_to_type_id.insert(acorn_type.clone(), id);
