@@ -91,6 +91,15 @@ impl Term {
         }
     }
 
+    pub fn new_variable(term_type: TypeId, index: AtomId) -> Term {
+        Term {
+            term_type,
+            head_type: term_type,
+            head: Atom::Variable(index),
+            args: vec![],
+        }
+    }
+
     pub fn get_term_type(&self) -> TypeId {
         self.term_type
     }

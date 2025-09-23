@@ -181,7 +181,7 @@ impl Normalizer {
     /// But there's a redundant arg here. The simpler form is just
     ///   forall(x, f(x) & g(skolem()))
     /// which is what we get if we don't convert to prenex first.
-    pub fn skolemize(
+    fn skolemize(
         &mut self,
         stack: &Vec<AcornType>,
         value: AcornValue,
@@ -298,10 +298,7 @@ impl Normalizer {
     /// Constructs a new term or negated term from an AcornValue
     /// Returns an error if it's inconvertible.
     /// The flag returned is whether the term is negated.
-    fn maybe_negated_term_from_value(
-        &self,
-        value: &AcornValue,
-    ) -> Result<(Term, bool), String> {
+    fn maybe_negated_term_from_value(&self, value: &AcornValue) -> Result<(Term, bool), String> {
         match value {
             AcornValue::Variable(i, var_type) => {
                 check_normalized_type(var_type)?;
@@ -491,6 +488,210 @@ impl Normalizer {
             clauses.push(clause);
         }
         clauses
+    }
+
+    /// Wrapper around value_to_literal_lists.
+    pub fn value_to_clauses(
+        &mut self,
+        value: &AcornValue,
+        synthesized: &mut Vec<AtomId>,
+    ) -> Result<Vec<Clause>, String> {
+        let mut stack = vec![];
+        let mut next_var_id = 0;
+        let literal_lists =
+            self.value_to_literal_lists(value, &mut stack, &mut next_var_id, synthesized)?;
+        let mut clauses = vec![];
+        for literals in literal_lists {
+            let clause = Clause::new(literals);
+            clauses.push(clause);
+        }
+        Ok(clauses)
+    }
+
+    /// Converts the value into a list of lists of literals, adding skolem constants
+    /// to the normalizer as needed.
+    /// True is [], false is [[]]. This is logical if you think hard about it.
+    ///
+    /// The variable numbering in the input and output is different.
+    /// x_i in the input gets mapped to stack[i] in the output.
+    /// This method must reset the stack before returning.
+    ///
+    /// Forall variables map into variables, but they may get renumbered, because the AcornValue
+    /// a variable id can be used multiple times in different branches. In the output, variables
+    /// in different branches may be combined. So each universal variable, anywhere in the value,
+    /// gets a unique id.
+    ///
+    /// Existential variables turn into skolem terms. These are declared in the normalizer
+    /// but not yet defined, because this function is creating the definition.
+    /// Whenever we create a new skolem term, we add it to the synthesized list.
+    fn value_to_literal_lists(
+        &mut self,
+        value: &AcornValue,
+        stack: &mut Vec<Term>,
+        next_var_id: &mut AtomId,
+        synthesized: &mut Vec<AtomId>,
+    ) -> Result<Vec<Vec<Literal>>, String> {
+        match value {
+            AcornValue::ForAll(quants, subvalue) => {
+                for quant in quants {
+                    let type_id = self.normalization_map.get_type_id(quant)?;
+                    let var = Term::new_variable(type_id, *next_var_id);
+                    *next_var_id += 1;
+                    stack.push(var);
+                }
+                let result =
+                    self.value_to_literal_lists(subvalue, stack, next_var_id, synthesized)?;
+                for _ in quants {
+                    stack.pop();
+                }
+                Ok(result)
+            }
+            AcornValue::Exists(quants, subvalue) => {
+                // The variables on the stack will be the arguments for the skolem functions
+                let mut args = vec![];
+                let mut arg_types = vec![];
+                for term in stack.iter() {
+                    if term.is_variable() {
+                        args.push(term.clone());
+                        arg_types.push(self.normalization_map.get_type(term.term_type).clone());
+                    }
+                }
+                for quant in quants {
+                    // Each existential quantifier needs a new skolem atom.
+                    // The skolem term is that atom applied to the variables on the stack.
+                    // Note that the skolem atom may be a type we have not used before.
+                    let skolem_atom_type = AcornType::functional(arg_types.clone(), quant.clone());
+                    let skolem_atom_type_id = self.normalization_map.add_type(&skolem_atom_type);
+                    let skolem_term_type_id = self.normalization_map.get_type_id(quant)?;
+                    let skolem_id = self.declare_synthetic_atom(skolem_atom_type)?;
+                    synthesized.push(skolem_id);
+                    let skolem_atom = Atom::Synthetic(skolem_id);
+                    let skolem_term = Term::new(
+                        skolem_term_type_id,
+                        skolem_atom_type_id,
+                        skolem_atom,
+                        args.clone(),
+                    );
+                    stack.push(skolem_term);
+                }
+                let result =
+                    self.value_to_literal_lists(subvalue, stack, next_var_id, synthesized)?;
+                for _ in quants {
+                    stack.pop();
+                }
+                Ok(result)
+            }
+            AcornValue::Binary(BinaryOp::And, left, right) => {
+                let mut left =
+                    self.value_to_literal_lists(left, stack, next_var_id, synthesized)?;
+                let right = self.value_to_literal_lists(right, stack, next_var_id, synthesized)?;
+                left.extend(right);
+                Ok(left)
+            }
+            AcornValue::Binary(BinaryOp::Or, left, right) => {
+                let left = self.value_to_literal_lists(left, stack, next_var_id, synthesized)?;
+                let right = self.value_to_literal_lists(right, stack, next_var_id, synthesized)?;
+                let mut results = vec![];
+                for left_result in &left {
+                    for right_result in &right {
+                        let mut combined = left_result.clone();
+                        combined.extend(right_result.clone());
+                        results.push(combined);
+                    }
+                }
+                Ok(results)
+            }
+            AcornValue::Bool(true) => Ok(vec![]),
+            AcornValue::Bool(false) => Ok(vec![vec![]]),
+            _ => {
+                let literal = self.value_to_literal(value, stack)?;
+                if literal.is_tautology() {
+                    return Ok(vec![]);
+                }
+                if literal.is_impossible() {
+                    return Ok(vec![vec![]]);
+                }
+                Ok(vec![vec![literal]])
+            }
+        }
+    }
+
+    /// Helper for value_to_literal_lists.
+    /// Note that this represents "true" and "false" as "true = true" and "true != true" literals.
+    fn value_to_literal(&self, value: &AcornValue, stack: &Vec<Term>) -> Result<Literal, String> {
+        match value {
+            AcornValue::Binary(BinaryOp::Equals, left, right) => {
+                let (left_term, left_sign) = self.value_to_signed_term(&*left, stack)?;
+                let (right_term, right_sign) = self.value_to_signed_term(&*right, stack)?;
+                Ok(Literal::new(left_sign == right_sign, left_term, right_term))
+            }
+            AcornValue::Binary(BinaryOp::NotEquals, left, right) => {
+                let (left_term, left_sign) = self.value_to_signed_term(&*left, stack)?;
+                let (right_term, right_sign) = self.value_to_signed_term(&*right, stack)?;
+                Ok(Literal::new(left_sign != right_sign, left_term, right_term))
+            }
+            AcornValue::Not(subvalue) => {
+                let subliteral = self.value_to_literal(subvalue, stack)?;
+                Ok(subliteral.negate())
+            }
+            _ => {
+                let (t, sign) = self.value_to_signed_term(value, stack)?;
+                Ok(Literal::new(sign, t, Term::new_true()))
+            }
+        }
+    }
+
+    fn value_to_term(&self, value: &AcornValue, stack: &Vec<Term>) -> Result<Term, String> {
+        let (t, sign) = self.value_to_signed_term(value, stack)?;
+        if sign {
+            return Ok(t);
+        }
+        Err(format!("{} is unexpectedly negated", value))
+    }
+
+    /// Helper for value_to_literal_lists.
+    /// The bool returned is true = positive.
+    fn value_to_signed_term(
+        &self,
+        value: &AcornValue,
+        stack: &Vec<Term>,
+    ) -> Result<(Term, bool), String> {
+        match value {
+            AcornValue::Variable(i, _) => {
+                if (*i as usize) < stack.len() {
+                    Ok((stack[*i as usize].clone(), true))
+                } else {
+                    Err(format!("variable {} out of range", i))
+                }
+            }
+            AcornValue::Application(application) => {
+                let application_type = application.get_type();
+                let term_type = self.normalization_map.get_type_id(&application_type)?;
+                let func_term = self.value_to_term(&application.function, stack)?;
+                let head = func_term.head;
+                let head_type = func_term.head_type;
+                let mut args = func_term.args;
+                for arg in &application.args {
+                    args.push(self.value_to_term(arg, stack)?);
+                }
+                Ok((Term::new(term_type, head_type, head, args), true))
+            }
+            AcornValue::Constant(c) => {
+                if c.params.is_empty() {
+                    let type_id = self.normalization_map.get_type_id(&c.instance_type)?;
+                    let constant_atom = self.atom_from_name(&c.name)?;
+                    Ok((Term::new(type_id, type_id, constant_atom, vec![]), true))
+                } else {
+                    Ok((self.normalization_map.term_from_monomorph(&c)?, true))
+                }
+            }
+            AcornValue::Not(subvalue) => {
+                let (t, sign) = self.value_to_signed_term(subvalue, stack)?;
+                Ok((t, !sign))
+            }
+            AcornValue::Bool(v) => Ok((Term::new_true(), *v)),
+            _ => Err(format!("Cannot convert {} to term", value)),
+        }
     }
 
     /// Adds the definition for these synthetic atoms.
