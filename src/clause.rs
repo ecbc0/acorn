@@ -7,6 +7,9 @@ use crate::proof_step::{EFLiteralTrace, EFTermTrace};
 use crate::term::{Term, BOOL};
 use crate::unifier::{Scope, Unifier};
 
+// The experiment is allowing boolean reduction.
+pub const EXPERIMENT: bool = false;
+
 // A record of what happened to a single literal during a single proof step.
 // This includes simplification and resolution, but not every sort of deduction.
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -520,8 +523,7 @@ impl Clause {
     pub fn find_boolean_reductions(&self) -> Vec<(usize, Vec<Literal>)> {
         let mut answer = vec![];
 
-        // Experiment flag
-        if true {
+        if !EXPERIMENT {
             return answer;
         }
 

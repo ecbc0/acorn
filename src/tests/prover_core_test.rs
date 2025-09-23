@@ -2062,33 +2062,37 @@ fn test_proving_functional_structure_identity() {
     prove(&mut p, "main", "goal");
 }
 
-// #[test]
-// fn test_proving_implied_boolean_equality() {
-//     let mut p = Project::new_mock();
-//     p.mock(
-//         "/mock/main.ac",
-//         r#"
-//         let a: Bool = axiom
-//         let b: Bool = axiom
-//         let c: Bool = axiom
-//         let f: Bool -> Bool = axiom
+#[test]
+fn test_proving_implied_boolean_equality() {
+    if !crate::clause::EXPERIMENT {
+        // We already know this test doesn't work outside the experiment.
+        return;
+    }
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        let a: Bool = axiom
+        let b: Bool = axiom
+        let c: Bool = axiom
+        let f: Bool -> Bool = axiom
 
-//         axiom rule1 {
-//             a implies (b = c)
-//         }
+        axiom rule1 {
+            a implies (b = c)
+        }
 
-//         axiom rule2 {
-//             a
-//         }
+        axiom rule2 {
+            a
+        }
 
-//         theorem goal {
-//             f(b) = f(c)
-//         }
-//         "#,
-//     );
+        theorem goal {
+            f(b) = f(c)
+        }
+        "#,
+    );
 
-//     prove(&mut p, "main", "goal");
-// }
+    prove(&mut p, "main", "goal");
+}
 
 // #[test]
 // fn test_proving_complex_expression() {
