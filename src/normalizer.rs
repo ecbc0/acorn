@@ -288,50 +288,36 @@ impl NormalizerView<'_> {
                         synthesized,
                     )
                 } else {
-                    todo!();
+                    self.exists_to_literal_lists(
+                        quants,
+                        subvalue,
+                        true,
+                        stack,
+                        next_var_id,
+                        synthesized,
+                    )
                 }
             }
             AcornValue::Exists(quants, subvalue) => {
-                assert!(!negate);
-                // The variables on the stack will be the arguments for the skolem functions
-                let mut args = vec![];
-                let mut arg_types = vec![];
-                for term in stack.iter() {
-                    if term.is_variable() {
-                        args.push(term.clone());
-                        arg_types.push(
-                            self.as_ref()
-                                .normalization_map
-                                .get_type(term.term_type)
-                                .clone(),
-                        );
-                    }
+                if !negate {
+                    self.exists_to_literal_lists(
+                        quants,
+                        subvalue,
+                        false,
+                        stack,
+                        next_var_id,
+                        synthesized,
+                    )
+                } else {
+                    self.forall_to_literal_lists(
+                        quants,
+                        subvalue,
+                        true,
+                        stack,
+                        next_var_id,
+                        synthesized,
+                    )
                 }
-                for quant in quants {
-                    // Each existential quantifier needs a new skolem atom.
-                    // The skolem term is that atom applied to the variables on the stack.
-                    // Note that the skolem atom may be a type we have not used before.
-                    let skolem_atom_type = AcornType::functional(arg_types.clone(), quant.clone());
-                    let skolem_atom_type_id =
-                        self.as_mut()?.normalization_map.add_type(&skolem_atom_type);
-                    let skolem_term_type_id = self.as_ref().normalization_map.get_type_id(quant)?;
-                    let skolem_id = self.as_mut()?.declare_synthetic_atom(skolem_atom_type)?;
-                    synthesized.push(skolem_id);
-                    let skolem_atom = Atom::Synthetic(skolem_id);
-                    let skolem_term = Term::new(
-                        skolem_term_type_id,
-                        skolem_atom_type_id,
-                        skolem_atom,
-                        args.clone(),
-                    );
-                    stack.push(skolem_term);
-                }
-                let result =
-                    self.value_to_literal_lists(subvalue, false, stack, next_var_id, synthesized)?;
-                for _ in quants {
-                    stack.pop();
-                }
-                Ok(result)
             }
             AcornValue::Binary(BinaryOp::And, left, right) => {
                 assert!(!negate);
@@ -368,8 +354,10 @@ impl NormalizerView<'_> {
                 }
             }
             _ => {
-                assert!(!negate);
-                let literal = self.value_to_literal(value, stack)?;
+                let mut literal = self.value_to_literal(value, stack)?;
+                if negate {
+                    literal.positive = !literal.positive;
+                }
                 if literal.is_basic_true() {
                     return Ok(vec![]);
                 }
@@ -396,6 +384,56 @@ impl NormalizerView<'_> {
             let var = Term::new_variable(type_id, *next_var_id);
             *next_var_id += 1;
             stack.push(var);
+        }
+        let result =
+            self.value_to_literal_lists(subvalue, negate, stack, next_var_id, synthesized)?;
+        for _ in quants {
+            stack.pop();
+        }
+        Ok(result)
+    }
+
+    // negate is whether to negate the subvalue.
+    fn exists_to_literal_lists(
+        &mut self,
+        quants: &Vec<AcornType>,
+        subvalue: &AcornValue,
+        negate: bool,
+        stack: &mut Vec<Term>,
+        next_var_id: &mut AtomId,
+        synthesized: &mut Vec<AtomId>,
+    ) -> Result<Vec<Vec<Literal>>, String> {
+        // The variables on the stack will be the arguments for the skolem functions
+        let mut args = vec![];
+        let mut arg_types = vec![];
+        for term in stack.iter() {
+            if term.is_variable() {
+                args.push(term.clone());
+                arg_types.push(
+                    self.as_ref()
+                        .normalization_map
+                        .get_type(term.term_type)
+                        .clone(),
+                );
+            }
+        }
+        for quant in quants {
+            // Each existential quantifier needs a new skolem atom.
+            // The skolem term is that atom applied to the variables on the stack.
+            // Note that the skolem atom may be a type we have not used before.
+            let skolem_atom_type = AcornType::functional(arg_types.clone(), quant.clone());
+            let skolem_atom_type_id = self.as_mut()?.normalization_map.add_type(&skolem_atom_type);
+            let skolem_term_type_id = self.as_ref().normalization_map.get_type_id(quant)?;
+            let skolem_id = self.as_mut()?.declare_synthetic_atom(skolem_atom_type)?;
+            synthesized.push(skolem_id);
+            let skolem_atom = Atom::Synthetic(skolem_id);
+            let skolem_term = Term::new(
+                skolem_term_type_id,
+                skolem_atom_type_id,
+                skolem_atom,
+                args.clone(),
+            );
+            stack.push(skolem_term);
         }
         let result =
             self.value_to_literal_lists(subvalue, negate, stack, next_var_id, synthesized)?;
