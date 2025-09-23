@@ -232,7 +232,7 @@ impl Checker {
                 let mut evaluator = Evaluator::new(project, bindings, None);
                 let value = evaluator.evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
                 let mut view = NormalizerView::Ref(&normalizer);
-                let clauses = view.nice_value_to_clauses(&value, &mut vec![])?;
+                let clauses = view.nice_value_to_clauses(value, &mut vec![])?;
                 for clause in clauses {
                     self.insert_clause(&clause);
                 }

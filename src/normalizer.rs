@@ -199,13 +199,13 @@ impl NormalizerView<'_> {
     /// Note that this only works on values that have already been "cleaned up" to some extent.
     pub fn nice_value_to_clauses(
         &mut self,
-        value: &AcornValue,
+        value: AcornValue,
         synthesized: &mut Vec<AtomId>,
     ) -> Result<Vec<Clause>, String> {
         match value {
             AcornValue::Binary(BinaryOp::And, left, right) => {
-                let mut left_clauses = self.nice_value_to_clauses(left, synthesized)?;
-                let right_clauses = self.nice_value_to_clauses(right, synthesized)?;
+                let mut left_clauses = self.nice_value_to_clauses(*left, synthesized)?;
+                let right_clauses = self.nice_value_to_clauses(*right, synthesized)?;
                 left_clauses.extend(right_clauses);
                 Ok(left_clauses)
             }
@@ -213,7 +213,7 @@ impl NormalizerView<'_> {
                 let mut stack = vec![];
                 let mut next_var_id = 0;
                 let literal_lists =
-                    self.value_to_literal_lists(value, &mut stack, &mut next_var_id, synthesized)?;
+                    self.value_to_literal_lists(&value, &mut stack, &mut next_var_id, synthesized)?;
                 let mut clauses = vec![];
                 for literals in literal_lists {
                     if literals.iter().any(|l| l.is_tautology()) {
@@ -469,7 +469,7 @@ impl Normalizer {
 
         let mut skolem_ids = vec![];
         let mut mut_view = NormalizerView::Mut(self);
-        let clauses = mut_view.nice_value_to_clauses(&value, &mut skolem_ids)?;
+        let clauses = mut_view.nice_value_to_clauses(value, &mut skolem_ids)?;
 
         if !skolem_ids.is_empty() {
             // We have to define the skolem atoms that were declared during skolemization.
