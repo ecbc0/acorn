@@ -312,6 +312,16 @@ impl NormalizerView<'_> {
                     self.and_to_literal_lists(left, right, false, true, stack, next_var_id, synth)
                 }
             }
+            AcornValue::Binary(BinaryOp::Equals, left, right)
+                if left.get_type() == AcornType::Bool =>
+            {
+                self.bool_eq_to_literal_lists(left, right, negate, stack, next_var_id, synth)
+            }
+            AcornValue::Binary(BinaryOp::NotEquals, left, right)
+                if left.get_type() == AcornType::Bool =>
+            {
+                self.bool_eq_to_literal_lists(left, right, !negate, stack, next_var_id, synth)
+            }
             AcornValue::Not(subvalue) => {
                 self.value_to_literal_lists(subvalue, !negate, stack, next_var_id, synth)
             }
@@ -453,6 +463,44 @@ impl NormalizerView<'_> {
             }
         }
         Ok(results)
+    }
+
+    // This should only be called when left and right are boolean
+    fn bool_eq_to_literal_lists(
+        &mut self,
+        left: &AcornValue,
+        right: &AcornValue,
+        negate: bool,
+        stack: &mut Vec<Term>,
+        next_var_id: &mut AtomId,
+        synth: &mut Vec<AtomId>,
+    ) -> Result<Vec<Vec<Literal>>, String> {
+        if let Some((left_term, left_sign)) = self.try_value_to_signed_term(left, stack)? {
+            if let Some((right_term, right_sign)) = self.try_value_to_signed_term(right, stack)? {
+                // Both sides are terms, so we can do a simple equality or inequality
+                let positive = (left_sign == right_sign) ^ negate;
+                return Ok(vec![vec![Literal::new(positive, left_term, right_term)]]);
+            }
+        }
+
+        // Here, we duplicate subterms. Be careful of weird stuff.
+        if negate {
+            // Inequality.
+            let mut some =
+                self.or_to_literal_lists(left, right, true, true, stack, next_var_id, synth)?;
+            let not_both =
+                self.or_to_literal_lists(left, right, false, false, stack, next_var_id, synth)?;
+            some.extend(not_both);
+            Ok(some)
+        } else {
+            // Equality.
+            let mut l_imp_r =
+                self.or_to_literal_lists(left, right, true, false, stack, next_var_id, synth)?;
+            let r_imp_l =
+                self.or_to_literal_lists(left, right, false, true, stack, next_var_id, synth)?;
+            l_imp_r.extend(r_imp_l);
+            Ok(l_imp_r)
+        }
     }
 
     /// Helper for value_to_literal_lists.
