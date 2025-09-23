@@ -212,8 +212,13 @@ impl NormalizerView<'_> {
             _ => {
                 let mut stack = vec![];
                 let mut next_var_id = 0;
-                let literal_lists =
-                    self.value_to_literal_lists(&value, &mut stack, &mut next_var_id, synthesized)?;
+                let literal_lists = self.value_to_literal_lists(
+                    &value,
+                    false,
+                    &mut stack,
+                    &mut next_var_id,
+                    synthesized,
+                )?;
                 let mut clauses = vec![];
                 for literals in literal_lists {
                     if literals.iter().any(|l| l.is_tautology()) {
@@ -237,7 +242,8 @@ impl NormalizerView<'_> {
         value: &AcornValue,
     ) -> Result<Vec<Clause>, String> {
         let mut output = vec![];
-        let lit_lists = self.value_to_literal_lists(&value, &mut vec![], &mut 0, &mut vec![])?;
+        let lit_lists =
+            self.value_to_literal_lists(&value, false, &mut vec![], &mut 0, &mut vec![])?;
         for mut literals in lit_lists {
             literals.sort();
             output.push(Clause { literals });
@@ -265,26 +271,28 @@ impl NormalizerView<'_> {
     fn value_to_literal_lists(
         &mut self,
         value: &AcornValue,
+        negate: bool,
         stack: &mut Vec<Term>,
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
     ) -> Result<Vec<Vec<Literal>>, String> {
         match value {
             AcornValue::ForAll(quants, subvalue) => {
-                for quant in quants {
-                    let type_id = self.as_ref().normalization_map.get_type_id(quant)?;
-                    let var = Term::new_variable(type_id, *next_var_id);
-                    *next_var_id += 1;
-                    stack.push(var);
+                if !negate {
+                    self.forall_to_literal_lists(
+                        quants,
+                        subvalue,
+                        false,
+                        stack,
+                        next_var_id,
+                        synthesized,
+                    )
+                } else {
+                    todo!();
                 }
-                let result =
-                    self.value_to_literal_lists(subvalue, stack, next_var_id, synthesized)?;
-                for _ in quants {
-                    stack.pop();
-                }
-                Ok(result)
             }
             AcornValue::Exists(quants, subvalue) => {
+                assert!(!negate);
                 // The variables on the stack will be the arguments for the skolem functions
                 let mut args = vec![];
                 let mut arg_types = vec![];
@@ -319,22 +327,29 @@ impl NormalizerView<'_> {
                     stack.push(skolem_term);
                 }
                 let result =
-                    self.value_to_literal_lists(subvalue, stack, next_var_id, synthesized)?;
+                    self.value_to_literal_lists(subvalue, false, stack, next_var_id, synthesized)?;
                 for _ in quants {
                     stack.pop();
                 }
                 Ok(result)
             }
             AcornValue::Binary(BinaryOp::And, left, right) => {
+                assert!(!negate);
+
                 let mut left =
-                    self.value_to_literal_lists(left, stack, next_var_id, synthesized)?;
-                let right = self.value_to_literal_lists(right, stack, next_var_id, synthesized)?;
+                    self.value_to_literal_lists(left, false, stack, next_var_id, synthesized)?;
+                let right =
+                    self.value_to_literal_lists(right, false, stack, next_var_id, synthesized)?;
                 left.extend(right);
                 Ok(left)
             }
             AcornValue::Binary(BinaryOp::Or, left, right) => {
-                let left = self.value_to_literal_lists(left, stack, next_var_id, synthesized)?;
-                let right = self.value_to_literal_lists(right, stack, next_var_id, synthesized)?;
+                assert!(!negate);
+
+                let left =
+                    self.value_to_literal_lists(left, false, stack, next_var_id, synthesized)?;
+                let right =
+                    self.value_to_literal_lists(right, false, stack, next_var_id, synthesized)?;
                 let mut results = vec![];
                 for left_result in &left {
                     for right_result in &right {
@@ -348,6 +363,7 @@ impl NormalizerView<'_> {
             AcornValue::Bool(true) => Ok(vec![]),
             AcornValue::Bool(false) => Ok(vec![vec![]]),
             _ => {
+                assert!(!negate);
                 let literal = self.value_to_literal(value, stack)?;
                 if literal.is_basic_true() {
                     return Ok(vec![]);
@@ -358,6 +374,30 @@ impl NormalizerView<'_> {
                 Ok(vec![vec![literal]])
             }
         }
+    }
+
+    // negate is whether to negate the subvalue.
+    fn forall_to_literal_lists(
+        &mut self,
+        quants: &Vec<AcornType>,
+        subvalue: &AcornValue,
+        negate: bool,
+        stack: &mut Vec<Term>,
+        next_var_id: &mut AtomId,
+        synthesized: &mut Vec<AtomId>,
+    ) -> Result<Vec<Vec<Literal>>, String> {
+        for quant in quants {
+            let type_id = self.as_ref().normalization_map.get_type_id(quant)?;
+            let var = Term::new_variable(type_id, *next_var_id);
+            *next_var_id += 1;
+            stack.push(var);
+        }
+        let result =
+            self.value_to_literal_lists(subvalue, negate, stack, next_var_id, synthesized)?;
+        for _ in quants {
+            stack.pop();
+        }
+        Ok(result)
     }
 
     /// Helper for value_to_literal_lists.
