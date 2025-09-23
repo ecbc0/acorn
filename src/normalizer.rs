@@ -260,31 +260,27 @@ impl Normalizer {
     fn term_from_application(
         &mut self,
         application: &FunctionApplication,
-        ctype: NewConstantType,
     ) -> Result<Term, String> {
         let application_type = application.get_type();
         check_normalized_type(&application_type)?;
         let term_type = self.normalization_map.add_type(&application_type);
-        let func_term = self.term_from_value(&application.function, ctype)?;
+        let func_term = self.term_from_value(&application.function)?;
         let head = func_term.head;
         let head_type = func_term.head_type;
         let mut args = func_term.args;
         for arg in &application.args {
-            args.push(self.term_from_value(arg, ctype)?);
+            args.push(self.term_from_value(arg)?);
         }
         Ok(Term::new(term_type, head_type, head, args))
     }
 
     /// Constructs a new term from an AcornValue
     /// Returns an error if it's inconvertible.
-    /// The "ctype" parameter controls whether any newly discovered constants
-    /// are local, global, or disallowed.
-    pub fn term_from_value(
+    fn term_from_value(
         &mut self,
         value: &AcornValue,
-        ctype: NewConstantType,
     ) -> Result<Term, String> {
-        let (t, negated) = self.maybe_negated_term_from_value(value, ctype)?;
+        let (t, negated) = self.maybe_negated_term_from_value(value)?;
         if negated {
             Err(format!(
                 "Cannot convert {} to term because it is negated",
@@ -337,13 +333,10 @@ impl Normalizer {
 
     /// Constructs a new term or negated term from an AcornValue
     /// Returns an error if it's inconvertible.
-    /// The "ctype" parameter controls whether any newly discovered constants
-    /// are local, global, or disallowed.
     /// The flag returned is whether the term is negated.
     fn maybe_negated_term_from_value(
         &mut self,
         value: &AcornValue,
-        ctype: NewConstantType,
     ) -> Result<(Term, bool), String> {
         match value {
             AcornValue::Variable(i, var_type) => {
@@ -355,13 +348,13 @@ impl Normalizer {
                 ))
             }
             AcornValue::Application(application) => {
-                Ok((self.term_from_application(application, ctype)?, false))
+                Ok((self.term_from_application(application)?, false))
             }
             AcornValue::Constant(c) => {
                 if c.params.is_empty() {
                     check_normalized_type(&c.instance_type)?;
                     let type_id = self.normalization_map.add_type(&c.instance_type);
-                    let constant_atom = self.atom_from_name(&c.name, ctype)?;
+                    let constant_atom = self.atom_from_name(&c.name, NewConstantType::Disallowed)?;
                     Ok((Term::new(type_id, type_id, constant_atom, vec![]), false))
                 } else {
                     Ok((self.normalization_map.term_from_monomorph(&c), false))
@@ -369,7 +362,7 @@ impl Normalizer {
             }
             AcornValue::Bool(v) => Ok((Term::new_true(), !v)),
             AcornValue::Not(subvalue) => {
-                let (term, negated) = self.maybe_negated_term_from_value(&*subvalue, ctype)?;
+                let (term, negated) = self.maybe_negated_term_from_value(&*subvalue)?;
                 Ok((term, !negated))
             }
             _ => Err(format!("Cannot convert {} to term", value)),
@@ -383,29 +376,29 @@ impl Normalizer {
     pub fn literal_from_value(&mut self, value: &AcornValue) -> Result<Literal, String> {
         match value {
             AcornValue::Variable(_, _) | AcornValue::Constant(_) => Ok(Literal::positive(
-                self.term_from_value(value, NewConstantType::Disallowed)?,
+                self.term_from_value(value)?,
             )),
             AcornValue::Application(app) => Ok(Literal::positive(
-                self.term_from_application(app, NewConstantType::Disallowed)?,
+                self.term_from_application(app)?,
             )),
             AcornValue::Binary(BinaryOp::Equals, left, right) => {
                 let (left_term, left_negated) =
-                    self.maybe_negated_term_from_value(&*left, NewConstantType::Disallowed)?;
+                    self.maybe_negated_term_from_value(&*left)?;
                 let (right_term, right_negated) =
-                    self.maybe_negated_term_from_value(&*right, NewConstantType::Disallowed)?;
+                    self.maybe_negated_term_from_value(&*right)?;
                 let negated = left_negated ^ right_negated;
                 Ok(Literal::new(!negated, left_term, right_term))
             }
             AcornValue::Binary(BinaryOp::NotEquals, left, right) => {
                 let (left_term, left_negated) =
-                    self.maybe_negated_term_from_value(&*left, NewConstantType::Disallowed)?;
+                    self.maybe_negated_term_from_value(&*left)?;
                 let (right_term, right_negated) =
-                    self.maybe_negated_term_from_value(&*right, NewConstantType::Disallowed)?;
+                    self.maybe_negated_term_from_value(&*right)?;
                 let negated = left_negated ^ right_negated;
                 Ok(Literal::new(negated, left_term, right_term))
             }
             AcornValue::Not(subvalue) => Ok(Literal::negative(
-                self.term_from_value(subvalue, NewConstantType::Disallowed)?,
+                self.term_from_value(subvalue)?,
             )),
             _ => Err(format!("Cannot convert {} to literal", value)),
         }
@@ -689,7 +682,7 @@ impl Normalizer {
             let defined = match &proposition.source.source_type {
                 SourceType::ConstantDefinition(value, _) => {
                     let term = self
-                        .term_from_value(&value, NewConstantType::Disallowed)
+                        .term_from_value(&value)
                         .map_err(|msg| BuildError::new(range, msg))?;
                     Some(term.get_head_atom().clone())
                 }
