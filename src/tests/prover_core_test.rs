@@ -2009,7 +2009,7 @@ fn test_proving_needing_templates() {
 }
 
 #[test]
-fn test_proving_boolean_equality() {
+fn test_core_proving_boolean_equality() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
