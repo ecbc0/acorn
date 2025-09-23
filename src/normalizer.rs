@@ -596,10 +596,10 @@ impl NormalizerView<'_> {
                     )))
                 }
             }
-            AcornValue::Not(subvalue) => {
-                let (t, sign) = self.value_to_signed_term(subvalue, stack)?;
-                Ok(Some((t, !sign)))
-            }
+            AcornValue::Not(subvalue) => match self.try_value_to_signed_term(subvalue, stack)? {
+                None => Ok(None),
+                Some((t, sign)) => Ok(Some((t, !sign))),
+            },
             AcornValue::Bool(v) => Ok(Some((Term::new_true(), *v))),
             _ => Ok(None),
         }
