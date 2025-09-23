@@ -2064,10 +2064,6 @@ fn test_proving_functional_structure_identity() {
 
 #[test]
 fn test_proving_implied_boolean_equality() {
-    if !crate::clause::EXPERIMENT {
-        // We already know this test doesn't work outside the experiment.
-        return;
-    }
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",

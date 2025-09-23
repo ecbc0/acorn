@@ -5,7 +5,7 @@ use crate::acorn_type::AcornType;
 use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
 use crate::builder::BuildError;
-use crate::clause::{Clause, EXPERIMENT};
+use crate::clause::Clause;
 use crate::fact::Fact;
 use crate::goal::Goal;
 use crate::literal::Literal;
@@ -620,12 +620,6 @@ impl Normalizer {
         let value = value.replace_if();
 
         self.normalization_map.add_from(&value, ctype);
-
-        let value = if EXPERIMENT {
-            value
-        } else {
-            value.move_negation_inwards(true, false)
-        };
 
         let mut skolem_ids = vec![];
         let mut mut_view = NormalizerView::Mut(self);
