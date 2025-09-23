@@ -84,7 +84,7 @@ impl QCF {
                             Ok(QCF::CNF(vec![vec![literal]]))
                         }
                     }
-                    Err(e) => Err(format!("Cannot convert {} to QCF: {}", value, e))
+                    Err(e) => Err(format!("Cannot convert {} to QCF: {}", value, e)),
                 }
             }
         }
@@ -272,31 +272,82 @@ fn shift_term(term: Term, index: AtomId, increment: AtomId) -> Term {
     Term::new(term.term_type, term.head_type, new_head, new_args)
 }
 
-/// Replace variables starting at base_index with the given replacement terms.
-pub fn replace_variables_in_qcf(qcf: QCF, base_index: AtomId, replacements: &[Term]) -> QCF {
+/// Replace variables starting at `first_binding_index` with the provided replacement terms.
+/// `stack_size` tracks how many bound variables are currently in scope so we can
+/// shift the replacement terms when descending under additional quantifiers.
+pub fn replace_variables_in_qcf(
+    qcf: QCF,
+    first_binding_index: AtomId,
+    stack_size: AtomId,
+    replacements: &[Term],
+) -> QCF {
     match qcf {
         QCF::ForAll(types, body) => {
-            // Variables bound by this ForAll start after the replacements
-            let new_base = base_index + replacements.len() as AtomId;
-            QCF::ForAll(types, Box::new(replace_variables_in_qcf(*body, new_base, replacements)))
+            let new_stack_size = stack_size + types.len() as AtomId;
+            QCF::ForAll(
+                types,
+                Box::new(replace_variables_in_qcf(
+                    *body,
+                    first_binding_index,
+                    new_stack_size,
+                    replacements,
+                )),
+            )
         }
         QCF::Exists(types, body) => {
-            let new_base = base_index + replacements.len() as AtomId;
-            QCF::Exists(types, Box::new(replace_variables_in_qcf(*body, new_base, replacements)))
+            let new_stack_size = stack_size + types.len() as AtomId;
+            QCF::Exists(
+                types,
+                Box::new(replace_variables_in_qcf(
+                    *body,
+                    first_binding_index,
+                    new_stack_size,
+                    replacements,
+                )),
+            )
         }
         QCF::And(left, right) => QCF::And(
-            Box::new(replace_variables_in_qcf(*left, base_index, replacements)),
-            Box::new(replace_variables_in_qcf(*right, base_index, replacements)),
+            Box::new(replace_variables_in_qcf(
+                *left,
+                first_binding_index,
+                stack_size,
+                replacements,
+            )),
+            Box::new(replace_variables_in_qcf(
+                *right,
+                first_binding_index,
+                stack_size,
+                replacements,
+            )),
         ),
         QCF::Or(left, right) => QCF::Or(
-            Box::new(replace_variables_in_qcf(*left, base_index, replacements)),
-            Box::new(replace_variables_in_qcf(*right, base_index, replacements)),
+            Box::new(replace_variables_in_qcf(
+                *left,
+                first_binding_index,
+                stack_size,
+                replacements,
+            )),
+            Box::new(replace_variables_in_qcf(
+                *right,
+                first_binding_index,
+                stack_size,
+                replacements,
+            )),
         ),
         QCF::CNF(clauses) => {
-            let new_clauses = clauses.into_iter()
+            let new_clauses = clauses
+                .into_iter()
                 .map(|clause| {
-                    clause.into_iter()
-                        .map(|lit| replace_variables_in_literal(lit, base_index, replacements))
+                    clause
+                        .into_iter()
+                        .map(|lit| {
+                            replace_variables_in_literal(
+                                lit,
+                                first_binding_index,
+                                stack_size,
+                                replacements,
+                            )
+                        })
                         .collect()
                 })
                 .collect();
@@ -307,36 +358,102 @@ pub fn replace_variables_in_qcf(qcf: QCF, base_index: AtomId, replacements: &[Te
 }
 
 /// Replace variables in a literal
-fn replace_variables_in_literal(lit: Literal, base_index: AtomId, replacements: &[Term]) -> Literal {
+fn replace_variables_in_literal(
+    lit: Literal,
+    first_binding_index: AtomId,
+    stack_size: AtomId,
+    replacements: &[Term],
+) -> Literal {
     Literal::new(
         lit.positive,
-        replace_variables_in_term(lit.left, base_index, replacements),
-        replace_variables_in_term(lit.right, base_index, replacements),
+        replace_variables_in_term(lit.left, first_binding_index, stack_size, replacements),
+        replace_variables_in_term(lit.right, first_binding_index, stack_size, replacements),
     )
 }
 
 /// Replace variables in a term
-fn replace_variables_in_term(term: Term, base_index: AtomId, replacements: &[Term]) -> Term {
+fn replace_variables_in_term(
+    term: Term,
+    first_binding_index: AtomId,
+    stack_size: AtomId,
+    replacements: &[Term],
+) -> Term {
     match term.head {
-        Atom::Variable(i) if i >= base_index && (i - base_index) < replacements.len() as AtomId => {
-            // Replace this variable with the corresponding replacement term
-            let replacement = &replacements[(i - base_index) as usize];
-            if term.args.is_empty() {
-                replacement.clone()
-            } else {
-                // Apply the replacement term to the arguments
-                let mut new_args = replacement.args.clone();
-                for arg in term.args {
-                    new_args.push(replace_variables_in_term(arg, base_index, replacements));
+        Atom::Variable(i) => {
+            if i < first_binding_index {
+                let new_args = term
+                    .args
+                    .into_iter()
+                    .map(|arg| {
+                        replace_variables_in_term(
+                            arg,
+                            first_binding_index,
+                            stack_size,
+                            replacements,
+                        )
+                    })
+                    .collect();
+                Term::new(term.term_type, term.head_type, Atom::Variable(i), new_args)
+            } else if i < first_binding_index + replacements.len() as AtomId {
+                let index = (i - first_binding_index) as usize;
+                let mut replacement = replacements[index].clone();
+                let increment = stack_size - first_binding_index;
+                replacement = shift_term(replacement, first_binding_index, increment);
+
+                if term.args.is_empty() {
+                    replacement
+                } else {
+                    let Term {
+                        head_type: replacement_head_type,
+                        head: replacement_head,
+                        args: mut replacement_args,
+                        ..
+                    } = replacement;
+
+                    for arg in term.args {
+                        replacement_args.push(replace_variables_in_term(
+                            arg,
+                            first_binding_index,
+                            stack_size,
+                            replacements,
+                        ));
+                    }
+                    Term::new(
+                        term.term_type,
+                        replacement_head_type,
+                        replacement_head,
+                        replacement_args,
+                    )
                 }
-                Term::new(term.term_type, replacement.head_type, replacement.head.clone(), new_args)
+            } else {
+                let new_index = i - replacements.len() as AtomId;
+                let new_args = term
+                    .args
+                    .into_iter()
+                    .map(|arg| {
+                        replace_variables_in_term(
+                            arg,
+                            first_binding_index,
+                            stack_size,
+                            replacements,
+                        )
+                    })
+                    .collect();
+                Term::new(
+                    term.term_type,
+                    term.head_type,
+                    Atom::Variable(new_index),
+                    new_args,
+                )
             }
         }
         _ => {
             let new_args = term
                 .args
                 .into_iter()
-                .map(|arg| replace_variables_in_term(arg, base_index, replacements))
+                .map(|arg| {
+                    replace_variables_in_term(arg, first_binding_index, stack_size, replacements)
+                })
                 .collect();
             Term::new(term.term_type, term.head_type, term.head, new_args)
         }

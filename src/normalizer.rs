@@ -295,7 +295,8 @@ impl Normalizer {
 
                 // Replace existential variables with skolem terms in the body
                 let stack_size = stack.len() as AtomId;
-                let replaced_qcf = replace_variables_in_qcf(*subqcf, stack_size, &skolem_terms);
+                let replaced_qcf =
+                    replace_variables_in_qcf(*subqcf, stack_size, stack_size, &skolem_terms);
                 self.skolemize_qcf(stack, replaced_qcf, declared)?
             }
             QCF::And(left, right) => {
