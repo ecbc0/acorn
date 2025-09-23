@@ -424,7 +424,7 @@ impl Normalizer {
     /// Swaps left and right if needed, to sort.
     /// Normalizes literals to <larger> = <smaller>, because that's the logical direction
     /// to do rewrite-type lookups, on the larger literal first.
-    fn literal_from_value(
+    pub fn literal_from_value(
         &mut self,
         value: &AcornValue,
         ctype: NewConstantType,
