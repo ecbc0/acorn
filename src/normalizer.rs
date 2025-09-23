@@ -1215,21 +1215,20 @@ mod tests {
         norm.check(&env, "goal", &["adder(x0, x1) = adder(x1, x0)"]);
     }
 
-    // TODO: figure out if we want this behavior.
-    // #[test]
-    // fn test_functional_equality() {
-    //     let mut env = Environment::test();
-    //     env.add(
-    //         r#"
-    //         type Nat: axiom
-    //         let zero: Nat = axiom
-    //         define zerof(a: Nat) -> (Nat -> Nat) { function(b: Nat) { zero } }
-    //         theorem goal(a: Nat, b: Nat) { zerof(a) = zerof(b) }
-    //         "#,
-    //     );
-    //     let mut norm = Normalizer::new();
-    //     norm.check(&env, "goal", &["zerof(x0, x1) = zerof(x2, x1)"]);
-    // }
+    #[test]
+    fn test_functional_equality() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            type Nat: axiom
+            let zero: Nat = axiom
+            define zerof(a: Nat) -> (Nat -> Nat) { function(b: Nat) { zero } }
+            theorem goal(a: Nat, b: Nat) { zerof(a) = zerof(b) }
+            "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(&env, "goal", &["zerof(x0, x1) = zerof(x2, x1)"]);
+    }
 
     #[test]
     fn test_normalizing_exists() {
