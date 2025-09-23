@@ -64,6 +64,9 @@ impl NormalizationMap {
     }
 
     pub fn get_atom(&self, name: &ConstantName) -> Option<Atom> {
+        if let ConstantName::Synthetic(i) = name {
+            return Some(Atom::Synthetic(*i));
+        };
         self.name_to_atom.get(name).cloned()
     }
 
@@ -97,9 +100,6 @@ impl NormalizationMap {
     pub fn add_from(&mut self, value: &AcornValue, ctype: NewConstantType) {
         // Add all constants
         value.for_each_constant(&mut |c| {
-            if c.name.is_synthetic() {
-                return;
-            }
             if self.get_atom(&c.name).is_none() {
                 self.add_constant(c.name.clone(), ctype);
             }

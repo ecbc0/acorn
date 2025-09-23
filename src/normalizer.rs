@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::acorn_type::AcornType;
-use crate::acorn_value::{AcornValue, BinaryOp, FunctionApplication};
+use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
 use crate::builder::BuildError;
 use crate::clause::Clause;
@@ -66,12 +66,6 @@ impl std::fmt::Display for SyntheticKey {
             "SyntheticKey(num_atoms: {}, clauses: {})",
             self.num_atoms, clauses
         )
-    }
-}
-
-impl SyntheticKey {
-    fn bucket(&self) -> (usize, usize) {
-        (self.num_atoms, self.clauses.len())
     }
 }
 
@@ -147,95 +141,30 @@ impl Normalizer {
         Ok(id)
     }
 
-    // Useful for debugging
-    #[allow(dead_code)]
-    fn debug_failed_lookup(&self, key: &SyntheticKey) {
-        println!("Failed lookup for key: {}", key);
-
-        for candidate in self.synthetic_map.keys() {
-            if candidate.bucket() == key.bucket() {
-                println!("Candidate: {}", candidate);
-            }
-        }
-    }
-
-    /// Constructs a new term from a function application
-    /// Function applications that are nested like f(x)(y) are flattened to f(x, y)
-    fn term_from_application(&self, application: &FunctionApplication) -> Result<Term, String> {
-        let application_type = application.get_type();
-        check_normalized_type(&application_type)?;
-        let term_type = self.normalization_map.get_type_id(&application_type)?;
-        let func_term = self.term_from_value(&application.function)?;
-        let head = func_term.head;
-        let head_type = func_term.head_type;
-        let mut args = func_term.args;
-        for arg in &application.args {
-            args.push(self.term_from_value(arg)?);
-        }
-        Ok(Term::new(term_type, head_type, head, args))
-    }
-
-    /// Constructs a new term from an AcornValue
-    /// Returns an error if it's inconvertible.
-    fn term_from_value(&self, value: &AcornValue) -> Result<Term, String> {
-        let (t, negated) = self.maybe_negated_term_from_value(value)?;
-        if negated {
-            Err(format!(
-                "Cannot convert {} to term because it is negated",
-                value
-            ))
-        } else {
-            Ok(t)
-        }
-    }
-
-    fn atom_from_name(&self, name: &ConstantName) -> Result<Atom, String> {
-        if let ConstantName::Synthetic(i) = name {
-            return Ok(Atom::Synthetic(*i));
+    /// Adds the definition for these synthetic atoms.
+    /// This must be done in the same order they are declared in.
+    fn define_synthetic_atoms(&mut self, atoms: Vec<AtomId>, clauses: Vec<Clause>) {
+        // In the synthetic key, we normalize synthetic ids by renumbering them.
+        let synthetic_key_form: Vec<_> = clauses
+            .iter()
+            .map(|c| c.invalidate_synthetics(&atoms))
+            .collect();
+        let num_atoms = atoms.len();
+        let key = SyntheticKey {
+            clauses: synthetic_key_form,
+            num_atoms,
         };
-
-        if let Some(atom) = self.normalization_map.get_atom(name) {
-            return Ok(atom);
+        let info = Arc::new(SyntheticDefinition {
+            clauses,
+            atoms: atoms.clone(),
+        });
+        for atom in atoms {
+            if atom as usize != self.synthetic_definitions.len() {
+                panic!("synthetic atoms must be defined in order");
+            }
+            self.synthetic_definitions.push(info.clone());
         }
-
-        // We have to create a new atom
-        // Unrecognized names are errors
-        Err(format!("unrecognized name: {}", name))
-    }
-
-    /// Constructs a new term or negated term from an AcornValue
-    /// Returns an error if it's inconvertible.
-    /// The flag returned is whether the term is negated.
-    fn maybe_negated_term_from_value(&self, value: &AcornValue) -> Result<(Term, bool), String> {
-        match value {
-            AcornValue::Variable(i, var_type) => {
-                check_normalized_type(var_type)?;
-                let type_id = self.normalization_map.get_type_id(var_type)?;
-                Ok((
-                    Term::new(type_id, type_id, Atom::Variable(*i), vec![]),
-                    false,
-                ))
-            }
-            AcornValue::Application(application) => {
-                Ok((self.term_from_application(application)?, false))
-            }
-            AcornValue::Constant(c) => {
-                if c.params.is_empty() {
-                    check_normalized_type(&c.instance_type)?;
-                    let type_id = self.normalization_map.get_type_id(&c.instance_type)?;
-                    let constant_atom = self.atom_from_name(&c.name)?;
-                    Ok((Term::new(type_id, type_id, constant_atom, vec![]), false))
-                } else {
-                    Ok((self.normalization_map.term_from_monomorph(&c)?, false))
-                }
-            }
-            AcornValue::Bool(v) => Ok((Term::new_true(), !v)),
-            AcornValue::Not(subvalue) => {
-                let (term, negated) = self.maybe_negated_term_from_value(&*subvalue)?;
-                Ok((term, !negated))
-            }
-            _ => Err(format!("Cannot convert {} to term", value)),
-        }
+        self.synthetic_map.insert(key, info);
     }
 
     pub fn add_local_constant(&mut self, cname: ConstantName) -> Atom {
@@ -500,8 +429,11 @@ impl NormalizerView<'_> {
                         .as_ref()
                         .normalization_map
                         .get_type_id(&c.instance_type)?;
-                    let constant_atom = self.as_ref().atom_from_name(&c.name)?;
-                    Ok((Term::new(type_id, type_id, constant_atom, vec![]), true))
+
+                    let Some(atom) = self.as_ref().normalization_map.get_atom(&c.name) else {
+                        return Err(format!("constant {} not found in normalization map", c));
+                    };
+                    Ok((Term::new(type_id, type_id, atom, vec![]), true))
                 } else {
                     Ok((
                         self.as_ref().normalization_map.term_from_monomorph(&c)?,
@@ -520,32 +452,6 @@ impl NormalizerView<'_> {
 }
 
 impl Normalizer {
-    /// Adds the definition for these synthetic atoms.
-    /// This must be done in the same order they are declared in.
-    fn define_synthetic_atoms(&mut self, atoms: Vec<AtomId>, clauses: Vec<Clause>) {
-        // In the synthetic key, we normalize synthetic ids by renumbering them.
-        let synthetic_key_form: Vec<_> = clauses
-            .iter()
-            .map(|c| c.invalidate_synthetics(&atoms))
-            .collect();
-        let num_atoms = atoms.len();
-        let key = SyntheticKey {
-            clauses: synthetic_key_form,
-            num_atoms,
-        };
-        let info = Arc::new(SyntheticDefinition {
-            clauses,
-            atoms: atoms.clone(),
-        });
-        for atom in atoms {
-            if atom as usize != self.synthetic_definitions.len() {
-                panic!("synthetic atoms must be defined in order");
-            }
-            self.synthetic_definitions.push(info.clone());
-        }
-        self.synthetic_map.insert(key, info);
-    }
-
     /// This should handle any sort of boolean value.
     /// TODO: port edge cases into the "nice" value to clauses so that we only have one of these.
     fn ugly_value_to_clauses(
@@ -653,9 +559,13 @@ impl Normalizer {
                 .map_err(|msg| BuildError::new(range, msg))?;
             let defined = match &proposition.source.source_type {
                 SourceType::ConstantDefinition(value, _) => {
-                    let term = self
-                        .term_from_value(&value)
-                        .map_err(|msg| BuildError::new(range, msg))?;
+                    let view = NormalizerView::Ref(self);
+                    let term = view.value_to_term(value, &mut vec![]).map_err(|msg| {
+                        BuildError::new(
+                            range,
+                            format!("Cannot convert definition to term: {}", msg),
+                        )
+                    })?;
                     Some(term.get_head_atom().clone())
                 }
                 _ => None,
@@ -926,42 +836,6 @@ impl Normalizer {
             }
         }
         panic!("no theorem named {}", name);
-    }
-}
-
-/// Returns an error if a type is not normalized.
-fn check_normalized_type(acorn_type: &AcornType) -> Result<(), String> {
-    match acorn_type {
-        AcornType::Function(function_type) => {
-            if function_type.arg_types.len() == 0 {
-                return Err(format!("Function type {} has no arguments", function_type));
-            }
-            for arg_type in &function_type.arg_types {
-                check_normalized_type(&arg_type)?;
-            }
-            if function_type.return_type.is_functional() {
-                return Err(format!(
-                    "Function type has a functional return type: {}",
-                    function_type
-                ));
-            }
-            check_normalized_type(&function_type.return_type)
-        }
-        AcornType::Bool => Ok(()),
-        AcornType::Data(_, params) => {
-            for param in params {
-                check_normalized_type(&param)?;
-            }
-            Ok(())
-        }
-        AcornType::Variable(..) => {
-            return Err(format!(
-                "Type variables should be monomorphized before normalization: {}",
-                acorn_type
-            ));
-        }
-        AcornType::Empty => Ok(()),
-        AcornType::Arbitrary(..) => Ok(()),
     }
 }
 
