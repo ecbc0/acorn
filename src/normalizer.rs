@@ -288,12 +288,8 @@ impl Normalizer {
                     }
 
                     let result_type_id = self.normalization_map.add_type(&quant);
-                    let skolem_term = Term::new(
-                        result_type_id,
-                        type_id,
-                        Atom::Synthetic(skolem_id),
-                        args,
-                    );
+                    let skolem_term =
+                        Term::new(result_type_id, type_id, Atom::Synthetic(skolem_id), args);
                     skolem_terms.push(skolem_term);
                 }
 
@@ -628,18 +624,24 @@ impl Normalizer {
         value: &AcornValue,
         ctype: NewConstantType,
     ) -> Result<Vec<Clause>, String> {
-        // println!("\nnormalizing: {}", value);
         let value = value.replace_function_equality(0);
         let value = value.expand_lambdas(0);
         let value = value.replace_match();
         let value = value.replace_if();
         let value = value.move_negation_inwards(true, false);
 
-        // println!("pre-skolemize: {}", value);
         let mut skolem_ids = vec![];
-        let value = self.skolemize(&vec![], value, &mut skolem_ids)?;
 
-        let clauses = self.normalize_cnf(value, ctype)?;
+        let clauses = if true {
+            // Old method
+            let value = self.skolemize(&vec![], value, &mut skolem_ids)?;
+            self.normalize_cnf(value, ctype)?
+        } else {
+            // New method
+            let qcf = QCF::from_value(&value, self)?;
+            let skolemized_qcf = self.skolemize_qcf(&vec![], qcf, &mut skolem_ids)?;
+            skolemized_qcf.into_clauses()?
+        };
 
         if !skolem_ids.is_empty() {
             // We have to define the skolem atoms that were declared during skolemization.
