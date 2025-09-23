@@ -1,5 +1,5 @@
 use crate::acorn_type::AcornType;
-use crate::acorn_value::AcornValue;
+use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::literal::Literal;
 use crate::normalizer::Normalizer;
 
@@ -33,9 +33,6 @@ impl QCF {
     /// Only handles cases that map directly onto QCF structure.
     /// Returns an error for unsupported cases.
     pub fn from_value(value: &AcornValue, normalizer: &mut Normalizer) -> Result<QCF, String> {
-        use crate::acorn_value::{AcornValue, BinaryOp};
-        use crate::normalization_map::NewConstantType;
-
         match value {
             AcornValue::ForAll(types, body) => {
                 let body_qcf = QCF::from_value(body, normalizer)?;
@@ -66,7 +63,7 @@ impl QCF {
             _ => {
                 // For other values, try to convert to a single literal
                 // and wrap it in CNF
-                match normalizer.literal_from_value(value, NewConstantType::Disallowed) {
+                match normalizer.literal_from_value(value) {
                     Ok(literal) => {
                         if literal.is_tautology() {
                             // x = x is always true

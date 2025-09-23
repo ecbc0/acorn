@@ -383,33 +383,32 @@ impl Normalizer {
     pub fn literal_from_value(
         &mut self,
         value: &AcornValue,
-        ctype: NewConstantType,
     ) -> Result<Literal, String> {
         match value {
             AcornValue::Variable(_, _) | AcornValue::Constant(_) => {
-                Ok(Literal::positive(self.term_from_value(value, ctype)?))
+                Ok(Literal::positive(self.term_from_value(value, NewConstantType::Disallowed)?))
             }
             AcornValue::Application(app) => {
-                Ok(Literal::positive(self.term_from_application(app, ctype)?))
+                Ok(Literal::positive(self.term_from_application(app, NewConstantType::Disallowed)?))
             }
             AcornValue::Binary(BinaryOp::Equals, left, right) => {
                 let (left_term, left_negated) =
-                    self.maybe_negated_term_from_value(&*left, ctype)?;
+                    self.maybe_negated_term_from_value(&*left, NewConstantType::Disallowed)?;
                 let (right_term, right_negated) =
-                    self.maybe_negated_term_from_value(&*right, ctype)?;
+                    self.maybe_negated_term_from_value(&*right, NewConstantType::Disallowed)?;
                 let negated = left_negated ^ right_negated;
                 Ok(Literal::new(!negated, left_term, right_term))
             }
             AcornValue::Binary(BinaryOp::NotEquals, left, right) => {
                 let (left_term, left_negated) =
-                    self.maybe_negated_term_from_value(&*left, ctype)?;
+                    self.maybe_negated_term_from_value(&*left, NewConstantType::Disallowed)?;
                 let (right_term, right_negated) =
-                    self.maybe_negated_term_from_value(&*right, ctype)?;
+                    self.maybe_negated_term_from_value(&*right, NewConstantType::Disallowed)?;
                 let negated = left_negated ^ right_negated;
                 Ok(Literal::new(negated, left_term, right_term))
             }
             AcornValue::Not(subvalue) => {
-                Ok(Literal::negative(self.term_from_value(subvalue, ctype)?))
+                Ok(Literal::negative(self.term_from_value(subvalue, NewConstantType::Disallowed)?))
             }
             _ => Err(format!("Cannot convert {} to literal", value)),
         }
@@ -430,7 +429,7 @@ impl Normalizer {
                 Ok(lits)
             }
             _ => {
-                let lit = self.literal_from_value(value, NewConstantType::Disallowed)?;
+                let lit = self.literal_from_value(value)?;
                 Ok(vec![lit])
             }
         }
@@ -504,7 +503,7 @@ impl Normalizer {
             AcornValue::Bool(true) => Ok(Some(vec![])),
             AcornValue::Bool(false) => Ok(None),
             _ => {
-                let literal = self.literal_from_value(&value, NewConstantType::Disallowed)?;
+                let literal = self.literal_from_value(&value)?;
                 if literal.is_tautology() {
                     Ok(Some(vec![]))
                 } else {
@@ -657,7 +656,7 @@ impl Normalizer {
                 //      don't have to normalize by adding args, and we can keep it as
                 //      f(a) = g(b)
                 //   2. Make extensionality more powerful, so that it can deduce f(a) = g(b).
-                let func_eq = self.literal_from_value(value, NewConstantType::Disallowed)?;
+                let func_eq = self.literal_from_value(value)?;
                 let clause = Clause::new(vec![func_eq]);
                 clauses.push(clause);
             }
