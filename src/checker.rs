@@ -245,11 +245,8 @@ impl Checker {
                 // only works on the non-normalized version.
                 // So we do our own weird literals-to-clause-without-normalizing thing.
                 let mut view = NormalizerView::Ref(&normalizer);
-                let lit_lists =
-                    view.value_to_literal_lists(&value, &mut vec![], &mut 0, &mut vec![])?;
-                for mut literals in lit_lists {
-                    literals.sort();
-                    let mut clause = Clause { literals };
+                let clauses = view.value_to_denormalized_clauses(&value)?;
+                for mut clause in clauses {
                     if !self.check_clause(&clause) {
                         return Err(Error::GeneratedBadCode(format!(
                             "The clause '{}' is not obviously true",

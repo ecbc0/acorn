@@ -289,14 +289,14 @@ impl Normalizer {
     }
 
     /// Does not change variable ids but does sort literals.
-    pub fn clause_from_value(&self, value: &AcornValue) -> Result<Clause, String> {
+    fn clause_from_value(&self, value: &AcornValue) -> Result<Clause, String> {
         let mut literals = self.literals_from_value(value)?;
         literals.sort();
         Ok(Clause { literals })
     }
 
     /// Does not change variable ids but does sort literals.
-    pub fn clauses_from_value(&self, value: &AcornValue) -> Result<Vec<Clause>, String> {
+    fn clauses_from_value(&self, value: &AcornValue) -> Result<Vec<Clause>, String> {
         if *value == AcornValue::Bool(true) {
             return Ok(vec![]);
         }
@@ -368,6 +368,23 @@ impl NormalizerView<'_> {
         }
     }
 
+    /// This returns clauses that are denormalized in the sense that they sort literals,
+    /// but don't filter out redundant or tautological literals.
+    /// This is the format that the Checker uses.
+    /// If you call normalize() on the clause afterwards, you should get the normalized one.
+    pub fn value_to_denormalized_clauses(
+        &mut self,
+        value: &AcornValue,
+    ) -> Result<Vec<Clause>, String> {
+        let mut output = vec![];
+        let lit_lists = self.value_to_literal_lists(&value, &mut vec![], &mut 0, &mut vec![])?;
+        for mut literals in lit_lists {
+            literals.sort();
+            output.push(Clause { literals });
+        }
+        Ok(output)
+    }
+
     /// Converts the value into a list of lists of literals, adding skolem constants
     /// to the normalizer as needed.
     /// True is [], false is [[]]. This is logical if you think hard about it.
@@ -385,7 +402,7 @@ impl NormalizerView<'_> {
     /// Existential variables turn into skolem terms. These are declared in the normalizer
     /// but not yet defined, because this function is creating the definition.
     /// Whenever we create a new skolem term, we add it to the synthesized list.
-    pub fn value_to_literal_lists(
+    fn value_to_literal_lists(
         &mut self,
         value: &AcornValue,
         stack: &mut Vec<Term>,
