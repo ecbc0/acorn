@@ -238,33 +238,6 @@ impl Normalizer {
         }
     }
 
-    /// Panics if this value cannot be converted to a literal.
-    /// Swaps left and right if needed, to sort.
-    /// Normalizes literals to <larger> = <smaller>, because that's the logical direction
-    /// to do rewrite-type lookups, on the larger literal first.
-    fn literal_from_value(&self, value: &AcornValue) -> Result<Literal, String> {
-        match value {
-            AcornValue::Variable(_, _) | AcornValue::Constant(_) => {
-                Ok(Literal::positive(self.term_from_value(value)?))
-            }
-            AcornValue::Application(app) => Ok(Literal::positive(self.term_from_application(app)?)),
-            AcornValue::Binary(BinaryOp::Equals, left, right) => {
-                let (left_term, left_negated) = self.maybe_negated_term_from_value(&*left)?;
-                let (right_term, right_negated) = self.maybe_negated_term_from_value(&*right)?;
-                let negated = left_negated ^ right_negated;
-                Ok(Literal::new(!negated, left_term, right_term))
-            }
-            AcornValue::Binary(BinaryOp::NotEquals, left, right) => {
-                let (left_term, left_negated) = self.maybe_negated_term_from_value(&*left)?;
-                let (right_term, right_negated) = self.maybe_negated_term_from_value(&*right)?;
-                let negated = left_negated ^ right_negated;
-                Ok(Literal::new(negated, left_term, right_term))
-            }
-            AcornValue::Not(subvalue) => Ok(Literal::negative(self.term_from_value(subvalue)?)),
-            _ => Err(format!("Cannot convert {} to literal", value)),
-        }
-    }
-
     pub fn add_local_constant(&mut self, cname: ConstantName) -> Atom {
         self.normalization_map
             .add_constant(cname, NewConstantType::Local)
@@ -644,7 +617,8 @@ impl Normalizer {
                 //      don't have to normalize by adding args, and we can keep it as
                 //      f(a) = g(b)
                 //   2. Make extensionality more powerful, so that it can deduce f(a) = g(b).
-                let func_eq = self.literal_from_value(value)?;
+                let view = NormalizerView::Ref(self);
+                let func_eq = view.value_to_literal(value, &mut vec![])?;
                 let clause = Clause::new(vec![func_eq]);
                 clauses.push(clause);
             }
