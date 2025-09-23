@@ -516,10 +516,7 @@ impl Normalizer {
 
     /// Converts AcornValue to Vec<Clause> without changing the tree structure.
     /// The tree structure should already be manipulated before calling this.
-    fn normalize_cnf(
-        &mut self,
-        value: AcornValue,
-    ) -> Result<Vec<Clause>, String> {
+    fn normalize_cnf(&mut self, value: AcornValue) -> Result<Vec<Clause>, String> {
         let mut universal = vec![];
         let value = value.remove_forall(&mut universal);
         match self.into_literal_lists(&value) {
@@ -660,7 +657,7 @@ impl Normalizer {
                 //      don't have to normalize by adding args, and we can keep it as
                 //      f(a) = g(b)
                 //   2. Make extensionality more powerful, so that it can deduce f(a) = g(b).
-                let func_eq = self.literal_from_value(value, ctype)?;
+                let func_eq = self.literal_from_value(value, NewConstantType::Disallowed)?;
                 let clause = Clause::new(vec![func_eq]);
                 clauses.push(clause);
             }
