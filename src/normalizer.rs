@@ -342,21 +342,36 @@ impl NormalizerView<'_> {
         value: &AcornValue,
         synthesized: &mut Vec<AtomId>,
     ) -> Result<Vec<Clause>, String> {
-        let mut stack = vec![];
-        let mut next_var_id = 0;
-        let literal_lists =
-            self.value_to_literal_lists(value, &mut stack, &mut next_var_id, synthesized)?;
-        let mut clauses = vec![];
-        for literals in literal_lists {
-            let clause = Clause::new(literals);
-            clauses.push(clause);
+        match value {
+            AcornValue::Binary(BinaryOp::And, left, right) => {
+                let mut left_clauses = self.nice_value_to_clauses(left, synthesized)?;
+                let right_clauses = self.nice_value_to_clauses(right, synthesized)?;
+                left_clauses.extend(right_clauses);
+                Ok(left_clauses)
+            }
+            _ => {
+                let mut stack = vec![];
+                let mut next_var_id = 0;
+                let literal_lists =
+                    self.value_to_literal_lists(value, &mut stack, &mut next_var_id, synthesized)?;
+                let mut clauses = vec![];
+                for literals in literal_lists {
+                    if literals.iter().any(|l| l.is_tautology()) {
+                        // This clause is always true, so skip it.
+                        continue;
+                    }
+                    let clause = Clause::new(literals);
+                    clauses.push(clause);
+                }
+                Ok(clauses)
+            }
         }
-        Ok(clauses)
     }
 
     /// Converts the value into a list of lists of literals, adding skolem constants
     /// to the normalizer as needed.
     /// True is [], false is [[]]. This is logical if you think hard about it.
+    /// We leave general tautologies in here, and don't normalize until we convert to Clause.
     ///
     /// The variable numbering in the input and output is different.
     /// x_i in the input gets mapped to stack[i] in the output.
@@ -370,7 +385,7 @@ impl NormalizerView<'_> {
     /// Existential variables turn into skolem terms. These are declared in the normalizer
     /// but not yet defined, because this function is creating the definition.
     /// Whenever we create a new skolem term, we add it to the synthesized list.
-    fn value_to_literal_lists(
+    pub fn value_to_literal_lists(
         &mut self,
         value: &AcornValue,
         stack: &mut Vec<Term>,
@@ -457,10 +472,10 @@ impl NormalizerView<'_> {
             AcornValue::Bool(false) => Ok(vec![vec![]]),
             _ => {
                 let literal = self.value_to_literal(value, stack)?;
-                if literal.is_tautology() {
+                if literal.is_basic_true() {
                     return Ok(vec![]);
                 }
-                if literal.is_impossible() {
+                if literal.is_basic_false() {
                     return Ok(vec![vec![]]);
                 }
                 Ok(vec![vec![literal]])

@@ -81,6 +81,14 @@ impl Literal {
         Literal::new(false, left, right)
     }
 
+    pub fn is_basic_true(&self) -> bool {
+        self.positive && self.left.is_true() && self.right.is_true()
+    }
+
+    pub fn is_basic_false(&self) -> bool {
+        !self.positive && self.left.is_true() && self.right.is_true()
+    }
+
     pub fn negate(&self) -> Literal {
         Literal {
             positive: !self.positive,

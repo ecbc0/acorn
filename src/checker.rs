@@ -11,7 +11,7 @@ use crate::evaluator::Evaluator;
 use crate::expression::Declaration;
 use crate::generalization_set::GeneralizationSet;
 use crate::names::ConstantName;
-use crate::normalizer::Normalizer;
+use crate::normalizer::{Normalizer, NormalizerView};
 use crate::project::Project;
 use crate::stack::Stack;
 use crate::statement::{Statement, StatementInfo};
@@ -231,18 +231,25 @@ impl Checker {
                 // Re-parse the expression with the newly defined variables
                 let mut evaluator = Evaluator::new(project, bindings, None);
                 let value = evaluator.evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
-                let clauses = normalizer.clauses_from_value(&value)?;
-                for mut clause in clauses {
-                    clause.normalize();
+                let mut view = NormalizerView::Ref(&normalizer);
+                let clauses = view.nice_value_to_clauses(&value, &mut vec![])?;
+                for clause in clauses {
                     self.insert_clause(&clause);
                 }
                 Ok(())
             }
             StatementInfo::Claim(claim) => {
                 let value = evaluator.evaluate_value(&claim.claim, Some(&AcornType::Bool))?;
-                let clauses = normalizer.clauses_from_value(&value)?;
 
-                for mut clause in clauses {
+                // We don't want to normalize these clauses because sometimes checking
+                // only works on the non-normalized version.
+                // So we do our own weird literals-to-clause-without-normalizing thing.
+                let mut view = NormalizerView::Ref(&normalizer);
+                let lit_lists =
+                    view.value_to_literal_lists(&value, &mut vec![], &mut 0, &mut vec![])?;
+                for mut literals in lit_lists {
+                    literals.sort();
+                    let mut clause = Clause { literals };
                     if !self.check_clause(&clause) {
                         return Err(Error::GeneratedBadCode(format!(
                             "The clause '{}' is not obviously true",
