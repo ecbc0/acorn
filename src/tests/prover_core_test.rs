@@ -201,7 +201,7 @@ fn test_closure_proof() {
 }
 
 #[test]
-fn test_boolean_equality() {
+fn test_prove_text_boolean_equality() {
     let text = r#"
             type Nat: axiom
             let addx: (Nat, Nat) -> Nat = axiom

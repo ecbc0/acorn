@@ -488,17 +488,29 @@ impl NormalizerView<'_> {
         Err(format!("{} is unexpectedly negated", value))
     }
 
-    /// Helper for value_to_literal_lists.
-    /// The bool returned is true = positive.
+    /// Wrapper around try_value_to_signed_term thats treat incontrovertibility as an error.
     fn value_to_signed_term(
         &self,
         value: &AcornValue,
         stack: &Vec<Term>,
     ) -> Result<(Term, bool), String> {
+        let answer = self.try_value_to_signed_term(value, stack)?;
+        answer.ok_or_else(|| format!("Cannot convert {} to signed term", value))
+    }
+
+    /// Helper for value_to_literal_lists.
+    /// The bool returned is true = positive.
+    /// This only errors if we get an inconsistent value.
+    /// If it is just called on a value that doesn't convert to a term, it returns Ok(None).
+    fn try_value_to_signed_term(
+        &self,
+        value: &AcornValue,
+        stack: &Vec<Term>,
+    ) -> Result<Option<(Term, bool)>, String> {
         match value {
             AcornValue::Variable(i, _) => {
                 if (*i as usize) < stack.len() {
-                    Ok((stack[*i as usize].clone(), true))
+                    Ok(Some((stack[*i as usize].clone(), true)))
                 } else {
                     Err(format!("variable {} out of range", i))
                 }
@@ -516,7 +528,7 @@ impl NormalizerView<'_> {
                 for arg in &application.args {
                     args.push(self.value_to_term(arg, stack)?);
                 }
-                Ok((Term::new(term_type, head_type, head, args), true))
+                Ok(Some((Term::new(term_type, head_type, head, args), true)))
             }
             AcornValue::Constant(c) => {
                 if c.params.is_empty() {
@@ -528,20 +540,20 @@ impl NormalizerView<'_> {
                     let Some(atom) = self.as_ref().normalization_map.get_atom(&c.name) else {
                         return Err(format!("constant {} not found in normalization map", c));
                     };
-                    Ok((Term::new(type_id, type_id, atom, vec![]), true))
+                    Ok(Some((Term::new(type_id, type_id, atom, vec![]), true)))
                 } else {
-                    Ok((
+                    Ok(Some((
                         self.as_ref().normalization_map.term_from_monomorph(&c)?,
                         true,
-                    ))
+                    )))
                 }
             }
             AcornValue::Not(subvalue) => {
                 let (t, sign) = self.value_to_signed_term(subvalue, stack)?;
-                Ok((t, !sign))
+                Ok(Some((t, !sign)))
             }
-            AcornValue::Bool(v) => Ok((Term::new_true(), *v)),
-            _ => Err(format!("Cannot convert {} to term", value)),
+            AcornValue::Bool(v) => Ok(Some((Term::new_true(), *v))),
+            _ => Ok(None),
         }
     }
 }
@@ -560,6 +572,7 @@ impl Normalizer {
         let value = value.replace_if();
 
         self.normalization_map.add_from(&value, ctype);
+
         let value = value.move_negation_inwards(true, false);
 
         let mut skolem_ids = vec![];
