@@ -182,17 +182,16 @@ impl Normalizer {
     ///   forall(x, f(x) & g(skolem()))
     /// which is what we get if we don't convert to prenex first.
     pub fn skolemize(
+        &mut self,
         stack: &Vec<AcornType>,
         value: AcornValue,
-        next_synthetic_id: &mut AtomId,
-        synthesized: &mut Vec<(AtomId, AcornType)>,
+        synthesized: &mut Vec<AtomId>,
     ) -> Result<AcornValue, String> {
         Ok(match value {
             AcornValue::ForAll(quants, subvalue) => {
                 let mut new_stack = stack.clone();
                 new_stack.extend(quants.clone());
-                let new_subvalue =
-                    Self::skolemize(&new_stack, *subvalue, next_synthetic_id, synthesized)?;
+                let new_subvalue = self.skolemize(&new_stack, *subvalue, synthesized)?;
                 AcornValue::ForAll(quants, Box::new(new_subvalue))
             }
 
@@ -209,12 +208,8 @@ impl Normalizer {
                 for quant in quants {
                     // Declare a new skolem atom
                     let skolem_type = AcornType::functional(stack.clone(), quant);
-                    let skolem_id = *next_synthetic_id;
-                    if skolem_id >= INVALID_SYNTHETIC_ID {
-                        return Err(format!("ran out of synthetic ids (used {})", skolem_id));
-                    }
-                    *next_synthetic_id += 1;
-                    synthesized.push((skolem_id, skolem_type.clone()));
+                    let skolem_id = self.declare_synthetic_atom(skolem_type.clone())?;
+                    synthesized.push(skolem_id);
                     let skolem_name = ConstantName::Synthetic(skolem_id);
                     let skolem_value = AcornValue::constant(skolem_name, vec![], skolem_type);
                     let replacement = AcornValue::apply(skolem_value, args.clone());
@@ -223,23 +218,22 @@ impl Normalizer {
 
                 // Replace references to the existential quantifiers
                 let stack_size = stack.len() as AtomId;
-                return Self::skolemize(
+                return self.skolemize(
                     stack,
                     subvalue.bind_values(stack_size, stack_size, &replacements),
-                    next_synthetic_id,
                     synthesized,
                 );
             }
 
             AcornValue::Binary(BinaryOp::And, left, right) => {
-                let left = Self::skolemize(stack, *left, next_synthetic_id, synthesized)?;
-                let right = Self::skolemize(stack, *right, next_synthetic_id, synthesized)?;
+                let left = self.skolemize(stack, *left, synthesized)?;
+                let right = self.skolemize(stack, *right, synthesized)?;
                 AcornValue::Binary(BinaryOp::And, Box::new(left), Box::new(right))
             }
 
             AcornValue::Binary(BinaryOp::Or, left, right) => {
-                let left = Self::skolemize(stack, *left, next_synthetic_id, synthesized)?;
-                let right = Self::skolemize(stack, *right, next_synthetic_id, synthesized)?;
+                let left = self.skolemize(stack, *left, synthesized)?;
+                let right = self.skolemize(stack, *right, synthesized)?;
                 AcornValue::Binary(BinaryOp::Or, Box::new(left), Box::new(right))
             }
 
@@ -538,22 +532,8 @@ impl Normalizer {
         let value = value.move_negation_inwards(true, false);
         self.normalization_map.add_from(&value, ctype);
 
-        let mut next_synthetic_id = self.synthetic_types.len() as AtomId;
-        let mut synthesized = vec![];
-        let value = Self::skolemize(&vec![], value, &mut next_synthetic_id, &mut synthesized)?;
-
-        // Declare the synthetic atoms and verify IDs match
         let mut skolem_ids = vec![];
-        for (expected_id, atom_type) in synthesized {
-            let actual_id = self.declare_synthetic_atom(atom_type)?;
-            if actual_id != expected_id {
-                return Err(format!(
-                    "Synthetic ID mismatch: expected {}, got {}",
-                    expected_id, actual_id
-                ));
-            }
-            skolem_ids.push(actual_id);
-        }
+        let value = self.skolemize(&vec![], value, &mut skolem_ids)?;
 
         let clauses = self.normalize_cnf(value)?;
 
