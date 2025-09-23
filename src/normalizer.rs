@@ -274,39 +274,46 @@ impl NormalizerView<'_> {
         negate: bool,
         stack: &mut Vec<Term>,
         next_var_id: &mut AtomId,
-        synthesized: &mut Vec<AtomId>,
+        synth: &mut Vec<AtomId>,
     ) -> Result<Vec<Vec<Literal>>, String> {
         match value {
             AcornValue::ForAll(qs, sub) => {
                 if !negate {
-                    self.forall_to_literal_lists(qs, sub, false, stack, next_var_id, synthesized)
+                    self.forall_to_literal_lists(qs, sub, false, stack, next_var_id, synth)
                 } else {
-                    self.exists_to_literal_lists(qs, sub, true, stack, next_var_id, synthesized)
+                    self.exists_to_literal_lists(qs, sub, true, stack, next_var_id, synth)
                 }
             }
             AcornValue::Exists(qs, sub) => {
                 if !negate {
-                    self.exists_to_literal_lists(qs, sub, false, stack, next_var_id, synthesized)
+                    self.exists_to_literal_lists(qs, sub, false, stack, next_var_id, synth)
                 } else {
-                    self.forall_to_literal_lists(qs, sub, true, stack, next_var_id, synthesized)
+                    self.forall_to_literal_lists(qs, sub, true, stack, next_var_id, synth)
                 }
             }
             AcornValue::Binary(BinaryOp::And, left, right) => {
                 if !negate {
-                    self.and_to_literal_lists(left, right, false, stack, next_var_id, synthesized)
+                    self.and_to_literal_lists(left, right, false, false, stack, next_var_id, synth)
                 } else {
-                    self.or_to_literal_lists(left, right, true, stack, next_var_id, synthesized)
+                    self.or_to_literal_lists(left, right, true, true, stack, next_var_id, synth)
                 }
             }
             AcornValue::Binary(BinaryOp::Or, left, right) => {
                 if !negate {
-                    self.or_to_literal_lists(left, right, false, stack, next_var_id, synthesized)
+                    self.or_to_literal_lists(left, right, false, false, stack, next_var_id, synth)
                 } else {
-                    self.and_to_literal_lists(left, right, true, stack, next_var_id, synthesized)
+                    self.and_to_literal_lists(left, right, true, true, stack, next_var_id, synth)
+                }
+            }
+            AcornValue::Binary(BinaryOp::Implies, left, right) => {
+                if !negate {
+                    self.or_to_literal_lists(left, right, true, false, stack, next_var_id, synth)
+                } else {
+                    self.and_to_literal_lists(left, right, false, true, stack, next_var_id, synth)
                 }
             }
             AcornValue::Not(subvalue) => {
-                self.value_to_literal_lists(subvalue, !negate, stack, next_var_id, synthesized)
+                self.value_to_literal_lists(subvalue, !negate, stack, next_var_id, synth)
             }
             AcornValue::Bool(value) => {
                 if *value ^ negate {
@@ -405,35 +412,38 @@ impl NormalizerView<'_> {
         Ok(result)
     }
 
-    // negate is whether to negate the left and right subvalues.
     fn and_to_literal_lists(
         &mut self,
         left: &AcornValue,
         right: &AcornValue,
-        negate: bool,
+        negate_left: bool,
+        negate_right: bool,
         stack: &mut Vec<Term>,
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
     ) -> Result<Vec<Vec<Literal>>, String> {
         let mut left =
-            self.value_to_literal_lists(left, negate, stack, next_var_id, synthesized)?;
-        let right = self.value_to_literal_lists(right, negate, stack, next_var_id, synthesized)?;
+            self.value_to_literal_lists(left, negate_left, stack, next_var_id, synthesized)?;
+        let right =
+            self.value_to_literal_lists(right, negate_right, stack, next_var_id, synthesized)?;
         left.extend(right);
         Ok(left)
     }
 
-    // negate is whether to negate the left and right subvalues.
     fn or_to_literal_lists(
         &mut self,
         left: &AcornValue,
         right: &AcornValue,
-        negate: bool,
+        negate_left: bool,
+        negate_right: bool,
         stack: &mut Vec<Term>,
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
     ) -> Result<Vec<Vec<Literal>>, String> {
-        let left = self.value_to_literal_lists(left, negate, stack, next_var_id, synthesized)?;
-        let right = self.value_to_literal_lists(right, negate, stack, next_var_id, synthesized)?;
+        let left =
+            self.value_to_literal_lists(left, negate_left, stack, next_var_id, synthesized)?;
+        let right =
+            self.value_to_literal_lists(right, negate_right, stack, next_var_id, synthesized)?;
         let mut results = vec![];
         for left_result in &left {
             for right_result in &right {
