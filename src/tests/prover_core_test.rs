@@ -2063,6 +2063,34 @@ fn test_proving_functional_structure_identity() {
 }
 
 // #[test]
+// fn test_proving_implied_boolean_equality() {
+//     let mut p = Project::new_mock();
+//     p.mock(
+//         "/mock/main.ac",
+//         r#"
+//         let a: Bool = axiom
+//         let b: Bool = axiom
+//         let c: Bool = axiom
+//         let f: Bool -> Bool = axiom
+
+//         axiom rule1 {
+//             a implies (b = c)
+//         }
+
+//         axiom rule2 {
+//             a
+//         }
+
+//         theorem goal {
+//             f(b) = f(c)
+//         }
+//         "#,
+//     );
+
+//     prove(&mut p, "main", "goal");
+// }
+
+// #[test]
 // fn test_proving_complex_expression() {
 //     // The boxed_and definition can't be normalized to CNF directly.
 //     let mut p = Project::new_mock();
