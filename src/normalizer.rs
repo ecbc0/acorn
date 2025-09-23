@@ -632,17 +632,8 @@ impl Normalizer {
         let value = value.move_negation_inwards(true, false);
 
         let mut skolem_ids = vec![];
-
-        let clauses = if true {
-            // Old method
-            let value = self.skolemize(&vec![], value, &mut skolem_ids)?;
-            self.normalize_cnf(value, ctype)?
-        } else {
-            // New method
-            let qcf = QCF::from_value(&value, self, ctype)?;
-            let skolemized_qcf = self.skolemize_qcf(&vec![], qcf, &mut skolem_ids)?;
-            skolemized_qcf.into_clauses()?
-        };
+        let value = self.skolemize(&vec![], value, &mut skolem_ids)?;
+        let clauses = self.normalize_cnf(value, ctype)?;
 
         if !skolem_ids.is_empty() {
             // We have to define the skolem atoms that were declared during skolemization.
