@@ -468,15 +468,14 @@ impl Normalizer {
     fn into_literal_lists(
         &mut self,
         value: &AcornValue,
-        ctype: NewConstantType,
     ) -> Result<Option<Vec<Vec<Literal>>>, String> {
         match value {
             AcornValue::Binary(BinaryOp::And, left, right) => {
-                let mut left = match self.into_literal_lists(left, ctype)? {
+                let mut left = match self.into_literal_lists(left)? {
                     Some(left) => left,
                     None => return Ok(None),
                 };
-                let right = match self.into_literal_lists(right, ctype)? {
+                let right = match self.into_literal_lists(right)? {
                     Some(right) => right,
                     None => return Ok(None),
                 };
@@ -484,8 +483,8 @@ impl Normalizer {
                 Ok(Some(left))
             }
             AcornValue::Binary(BinaryOp::Or, left, right) => {
-                let left = self.into_literal_lists(left, ctype)?;
-                let right = self.into_literal_lists(right, ctype)?;
+                let left = self.into_literal_lists(left)?;
+                let right = self.into_literal_lists(right)?;
                 match (left, right) {
                     (None, None) => Ok(None),
                     (Some(result), None) | (None, Some(result)) => Ok(Some(result)),
@@ -505,7 +504,7 @@ impl Normalizer {
             AcornValue::Bool(true) => Ok(Some(vec![])),
             AcornValue::Bool(false) => Ok(None),
             _ => {
-                let literal = self.literal_from_value(&value, ctype)?;
+                let literal = self.literal_from_value(&value, NewConstantType::Disallowed)?;
                 if literal.is_tautology() {
                     Ok(Some(vec![]))
                 } else {
@@ -520,11 +519,10 @@ impl Normalizer {
     fn normalize_cnf(
         &mut self,
         value: AcornValue,
-        ctype: NewConstantType,
     ) -> Result<Vec<Clause>, String> {
         let mut universal = vec![];
         let value = value.remove_forall(&mut universal);
-        match self.into_literal_lists(&value, ctype) {
+        match self.into_literal_lists(&value) {
             Ok(Some(lists)) => Ok(self.normalize_literal_lists(lists)),
             Ok(None) => Ok(vec![Clause::impossible()]),
             Err(s) => {
@@ -608,7 +606,7 @@ impl Normalizer {
         }
 
         self.add_constants(&value, ctype)?;
-        let clauses = self.normalize_cnf(value, NewConstantType::Disallowed)?;
+        let clauses = self.normalize_cnf(value)?;
 
         if !skolem_ids.is_empty() {
             // We have to define the skolem atoms that were declared during skolemization.
