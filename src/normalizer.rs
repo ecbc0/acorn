@@ -242,7 +242,7 @@ impl Normalizer {
     /// Swaps left and right if needed, to sort.
     /// Normalizes literals to <larger> = <smaller>, because that's the logical direction
     /// to do rewrite-type lookups, on the larger literal first.
-    pub fn literal_from_value(&self, value: &AcornValue) -> Result<Literal, String> {
+    fn literal_from_value(&self, value: &AcornValue) -> Result<Literal, String> {
         match value {
             AcornValue::Variable(_, _) | AcornValue::Constant(_) => {
                 Ok(Literal::positive(self.term_from_value(value)?))
