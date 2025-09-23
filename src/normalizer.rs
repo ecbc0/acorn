@@ -1269,4 +1269,38 @@ mod tests {
             &["addx(addx(x0, zero), x1) != zero or ltx(x1, zero)"],
         );
     }
+
+    #[test]
+    fn test_functional_skolemization() {
+        // This matches a pattern that failed in finite_constraint proving
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            type T: axiom
+            type List: axiom
+            let contains: (List, T) -> Bool = axiom
+            define finite_constraint(p: T -> Bool) -> Bool {
+                exists(lst: List) {
+                    forall(x: T) {
+                        p(x) implies contains(lst, x)
+                    }
+                }
+            }
+            theorem test_finite(p: T -> Bool) {
+                not finite_constraint(p) or
+                exists(lst: List) {
+                    forall(x: T) {
+                        p(x) implies contains(lst, x)
+                    }
+                }
+            }
+            "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(
+            &env,
+            "test_finite",
+            &["not finite_constraint(x0) or not x0(x1) or contains(s0(x0), x1)"],
+        );
+    }
 }
