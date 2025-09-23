@@ -34,27 +34,30 @@ impl QCF {
     /// Convert an AcornValue to a QCF.
     /// Only handles cases that map directly onto QCF structure.
     /// Returns an error for unsupported cases.
-    pub fn from_value(value: &AcornValue, normalizer: &mut crate::normalizer::Normalizer) -> Result<QCF, String> {
+    pub fn from_value(
+        value: &AcornValue,
+        normalizer: &mut crate::normalizer::Normalizer,
+        ctype: crate::normalization_map::NewConstantType,
+    ) -> Result<QCF, String> {
         use crate::acorn_value::{AcornValue, BinaryOp};
-        use crate::normalization_map::NewConstantType;
 
         match value {
             AcornValue::ForAll(types, body) => {
-                let body_qcf = QCF::from_value(body, normalizer)?;
+                let body_qcf = QCF::from_value(body, normalizer, ctype)?;
                 Ok(QCF::ForAll(types.clone(), Box::new(body_qcf)))
             }
             AcornValue::Exists(types, body) => {
-                let body_qcf = QCF::from_value(body, normalizer)?;
+                let body_qcf = QCF::from_value(body, normalizer, ctype)?;
                 Ok(QCF::Exists(types.clone(), Box::new(body_qcf)))
             }
             AcornValue::Binary(BinaryOp::And, left, right) => {
-                let left_qcf = QCF::from_value(left, normalizer)?;
-                let right_qcf = QCF::from_value(right, normalizer)?;
+                let left_qcf = QCF::from_value(left, normalizer, ctype)?;
+                let right_qcf = QCF::from_value(right, normalizer, ctype)?;
                 Ok(QCF::And(Box::new(left_qcf), Box::new(right_qcf)))
             }
             AcornValue::Binary(BinaryOp::Or, left, right) => {
-                let left_qcf = QCF::from_value(left, normalizer)?;
-                let right_qcf = QCF::from_value(right, normalizer)?;
+                let left_qcf = QCF::from_value(left, normalizer, ctype)?;
+                let right_qcf = QCF::from_value(right, normalizer, ctype)?;
                 Ok(QCF::Or(Box::new(left_qcf), Box::new(right_qcf)))
             }
             AcornValue::Bool(true) => {
@@ -68,7 +71,7 @@ impl QCF {
             _ => {
                 // For other values, try to convert to a single literal
                 // and wrap it in CNF
-                match normalizer.literal_from_value(value, NewConstantType::Disallowed) {
+                match normalizer.literal_from_value(value, ctype) {
                     Ok(literal) => {
                         if literal.is_tautology() {
                             // x = x is always true

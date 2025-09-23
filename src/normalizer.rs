@@ -638,7 +638,7 @@ impl Normalizer {
             self.normalize_cnf(value, ctype)?
         } else {
             // New method
-            let qcf = QCF::from_value(&value, self)?;
+            let qcf = QCF::from_value(&value, self, ctype)?;
             let skolemized_qcf = self.skolemize_qcf(&vec![], qcf, &mut skolem_ids)?;
             skolemized_qcf.into_clauses()?
         };
