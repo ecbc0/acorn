@@ -311,6 +311,29 @@ impl Normalizer {
         self.normalization_map
             .add_constant(cname, NewConstantType::Local)
     }
+}
+
+// A NormalizerView lets us share methods between mutable and non-mutable normalizers that
+// only differ in a small number of places.
+pub enum NormalizerView<'a> {
+    Ref(&'a Normalizer),
+    Mut(&'a mut Normalizer),
+}
+
+impl NormalizerView<'_> {
+    fn as_ref(&self) -> &Normalizer {
+        match self {
+            NormalizerView::Ref(n) => n,
+            NormalizerView::Mut(n) => n,
+        }
+    }
+
+    fn as_mut(&mut self) -> Result<&mut Normalizer, String> {
+        match self {
+            NormalizerView::Ref(_) => Err("Cannot mutate a NormalizerView::Ref".to_string()),
+            NormalizerView::Mut(n) => Ok(n),
+        }
+    }
 
     /// Wrapper around value_to_literal_lists.
     /// Note that this only works on values that have already been "cleaned up" to some extent.
@@ -357,7 +380,7 @@ impl Normalizer {
         match value {
             AcornValue::ForAll(quants, subvalue) => {
                 for quant in quants {
-                    let type_id = self.normalization_map.get_type_id(quant)?;
+                    let type_id = self.as_ref().normalization_map.get_type_id(quant)?;
                     let var = Term::new_variable(type_id, *next_var_id);
                     *next_var_id += 1;
                     stack.push(var);
@@ -376,7 +399,12 @@ impl Normalizer {
                 for term in stack.iter() {
                     if term.is_variable() {
                         args.push(term.clone());
-                        arg_types.push(self.normalization_map.get_type(term.term_type).clone());
+                        arg_types.push(
+                            self.as_ref()
+                                .normalization_map
+                                .get_type(term.term_type)
+                                .clone(),
+                        );
                     }
                 }
                 for quant in quants {
@@ -384,9 +412,10 @@ impl Normalizer {
                     // The skolem term is that atom applied to the variables on the stack.
                     // Note that the skolem atom may be a type we have not used before.
                     let skolem_atom_type = AcornType::functional(arg_types.clone(), quant.clone());
-                    let skolem_atom_type_id = self.normalization_map.add_type(&skolem_atom_type);
-                    let skolem_term_type_id = self.normalization_map.get_type_id(quant)?;
-                    let skolem_id = self.declare_synthetic_atom(skolem_atom_type)?;
+                    let skolem_atom_type_id =
+                        self.as_mut()?.normalization_map.add_type(&skolem_atom_type);
+                    let skolem_term_type_id = self.as_ref().normalization_map.get_type_id(quant)?;
+                    let skolem_id = self.as_mut()?.declare_synthetic_atom(skolem_atom_type)?;
                     synthesized.push(skolem_id);
                     let skolem_atom = Atom::Synthetic(skolem_id);
                     let skolem_term = Term::new(
@@ -489,7 +518,10 @@ impl Normalizer {
             }
             AcornValue::Application(application) => {
                 let application_type = application.get_type();
-                let term_type = self.normalization_map.get_type_id(&application_type)?;
+                let term_type = self
+                    .as_ref()
+                    .normalization_map
+                    .get_type_id(&application_type)?;
                 let func_term = self.value_to_term(&application.function, stack)?;
                 let head = func_term.head;
                 let head_type = func_term.head_type;
@@ -501,11 +533,17 @@ impl Normalizer {
             }
             AcornValue::Constant(c) => {
                 if c.params.is_empty() {
-                    let type_id = self.normalization_map.get_type_id(&c.instance_type)?;
-                    let constant_atom = self.atom_from_name(&c.name)?;
+                    let type_id = self
+                        .as_ref()
+                        .normalization_map
+                        .get_type_id(&c.instance_type)?;
+                    let constant_atom = self.as_ref().atom_from_name(&c.name)?;
                     Ok((Term::new(type_id, type_id, constant_atom, vec![]), true))
                 } else {
-                    Ok((self.normalization_map.term_from_monomorph(&c)?, true))
+                    Ok((
+                        self.as_ref().normalization_map.term_from_monomorph(&c)?,
+                        true,
+                    ))
                 }
             }
             AcornValue::Not(subvalue) => {
@@ -516,7 +554,9 @@ impl Normalizer {
             _ => Err(format!("Cannot convert {} to term", value)),
         }
     }
+}
 
+impl Normalizer {
     /// Adds the definition for these synthetic atoms.
     /// This must be done in the same order they are declared in.
     fn define_synthetic_atoms(&mut self, atoms: Vec<AtomId>, clauses: Vec<Clause>) {
@@ -559,7 +599,8 @@ impl Normalizer {
         self.normalization_map.add_from(&value, ctype);
 
         let mut skolem_ids = vec![];
-        let clauses = self.nice_value_to_clauses(&value, &mut skolem_ids)?;
+        let mut mut_view = NormalizerView::Mut(self);
+        let clauses = mut_view.nice_value_to_clauses(&value, &mut skolem_ids)?;
 
         if !skolem_ids.is_empty() {
             // We have to define the skolem atoms that were declared during skolemization.
