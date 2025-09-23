@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::acorn_type::AcornType;
@@ -43,6 +44,10 @@ pub struct Checker {
 
     /// Stringified versions of inserted clauses when verbose is true.
     insertions: Vec<String>,
+
+    /// A hack, but we need to break out of loops, since equality factoring and boolean
+    /// reduction can create cycles.
+    past_boolean_reductions: HashSet<Clause>,
 }
 
 impl Checker {
@@ -54,6 +59,7 @@ impl Checker {
             direct_contradiction: false,
             verbose: false,
             insertions: Vec::new(),
+            past_boolean_reductions: HashSet::new(),
         }
     }
 
@@ -107,6 +113,11 @@ impl Checker {
         }
 
         for boolean_reduction in clause.boolean_reductions() {
+            if self.past_boolean_reductions.contains(&boolean_reduction) {
+                continue;
+            }
+            self.past_boolean_reductions
+                .insert(boolean_reduction.clone());
             self.insert_clause(&boolean_reduction);
         }
     }
