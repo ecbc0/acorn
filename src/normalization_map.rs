@@ -119,6 +119,14 @@ impl NormalizationMap {
         &self.local_constants[atom_id as usize].as_ref().unwrap()
     }
 
+    /// Get the id for a type if it exists, otherwise return an error.
+    pub fn get_type_id(&self, acorn_type: &AcornType) -> Result<TypeId, String> {
+        self.type_to_type_id
+            .get(acorn_type)
+            .copied()
+            .ok_or_else(|| format!("Type {} not registered in normalization map", acorn_type))
+    }
+
     /// Returns the id for the new type.
     pub fn add_type(&mut self, acorn_type: &AcornType) -> TypeId {
         if let Some(type_id) = self.type_to_type_id.get(acorn_type) {
