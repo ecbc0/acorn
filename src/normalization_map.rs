@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::acorn_type::AcornType;
-use crate::acorn_value::ConstantInstance;
+use crate::acorn_value::{AcornValue, ConstantInstance};
 use crate::atom::{Atom, AtomId};
 use crate::names::ConstantName;
 use crate::term::{Term, TypeId};
@@ -90,6 +90,17 @@ impl NormalizationMap {
         };
         self.name_to_atom.insert(name, atom);
         atom
+    }
+
+    /// Add all constants from a value to the normalization map.
+    /// This ensures that all constants in the value are registered.
+    pub fn add_from(&mut self, value: &AcornValue, ctype: NewConstantType) {
+        value.for_each_constant(&mut |c| {
+            if c.name.is_synthetic() || self.get_atom(&c.name).is_some() {
+                return;
+            }
+            self.add_constant(c.name.clone(), ctype);
+        });
     }
 
     /// Get the name corresponding to a particular global AtomId.

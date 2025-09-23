@@ -299,19 +299,6 @@ impl Normalizer {
         Err(format!("unrecognized name: {}", name))
     }
 
-    /// Adds all constants from a value to the normalizer.
-    /// This ensures that all constants in the value are registered in the normalization map.
-    fn add_constants(&mut self, value: &AcornValue, ctype: NewConstantType) -> Result<(), String> {
-        value.for_each_constant(&mut |c| {
-            if c.name.is_synthetic() || self.normalization_map.get_atom(&c.name).is_some() {
-                return;
-            }
-
-            self.normalization_map.add_constant(c.name.clone(), ctype);
-        });
-        Ok(())
-    }
-
     /// Constructs a new term or negated term from an AcornValue
     /// Returns an error if it's inconvertible.
     /// The flag returned is whether the term is negated.
@@ -547,7 +534,7 @@ impl Normalizer {
         let value = value.replace_match();
         let value = value.replace_if();
         let value = value.move_negation_inwards(true, false);
-        self.add_constants(&value, ctype)?;
+        self.normalization_map.add_from(&value, ctype);
 
         let mut next_synthetic_id = self.synthetic_types.len() as AtomId;
         let mut synthesized = vec![];

@@ -1632,6 +1632,62 @@ impl AcornValue {
         }
     }
 
+    /// Apply a function to each type in this value.
+    /// This includes types of variables, constants, and the result types of function applications.
+    pub fn for_each_type(&self, f: &mut impl FnMut(&AcornType)) {
+        match self {
+            AcornValue::Variable(_, var_type) => f(var_type),
+            AcornValue::Application(app) => {
+                // Process the function's types
+                app.function.for_each_type(f);
+                // Process argument types
+                for arg in &app.args {
+                    arg.for_each_type(f);
+                }
+                // Process the application's result type
+                let app_type = app.get_type();
+                f(&app_type);
+            }
+            AcornValue::Lambda(arg_types, value) => {
+                // Process lambda argument types
+                for arg_type in arg_types {
+                    f(arg_type);
+                }
+                value.for_each_type(f);
+            }
+            AcornValue::ForAll(quant_types, value) | AcornValue::Exists(quant_types, value) => {
+                // Process quantifier types
+                for quant_type in quant_types {
+                    f(quant_type);
+                }
+                value.for_each_type(f);
+            }
+            AcornValue::Binary(_, left, right) => {
+                left.for_each_type(f);
+                right.for_each_type(f);
+            }
+            AcornValue::IfThenElse(cond, if_value, else_value) => {
+                cond.for_each_type(f);
+                if_value.for_each_type(f);
+                else_value.for_each_type(f);
+            }
+            AcornValue::Match(scrutinee, cases) => {
+                scrutinee.for_each_type(f);
+                for (new_vars, pattern, result) in cases {
+                    // Process types introduced by the match
+                    for var_type in new_vars {
+                        f(var_type);
+                    }
+                    pattern.for_each_type(f);
+                    result.for_each_type(f);
+                }
+            }
+            AcornValue::Not(x) => x.for_each_type(f),
+            AcornValue::Constant(c) => f(&c.instance_type),
+            AcornValue::Bool(_) => {}
+        }
+    }
+
     pub fn find_constants(
         &self,
         filter: &impl Fn(&ConstantInstance) -> bool,
