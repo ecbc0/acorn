@@ -450,30 +450,54 @@ impl NormalizerView<'_> {
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
     ) -> Result<CNF, String> {
-        if let Some((left_term, left_sign)) = self.try_value_to_signed_term(left, stack)? {
-            if let Some((right_term, right_sign)) = self.try_value_to_signed_term(right, stack)? {
-                // Both sides are terms, so we can do a simple equality or inequality
-                let positive = (left_sign == right_sign) ^ negate;
-                let literal = Literal::new(positive, left_term, right_term);
-                return Ok(CNF::from_literal(literal));
+        if left.is_bool_type() {
+            if let Some((left_term, left_sign)) = self.try_value_to_signed_term(left, stack)? {
+                if let Some((right_term, right_sign)) =
+                    self.try_value_to_signed_term(right, stack)?
+                {
+                    // Both sides are terms, so we can do a simple equality or inequality
+                    let positive = (left_sign == right_sign) ^ negate;
+                    let literal = Literal::new(positive, left_term, right_term);
+                    return Ok(CNF::from_literal(literal));
+                }
             }
-        }
 
-        if !left.is_bool_type() {
-            return Err("comparing unexpected things".to_string());
-        }
-
-        // Here, we duplicate subterms. Be careful of weird stuff.
-        if negate {
-            // Inequality.
-            let some = self.or_to_cnf(left, right, true, true, stack, next_var_id, synth)?;
-            let not_both = self.or_to_cnf(left, right, false, false, stack, next_var_id, synth)?;
-            Ok(some.and(not_both))
+            // This logic duplicates subterms. We need to be careful that we don't synthesize
+            // variables in these calls.
+            if negate {
+                // Inequality.
+                let some = self.or_to_cnf(left, right, true, true, stack, next_var_id, synth)?;
+                let not_both =
+                    self.or_to_cnf(left, right, false, false, stack, next_var_id, synth)?;
+                Ok(some.and(not_both))
+            } else {
+                // Equality.
+                let l_imp_r =
+                    self.or_to_cnf(left, right, true, false, stack, next_var_id, synth)?;
+                let r_imp_l =
+                    self.or_to_cnf(left, right, false, true, stack, next_var_id, synth)?;
+                Ok(l_imp_r.and(r_imp_l))
+            }
         } else {
-            // Equality.
-            let l_imp_r = self.or_to_cnf(left, right, true, false, stack, next_var_id, synth)?;
-            let r_imp_l = self.or_to_cnf(left, right, false, true, stack, next_var_id, synth)?;
-            Ok(l_imp_r.and(r_imp_l))
+            let left = self.value_to_branching_term(left, stack, next_var_id, synth)?;
+            let right = self.value_to_branching_term(right, stack, next_var_id, synth)?;
+            match (left, right) {
+                (Branching::Plain(left), Branching::Plain(right)) => {
+                    let literal = Literal::new(!negate, left, right);
+                    Ok(CNF::from_literal(literal))
+                }
+                (Branching::If(cond, then_term, else_term), Branching::Plain(right)) => {
+                    let then_lit = Literal::new(!negate, then_term, right.clone());
+                    let else_lit = Literal::new(!negate, else_term, right);
+                    Ok(CNF::literal_if(cond, then_lit, else_lit))
+                }
+                (Branching::Plain(left), Branching::If(cond, then_term, else_term)) => {
+                    let then_lit = Literal::new(!negate, left.clone(), then_term);
+                    let else_lit = Literal::new(!negate, left, else_term);
+                    Ok(CNF::literal_if(cond, then_lit, else_lit))
+                }
+                _ => Err("failed to normalize comparison between branching terms".to_string()),
+            }
         }
     }
 

@@ -1,3 +1,5 @@
+use std::vec;
+
 use crate::literal::Literal;
 
 /// A CNF (Conjunctive Normal Form) formula represented as a vector of clauses,
@@ -13,7 +15,7 @@ pub struct CNF(Vec<Vec<Literal>>);
 
 impl CNF {
     /// Creates a new CNF from a vector of clauses.
-    pub fn new(clauses: Vec<Vec<Literal>>) -> Self {
+    fn new(clauses: Vec<Vec<Literal>>) -> Self {
         CNF(clauses)
     }
 
@@ -89,5 +91,13 @@ impl CNF {
         } else {
             None
         }
+    }
+
+    /// Convert an if-then-else structure into CNF.
+    pub fn literal_if(condition: Literal, consequence: Literal, alternative: Literal) -> Self {
+        CNF::new(vec![
+            vec![condition.negate(), consequence],
+            vec![condition, alternative],
+        ])
     }
 }
