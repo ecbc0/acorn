@@ -479,24 +479,24 @@ impl NormalizerView<'_> {
                 Ok(l_imp_r.and(r_imp_l))
             }
         } else {
-            let left = self.value_to_branching_term(left, stack, next_var_id, synth)?;
-            let right = self.value_to_branching_term(right, stack, next_var_id, synth)?;
+            let left = self.value_to_extended_term(left, stack, next_var_id, synth)?;
+            let right = self.value_to_extended_term(right, stack, next_var_id, synth)?;
             match (left, right) {
-                (ExtendedTerm::Plain(left), ExtendedTerm::Plain(right)) => {
-                    let literal = Literal::new(!negate, left, right);
+                (ExtendedTerm::Signed(left, ls), ExtendedTerm::Signed(right, rs)) => {
+                    let literal = Literal::new(!negate ^ !ls ^ !rs, left, right);
                     Ok(CNF::from_literal(literal))
                 }
-                (ExtendedTerm::If(cond, then_term, else_term), ExtendedTerm::Plain(right)) => {
-                    let then_lit = Literal::new(!negate, then_term, right.clone());
-                    let else_lit = Literal::new(!negate, else_term, right);
+                (ExtendedTerm::If(cond, then_t, else_t), ExtendedTerm::Signed(right, rs)) => {
+                    let then_lit = Literal::new(!negate ^ !rs, then_t, right.clone());
+                    let else_lit = Literal::new(!negate ^ !rs, else_t, right);
                     Ok(CNF::literal_if(cond, then_lit, else_lit))
                 }
-                (ExtendedTerm::Plain(left), ExtendedTerm::If(cond, then_term, else_term)) => {
-                    let then_lit = Literal::new(!negate, left.clone(), then_term);
-                    let else_lit = Literal::new(!negate, left, else_term);
+                (ExtendedTerm::Signed(left, ls), ExtendedTerm::If(cond, then_t, else_t)) => {
+                    let then_lit = Literal::new(!negate ^ !ls, left.clone(), then_t);
+                    let else_lit = Literal::new(!negate ^ !ls, left, else_t);
                     Ok(CNF::literal_if(cond, then_lit, else_lit))
                 }
-                _ => Err("failed to normalize comparison between branching terms".to_string()),
+                _ => Err("comparison between two 'if' values".to_string()),
             }
         }
     }
@@ -578,8 +578,8 @@ impl NormalizerView<'_> {
         }
     }
 
-    /// Converts a value to a BranchingTerm, which is like a Term but can represent if-then-else.
-    pub fn value_to_branching_term(
+    /// Converts a value to an ExtendedTerm, which can appear in places a Term does.
+    fn value_to_extended_term(
         &mut self,
         value: &AcornValue,
         stack: &mut Vec<Term>,
@@ -604,8 +604,11 @@ impl NormalizerView<'_> {
                 let mut spine1 = vec![];
                 let mut spine2 = vec![];
                 for subterm in app.iter_spine() {
-                    match self.value_to_branching_term(subterm, stack, next_var_id, synth)? {
-                        ExtendedTerm::Plain(t) => {
+                    match self.value_to_extended_term(subterm, stack, next_var_id, synth)? {
+                        ExtendedTerm::Signed(t, sign) => {
+                            if !sign {
+                                return Err("negated term in application".to_string());
+                            }
                             if !spine2.is_empty() {
                                 spine2.push(t.clone());
                             }
@@ -636,22 +639,22 @@ impl NormalizerView<'_> {
                     None => {
                         assert!(spine2.is_empty());
                         let term = Term::from_spine(spine1, term_type);
-                        Ok(ExtendedTerm::Plain(term))
+                        Ok(ExtendedTerm::Signed(term, true))
                     }
                 }
             }
             _ => {
                 let term = self.value_to_term(value, stack)?;
-                Ok(ExtendedTerm::Plain(term))
+                Ok(ExtendedTerm::Signed(term, true))
             }
         }
     }
 }
 
-// An ExtendedTerm represents a Term that might be under an if-then-else branch, or might not.
-pub enum ExtendedTerm {
-    // Just a plain term.
-    Plain(Term),
+// An ExtendedTerm can be a term but also a negated term or an if-then-else construct.
+enum ExtendedTerm {
+    // true = positive.
+    Signed(Term, bool),
 
     // (condition, then branch, else branch)
     If(Literal, Term, Term),
