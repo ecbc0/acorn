@@ -324,15 +324,14 @@ impl NormalizerView<'_> {
                 }
             }
             _ => {
-                let mut literal = self.value_to_literal(value, stack)?;
-                if negate {
-                    literal = literal.negate();
-                }
+                let (t, sign) = self.value_to_signed_term(value, stack)?;
+                let literal = Literal::from_signed_term(t, sign ^ negate);
                 Ok(CNF::from_literal(literal))
             }
         }
     }
 
+    // Convert a "forall" node in a value, or the equivalent, to CNF.
     // negate is whether to negate the subvalue.
     fn forall_to_cnf(
         &mut self,
@@ -356,6 +355,7 @@ impl NormalizerView<'_> {
         Ok(result)
     }
 
+    // Convert an "exists" node in a value, or the equivalent, to CNF.
     // negate is whether to negate the subvalue.
     fn exists_to_cnf(
         &mut self,
@@ -405,6 +405,8 @@ impl NormalizerView<'_> {
         Ok(result)
     }
 
+    // Convert an "and" node in a value, or the equivalent, to CNF.
+    // negate_left and negate_right are whether to negate the respective subvalues.
     fn and_to_cnf(
         &mut self,
         left: &AcornValue,
@@ -420,6 +422,8 @@ impl NormalizerView<'_> {
         Ok(left.and(right))
     }
 
+    // Convert an "or" node in a value, or the equivalent, to CNF.
+    // negate_left and negate_right are whether to negate the respective subvalues.
     fn or_to_cnf(
         &mut self,
         left: &AcornValue,
@@ -435,7 +439,8 @@ impl NormalizerView<'_> {
         Ok(left.or(right))
     }
 
-    // This should only be called when left and right are boolean.
+    // Convert an equality or inequality node in a value to CNF.
+    // negate is whether it's an inequality.
     fn eq_to_cnf(
         &mut self,
         left: &AcornValue,
@@ -472,31 +477,6 @@ impl NormalizerView<'_> {
         }
     }
 
-    /// Helper for value_to_literal_lists.
-    /// Note that this represents "true" and "false" as "true = true" and "true != true" literals.
-    fn value_to_literal(&self, value: &AcornValue, stack: &Vec<Term>) -> Result<Literal, String> {
-        match value {
-            AcornValue::Binary(BinaryOp::Equals, left, right) => {
-                let (left_term, left_sign) = self.value_to_signed_term(&*left, stack)?;
-                let (right_term, right_sign) = self.value_to_signed_term(&*right, stack)?;
-                Ok(Literal::new(left_sign == right_sign, left_term, right_term))
-            }
-            AcornValue::Binary(BinaryOp::NotEquals, left, right) => {
-                let (left_term, left_sign) = self.value_to_signed_term(&*left, stack)?;
-                let (right_term, right_sign) = self.value_to_signed_term(&*right, stack)?;
-                Ok(Literal::new(left_sign != right_sign, left_term, right_term))
-            }
-            AcornValue::Not(subvalue) => {
-                let subliteral = self.value_to_literal(subvalue, stack)?;
-                Ok(subliteral.negate())
-            }
-            _ => {
-                let (t, sign) = self.value_to_signed_term(value, stack)?;
-                Ok(Literal::new(sign, t, Term::new_true()))
-            }
-        }
-    }
-
     fn value_to_term(&self, value: &AcornValue, stack: &Vec<Term>) -> Result<Term, String> {
         let (t, sign) = self.value_to_signed_term(value, stack)?;
         if sign {
@@ -515,7 +495,7 @@ impl NormalizerView<'_> {
         answer.ok_or_else(|| format!("Cannot convert {} to signed term", value))
     }
 
-    /// Helper for value_to_literal_lists.
+    /// Helper for value_to_cnf.
     /// The bool returned is true = positive.
     /// This only errors if we get an inconsistent value.
     /// If it is just called on a value that doesn't convert to a term, it returns Ok(None).
@@ -576,16 +556,21 @@ impl NormalizerView<'_> {
 
     /// Converts a value to a BranchingTerm, which is like a Term but can represent if-then-else.
     pub fn value_to_branching_term(
-        &self,
+        &mut self,
         value: &AcornValue,
-        stack: &Vec<Term>,
+        stack: &mut Vec<Term>,
+        next_var_id: &mut AtomId,
+        synth: &mut Vec<AtomId>,
     ) -> Result<Branching<Term>, String> {
         match value {
             AcornValue::IfThenElse(cond_val, then_value, else_value) => {
-                let cond = self.value_to_literal(cond_val, stack)?;
+                let cond_cnf = self.value_to_cnf(cond_val, false, stack, next_var_id, synth)?;
+                let Some(cond_lit) = cond_cnf.to_literal() else {
+                    return Err("if condition is too complicated".to_string());
+                };
                 let then_branch = self.value_to_term(then_value, stack)?;
                 let else_branch = self.value_to_term(else_value, stack)?;
-                Ok(Branching::If(cond, then_branch, else_branch))
+                Ok(Branching::If(cond_lit, then_branch, else_branch))
             }
             AcornValue::Application(app) => {
                 // We convert f(if a then b else c, d) into if a then f(b, d) else f(c, d).
@@ -595,7 +580,7 @@ impl NormalizerView<'_> {
                 let mut spine1 = vec![];
                 let mut spine2 = vec![];
                 for subterm in app.iter_spine() {
-                    match self.value_to_branching_term(subterm, stack)? {
+                    match self.value_to_branching_term(subterm, stack, next_var_id, synth)? {
                         Branching::Plain(t) => {
                             if !spine2.is_empty() {
                                 spine2.push(t.clone());

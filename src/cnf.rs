@@ -22,16 +22,24 @@ impl CNF {
         CNF(vec![])
     }
 
+    pub fn is_true_value(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// Creates a CNF with an empty clause representing "false".
     pub fn false_value() -> Self {
         CNF(vec![vec![]])
     }
 
+    pub fn is_false_value(&self) -> bool {
+        self.0.len() == 1 && self.0[0].is_empty()
+    }
+
     /// Creates a CNF from a single literal.
     pub fn from_literal(literal: Literal) -> Self {
-        if literal.is_basic_true() {
+        if literal.is_true_value() {
             Self::true_value()
-        } else if literal.is_basic_false() {
+        } else if literal.is_false_value() {
             Self::false_value()
         } else {
             CNF(vec![vec![literal]])
@@ -61,5 +69,25 @@ impl CNF {
 
     pub fn into_iter(self) -> impl Iterator<Item = Vec<Literal>> {
         self.0.into_iter()
+    }
+
+    pub fn to_literal(self) -> Option<Literal> {
+        if self.is_true_value() {
+            Some(Literal::true_value())
+        } else if self.is_false_value() {
+            Some(Literal::false_value())
+        } else if self.0.len() == 1 && self.0[0].len() == 1 {
+            Some(
+                self.0
+                    .into_iter()
+                    .next()
+                    .unwrap()
+                    .into_iter()
+                    .next()
+                    .unwrap(),
+            )
+        } else {
+            None
+        }
     }
 }

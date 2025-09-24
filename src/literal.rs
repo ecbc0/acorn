@@ -65,6 +65,10 @@ impl Literal {
         }
     }
 
+    pub fn from_signed_term(term: Term, positive: bool) -> Literal {
+        Literal::new(positive, term, Term::new_true())
+    }
+
     pub fn positive(term: Term) -> Literal {
         Literal::new(true, term, Term::new_true())
     }
@@ -81,11 +85,19 @@ impl Literal {
         Literal::new(false, left, right)
     }
 
-    pub fn is_basic_true(&self) -> bool {
+    pub fn true_value() -> Literal {
+        Literal::new(true, Term::new_true(), Term::new_true())
+    }
+
+    pub fn false_value() -> Literal {
+        Literal::new(false, Term::new_true(), Term::new_true())
+    }
+
+    pub fn is_true_value(&self) -> bool {
         self.positive && self.left.is_true() && self.right.is_true()
     }
 
-    pub fn is_basic_false(&self) -> bool {
+    pub fn is_false_value(&self) -> bool {
         !self.positive && self.left.is_true() && self.right.is_true()
     }
 
@@ -94,23 +106,6 @@ impl Literal {
             positive: !self.positive,
             left: self.left.clone(),
             right: self.right.clone(),
-        }
-    }
-
-    /// Converts to "literal lists" format. This is CNF.
-    /// This converts basic true and false into their CNF form..
-    /// In CNF, an empty list is "true", because it represents no clauses that need to be satisfied.
-    /// In CNF, a list with an empty list is "false", because it represents an unsatisfiable clause.
-    pub fn to_literal_lists(mut self, negate: bool) -> Vec<Vec<Literal>> {
-        if negate {
-            self.positive = !self.positive;
-        }
-        if self.is_basic_true() {
-            vec![]
-        } else if self.is_basic_false() {
-            vec![vec![]]
-        } else {
-            vec![vec![self]]
         }
     }
 
