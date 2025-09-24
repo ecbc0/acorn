@@ -37,6 +37,14 @@ impl CNF {
         self.0.len() == 1 && self.0[0].is_empty()
     }
 
+    pub fn validate(&self) {
+        for clause in &self.0 {
+            for literal in clause {
+                literal.validate();
+            }
+        }
+    }
+
     /// Creates a CNF from a single literal.
     pub fn from_literal(literal: Literal) -> Self {
         if literal.is_true_value() {

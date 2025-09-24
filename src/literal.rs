@@ -65,6 +65,13 @@ impl Literal {
         }
     }
 
+    pub fn validate(&self) {
+        if Literal::new(self.positive, self.left.clone(), self.right.clone()) != *self {
+            panic!("Literal is not normalized: {}", self);
+        }
+        self.validate_type();
+    }
+
     pub fn from_signed_term(term: Term, positive: bool) -> Literal {
         Literal::new(positive, term, Term::new_true())
     }

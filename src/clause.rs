@@ -140,6 +140,16 @@ impl Clause {
         (c, trace)
     }
 
+    pub fn validate(&self) {
+        // Check that the literals are sorted
+        for i in 0..self.literals.len() {
+            self.literals[i].validate();
+            if i > 0 && self.literals[i - 1] > self.literals[i] {
+                panic!("Clause literals are not sorted: {}", self);
+            }
+        }
+    }
+
     /// Creates a new clause and a new trace, given a list of literals and a
     /// trace of how they were created.
     pub fn new_with_trace(
