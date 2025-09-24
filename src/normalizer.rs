@@ -614,12 +614,12 @@ impl Normalizer {
         value: &AcornValue,
         ctype: NewConstantType,
     ) -> Result<Vec<Clause>, String> {
+        self.normalization_map.add_from(&value, ctype);
+
         let value = value.replace_function_equality(0);
         let value = value.expand_lambdas(0);
         let value = value.replace_match();
         let value = value.replace_if();
-
-        self.normalization_map.add_from(&value, ctype);
 
         let mut skolem_ids = vec![];
         let mut mut_view = NormalizerView::Mut(self);
