@@ -10,6 +10,7 @@ pub mod certificate;
 pub mod checker;
 pub mod clause;
 pub mod clause_set;
+pub mod cnf;
 pub mod code_generator;
 pub mod common;
 pub mod compilation;
