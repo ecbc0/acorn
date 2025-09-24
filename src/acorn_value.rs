@@ -962,49 +962,6 @@ impl AcornValue {
         }
     }
 
-    /// Replaces "match" nodes by replacing them with a disjunction of all their cases.
-    /// This should only be called on boolean values.
-    /// It only handles the case where the match is directly below the right of a binary operator,
-    /// because that lets you define constants and functions using match.
-    /// We could easily implement left-match. But is it even possible to hit that code?
-    pub fn replace_match(self) -> AcornValue {
-        assert!(self.is_bool_type());
-
-        match self {
-            AcornValue::Binary(op, left, right) => {
-                if let AcornValue::Match(scrutinee, cases) = *right {
-                    let mut conjuncts = vec![];
-                    for (vars, pattern, result) in cases {
-                        // The meaning of the branch is:
-                        //   scrutinee = pattern implies op(left, result)
-                        let equality = AcornValue::equals(*scrutinee.clone(), pattern);
-                        let implication = AcornValue::implies(
-                            equality,
-                            AcornValue::Binary(op, left.clone(), Box::new(result)),
-                        );
-                        let conjunct = AcornValue::forall(vars, implication);
-                        conjuncts.push(conjunct);
-                    }
-                    return AcornValue::reduce(BinaryOp::And, conjuncts);
-                }
-                AcornValue::Binary(op, left, right)
-            }
-
-            // The cases where we recurse
-            AcornValue::Not(value) => AcornValue::Not(Box::new(value.replace_match())),
-            AcornValue::ForAll(quants, value) => {
-                AcornValue::ForAll(quants, Box::new(value.replace_match()))
-            }
-            AcornValue::Exists(quants, value) => {
-                AcornValue::Exists(quants, Box::new(value.replace_match()))
-            }
-            AcornValue::Lambda(args, value) => {
-                AcornValue::Lambda(args, Box::new(value.replace_match()))
-            }
-            _ => self,
-        }
-    }
-
     /// Removes all "and" nodes, collecting the conjuncts into a vector.
     pub fn remove_and(&self) -> Vec<AcornValue> {
         let mut output = vec![];
