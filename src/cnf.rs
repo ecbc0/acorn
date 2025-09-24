@@ -93,11 +93,18 @@ impl CNF {
         }
     }
 
-    /// Convert an if-then-else structure into CNF.
+    /// Convert an if-then-else structure among literals into CNF.
     pub fn literal_if(condition: Literal, consequence: Literal, alternative: Literal) -> Self {
         CNF::new(vec![
             vec![condition.negate(), consequence],
             vec![condition, alternative],
         ])
+    }
+
+    /// Convert an if-then-else structure among CNF formulas into CNF.
+    pub fn cnf_if(condition: Literal, consequence: CNF, alternative: CNF) -> Self {
+        let cond_false = CNF::from_literal(condition.negate());
+        let cond_true = CNF::from_literal(condition);
+        cond_false.or(consequence).and(cond_true.or(alternative))
     }
 }

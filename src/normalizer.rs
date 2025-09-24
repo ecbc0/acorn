@@ -323,6 +323,15 @@ impl NormalizerView<'_> {
                     Ok(CNF::false_value())
                 }
             }
+            AcornValue::IfThenElse(cond_value, then_value, else_value) => {
+                let cond_cnf = self.value_to_cnf(cond_value, false, stack, next_var_id, synth)?;
+                let Some(cond_lit) = cond_cnf.to_literal() else {
+                    return Err("value 'if' condition is too complicated".to_string());
+                };
+                let then_cnf = self.value_to_cnf(then_value, negate, stack, next_var_id, synth)?;
+                let else_cnf = self.value_to_cnf(else_value, negate, stack, next_var_id, synth)?;
+                Ok(CNF::cnf_if(cond_lit, then_cnf, else_cnf))
+            }
             _ => {
                 let (t, sign) = self.value_to_signed_term(value, stack)?;
                 let literal = Literal::from_signed_term(t, sign ^ negate);
@@ -590,7 +599,7 @@ impl NormalizerView<'_> {
             AcornValue::IfThenElse(cond_val, then_value, else_value) => {
                 let cond_cnf = self.value_to_cnf(cond_val, false, stack, next_var_id, synth)?;
                 let Some(cond_lit) = cond_cnf.to_literal() else {
-                    return Err("if condition is too complicated".to_string());
+                    return Err("term 'if' condition is too complicated".to_string());
                 };
                 let then_branch = self.value_to_term(then_value, stack)?;
                 let else_branch = self.value_to_term(else_value, stack)?;
