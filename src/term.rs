@@ -100,6 +100,29 @@ impl Term {
         }
     }
 
+    /// Constructs a Term from a spine of terms where the first element is the function
+    /// and the rest are arguments. The term_type is the final type after all applications.
+    pub fn from_spine(mut spine: Vec<Term>, term_type: TypeId) -> Term {
+        if spine.is_empty() {
+            panic!("from_spine called with empty spine");
+        }
+
+        if spine.len() == 1 {
+            // Just the function, no arguments
+            spine.pop().unwrap()
+        } else {
+            // Take the function (first element)
+            let func = spine.remove(0);
+
+            // If the function already has arguments, we need to append the new ones
+            let mut all_args = func.args;
+            all_args.extend(spine);
+
+            // Build the final term with all arguments
+            Term::new(term_type, func.head_type, func.head, all_args)
+        }
+    }
+
     pub fn get_term_type(&self) -> TypeId {
         self.term_type
     }

@@ -614,6 +614,9 @@ impl NormalizerView<'_> {
                 let else_branch = self.value_to_term(else_value, stack)?;
                 Ok(Branching::If(cond, then_branch, else_branch))
             }
+            AcornValue::Application(_app) => {
+                todo!();
+            }
             _ => {
                 let term = self.value_to_term(value, stack)?;
                 Ok(Branching::Plain(term))

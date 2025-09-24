@@ -33,6 +33,11 @@ impl FunctionApplication {
         write!(f, ")")
     }
 
+    /// Iterates over the spine of the application: first the function, then the arguments
+    pub fn iter_spine(&self) -> impl Iterator<Item = &AcornValue> {
+        std::iter::once(self.function.as_ref()).chain(self.args.iter())
+    }
+
     /// Typechecks this function application
     fn typecheck(&self) -> Result<(), String> {
         let function_type = self.function.get_type();
