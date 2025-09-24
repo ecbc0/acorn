@@ -312,11 +312,11 @@ impl NormalizerView<'_> {
                     self.and_to_literal_lists(left, right, false, true, stack, next_var_id, synth)
                 }
             }
-            AcornValue::Binary(BinaryOp::Equals, left, right) if left.is_bool_type() => {
-                self.bool_eq_to_literal_lists(left, right, negate, stack, next_var_id, synth)
+            AcornValue::Binary(BinaryOp::Equals, left, right) => {
+                self.eq_to_literal_lists(left, right, negate, stack, next_var_id, synth)
             }
-            AcornValue::Binary(BinaryOp::NotEquals, left, right) if left.is_bool_type() => {
-                self.bool_eq_to_literal_lists(left, right, !negate, stack, next_var_id, synth)
+            AcornValue::Binary(BinaryOp::NotEquals, left, right) => {
+                self.eq_to_literal_lists(left, right, !negate, stack, next_var_id, synth)
             }
             AcornValue::Not(subvalue) => {
                 self.value_to_literal_lists(subvalue, !negate, stack, next_var_id, synth)
@@ -453,7 +453,7 @@ impl NormalizerView<'_> {
     }
 
     // This should only be called when left and right are boolean.
-    fn bool_eq_to_literal_lists(
+    fn eq_to_literal_lists(
         &mut self,
         left: &AcornValue,
         right: &AcornValue,
@@ -466,8 +466,13 @@ impl NormalizerView<'_> {
             if let Some((right_term, right_sign)) = self.try_value_to_signed_term(right, stack)? {
                 // Both sides are terms, so we can do a simple equality or inequality
                 let positive = (left_sign == right_sign) ^ negate;
-                return Ok(vec![vec![Literal::new(positive, left_term, right_term)]]);
+                let literal = Literal::new(positive, left_term, right_term);
+                return Ok(literal.to_literal_lists(false));
             }
+        }
+
+        if !left.is_bool_type() {
+            return Err("comparing unexpected things".to_string());
         }
 
         // Here, we duplicate subterms. Be careful of weird stuff.
