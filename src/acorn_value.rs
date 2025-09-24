@@ -962,55 +962,6 @@ impl AcornValue {
         }
     }
 
-    /// For an "if" among three boolean values, replace it with an equivalent value that
-    /// doesn't use if-then-else nodes.
-    fn if_replacement(a: AcornValue, b: AcornValue, c: AcornValue) -> AcornValue {
-        let (a, b, c) = (a.replace_if(), b.replace_if(), c.replace_if());
-        let not_a_imp_c = AcornValue::implies(a.clone().negate(), c);
-        let a_imp_b = AcornValue::implies(a, b);
-        AcornValue::and(a_imp_b, not_a_imp_c)
-    }
-
-    /// Replaces "if" nodes by extracting them into boolean values and then replacing them.
-    /// This should only be called on boolean values.
-    /// It handles the case where the if branches are boolean themselves, as well as the cases where
-    /// the "if" is in a function argument, or on one side of a binary.
-    pub fn replace_if(self) -> AcornValue {
-        assert!(self.is_bool_type());
-
-        match self {
-            AcornValue::Binary(op, left, right) if left.is_bool_type() => {
-                // The subvalues are still boolean, so we can recurse.
-                let new_left = left.replace_if();
-                let new_right = right.replace_if();
-                return AcornValue::Binary(op, Box::new(new_left), Box::new(new_right));
-            }
-
-            AcornValue::Binary(_, _, _) | AcornValue::Application(_) => self,
-
-            AcornValue::IfThenElse(a, b, c) => AcornValue::if_replacement(*a, *b, *c),
-
-            AcornValue::Not(value) => AcornValue::Not(Box::new(value.replace_if())),
-            AcornValue::ForAll(quants, value) => {
-                AcornValue::ForAll(quants, Box::new(value.replace_if()))
-            }
-            AcornValue::Exists(quants, value) => {
-                AcornValue::Exists(quants, Box::new(value.replace_if()))
-            }
-            AcornValue::Lambda(args, value) => {
-                AcornValue::Lambda(args, Box::new(value.replace_if()))
-            }
-            AcornValue::Variable(_, _) | AcornValue::Constant(_) | AcornValue::Bool(_) => self,
-            AcornValue::Match(scrutinee, cases) => {
-                let new_cases = cases
-                    .into_iter()
-                    .map(|(new_vars, pattern, result)| (new_vars, pattern, result.replace_if()))
-                    .collect();
-                AcornValue::Match(scrutinee, new_cases)
-            }
-        }
-    }
-
     /// Replaces "match" nodes by replacing them with a disjunction of all their cases.
     /// This should only be called on boolean values.
     /// It only handles the case where the match is directly below the right of a binary operator,
@@ -1049,35 +1000,6 @@ impl AcornValue {
             }
             AcornValue::Lambda(args, value) => {
                 AcornValue::Lambda(args, Box::new(value.replace_match()))
-            }
-            _ => self,
-        }
-    }
-
-    /// Removes all "forall" nodes, collecting the quantified types into quantifiers.
-    pub fn remove_forall(self, quantifiers: &mut Vec<AcornType>) -> AcornValue {
-        match self {
-            AcornValue::Binary(BinaryOp::And, left, right) => {
-                let original_num_quants = quantifiers.len() as AtomId;
-                let new_left = left.remove_forall(quantifiers);
-                let added_quants = quantifiers.len() as AtomId - original_num_quants;
-
-                let shifted_right = right.insert_stack(original_num_quants, added_quants);
-                let new_right = shifted_right.remove_forall(quantifiers);
-                AcornValue::Binary(BinaryOp::And, Box::new(new_left), Box::new(new_right))
-            }
-            AcornValue::Binary(BinaryOp::Or, left, right) => {
-                let original_num_quants = quantifiers.len() as AtomId;
-                let new_left = left.remove_forall(quantifiers);
-                let added_quants = quantifiers.len() as AtomId - original_num_quants;
-
-                let shifted_right = right.insert_stack(original_num_quants, added_quants);
-                let new_right = shifted_right.remove_forall(quantifiers);
-                AcornValue::Binary(BinaryOp::Or, Box::new(new_left), Box::new(new_right))
-            }
-            AcornValue::ForAll(new_quants, value) => {
-                quantifiers.extend(new_quants);
-                value.remove_forall(quantifiers)
             }
             _ => self,
         }
