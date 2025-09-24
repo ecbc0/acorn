@@ -413,6 +413,10 @@ impl AcornValue {
         }
     }
 
+    pub fn is_bool_type(&self) -> bool {
+        self.is_type(&AcornType::Bool)
+    }
+
     /// Construct an application if we have arguments, but omit it otherwise.
     /// Be careful - if we apply to the wrong type, this just creates an internally invalid value.
     pub fn apply(function: AcornValue, args: Vec<AcornValue>) -> AcornValue {
@@ -1051,10 +1055,10 @@ impl AcornValue {
     /// It handles the case where the if branches are boolean themselves, as well as the cases where
     /// the "if" is in a function argument, or on one side of a binary.
     pub fn replace_if(self) -> AcornValue {
-        assert!(self.is_type(&AcornType::Bool));
+        assert!(self.is_bool_type());
 
         match self {
-            AcornValue::Binary(op, left, right) if left.is_type(&AcornType::Bool) => {
+            AcornValue::Binary(op, left, right) if left.is_bool_type() => {
                 // The subvalues are still boolean, so we can recurse.
                 let new_left = left.replace_if();
                 let new_right = right.replace_if();
@@ -1096,7 +1100,7 @@ impl AcornValue {
     /// because that lets you define constants and functions using match.
     /// We could easily implement left-match. But is it even possible to hit that code?
     pub fn replace_match(self) -> AcornValue {
-        assert!(self.is_type(&AcornType::Bool));
+        assert!(self.is_bool_type());
 
         match self {
             AcornValue::Binary(op, left, right) => {

@@ -313,12 +313,12 @@ impl NormalizerView<'_> {
                 }
             }
             AcornValue::Binary(BinaryOp::Equals, left, right)
-                if left.is_type(&AcornType::Bool) =>
+                if left.is_bool_type() =>
             {
                 self.bool_eq_to_literal_lists(left, right, negate, stack, next_var_id, synth)
             }
             AcornValue::Binary(BinaryOp::NotEquals, left, right)
-                if left.is_type(&AcornType::Bool) =>
+                if left.is_bool_type() =>
             {
                 self.bool_eq_to_literal_lists(left, right, !negate, stack, next_var_id, synth)
             }
@@ -664,7 +664,7 @@ impl Normalizer {
                 e, value
             ));
         }
-        assert!(value.is_type(&AcornType::Bool));
+        assert!(value.is_bool_type());
 
         let mut clauses = self.ugly_value_to_clauses(value, ctype)?;
 
