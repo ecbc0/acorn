@@ -738,8 +738,10 @@ impl Normalizer {
                 //      f(a) = g(b)
                 //   2. Make extensionality more powerful, so that it can deduce f(a) = g(b).
                 let view = NormalizerView::Ref(self);
-                let func_eq = view.value_to_literal(value, &mut vec![])?;
-                let clause = Clause::new(vec![func_eq]);
+                let left_term = view.value_to_term(left, &mut vec![])?;
+                let right_term = view.value_to_term(right, &mut vec![])?;
+                let literal = Literal::new(true, left_term, right_term);
+                let clause = Clause::new(vec![literal]);
                 clauses.push(clause);
             }
         }
