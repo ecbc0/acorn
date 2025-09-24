@@ -85,6 +85,10 @@ impl BinaryOp {
             BinaryOp::Or => TokenType::Or,
         }
     }
+
+    pub fn is_comparison(&self) -> bool {
+        matches!(self, BinaryOp::Equals | BinaryOp::NotEquals)
+    }
 }
 
 impl fmt::Display for BinaryOp {
@@ -1012,7 +1016,7 @@ impl AcornValue {
             AcornValue::IfThenElse(a, b, c) => Some((*a.clone(), *b.clone(), *c.clone())),
 
             AcornValue::Binary(op, left, right) => {
-                assert!(*op == BinaryOp::Equals || *op == BinaryOp::NotEquals);
+                assert!(op.is_comparison());
                 if let Some((a, b, c)) = left.extract_one_if() {
                     Some((
                         a,

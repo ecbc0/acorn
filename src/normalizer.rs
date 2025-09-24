@@ -312,14 +312,10 @@ impl NormalizerView<'_> {
                     self.and_to_literal_lists(left, right, false, true, stack, next_var_id, synth)
                 }
             }
-            AcornValue::Binary(BinaryOp::Equals, left, right)
-                if left.is_bool_type() =>
-            {
+            AcornValue::Binary(BinaryOp::Equals, left, right) if left.is_bool_type() => {
                 self.bool_eq_to_literal_lists(left, right, negate, stack, next_var_id, synth)
             }
-            AcornValue::Binary(BinaryOp::NotEquals, left, right)
-                if left.is_bool_type() =>
-            {
+            AcornValue::Binary(BinaryOp::NotEquals, left, right) if left.is_bool_type() => {
                 self.bool_eq_to_literal_lists(left, right, !negate, stack, next_var_id, synth)
             }
             AcornValue::Not(subvalue) => {
@@ -604,15 +600,35 @@ impl NormalizerView<'_> {
             _ => Ok(None),
         }
     }
+
+    /// Converts a value to a BranchingTerm, which is like a Term but can represent if-then-else.
+    pub fn value_to_branching_term(
+        &self,
+        value: &AcornValue,
+        stack: &Vec<Term>,
+    ) -> Result<Branching<Term>, String> {
+        match value {
+            AcornValue::IfThenElse(cond_val, then_value, else_value) => {
+                let cond = self.value_to_literal(cond_val, stack)?;
+                let then_branch = self.value_to_term(then_value, stack)?;
+                let else_branch = self.value_to_term(else_value, stack)?;
+                Ok(Branching::If(cond, then_branch, else_branch))
+            }
+            _ => {
+                let term = self.value_to_term(value, stack)?;
+                Ok(Branching::Plain(term))
+            }
+        }
+    }
 }
 
-// The BranchingTerm represents a term that might be under an if-then-else branch, or might not.
-pub enum BranchingTerm {
-    // Just a plain term.
-    Term(Term),
+// A Branching<T>> represents a T that might be under an if-then-else branch, or might not.
+pub enum Branching<T> {
+    // Just a plain one.
+    Plain(T),
 
     // (condition, then branch, else branch)
-    If(Vec<Literal>, Term, Term),
+    If(Literal, T, T),
 }
 
 impl Normalizer {
