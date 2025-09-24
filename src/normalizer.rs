@@ -482,16 +482,16 @@ impl NormalizerView<'_> {
             let left = self.value_to_branching_term(left, stack, next_var_id, synth)?;
             let right = self.value_to_branching_term(right, stack, next_var_id, synth)?;
             match (left, right) {
-                (Branching::Plain(left), Branching::Plain(right)) => {
+                (ExtendedTerm::Plain(left), ExtendedTerm::Plain(right)) => {
                     let literal = Literal::new(!negate, left, right);
                     Ok(CNF::from_literal(literal))
                 }
-                (Branching::If(cond, then_term, else_term), Branching::Plain(right)) => {
+                (ExtendedTerm::If(cond, then_term, else_term), ExtendedTerm::Plain(right)) => {
                     let then_lit = Literal::new(!negate, then_term, right.clone());
                     let else_lit = Literal::new(!negate, else_term, right);
                     Ok(CNF::literal_if(cond, then_lit, else_lit))
                 }
-                (Branching::Plain(left), Branching::If(cond, then_term, else_term)) => {
+                (ExtendedTerm::Plain(left), ExtendedTerm::If(cond, then_term, else_term)) => {
                     let then_lit = Literal::new(!negate, left.clone(), then_term);
                     let else_lit = Literal::new(!negate, left, else_term);
                     Ok(CNF::literal_if(cond, then_lit, else_lit))
@@ -585,7 +585,7 @@ impl NormalizerView<'_> {
         stack: &mut Vec<Term>,
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
-    ) -> Result<Branching<Term>, String> {
+    ) -> Result<ExtendedTerm, String> {
         match value {
             AcornValue::IfThenElse(cond_val, then_value, else_value) => {
                 let cond_cnf = self.value_to_cnf(cond_val, false, stack, next_var_id, synth)?;
@@ -594,7 +594,7 @@ impl NormalizerView<'_> {
                 };
                 let then_branch = self.value_to_term(then_value, stack)?;
                 let else_branch = self.value_to_term(else_value, stack)?;
-                Ok(Branching::If(cond_lit, then_branch, else_branch))
+                Ok(ExtendedTerm::If(cond_lit, then_branch, else_branch))
             }
             AcornValue::Application(app) => {
                 // We convert f(if a then b else c, d) into if a then f(b, d) else f(c, d).
@@ -605,13 +605,13 @@ impl NormalizerView<'_> {
                 let mut spine2 = vec![];
                 for subterm in app.iter_spine() {
                     match self.value_to_branching_term(subterm, stack, next_var_id, synth)? {
-                        Branching::Plain(t) => {
+                        ExtendedTerm::Plain(t) => {
                             if !spine2.is_empty() {
                                 spine2.push(t.clone());
                             }
                             spine1.push(t);
                         }
-                        Branching::If(sub_cond, sub_then, sub_else) => {
+                        ExtendedTerm::If(sub_cond, sub_then, sub_else) => {
                             if !spine2.is_empty() {
                                 return Err("multiple branches in application".to_string());
                             }
@@ -631,30 +631,30 @@ impl NormalizerView<'_> {
                         assert_eq!(spine1.len(), spine2.len());
                         let then_term = Term::from_spine(spine1, term_type);
                         let else_term = Term::from_spine(spine2, term_type);
-                        Ok(Branching::If(cond, then_term, else_term))
+                        Ok(ExtendedTerm::If(cond, then_term, else_term))
                     }
                     None => {
                         assert!(spine2.is_empty());
                         let term = Term::from_spine(spine1, term_type);
-                        Ok(Branching::Plain(term))
+                        Ok(ExtendedTerm::Plain(term))
                     }
                 }
             }
             _ => {
                 let term = self.value_to_term(value, stack)?;
-                Ok(Branching::Plain(term))
+                Ok(ExtendedTerm::Plain(term))
             }
         }
     }
 }
 
-// A Branching<T>> represents a T that might be under an if-then-else branch, or might not.
-pub enum Branching<T> {
-    // Just a plain one.
-    Plain(T),
+// An ExtendedTerm represents a Term that might be under an if-then-else branch, or might not.
+pub enum ExtendedTerm {
+    // Just a plain term.
+    Plain(Term),
 
     // (condition, then branch, else branch)
-    If(Literal, T, T),
+    If(Literal, Term, Term),
 }
 
 impl Normalizer {
