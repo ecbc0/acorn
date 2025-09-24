@@ -6,6 +6,7 @@ use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
 use crate::builder::BuildError;
 use crate::clause::Clause;
+use crate::cnf::CNF;
 use crate::fact::Fact;
 use crate::goal::Goal;
 use crate::literal::Literal;
@@ -212,15 +213,10 @@ impl NormalizerView<'_> {
             _ => {
                 let mut stack = vec![];
                 let mut next_var_id = 0;
-                let literal_lists = self.value_to_literal_lists(
-                    &value,
-                    false,
-                    &mut stack,
-                    &mut next_var_id,
-                    synthesized,
-                )?;
+                let cnf =
+                    self.value_to_cnf(&value, false, &mut stack, &mut next_var_id, synthesized)?;
                 let mut clauses = vec![];
-                for literals in literal_lists {
+                for literals in cnf.into_iter() {
                     if literals.iter().any(|l| l.is_tautology()) {
                         // This clause is always true, so skip it.
                         continue;
@@ -242,9 +238,8 @@ impl NormalizerView<'_> {
         value: &AcornValue,
     ) -> Result<Vec<Clause>, String> {
         let mut output = vec![];
-        let lit_lists =
-            self.value_to_literal_lists(&value, false, &mut vec![], &mut 0, &mut vec![])?;
-        for mut literals in lit_lists {
+        let cnf = self.value_to_cnf(&value, false, &mut vec![], &mut 0, &mut vec![])?;
+        for mut literals in cnf.into_iter() {
             literals.sort();
             output.push(Clause { literals });
         }
@@ -268,14 +263,14 @@ impl NormalizerView<'_> {
     /// Existential variables turn into skolem terms. These are declared in the normalizer
     /// but not yet defined, because this function is creating the definition.
     /// Whenever we create a new skolem term, we add it to the synthesized list.
-    fn value_to_literal_lists(
+    fn value_to_cnf(
         &mut self,
         value: &AcornValue,
         negate: bool,
         stack: &mut Vec<Term>,
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
-    ) -> Result<Vec<Vec<Literal>>, String> {
+    ) -> Result<CNF, String> {
         match value {
             AcornValue::ForAll(qs, sub) => {
                 if !negate {
@@ -319,18 +314,21 @@ impl NormalizerView<'_> {
                 self.eq_to_literal_lists(left, right, !negate, stack, next_var_id, synth)
             }
             AcornValue::Not(subvalue) => {
-                self.value_to_literal_lists(subvalue, !negate, stack, next_var_id, synth)
+                self.value_to_cnf(subvalue, !negate, stack, next_var_id, synth)
             }
             AcornValue::Bool(value) => {
                 if *value ^ negate {
-                    Ok(vec![])
+                    Ok(CNF::true_value())
                 } else {
-                    Ok(vec![vec![]])
+                    Ok(CNF::false_value())
                 }
             }
             _ => {
-                let literal = self.value_to_literal(value, stack)?;
-                Ok(literal.to_literal_lists(negate))
+                let mut literal = self.value_to_literal(value, stack)?;
+                if negate {
+                    literal = literal.negate();
+                }
+                Ok(CNF::from_literal(literal))
             }
         }
     }
@@ -344,7 +342,7 @@ impl NormalizerView<'_> {
         stack: &mut Vec<Term>,
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
-    ) -> Result<Vec<Vec<Literal>>, String> {
+    ) -> Result<CNF, String> {
         for quant in quants {
             let type_id = self.as_ref().normalization_map.get_type_id(quant)?;
             let var = Term::new_variable(type_id, *next_var_id);
@@ -352,7 +350,7 @@ impl NormalizerView<'_> {
             stack.push(var);
         }
         let result =
-            self.value_to_literal_lists(subvalue, negate, stack, next_var_id, synthesized)?;
+            self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized)?;
         for _ in quants {
             stack.pop();
         }
@@ -368,7 +366,7 @@ impl NormalizerView<'_> {
         stack: &mut Vec<Term>,
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
-    ) -> Result<Vec<Vec<Literal>>, String> {
+    ) -> Result<CNF, String> {
         // The variables on the stack will be the arguments for the skolem functions
         let mut args = vec![];
         let mut arg_types = vec![];
@@ -402,7 +400,7 @@ impl NormalizerView<'_> {
             stack.push(skolem_term);
         }
         let result =
-            self.value_to_literal_lists(subvalue, negate, stack, next_var_id, synthesized)?;
+            self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized)?;
         for _ in quants {
             stack.pop();
         }
@@ -418,13 +416,12 @@ impl NormalizerView<'_> {
         stack: &mut Vec<Term>,
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
-    ) -> Result<Vec<Vec<Literal>>, String> {
-        let mut left =
-            self.value_to_literal_lists(left, negate_left, stack, next_var_id, synthesized)?;
+    ) -> Result<CNF, String> {
+        let left =
+            self.value_to_cnf(left, negate_left, stack, next_var_id, synthesized)?;
         let right =
-            self.value_to_literal_lists(right, negate_right, stack, next_var_id, synthesized)?;
-        left.extend(right);
-        Ok(left)
+            self.value_to_cnf(right, negate_right, stack, next_var_id, synthesized)?;
+        Ok(left.and(right))
     }
 
     fn or_to_literal_lists(
@@ -436,20 +433,12 @@ impl NormalizerView<'_> {
         stack: &mut Vec<Term>,
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
-    ) -> Result<Vec<Vec<Literal>>, String> {
+    ) -> Result<CNF, String> {
         let left =
-            self.value_to_literal_lists(left, negate_left, stack, next_var_id, synthesized)?;
+            self.value_to_cnf(left, negate_left, stack, next_var_id, synthesized)?;
         let right =
-            self.value_to_literal_lists(right, negate_right, stack, next_var_id, synthesized)?;
-        let mut results = vec![];
-        for left_result in &left {
-            for right_result in &right {
-                let mut combined = left_result.clone();
-                combined.extend(right_result.clone());
-                results.push(combined);
-            }
-        }
-        Ok(results)
+            self.value_to_cnf(right, negate_right, stack, next_var_id, synthesized)?;
+        Ok(left.or(right))
     }
 
     // This should only be called when left and right are boolean.
@@ -461,13 +450,13 @@ impl NormalizerView<'_> {
         stack: &mut Vec<Term>,
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
-    ) -> Result<Vec<Vec<Literal>>, String> {
+    ) -> Result<CNF, String> {
         if let Some((left_term, left_sign)) = self.try_value_to_signed_term(left, stack)? {
             if let Some((right_term, right_sign)) = self.try_value_to_signed_term(right, stack)? {
                 // Both sides are terms, so we can do a simple equality or inequality
                 let positive = (left_sign == right_sign) ^ negate;
                 let literal = Literal::new(positive, left_term, right_term);
-                return Ok(literal.to_literal_lists(false));
+                return Ok(CNF::from_literal(literal));
             }
         }
 
@@ -478,20 +467,18 @@ impl NormalizerView<'_> {
         // Here, we duplicate subterms. Be careful of weird stuff.
         if negate {
             // Inequality.
-            let mut some =
+            let some =
                 self.or_to_literal_lists(left, right, true, true, stack, next_var_id, synth)?;
             let not_both =
                 self.or_to_literal_lists(left, right, false, false, stack, next_var_id, synth)?;
-            some.extend(not_both);
-            Ok(some)
+            Ok(some.and(not_both))
         } else {
             // Equality.
-            let mut l_imp_r =
+            let l_imp_r =
                 self.or_to_literal_lists(left, right, true, false, stack, next_var_id, synth)?;
             let r_imp_l =
                 self.or_to_literal_lists(left, right, false, true, stack, next_var_id, synth)?;
-            l_imp_r.extend(r_imp_l);
-            Ok(l_imp_r)
+            Ok(l_imp_r.and(r_imp_l))
         }
     }
 

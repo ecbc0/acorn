@@ -12,6 +12,11 @@ use crate::literal::Literal;
 pub struct CNF(Vec<Vec<Literal>>);
 
 impl CNF {
+    /// Creates a new CNF from a vector of clauses.
+    pub fn new(clauses: Vec<Vec<Literal>>) -> Self {
+        CNF(clauses)
+    }
+
     /// Creates an empty CNF representing "true".
     pub fn true_value() -> Self {
         CNF(vec![])
@@ -52,5 +57,9 @@ impl CNF {
             }
         }
         CNF(result_clauses)
+    }
+
+    pub fn into_iter(self) -> impl Iterator<Item = Vec<Literal>> {
+        self.0.into_iter()
     }
 }
