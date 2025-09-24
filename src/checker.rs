@@ -258,14 +258,14 @@ impl Checker {
 
                 // We don't want to normalize these clauses because sometimes checking
                 // only works on the non-normalized version.
-                // So we do our own weird literals-to-clause-without-normalizing thing.
+                // So we use the denormalized clause.
                 let mut view = NormalizerView::Ref(&normalizer);
                 let clauses = view.value_to_denormalized_clauses(&value)?;
                 for mut clause in clauses {
                     if !self.check_clause(&clause) {
                         return Err(Error::GeneratedBadCode(format!(
-                            "The clause '{}' is not obviously true",
-                            clause
+                            "In claim '{}', the clause '{}' is not obviously true",
+                            code, clause
                         )));
                     }
                     clause.normalize();
