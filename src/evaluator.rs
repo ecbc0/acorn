@@ -1040,7 +1040,7 @@ impl<'a> Evaluator<'a> {
                     }
                     None => {
                         // If without else - convert to implies if if_value is boolean
-                        if if_value.get_type() == AcornType::Bool {
+                        if if_value.is_type(&AcornType::Bool) {
                             AcornValue::implies(cond, if_value)
                         } else {
                             return Err(expression.error(

@@ -45,7 +45,7 @@ impl FunctionApplication {
                 ));
             }
             for (i, (arg, arg_type)) in self.args.iter().zip(ftype.arg_types.iter()).enumerate() {
-                if arg.get_type() != *arg_type {
+                if !arg.is_type(arg_type) {
                     return Err(format!(
                         "Argument {} has type {}, but expected {}",
                         i,
@@ -380,6 +380,34 @@ impl AcornValue {
                     result.get_type()
                 } else {
                     panic!("Match with no cases");
+                }
+            }
+        }
+    }
+
+    pub fn is_type(&self, t: &AcornType) -> bool {
+        match self {
+            AcornValue::Variable(_, var_type) => var_type == t,
+            AcornValue::Application(app) => app.get_type() == *t,
+            AcornValue::Lambda(args, return_value) => {
+                if let AcornType::Function(ftype) = t {
+                    args == &ftype.arg_types && return_value.is_type(&ftype.return_type)
+                } else {
+                    false
+                }
+            }
+            AcornValue::Binary(_, _, _) => *t == AcornType::Bool,
+            AcornValue::Not(_) => *t == AcornType::Bool,
+            AcornValue::ForAll(_, _) => *t == AcornType::Bool,
+            AcornValue::Exists(_, _) => *t == AcornType::Bool,
+            AcornValue::Constant(c) => c.instance_type == *t,
+            AcornValue::Bool(_) => *t == AcornType::Bool,
+            AcornValue::IfThenElse(_, if_value, _) => if_value.is_type(t),
+            AcornValue::Match(_, cases) => {
+                if let Some((_, _, result)) = cases.first() {
+                    result.is_type(t)
+                } else {
+                    false
                 }
             }
         }
@@ -1023,10 +1051,10 @@ impl AcornValue {
     /// It handles the case where the if branches are boolean themselves, as well as the cases where
     /// the "if" is in a function argument, or on one side of a binary.
     pub fn replace_if(self) -> AcornValue {
-        assert_eq!(self.get_type(), AcornType::Bool);
+        assert!(self.is_type(&AcornType::Bool));
 
         match self {
-            AcornValue::Binary(op, left, right) if (left.get_type() == AcornType::Bool) => {
+            AcornValue::Binary(op, left, right) if left.is_type(&AcornType::Bool) => {
                 // The subvalues are still boolean, so we can recurse.
                 let new_left = left.replace_if();
                 let new_right = right.replace_if();
@@ -1068,7 +1096,7 @@ impl AcornValue {
     /// because that lets you define constants and functions using match.
     /// We could easily implement left-match. But is it even possible to hit that code?
     pub fn replace_match(self) -> AcornValue {
-        assert_eq!(self.get_type(), AcornType::Bool);
+        assert!(self.is_type(&AcornType::Bool));
 
         match self {
             AcornValue::Binary(op, left, right) => {

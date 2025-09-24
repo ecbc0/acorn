@@ -313,12 +313,12 @@ impl NormalizerView<'_> {
                 }
             }
             AcornValue::Binary(BinaryOp::Equals, left, right)
-                if left.get_type() == AcornType::Bool =>
+                if left.is_type(&AcornType::Bool) =>
             {
                 self.bool_eq_to_literal_lists(left, right, negate, stack, next_var_id, synth)
             }
             AcornValue::Binary(BinaryOp::NotEquals, left, right)
-                if left.get_type() == AcornType::Bool =>
+                if left.is_type(&AcornType::Bool) =>
             {
                 self.bool_eq_to_literal_lists(left, right, !negate, stack, next_var_id, synth)
             }
@@ -465,7 +465,7 @@ impl NormalizerView<'_> {
         Ok(results)
     }
 
-    // This should only be called when left and right are boolean
+    // This should only be called when left and right are boolean.
     fn bool_eq_to_literal_lists(
         &mut self,
         left: &AcornValue,
@@ -536,7 +536,7 @@ impl NormalizerView<'_> {
         Err(format!("{} is unexpectedly negated", value))
     }
 
-    /// Wrapper around try_value_to_signed_term thats treat incontrovertibility as an error.
+    /// Wrapper around try_value_to_signed_term that treats inconvertibility as an error.
     fn value_to_signed_term(
         &self,
         value: &AcornValue,
@@ -604,25 +604,15 @@ impl NormalizerView<'_> {
             _ => Ok(None),
         }
     }
+}
 
-    /// Helper to check if we are getting an if-then-else expression where we expect a term.
-    /// Returns Ok(None) if we aren't getting that.
-    /// Returns Err(..) if there's a structure we can't handle.
-    pub fn try_value_to_if_term(
-        &mut self,
-        value: &AcornValue,
-        stack: &Vec<Term>,
-    ) -> Result<Option<(Literal, Term, Term)>, String> {
-        match value {
-            AcornValue::IfThenElse(cond, then_branch, else_branch) => {
-                let cond_lit = self.value_to_literal(cond, stack)?;
-                let then_term = self.value_to_term(then_branch, stack)?;
-                let else_term = self.value_to_term(else_branch, stack)?;
-                Ok(Some((cond_lit, then_term, else_term)))
-            }
-            _ => Ok(None),
-        }
-    }
+// The BranchingTerm represents a term that might be under an if-then-else branch, or might not.
+pub enum BranchingTerm {
+    // Just a plain term.
+    Term(Term),
+
+    // (condition, then branch, else branch)
+    If(Vec<Literal>, Term, Term),
 }
 
 impl Normalizer {
@@ -674,7 +664,7 @@ impl Normalizer {
                 e, value
             ));
         }
-        assert_eq!(value.get_type(), AcornType::Bool);
+        assert!(value.is_type(&AcornType::Bool));
 
         let mut clauses = self.ugly_value_to_clauses(value, ctype)?;
 
