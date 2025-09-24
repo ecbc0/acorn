@@ -196,7 +196,7 @@ impl NormalizerView<'_> {
         }
     }
 
-    /// Wrapper around value_to_literal_lists.
+    /// Wrapper around value_to_cnf.
     /// Note that this only works on values that have already been "cleaned up" to some extent.
     pub fn nice_value_to_clauses(
         &mut self,
@@ -274,44 +274,44 @@ impl NormalizerView<'_> {
         match value {
             AcornValue::ForAll(qs, sub) => {
                 if !negate {
-                    self.forall_to_literal_lists(qs, sub, false, stack, next_var_id, synth)
+                    self.forall_to_cnf(qs, sub, false, stack, next_var_id, synth)
                 } else {
-                    self.exists_to_literal_lists(qs, sub, true, stack, next_var_id, synth)
+                    self.exists_to_cnf(qs, sub, true, stack, next_var_id, synth)
                 }
             }
             AcornValue::Exists(qs, sub) => {
                 if !negate {
-                    self.exists_to_literal_lists(qs, sub, false, stack, next_var_id, synth)
+                    self.exists_to_cnf(qs, sub, false, stack, next_var_id, synth)
                 } else {
-                    self.forall_to_literal_lists(qs, sub, true, stack, next_var_id, synth)
+                    self.forall_to_cnf(qs, sub, true, stack, next_var_id, synth)
                 }
             }
             AcornValue::Binary(BinaryOp::And, left, right) => {
                 if !negate {
-                    self.and_to_literal_lists(left, right, false, false, stack, next_var_id, synth)
+                    self.and_to_cnf(left, right, false, false, stack, next_var_id, synth)
                 } else {
-                    self.or_to_literal_lists(left, right, true, true, stack, next_var_id, synth)
+                    self.or_to_cnf(left, right, true, true, stack, next_var_id, synth)
                 }
             }
             AcornValue::Binary(BinaryOp::Or, left, right) => {
                 if !negate {
-                    self.or_to_literal_lists(left, right, false, false, stack, next_var_id, synth)
+                    self.or_to_cnf(left, right, false, false, stack, next_var_id, synth)
                 } else {
-                    self.and_to_literal_lists(left, right, true, true, stack, next_var_id, synth)
+                    self.and_to_cnf(left, right, true, true, stack, next_var_id, synth)
                 }
             }
             AcornValue::Binary(BinaryOp::Implies, left, right) => {
                 if !negate {
-                    self.or_to_literal_lists(left, right, true, false, stack, next_var_id, synth)
+                    self.or_to_cnf(left, right, true, false, stack, next_var_id, synth)
                 } else {
-                    self.and_to_literal_lists(left, right, false, true, stack, next_var_id, synth)
+                    self.and_to_cnf(left, right, false, true, stack, next_var_id, synth)
                 }
             }
             AcornValue::Binary(BinaryOp::Equals, left, right) => {
-                self.eq_to_literal_lists(left, right, negate, stack, next_var_id, synth)
+                self.eq_to_cnf(left, right, negate, stack, next_var_id, synth)
             }
             AcornValue::Binary(BinaryOp::NotEquals, left, right) => {
-                self.eq_to_literal_lists(left, right, !negate, stack, next_var_id, synth)
+                self.eq_to_cnf(left, right, !negate, stack, next_var_id, synth)
             }
             AcornValue::Not(subvalue) => {
                 self.value_to_cnf(subvalue, !negate, stack, next_var_id, synth)
@@ -334,7 +334,7 @@ impl NormalizerView<'_> {
     }
 
     // negate is whether to negate the subvalue.
-    fn forall_to_literal_lists(
+    fn forall_to_cnf(
         &mut self,
         quants: &Vec<AcornType>,
         subvalue: &AcornValue,
@@ -349,8 +349,7 @@ impl NormalizerView<'_> {
             *next_var_id += 1;
             stack.push(var);
         }
-        let result =
-            self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized)?;
+        let result = self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized)?;
         for _ in quants {
             stack.pop();
         }
@@ -358,7 +357,7 @@ impl NormalizerView<'_> {
     }
 
     // negate is whether to negate the subvalue.
-    fn exists_to_literal_lists(
+    fn exists_to_cnf(
         &mut self,
         quants: &Vec<AcornType>,
         subvalue: &AcornValue,
@@ -399,15 +398,14 @@ impl NormalizerView<'_> {
             );
             stack.push(skolem_term);
         }
-        let result =
-            self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized)?;
+        let result = self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized)?;
         for _ in quants {
             stack.pop();
         }
         Ok(result)
     }
 
-    fn and_to_literal_lists(
+    fn and_to_cnf(
         &mut self,
         left: &AcornValue,
         right: &AcornValue,
@@ -417,14 +415,12 @@ impl NormalizerView<'_> {
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
     ) -> Result<CNF, String> {
-        let left =
-            self.value_to_cnf(left, negate_left, stack, next_var_id, synthesized)?;
-        let right =
-            self.value_to_cnf(right, negate_right, stack, next_var_id, synthesized)?;
+        let left = self.value_to_cnf(left, negate_left, stack, next_var_id, synthesized)?;
+        let right = self.value_to_cnf(right, negate_right, stack, next_var_id, synthesized)?;
         Ok(left.and(right))
     }
 
-    fn or_to_literal_lists(
+    fn or_to_cnf(
         &mut self,
         left: &AcornValue,
         right: &AcornValue,
@@ -434,15 +430,13 @@ impl NormalizerView<'_> {
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
     ) -> Result<CNF, String> {
-        let left =
-            self.value_to_cnf(left, negate_left, stack, next_var_id, synthesized)?;
-        let right =
-            self.value_to_cnf(right, negate_right, stack, next_var_id, synthesized)?;
+        let left = self.value_to_cnf(left, negate_left, stack, next_var_id, synthesized)?;
+        let right = self.value_to_cnf(right, negate_right, stack, next_var_id, synthesized)?;
         Ok(left.or(right))
     }
 
     // This should only be called when left and right are boolean.
-    fn eq_to_literal_lists(
+    fn eq_to_cnf(
         &mut self,
         left: &AcornValue,
         right: &AcornValue,
@@ -467,17 +461,13 @@ impl NormalizerView<'_> {
         // Here, we duplicate subterms. Be careful of weird stuff.
         if negate {
             // Inequality.
-            let some =
-                self.or_to_literal_lists(left, right, true, true, stack, next_var_id, synth)?;
-            let not_both =
-                self.or_to_literal_lists(left, right, false, false, stack, next_var_id, synth)?;
+            let some = self.or_to_cnf(left, right, true, true, stack, next_var_id, synth)?;
+            let not_both = self.or_to_cnf(left, right, false, false, stack, next_var_id, synth)?;
             Ok(some.and(not_both))
         } else {
             // Equality.
-            let l_imp_r =
-                self.or_to_literal_lists(left, right, true, false, stack, next_var_id, synth)?;
-            let r_imp_l =
-                self.or_to_literal_lists(left, right, false, true, stack, next_var_id, synth)?;
+            let l_imp_r = self.or_to_cnf(left, right, true, false, stack, next_var_id, synth)?;
+            let r_imp_l = self.or_to_cnf(left, right, false, true, stack, next_var_id, synth)?;
             Ok(l_imp_r.and(r_imp_l))
         }
     }
