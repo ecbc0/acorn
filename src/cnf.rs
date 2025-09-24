@@ -101,10 +101,12 @@ impl CNF {
         ])
     }
 
-    /// Convert an if-then-else structure among CNF formulas into CNF.
-    pub fn cnf_if(condition: Literal, consequence: CNF, alternative: CNF) -> Self {
-        let cond_false = CNF::from_literal(condition.negate());
-        let cond_true = CNF::from_literal(condition);
-        cond_false.or(consequence).and(cond_true.or(alternative))
+    /// Convert an if a { b } else { c } structure among CNF formulas into CNF.
+    pub fn cnf_if(a: Literal, b: CNF, c: CNF) -> Self {
+        let not_a_lit = CNF::from_literal(a.negate());
+        let a_lit = CNF::from_literal(a);
+        let not_a_imp_c = a_lit.or(c);
+        let a_imp_b = not_a_lit.or(b);
+        a_imp_b.and(not_a_imp_c)
     }
 }
