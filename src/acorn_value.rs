@@ -556,8 +556,6 @@ impl AcornValue {
         }
     }
 
-
-
     /// Binds the provided values to stack variables.
     ///
     /// The first_binding_index is the first index that we should bind to.
@@ -923,6 +921,9 @@ impl AcornValue {
         }
     }
 
+    /// extract_one_if handles "if" nodes that occur where a term or literal is expected.
+    /// We need to lift them out past the single-literal layer.
+    ///
     /// The general idea is that these expressions are equivalent:
     ///
     ///   foo(if a then b else c)
@@ -932,7 +933,7 @@ impl AcornValue {
     /// Some((condition, if_value, else_value))
     ///
     /// This function is very closely tied to replace_if and only has to work with the sorts of
-    /// values it is called on, those at the boundary between boolean and non-boolean values.
+    /// values it is called on.
     fn extract_one_if(&self) -> Option<(AcornValue, AcornValue, AcornValue)> {
         match self {
             AcornValue::Application(app) => {
@@ -979,6 +980,7 @@ impl AcornValue {
             AcornValue::IfThenElse(a, b, c) => Some((*a.clone(), *b.clone(), *c.clone())),
 
             AcornValue::Binary(op, left, right) => {
+                assert!(*op == BinaryOp::Equals || *op == BinaryOp::NotEquals);
                 if let Some((a, b, c)) = left.extract_one_if() {
                     Some((
                         a,
