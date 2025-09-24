@@ -519,15 +519,6 @@ impl AcornValue {
 
     /// Negates this value
     pub fn negate(self) -> AcornValue {
-        self.maybe_negate(true)
-    }
-
-    /// Simplifies at the top level but does not recurse.
-    /// Does not typecheck
-    fn maybe_negate(self, negate: bool) -> AcornValue {
-        if !negate {
-            return self;
-        }
         match self {
             AcornValue::Not(x) => *x,
             AcornValue::Binary(BinaryOp::Equals, x, y) => {
