@@ -614,8 +614,49 @@ impl NormalizerView<'_> {
                 let else_branch = self.value_to_term(else_value, stack)?;
                 Ok(Branching::If(cond, then_branch, else_branch))
             }
-            AcornValue::Application(_app) => {
-                todo!();
+            AcornValue::Application(app) => {
+                // We convert f(if a then b else c, d) into if a then f(b, d) else f(c, d).
+                // The "spine" logic makes branching work for f as well.
+                // If we discover a branching subterm, then we set cond and spine2.
+                let mut cond: Option<Literal> = None;
+                let mut spine1 = vec![];
+                let mut spine2 = vec![];
+                for subterm in app.iter_spine() {
+                    match self.value_to_branching_term(subterm, stack)? {
+                        Branching::Plain(t) => {
+                            if !spine2.is_empty() {
+                                spine2.push(t.clone());
+                            }
+                            spine1.push(t);
+                        }
+                        Branching::If(sub_cond, sub_then, sub_else) => {
+                            if !spine2.is_empty() {
+                                return Err("multiple branches in application".to_string());
+                            }
+                            cond = Some(sub_cond);
+                            spine2.extend(spine1.iter().cloned());
+                            spine1.push(sub_then);
+                            spine2.push(sub_else);
+                        }
+                    }
+                }
+                let term_type = self
+                    .as_ref()
+                    .normalization_map
+                    .get_type_id(&app.get_type())?;
+                match cond {
+                    Some(cond) => {
+                        assert_eq!(spine1.len(), spine2.len());
+                        let then_term = Term::from_spine(spine1, term_type);
+                        let else_term = Term::from_spine(spine2, term_type);
+                        Ok(Branching::If(cond, then_term, else_term))
+                    }
+                    None => {
+                        assert!(spine2.is_empty());
+                        let term = Term::from_spine(spine1, term_type);
+                        Ok(Branching::Plain(term))
+                    }
+                }
             }
             _ => {
                 let term = self.value_to_term(value, stack)?;
