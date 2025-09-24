@@ -97,6 +97,23 @@ impl Literal {
         }
     }
 
+    /// Converts to "literal lists" format. This is CNF.
+    /// This converts basic true and false into their CNF form..
+    /// In CNF, an empty list is "true", because it represents no clauses that need to be satisfied.
+    /// In CNF, a list with an empty list is "false", because it represents an unsatisfiable clause.
+    pub fn to_literal_lists(mut self, negate: bool) -> Vec<Vec<Literal>> {
+        if negate {
+            self.positive = !self.positive;
+        }
+        if self.is_basic_true() {
+            vec![]
+        } else if self.is_basic_false() {
+            vec![vec![]]
+        } else {
+            vec![vec![self]]
+        }
+    }
+
     /// Extracts the polarity from this literal, returning a positive version and the original polarity.
     /// If the literal is already positive, returns (self, true).
     /// If the literal is negative, returns (positive version, false).

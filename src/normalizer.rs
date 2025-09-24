@@ -329,17 +329,8 @@ impl NormalizerView<'_> {
                 }
             }
             _ => {
-                let mut literal = self.value_to_literal(value, stack)?;
-                if negate {
-                    literal.positive = !literal.positive;
-                }
-                if literal.is_basic_true() {
-                    return Ok(vec![]);
-                }
-                if literal.is_basic_false() {
-                    return Ok(vec![vec![]]);
-                }
-                Ok(vec![vec![literal]])
+                let literal = self.value_to_literal(value, stack)?;
+                Ok(literal.to_literal_lists(negate))
             }
         }
     }
