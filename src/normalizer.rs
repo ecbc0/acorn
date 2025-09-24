@@ -1031,7 +1031,12 @@ impl Normalizer {
             }
             panic!("expected 1 clause, got {}", renormalized.len());
         }
-        assert_eq!(clause, &renormalized[0]);
+        if clause != &renormalized[0] {
+            println!("original clause: {}", clause);
+            println!("denormalized: {}", denormalized);
+            println!("renormalized: {}", renormalized[0]);
+            panic!("renormalized clause does not match original");
+        }
     }
 
     #[cfg(test)]
@@ -1338,6 +1343,35 @@ mod tests {
             &env,
             "test_finite",
             &["not finite_constraint(x0) or not x0(x1) or contains(s0(x0), x1)"],
+        );
+    }
+
+    #[test]
+    fn test_if_then_else_normalization() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            type T: axiom
+            let foo: (T -> Bool, T, T) -> Bool = axiom
+
+            theorem goal(f: T -> Bool, item: T, x: T) {
+                foo(f, item, x) = if x = item {
+                    true
+                } else {
+                    f(x)
+                }
+            }
+            "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(
+            &env,
+            "goal",
+            &[
+                "not foo(x0, x1, x2) or x1 = x2 or x0(x2)",
+                "x0 != x1 or foo(x2, x0, x1)",
+                "not x0(x1) or foo(x0, x2, x1) or x2 = x1",
+            ],
         );
     }
 }
