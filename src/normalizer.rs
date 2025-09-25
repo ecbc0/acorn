@@ -332,12 +332,20 @@ impl NormalizerView<'_> {
                 let else_cnf = self.value_to_cnf(else_value, negate, stack, next_var_id, synth)?;
                 Ok(CNF::cnf_if(cond_lit, then_cnf, else_cnf))
             }
-            _ => {
-                let (t, sign) = self.value_to_signed_term(value, stack)?;
-                let literal = Literal::from_signed_term(t, sign ^ negate);
-                Ok(CNF::from_literal(literal))
-            }
+            _ => self.value_to_single_term_to_cnf(value, negate, stack),
         }
+    }
+
+    // The "fallthrough" case for value_to_cnf.
+    fn value_to_single_term_to_cnf(
+        &mut self,
+        value: &AcornValue,
+        negate: bool,
+        stack: &Vec<Term>,
+    ) -> Result<CNF, String> {
+        let (t, sign) = self.value_to_signed_term(value, stack)?;
+        let literal = Literal::from_signed_term(t, sign ^ negate);
+        Ok(CNF::from_literal(literal))
     }
 
     // Convert a "forall" node in a value, or the equivalent, to CNF.
