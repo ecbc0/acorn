@@ -772,6 +772,11 @@ fn check(s: &str) {
 }
 
 #[test]
-fn test_clause_normalization() {
+fn test_easy_clause_normalization() {
     check("c0 or c1");
+}
+
+#[test]
+fn test_hard_clause_normalization() {
+    check("not x0(x2) or c0(x0, x1, x2) or x1 = x2");
 }
