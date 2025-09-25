@@ -1016,12 +1016,6 @@ impl Normalizer {
     /// When you denormalize and renormalize a clause, you should get the same thing.
     #[cfg(test)]
     fn check_denormalize_renormalize(&mut self, clause: &Clause) {
-        use crate::clause::EXPERIMENT;
-
-        if !EXPERIMENT {
-            // This has actually been broken for ages, but it was rare to repro.
-            return;
-        }
         let denormalized = self.denormalize(clause, None);
         denormalized
             .validate()
@@ -1434,7 +1428,7 @@ mod tests {
             &[
                 "not foo(x0, x1, x2) or x1 = x2 or x0(x2)",
                 "x0 != x1 or foo(x2, x0, x1)",
-                "not x0(x1) or foo(x0, x2, x1) or x2 = x1",
+                "not x0(x1) or foo(x0, x2, x1) or x1 = x2",
             ],
         );
     }

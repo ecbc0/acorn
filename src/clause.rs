@@ -8,9 +8,6 @@ use crate::term::{Term, BOOL};
 use crate::unifier::{Scope, Unifier};
 use crate::variable_map::VariableMap;
 
-// The experiment is to fix clause variable id normalization.
-pub const EXPERIMENT: bool = false;
-
 /// A record of what happened to a literal during a transformation.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum LiteralTrace {
@@ -283,18 +280,23 @@ impl Clause {
     }
 
     /// Normalizes the variable IDs in the literals.
-    /// If you reorder or modify the literals, you should call this.
+    /// This may flip literals, so keep in mind it will break any trace.
     pub fn normalize_var_ids(&mut self) {
         let mut var_ids = vec![];
         for literal in &mut self.literals {
-            if EXPERIMENT {
-                // Note: this doesn't update the trace.
-                literal.normalize_var_ids(&mut var_ids);
-            } else {
-                // This is bugged because it might denormalize the literal.
-                literal.left.normalize_var_ids(&mut var_ids);
-                literal.right.normalize_var_ids(&mut var_ids);
-            }
+            // Note: this doesn't update the trace.
+            literal.normalize_var_ids(&mut var_ids);
+        }
+    }
+
+    /// Normalizes the variable IDs in the literals so that they are ascending,
+    /// but does not flip any literals if this then disorders those literals.
+    /// This may produce non-normalized literals.
+    pub fn normalize_var_ids_no_flip(&mut self) {
+        let mut var_ids = vec![];
+        for literal in &mut self.literals {
+            literal.left.normalize_var_ids(&mut var_ids);
+            literal.right.normalize_var_ids(&mut var_ids);
         }
     }
 

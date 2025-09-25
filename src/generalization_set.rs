@@ -194,7 +194,7 @@ fn all_generalized_orders(base_clause: &Clause, output: &mut Vec<Clause>) {
             let mut clause = Clause {
                 literals: current.clone(),
             };
-            clause.normalize_var_ids();
+            clause.normalize_var_ids_no_flip();
             output.push(clause);
             return;
         }
@@ -252,7 +252,7 @@ fn specialized_form(mut clause: Clause) -> Clause {
             .reverse() // Reverse to get non-increasing order
     });
 
-    clause.normalize_var_ids();
+    clause.normalize_var_ids_no_flip();
     clause
 }
 
