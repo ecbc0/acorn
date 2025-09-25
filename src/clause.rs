@@ -79,19 +79,14 @@ impl ClauseTrace {
     }
 
     pub fn compose(&mut self, other: &ClauseTrace) {
-        compose_traces(&mut self.0, &other.0);
-    }
-}
-
-// Modifies the first trace in place.
-fn compose_traces(first: &mut Vec<LiteralTrace>, second: &Vec<LiteralTrace>) {
-    for i in 0..first.len() {
-        let LiteralTrace::Output { index, flipped } = first[i] else {
-            continue;
-        };
-        first[i] = second[index].clone();
-        if flipped {
-            first[i].flip();
+        for i in 0..self.0.len() {
+            let LiteralTrace::Output { index, flipped } = self.0[i] else {
+                continue;
+            };
+            self.0[i] = other.0[index].clone();
+            if flipped {
+                self.0[i].flip();
+            }
         }
     }
 }
