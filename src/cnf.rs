@@ -65,6 +65,14 @@ impl CNF {
         self
     }
 
+    pub fn and_all(formulas: impl Iterator<Item = CNF>) -> Self {
+        let mut result = CNF::true_value();
+        for formula in formulas {
+            result = result.and(formula);
+        }
+        result
+    }
+
     /// The 'or' of two CNF formulas.
     /// Applies the distributive law: (A ∧ B) ∨ (C ∧ D) = (A ∨ C) ∧ (A ∨ D) ∧ (B ∨ C) ∧ (B ∨ D)
     pub fn or(self, other: CNF) -> Self {
@@ -77,6 +85,25 @@ impl CNF {
             }
         }
         CNF(result_clauses)
+    }
+
+    pub fn or_all(formulas: impl Iterator<Item = CNF>) -> Self {
+        let mut result = CNF::false_value();
+        for formula in formulas {
+            result = result.or(formula);
+        }
+        result
+    }
+
+    // Note that this causes exponential blowup.
+    // Think of the input formula as And(Or(...)).
+    // To negate it, it's Negate(And(Or(...))), which is equivalent to Or(And(Negate(...))).
+    pub fn negate(&self) -> CNF {
+        CNF::or_all(
+            self.0.iter().map(|clause| {
+                CNF::and_all(clause.iter().map(|lit| CNF::from_literal(lit.negate())))
+            }),
+        )
     }
 
     pub fn into_iter(self) -> impl Iterator<Item = Vec<Literal>> {
