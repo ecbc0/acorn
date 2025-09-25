@@ -10,18 +10,17 @@ use crate::unifier::{Scope, Unifier};
 // The experiment is to fix clause variable id normalization.
 pub const EXPERIMENT: bool = false;
 
-// A record of what happened to a single literal during a single proof step.
-// This includes simplification and resolution, but not every sort of deduction.
+/// A record of what happened to a literal during a transformation.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum LiteralTrace {
-    // This literal is in the output clause.
+    /// This literal is in the output clause.
     Output { index: usize, flipped: bool },
 
-    // This literal was eliminated by combining with the given step.
-    // Step must be a single literal.
+    /// This literal was eliminated by combining with the given step.
+    /// Step must be a single literal.
     Eliminated { step: usize, flipped: bool },
 
-    // This literal was self-contradictory, of the form x != x.
+    /// This literal was self-contradictory, of the form x != x.
     Impossible,
 }
 
@@ -42,6 +41,8 @@ impl LiteralTrace {
     }
 }
 
+/// A record of how a Clause was created from a particular Vec<Literal>.
+/// The trace matches the original Vec<Literal> in length, not the clause necessarily.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct ClauseTrace(Vec<LiteralTrace>);
 
@@ -191,28 +192,25 @@ impl Clause {
 
     /// Creates a new clause and a new trace, given a list of literals and a
     /// trace of how they were created.
-    pub fn new_with_trace(
-        literals: Vec<Literal>,
-        mut traces: ClauseTrace,
-    ) -> (Clause, ClauseTrace) {
+    pub fn new_with_trace(literals: Vec<Literal>, mut trace: ClauseTrace) -> (Clause, ClauseTrace) {
         let (c, incremental_trace) = Clause::normalize_with_trace(literals);
-        traces.compose(&incremental_trace);
-        (c, traces)
+        trace.compose(&incremental_trace);
+        (c, trace)
     }
 
     /// Creates a new clause. If a trace is provided, we compose the traces.
     /// The base_trace should be applicable to the provided literals.
     pub fn new_composing_traces(
         literals: Vec<Literal>,
-        base_traces: Option<ClauseTrace>,
+        base_trace: Option<ClauseTrace>,
         incremental_trace: &ClauseTrace,
     ) -> (Clause, Option<ClauseTrace>) {
-        let Some(mut base_traces) = base_traces else {
+        let Some(mut base_traces) = base_trace else {
             return (Clause::new(literals), None);
         };
         base_traces.compose(incremental_trace);
-        let (c, traces) = Clause::new_with_trace(literals, base_traces);
-        (c, Some(traces))
+        let (c, trace) = Clause::new_with_trace(literals, base_traces);
+        (c, Some(trace))
     }
 
     pub fn from_literal(literal: Literal, flipped: bool) -> (Clause, ClauseTrace) {
