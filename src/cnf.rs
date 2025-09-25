@@ -146,4 +146,42 @@ impl CNF {
         let a_imp_b = not_a_lit.or(b);
         a_imp_b.and(not_a_imp_c)
     }
+
+    /// Parse a CNF formula from a string.
+    /// The string should be in the format "clause1 and clause2 and ..."
+    /// where each clause is "literal1 or literal2 or ...".
+    pub fn parse(s: &str) -> Self {
+        let clauses: Vec<Vec<Literal>> = s
+            .split(" and ")
+            .map(|clause_str| {
+                clause_str
+                    .split(" or ")
+                    .map(|lit_str| Literal::parse(lit_str))
+                    .collect()
+            })
+            .collect();
+        CNF::new(clauses)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cnf_negate() {
+        let cnf = CNF::parse("x0 or x1 and x2 or x3");
+
+        let negated = cnf.negate();
+
+        let expected = CNF::parse(
+            "\
+        not x0 or not x2 and \
+        not x0 or not x3 and \
+        not x1 or not x2 and \
+        not x1 or not x3",
+        );
+
+        assert_eq!(negated, expected);
+    }
 }
