@@ -38,9 +38,11 @@ impl CNF {
     }
 
     pub fn validate(&self) {
-        for clause in &self.0 {
-            for literal in clause {
-                literal.validate();
+        for lits in &self.0 {
+            for lit in lits {
+                if !lit.is_normalized() {
+                    panic!("CNF contains non-normalized literal: {}", lit);
+                }
             }
         }
     }

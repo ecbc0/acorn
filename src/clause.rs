@@ -209,7 +209,6 @@ impl Clause {
     pub fn validate(&self) {
         // Check that the literals are sorted
         for i in 0..self.literals.len() {
-            self.literals[i].validate();
             if i > 0 && self.literals[i - 1] > self.literals[i] {
                 panic!("Clause literals are not sorted: {}", self);
             }
@@ -221,7 +220,9 @@ impl Clause {
             if literal.is_impossible() {
                 panic!("Clause contains impossible literal: {}", self);
             }
-            literal.validate();
+            if !literal.is_normalized() {
+                panic!("Clause {} has bad literal {}", self, literal);
+            }
         }
         let mut next_var_id = 0;
         for atom in self.iter_atoms() {

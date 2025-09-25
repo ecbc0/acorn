@@ -69,11 +69,8 @@ impl Literal {
         }
     }
 
-    // Does not validate type, because that's inconvenient for our testing.
-    pub fn validate(&self) {
-        if Literal::new(self.positive, self.left.clone(), self.right.clone()) != *self {
-            panic!("Literal is not normalized: {}", self);
-        }
+    pub fn is_normalized(&self) -> bool {
+        !needs_to_flip(&self.left, &self.right)
     }
 
     pub fn from_signed_term(term: Term, positive: bool) -> Literal {
