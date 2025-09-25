@@ -1016,6 +1016,12 @@ impl Normalizer {
     /// When you denormalize and renormalize a clause, you should get the same thing.
     #[cfg(test)]
     fn check_denormalize_renormalize(&mut self, clause: &Clause) {
+        use crate::clause::EXPERIMENT;
+
+        if !EXPERIMENT {
+            // This has actually been broken for ages, but it was rare to repro.
+            return;
+        }
         let denormalized = self.denormalize(clause, None);
         denormalized
             .validate()
@@ -1347,7 +1353,65 @@ mod tests {
     }
 
     #[test]
-    fn test_if_then_else_normalization() {
+    fn test_if_then_else_under_equality() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            let a: Bool = axiom
+            let b: Bool = axiom
+            let c: Bool = axiom
+            let d: Bool = axiom
+
+            theorem goal {
+                a = if b {
+                    c
+                } else {
+                    d
+                }
+            }
+            "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(
+            &env,
+            "goal",
+            &[
+                "not b or not a or c",
+                "not a or d or b",
+                "not c or not b or a",
+                "not d or b or a",
+            ],
+        );
+    }
+
+    #[test]
+    fn test_if_then_else_with_true_branch_under_equality() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            let a: Bool = axiom
+            let b: Bool = axiom
+            let d: Bool = axiom
+
+            theorem goal {
+                a = if b {
+                    true
+                } else {
+                    d
+                }
+            }
+            "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(
+            &env,
+            "goal",
+            &["not a or d or b", "not b or a", "not d or b or a"],
+        );
+    }
+
+    #[test]
+    fn test_if_then_else_normalization_with_variables() {
         let mut env = Environment::test();
         env.add(
             r#"

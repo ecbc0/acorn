@@ -32,6 +32,10 @@ impl fmt::Display for Literal {
     }
 }
 
+fn needs_to_flip(left: &Term, right: &Term) -> bool {
+    left.extended_kbo_cmp(right) == Ordering::Less
+}
+
 impl Literal {
     // Normalizes the direction.
     // The larger term should be on the left of the literal.
@@ -44,7 +48,7 @@ impl Literal {
     // The larger term should be on the left of the literal.
     // Returns the literal and whether it was flipped.
     pub fn new_with_flip(positive: bool, left: Term, right: Term) -> (Literal, bool) {
-        if left.extended_kbo_cmp(&right) == Ordering::Less {
+        if needs_to_flip(&left, &right) {
             (
                 Literal {
                     positive,
@@ -231,6 +235,14 @@ impl Literal {
         let mut left = self.left.clone();
         left.normalize_var_ids(&mut var_ids);
         (right, left)
+    }
+
+    pub fn normalize_var_ids(&mut self, var_ids: &mut Vec<AtomId>) {
+        self.left.normalize_var_ids(var_ids);
+        self.right.normalize_var_ids(var_ids);
+        if needs_to_flip(&self.left, &self.right) {
+            self.flip();
+        }
     }
 
     pub fn least_unused_variable(&self) -> AtomId {

@@ -7,6 +7,9 @@ use crate::proof_step::{EFLiteralTrace, EFTermTrace};
 use crate::term::{Term, BOOL};
 use crate::unifier::{Scope, Unifier};
 
+// The experiment is to fix clause variable id normalization.
+pub const EXPERIMENT: bool = false;
+
 // A record of what happened to a single literal during a single proof step.
 // This includes simplification and resolution, but not every sort of deduction.
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -188,8 +191,14 @@ impl Clause {
     pub fn normalize_var_ids(&mut self) {
         let mut var_ids = vec![];
         for literal in &mut self.literals {
-            literal.left.normalize_var_ids(&mut var_ids);
-            literal.right.normalize_var_ids(&mut var_ids);
+            if EXPERIMENT {
+                // This is bugged because it doesn't update the trace.
+                literal.normalize_var_ids(&mut var_ids);
+            } else {
+                // This is bugged because it might denormalize the literal.
+                literal.left.normalize_var_ids(&mut var_ids);
+                literal.right.normalize_var_ids(&mut var_ids);
+            }
         }
     }
 
