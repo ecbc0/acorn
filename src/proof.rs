@@ -819,7 +819,7 @@ impl<'a> Proof<'a> {
                 // a way that we need to reconstruct.
                 let var_maps = self.reconstruct_trace(
                     &info.literals,
-                    traces,
+                    traces.as_slice(),
                     &step.clause,
                     conclusion_map,
                     concrete_steps,
@@ -848,7 +848,7 @@ impl<'a> Proof<'a> {
                 let literals = vec![info.rewritten.clone()];
                 let var_maps = self.reconstruct_trace(
                     &literals,
-                    traces,
+                    traces.as_slice(),
                     &step.clause,
                     conclusion_map,
                     concrete_steps,
@@ -898,7 +898,7 @@ impl<'a> Proof<'a> {
                 // For EF, the trace applies to the stored literals.
                 let var_maps = self.reconstruct_trace(
                     &info.literals,
-                    traces,
+                    traces.as_slice(),
                     &step.clause,
                     conclusion_map,
                     concrete_steps,
@@ -937,7 +937,7 @@ impl<'a> Proof<'a> {
                 // For ER, the trace applies to the stored literals.
                 let var_maps = self.reconstruct_trace(
                     &info.literals,
-                    traces,
+                    traces.as_slice(),
                     &step.clause,
                     conclusion_map,
                     concrete_steps,
@@ -983,7 +983,7 @@ impl<'a> Proof<'a> {
                 // For injectivity, the trace applies to the stored literals.
                 let var_maps = self.reconstruct_trace(
                     &info.literals,
-                    traces,
+                    traces.as_slice(),
                     &step.clause,
                     conclusion_map,
                     concrete_steps,
@@ -1036,7 +1036,7 @@ impl<'a> Proof<'a> {
                 // For boolean reduction, the trace applies to the stored literals.
                 let var_maps = self.reconstruct_trace(
                     &info.literals,
-                    traces,
+                    traces.as_slice(),
                     &step.clause,
                     conclusion_map,
                     concrete_steps,
@@ -1088,7 +1088,7 @@ impl<'a> Proof<'a> {
                 let long_clause = self.get_clause(long_id)?;
                 let var_maps = self.reconstruct_trace(
                     &long_clause.literals,
-                    traces,
+                    traces.as_slice(),
                     &step.clause,
                     conclusion_map,
                     concrete_steps,
@@ -1102,7 +1102,7 @@ impl<'a> Proof<'a> {
                 let pattern_clause = self.get_clause(pattern_id)?;
                 let var_maps = self.reconstruct_trace(
                     &pattern_clause.literals,
-                    traces,
+                    traces.as_slice(),
                     &step.clause,
                     conclusion_map,
                     concrete_steps,

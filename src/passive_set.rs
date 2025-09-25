@@ -1,4 +1,4 @@
-use crate::clause::{Clause, LiteralTrace};
+use crate::clause::{Clause, ClauseTrace, LiteralTrace};
 use crate::features::Features;
 use crate::fingerprint::FingerprintSpecializer;
 use crate::literal::Literal;
@@ -73,8 +73,8 @@ fn make_simplified(
     flipped: bool,
     index: usize,
     literals: Vec<Literal>,
-    traces: Option<Vec<LiteralTrace>>,
-) -> Option<(Clause, Option<Vec<LiteralTrace>>)> {
+    traces: Option<ClauseTrace>,
+) -> Option<(Clause, Option<ClauseTrace>)> {
     if literals[index].positive == positive {
         return None;
     }
@@ -117,7 +117,7 @@ fn make_simplified(
     Some(Clause::new_composing_traces(
         new_literals,
         traces,
-        &incremental_trace,
+        &ClauseTrace::new(incremental_trace),
     ))
 }
 

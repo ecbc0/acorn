@@ -42,6 +42,47 @@ impl LiteralTrace {
     }
 }
 
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct ClauseTrace(Vec<LiteralTrace>);
+
+impl ClauseTrace {
+    pub fn new(traces: Vec<LiteralTrace>) -> ClauseTrace {
+        ClauseTrace(traces)
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn get(&self, index: usize) -> &LiteralTrace {
+        &self.0[index]
+    }
+
+    pub fn get_mut(&mut self, index: usize) -> &mut LiteralTrace {
+        &mut self.0[index]
+    }
+
+    pub fn into_inner(self) -> Vec<LiteralTrace> {
+        self.0
+    }
+
+    pub fn as_slice(&self) -> &[LiteralTrace] {
+        &self.0
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<LiteralTrace> {
+        self.0.iter()
+    }
+
+    pub fn compose(&mut self, other: &ClauseTrace) {
+        compose_traces(&mut self.0, &other.0);
+    }
+}
+
 // Modifies the first trace in place.
 fn compose_traces(first: &mut Vec<LiteralTrace>, second: &Vec<LiteralTrace>) {
     for i in 0..first.len() {
@@ -99,7 +140,7 @@ impl Clause {
     /// Normalizes literals into a clause, creating a trace of where each one is sent.
     /// Note that this doesn't flip any literals. It only creates the "Output" and "Impossible"
     /// type traces.
-    pub fn normalize_with_trace(literals: Vec<Literal>) -> (Clause, Vec<LiteralTrace>) {
+    pub fn normalize_with_trace(literals: Vec<Literal>) -> (Clause, ClauseTrace) {
         let mut trace = vec![LiteralTrace::Impossible; literals.len()];
 
         // Pair each literal with its initial index.
@@ -140,7 +181,7 @@ impl Clause {
             literals: output_literals,
         };
         c.normalize_var_ids();
-        (c, trace)
+        (c, ClauseTrace::new(trace))
     }
 
     pub fn validate(&self) {
@@ -157,10 +198,10 @@ impl Clause {
     /// trace of how they were created.
     pub fn new_with_trace(
         literals: Vec<Literal>,
-        mut traces: Vec<LiteralTrace>,
-    ) -> (Clause, Vec<LiteralTrace>) {
+        mut traces: ClauseTrace,
+    ) -> (Clause, ClauseTrace) {
         let (c, incremental_trace) = Clause::normalize_with_trace(literals);
-        compose_traces(&mut traces, &incremental_trace);
+        traces.compose(&incremental_trace);
         (c, traces)
     }
 
@@ -168,21 +209,21 @@ impl Clause {
     /// The base_trace should be applicable to the provided literals.
     pub fn new_composing_traces(
         literals: Vec<Literal>,
-        base_traces: Option<Vec<LiteralTrace>>,
-        incremental_trace: &Vec<LiteralTrace>,
-    ) -> (Clause, Option<Vec<LiteralTrace>>) {
+        base_traces: Option<ClauseTrace>,
+        incremental_trace: &ClauseTrace,
+    ) -> (Clause, Option<ClauseTrace>) {
         let Some(mut base_traces) = base_traces else {
             return (Clause::new(literals), None);
         };
-        compose_traces(&mut base_traces, incremental_trace);
+        base_traces.compose(incremental_trace);
         let (c, traces) = Clause::new_with_trace(literals, base_traces);
         (c, Some(traces))
     }
 
-    pub fn from_literal(literal: Literal, flipped: bool) -> (Clause, Vec<LiteralTrace>) {
+    pub fn from_literal(literal: Literal, flipped: bool) -> (Clause, ClauseTrace) {
         Clause::new_with_trace(
             vec![literal],
-            vec![LiteralTrace::Output { index: 0, flipped }],
+            ClauseTrace::new(vec![LiteralTrace::Output { index: 0, flipped }]),
         )
     }
 

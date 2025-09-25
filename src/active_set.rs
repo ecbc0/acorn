@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::clause::{Clause, LiteralTrace};
+use crate::clause::{Clause, ClauseTrace, LiteralTrace};
 use crate::clause_set::TermId;
 use crate::fingerprint::FingerprintUnifier;
 use crate::literal::Literal;
@@ -296,7 +296,7 @@ impl ActiveSet {
         }
 
         // Gather the output data
-        let (clause, traces) = Clause::new_with_trace(literals, incremental_trace);
+        let (clause, traces) = Clause::new_with_trace(literals, ClauseTrace::new(incremental_trace));
         let mut step = ProofStep::resolution(long_id, long_step, short_id, short_step, clause);
         step.traces = Some(traces);
         Some(step)
@@ -725,7 +725,7 @@ impl ActiveSet {
         }
 
         let (clause, traces) =
-            Clause::new_composing_traces(output_literals, step.traces.clone(), &incremental_trace);
+            Clause::new_composing_traces(output_literals, step.traces.clone(), &ClauseTrace::new(incremental_trace));
         if clause.is_tautology() {
             return None;
         }

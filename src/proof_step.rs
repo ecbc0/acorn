@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::atom::Atom;
-use crate::clause::{Clause, LiteralTrace};
+use crate::clause::{Clause, ClauseTrace, LiteralTrace};
 use crate::literal::Literal;
 use crate::proposition::MonomorphicProposition;
 use crate::source::{Source, SourceType};
@@ -378,7 +378,7 @@ pub struct ProofStep {
     pub printable: bool,
 
     /// Information about this step that will let us reconstruct the variable mappings.
-    pub traces: Option<Vec<LiteralTrace>>,
+    pub traces: Option<ClauseTrace>,
 }
 
 impl fmt::Display for ProofStep {
@@ -404,7 +404,7 @@ impl ProofStep {
         });
 
         // Create traces to indicate that no literals have been moved around
-        let traces = Some(
+        let traces = Some(ClauseTrace::new(
             clause
                 .literals
                 .iter()
@@ -414,7 +414,7 @@ impl ProofStep {
                     flipped: false,
                 })
                 .collect(),
-        );
+        ));
 
         ProofStep {
             clause,
@@ -435,7 +435,7 @@ impl ProofStep {
         activated_step: &ProofStep,
         rule: Rule,
         clause: Clause,
-        literal_traces: Vec<LiteralTrace>,
+        literal_traces: ClauseTrace,
     ) -> ProofStep {
         // Direct implication does not add to depth.
         let depth = activated_step.depth;
@@ -459,7 +459,7 @@ impl ProofStep {
         inspiration_id: usize,
         pattern_step: &ProofStep,
         clause: Clause,
-        traces: Vec<LiteralTrace>,
+        traces: ClauseTrace,
     ) -> ProofStep {
         let info = SpecializationInfo {
             pattern_id,
@@ -525,7 +525,7 @@ impl ProofStep {
         long_step: ProofStep,
         short_steps: &[(usize, &ProofStep)],
         clause: Clause,
-        traces: Option<Vec<LiteralTrace>>,
+        traces: Option<ClauseTrace>,
     ) -> ProofStep {
         let mut truthiness = long_step.truthiness;
         let mut simplification_rules = long_step.simplification_rules;
