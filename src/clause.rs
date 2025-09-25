@@ -6,6 +6,7 @@ use crate::literal::Literal;
 use crate::proof_step::{EFLiteralTrace, EFTermTrace};
 use crate::term::{Term, BOOL};
 use crate::unifier::{Scope, Unifier};
+use crate::variable_map::VariableMap;
 
 // The experiment is to fix clause variable id normalization.
 pub const EXPERIMENT: bool = false;
@@ -87,6 +88,31 @@ impl ClauseTrace {
             self.0[i] = other.0[index].clone();
             if flipped {
                 self.0[i].flip();
+            }
+        }
+    }
+
+    /// Validate that this trace, when applied to the given literals, produces the given clause.
+    pub fn validate(&self, literals: &Vec<Literal>, clause: &Clause) {
+        let mut covered = vec![false; clause.len()];
+        assert_eq!(self.len(), literals.len());
+        let mut var_map = VariableMap::new();
+        for (trace, literal) in self.iter().zip(literals) {
+            match trace {
+                LiteralTrace::Output { index, flipped } => {
+                    let (left, right) = if *flipped {
+                        (&literal.right, &literal.left)
+                    } else {
+                        (&literal.left, &literal.right)
+                    };
+                    covered[*index] = true;
+                    let out = &clause.literals[*index];
+                    assert!(var_map.match_terms(&left, &out.left));
+                    assert!(var_map.match_terms(&right, &out.right));
+                }
+                _ => {
+                    // The other branches don't leave anything to be validated
+                }
             }
         }
     }
@@ -729,4 +755,23 @@ impl Clause {
 
         (Clause { literals }, polarities)
     }
+}
+
+#[cfg(test)]
+fn check(s: &str) {
+    let literals: Vec<Literal> = s
+        .split(" or ")
+        .map(|x| Literal::parse(x))
+        .collect::<Vec<_>>();
+    let clause = Clause::new(literals.clone());
+    let (alt_clause, trace) = Clause::normalize_with_trace(literals.clone());
+    assert_eq!(clause, alt_clause);
+
+    clause.validate();
+    trace.validate(&literals, &clause);
+}
+
+#[test]
+fn test_clause_normalization() {
+    check("c0 or c1");
 }

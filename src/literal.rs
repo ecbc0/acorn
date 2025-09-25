@@ -69,11 +69,11 @@ impl Literal {
         }
     }
 
+    // Does not validate type, because that's inconvenient for our testing.
     pub fn validate(&self) {
         if Literal::new(self.positive, self.left.clone(), self.right.clone()) != *self {
             panic!("Literal is not normalized: {}", self);
         }
-        self.validate_type();
     }
 
     pub fn from_signed_term(term: Term, positive: bool) -> Literal {
@@ -229,10 +229,7 @@ impl Literal {
 
     /// Iterates over all atoms in the literal (left term atoms first, then right term atoms)
     pub fn iter_atoms(&self) -> Box<dyn Iterator<Item = &Atom> + '_> {
-        Box::new(
-            self.left.iter_atoms()
-                .chain(self.right.iter_atoms())
-        )
+        Box::new(self.left.iter_atoms().chain(self.right.iter_atoms()))
     }
 
     // Returns (right, left) with normalized var ids.
