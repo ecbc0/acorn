@@ -199,10 +199,22 @@ impl Clause {
                 flipped: false,
             };
         }
-        let mut c = Clause {
+        let mut var_ids = vec![];
+        for i in 0..output_literals.len() {
+            if output_literals[i].normalize_var_ids(&mut var_ids) {
+                // We flipped literal i. Update the trace.
+                for t in &mut trace {
+                    if let LiteralTrace::Output { index, flipped } = t {
+                        if *index == i {
+                            *flipped = !*flipped;
+                        }
+                    }
+                }
+            }
+        }
+        let c = Clause {
             literals: output_literals,
         };
-        c.normalize_var_ids();
         (c, ClauseTrace::new(trace))
     }
 
@@ -276,7 +288,7 @@ impl Clause {
         let mut var_ids = vec![];
         for literal in &mut self.literals {
             if EXPERIMENT {
-                // This is bugged because it doesn't update the trace.
+                // Note: this doesn't update the trace.
                 literal.normalize_var_ids(&mut var_ids);
             } else {
                 // This is bugged because it might denormalize the literal.

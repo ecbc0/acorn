@@ -239,11 +239,15 @@ impl Literal {
         (right, left)
     }
 
-    pub fn normalize_var_ids(&mut self, var_ids: &mut Vec<AtomId>) {
+    // Returns whether we flipped this literal.
+    pub fn normalize_var_ids(&mut self, var_ids: &mut Vec<AtomId>) -> bool {
         self.left.normalize_var_ids(var_ids);
         self.right.normalize_var_ids(var_ids);
         if needs_to_flip(&self.left, &self.right) {
             self.flip();
+            true
+        } else {
+            false
         }
     }
 
