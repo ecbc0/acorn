@@ -805,7 +805,7 @@ impl<'a> Proof<'a> {
             _ => {}
         }
 
-        let Some(traces) = step.traces.as_ref() else {
+        let Some(traces) = step.trace.as_ref() else {
             return Err(Error::internal(format!(
                 "no trace for {}: {}",
                 step.rule.name(),

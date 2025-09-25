@@ -296,9 +296,9 @@ impl ActiveSet {
         }
 
         // Gather the output data
-        let (clause, traces) = Clause::new_with_trace(literals, ClauseTrace::new(incremental_trace));
+        let (clause, trace) = Clause::new_with_trace(literals, ClauseTrace::new(incremental_trace));
         let mut step = ProofStep::resolution(long_id, long_step, short_id, short_step, clause);
-        step.traces = Some(traces);
+        step.trace = Some(trace);
         Some(step)
     }
 
@@ -724,15 +724,18 @@ impl ActiveSet {
             return Some(step);
         }
 
-        let (clause, traces) =
-            Clause::new_composing_traces(output_literals, step.traces.clone(), &ClauseTrace::new(incremental_trace));
+        let (clause, trace) = Clause::new_composing_traces(
+            output_literals,
+            step.trace.clone(),
+            &ClauseTrace::new(incremental_trace),
+        );
         if clause.is_tautology() {
             return None;
         }
         if self.is_known_long_clause(&clause) {
             return None;
         }
-        Some(ProofStep::simplified(step, &new_rules, clause, traces))
+        Some(ProofStep::simplified(step, &new_rules, clause, trace))
     }
 
     fn add_resolution_targets(

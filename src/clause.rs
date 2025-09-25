@@ -205,11 +205,11 @@ impl Clause {
         base_trace: Option<ClauseTrace>,
         incremental_trace: &ClauseTrace,
     ) -> (Clause, Option<ClauseTrace>) {
-        let Some(mut base_traces) = base_trace else {
+        let Some(mut base_trace) = base_trace else {
             return (Clause::new(literals), None);
         };
-        base_traces.compose(incremental_trace);
-        let (c, trace) = Clause::new_with_trace(literals, base_traces);
+        base_trace.compose(incremental_trace);
+        let (c, trace) = Clause::new_with_trace(literals, base_trace);
         (c, Some(trace))
     }
 
