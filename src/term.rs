@@ -150,6 +150,14 @@ impl Term {
         self.args.iter()
     }
 
+    /// Iterates over all atoms in the term (head first, then recursively through arguments)
+    pub fn iter_atoms(&self) -> Box<dyn Iterator<Item = &Atom> + '_> {
+        Box::new(
+            std::iter::once(&self.head)
+                .chain(self.args.iter().flat_map(|arg| arg.iter_atoms()))
+        )
+    }
+
     /// This doesn't change the term type, so the caller is responsible for making sure
     /// the type is correct.
     pub fn push_arg(&mut self, arg: Term) {

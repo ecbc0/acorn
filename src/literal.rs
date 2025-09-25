@@ -227,6 +227,14 @@ impl Literal {
         ]
     }
 
+    /// Iterates over all atoms in the literal (left term atoms first, then right term atoms)
+    pub fn iter_atoms(&self) -> Box<dyn Iterator<Item = &Atom> + '_> {
+        Box::new(
+            self.left.iter_atoms()
+                .chain(self.right.iter_atoms())
+        )
+    }
+
     // Returns (right, left) with normalized var ids.
     pub fn normalized_reversed(&self) -> (Term, Term) {
         let mut var_ids = vec![];

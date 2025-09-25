@@ -188,6 +188,29 @@ impl Clause {
                 panic!("Clause literals are not sorted: {}", self);
             }
         }
+        for literal in &self.literals {
+            if literal.is_tautology() {
+                panic!("Clause contains tautology literal: {}", self);
+            }
+            if literal.is_impossible() {
+                panic!("Clause contains impossible literal: {}", self);
+            }
+            literal.validate();
+        }
+        let mut next_var_id = 0;
+        for atom in self.iter_atoms() {
+            if let Atom::Variable(id) = atom {
+                if *id > next_var_id {
+                    panic!(
+                        "Clause {} skips variable ids: expected <= {}, found {}",
+                        self, next_var_id, id
+                    );
+                }
+                if *id == next_var_id {
+                    next_var_id += 1;
+                }
+            }
+        }
     }
 
     /// Creates a new clause and a new trace, given a list of literals and a
@@ -277,6 +300,15 @@ impl Clause {
 
     pub fn len(&self) -> usize {
         self.literals.len()
+    }
+
+    /// Iterates over all atoms in the clause (from all literals in order)
+    pub fn iter_atoms(&self) -> Box<dyn Iterator<Item = &Atom> + '_> {
+        Box::new(
+            self.literals
+                .iter()
+                .flat_map(|literal| literal.iter_atoms()),
+        )
     }
 
     pub fn has_any_variable(&self) -> bool {
