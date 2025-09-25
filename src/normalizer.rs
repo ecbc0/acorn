@@ -332,6 +332,22 @@ impl NormalizerView<'_> {
                 let else_cnf = self.value_to_cnf(else_value, negate, stack, next_var_id, synth)?;
                 Ok(CNF::cnf_if(cond_lit, then_cnf, else_cnf))
             }
+            AcornValue::Application(app) => {
+                if let AcornValue::Lambda(_, return_value) = &*app.function {
+                    let mut args = vec![];
+                    for arg in &app.args {
+                        args.push(self.value_to_term(arg, stack)?);
+                    }
+                    stack.extend(args);
+                    let answer =
+                        self.value_to_cnf(&return_value, negate, stack, next_var_id, synth);
+                    stack.truncate(stack.len() - app.args.len());
+                    return answer;
+                }
+
+                // Fall through
+                self.value_to_single_term_to_cnf(value, negate, stack)
+            }
             _ => self.value_to_single_term_to_cnf(value, negate, stack),
         }
     }
@@ -556,7 +572,10 @@ impl NormalizerView<'_> {
         stack: &Vec<Term>,
     ) -> Result<(Term, bool), String> {
         let answer = self.try_value_to_signed_term(value, stack)?;
-        answer.ok_or_else(|| format!("Cannot convert {} to signed term", value))
+        answer.ok_or_else(|| {
+            // We might want to introduce a synthetic term here instead of giving up.
+            format!("cannot convert {} to signed term", value)
+        })
     }
 
     /// Helper for value_to_cnf.
@@ -711,6 +730,8 @@ impl Normalizer {
         self.normalization_map.add_from(&value, ctype);
 
         let value = value.replace_function_equality(0);
+
+        // TODO: remove this line
         let value = value.expand_lambdas(0);
 
         let mut skolem_ids = vec![];
@@ -811,7 +832,7 @@ impl Normalizer {
                     let term = view.value_to_term(value, &mut vec![]).map_err(|msg| {
                         BuildError::new(
                             range,
-                            format!("Cannot convert definition to term: {}", msg),
+                            format!("cannot convert definition to term: {}", msg),
                         )
                     })?;
                     Some(term.get_head_atom().clone())
@@ -1439,5 +1460,28 @@ mod tests {
                 "not x0(x1) or foo(x0, x2, x1) or x1 = x2",
             ],
         );
+    }
+
+    #[test]
+    fn test_lambda_normalization() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            type Nat: axiom
+            
+            let f1: (Nat, Nat) -> Nat = axiom
+            let f2: (Nat, Nat) -> Nat = axiom
+
+            theorem goal {
+                forall(a: Nat) {
+                    f1(a) = function(b: Nat) {
+                        f2(a)(b)
+                    }
+                }
+            }
+        "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(&env, "goal", &["f2(x0, x1) = f1(x0, x1)"]);
     }
 }
