@@ -336,7 +336,7 @@ impl NormalizerView<'_> {
                 if let AcornValue::Lambda(_, return_value) = &*app.function {
                     let mut args = vec![];
                     for arg in &app.args {
-                        args.push(self.value_to_term(arg, stack)?);
+                        args.push(self.old_value_to_term(arg, stack)?);
                     }
                     stack.extend(args);
                     let answer =
@@ -359,7 +359,7 @@ impl NormalizerView<'_> {
         negate: bool,
         stack: &Vec<Term>,
     ) -> Result<CNF, String> {
-        let (t, sign) = self.value_to_signed_term(value, stack)?;
+        let (t, sign) = self.old_value_to_signed_term(value, stack)?;
         let literal = Literal::from_signed_term(t, sign ^ negate);
         Ok(CNF::from_literal(literal))
     }
@@ -507,9 +507,9 @@ impl NormalizerView<'_> {
         }
 
         if left.is_bool_type() {
-            if let Some((left_term, left_sign)) = self.try_value_to_signed_term(left, stack)? {
+            if let Some((left_term, left_sign)) = self.old_try_value_to_signed_term(left, stack)? {
                 if let Some((right_term, right_sign)) =
-                    self.try_value_to_signed_term(right, stack)?
+                    self.old_try_value_to_signed_term(right, stack)?
                 {
                     // Both sides are terms, so we can do a simple equality or inequality
                     let positive = (left_sign == right_sign) ^ negate;
@@ -557,8 +557,8 @@ impl NormalizerView<'_> {
         }
     }
 
-    fn value_to_term(&self, value: &AcornValue, stack: &Vec<Term>) -> Result<Term, String> {
-        let (t, sign) = self.value_to_signed_term(value, stack)?;
+    fn old_value_to_term(&self, value: &AcornValue, stack: &Vec<Term>) -> Result<Term, String> {
+        let (t, sign) = self.old_value_to_signed_term(value, stack)?;
         if sign {
             return Ok(t);
         }
@@ -566,12 +566,12 @@ impl NormalizerView<'_> {
     }
 
     /// Wrapper around try_value_to_signed_term that treats inconvertibility as an error.
-    fn value_to_signed_term(
+    fn old_value_to_signed_term(
         &self,
         value: &AcornValue,
         stack: &Vec<Term>,
     ) -> Result<(Term, bool), String> {
-        let answer = self.try_value_to_signed_term(value, stack)?;
+        let answer = self.old_try_value_to_signed_term(value, stack)?;
         answer.ok_or_else(|| {
             // We might want to introduce a synthetic term here instead of giving up.
             format!("cannot convert {} to signed term", value)
@@ -582,7 +582,7 @@ impl NormalizerView<'_> {
     /// The bool returned is true = positive.
     /// This only errors if we get an inconsistent value.
     /// If it is just called on a value that doesn't convert to a term, it returns Ok(None).
-    fn try_value_to_signed_term(
+    fn old_try_value_to_signed_term(
         &self,
         value: &AcornValue,
         stack: &Vec<Term>,
@@ -601,12 +601,12 @@ impl NormalizerView<'_> {
                     .as_ref()
                     .normalization_map
                     .get_type_id(&application_type)?;
-                let func_term = self.value_to_term(&application.function, stack)?;
+                let func_term = self.old_value_to_term(&application.function, stack)?;
                 let head = func_term.head;
                 let head_type = func_term.head_type;
                 let mut args = func_term.args;
                 for arg in &application.args {
-                    args.push(self.value_to_term(arg, stack)?);
+                    args.push(self.old_value_to_term(arg, stack)?);
                 }
                 Ok(Some((Term::new(term_type, head_type, head, args), true)))
             }
@@ -628,12 +628,28 @@ impl NormalizerView<'_> {
                     )))
                 }
             }
-            AcornValue::Not(subvalue) => match self.try_value_to_signed_term(subvalue, stack)? {
-                None => Ok(None),
-                Some((t, sign)) => Ok(Some((t, !sign))),
-            },
+            AcornValue::Not(subvalue) => {
+                match self.old_try_value_to_signed_term(subvalue, stack)? {
+                    None => Ok(None),
+                    Some((t, sign)) => Ok(Some((t, !sign))),
+                }
+            }
             AcornValue::Bool(v) => Ok(Some((Term::new_true(), *v))),
             _ => Ok(None),
+        }
+    }
+
+    fn value_to_term(
+        &mut self,
+        value: &AcornValue,
+        stack: &mut Vec<Term>,
+        next_var_id: &mut AtomId,
+        synth: &mut Vec<AtomId>,
+    ) -> Result<Term, String> {
+        match self.value_to_extended_term(value, stack, next_var_id, synth)? {
+            ExtendedTerm::Signed(t, true) => Ok(t),
+            ExtendedTerm::Signed(_, false) => Err(format!("{} is unexpectedly negated", value)),
+            ExtendedTerm::If(_, _, _) => Err(format!("{} is an 'if' term", value)),
         }
     }
 
@@ -651,8 +667,8 @@ impl NormalizerView<'_> {
                 let Some(cond_lit) = cond_cnf.to_literal() else {
                     return Err("term 'if' condition is too complicated".to_string());
                 };
-                let then_branch = self.value_to_term(then_value, stack)?;
-                let else_branch = self.value_to_term(else_value, stack)?;
+                let then_branch = self.value_to_term(then_value, stack, next_var_id, synth)?;
+                let else_branch = self.value_to_term(else_value, stack, next_var_id, synth)?;
                 Ok(ExtendedTerm::If(cond_lit, then_branch, else_branch))
             }
             AcornValue::Application(app) => {
@@ -823,8 +839,8 @@ impl Normalizer {
                 //      f(a) = g(b)
                 //   2. Make extensionality more powerful, so that it can deduce f(a) = g(b).
                 let view = NormalizerView::Ref(self);
-                let left_term = view.value_to_term(left, &mut vec![])?;
-                let right_term = view.value_to_term(right, &mut vec![])?;
+                let left_term = view.old_value_to_term(left, &mut vec![])?;
+                let right_term = view.old_value_to_term(right, &mut vec![])?;
                 let literal = Literal::new(true, left_term, right_term);
                 let clause = Clause::new(vec![literal]);
                 clauses.push(clause);
@@ -861,7 +877,7 @@ impl Normalizer {
             let defined = match &proposition.source.source_type {
                 SourceType::ConstantDefinition(value, _) => {
                     let view = NormalizerView::Ref(self);
-                    let term = view.value_to_term(value, &mut vec![]).map_err(|msg| {
+                    let term = view.old_value_to_term(value, &mut vec![]).map_err(|msg| {
                         BuildError::new(
                             range,
                             format!("cannot convert definition to term: {}", msg),
