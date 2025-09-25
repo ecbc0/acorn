@@ -702,10 +702,42 @@ impl NormalizerView<'_> {
                     }
                 }
             }
-            _ => {
-                let term = self.value_to_term(value, stack)?;
-                Ok(ExtendedTerm::Signed(term, true))
+            AcornValue::Variable(i, _) => {
+                if (*i as usize) < stack.len() {
+                    Ok(ExtendedTerm::Signed(stack[*i as usize].clone(), true))
+                } else {
+                    Err(format!("variable {} out of range", i))
+                }
             }
+            AcornValue::Constant(c) => {
+                if c.params.is_empty() {
+                    let type_id = self
+                        .as_ref()
+                        .normalization_map
+                        .get_type_id(&c.instance_type)?;
+
+                    let Some(atom) = self.as_ref().normalization_map.get_atom(&c.name) else {
+                        return Err(format!("constant {} not found in normalization map", c));
+                    };
+                    Ok(ExtendedTerm::Signed(
+                        Term::new(type_id, type_id, atom, vec![]),
+                        true,
+                    ))
+                } else {
+                    Ok(ExtendedTerm::Signed(
+                        self.as_ref().normalization_map.term_from_monomorph(&c)?,
+                        true,
+                    ))
+                }
+            }
+            AcornValue::Not(subvalue) => {
+                match self.value_to_extended_term(subvalue, stack, next_var_id, synth)? {
+                    ExtendedTerm::If(..) => Err("negation of 'if' term".to_string()),
+                    ExtendedTerm::Signed(t, sign) => Ok(ExtendedTerm::Signed(t, !sign)),
+                }
+            }
+            AcornValue::Bool(v) => Ok(ExtendedTerm::Signed(Term::new_true(), *v)),
+            _ => Err(format!("cannot convert {} to extended term", value)),
         }
     }
 }
