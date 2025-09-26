@@ -1,3 +1,4 @@
+use std::fmt;
 use std::vec;
 
 use crate::literal::Literal;
@@ -259,6 +260,29 @@ impl CNF {
     }
 }
 
+impl fmt::Display for CNF {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_true_value() {
+            write!(f, "true")
+        } else if self.is_false_value() {
+            write!(f, "false")
+        } else {
+            let clause_strings: Vec<String> = self
+                .0
+                .iter()
+                .map(|clause| {
+                    clause
+                        .iter()
+                        .map(|lit| lit.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" or ")
+                })
+                .collect();
+            write!(f, "{}", clause_strings.join(" and "))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -289,5 +313,20 @@ mod tests {
         assert_eq!(cnf2.clone().equals(cnf1.clone()), CNF::parse("x0 != x1"));
         assert_eq!(cnf1.clone().not_equals(cnf2.clone()), CNF::parse("x0 = x1"));
         assert_eq!(cnf2.clone().not_equals(cnf1.clone()), CNF::parse("x0 = x1"));
+    }
+
+    #[test]
+    fn test_cnf_tricky_equality() {
+        let cnf1 = CNF::parse("x0 = x1");
+        let cnf2 = CNF::parse("x2 = x3");
+
+        assert_eq!(
+            cnf1.clone().equals(cnf2.clone()).to_string(),
+            "x0 != x1 or x2 = x3 and x2 != x3 or x0 = x1"
+        );
+        assert_eq!(
+            cnf1.clone().not_equals(cnf2.clone()).to_string(),
+            "x0 != x1 or x2 != x3 and x0 = x1 or x2 = x3"
+        );
     }
 }
