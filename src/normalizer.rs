@@ -1630,4 +1630,28 @@ mod tests {
         let mut norm = Normalizer::new();
         norm.check(&env, "goal", &["not f(x0)", "not g(x0)"]);
     }
+
+    #[test]
+    fn test_normalizing_exists_inside_if() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            type Nat: axiom
+
+            let b: Bool = axiom
+            let f: Nat -> Bool = axiom
+            let g: Nat -> Bool = axiom
+
+            theorem goal {
+                if b {
+                    exists(x: Nat) { f(x) }
+                } else {
+                    exists(y: Nat) { g(y) }
+                }
+            }
+        "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(&env, "goal", &["not b or f(s0)", "g(s1) or b"]);
+    }
 }
