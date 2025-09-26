@@ -507,42 +507,32 @@ impl NormalizerView<'_> {
         }
 
         if left.is_bool_type() {
-            if true {
-                // Old logic
-                if let Some((left_term, left_sign)) =
-                    self.old_try_value_to_signed_term(left, stack)?
+            if let Some((left_term, left_sign)) = self.old_try_value_to_signed_term(left, stack)? {
+                if let Some((right_term, right_sign)) =
+                    self.old_try_value_to_signed_term(right, stack)?
                 {
-                    if let Some((right_term, right_sign)) =
-                        self.old_try_value_to_signed_term(right, stack)?
-                    {
-                        // Both sides are terms, so we can do a simple equality or inequality
-                        let positive = (left_sign == right_sign) ^ negate;
-                        let literal = Literal::new(positive, left_term, right_term);
-                        return Ok(CNF::from_literal(literal));
-                    }
+                    // Both sides are terms, so we can do a simple equality or inequality
+                    let positive = (left_sign == right_sign) ^ negate;
+                    let literal = Literal::new(positive, left_term, right_term);
+                    return Ok(CNF::from_literal(literal));
                 }
+            }
 
-                // This logic duplicates subterms. We need to be careful that we don't synthesize
-                // variables in these calls.
-                if negate {
-                    // Inequality.
-                    let some =
-                        self.or_to_cnf(left, right, true, true, stack, next_var_id, synth)?;
-                    let not_both =
-                        self.or_to_cnf(left, right, false, false, stack, next_var_id, synth)?;
-                    Ok(some.and(not_both))
-                } else {
-                    // Equality.
-                    let l_imp_r =
-                        self.or_to_cnf(left, right, true, false, stack, next_var_id, synth)?;
-                    let r_imp_l =
-                        self.or_to_cnf(left, right, false, true, stack, next_var_id, synth)?;
-                    Ok(l_imp_r.and(r_imp_l))
-                }
+            // This logic duplicates subterms. We need to be careful that we don't synthesize
+            // variables in these calls.
+            if negate {
+                // Inequality.
+                let some = self.or_to_cnf(left, right, true, true, stack, next_var_id, synth)?;
+                let not_both =
+                    self.or_to_cnf(left, right, false, false, stack, next_var_id, synth)?;
+                Ok(some.and(not_both))
             } else {
-                let _left_cnf = self.value_to_cnf(left, false, stack, next_var_id, synth)?;
-                let _right_cnf = self.value_to_cnf(right, false, stack, next_var_id, synth)?;
-                todo!();
+                // Equality.
+                let l_imp_r =
+                    self.or_to_cnf(left, right, true, false, stack, next_var_id, synth)?;
+                let r_imp_l =
+                    self.or_to_cnf(left, right, false, true, stack, next_var_id, synth)?;
+                Ok(l_imp_r.and(r_imp_l))
             }
         } else {
             let left = self.value_to_extended_term(left, stack, next_var_id, synth)?;
@@ -562,7 +552,7 @@ impl NormalizerView<'_> {
                     let else_lit = Literal::new(!negate ^ !ls, left, else_t);
                     Ok(CNF::literal_if(cond, then_lit, else_lit))
                 }
-                _ => Err("comparison between two 'if' values".to_string()),
+                _ => Err("unhandled case in eq_to_cnf".to_string()),
             }
         }
     }
@@ -584,7 +574,7 @@ impl NormalizerView<'_> {
         let answer = self.old_try_value_to_signed_term(value, stack)?;
         answer.ok_or_else(|| {
             // We might want to introduce a synthetic term here instead of giving up.
-            format!("cannot convert {} to signed term", value)
+            format!("cannot convert '{}' to signed term", value)
         })
     }
 
@@ -658,8 +648,7 @@ impl NormalizerView<'_> {
     ) -> Result<Term, String> {
         match self.value_to_extended_term(value, stack, next_var_id, synth)? {
             ExtendedTerm::Signed(t, true) => Ok(t),
-            ExtendedTerm::Signed(_, false) => Err(format!("{} is unexpectedly negated", value)),
-            ExtendedTerm::If(_, _, _) => Err(format!("{} is an 'if' term", value)),
+            _ => Err(format!("cannot convert '{}' to plain term", value)),
         }
     }
 
@@ -707,6 +696,9 @@ impl NormalizerView<'_> {
                             spine2.extend(spine1.iter().cloned());
                             spine1.push(sub_then);
                             spine2.push(sub_else);
+                        }
+                        ExtendedTerm::CNF(_) => {
+                            return Err("boolean formula in application".to_string());
                         }
                     }
                 }
@@ -760,21 +752,31 @@ impl NormalizerView<'_> {
                 match self.value_to_extended_term(subvalue, stack, next_var_id, synth)? {
                     ExtendedTerm::If(..) => Err("negation of 'if' term".to_string()),
                     ExtendedTerm::Signed(t, sign) => Ok(ExtendedTerm::Signed(t, !sign)),
+                    ExtendedTerm::CNF(cnf) => Ok(ExtendedTerm::CNF(cnf.negate())),
                 }
             }
             AcornValue::Bool(v) => Ok(ExtendedTerm::Signed(Term::new_true(), *v)),
-            _ => Err(format!("cannot convert {} to extended term", value)),
+            _ => {
+                if !value.is_bool_type() {
+                    return Err(format!("cannot convert '{}' to extended term", value));
+                }
+                let cnf = self.value_to_cnf(value, false, stack, next_var_id, synth)?;
+                Ok(ExtendedTerm::CNF(cnf))
+            }
         }
     }
 }
 
-// An ExtendedTerm can be a term but also a negated term or an if-then-else construct.
+// An ExtendedTerm can be a term but also some other constructs, especially for boolean terms.
 enum ExtendedTerm {
     // true = positive.
     Signed(Term, bool),
 
     // (condition, then branch, else branch)
     If(Literal, Term, Term),
+
+    // A general boolean formula.
+    CNF(CNF),
 }
 
 impl Normalizer {
