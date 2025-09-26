@@ -671,6 +671,18 @@ impl NormalizerView<'_> {
                 Ok(ExtendedTerm::If(cond_lit, then_branch, else_branch))
             }
             AcornValue::Application(app) => {
+                if let AcornValue::Lambda(_, return_value) = &*app.function {
+                    let mut args = vec![];
+                    for arg in &app.args {
+                        args.push(self.value_to_term(arg, stack, next_var_id, synth)?);
+                    }
+                    stack.extend(args);
+                    let answer =
+                        self.value_to_extended_term(&return_value, stack, next_var_id, synth);
+                    stack.truncate(stack.len() - app.args.len());
+                    return answer;
+                }
+
                 // We convert f(if a then b else c, d) into if a then f(b, d) else f(c, d).
                 // The "spine" logic makes branching work for f as well.
                 // If we discover a branching subterm, then we set cond and spine2.
