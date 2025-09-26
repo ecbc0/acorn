@@ -110,23 +110,118 @@ impl CNF {
         self.0.into_iter()
     }
 
+    // Plain "true" or "false" are zero literals, not a single literal.
+    fn is_single_literal(&self) -> bool {
+        self.0.len() == 1 && self.0[0].len() == 1
+    }
+
+    fn as_single_literal(&self) -> Option<&Literal> {
+        if self.is_single_literal() {
+            Some(&self.0[0][0])
+        } else {
+            None
+        }
+    }
+
+    fn into_single_literal(self) -> Literal {
+        assert!(self.is_single_literal());
+        self.0
+            .into_iter()
+            .next()
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap()
+    }
+
+    pub fn is_literal(&self) -> bool {
+        self.is_true_value() || self.is_false_value() || self.is_single_literal()
+    }
+
     pub fn to_literal(self) -> Option<Literal> {
         if self.is_true_value() {
             Some(Literal::true_value())
         } else if self.is_false_value() {
             Some(Literal::false_value())
-        } else if self.0.len() == 1 && self.0[0].len() == 1 {
-            Some(
-                self.0
-                    .into_iter()
-                    .next()
-                    .unwrap()
-                    .into_iter()
-                    .next()
-                    .unwrap(),
-            )
+        } else if self.is_single_literal() {
+            Some(self.into_single_literal())
         } else {
             None
+        }
+    }
+
+    pub fn to_bool(&self) -> Option<bool> {
+        if self.is_true_value() {
+            Some(true)
+        } else if self.is_false_value() {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    fn maybe_transform_eq_to_literal(self, other: CNF) -> Result<Literal, (CNF, CNF)> {
+        if let Some(self_bool) = self.to_bool() {
+            if other.is_literal() {
+                let other_lit = other.to_literal().unwrap();
+                if self_bool {
+                    Ok(other_lit)
+                } else {
+                    Ok(other_lit.negate())
+                }
+            } else {
+                Err((self, other))
+            }
+        } else if let Some(other_bool) = other.to_bool() {
+            if self.is_literal() {
+                let self_lit = self.to_literal().unwrap();
+                if other_bool {
+                    Ok(self_lit)
+                } else {
+                    Ok(self_lit.negate())
+                }
+            } else {
+                Err((self, other))
+            }
+        } else if self.is_single_literal() && other.is_single_literal() {
+            let self_lit = self.as_single_literal().unwrap();
+            let other_lit = other.as_single_literal().unwrap();
+            if self_lit.right.is_true() && other_lit.right.is_true() {
+                let self_lit = self.into_single_literal();
+                let other_lit = other.into_single_literal();
+                let positive = self_lit.positive == other_lit.positive;
+                Ok(Literal::new(positive, self_lit.left, other_lit.left))
+            } else {
+                Err((self, other))
+            }
+        } else {
+            Err((self, other))
+        }
+    }
+
+    pub fn equals(self, other: CNF) -> CNF {
+        match self.maybe_transform_eq_to_literal(other) {
+            Ok(lit) => CNF::from_literal(lit),
+            Err((a, b)) => {
+                let neg_a = a.negate();
+                let neg_b = b.negate();
+                let a_imp_b = neg_a.or(b);
+                let b_imp_a = neg_b.or(a);
+                a_imp_b.and(b_imp_a)
+            }
+        }
+    }
+
+    pub fn not_equals(self, other: CNF) -> CNF {
+        match self.maybe_transform_eq_to_literal(other) {
+            Ok(lit) => CNF::from_literal(lit.negate()),
+            Err((a, b)) => {
+                let neg_a = a.negate();
+                let neg_b = b.negate();
+                let a_imp_not_b = neg_a.or(neg_b);
+                let not_a_imp_b = a.or(b);
+                a_imp_not_b.and(not_a_imp_b)
+            }
         }
     }
 
@@ -183,5 +278,16 @@ mod tests {
         );
 
         assert_eq!(negated, expected);
+    }
+
+    #[test]
+    fn test_cnf_simple_equality() {
+        let cnf1 = CNF::parse("x0");
+        let cnf2 = CNF::parse("not x1");
+
+        assert_eq!(cnf1.clone().equals(cnf2.clone()), CNF::parse("x0 != x1"));
+        assert_eq!(cnf2.clone().equals(cnf1.clone()), CNF::parse("x0 != x1"));
+        assert_eq!(cnf1.clone().not_equals(cnf2.clone()), CNF::parse("x0 = x1"));
+        assert_eq!(cnf2.clone().not_equals(cnf1.clone()), CNF::parse("x0 = x1"));
     }
 }

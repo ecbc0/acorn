@@ -507,32 +507,42 @@ impl NormalizerView<'_> {
         }
 
         if left.is_bool_type() {
-            if let Some((left_term, left_sign)) = self.old_try_value_to_signed_term(left, stack)? {
-                if let Some((right_term, right_sign)) =
-                    self.old_try_value_to_signed_term(right, stack)?
+            if true {
+                // Old logic
+                if let Some((left_term, left_sign)) =
+                    self.old_try_value_to_signed_term(left, stack)?
                 {
-                    // Both sides are terms, so we can do a simple equality or inequality
-                    let positive = (left_sign == right_sign) ^ negate;
-                    let literal = Literal::new(positive, left_term, right_term);
-                    return Ok(CNF::from_literal(literal));
+                    if let Some((right_term, right_sign)) =
+                        self.old_try_value_to_signed_term(right, stack)?
+                    {
+                        // Both sides are terms, so we can do a simple equality or inequality
+                        let positive = (left_sign == right_sign) ^ negate;
+                        let literal = Literal::new(positive, left_term, right_term);
+                        return Ok(CNF::from_literal(literal));
+                    }
                 }
-            }
 
-            // This logic duplicates subterms. We need to be careful that we don't synthesize
-            // variables in these calls.
-            if negate {
-                // Inequality.
-                let some = self.or_to_cnf(left, right, true, true, stack, next_var_id, synth)?;
-                let not_both =
-                    self.or_to_cnf(left, right, false, false, stack, next_var_id, synth)?;
-                Ok(some.and(not_both))
+                // This logic duplicates subterms. We need to be careful that we don't synthesize
+                // variables in these calls.
+                if negate {
+                    // Inequality.
+                    let some =
+                        self.or_to_cnf(left, right, true, true, stack, next_var_id, synth)?;
+                    let not_both =
+                        self.or_to_cnf(left, right, false, false, stack, next_var_id, synth)?;
+                    Ok(some.and(not_both))
+                } else {
+                    // Equality.
+                    let l_imp_r =
+                        self.or_to_cnf(left, right, true, false, stack, next_var_id, synth)?;
+                    let r_imp_l =
+                        self.or_to_cnf(left, right, false, true, stack, next_var_id, synth)?;
+                    Ok(l_imp_r.and(r_imp_l))
+                }
             } else {
-                // Equality.
-                let l_imp_r =
-                    self.or_to_cnf(left, right, true, false, stack, next_var_id, synth)?;
-                let r_imp_l =
-                    self.or_to_cnf(left, right, false, true, stack, next_var_id, synth)?;
-                Ok(l_imp_r.and(r_imp_l))
+                let _left_cnf = self.value_to_cnf(left, false, stack, next_var_id, synth)?;
+                let _right_cnf = self.value_to_cnf(right, false, stack, next_var_id, synth)?;
+                todo!();
             }
         } else {
             let left = self.value_to_extended_term(left, stack, next_var_id, synth)?;
