@@ -346,9 +346,9 @@ impl NormalizerView<'_> {
                 }
 
                 // Fall through
-                self.value_to_single_term_to_cnf(value, negate, stack)
+                self.value_to_single_term_to_cnf(value, negate, stack, next_var_id, synth)
             }
-            _ => self.value_to_single_term_to_cnf(value, negate, stack),
+            _ => self.value_to_single_term_to_cnf(value, negate, stack, next_var_id, synth),
         }
     }
 
@@ -357,11 +357,17 @@ impl NormalizerView<'_> {
         &mut self,
         value: &AcornValue,
         negate: bool,
-        stack: &Vec<Term>,
+        stack: &mut Vec<Term>,
+        next_var_id: &mut AtomId,
+        synthesized: &mut Vec<AtomId>,
     ) -> Result<CNF, String> {
-        let (t, sign) = self.old_value_to_signed_term(value, stack)?;
-        let literal = Literal::from_signed_term(t, sign ^ negate);
-        Ok(CNF::from_literal(literal))
+        match self.value_to_extended_term(value, stack, next_var_id, synthesized)? {
+            ExtendedTerm::Signed(t, sign) => {
+                let literal = Literal::from_signed_term(t, sign ^ negate);
+                Ok(CNF::from_literal(literal))
+            }
+            ExtendedTerm::If(..) => Err("branch should be unreachable".to_string()),
+        }
     }
 
     // Convert a "forall" node in a value, or the equivalent, to CNF.
