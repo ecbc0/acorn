@@ -506,10 +506,7 @@ impl NormalizerView<'_> {
             return Ok(answer);
         }
 
-        // The experiment is allowing CNFs in extended terms to delay equality expansion.
-        let experiment: bool = false;
-
-        if left.is_bool_type() && !experiment {
+        if left.is_bool_type() {
             if let Some((left_term, left_sign)) = self.old_try_value_to_signed_term(left, stack)? {
                 if let Some((right_term, right_sign)) =
                     self.old_try_value_to_signed_term(right, stack)?
@@ -555,22 +552,7 @@ impl NormalizerView<'_> {
                     let else_lit = Literal::new(!negate ^ !ls, left, else_t);
                     Ok(CNF::literal_if(cond, then_lit, else_lit))
                 }
-                (ExtendedTerm::CNF(left), ExtendedTerm::CNF(right)) => {
-                    if negate {
-                        Ok(left.not_equals(right))
-                    } else {
-                        Ok(left.equals(right))
-                    }
-                }
-                (ExtendedTerm::Signed(left, ls), ExtendedTerm::CNF(right)) => {
-                    let left_lit = Literal::new(!negate ^ !ls, left, Term::new_true());
-                    let left_cnf = CNF::from_literal(left_lit);
-                    Ok(left_cnf.equals(right))
-                }
-                (left, right) => Err(format!(
-                    "unhandled case in eq_to_cnf: {} ?= {}",
-                    left, right
-                )),
+                (left, right) => Err(format!("cannot normalize equality: {} = {}", left, right)),
             }
         }
     }
@@ -715,9 +697,6 @@ impl NormalizerView<'_> {
                             spine1.push(sub_then);
                             spine2.push(sub_else);
                         }
-                        ExtendedTerm::CNF(_) => {
-                            return Err("boolean formula in application".to_string());
-                        }
                     }
                 }
                 let term_type = self
@@ -770,17 +749,10 @@ impl NormalizerView<'_> {
                 match self.value_to_extended_term(subvalue, stack, next_var_id, synth)? {
                     ExtendedTerm::If(..) => Err("negation of 'if' term".to_string()),
                     ExtendedTerm::Signed(t, sign) => Ok(ExtendedTerm::Signed(t, !sign)),
-                    ExtendedTerm::CNF(cnf) => Ok(ExtendedTerm::CNF(cnf.negate())),
                 }
             }
             AcornValue::Bool(v) => Ok(ExtendedTerm::Signed(Term::new_true(), *v)),
-            _ => {
-                if !value.is_bool_type() {
-                    return Err(format!("cannot convert '{}' to extended term", value));
-                }
-                let cnf = self.value_to_cnf(value, false, stack, next_var_id, synth)?;
-                Ok(ExtendedTerm::CNF(cnf))
-            }
+            _ => Err(format!("cannot convert '{}' to extended term", value)),
         }
     }
 }
@@ -792,9 +764,6 @@ enum ExtendedTerm {
 
     // (condition, then branch, else branch)
     If(Literal, Term, Term),
-
-    // A general boolean formula.
-    CNF(CNF),
 }
 
 impl std::fmt::Display for ExtendedTerm {
@@ -813,9 +782,6 @@ impl std::fmt::Display for ExtendedTerm {
                     "if {} then {} else {}",
                     condition, then_branch, else_branch
                 )
-            }
-            ExtendedTerm::CNF(cnf) => {
-                write!(f, "{}", cnf)
             }
         }
     }
@@ -1619,5 +1585,26 @@ mod tests {
                 "not h(x0) or dis(x0)",
             ],
         );
+    }
+
+    #[test]
+    fn test_normalizing_equals_exists() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            type Nat: axiom
+
+            let b: Bool = axiom
+            let f: Nat -> Bool = axiom
+
+            theorem goal {
+                b = exists(x: Nat) {
+                    f(x)
+                }
+            }
+        "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(&env, "goal", &["not b or f(s0)", "not f(x0) or b"]);
     }
 }
