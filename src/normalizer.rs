@@ -513,9 +513,9 @@ impl NormalizerView<'_> {
         }
 
         if left.is_bool_type() {
-            if let Some((left_term, left_sign)) = self.old_try_value_to_signed_term(left, stack)? {
+            if let Some((left_term, left_sign)) = self.simple_value_to_signed_term(left, stack)? {
                 if let Some((right_term, right_sign)) =
-                    self.old_try_value_to_signed_term(right, stack)?
+                    self.simple_value_to_signed_term(right, stack)?
                 {
                     // Both sides are terms, so we can do a simple equality or inequality
                     let positive = (left_sign == right_sign) ^ negate;
@@ -563,32 +563,31 @@ impl NormalizerView<'_> {
         }
     }
 
-    fn old_value_to_term(&self, value: &AcornValue, stack: &Vec<Term>) -> Result<Term, String> {
-        let (t, sign) = self.old_value_to_signed_term(value, stack)?;
+    /// Converts a value to a Term, if possible.
+    /// This doesn't mutate the normalizer, so it only handles simple values, no quantifiers.
+    ///
+    /// The "simple" converters are used for a few miscellaneous things:
+    ///     special-casing boolean equality
+    ///     special-casing function definition
+    ///     extracting the defined term from a definition value
+    ///
+    /// This will return Err if the value doesn't convert to a plain Term.
+    fn simple_value_to_term(&self, value: &AcornValue, stack: &Vec<Term>) -> Result<Term, String> {
+        let answer = self.simple_value_to_signed_term(value, stack)?;
+        let (t, sign) =
+            answer.ok_or_else(|| format!("cannot convert '{}' to signed term", value))?;
         if sign {
             return Ok(t);
         }
         Err(format!("{} is unexpectedly negated", value))
     }
 
-    /// Wrapper around try_value_to_signed_term that treats inconvertibility as an error.
-    fn old_value_to_signed_term(
-        &self,
-        value: &AcornValue,
-        stack: &Vec<Term>,
-    ) -> Result<(Term, bool), String> {
-        let answer = self.old_try_value_to_signed_term(value, stack)?;
-        answer.ok_or_else(|| {
-            // We might want to introduce a synthetic term here instead of giving up.
-            format!("cannot convert '{}' to signed term", value)
-        })
-    }
-
-    /// Helper for value_to_cnf.
-    /// The bool returned is true = positive.
+    /// Converts a value to a Term plus a sign, if possible.
+    /// true = positive.
+    /// This doesn't mutate the normalizer, so it only handles simple values, no quantifiers.
     /// This only errors if we get an inconsistent value.
-    /// If it is just called on a value that doesn't convert to a term, it returns Ok(None).
-    fn old_try_value_to_signed_term(
+    /// If it is just called on a value that doesn't convert to a signed term, it returns Ok(None).
+    fn simple_value_to_signed_term(
         &self,
         value: &AcornValue,
         stack: &Vec<Term>,
@@ -607,12 +606,12 @@ impl NormalizerView<'_> {
                     .as_ref()
                     .normalization_map
                     .get_type_id(&application_type)?;
-                let func_term = self.old_value_to_term(&application.function, stack)?;
+                let func_term = self.simple_value_to_term(&application.function, stack)?;
                 let head = func_term.head;
                 let head_type = func_term.head_type;
                 let mut args = func_term.args;
                 for arg in &application.args {
-                    args.push(self.old_value_to_term(arg, stack)?);
+                    args.push(self.simple_value_to_term(arg, stack)?);
                 }
                 Ok(Some((Term::new(term_type, head_type, head, args), true)))
             }
@@ -635,7 +634,7 @@ impl NormalizerView<'_> {
                 }
             }
             AcornValue::Not(subvalue) => {
-                match self.old_try_value_to_signed_term(subvalue, stack)? {
+                match self.simple_value_to_signed_term(subvalue, stack)? {
                     None => Ok(None),
                     Some((t, sign)) => Ok(Some((t, !sign))),
                 }
@@ -877,8 +876,8 @@ impl Normalizer {
                 //      f(a) = g(b)
                 //   2. Make extensionality more powerful, so that it can deduce f(a) = g(b).
                 let view = NormalizerView::Ref(self);
-                let left_term = view.old_value_to_term(left, &mut vec![])?;
-                let right_term = view.old_value_to_term(right, &mut vec![])?;
+                let left_term = view.simple_value_to_term(left, &mut vec![])?;
+                let right_term = view.simple_value_to_term(right, &mut vec![])?;
                 let literal = Literal::new(true, left_term, right_term);
                 let clause = Clause::new(vec![literal]);
                 clauses.push(clause);
@@ -915,12 +914,14 @@ impl Normalizer {
             let defined = match &proposition.source.source_type {
                 SourceType::ConstantDefinition(value, _) => {
                     let view = NormalizerView::Ref(self);
-                    let term = view.old_value_to_term(value, &mut vec![]).map_err(|msg| {
-                        BuildError::new(
-                            range,
-                            format!("cannot convert definition to term: {}", msg),
-                        )
-                    })?;
+                    let term = view
+                        .simple_value_to_term(value, &mut vec![])
+                        .map_err(|msg| {
+                            BuildError::new(
+                                range,
+                                format!("cannot convert definition to term: {}", msg),
+                            )
+                        })?;
                     Some(term.get_head_atom().clone())
                 }
                 _ => None,
