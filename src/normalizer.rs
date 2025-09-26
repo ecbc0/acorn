@@ -1607,4 +1607,27 @@ mod tests {
         let mut norm = Normalizer::new();
         norm.check(&env, "goal", &["not b or f(s0)", "not f(x0) or b"]);
     }
+
+    #[test]
+    fn test_normalizing_not_or_exists() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            type Nat: axiom
+
+            let f: Nat -> Bool = axiom
+            let g: Nat -> Bool = axiom
+
+            theorem goal {
+                not (exists(x: Nat) {
+                    f(x)
+                } or exists(y: Nat) {
+                    g(y)
+                })
+            }
+        "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(&env, "goal", &["not f(x0)", "not g(x0)"]);
+    }
 }
