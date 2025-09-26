@@ -336,7 +336,7 @@ impl NormalizerView<'_> {
                 if let AcornValue::Lambda(_, return_value) = &*app.function {
                     let mut args = vec![];
                     for arg in &app.args {
-                        args.push(self.old_value_to_term(arg, stack)?);
+                        args.push(self.value_to_term(arg, stack, next_var_id, synth)?);
                     }
                     stack.extend(args);
                     let answer =
