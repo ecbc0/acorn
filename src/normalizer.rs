@@ -574,8 +574,10 @@ impl NormalizerView<'_> {
     /// This will return Err if the value doesn't convert to a plain Term.
     fn simple_value_to_term(&self, value: &AcornValue, stack: &Vec<Term>) -> Result<Term, String> {
         let answer = self.simple_value_to_signed_term(value, stack)?;
-        let (t, sign) =
-            answer.ok_or_else(|| format!("cannot convert '{}' to signed term", value))?;
+        let (t, sign) = answer.ok_or_else(|| {
+            // Often we want to print debug stuff here.
+            format!("cannot convert '{}' to signed term", value)
+        })?;
         if sign {
             return Ok(t);
         }
@@ -1672,5 +1674,35 @@ mod tests {
         );
         let mut norm = Normalizer::new();
         norm.check(&env, "goal", &["not b or f(s0)", "g(s1) or b"]);
+    }
+
+    #[test]
+    fn test_normalizing_lambda_inside_equality() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            type Nat: axiom
+
+            let z: Nat = axiom
+            let f: (Nat, Nat) -> Bool = axiom
+            let g: Nat -> Nat = axiom
+            let h: (Nat, Nat) -> Nat = axiom
+
+            theorem goal(a: Nat) {
+                f(a) = function(b: Nat) {
+                    g(h(a, b)) = z
+                }
+            }
+        "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(
+            &env,
+            "goal",
+            &[
+                "not f(x0, x1) or g(h(x0, x1)) = z",
+                "g(h(x0, x1)) != z or f(x0, x1)",
+            ],
+        );
     }
 }
