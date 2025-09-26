@@ -506,7 +506,10 @@ impl NormalizerView<'_> {
             return Ok(answer);
         }
 
-        if left.is_bool_type() {
+        // The experiment is allowing CNFs in extended terms to delay equality expansion.
+        let experiment: bool = false;
+
+        if left.is_bool_type() && !experiment {
             if let Some((left_term, left_sign)) = self.old_try_value_to_signed_term(left, stack)? {
                 if let Some((right_term, right_sign)) =
                     self.old_try_value_to_signed_term(right, stack)?
@@ -552,7 +555,22 @@ impl NormalizerView<'_> {
                     let else_lit = Literal::new(!negate ^ !ls, left, else_t);
                     Ok(CNF::literal_if(cond, then_lit, else_lit))
                 }
-                _ => Err("unhandled case in eq_to_cnf".to_string()),
+                (ExtendedTerm::CNF(left), ExtendedTerm::CNF(right)) => {
+                    if negate {
+                        Ok(left.not_equals(right))
+                    } else {
+                        Ok(left.equals(right))
+                    }
+                }
+                (ExtendedTerm::Signed(left, ls), ExtendedTerm::CNF(right)) => {
+                    let left_lit = Literal::new(!negate ^ !ls, left, Term::new_true());
+                    let left_cnf = CNF::from_literal(left_lit);
+                    Ok(left_cnf.equals(right))
+                }
+                (left, right) => Err(format!(
+                    "unhandled case in eq_to_cnf: {} ?= {}",
+                    left, right
+                )),
             }
         }
     }
@@ -777,6 +795,30 @@ enum ExtendedTerm {
 
     // A general boolean formula.
     CNF(CNF),
+}
+
+impl std::fmt::Display for ExtendedTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExtendedTerm::Signed(term, positive) => {
+                if *positive {
+                    write!(f, "{}", term)
+                } else {
+                    write!(f, "not {}", term)
+                }
+            }
+            ExtendedTerm::If(condition, then_branch, else_branch) => {
+                write!(
+                    f,
+                    "if {} then {} else {}",
+                    condition, then_branch, else_branch
+                )
+            }
+            ExtendedTerm::CNF(cnf) => {
+                write!(f, "{}", cnf)
+            }
+        }
+    }
 }
 
 impl Normalizer {
@@ -1140,7 +1182,11 @@ impl Normalizer {
                 actual.len(),
                 actual
                     .iter()
-                    .map(|c| format!("{}", c))
+                    .map(|c| DisplayClause {
+                        clause: c,
+                        normalizer: self,
+                    }
+                    .to_string())
                     .collect::<Vec<String>>()
                     .join("\n")
             );
@@ -1543,5 +1589,35 @@ mod tests {
         );
         let mut norm = Normalizer::new();
         norm.check(&env, "goal", &["f2(x0, x1) = f1(x0, x1)"]);
+    }
+
+    #[test]
+    fn test_normalizing_functional_or() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            type Nat: axiom
+
+            let f: Nat -> Bool = axiom
+            let g: Nat -> Bool = axiom
+            let h: Nat -> Bool = axiom
+            let dis: Nat -> Bool = axiom
+
+            theorem goal(a: Nat) {
+                dis(a) = (f(a) or g(a) or h(a))
+            }
+        "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(
+            &env,
+            "goal",
+            &[
+                "not dis(x0) or h(x0) or g(x0) or f(x0)",
+                "not f(x0) or dis(x0)",
+                "not g(x0) or dis(x0)",
+                "not h(x0) or dis(x0)",
+            ],
+        );
     }
 }
