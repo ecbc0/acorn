@@ -898,7 +898,7 @@ impl AcornValue {
     /// Replaces lambda(...) { value } (args) by substituting the args into the value.
     ///
     /// stack_size is the number of variables that are already on the stack.
-    pub fn expand_lambdas(self, stack_size: AtomId) -> AcornValue {
+    pub fn expand_lambdas(&self, stack_size: AtomId) -> AcornValue {
         match self {
             AcornValue::Application(app) => {
                 let function = app.function.expand_lambdas(stack_size);
@@ -911,14 +911,14 @@ impl AcornValue {
                         function: Box::new(function),
                         args: app
                             .args
-                            .into_iter()
+                            .iter()
                             .map(|x| x.expand_lambdas(stack_size))
                             .collect(),
                     })
                 }
             }
             AcornValue::Binary(op, left, right) => AcornValue::Binary(
-                op,
+                *op,
                 Box::new(left.expand_lambdas(stack_size)),
                 Box::new(right.expand_lambdas(stack_size)),
             ),
@@ -932,11 +932,11 @@ impl AcornValue {
             }
             AcornValue::Exists(quants, value) => {
                 let new_stack_size = stack_size + quants.len() as AtomId;
-                AcornValue::Exists(quants, Box::new(value.expand_lambdas(new_stack_size)))
+                AcornValue::Exists(quants.clone(), Box::new(value.expand_lambdas(new_stack_size)))
             }
             AcornValue::Lambda(args, value) => {
                 let new_stack_size = stack_size + args.len() as AtomId;
-                AcornValue::Lambda(args, Box::new(value.expand_lambdas(new_stack_size)))
+                AcornValue::Lambda(args.clone(), Box::new(value.expand_lambdas(new_stack_size)))
             }
             AcornValue::IfThenElse(cond, if_value, else_value) => AcornValue::IfThenElse(
                 Box::new(cond.expand_lambdas(stack_size)),
@@ -946,11 +946,11 @@ impl AcornValue {
             AcornValue::Match(scrutinee, cases) => {
                 let new_scrutinee = scrutinee.expand_lambdas(stack_size);
                 let new_cases = cases
-                    .into_iter()
+                    .iter()
                     .map(|(new_vars, pattern, result)| {
                         let new_stack_size = stack_size + new_vars.len() as AtomId;
                         (
-                            new_vars,
+                            new_vars.clone(),
                             pattern.expand_lambdas(new_stack_size),
                             result.expand_lambdas(new_stack_size),
                         )
@@ -958,7 +958,7 @@ impl AcornValue {
                     .collect();
                 AcornValue::Match(Box::new(new_scrutinee), new_cases)
             }
-            AcornValue::Variable(_, _) | AcornValue::Constant(_) | AcornValue::Bool(_) => self,
+            AcornValue::Variable(_, _) | AcornValue::Constant(_) | AcornValue::Bool(_) => self.clone(),
         }
     }
 
