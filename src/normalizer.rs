@@ -837,12 +837,12 @@ impl Normalizer {
     ) -> Result<Vec<Clause>, String> {
         self.normalization_map.add_from(&value, ctype);
 
-        let value = value.replace_function_equality(0);
-
         // It's hard to avoid expanding lambdas in value space, because the arguments
         // can be anything, including things like partial applications.
         // It does duplicate, though. Maybe we actually want to synthesize atoms here?
-        let value = value.expand_lambdas(0);
+        let value = value.clone().expand_lambdas(0);
+
+        let value = value.replace_function_equality(0);
 
         let mut skolem_ids = vec![];
         let mut mut_view = NormalizerView::Mut(self);
