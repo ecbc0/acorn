@@ -839,7 +839,8 @@ impl Normalizer {
 
         let value = value.replace_function_equality(0);
 
-        // Experiment: remove this line
+        // It's hard to avoid expanding lambdas in value space, because the arguments
+        // can be anything, including things like partial applications.
         let value = value.expand_lambdas(0);
 
         let mut skolem_ids = vec![];
