@@ -1990,3 +1990,22 @@ fn test_reusing_function_arg_names() {
         "#,
     );
 }
+
+#[test]
+fn test_reusing_goal_arg_name() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+            type Nat: axiom
+        "#,
+    );
+    env.bad(
+        r#"
+            theorem goal(a: Nat) {
+                function(a: Nat) {
+                    a = a
+                }(a)
+            }
+        "#,
+    );
+}

@@ -87,14 +87,8 @@ impl Verifier {
 
         // Set up the builder with event handler
         let mut builder = Builder::new(project, CancellationToken::new(), move |event| {
-            // Print log messages with module and line info
             if let Some(m) = &event.log_message {
-                if let Some(diagnostic) = &event.diagnostic {
-                    let line = diagnostic.range.start.line + 1; // LSP is 0-indexed
-                    println!("{}, line {}: {}", event.module, line, m);
-                } else {
-                    println!("{}: {}", event.module, m);
-                }
+                println!("{}", m);
             }
 
             // Store the event
