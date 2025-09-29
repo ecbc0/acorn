@@ -211,6 +211,10 @@ impl NormalizerView<'_> {
         }
     }
 
+    fn map(&self) -> &NormalizationMap {
+        &self.as_ref().normalization_map
+    }
+
     /// Wrapper around value_to_cnf.
     /// Note that this only works on values that have already been "cleaned up" to some extent.
     pub fn nice_value_to_clauses(
@@ -400,7 +404,7 @@ impl NormalizerView<'_> {
         synthesized: &mut Vec<AtomId>,
     ) -> Result<CNF, String> {
         for quant in quants {
-            let type_id = self.as_ref().normalization_map.get_type_id(quant)?;
+            let type_id = self.map().get_type_id(quant)?;
             let var = Term::new_variable(type_id, *next_var_id);
             *next_var_id += 1;
             stack.push(TermBinding::Free(var));
@@ -427,12 +431,7 @@ impl NormalizerView<'_> {
             if let TermBinding::Free(term) = binding {
                 if term.is_variable() {
                     args.push(term.clone());
-                    arg_types.push(
-                        self.as_ref()
-                            .normalization_map
-                            .get_type(term.term_type)
-                            .clone(),
-                    );
+                    arg_types.push(self.map().get_type(term.term_type).clone());
                 }
             }
         }
@@ -443,7 +442,7 @@ impl NormalizerView<'_> {
             // Note that the skolem atom may be a type we have not used before.
             let skolem_atom_type = AcornType::functional(arg_types.clone(), t.clone());
             let skolem_atom_type_id = self.as_mut()?.normalization_map.add_type(&skolem_atom_type);
-            let skolem_term_type_id = self.as_ref().normalization_map.get_type_id(t)?;
+            let skolem_term_type_id = self.map().get_type_id(t)?;
             let skolem_id = self.as_mut()?.declare_synthetic_atom(skolem_atom_type)?;
             synthesized.push(skolem_id);
             let skolem_atom = Atom::Synthetic(skolem_id);
@@ -655,10 +654,7 @@ impl NormalizerView<'_> {
             }
             AcornValue::Application(application) => {
                 let application_type = application.get_type();
-                let term_type = self
-                    .as_ref()
-                    .normalization_map
-                    .get_type_id(&application_type)?;
+                let term_type = self.map().get_type_id(&application_type)?;
                 let func_term = match self.try_simple_value_to_term(&application.function, stack)? {
                     Some(t) => t,
                     None => return Ok(None),
@@ -677,20 +673,14 @@ impl NormalizerView<'_> {
             }
             AcornValue::Constant(c) => {
                 if c.params.is_empty() {
-                    let type_id = self
-                        .as_ref()
-                        .normalization_map
-                        .get_type_id(&c.instance_type)?;
+                    let type_id = self.map().get_type_id(&c.instance_type)?;
 
-                    let Some(atom) = self.as_ref().normalization_map.get_atom(&c.name) else {
+                    let Some(atom) = self.map().get_atom(&c.name) else {
                         return Err(format!("constant {} not found in normalization map", c));
                     };
                     Ok(Some((Term::new(type_id, type_id, atom, vec![]), true)))
                 } else {
-                    Ok(Some((
-                        self.as_ref().normalization_map.term_from_monomorph(&c)?,
-                        true,
-                    )))
+                    Ok(Some((self.map().term_from_monomorph(&c)?, true)))
                 }
             }
             AcornValue::Not(subvalue) => {
@@ -779,10 +769,7 @@ impl NormalizerView<'_> {
                         }
                     }
                 }
-                let term_type = self
-                    .as_ref()
-                    .normalization_map
-                    .get_type_id(&app.get_type())?;
+                let term_type = self.map().get_type_id(&app.get_type())?;
                 match cond {
                     Some(cond) => {
                         assert_eq!(spine1.len(), spine2.len());
@@ -809,12 +796,9 @@ impl NormalizerView<'_> {
             }
             AcornValue::Constant(c) => {
                 if c.params.is_empty() {
-                    let type_id = self
-                        .as_ref()
-                        .normalization_map
-                        .get_type_id(&c.instance_type)?;
+                    let type_id = self.map().get_type_id(&c.instance_type)?;
 
-                    let Some(atom) = self.as_ref().normalization_map.get_atom(&c.name) else {
+                    let Some(atom) = self.map().get_atom(&c.name) else {
                         return Err(format!("constant {} not found in normalization map", c));
                     };
                     Ok(ExtendedTerm::Signed(
@@ -823,7 +807,7 @@ impl NormalizerView<'_> {
                     ))
                 } else {
                     Ok(ExtendedTerm::Signed(
-                        self.as_ref().normalization_map.term_from_monomorph(&c)?,
+                        self.map().term_from_monomorph(&c)?,
                         true,
                     ))
                 }
@@ -1848,6 +1832,33 @@ mod tests {
                 "not f(x0) or h(x0, x1) = g(x0, x1)",
                 "h(x0, s0(x0)) != g(x0, s0(x0)) or f(x0)",
             ],
+        );
+    }
+
+    #[test]
+    fn test_normalizing_exists_inside_lambda() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            type Nat: axiom
+
+            let f: (Nat, Nat) -> Bool = axiom
+            let g: Nat -> Bool = axiom
+
+            theorem goal {
+                g = function(x: Nat) {
+                        exists(y: Nat) {
+                            f(x, y)
+                        }
+                    }
+            }
+        "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(
+            &env,
+            "goal",
+            &["not g(x0) or f(x0, s0(x0))", "not f(x0, x1) or g(x0)"],
         );
     }
 }
