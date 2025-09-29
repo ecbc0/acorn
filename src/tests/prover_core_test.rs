@@ -2091,7 +2091,7 @@ fn test_proving_implied_boolean_equality() {
 }
 
 // #[test]
-// fn test_proving_complex_expression() {
+// fn test_proving_and_inside_arg() {
 //     // The boxed_and definition can't be normalized to CNF directly.
 //     let mut p = Project::new_mock();
 //     p.mock(

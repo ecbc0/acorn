@@ -1861,4 +1861,26 @@ mod tests {
             &["not g(x0) or f(x0, s0(x0))", "not f(x0, x1) or g(x0)"],
         );
     }
+
+    // #[test]
+    // fn test_normalizing_and_inside_arg() {
+    //     let mut env = Environment::test();
+    //     env.add(
+    //         r#"
+    //         structure BoxedBool {
+    //             value: Bool
+    //         }
+
+    //         let f: (BoxedBool, BoxedBool) -> BoxedBool = axiom
+
+    //         theorem goal {
+    //             f = function(a: BoxedBool, b: BoxedBool) {
+    //                 BoxedBool.new(a.value and b.value)
+    //             }
+    //         }
+    //     "#,
+    //     );
+    //     let mut norm = Normalizer::new();
+    //     norm.check(&env, "goal", &["todo"]);
+    // }
 }
