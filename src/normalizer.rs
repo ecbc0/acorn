@@ -412,18 +412,15 @@ impl NormalizerView<'_> {
         Ok(result)
     }
 
-    // Convert an "exists" node in a value, or the equivalent, to CNF.
-    // negate is whether to negate the subvalue.
-    fn exists_to_cnf(
+    // Define skolem functions that take the free variables on the stack as arguments.
+    // One skolem function is created for each type in skolem_types.
+    // Returns terms representing the applied skolem functions.
+    fn make_skolem_terms(
         &mut self,
-        quants: &Vec<AcornType>,
-        subvalue: &AcornValue,
-        negate: bool,
-        stack: &mut Vec<TermBinding>,
-        next_var_id: &mut AtomId,
+        skolem_types: &Vec<AcornType>,
+        stack: &Vec<TermBinding>,
         synthesized: &mut Vec<AtomId>,
-    ) -> Result<CNF, String> {
-        // Only free variables on the stack will be the arguments for the skolem functions
+    ) -> Result<Vec<Term>, String> {
         let mut args = vec![];
         let mut arg_types = vec![];
         for binding in stack.iter() {
@@ -439,13 +436,14 @@ impl NormalizerView<'_> {
                 }
             }
         }
-        for quant in quants {
+        let mut output = vec![];
+        for t in skolem_types {
             // Each existential quantifier needs a new skolem atom.
             // The skolem term is that atom applied to the free variables on the stack.
             // Note that the skolem atom may be a type we have not used before.
-            let skolem_atom_type = AcornType::functional(arg_types.clone(), quant.clone());
+            let skolem_atom_type = AcornType::functional(arg_types.clone(), t.clone());
             let skolem_atom_type_id = self.as_mut()?.normalization_map.add_type(&skolem_atom_type);
-            let skolem_term_type_id = self.as_ref().normalization_map.get_type_id(quant)?;
+            let skolem_term_type_id = self.as_ref().normalization_map.get_type_id(t)?;
             let skolem_id = self.as_mut()?.declare_synthetic_atom(skolem_atom_type)?;
             synthesized.push(skolem_id);
             let skolem_atom = Atom::Synthetic(skolem_id);
@@ -455,10 +453,29 @@ impl NormalizerView<'_> {
                 skolem_atom,
                 args.clone(),
             );
+            output.push(skolem_term);
+        }
+        Ok(output)
+    }
+
+    // Convert an "exists" node in a value, or the equivalent, to CNF.
+    // negate is whether to negate the subvalue.
+    fn exists_to_cnf(
+        &mut self,
+        quants: &Vec<AcornType>,
+        subvalue: &AcornValue,
+        negate: bool,
+        stack: &mut Vec<TermBinding>,
+        next_var_id: &mut AtomId,
+        synthesized: &mut Vec<AtomId>,
+    ) -> Result<CNF, String> {
+        let skolem_terms = self.make_skolem_terms(quants, stack, synthesized)?;
+        let len = skolem_terms.len();
+        for skolem_term in skolem_terms {
             stack.push(TermBinding::Bound(skolem_term));
         }
         let result = self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized)?;
-        for _ in quants {
+        for _ in 0..len {
             stack.pop();
         }
         Ok(result)
