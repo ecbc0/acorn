@@ -343,6 +343,9 @@ impl<'a> Builder<'a> {
 
     /// Logs an error during the loading phase, that can be localized to a particular place.
     pub fn log_loading_error(&mut self, descriptor: &ModuleDescriptor, error: &CompilationError) {
+        let display_path = self.project.display_path(descriptor);
+        let line = error.range().start.line + 1;
+        let log_message = format!("{}, line {}: compilation error: {}", display_path, line, error);
         let diagnostic = Diagnostic {
             range: error.range(),
             severity: Some(DiagnosticSeverity::ERROR),
@@ -350,7 +353,7 @@ impl<'a> Builder<'a> {
             ..Diagnostic::default()
         };
         let event = BuildEvent {
-            log_message: Some(format!("compilation error: {}", error)),
+            log_message: Some(log_message),
             module: descriptor.clone(),
             diagnostic: Some(diagnostic),
             ..self.default_event()
