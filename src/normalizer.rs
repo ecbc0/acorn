@@ -77,8 +77,8 @@ pub struct Normalizer {
     /// Types of the synthetic atoms that we synthesized
     synthetic_types: Vec<AcornType>,
 
-    /// The definition for each synthetic atom.
-    synthetic_definitions: Vec<Arc<SyntheticDefinition>>,
+    /// The definition for each synthetic atom, indexed by AtomId.
+    synthetic_definitions: HashMap<AtomId, Arc<SyntheticDefinition>>,
 
     /// Same information as `synthetic_info`, but indexed by SyntheticKey.
     /// This is used to avoid defining the same thing multiple times.
@@ -92,7 +92,7 @@ impl Normalizer {
         Normalizer {
             monomorphizer: Monomorphizer::new(),
             synthetic_types: vec![],
-            synthetic_definitions: vec![],
+            synthetic_definitions: HashMap::new(),
             synthetic_map: HashMap::new(),
             normalization_map: NormalizationMap::new(),
         }
@@ -143,7 +143,6 @@ impl Normalizer {
     }
 
     /// Adds the definition for these synthetic atoms.
-    /// This must be done in the same order they are declared in.
     fn define_synthetic_atoms(&mut self, atoms: Vec<AtomId>, clauses: Vec<Clause>) {
         // In the synthetic key, we normalize synthetic ids by renumbering them.
         let synthetic_key_form: Vec<_> = clauses
@@ -159,11 +158,8 @@ impl Normalizer {
             clauses,
             atoms: atoms.clone(),
         });
-        for atom in atoms {
-            if atom as usize != self.synthetic_definitions.len() {
-                panic!("synthetic atoms must be defined in order");
-            }
-            self.synthetic_definitions.push(info.clone());
+        for atom in &atoms {
+            self.synthetic_definitions.insert(*atom, info.clone());
         }
         self.synthetic_map.insert(key, info);
     }
@@ -883,9 +879,6 @@ impl Normalizer {
             self.define_synthetic_atoms(skolem_ids, clauses.clone());
         }
 
-        // We should have defined all the synthetic atoms we declared at this point.
-        assert!(self.synthetic_definitions.len() == self.synthetic_types.len());
-
         Ok(clauses)
     }
 
@@ -1162,7 +1155,7 @@ impl Normalizer {
             if covered.contains(id) {
                 continue;
             }
-            let info = self.synthetic_definitions[*id as usize].clone();
+            let info = self.synthetic_definitions[id].clone();
             for synthetic_id in &info.atoms {
                 covered.insert(*synthetic_id);
             }
