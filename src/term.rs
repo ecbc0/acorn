@@ -153,8 +153,7 @@ impl Term {
     /// Iterates over all atoms in the term (head first, then recursively through arguments)
     pub fn iter_atoms(&self) -> Box<dyn Iterator<Item = &Atom> + '_> {
         Box::new(
-            std::iter::once(&self.head)
-                .chain(self.args.iter().flat_map(|arg| arg.iter_atoms()))
+            std::iter::once(&self.head).chain(self.args.iter().flat_map(|arg| arg.iter_atoms())),
         )
     }
 
@@ -338,6 +337,17 @@ impl Term {
             }
         }
         None
+    }
+
+    pub fn apply(&self, args: &[Term], result_type: TypeId) -> Term {
+        let mut new_args = self.args.clone();
+        new_args.extend_from_slice(args);
+        Term {
+            term_type: result_type,
+            head_type: self.head_type,
+            head: self.head,
+            args: new_args,
+        }
     }
 
     /// A higher order term is one that has a variable as its head.
