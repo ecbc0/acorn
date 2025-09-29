@@ -1775,4 +1775,34 @@ mod tests {
         let mut norm = Normalizer::new();
         norm.check(&env, "goal", &["g(a, s0) != f(s0)"]);
     }
+
+    // TODO: turn this test back on when it works.
+    #[allow(dead_code)]
+    fn test_normalizing_func_eq_inside_lambda() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            type Nat: axiom
+
+            let f: Nat -> Bool = axiom
+            let g: (Nat, Nat) -> Nat = axiom
+            let h: (Nat, Nat) -> Nat = axiom
+
+            theorem goal {
+                f = function(x: Nat) {
+                    g(x) = h(x)
+                }
+            }
+        "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(
+            &env,
+            "goal",
+            &[
+                "not f(x0) or h(x0, x1) = g(x0, x1)",
+                "h(x0, s0(x0)) != g(x0, s0(x0)) or f(x0)",
+            ],
+        );
+    }
 }
