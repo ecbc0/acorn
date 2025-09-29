@@ -207,6 +207,11 @@ impl<'a> Evaluator<'a> {
             let (name, acorn_type) = self.evaluate_declaration(declaration)?;
             self.bindings
                 .check_unqualified_name_available(&name, declaration.token())?;
+            if stack.get(&name).is_some() {
+                return Err(declaration
+                    .token()
+                    .error(&format!("name '{}' is already bound", name)));
+            }
             if names.contains(&name) {
                 return Err(declaration
                     .token()

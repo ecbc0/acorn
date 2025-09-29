@@ -1426,8 +1426,6 @@ fn test_right_recursive_member_function() {
     );
 }
 
-
-
 #[test]
 fn test_class_variables() {
     let mut env = Environment::test();
@@ -1934,4 +1932,61 @@ fn test_standalone_lib_is_error() {
     // lib(foo) would also fail because module foo doesn't exist
     env.bad("let y = lib(foo)");
     env.bad("let z = lib(foo).bar");
+}
+
+#[test]
+fn test_reusing_forall_names() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+            type Nat: axiom
+        "#,
+    );
+    env.bad(
+        r#"
+            forall(a: Nat) {
+                forall(a: Nat) {
+                    a = a
+                }
+            }
+        "#,
+    );
+}
+
+#[test]
+fn test_reusing_exists_names() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+            type Nat: axiom
+        "#,
+    );
+    env.bad(
+        r#"
+            let x: Bool = exists(a: Nat) {
+                exists(a: Nat) {
+                    a = a
+                }
+            }
+        "#,
+    );
+}
+
+#[test]
+fn test_reusing_function_arg_names() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+            type Nat: axiom
+        "#,
+    );
+    env.bad(
+        r#"
+            let f: Nat -> (Nat -> Bool) = function(a: Nat) {
+                function(a: Nat) {
+                    a = a
+                }
+            }
+        "#,
+    );
 }
