@@ -174,6 +174,21 @@ impl Normalizer {
     }
 }
 
+// Represents a binding for a variable on the stack during normalization.
+enum TermBinding {
+    Bound(Term),
+    Free(Term),
+}
+
+impl TermBinding {
+    /// Get the underlying term regardless of binding type
+    fn term(&self) -> &Term {
+        match self {
+            TermBinding::Bound(t) | TermBinding::Free(t) => t,
+        }
+    }
+}
+
 // A NormalizerView lets us share methods between mutable and non-mutable normalizers that
 // only differ in a small number of places.
 pub enum NormalizerView<'a> {
@@ -267,7 +282,7 @@ impl NormalizerView<'_> {
         &mut self,
         value: &AcornValue,
         negate: bool,
-        stack: &mut Vec<Term>,
+        stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
     ) -> Result<CNF, String> {
@@ -338,7 +353,10 @@ impl NormalizerView<'_> {
                     for arg in &app.args {
                         args.push(self.value_to_term(arg, stack, next_var_id, synth)?);
                     }
-                    stack.extend(args);
+                    // Lambda arguments are bound variables
+                    for arg in args {
+                        stack.push(TermBinding::Bound(arg));
+                    }
                     let answer =
                         self.value_to_cnf(&return_value, negate, stack, next_var_id, synth);
                     stack.truncate(stack.len() - app.args.len());
@@ -357,7 +375,7 @@ impl NormalizerView<'_> {
         &mut self,
         value: &AcornValue,
         negate: bool,
-        stack: &mut Vec<Term>,
+        stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
     ) -> Result<CNF, String> {
@@ -377,7 +395,7 @@ impl NormalizerView<'_> {
         quants: &Vec<AcornType>,
         subvalue: &AcornValue,
         negate: bool,
-        stack: &mut Vec<Term>,
+        stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
     ) -> Result<CNF, String> {
@@ -385,7 +403,7 @@ impl NormalizerView<'_> {
             let type_id = self.as_ref().normalization_map.get_type_id(quant)?;
             let var = Term::new_variable(type_id, *next_var_id);
             *next_var_id += 1;
-            stack.push(var);
+            stack.push(TermBinding::Free(var));
         }
         let result = self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized)?;
         for _ in quants {
@@ -401,27 +419,29 @@ impl NormalizerView<'_> {
         quants: &Vec<AcornType>,
         subvalue: &AcornValue,
         negate: bool,
-        stack: &mut Vec<Term>,
+        stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
     ) -> Result<CNF, String> {
-        // The variables on the stack will be the arguments for the skolem functions
+        // Only free variables on the stack will be the arguments for the skolem functions
         let mut args = vec![];
         let mut arg_types = vec![];
-        for term in stack.iter() {
-            if term.is_variable() {
-                args.push(term.clone());
-                arg_types.push(
-                    self.as_ref()
-                        .normalization_map
-                        .get_type(term.term_type)
-                        .clone(),
-                );
+        for binding in stack.iter() {
+            if let TermBinding::Free(term) = binding {
+                if term.is_variable() {
+                    args.push(term.clone());
+                    arg_types.push(
+                        self.as_ref()
+                            .normalization_map
+                            .get_type(term.term_type)
+                            .clone(),
+                    );
+                }
             }
         }
         for quant in quants {
             // Each existential quantifier needs a new skolem atom.
-            // The skolem term is that atom applied to the variables on the stack.
+            // The skolem term is that atom applied to the free variables on the stack.
             // Note that the skolem atom may be a type we have not used before.
             let skolem_atom_type = AcornType::functional(arg_types.clone(), quant.clone());
             let skolem_atom_type_id = self.as_mut()?.normalization_map.add_type(&skolem_atom_type);
@@ -435,7 +455,7 @@ impl NormalizerView<'_> {
                 skolem_atom,
                 args.clone(),
             );
-            stack.push(skolem_term);
+            stack.push(TermBinding::Bound(skolem_term));
         }
         let result = self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized)?;
         for _ in quants {
@@ -452,7 +472,7 @@ impl NormalizerView<'_> {
         right: &AcornValue,
         negate_left: bool,
         negate_right: bool,
-        stack: &mut Vec<Term>,
+        stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
     ) -> Result<CNF, String> {
@@ -469,7 +489,7 @@ impl NormalizerView<'_> {
         right: &AcornValue,
         negate_left: bool,
         negate_right: bool,
-        stack: &mut Vec<Term>,
+        stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
     ) -> Result<CNF, String> {
@@ -485,7 +505,7 @@ impl NormalizerView<'_> {
         left: &AcornValue,
         right: &AcornValue,
         negate: bool,
-        stack: &mut Vec<Term>,
+        stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
     ) -> Result<CNF, String> {
@@ -572,7 +592,7 @@ impl NormalizerView<'_> {
     fn try_simple_value_to_term(
         &self,
         value: &AcornValue,
-        stack: &Vec<Term>,
+        stack: &Vec<TermBinding>,
     ) -> Result<Option<Term>, String> {
         match self.try_simple_value_to_signed_term(value, stack)? {
             None => Ok(None),
@@ -590,7 +610,7 @@ impl NormalizerView<'_> {
     fn force_simple_value_to_term(
         &self,
         value: &AcornValue,
-        stack: &Vec<Term>,
+        stack: &Vec<TermBinding>,
     ) -> Result<Term, String> {
         match self.try_simple_value_to_term(value, stack)? {
             Some(t) => Ok(t),
@@ -606,12 +626,12 @@ impl NormalizerView<'_> {
     fn try_simple_value_to_signed_term(
         &self,
         value: &AcornValue,
-        stack: &Vec<Term>,
+        stack: &Vec<TermBinding>,
     ) -> Result<Option<(Term, bool)>, String> {
         match value {
             AcornValue::Variable(i, _) => {
                 if (*i as usize) < stack.len() {
-                    Ok(Some((stack[*i as usize].clone(), true)))
+                    Ok(Some((stack[*i as usize].term().clone(), true)))
                 } else {
                     Err(format!("variable {} out of range", i))
                 }
@@ -670,7 +690,7 @@ impl NormalizerView<'_> {
     fn value_to_term(
         &mut self,
         value: &AcornValue,
-        stack: &mut Vec<Term>,
+        stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
     ) -> Result<Term, String> {
@@ -684,7 +704,7 @@ impl NormalizerView<'_> {
     fn value_to_extended_term(
         &mut self,
         value: &AcornValue,
-        stack: &mut Vec<Term>,
+        stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
     ) -> Result<ExtendedTerm, String> {
@@ -704,7 +724,10 @@ impl NormalizerView<'_> {
                     for arg in &app.args {
                         args.push(self.value_to_term(arg, stack, next_var_id, synth)?);
                     }
-                    stack.extend(args);
+                    // Lambda arguments are bound variables
+                    for arg in args {
+                        stack.push(TermBinding::Bound(arg));
+                    }
                     let answer =
                         self.value_to_extended_term(&return_value, stack, next_var_id, synth);
                     stack.truncate(stack.len() - app.args.len());
@@ -759,7 +782,10 @@ impl NormalizerView<'_> {
             }
             AcornValue::Variable(i, _) => {
                 if (*i as usize) < stack.len() {
-                    Ok(ExtendedTerm::Signed(stack[*i as usize].clone(), true))
+                    Ok(ExtendedTerm::Signed(
+                        stack[*i as usize].term().clone(),
+                        true,
+                    ))
                 } else {
                     Err(format!("variable {} out of range", i))
                 }
@@ -1776,8 +1802,7 @@ mod tests {
         norm.check(&env, "goal", &["g(a, s0) != f(s0)"]);
     }
 
-    // TODO: turn this test back on when it works.
-    #[allow(dead_code)]
+    #[test]
     fn test_normalizing_func_eq_inside_lambda() {
         let mut env = Environment::test();
         env.add(
