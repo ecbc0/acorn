@@ -364,15 +364,14 @@ impl NormalizerView<'_> {
                     return answer;
                 }
 
-                // Fall through
-                self.value_to_single_term_to_cnf(value, negate, stack, next_var_id, synth)
+                self.value_to_term_to_cnf(value, negate, stack, next_var_id, synth)
             }
-            _ => self.value_to_single_term_to_cnf(value, negate, stack, next_var_id, synth),
+            _ => self.value_to_term_to_cnf(value, negate, stack, next_var_id, synth),
         }
     }
 
     // The "fallthrough" case for value_to_cnf.
-    fn value_to_single_term_to_cnf(
+    fn value_to_term_to_cnf(
         &mut self,
         value: &AcornValue,
         negate: bool,
@@ -380,20 +379,9 @@ impl NormalizerView<'_> {
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
     ) -> Result<CNF, String> {
-        match self.value_to_extended_term(value, stack, next_var_id, synthesized)? {
-            ExtendedTerm::Signed(t, sign) => {
-                if !sign {
-                    unreachable!();
-                }
-                let literal = Literal::from_signed_term(t, sign ^ negate);
-                Ok(CNF::from_literal(literal))
-            }
-            ExtendedTerm::If(..) => Err("fallthrough if: branch should be unreachable".to_string()),
-            ExtendedTerm::Lambda(_, _) => {
-                // TODO: is this actually unreachable?
-                Err("unhandled case: fallthrough lambda".to_string())
-            }
-        }
+        let term = self.value_to_term(value, stack, next_var_id, synthesized)?;
+        let literal = Literal::from_signed_term(term, !negate);
+        Ok(CNF::from_literal(literal))
     }
 
     // Convert a "forall" node in a value, or the equivalent, to CNF.
