@@ -352,7 +352,7 @@ impl NormalizerView<'_> {
                 self.apply_to_cnf(&app.function, &app.args, negate, stack, next_var_id, synth)
             }
             _ => {
-                let term = self.value_to_term(value, stack, next_var_id, synth)?;
+                let term = self.value_to_extended_term(value, stack, next_var_id, synth)?.to_term()?;
                 let literal = Literal::from_signed_term(term, !negate);
                 Ok(CNF::from_literal(literal))
             }
@@ -371,7 +371,7 @@ impl NormalizerView<'_> {
         if let AcornValue::Lambda(_, return_value) = function {
             let mut arg_terms = vec![];
             for arg in args {
-                arg_terms.push(self.value_to_term(arg, stack, next_var_id, synthesized)?);
+                arg_terms.push(self.value_to_extended_term(arg, stack, next_var_id, synthesized)?.to_term()?);
             }
             // Lambda arguments are bound variables
             for arg in arg_terms {
@@ -719,18 +719,6 @@ impl NormalizerView<'_> {
         }
     }
 
-    fn value_to_term(
-        &mut self,
-        value: &AcornValue,
-        stack: &mut Vec<TermBinding>,
-        next_var_id: &mut AtomId,
-        synth: &mut Vec<AtomId>,
-    ) -> Result<Term, String> {
-        match self.value_to_extended_term(value, stack, next_var_id, synth)? {
-            ExtendedTerm::Term(t) => Ok(t),
-            _ => Err(format!("cannot convert value '{}' to term", value)),
-        }
-    }
 
     /// Handles application of a function to arguments, converting to an ExtendedTerm.
     fn apply_to_extended_term(
@@ -744,7 +732,7 @@ impl NormalizerView<'_> {
         if let AcornValue::Lambda(_, return_value) = function {
             let mut arg_terms = vec![];
             for arg in args {
-                arg_terms.push(self.value_to_term(arg, stack, next_var_id, synth)?);
+                arg_terms.push(self.value_to_extended_term(arg, stack, next_var_id, synth)?.to_term()?);
             }
             // Lambda arguments are bound variables
             for arg in arg_terms {
@@ -857,8 +845,8 @@ impl NormalizerView<'_> {
                 let Some(cond_lit) = cond_cnf.to_literal() else {
                     return Err("unhandled case: non-literal if condition".to_string());
                 };
-                let then_branch = self.value_to_term(then_value, stack, next_var_id, synth)?;
-                let else_branch = self.value_to_term(else_value, stack, next_var_id, synth)?;
+                let then_branch = self.value_to_extended_term(then_value, stack, next_var_id, synth)?.to_term()?;
+                let else_branch = self.value_to_extended_term(else_value, stack, next_var_id, synth)?.to_term()?;
                 Ok(ExtendedTerm::If(cond_lit, then_branch, else_branch))
             }
             AcornValue::Application(app) => {
@@ -905,7 +893,7 @@ impl NormalizerView<'_> {
                 }
 
                 // Evaluate the body with the lambda arguments on the stack
-                let body_term = self.value_to_term(body, stack, next_var_id, synth)?;
+                let body_term = self.value_to_extended_term(body, stack, next_var_id, synth)?.to_term()?;
 
                 // Pop the lambda arguments from the stack
                 for _ in arg_types {

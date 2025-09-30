@@ -42,6 +42,14 @@ impl std::fmt::Display for ExtendedTerm {
 }
 
 impl ExtendedTerm {
+    /// Convert ExtendedTerm to a plain Term, erroring if it's not ::Term variant
+    pub fn to_term(self) -> Result<Term, String> {
+        match self {
+            ExtendedTerm::Term(t) => Ok(t),
+            other => Err(format!("expected plain term but got {}", other)),
+        }
+    }
+
     /// Apply arguments to an ExtendedTerm, similar to Term::apply.
     pub fn apply(&self, args: &[Term], result_type: TypeId) -> ExtendedTerm {
         match self {
