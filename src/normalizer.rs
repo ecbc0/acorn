@@ -574,18 +574,18 @@ impl NormalizerView<'_> {
             let left = self.value_to_extended_term(left, stack, next_var_id, synth)?;
             let right = self.value_to_extended_term(right, stack, next_var_id, synth)?;
             match (left, right) {
-                (ExtendedTerm::Signed(left, ls), ExtendedTerm::Signed(right, rs)) => {
-                    let literal = Literal::new(!negate ^ !ls ^ !rs, left, right);
+                (ExtendedTerm::Term(left), ExtendedTerm::Term(right)) => {
+                    let literal = Literal::new(!negate, left, right);
                     Ok(CNF::from_literal(literal))
                 }
-                (ExtendedTerm::If(cond, then_t, else_t), ExtendedTerm::Signed(right, rs)) => {
-                    let then_lit = Literal::new(!negate ^ !rs, then_t, right.clone());
-                    let else_lit = Literal::new(!negate ^ !rs, else_t, right);
+                (ExtendedTerm::If(cond, then_t, else_t), ExtendedTerm::Term(right)) => {
+                    let then_lit = Literal::new(!negate, then_t, right.clone());
+                    let else_lit = Literal::new(!negate, else_t, right);
                     Ok(CNF::literal_if(cond, then_lit, else_lit))
                 }
-                (ExtendedTerm::Signed(left, ls), ExtendedTerm::If(cond, then_t, else_t)) => {
-                    let then_lit = Literal::new(!negate ^ !ls, left.clone(), then_t);
-                    let else_lit = Literal::new(!negate ^ !ls, left, else_t);
+                (ExtendedTerm::Term(left), ExtendedTerm::If(cond, then_t, else_t)) => {
+                    let then_lit = Literal::new(!negate, left.clone(), then_t);
+                    let else_lit = Literal::new(!negate, left, else_t);
                     Ok(CNF::literal_if(cond, then_lit, else_lit))
                 }
                 (left, right) => Err(format!(
@@ -699,7 +699,7 @@ impl NormalizerView<'_> {
         synth: &mut Vec<AtomId>,
     ) -> Result<Term, String> {
         match self.value_to_extended_term(value, stack, next_var_id, synth)? {
-            ExtendedTerm::Signed(t, true) => Ok(t),
+            ExtendedTerm::Term(t) => Ok(t),
             _ => Err(format!("cannot convert value '{}' to term", value)),
         }
     }
@@ -746,10 +746,7 @@ impl NormalizerView<'_> {
                 let mut spine2 = vec![];
                 for subterm in app.iter_spine() {
                     match self.value_to_extended_term(subterm, stack, next_var_id, synth)? {
-                        ExtendedTerm::Signed(t, sign) => {
-                            if !sign {
-                                return Err("unhandled case: negated arg".to_string());
-                            }
+                        ExtendedTerm::Term(t) => {
                             if !spine2.is_empty() {
                                 spine2.push(t.clone());
                             }
@@ -780,16 +777,13 @@ impl NormalizerView<'_> {
                     None => {
                         assert!(spine2.is_empty());
                         let term = Term::from_spine(spine1, term_type);
-                        Ok(ExtendedTerm::Signed(term, true))
+                        Ok(ExtendedTerm::Term(term))
                     }
                 }
             }
             AcornValue::Variable(i, _) => {
                 if (*i as usize) < stack.len() {
-                    Ok(ExtendedTerm::Signed(
-                        stack[*i as usize].term().clone(),
-                        true,
-                    ))
+                    Ok(ExtendedTerm::Term(stack[*i as usize].term().clone()))
                 } else {
                     Err(format!("variable {} out of range", i))
                 }
@@ -801,24 +795,20 @@ impl NormalizerView<'_> {
                     let Some(atom) = self.map().get_atom(&c.name) else {
                         return Err(format!("constant {} not found in normalization map", c));
                     };
-                    Ok(ExtendedTerm::Signed(
-                        Term::new(type_id, type_id, atom, vec![]),
-                        true,
-                    ))
+                    Ok(ExtendedTerm::Term(Term::new(
+                        type_id,
+                        type_id,
+                        atom,
+                        vec![],
+                    )))
                 } else {
-                    Ok(ExtendedTerm::Signed(
-                        self.map().term_from_monomorph(&c)?,
-                        true,
-                    ))
+                    Ok(ExtendedTerm::Term(self.map().term_from_monomorph(&c)?))
                 }
             }
-            AcornValue::Not(subvalue) => {
-                match self.value_to_extended_term(subvalue, stack, next_var_id, synth)? {
-                    ExtendedTerm::If(..) => Err("unhandled case: negated if".to_string()),
-                    ExtendedTerm::Signed(t, sign) => Ok(ExtendedTerm::Signed(t, !sign)),
-                    ExtendedTerm::Lambda(..) => Err("unhandled case: negated lambda".to_string()),
-                }
-            }
+            AcornValue::Not(_) => Err(
+                "cannot convert negation to extended term (should be handled at CNF level)"
+                    .to_string(),
+            ),
             AcornValue::Lambda(arg_types, body) => {
                 // Create variable terms for each lambda argument
                 let mut args = vec![];
@@ -841,7 +831,10 @@ impl NormalizerView<'_> {
 
                 Ok(ExtendedTerm::Lambda(args, body_term))
             }
-            AcornValue::Bool(v) => Ok(ExtendedTerm::Signed(Term::new_true(), *v)),
+            AcornValue::Bool(_) => Err(
+                "cannot convert boolean to extended term (should be handled at CNF level)"
+                    .to_string(),
+            ),
             _ => Err(format!("cannot convert '{}' to extended term", value)),
         }
     }

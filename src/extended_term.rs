@@ -6,8 +6,7 @@ use crate::term::{Term, TypeId};
 // into a CNF formula.
 // They can be Boolean or have non-Boolean types.
 pub enum ExtendedTerm {
-    // true = positive.
-    Signed(Term, bool),
+    Term(Term),
 
     // (condition, then branch, else branch)
     If(Literal, Term, Term),
@@ -19,13 +18,7 @@ pub enum ExtendedTerm {
 impl std::fmt::Display for ExtendedTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ExtendedTerm::Signed(term, positive) => {
-                if *positive {
-                    write!(f, "{}", term)
-                } else {
-                    write!(f, "not {}", term)
-                }
-            }
+            ExtendedTerm::Term(term) => write!(f, "{}", term),
             ExtendedTerm::If(condition, then_branch, else_branch) => {
                 write!(
                     f,
@@ -49,14 +42,10 @@ impl std::fmt::Display for ExtendedTerm {
 
 impl ExtendedTerm {
     /// Apply arguments to an ExtendedTerm, similar to Term::apply.
-    /// Returns an error if trying to apply to a negative term.
     pub fn apply(&self, args: &[Term], result_type: TypeId) -> Result<ExtendedTerm, String> {
         match self {
-            ExtendedTerm::Signed(term, sign) => {
-                if !sign {
-                    return Err("cannot apply arguments to a negative term".to_string());
-                }
-                Ok(ExtendedTerm::Signed(term.apply(args, result_type), true))
+            ExtendedTerm::Term(term) => {
+                Ok(ExtendedTerm::Term(term.apply(args, result_type)))
             }
             ExtendedTerm::If(cond, then_term, else_term) => {
                 let new_then = then_term.apply(args, result_type);
@@ -75,7 +64,7 @@ impl ExtendedTerm {
                         .map(|((var_id, _), arg)| (*var_id, arg))
                         .collect();
                     let result = body.replace_variables(&replacements);
-                    Ok(ExtendedTerm::Signed(result, true))
+                    Ok(ExtendedTerm::Term(result))
                 } else {
                     // Over-application - apply lambda args first, then apply the rest
                     let (lambda_args_slice, rest_args) = args.split_at(lambda_args.len());
@@ -86,7 +75,7 @@ impl ExtendedTerm {
                         .collect();
                     let result = body.replace_variables(&replacements);
                     let applied = result.apply(rest_args, result_type);
-                    Ok(ExtendedTerm::Signed(applied, true))
+                    Ok(ExtendedTerm::Term(applied))
                 }
             }
         }
