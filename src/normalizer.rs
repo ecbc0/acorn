@@ -352,7 +352,9 @@ impl NormalizerView<'_> {
                 self.apply_to_cnf(&app.function, &app.args, negate, stack, next_var_id, synth)
             }
             _ => {
-                let term = self.value_to_extended_term(value, stack, next_var_id, synth)?.to_term()?;
+                let term = self
+                    .value_to_extended_term(value, stack, next_var_id, synth)?
+                    .to_term()?;
                 let literal = Literal::from_signed_term(term, !negate);
                 Ok(CNF::from_literal(literal))
             }
@@ -371,7 +373,10 @@ impl NormalizerView<'_> {
         if let AcornValue::Lambda(_, return_value) = function {
             let mut arg_terms = vec![];
             for arg in args {
-                arg_terms.push(self.value_to_extended_term(arg, stack, next_var_id, synthesized)?.to_term()?);
+                arg_terms.push(
+                    self.value_to_extended_term(arg, stack, next_var_id, synthesized)?
+                        .to_term()?,
+                );
             }
             // Lambda arguments are bound variables
             for arg in arg_terms {
@@ -383,8 +388,12 @@ impl NormalizerView<'_> {
         }
 
         // Fall back to converting via extended term
+        let mut arg_exts = vec![];
+        for arg in args {
+            arg_exts.push(self.value_to_extended_term(arg, stack, next_var_id, synthesized)?);
+        }
         let extended =
-            self.apply_to_extended_term(function, args, stack, next_var_id, synthesized)?;
+            self.apply_to_extended_term(function, arg_exts, stack, next_var_id, synthesized)?;
         match extended {
             ExtendedTerm::Term(term) => {
                 let literal = Literal::from_signed_term(term, !negate);
@@ -719,12 +728,11 @@ impl NormalizerView<'_> {
         }
     }
 
-
     /// Handles application of a function to arguments, converting to an ExtendedTerm.
     fn apply_to_extended_term(
         &mut self,
         function: &AcornValue,
-        args: &[AcornValue],
+        args: Vec<ExtendedTerm>,
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
@@ -732,14 +740,15 @@ impl NormalizerView<'_> {
         if let AcornValue::Lambda(_, return_value) = function {
             let mut arg_terms = vec![];
             for arg in args {
-                arg_terms.push(self.value_to_extended_term(arg, stack, next_var_id, synth)?.to_term()?);
+                arg_terms.push(arg.to_term()?);
             }
+            let num_args = arg_terms.len();
             // Lambda arguments are bound variables
             for arg in arg_terms {
                 stack.push(TermBinding::Bound(arg));
             }
             let answer = self.value_to_extended_term(&return_value, stack, next_var_id, synth);
-            stack.truncate(stack.len() - args.len());
+            stack.truncate(stack.len() - num_args);
             return answer;
         }
 
@@ -761,13 +770,17 @@ impl NormalizerView<'_> {
                 spine2.push(sub_else);
             }
             ExtendedTerm::Lambda(_, _) => {
-                return Err("unhandled case: lambda arg".to_string());
+                // Can this happen?
+                return Err("unhandled case: secret lambda".to_string());
             }
         }
 
+        // Determine the result type from the original application
+        let args_len = args.len();
+
         // Then process the arguments
         for arg in args {
-            match self.value_to_extended_term(arg, stack, next_var_id, synth)? {
+            match arg {
                 ExtendedTerm::Term(t) => {
                     if !spine2.is_empty() {
                         spine2.push(t.clone());
@@ -788,25 +801,18 @@ impl NormalizerView<'_> {
                 }
             }
         }
-
-        // Determine the result type from the original application
-        let result_type = if let AcornValue::Application(app) =
-            &AcornValue::apply(function.clone(), args.to_vec())
-        {
-            self.map().get_type_id(&app.get_type())?
-        } else {
-            // Fallback: compute the type from function and args
+        let result_type = {
             let func_type = function.get_type();
             if let AcornType::Function(fapp) = func_type {
-                if args.len() > fapp.arg_types.len() {
+                if args_len > fapp.arg_types.len() {
                     return Err("too many arguments".to_string());
                 }
-                let remaining_args = fapp.arg_types.len() - args.len();
+                let remaining_args = fapp.arg_types.len() - args_len;
                 if remaining_args == 0 {
                     self.map().get_type_id(&fapp.return_type)?
                 } else {
                     let remaining_type = AcornType::functional(
-                        fapp.arg_types[args.len()..].to_vec(),
+                        fapp.arg_types[args_len..].to_vec(),
                         (*fapp.return_type).clone(),
                     );
                     self.map().get_type_id(&remaining_type)?
@@ -845,12 +851,20 @@ impl NormalizerView<'_> {
                 let Some(cond_lit) = cond_cnf.to_literal() else {
                     return Err("unhandled case: non-literal if condition".to_string());
                 };
-                let then_branch = self.value_to_extended_term(then_value, stack, next_var_id, synth)?.to_term()?;
-                let else_branch = self.value_to_extended_term(else_value, stack, next_var_id, synth)?.to_term()?;
+                let then_branch = self
+                    .value_to_extended_term(then_value, stack, next_var_id, synth)?
+                    .to_term()?;
+                let else_branch = self
+                    .value_to_extended_term(else_value, stack, next_var_id, synth)?
+                    .to_term()?;
                 Ok(ExtendedTerm::If(cond_lit, then_branch, else_branch))
             }
             AcornValue::Application(app) => {
-                self.apply_to_extended_term(&app.function, &app.args, stack, next_var_id, synth)
+                let mut arg_exts = vec![];
+                for arg in &app.args {
+                    arg_exts.push(self.value_to_extended_term(arg, stack, next_var_id, synth)?);
+                }
+                self.apply_to_extended_term(&app.function, arg_exts, stack, next_var_id, synth)
             }
             AcornValue::Variable(i, _) => {
                 if (*i as usize) < stack.len() {
@@ -893,7 +907,9 @@ impl NormalizerView<'_> {
                 }
 
                 // Evaluate the body with the lambda arguments on the stack
-                let body_term = self.value_to_extended_term(body, stack, next_var_id, synth)?.to_term()?;
+                let body_term = self
+                    .value_to_extended_term(body, stack, next_var_id, synth)?
+                    .to_term()?;
 
                 // Pop the lambda arguments from the stack
                 for _ in arg_types {
