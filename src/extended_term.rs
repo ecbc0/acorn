@@ -79,28 +79,26 @@ impl ExtendedTerm {
     }
 
     /// Convert an equality comparison between this ExtendedTerm and a Term into CNF.
-    pub fn eq_term_to_cnf(&self, term: &Term, negate: bool) -> Result<CNF, String> {
+    pub fn eq_term_to_cnf(self, term: Term, negate: bool) -> Result<CNF, String> {
         match self {
             ExtendedTerm::Term(left) => {
-                let literal = Literal::new(!negate, left.clone(), term.clone());
+                let literal = Literal::new(!negate, left, term);
                 Ok(CNF::from_literal(literal))
             }
             ExtendedTerm::If(cond, then_t, else_t) => {
-                let then_lit = Literal::new(!negate, then_t.clone(), term.clone());
-                let else_lit = Literal::new(!negate, else_t.clone(), term.clone());
-                Ok(CNF::literal_if(cond.clone(), then_lit, else_lit))
+                let then_lit = Literal::new(!negate, then_t, term.clone());
+                let else_lit = Literal::new(!negate, else_t, term);
+                Ok(CNF::literal_if(cond, then_lit, else_lit))
             }
-            ExtendedTerm::Lambda(_, _) => Err(format!(
-                "comparison should have been normalized upstream: {} {} {}",
-                self,
-                if negate { "!=" } else { "=" },
-                term
+            ExtendedTerm::Lambda(_, t) => Err(format!(
+                "comparison to {} should have been normalized upstream",
+                t
             )),
         }
     }
 
     /// Convert an equality comparison between two ExtendedTerms into CNF.
-    pub fn eq_to_cnf(&self, other: &ExtendedTerm, negate: bool) -> Result<CNF, String> {
+    pub fn eq_to_cnf(self, other: ExtendedTerm, negate: bool) -> Result<CNF, String> {
         match (self, other) {
             (left, ExtendedTerm::Term(right)) => left.eq_term_to_cnf(right, negate),
             (ExtendedTerm::Term(left), right) => right.eq_term_to_cnf(left, negate),

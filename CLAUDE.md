@@ -8,7 +8,7 @@ Primarily for the use of the Claude Code tool.
 - Run a single Rust test: `cargo test -q test_name`
 
 - The slow and extensive global reverify:
-  `cargo run --release -- --nohash`
+  `cargo run --release -- --reverify`
   This generally doesn't have to be run, but if the user asks for it we can.
 
 ## Code Style Guidelines

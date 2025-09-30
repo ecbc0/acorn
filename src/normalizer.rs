@@ -573,7 +573,7 @@ impl NormalizerView<'_> {
         } else {
             let left = self.value_to_extended_term(left, stack, next_var_id, synth)?;
             let right = self.value_to_extended_term(right, stack, next_var_id, synth)?;
-            left.eq_to_cnf(&right, negate)
+            left.eq_to_cnf(right, negate)
         }
     }
 
