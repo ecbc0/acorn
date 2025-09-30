@@ -573,28 +573,7 @@ impl NormalizerView<'_> {
         } else {
             let left = self.value_to_extended_term(left, stack, next_var_id, synth)?;
             let right = self.value_to_extended_term(right, stack, next_var_id, synth)?;
-            match (left, right) {
-                (ExtendedTerm::Term(left), ExtendedTerm::Term(right)) => {
-                    let literal = Literal::new(!negate, left, right);
-                    Ok(CNF::from_literal(literal))
-                }
-                (ExtendedTerm::If(cond, then_t, else_t), ExtendedTerm::Term(right)) => {
-                    let then_lit = Literal::new(!negate, then_t, right.clone());
-                    let else_lit = Literal::new(!negate, else_t, right);
-                    Ok(CNF::literal_if(cond, then_lit, else_lit))
-                }
-                (ExtendedTerm::Term(left), ExtendedTerm::If(cond, then_t, else_t)) => {
-                    let then_lit = Literal::new(!negate, left.clone(), then_t);
-                    let else_lit = Literal::new(!negate, left, else_t);
-                    Ok(CNF::literal_if(cond, then_lit, else_lit))
-                }
-                (left, right) => Err(format!(
-                    "cannot normalize comparison: {} {} {}",
-                    left,
-                    if negate { "!=" } else { "=" },
-                    right
-                )),
-            }
+            left.eq_to_cnf(&right, negate)
         }
     }
 
