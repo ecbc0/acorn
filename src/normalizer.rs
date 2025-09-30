@@ -585,8 +585,8 @@ impl NormalizerView<'_> {
                     // Create skolem terms for each argument
                     let args = self.make_skolem_terms(&app.arg_types, stack, synth)?;
                     // Apply the skolem terms to both sides
-                    let left = left.apply(&args, result_type)?;
-                    let right = right.apply(&args, result_type)?;
+                    let left = left.apply(&args, result_type);
+                    let right = right.apply(&args, result_type);
                     (left, right)
                 } else {
                     // Create new free variables for each argument
@@ -597,8 +597,8 @@ impl NormalizerView<'_> {
                         args.push(var);
                     }
                     // Apply the free variables to both sides
-                    let left = left.apply(&args, result_type)?;
-                    let right = right.apply(&args, result_type)?;
+                    let left = left.apply(&args, result_type);
+                    let right = right.apply(&args, result_type);
                     (left, right)
                 }
             } else {
