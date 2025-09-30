@@ -54,26 +54,24 @@ impl ExtendedTerm {
             }
             ExtendedTerm::Lambda(lambda_args, body) => {
                 if args.len() < lambda_args.len() {
-                    // Partial application - not yet supported
-                    return Err("partial application of lambda not yet supported".to_string());
+                    // Partial application - substitute some args and return a new lambda
+                    let (applied_args, remaining_args) = lambda_args.split_at(args.len());
+                    let var_ids: Vec<_> = applied_args.iter().map(|(var_id, _)| *var_id).collect();
+                    let terms: Vec<_> = args.iter().collect();
+                    let new_body = body.replace_variables(&var_ids, &terms);
+                    Ok(ExtendedTerm::Lambda(remaining_args.to_vec(), new_body))
                 } else if args.len() == lambda_args.len() {
                     // Exact application - substitute the arguments into the body
-                    let replacements: Vec<_> = lambda_args
-                        .iter()
-                        .zip(args.iter())
-                        .map(|((var_id, _), arg)| (*var_id, arg))
-                        .collect();
-                    let result = body.replace_variables(&replacements);
+                    let var_ids: Vec<_> = lambda_args.iter().map(|(var_id, _)| *var_id).collect();
+                    let terms: Vec<_> = args.iter().collect();
+                    let result = body.replace_variables(&var_ids, &terms);
                     Ok(ExtendedTerm::Term(result))
                 } else {
                     // Over-application - apply lambda args first, then apply the rest
                     let (lambda_args_slice, rest_args) = args.split_at(lambda_args.len());
-                    let replacements: Vec<_> = lambda_args
-                        .iter()
-                        .zip(lambda_args_slice.iter())
-                        .map(|((var_id, _), arg)| (*var_id, arg))
-                        .collect();
-                    let result = body.replace_variables(&replacements);
+                    let var_ids: Vec<_> = lambda_args.iter().map(|(var_id, _)| *var_id).collect();
+                    let terms: Vec<_> = lambda_args_slice.iter().collect();
+                    let result = body.replace_variables(&var_ids, &terms);
                     let applied = result.apply(rest_args, result_type);
                     Ok(ExtendedTerm::Term(applied))
                 }
