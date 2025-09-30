@@ -20,6 +20,7 @@ pub mod doc_generator;
 pub mod environment;
 pub mod evaluator;
 pub mod expression;
+pub mod extended_term;
 pub mod fact;
 pub mod features;
 pub mod fingerprint;
