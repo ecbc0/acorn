@@ -560,7 +560,7 @@ impl fmt::Display for AcornType {
             AcornType::Data(datatype, params) => {
                 write!(f, "{}", datatype.name)?;
                 if !params.is_empty() {
-                    write!(f, "<{}>", AcornType::types_to_str(params))?;
+                    write!(f, "[{}]", AcornType::types_to_str(params))?;
                 }
                 Ok(())
             }
