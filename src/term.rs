@@ -421,6 +421,46 @@ impl Term {
         answer
     }
 
+    /// Replace multiple variables at once.
+    /// The replacements slice contains (variable_id, replacement_term) pairs.
+    pub fn replace_variables(&self, replacements: &[(AtomId, &Term)]) -> Term {
+        if replacements.is_empty() {
+            return Term {
+                term_type: self.term_type,
+                head_type: self.head_type,
+                head: self.head,
+                args: self.args.clone(),
+            };
+        }
+
+        // Check if the head is a variable that needs replacement
+        let mut answer = None;
+        for (id, value) in replacements {
+            if self.head == Atom::Variable(*id) {
+                answer = Some(Term {
+                    term_type: self.term_type,
+                    head_type: value.head_type,
+                    head: value.head.clone(),
+                    args: value.args.clone(),
+                });
+                break;
+            }
+        }
+
+        let mut answer = answer.unwrap_or_else(|| Term {
+            term_type: self.term_type,
+            head_type: self.head_type,
+            head: self.head,
+            args: vec![],
+        });
+
+        for arg in &self.args {
+            answer.args.push(arg.replace_variables(replacements));
+        }
+
+        answer
+    }
+
     pub fn replace_atom(&self, atom: &Atom, new_atom: &Atom) -> Term {
         let new_head = if self.head == *atom {
             new_atom.clone()

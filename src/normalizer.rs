@@ -562,8 +562,8 @@ impl NormalizerView<'_> {
                 }
             }
 
-            // This logic duplicates subterms. We need to be careful that we don't synthesize
-            // variables in these calls.
+            // This logic duplicates subterms. Either we need to be careful that we don't synthesize
+            // variables in these calls, or we need to globally deduplicate at synthesis time.
             if negate {
                 // Inequality.
                 let some = self.or_to_cnf(left, right, true, true, stack, next_var_id, synth)?;
@@ -890,6 +890,52 @@ impl std::fmt::Display for ExtendedTerm {
                     write!(f, "x{}", arg_id,)?;
                 }
                 write!(f, ") {{ {} }}", body)
+            }
+        }
+    }
+}
+
+impl ExtendedTerm {
+    /// Apply arguments to an ExtendedTerm, similar to Term::apply.
+    /// Returns an error if trying to apply to a negative term.
+    fn apply(&self, args: &[Term], result_type: TypeId) -> Result<ExtendedTerm, String> {
+        match self {
+            ExtendedTerm::Signed(term, sign) => {
+                if !sign {
+                    return Err("cannot apply arguments to a negative term".to_string());
+                }
+                Ok(ExtendedTerm::Signed(term.apply(args, result_type), true))
+            }
+            ExtendedTerm::If(cond, then_term, else_term) => {
+                let new_then = then_term.apply(args, result_type);
+                let new_else = else_term.apply(args, result_type);
+                Ok(ExtendedTerm::If(cond.clone(), new_then, new_else))
+            }
+            ExtendedTerm::Lambda(lambda_args, body) => {
+                if args.len() < lambda_args.len() {
+                    // Partial application - not yet supported
+                    return Err("partial application of lambda not yet supported".to_string());
+                } else if args.len() == lambda_args.len() {
+                    // Exact application - substitute the arguments into the body
+                    let replacements: Vec<_> = lambda_args
+                        .iter()
+                        .zip(args.iter())
+                        .map(|((var_id, _), arg)| (*var_id, arg))
+                        .collect();
+                    let result = body.replace_variables(&replacements);
+                    Ok(ExtendedTerm::Signed(result, true))
+                } else {
+                    // Over-application - apply lambda args first, then apply the rest
+                    let (lambda_args_slice, rest_args) = args.split_at(lambda_args.len());
+                    let replacements: Vec<_> = lambda_args
+                        .iter()
+                        .zip(lambda_args_slice.iter())
+                        .map(|((var_id, _), arg)| (*var_id, arg))
+                        .collect();
+                    let result = body.replace_variables(&replacements);
+                    let applied = result.apply(rest_args, result_type);
+                    Ok(ExtendedTerm::Signed(applied, true))
+                }
             }
         }
     }
