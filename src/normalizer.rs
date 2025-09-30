@@ -571,8 +571,39 @@ impl NormalizerView<'_> {
                 Ok(l_imp_r.and(r_imp_l))
             }
         } else {
+            let left_type = left.get_type();
             let left = self.value_to_extended_term(left, stack, next_var_id, synth)?;
             let right = self.value_to_extended_term(right, stack, next_var_id, synth)?;
+            let (left, right) = if let AcornType::Function(app) = left_type {
+                let arg_types: Vec<TypeId> = app
+                    .arg_types
+                    .iter()
+                    .map(|t| self.map().get_type_id(t))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let result_type = self.map().get_type_id(&app.return_type)?;
+                if negate {
+                    // Create skolem terms for each argument
+                    let args = self.make_skolem_terms(&app.arg_types, stack, synth)?;
+                    // Apply the skolem terms to both sides
+                    let left = left.apply(&args, result_type)?;
+                    let right = right.apply(&args, result_type)?;
+                    (left, right)
+                } else {
+                    // Create new free variables for each argument
+                    let mut args = vec![];
+                    for arg_type in &arg_types {
+                        let var = Term::new_variable(*arg_type, *next_var_id);
+                        *next_var_id += 1;
+                        args.push(var);
+                    }
+                    // Apply the free variables to both sides
+                    let left = left.apply(&args, result_type)?;
+                    let right = right.apply(&args, result_type)?;
+                    (left, right)
+                }
+            } else {
+                (left, right)
+            };
             left.eq_to_cnf(right, negate)
         }
     }
