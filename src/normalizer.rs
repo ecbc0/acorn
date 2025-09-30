@@ -384,7 +384,11 @@ impl NormalizerView<'_> {
                 let literal = Literal::from_signed_term(t, sign ^ negate);
                 Ok(CNF::from_literal(literal))
             }
-            ExtendedTerm::If(..) => Err("branch should be unreachable".to_string()),
+            ExtendedTerm::If(..) => Err("fallthrough if: branch should be unreachable".to_string()),
+            ExtendedTerm::Lambda(_, _) => {
+                // TODO: is this actually unreachable?
+                Err("unhandled case: fallthrough lambda".to_string())
+            }
         }
     }
 
@@ -715,7 +719,7 @@ impl NormalizerView<'_> {
             AcornValue::IfThenElse(cond_val, then_value, else_value) => {
                 let cond_cnf = self.value_to_cnf(cond_val, false, stack, next_var_id, synth)?;
                 let Some(cond_lit) = cond_cnf.to_literal() else {
-                    return Err("term 'if' condition is too complicated".to_string());
+                    return Err("unhandled case: non-literal if condition".to_string());
                 };
                 let then_branch = self.value_to_term(then_value, stack, next_var_id, synth)?;
                 let else_branch = self.value_to_term(else_value, stack, next_var_id, synth)?;
@@ -747,7 +751,7 @@ impl NormalizerView<'_> {
                     match self.value_to_extended_term(subterm, stack, next_var_id, synth)? {
                         ExtendedTerm::Signed(t, sign) => {
                             if !sign {
-                                return Err("negated term in application".to_string());
+                                return Err("unhandled case: negated arg".to_string());
                             }
                             if !spine2.is_empty() {
                                 spine2.push(t.clone());
@@ -756,12 +760,15 @@ impl NormalizerView<'_> {
                         }
                         ExtendedTerm::If(sub_cond, sub_then, sub_else) => {
                             if !spine2.is_empty() {
-                                return Err("multiple branches in application".to_string());
+                                return Err("unhandled case: multiple if args".to_string());
                             }
                             cond = Some(sub_cond);
                             spine2.extend(spine1.iter().cloned());
                             spine1.push(sub_then);
                             spine2.push(sub_else);
+                        }
+                        ExtendedTerm::Lambda(_, _) => {
+                            return Err("unhandled case: lambda arg".to_string());
                         }
                     }
                 }
@@ -810,9 +817,32 @@ impl NormalizerView<'_> {
             }
             AcornValue::Not(subvalue) => {
                 match self.value_to_extended_term(subvalue, stack, next_var_id, synth)? {
-                    ExtendedTerm::If(..) => Err("negation of 'if' term".to_string()),
+                    ExtendedTerm::If(..) => Err("unhandled case: negated if".to_string()),
                     ExtendedTerm::Signed(t, sign) => Ok(ExtendedTerm::Signed(t, !sign)),
+                    ExtendedTerm::Lambda(..) => Err("unhandled case: negated lambda".to_string()),
                 }
+            }
+            AcornValue::Lambda(arg_types, body) => {
+                // Create variable terms for each lambda argument
+                let mut args = vec![];
+                for arg_type in arg_types {
+                    let type_id = self.map().get_type_id(arg_type)?;
+                    let var_id = *next_var_id;
+                    *next_var_id += 1;
+                    let var = Term::new_variable(type_id, var_id);
+                    args.push((var_id, type_id));
+                    stack.push(TermBinding::Free(var));
+                }
+
+                // Evaluate the body with the lambda arguments on the stack
+                let body_term = self.value_to_term(body, stack, next_var_id, synth)?;
+
+                // Pop the lambda arguments from the stack
+                for _ in arg_types {
+                    stack.pop();
+                }
+
+                Ok(ExtendedTerm::Lambda(args, body_term))
             }
             AcornValue::Bool(v) => Ok(ExtendedTerm::Signed(Term::new_true(), *v)),
             _ => Err(format!("cannot convert '{}' to extended term", value)),
@@ -820,13 +850,18 @@ impl NormalizerView<'_> {
     }
 }
 
-// An ExtendedTerm can be a term but also some other constructs, especially for boolean terms.
+// An ExtendedTerm is like a term in the sense that a comparison between two of them can be converted
+// into a CNF formula.
+// They can be Boolean or have non-Boolean types.
 enum ExtendedTerm {
     // true = positive.
     Signed(Term, bool),
 
     // (condition, then branch, else branch)
     If(Literal, Term, Term),
+
+    // Lambda(args, body) represents the value f such that f(args) = body.
+    Lambda(Vec<(AtomId, TypeId)>, Term),
 }
 
 impl std::fmt::Display for ExtendedTerm {
@@ -845,6 +880,16 @@ impl std::fmt::Display for ExtendedTerm {
                     "if {} then {} else {}",
                     condition, then_branch, else_branch
                 )
+            }
+            ExtendedTerm::Lambda(args, body) => {
+                write!(f, "function(")?;
+                for (i, (arg_id, _)) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "x{}", arg_id,)?;
+                }
+                write!(f, ") {{ {} }}", body)
             }
         }
     }
