@@ -349,39 +349,49 @@ impl NormalizerView<'_> {
                 Ok(CNF::cnf_if(cond_lit, then_cnf, else_cnf))
             }
             AcornValue::Application(app) => {
-                if let AcornValue::Lambda(_, return_value) = &*app.function {
-                    let mut args = vec![];
-                    for arg in &app.args {
-                        args.push(self.value_to_term(arg, stack, next_var_id, synth)?);
-                    }
-                    // Lambda arguments are bound variables
-                    for arg in args {
-                        stack.push(TermBinding::Bound(arg));
-                    }
-                    let answer =
-                        self.value_to_cnf(&return_value, negate, stack, next_var_id, synth);
-                    stack.truncate(stack.len() - app.args.len());
-                    return answer;
-                }
-
-                self.value_to_term_to_cnf(value, negate, stack, next_var_id, synth)
+                self.apply_to_cnf(&app.function, &app.args, negate, stack, next_var_id, synth)
             }
-            _ => self.value_to_term_to_cnf(value, negate, stack, next_var_id, synth),
+            _ => {
+                let term = self.value_to_term(value, stack, next_var_id, synth)?;
+                let literal = Literal::from_signed_term(term, !negate);
+                Ok(CNF::from_literal(literal))
+            }
         }
     }
 
-    // The "fallthrough" case for value_to_cnf.
-    fn value_to_term_to_cnf(
+    fn apply_to_cnf(
         &mut self,
-        value: &AcornValue,
+        function: &AcornValue,
+        args: &[AcornValue],
         negate: bool,
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
     ) -> Result<CNF, String> {
-        let term = self.value_to_term(value, stack, next_var_id, synthesized)?;
-        let literal = Literal::from_signed_term(term, !negate);
-        Ok(CNF::from_literal(literal))
+        if let AcornValue::Lambda(_, return_value) = function {
+            let mut arg_terms = vec![];
+            for arg in args {
+                arg_terms.push(self.value_to_term(arg, stack, next_var_id, synthesized)?);
+            }
+            // Lambda arguments are bound variables
+            for arg in arg_terms {
+                stack.push(TermBinding::Bound(arg));
+            }
+            let answer = self.value_to_cnf(&return_value, negate, stack, next_var_id, synthesized);
+            stack.truncate(stack.len() - args.len());
+            return answer;
+        }
+
+        // Fall back to converting via extended term
+        let extended =
+            self.apply_to_extended_term(function, args, stack, next_var_id, synthesized)?;
+        match extended {
+            ExtendedTerm::Term(term) => {
+                let literal = Literal::from_signed_term(term, !negate);
+                Ok(CNF::from_literal(literal))
+            }
+            _ => Err("unhandled case: non-term application".to_string()),
+        }
     }
 
     // Convert a "forall" node in a value, or the equivalent, to CNF.
@@ -723,6 +733,117 @@ impl NormalizerView<'_> {
         }
     }
 
+    /// Handles application of a function to arguments, converting to an ExtendedTerm.
+    fn apply_to_extended_term(
+        &mut self,
+        function: &AcornValue,
+        args: &[AcornValue],
+        stack: &mut Vec<TermBinding>,
+        next_var_id: &mut AtomId,
+        synth: &mut Vec<AtomId>,
+    ) -> Result<ExtendedTerm, String> {
+        if let AcornValue::Lambda(_, return_value) = function {
+            let mut arg_terms = vec![];
+            for arg in args {
+                arg_terms.push(self.value_to_term(arg, stack, next_var_id, synth)?);
+            }
+            // Lambda arguments are bound variables
+            for arg in arg_terms {
+                stack.push(TermBinding::Bound(arg));
+            }
+            let answer = self.value_to_extended_term(&return_value, stack, next_var_id, synth);
+            stack.truncate(stack.len() - args.len());
+            return answer;
+        }
+
+        // We convert f(if a then b else c, d) into if a then f(b, d) else f(c, d).
+        // The "spine" logic makes branching work for f as well.
+        // If we discover a branching subterm, then we set cond and spine2.
+        let mut cond: Option<Literal> = None;
+        let mut spine1 = vec![];
+        let mut spine2 = vec![];
+
+        // First process the function
+        match self.value_to_extended_term(function, stack, next_var_id, synth)? {
+            ExtendedTerm::Term(t) => {
+                spine1.push(t);
+            }
+            ExtendedTerm::If(sub_cond, sub_then, sub_else) => {
+                cond = Some(sub_cond);
+                spine1.push(sub_then);
+                spine2.push(sub_else);
+            }
+            ExtendedTerm::Lambda(_, _) => {
+                return Err("unhandled case: lambda arg".to_string());
+            }
+        }
+
+        // Then process the arguments
+        for arg in args {
+            match self.value_to_extended_term(arg, stack, next_var_id, synth)? {
+                ExtendedTerm::Term(t) => {
+                    if !spine2.is_empty() {
+                        spine2.push(t.clone());
+                    }
+                    spine1.push(t);
+                }
+                ExtendedTerm::If(sub_cond, sub_then, sub_else) => {
+                    if !spine2.is_empty() {
+                        return Err("unhandled case: multiple if args".to_string());
+                    }
+                    cond = Some(sub_cond);
+                    spine2.extend(spine1.iter().cloned());
+                    spine1.push(sub_then);
+                    spine2.push(sub_else);
+                }
+                ExtendedTerm::Lambda(_, _) => {
+                    return Err("unhandled case: lambda arg".to_string());
+                }
+            }
+        }
+
+        // Determine the result type from the original application
+        let result_type = if let AcornValue::Application(app) =
+            &AcornValue::apply(function.clone(), args.to_vec())
+        {
+            self.map().get_type_id(&app.get_type())?
+        } else {
+            // Fallback: compute the type from function and args
+            let func_type = function.get_type();
+            if let AcornType::Function(fapp) = func_type {
+                if args.len() > fapp.arg_types.len() {
+                    return Err("too many arguments".to_string());
+                }
+                let remaining_args = fapp.arg_types.len() - args.len();
+                if remaining_args == 0 {
+                    self.map().get_type_id(&fapp.return_type)?
+                } else {
+                    let remaining_type = AcornType::functional(
+                        fapp.arg_types[args.len()..].to_vec(),
+                        (*fapp.return_type).clone(),
+                    );
+                    self.map().get_type_id(&remaining_type)?
+                }
+            } else {
+                return Err("cannot apply non-function".to_string());
+            }
+        };
+
+        match cond {
+            Some(cond) => {
+                assert_eq!(spine1.len(), spine2.len());
+                let then_term = Term::from_spine(spine1, result_type);
+                let else_term = Term::from_spine(spine2, result_type);
+                Ok(ExtendedTerm::If(cond, then_term, else_term))
+            }
+            None => {
+                assert!(spine2.is_empty());
+                let term = Term::from_spine(spine1, result_type);
+                Ok(ExtendedTerm::Term(term))
+            }
+        }
+    }
+
     /// Converts a value to an ExtendedTerm, which can appear in places a Term does.
     fn value_to_extended_term(
         &mut self,
@@ -742,63 +863,7 @@ impl NormalizerView<'_> {
                 Ok(ExtendedTerm::If(cond_lit, then_branch, else_branch))
             }
             AcornValue::Application(app) => {
-                if let AcornValue::Lambda(_, return_value) = &*app.function {
-                    let mut args = vec![];
-                    for arg in &app.args {
-                        args.push(self.value_to_term(arg, stack, next_var_id, synth)?);
-                    }
-                    // Lambda arguments are bound variables
-                    for arg in args {
-                        stack.push(TermBinding::Bound(arg));
-                    }
-                    let answer =
-                        self.value_to_extended_term(&return_value, stack, next_var_id, synth);
-                    stack.truncate(stack.len() - app.args.len());
-                    return answer;
-                }
-
-                // We convert f(if a then b else c, d) into if a then f(b, d) else f(c, d).
-                // The "spine" logic makes branching work for f as well.
-                // If we discover a branching subterm, then we set cond and spine2.
-                let mut cond: Option<Literal> = None;
-                let mut spine1 = vec![];
-                let mut spine2 = vec![];
-                for subterm in app.iter_spine() {
-                    match self.value_to_extended_term(subterm, stack, next_var_id, synth)? {
-                        ExtendedTerm::Term(t) => {
-                            if !spine2.is_empty() {
-                                spine2.push(t.clone());
-                            }
-                            spine1.push(t);
-                        }
-                        ExtendedTerm::If(sub_cond, sub_then, sub_else) => {
-                            if !spine2.is_empty() {
-                                return Err("unhandled case: multiple if args".to_string());
-                            }
-                            cond = Some(sub_cond);
-                            spine2.extend(spine1.iter().cloned());
-                            spine1.push(sub_then);
-                            spine2.push(sub_else);
-                        }
-                        ExtendedTerm::Lambda(_, _) => {
-                            return Err("unhandled case: lambda arg".to_string());
-                        }
-                    }
-                }
-                let term_type = self.map().get_type_id(&app.get_type())?;
-                match cond {
-                    Some(cond) => {
-                        assert_eq!(spine1.len(), spine2.len());
-                        let then_term = Term::from_spine(spine1, term_type);
-                        let else_term = Term::from_spine(spine2, term_type);
-                        Ok(ExtendedTerm::If(cond, then_term, else_term))
-                    }
-                    None => {
-                        assert!(spine2.is_empty());
-                        let term = Term::from_spine(spine1, term_type);
-                        Ok(ExtendedTerm::Term(term))
-                    }
-                }
+                self.apply_to_extended_term(&app.function, &app.args, stack, next_var_id, synth)
             }
             AcornValue::Variable(i, _) => {
                 if (*i as usize) < stack.len() {
