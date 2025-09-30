@@ -79,7 +79,7 @@ impl ExtendedTerm {
     }
 
     /// Convert an equality comparison between this ExtendedTerm and a Term into CNF.
-    pub fn eq_term_to_cnf(self, term: Term, negate: bool) -> Result<CNF, String> {
+    fn eq_term_to_cnf(self, term: Term, negate: bool) -> Result<CNF, String> {
         match self {
             ExtendedTerm::Term(left) => {
                 let literal = Literal::new(!negate, left, term);

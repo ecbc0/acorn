@@ -16,7 +16,7 @@ use crate::names::ConstantName;
 use crate::normalization_map::{NewConstantType, NormalizationMap};
 use crate::proof_step::{ProofStep, Truthiness};
 use crate::source::SourceType;
-use crate::term::{Term, TypeId};
+use crate::term::{Term, TypeId, BOOL};
 
 /// Information about the definition of a set of synthetic atoms.
 pub struct SyntheticDefinition {
@@ -540,6 +540,47 @@ impl NormalizerView<'_> {
             return Ok(answer);
         }
 
+        if let AcornType::Function(app) = left.get_type() {
+            // Comparing functions.
+            let arg_types: Vec<TypeId> = app
+                .arg_types
+                .iter()
+                .map(|t| self.map().get_type_id(t))
+                .collect::<Result<Vec<_>, _>>()?;
+            let result_type = self.map().get_type_id(&app.return_type)?;
+
+            if result_type == BOOL {
+                // Boolean functional comparison.
+                todo!();
+            }
+
+            // Non-boolean functional comparison.
+            let left = self.value_to_extended_term(left, stack, next_var_id, synth)?;
+            let right = self.value_to_extended_term(right, stack, next_var_id, synth)?;
+            if negate {
+                // Functional inequality.
+                // Create skolem terms for each argument
+                let args = self.make_skolem_terms(&app.arg_types, stack, synth)?;
+                // Apply the skolem terms to both sides
+                let left = left.apply(&args, result_type);
+                let right = right.apply(&args, result_type);
+                return left.eq_to_cnf(right, true);
+            }
+
+            // Functional equality.
+            // Create new free variables for each argument
+            let mut args = vec![];
+            for arg_type in &arg_types {
+                let var = Term::new_variable(*arg_type, *next_var_id);
+                *next_var_id += 1;
+                args.push(var);
+            }
+            // Apply the free variables to both sides
+            let left = left.apply(&args, result_type);
+            let right = right.apply(&args, result_type);
+            return left.eq_to_cnf(right, false);
+        }
+
         if left.is_bool_type() {
             if let Some((left_term, left_sign)) =
                 self.try_simple_value_to_signed_term(left, stack)?
@@ -557,55 +598,23 @@ impl NormalizerView<'_> {
             // This logic duplicates subterms. Either we need to be careful that we don't synthesize
             // variables in these calls, or we need to globally deduplicate at synthesis time.
             if negate {
-                // Inequality.
+                // Boolean inequality.
                 let some = self.or_to_cnf(left, right, true, true, stack, next_var_id, synth)?;
                 let not_both =
                     self.or_to_cnf(left, right, false, false, stack, next_var_id, synth)?;
-                Ok(some.and(not_both))
-            } else {
-                // Equality.
-                let l_imp_r =
-                    self.or_to_cnf(left, right, true, false, stack, next_var_id, synth)?;
-                let r_imp_l =
-                    self.or_to_cnf(left, right, false, true, stack, next_var_id, synth)?;
-                Ok(l_imp_r.and(r_imp_l))
+                return Ok(some.and(not_both));
             }
-        } else {
-            let left_type = left.get_type();
-            let left = self.value_to_extended_term(left, stack, next_var_id, synth)?;
-            let right = self.value_to_extended_term(right, stack, next_var_id, synth)?;
-            let (left, right) = if let AcornType::Function(app) = left_type {
-                let arg_types: Vec<TypeId> = app
-                    .arg_types
-                    .iter()
-                    .map(|t| self.map().get_type_id(t))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let result_type = self.map().get_type_id(&app.return_type)?;
-                if negate {
-                    // Create skolem terms for each argument
-                    let args = self.make_skolem_terms(&app.arg_types, stack, synth)?;
-                    // Apply the skolem terms to both sides
-                    let left = left.apply(&args, result_type);
-                    let right = right.apply(&args, result_type);
-                    (left, right)
-                } else {
-                    // Create new free variables for each argument
-                    let mut args = vec![];
-                    for arg_type in &arg_types {
-                        let var = Term::new_variable(*arg_type, *next_var_id);
-                        *next_var_id += 1;
-                        args.push(var);
-                    }
-                    // Apply the free variables to both sides
-                    let left = left.apply(&args, result_type);
-                    let right = right.apply(&args, result_type);
-                    (left, right)
-                }
-            } else {
-                (left, right)
-            };
-            left.eq_to_cnf(right, negate)
+
+            // Boolean equality.
+            let l_imp_r = self.or_to_cnf(left, right, true, false, stack, next_var_id, synth)?;
+            let r_imp_l = self.or_to_cnf(left, right, false, true, stack, next_var_id, synth)?;
+            return Ok(l_imp_r.and(r_imp_l));
         }
+
+        // Plain old equality of terms.
+        let left = self.value_to_extended_term(left, stack, next_var_id, synth)?;
+        let right = self.value_to_extended_term(right, stack, next_var_id, synth)?;
+        left.eq_to_cnf(right, negate)
     }
 
     /// Converts a value to a Term, if possible.
