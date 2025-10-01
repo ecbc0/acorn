@@ -581,6 +581,14 @@ impl NormalizerView<'_> {
                         self.apply_to_cnf(left, args.clone(), false, stack, next_var_id, synth)?;
                     let right_neg =
                         self.apply_to_cnf(right, args.clone(), true, stack, next_var_id, synth)?;
+                    if let Some((left_term, left_sign)) = left_pos.as_signed_term() {
+                        if let Some((right_term, right_sign)) = right_neg.as_signed_term() {
+                            // Both sides are terms, so we can do a simple equality or inequality
+                            let positive = left_sign == right_sign;
+                            let literal = Literal::new(positive, left_term, right_term);
+                            return Ok(CNF::from_literal(literal));
+                        }
+                    }
                     let left_neg =
                         self.apply_to_cnf(left, args.clone(), true, stack, next_var_id, synth)?;
                     let right_pos =
