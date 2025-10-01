@@ -1966,6 +1966,33 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_normalizing_pre_expanded_exists_inside_lambda() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            type Nat: axiom
+
+            let f: (Nat, Nat) -> Bool = axiom
+            let g: Nat -> Bool = axiom
+
+            theorem goal(a: Nat) {
+                g(a) = function(x: Nat) {
+                            exists(y: Nat) {
+                                f(x, y)
+                            }
+                        }(a)
+            }
+        "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(
+            &env,
+            "goal",
+            &["not g(x0) or f(x0, s0(x0))", "not f(x0, x1) or g(x0)"],
+        );
+    }
+
     // #[test]
     // fn test_normalizing_and_inside_arg() {
     //     let mut env = Environment::test();
