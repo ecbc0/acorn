@@ -975,15 +975,16 @@ impl Normalizer {
     ) -> Result<Vec<Clause>, String> {
         self.normalization_map.add_from(&value, ctype);
 
-        // It's hard to avoid expanding lambdas in value space, because the arguments
-        // can be anything, including things like partial applications.
-        // Also, it duplicates.
         // Maybe we actually want to synthesize atoms here, for every lambda?
         let value = value.expand_lambdas(0);
 
-        // The tricky bit about this replacement is that it is replacing lambdas.
-        // If we do synthesize atoms for lambdas, it could make this simpler.
-        let value = value.replace_function_equality(0);
+        // TODO: flip experiment to true.
+        let experiment = false;
+        let value = if experiment {
+            value
+        } else {
+            value.replace_function_equality(0)
+        };
 
         let mut skolem_ids = vec![];
         let mut mut_view = NormalizerView::Mut(self);
@@ -1994,6 +1995,31 @@ mod tests {
             &env,
             "goal",
             &["not g(x0) or f(x0, s0(x0))", "not f(x0, x1) or g(x0)"],
+        );
+    }
+
+    #[test]
+    fn test_more_normalizing_function_equality() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            type Nat: axiom
+
+            let is_min: (Nat -> Bool, Nat) -> Bool = axiom
+            let gcd_term: (Nat, Nat) -> Bool = axiom
+            let p: Nat = axiom
+            let f: Nat -> Bool = axiom
+
+            theorem goal {
+                is_min(gcd_term(p)) = f
+            }
+        "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(
+            &env,
+            "goal",
+            &["is_min(gcd_term(p), x0) = f(x0)", "is_min(gcd_term(p)) = f"],
         );
     }
 
