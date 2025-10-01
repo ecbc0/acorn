@@ -349,7 +349,11 @@ impl NormalizerView<'_> {
                 Ok(CNF::cnf_if(cond_lit, then_cnf, else_cnf))
             }
             AcornValue::Application(app) => {
-                self.apply_to_cnf(&app.function, &app.args, negate, stack, next_var_id, synth)
+                let mut arg_exts = vec![];
+                for arg in &app.args {
+                    arg_exts.push(self.value_to_extended_term(arg, stack, next_var_id, synth)?);
+                }
+                self.apply_to_cnf(&app.function, arg_exts, negate, stack, next_var_id, synth)
             }
             _ => {
                 let term = self
@@ -364,7 +368,7 @@ impl NormalizerView<'_> {
     fn apply_to_cnf(
         &mut self,
         function: &AcornValue,
-        args: &[AcornValue],
+        args: Vec<ExtendedTerm>,
         negate: bool,
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
@@ -373,27 +377,21 @@ impl NormalizerView<'_> {
         if let AcornValue::Lambda(_, return_value) = function {
             let mut arg_terms = vec![];
             for arg in args {
-                arg_terms.push(
-                    self.value_to_extended_term(arg, stack, next_var_id, synthesized)?
-                        .to_term()?,
-                );
+                arg_terms.push(arg.to_term()?);
             }
+            let num_args = arg_terms.len();
             // Lambda arguments are bound variables
             for arg in arg_terms {
                 stack.push(TermBinding::Bound(arg));
             }
             let answer = self.value_to_cnf(&return_value, negate, stack, next_var_id, synthesized);
-            stack.truncate(stack.len() - args.len());
+            stack.truncate(stack.len() - num_args);
             return answer;
         }
 
         // Fall back to converting via extended term
-        let mut arg_exts = vec![];
-        for arg in args {
-            arg_exts.push(self.value_to_extended_term(arg, stack, next_var_id, synthesized)?);
-        }
         let extended =
-            self.apply_to_extended_term(function, arg_exts, stack, next_var_id, synthesized)?;
+            self.apply_to_extended_term(function, args, stack, next_var_id, synthesized)?;
         match extended {
             ExtendedTerm::Term(term) => {
                 let literal = Literal::from_signed_term(term, !negate);
