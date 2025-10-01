@@ -2016,6 +2016,24 @@ mod tests {
         norm.check(&env, "goal", &["g(x0) = f(x0)", "g = f"]);
     }
 
+    #[test]
+    fn test_normalizing_boolean_function_inequality() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            type Nat: axiom
+            let f: Nat -> Bool = axiom
+            let g: Nat -> Bool = axiom
+
+            theorem goal {
+                f != g
+            }
+        "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(&env, "goal", &["g(s0) != f(s0)"]);
+    }
+
     // #[test]
     // fn test_normalizing_and_inside_arg() {
     //     let mut env = Environment::test();
