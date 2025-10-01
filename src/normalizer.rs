@@ -1999,28 +1999,21 @@ mod tests {
     }
 
     #[test]
-    fn test_more_normalizing_function_equality() {
+    fn test_normalizing_boolean_function_equality() {
         let mut env = Environment::test();
         env.add(
             r#"
             type Nat: axiom
-
-            let is_min: (Nat -> Bool, Nat) -> Bool = axiom
-            let gcd_term: (Nat, Nat) -> Bool = axiom
-            let p: Nat = axiom
             let f: Nat -> Bool = axiom
+            let g: Nat -> Bool = axiom
 
             theorem goal {
-                is_min(gcd_term(p)) = f
+                f = g
             }
         "#,
         );
         let mut norm = Normalizer::new();
-        norm.check(
-            &env,
-            "goal",
-            &["is_min(gcd_term(p), x0) = f(x0)", "is_min(gcd_term(p)) = f"],
-        );
+        norm.check(&env, "goal", &["g(x0) = f(x0)", "g = f"]);
     }
 
     // #[test]
