@@ -19,12 +19,12 @@ pub struct Literal {
 impl fmt::Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.positive {
-            if self.is_boolean() {
+            if self.is_signed_term() {
                 write!(f, "{}", self.left)
             } else {
                 write!(f, "{} = {}", self.left, self.right)
             }
-        } else if self.is_boolean() {
+        } else if self.is_signed_term() {
             write!(f, "not {}", self.left)
         } else {
             write!(f, "{} != {}", self.left, self.right)
@@ -158,8 +158,8 @@ impl Literal {
         !self.positive && self.left == self.right
     }
 
-    // Returns whether this literal is a boolean literal, i.e. "foo" or "!foo"
-    pub fn is_boolean(&self) -> bool {
+    // Returns whether this literal is a signed term, i.e. "foo" or "!foo"
+    pub fn is_signed_term(&self) -> bool {
         self.right.is_true()
     }
 

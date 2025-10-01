@@ -70,7 +70,7 @@ impl DisplayLiteral<'_> {
 impl fmt::Display for DisplayLiteral<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.literal.positive {
-            if self.literal.is_boolean() {
+            if self.literal.is_signed_term() {
                 write!(f, "{}", self.term(&self.literal.left))
             } else {
                 write!(
@@ -80,7 +80,7 @@ impl fmt::Display for DisplayLiteral<'_> {
                     self.term(&self.literal.right)
                 )
             }
-        } else if self.literal.is_boolean() {
+        } else if self.literal.is_signed_term() {
             write!(f, "not {}", self.term(&self.literal.left),)
         } else {
             write!(

@@ -2,6 +2,7 @@ use std::fmt;
 use std::vec;
 
 use crate::literal::Literal;
+use crate::term::Term;
 
 /// A CNF (Conjunctive Normal Form) formula represented as a vector of clauses,
 /// where each clause is a vector of literals.
@@ -116,14 +117,6 @@ impl CNF {
         self.0.len() == 1 && self.0[0].len() == 1
     }
 
-    fn as_single_literal(&self) -> Option<&Literal> {
-        if self.is_single_literal() {
-            Some(&self.0[0][0])
-        } else {
-            None
-        }
-    }
-
     fn into_single_literal(self) -> Literal {
         assert!(self.is_single_literal());
         self.0
@@ -161,68 +154,18 @@ impl CNF {
         }
     }
 
-    fn maybe_transform_eq_to_literal(self, other: CNF) -> Result<Literal, (CNF, CNF)> {
-        if let Some(self_bool) = self.to_bool() {
-            if other.is_literal() {
-                let other_lit = other.to_literal().unwrap();
-                if self_bool {
-                    Ok(other_lit)
-                } else {
-                    Ok(other_lit.negate())
-                }
-            } else {
-                Err((self, other))
-            }
-        } else if let Some(other_bool) = other.to_bool() {
-            if self.is_literal() {
-                let self_lit = self.to_literal().unwrap();
-                if other_bool {
-                    Ok(self_lit)
-                } else {
-                    Ok(self_lit.negate())
-                }
-            } else {
-                Err((self, other))
-            }
-        } else if self.is_single_literal() && other.is_single_literal() {
-            let self_lit = self.as_single_literal().unwrap();
-            let other_lit = other.as_single_literal().unwrap();
-            if self_lit.right.is_true() && other_lit.right.is_true() {
-                let self_lit = self.into_single_literal();
-                let other_lit = other.into_single_literal();
-                let positive = self_lit.positive == other_lit.positive;
-                Ok(Literal::new(positive, self_lit.left, other_lit.left))
-            } else {
-                Err((self, other))
-            }
+    /// Returns Some((term, positive)) if this CNF can be converted into a single signed term.
+    /// Returns None otherwise.
+    /// A boolean literal "foo" or "not foo" can be converted to (foo, true) or (foo, false).
+    pub fn as_signed_term(&self) -> Option<(Term, bool)> {
+        if !self.is_single_literal() {
+            return None;
+        }
+        let literal = &self.0[0][0];
+        if literal.is_signed_term() {
+            Some((literal.left.clone(), literal.positive))
         } else {
-            Err((self, other))
-        }
-    }
-
-    pub fn equals(self, other: CNF) -> CNF {
-        match self.maybe_transform_eq_to_literal(other) {
-            Ok(lit) => CNF::from_literal(lit),
-            Err((a, b)) => {
-                let neg_a = a.negate();
-                let neg_b = b.negate();
-                let a_imp_b = neg_a.or(b);
-                let b_imp_a = neg_b.or(a);
-                a_imp_b.and(b_imp_a)
-            }
-        }
-    }
-
-    pub fn not_equals(self, other: CNF) -> CNF {
-        match self.maybe_transform_eq_to_literal(other) {
-            Ok(lit) => CNF::from_literal(lit.negate()),
-            Err((a, b)) => {
-                let neg_a = a.negate();
-                let neg_b = b.negate();
-                let a_imp_not_b = neg_a.or(neg_b);
-                let not_a_imp_b = a.or(b);
-                a_imp_not_b.and(not_a_imp_b)
-            }
+            None
         }
     }
 
@@ -286,6 +229,7 @@ impl fmt::Display for CNF {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::term::Term;
 
     #[test]
     fn test_cnf_negate() {
@@ -305,28 +249,29 @@ mod tests {
     }
 
     #[test]
-    fn test_cnf_simple_equality() {
-        let cnf1 = CNF::parse("x0");
-        let cnf2 = CNF::parse("not x1");
+    fn test_as_signed_term() {
+        // Positive boolean literal
+        let cnf = CNF::parse("x0");
+        let (term, positive) = cnf.as_signed_term().unwrap();
+        assert_eq!(term, Term::parse("x0"));
+        assert_eq!(positive, true);
 
-        assert_eq!(cnf1.clone().equals(cnf2.clone()), CNF::parse("x0 != x1"));
-        assert_eq!(cnf2.clone().equals(cnf1.clone()), CNF::parse("x0 != x1"));
-        assert_eq!(cnf1.clone().not_equals(cnf2.clone()), CNF::parse("x0 = x1"));
-        assert_eq!(cnf2.clone().not_equals(cnf1.clone()), CNF::parse("x0 = x1"));
-    }
+        // Negative boolean literal
+        let cnf = CNF::parse("not x0");
+        let (term, positive) = cnf.as_signed_term().unwrap();
+        assert_eq!(term, Term::parse("x0"));
+        assert_eq!(positive, false);
 
-    #[test]
-    fn test_cnf_tricky_equality() {
-        let cnf1 = CNF::parse("x0 = x1");
-        let cnf2 = CNF::parse("x2 = x3");
+        // Equality - should return None
+        let cnf = CNF::parse("x0 = x1");
+        assert_eq!(cnf.as_signed_term(), None);
 
-        assert_eq!(
-            cnf1.clone().equals(cnf2.clone()).to_string(),
-            "x0 != x1 or x2 = x3 and x2 != x3 or x0 = x1"
-        );
-        assert_eq!(
-            cnf1.clone().not_equals(cnf2.clone()).to_string(),
-            "x0 != x1 or x2 != x3 and x0 = x1 or x2 = x3"
-        );
+        // Multiple clauses - should return None
+        let cnf = CNF::parse("x0 and x1");
+        assert_eq!(cnf.as_signed_term(), None);
+
+        // Disjunction - should return None
+        let cnf = CNF::parse("x0 or x1");
+        assert_eq!(cnf.as_signed_term(), None);
     }
 }
