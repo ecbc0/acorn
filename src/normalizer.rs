@@ -567,7 +567,43 @@ impl NormalizerView<'_> {
             let result_type = self.map().get_type_id(&app.return_type)?;
 
             if result_type == BOOL {
-                todo!("boolean function comparison");
+                // Boolean functional comparison.
+                if negate {
+                    // Boolean functional inequality.
+                    // Create skolem terms for each argument
+                    let arg_terms = self.make_skolem_terms(&app.arg_types, stack, synth)?;
+                    let args: Vec<_> = arg_terms.into_iter().map(ExtendedTerm::Term).collect();
+                    let left_pos =
+                        self.apply_to_cnf(left, args.clone(), false, stack, next_var_id, synth)?;
+                    let right_pos =
+                        self.apply_to_cnf(right, args.clone(), false, stack, next_var_id, synth)?;
+                    let left_neg =
+                        self.apply_to_cnf(left, args.clone(), true, stack, next_var_id, synth)?;
+                    let right_neg =
+                        self.apply_to_cnf(right, args, true, stack, next_var_id, synth)?;
+                    let some = left_pos.or(right_pos);
+                    let not_both = left_neg.or(right_neg);
+                    return Ok(some.and(not_both));
+                }
+
+                // Boolean functional equality.
+                // Create new free variables for each argument
+                let mut args = vec![];
+                for arg_type in &arg_types {
+                    let var = Term::new_variable(*arg_type, *next_var_id);
+                    *next_var_id += 1;
+                    args.push(ExtendedTerm::Term(var));
+                }
+                let left_pos =
+                    self.apply_to_cnf(left, args.clone(), false, stack, next_var_id, synth)?;
+                let right_pos =
+                    self.apply_to_cnf(right, args.clone(), false, stack, next_var_id, synth)?;
+                let left_neg =
+                    self.apply_to_cnf(left, args.clone(), true, stack, next_var_id, synth)?;
+                let right_neg = self.apply_to_cnf(right, args, true, stack, next_var_id, synth)?;
+                let l_imp_r = left_neg.or(right_pos);
+                let r_imp_l = left_pos.or(right_neg);
+                return Ok(l_imp_r.and(r_imp_l));
             }
 
             // Non-boolean functional comparison.

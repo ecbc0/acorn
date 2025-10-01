@@ -6,6 +6,7 @@ use crate::term::{Term, TypeId};
 // An ExtendedTerm is like a term in the sense that a comparison between two of them can be converted
 // into a CNF formula.
 // They can be Boolean or have non-Boolean types.
+#[derive(Clone, Debug)]
 pub enum ExtendedTerm {
     Term(Term),
 
