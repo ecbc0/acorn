@@ -579,12 +579,12 @@ impl NormalizerView<'_> {
                     let args: Vec<_> = arg_terms.into_iter().map(ExtendedTerm::Term).collect();
                     let left_pos =
                         self.apply_to_cnf(left, args.clone(), false, stack, next_var_id, synth)?;
-                    let right_pos =
-                        self.apply_to_cnf(right, args.clone(), false, stack, next_var_id, synth)?;
+                    let right_neg =
+                        self.apply_to_cnf(right, args.clone(), true, stack, next_var_id, synth)?;
                     let left_neg =
                         self.apply_to_cnf(left, args.clone(), true, stack, next_var_id, synth)?;
-                    let right_neg =
-                        self.apply_to_cnf(right, args, true, stack, next_var_id, synth)?;
+                    let right_pos =
+                        self.apply_to_cnf(right, args, false, stack, next_var_id, synth)?;
                     let some = left_pos.or(right_pos);
                     let not_both = left_neg.or(right_neg);
                     return Ok(some.and(not_both));
