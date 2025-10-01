@@ -157,6 +157,21 @@ impl Term {
         )
     }
 
+    /// Iterates over all variables in the term (recursively through arguments)
+    /// Returns (AtomId, TypeId) pairs for each variable found
+    pub fn iter_vars(&self) -> Box<dyn Iterator<Item = (AtomId, TypeId)> + '_> {
+        let head_var = if let Atom::Variable(id) = self.head {
+            Some((id, self.head_type))
+        } else {
+            None
+        };
+        Box::new(
+            head_var
+                .into_iter()
+                .chain(self.args.iter().flat_map(|arg| arg.iter_vars())),
+        )
+    }
+
     /// This doesn't change the term type, so the caller is responsible for making sure
     /// the type is correct.
     pub fn push_arg(&mut self, arg: Term) {

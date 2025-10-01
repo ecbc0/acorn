@@ -436,14 +436,18 @@ impl NormalizerView<'_> {
     ) -> Result<Vec<Term>, String> {
         let mut args = vec![];
         let mut arg_types = vec![];
+        let mut seen_vars = std::collections::HashSet::new();
+
         for binding in stack.iter() {
-            if let TermBinding::Free(term) = binding {
-                if term.is_variable() {
-                    args.push(term.clone());
-                    arg_types.push(self.map().get_type(term.term_type).clone());
+            for (var_id, type_id) in binding.term().iter_vars() {
+                if seen_vars.insert(var_id) {
+                    let var_term = Term::new_variable(type_id, var_id);
+                    args.push(var_term);
+                    arg_types.push(self.map().get_type(type_id).clone());
                 }
             }
         }
+
         let mut output = vec![];
         for t in skolem_types {
             // Each existential quantifier needs a new skolem atom.
