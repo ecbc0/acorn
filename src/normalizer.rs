@@ -997,7 +997,8 @@ impl Normalizer {
     ) -> Result<Vec<Clause>, String> {
         self.normalization_map.add_from(&value, ctype);
 
-        // TODO: can we remove this?
+        // TODO: can we remove this? Expanding them doesn't really seem right.
+        // Maybe we can inline lambdas instead of expanding them.
         let value = value.expand_lambdas(0);
 
         let mut skolem_ids = vec![];
@@ -2136,22 +2137,22 @@ mod tests {
             r#"
             type Foo: axiom
             let a: Foo = axiom
-            let g: Foo -> Bool = axiom
+            let b: Foo = axiom
+            let g: (Foo, Foo) -> Bool = axiom
 
             theorem goal {
                 function(f: Foo -> Bool) {
                     f(a)
-                }
-                (
+                }(
                     function(x: Foo) {
-                        g(x)
+                        g(x, b)
                     }
                 )
             }
         "#,
         );
         let mut norm = Normalizer::new();
-        norm.check(&env, "goal", &["g(a)"]);
+        norm.check(&env, "goal", &["g(a, b)"]);
     }
 
     // #[test]
