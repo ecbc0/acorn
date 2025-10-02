@@ -132,6 +132,14 @@ impl CNF {
         self.is_true_value() || self.is_false_value() || self.is_single_literal()
     }
 
+    pub fn as_literal(&self) -> Option<&Literal> {
+        if self.is_single_literal() {
+            Some(&self.0[0][0])
+        } else {
+            None
+        }
+    }
+
     pub fn to_literal(self) -> Option<Literal> {
         if self.is_true_value() {
             Some(Literal::true_value())

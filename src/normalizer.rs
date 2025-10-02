@@ -2015,6 +2015,60 @@ mod tests {
     }
 
     #[test]
+    fn test_normalizing_exists_inside_neq_lambda() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            type Nat: axiom
+
+            let f: (Nat, Nat) -> Bool = axiom
+            let g: Nat -> Bool = axiom
+
+            theorem goal {
+                g != function(x: Nat) {
+                        exists(y: Nat) {
+                            f(x, y)
+                        }
+                    }
+            }
+        "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(
+            &env,
+            "goal",
+            &["not f(s0, x0) or not g(s0)", "f(s0, s1) or g(s0)"],
+        );
+    }
+
+    #[test]
+    fn test_normalizing_forall_inside_neq_lambda() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            type Nat: axiom
+
+            let f: (Nat, Nat) -> Bool = axiom
+            let g: Nat -> Bool = axiom
+
+            theorem goal {
+                g != function(x: Nat) {
+                        forall(y: Nat) {
+                            f(x, y)
+                        }
+                    }
+            }
+        "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(
+            &env,
+            "goal",
+            &["not f(s0, s1) or not g(s0)", "f(s0, x0) or g(s0)"],
+        );
+    }
+
+    #[test]
     fn test_normalizing_pre_expanded_exists_inside_lambda() {
         let mut env = Environment::test();
         env.add(
