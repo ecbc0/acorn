@@ -140,15 +140,16 @@ impl CNF {
         }
     }
 
-    // Whether these two CNF formulas are actually the same thing, but one is the negation of the other.
-    pub fn equals_negated(&self, other: &CNF) -> bool {
-        let Some(self_lit) = self.as_literal() else {
-            return false;
-        };
-        let Some(other_lit) = other.as_literal() else {
-            return false;
-        };
-        self_lit.equals_negated(other_lit)
+    // If these CNFs each represent a single signed term, and they are negations of each other,
+    // return this term's signed term form.
+    pub fn match_negated(&self, other: &CNF) -> Option<(&Term, bool)> {
+        let (self_term, self_sign) = self.as_signed_term()?;
+        let (other_term, other_sign) = other.as_signed_term()?;
+        if self_term == other_term && self_sign != other_sign {
+            Some((&self_term, self_sign))
+        } else {
+            None
+        }
     }
 
     pub fn to_literal(self) -> Option<Literal> {
@@ -176,13 +177,13 @@ impl CNF {
     /// Returns Some((term, positive)) if this CNF can be converted into a single signed term.
     /// Returns None otherwise.
     /// A boolean literal "foo" or "not foo" can be converted to (foo, true) or (foo, false).
-    pub fn as_signed_term(&self) -> Option<(Term, bool)> {
+    pub fn as_signed_term(&self) -> Option<(&Term, bool)> {
         if !self.is_single_literal() {
             return None;
         }
         let literal = &self.0[0][0];
         if literal.is_signed_term() {
-            Some((literal.left.clone(), literal.positive))
+            Some((&literal.left, literal.positive))
         } else {
             None
         }
@@ -272,13 +273,13 @@ mod tests {
         // Positive boolean literal
         let cnf = CNF::parse("x0");
         let (term, positive) = cnf.as_signed_term().unwrap();
-        assert_eq!(term, Term::parse("x0"));
+        assert_eq!(term, &Term::parse("x0"));
         assert_eq!(positive, true);
 
         // Negative boolean literal
         let cnf = CNF::parse("not x0");
         let (term, positive) = cnf.as_signed_term().unwrap();
-        assert_eq!(term, Term::parse("x0"));
+        assert_eq!(term, &Term::parse("x0"));
         assert_eq!(positive, false);
 
         // Equality - should return None

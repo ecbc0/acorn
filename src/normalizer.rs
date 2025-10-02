@@ -579,23 +579,27 @@ impl NormalizerView<'_> {
                     let args: Vec<_> = arg_terms.into_iter().map(ExtendedTerm::Term).collect();
                     let left_pos =
                         self.apply_to_cnf(left, args.clone(), false, stack, next_var_id, synth)?;
-                    let right_neg =
-                        self.apply_to_cnf(right, args.clone(), true, stack, next_var_id, synth)?;
-                    if let Some((left_term, left_sign)) = left_pos.as_signed_term() {
-                        if let Some((right_term, right_sign)) = right_neg.as_signed_term() {
-                            // Both sides are terms, so we can do a simple equality or inequality
-                            let positive = left_sign == right_sign;
-                            let literal = Literal::new(positive, left_term, right_term);
-                            return Ok(CNF::from_literal(literal));
-                        }
-                    }
                     let left_neg =
                         self.apply_to_cnf(left, args.clone(), true, stack, next_var_id, synth)?;
                     let right_pos =
-                        self.apply_to_cnf(right, args, false, stack, next_var_id, synth)?;
+                        self.apply_to_cnf(right, args.clone(), false, stack, next_var_id, synth)?;
+                    let right_neg =
+                        self.apply_to_cnf(right, args, true, stack, next_var_id, synth)?;
+
+                    if let Some((left_term, left_sign)) = left_pos.match_negated(&left_neg) {
+                        if let Some((right_term, right_sign)) = right_pos.match_negated(&right_neg)
+                        {
+                            // Both sides are simple, so we can return a single literal.
+                            let positive = left_sign != right_sign;
+                            let literal =
+                                Literal::new(positive, left_term.clone(), right_term.clone());
+                            return Ok(CNF::from_literal(literal));
+                        }
+                    }
+
                     let some = left_pos.or(right_pos);
                     let not_both = left_neg.or(right_neg);
-                    return Ok(some.and(not_both));
+                    return Ok(not_both.and(some));
                 }
 
                 // Boolean functional equality.
@@ -608,19 +612,21 @@ impl NormalizerView<'_> {
                 }
                 let left_pos =
                     self.apply_to_cnf(left, args.clone(), false, stack, next_var_id, synth)?;
+                let left_neg =
+                    self.apply_to_cnf(left, args.clone(), true, stack, next_var_id, synth)?;
                 let right_pos =
                     self.apply_to_cnf(right, args.clone(), false, stack, next_var_id, synth)?;
-                if let Some((left_term, left_sign)) = left_pos.as_signed_term() {
-                    if let Some((right_term, right_sign)) = right_pos.as_signed_term() {
-                        // Both sides are terms, so we can do a simple equality or inequality
+                let right_neg = self.apply_to_cnf(right, args, true, stack, next_var_id, synth)?;
+
+                if let Some((left_term, left_sign)) = left_pos.match_negated(&left_neg) {
+                    if let Some((right_term, right_sign)) = right_pos.match_negated(&right_neg) {
+                        // Both sides are simple, so we can return a single literal.
                         let positive = left_sign == right_sign;
-                        let literal = Literal::new(positive, left_term, right_term);
+                        let literal = Literal::new(positive, left_term.clone(), right_term.clone());
                         return Ok(CNF::from_literal(literal));
                     }
                 }
-                let left_neg =
-                    self.apply_to_cnf(left, args.clone(), true, stack, next_var_id, synth)?;
-                let right_neg = self.apply_to_cnf(right, args, true, stack, next_var_id, synth)?;
+
                 let l_imp_r = left_neg.or(right_pos);
                 let r_imp_l = left_pos.or(right_neg);
                 return Ok(l_imp_r.and(r_imp_l));
@@ -991,16 +997,8 @@ impl Normalizer {
     ) -> Result<Vec<Clause>, String> {
         self.normalization_map.add_from(&value, ctype);
 
-        // Maybe we actually want to synthesize atoms here, for every lambda?
+        // TODO: can we remove this?
         let value = value.expand_lambdas(0);
-
-        // TODO: flip experiment to true.
-        let experiment = false;
-        let value = if experiment {
-            value
-        } else {
-            value.replace_function_equality(0)
-        };
 
         let mut skolem_ids = vec![];
         let mut mut_view = NormalizerView::Mut(self);
