@@ -2129,6 +2129,47 @@ mod tests {
         norm.check(&env, "goal", &["g(s0) != f(s0)"]);
     }
 
+    #[test]
+    fn test_normalizing_lambda_inside_lambda() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            type T: axiom
+            type Foo: axiom
+            let nil: Foo = axiom
+            let cons: (T, Foo) -> Foo = axiom
+            let p: (Foo, T) -> Bool = axiom
+            let item: T = axiom
+
+            theorem goal {
+                function (x0: Foo -> Bool) {
+                    (
+                        x0(nil) and
+                        forall (x1: T, x2: Foo) {
+                            x0(x2) implies x0(cons(x1, x2))
+                        }
+                    ) implies
+                    forall (x1: Foo) { x0(x1) }
+                }
+                (
+                    function (x0: Foo) {
+                        p(x0, item)
+                    }
+                )
+            }
+        "#,
+        );
+        let mut norm = Normalizer::new();
+        norm.check(
+            &env,
+            "goal",
+            &[
+                "not p(nil, item) or p(s1, item) or p(x0, item)",
+                "not p(cons(s0, s1), item) or not p(nil, item) or p(x0, item)",
+            ],
+        );
+    }
+
     // #[test]
     // fn test_normalizing_and_inside_arg() {
     //     let mut env = Environment::test();
