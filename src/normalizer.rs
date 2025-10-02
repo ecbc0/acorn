@@ -355,13 +355,14 @@ impl NormalizerView<'_> {
                 }
                 self.apply_to_cnf(&app.function, arg_exts, negate, stack, next_var_id, synth)
             }
-            _ => {
+            AcornValue::Variable(..) | AcornValue::Constant(..) | AcornValue::Lambda(..) => {
                 let term = self
                     .value_to_extended_term(value, stack, next_var_id, synth)?
                     .to_term()?;
                 let literal = Literal::from_signed_term(term, !negate);
                 Ok(CNF::from_literal(literal))
             }
+            AcornValue::Match(..) => Err("match in unexpected position".to_string()),
         }
     }
 
@@ -2155,25 +2156,31 @@ mod tests {
         norm.check(&env, "goal", &["g(a, b)"]);
     }
 
-    // #[test]
-    // fn test_normalizing_and_inside_arg() {
-    //     let mut env = Environment::test();
-    //     env.add(
-    //         r#"
-    //         structure BoxedBool {
-    //             value: Bool
-    //         }
+    #[test]
+    fn test_normalizing_and_inside_arg() {
+        let mut env = Environment::test();
+        env.add(
+            r#"
+            structure BoxedBool {
+                value: Bool
+            }
 
-    //         let f: (BoxedBool, BoxedBool) -> BoxedBool = axiom
+            let f: (BoxedBool, BoxedBool) -> BoxedBool = axiom
 
-    //         theorem goal {
-    //             f = function(a: BoxedBool, b: BoxedBool) {
-    //                 BoxedBool.new(a.value and b.value)
-    //             }
-    //         }
-    //     "#,
-    //     );
-    //     let mut norm = Normalizer::new();
-    //     norm.check(&env, "goal", &["todo"]);
-    // }
+            theorem goal {
+                f = function(a: BoxedBool, b: BoxedBool) {
+                    BoxedBool.new(a.value and b.value)
+                }
+            }
+        "#,
+        );
+
+        // TODO: flip the experiment to true
+        let experiment = false;
+
+        if experiment {
+            let mut norm = Normalizer::new();
+            norm.check(&env, "goal", &["todo"]);
+        }
+    }
 }
