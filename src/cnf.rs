@@ -1,6 +1,7 @@
 use std::fmt;
 use std::vec;
 
+use crate::clause::Clause;
 use crate::literal::Literal;
 use crate::term::Term;
 
@@ -110,6 +111,14 @@ impl CNF {
 
     pub fn into_iter(self) -> impl Iterator<Item = Vec<Literal>> {
         self.0.into_iter()
+    }
+
+    pub fn into_clauses(self) -> Vec<Clause> {
+        self.0
+            .into_iter()
+            .filter(|literals| !literals.iter().any(|l| l.is_tautology()))
+            .map(Clause::new)
+            .collect()
     }
 
     // Plain "true" or "false" are zero literals, not a single literal.

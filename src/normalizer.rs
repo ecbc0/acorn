@@ -144,7 +144,18 @@ impl Normalizer {
     }
 
     /// Adds the definition for these synthetic atoms.
-    fn define_synthetic_atoms(&mut self, atoms: Vec<AtomId>, clauses: Vec<Clause>) {
+    fn define_synthetic_atoms(
+        &mut self,
+        atoms: Vec<AtomId>,
+        clauses: Vec<Clause>,
+    ) -> Result<(), String> {
+        // Check if any atoms are already defined
+        for atom in &atoms {
+            if self.synthetic_definitions.contains_key(atom) {
+                return Err(format!("synthetic atom {} is already defined", atom));
+            }
+        }
+
         // In the synthetic key, we normalize synthetic ids by renumbering them.
         let synthetic_key_form: Vec<_> = clauses
             .iter()
@@ -163,6 +174,7 @@ impl Normalizer {
             self.synthetic_definitions.insert(*atom, info.clone());
         }
         self.synthetic_map.insert(key, info);
+        Ok(())
     }
 
     pub fn add_local_constant(&mut self, cname: ConstantName) -> Atom {
@@ -231,16 +243,7 @@ impl NormalizerView<'_> {
                 let mut next_var_id = 0;
                 let cnf =
                     self.value_to_cnf(&value, false, &mut stack, &mut next_var_id, synthesized)?;
-                let mut clauses = vec![];
-                for literals in cnf.into_iter() {
-                    if literals.iter().any(|l| l.is_tautology()) {
-                        // This clause is always true, so skip it.
-                        continue;
-                    }
-                    let clause = Clause::new(literals);
-                    clauses.push(clause);
-                }
-                Ok(clauses)
+                Ok(cnf.into_clauses())
             }
         }
     }
@@ -951,10 +954,7 @@ impl NormalizerView<'_> {
                     Ok(ExtendedTerm::Term(self.map().term_from_monomorph(&c)?))
                 }
             }
-            AcornValue::Not(_) => Err(
-                "cannot convert negation to extended term (should be handled at CNF level)"
-                    .to_string(),
-            ),
+            AcornValue::Not(_) => Err("negation in unexpected position".to_string()),
             AcornValue::Lambda(arg_types, body) => {
                 // Create variable terms for each lambda argument
                 let mut args = vec![];
@@ -979,10 +979,18 @@ impl NormalizerView<'_> {
 
                 Ok(ExtendedTerm::Lambda(args, body_term))
             }
-            AcornValue::Bool(_) => Err(
-                "cannot convert boolean to extended term (should be handled at CNF level)"
-                    .to_string(),
-            ),
+            AcornValue::Bool(_) => Err("boolean in unexpected position".to_string()),
+            value if value.is_bool_type() => {
+                // Synthesize a term to represent this value.
+
+                // TODO:
+                // 1. make the skolem term
+                // 2. do eq_to_cnf to get the definition
+                // 3. add the definition
+                // 4. return the skolem term
+
+                Err("TODO: synthesize term for boolean".to_string())
+            }
             _ => Err(format!("cannot convert '{}' to extended term", value)),
         }
     }
@@ -1008,7 +1016,7 @@ impl Normalizer {
 
         if !skolem_ids.is_empty() {
             // We have to define the skolem atoms that were declared during skolemization.
-            self.define_synthetic_atoms(skolem_ids, clauses.clone());
+            self.define_synthetic_atoms(skolem_ids, clauses.clone())?;
         }
 
         Ok(clauses)
