@@ -140,6 +140,17 @@ impl CNF {
         }
     }
 
+    // Whether these two CNF formulas are actually the same thing, but one is the negation of the other.
+    pub fn equals_negated(&self, other: &CNF) -> bool {
+        let Some(self_lit) = self.as_literal() else {
+            return false;
+        };
+        let Some(other_lit) = other.as_literal() else {
+            return false;
+        };
+        self_lit.equals_negated(other_lit)
+    }
+
     pub fn to_literal(self) -> Option<Literal> {
         if self.is_true_value() {
             Some(Literal::true_value())

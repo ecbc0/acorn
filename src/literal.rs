@@ -117,6 +117,11 @@ impl Literal {
         }
     }
 
+    /// Whether these two literals are the same thing, but one is the negation of the other.
+    pub fn equals_negated(&self, other: &Literal) -> bool {
+        self.positive != other.positive && self.left == other.left && self.right == other.right
+    }
+
     /// Extracts the polarity from this literal, returning a positive version and the original polarity.
     /// If the literal is already positive, returns (self, true).
     /// If the literal is negative, returns (positive version, false).
