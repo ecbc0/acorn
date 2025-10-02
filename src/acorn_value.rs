@@ -766,133 +766,6 @@ impl AcornValue {
         }
     }
 
-    /// Converts function types to a primitive type by applying them to new unbound variables.
-    /// Inserts these unbound variables as new stack variables starting at stack_size.
-    /// Returns the types of the newly created unbound variables, along with the converted value.
-    fn apply_to_free_variables(self, stack_size: AtomId) -> (Vec<AcornType>, AcornValue) {
-        let current_type = self.get_type();
-        if let AcornType::Function(ftype) = current_type {
-            let shifted = self.insert_stack(stack_size, ftype.arg_types.len() as AtomId);
-            let new_value = AcornValue::Application(FunctionApplication {
-                function: Box::new(shifted),
-                args: ftype
-                    .arg_types
-                    .iter()
-                    .enumerate()
-                    .map(|(i, t)| AcornValue::Variable(stack_size + i as AtomId, t.clone()))
-                    .collect(),
-            });
-
-            // We need to recurse in case we have functions that generate more functions.
-            let (mut new_args, final_value) = new_value.apply_to_free_variables(stack_size);
-            new_args.extend(ftype.arg_types);
-            (new_args, final_value)
-        } else {
-            (vec![], self)
-        }
-    }
-
-    /// Replaces functional comparisons with comparisons between primitive values.
-    /// f = g is equivalent to forall(x) { f(x) = g(x) }
-    /// f != g is equivalent to exists(x) { f(x) != g(x) }
-    pub fn replace_function_equality(&self, stack_size: AtomId) -> AcornValue {
-        match self {
-            AcornValue::Application(app) => AcornValue::Application(FunctionApplication {
-                function: Box::new(app.function.replace_function_equality(stack_size)),
-                args: app
-                    .args
-                    .iter()
-                    .map(|x| x.replace_function_equality(stack_size))
-                    .collect(),
-            }),
-            AcornValue::Binary(BinaryOp::Equals, left, right) => {
-                let (left_quants, left) = left
-                    .replace_function_equality(stack_size)
-                    .apply_to_free_variables(stack_size);
-                let (right_quants, right) = right
-                    .replace_function_equality(stack_size)
-                    .apply_to_free_variables(stack_size);
-                assert_eq!(left_quants, right_quants);
-                let equality =
-                    AcornValue::Binary(BinaryOp::Equals, Box::new(left), Box::new(right));
-                let answer = if left_quants.is_empty() {
-                    equality
-                } else {
-                    AcornValue::ForAll(left_quants, Box::new(equality))
-                };
-                answer
-            }
-            AcornValue::Binary(BinaryOp::NotEquals, left, right) => {
-                let (left_quants, left) = left
-                    .replace_function_equality(stack_size)
-                    .apply_to_free_variables(stack_size);
-                let (right_quants, right) = right
-                    .replace_function_equality(stack_size)
-                    .apply_to_free_variables(stack_size);
-                assert_eq!(left_quants, right_quants);
-                let inequality =
-                    AcornValue::Binary(BinaryOp::NotEquals, Box::new(left), Box::new(right));
-                if left_quants.is_empty() {
-                    inequality
-                } else {
-                    AcornValue::Exists(left_quants, Box::new(inequality))
-                }
-            }
-            AcornValue::Binary(op, left, right) => AcornValue::Binary(
-                *op,
-                Box::new(left.replace_function_equality(stack_size)),
-                Box::new(right.replace_function_equality(stack_size)),
-            ),
-            AcornValue::Not(x) => {
-                AcornValue::Not(Box::new(x.replace_function_equality(stack_size)))
-            }
-            AcornValue::ForAll(quants, value) => {
-                let new_stack_size = stack_size + quants.len() as AtomId;
-                AcornValue::ForAll(
-                    quants.clone(),
-                    Box::new(value.replace_function_equality(new_stack_size)),
-                )
-            }
-            AcornValue::Exists(quants, value) => {
-                let new_stack_size = stack_size + quants.len() as AtomId;
-                AcornValue::Exists(
-                    quants.clone(),
-                    Box::new(value.replace_function_equality(new_stack_size)),
-                )
-            }
-            AcornValue::Lambda(args, value) => {
-                let new_stack_size = stack_size + args.len() as AtomId;
-                AcornValue::Lambda(
-                    args.clone(),
-                    Box::new(value.replace_function_equality(new_stack_size)),
-                )
-            }
-            AcornValue::IfThenElse(cond, if_value, else_value) => AcornValue::IfThenElse(
-                Box::new(cond.replace_function_equality(stack_size)),
-                Box::new(if_value.replace_function_equality(stack_size)),
-                Box::new(else_value.replace_function_equality(stack_size)),
-            ),
-            AcornValue::Match(scrutinee, cases) => {
-                let new_scrutinee = scrutinee.replace_function_equality(stack_size);
-                let new_cases = cases
-                    .iter()
-                    .map(|(new_vars, pattern, result)| {
-                        let new_stack_size = stack_size + new_vars.len() as AtomId;
-                        (
-                            new_vars.clone(),
-                            pattern.replace_function_equality(new_stack_size),
-                            result.replace_function_equality(new_stack_size),
-                        )
-                    })
-                    .collect();
-                AcornValue::Match(Box::new(new_scrutinee), new_cases)
-            }
-            AcornValue::Variable(_, _) | AcornValue::Constant(_) | AcornValue::Bool(_) => {
-                self.clone()
-            }
-        }
-    }
-
     /// Attempts to remove all lambdas from a value.
     ///
     /// Replaces lambda(...) { value } (args) by substituting the args into the value.
@@ -932,7 +805,10 @@ impl AcornValue {
             }
             AcornValue::Exists(quants, value) => {
                 let new_stack_size = stack_size + quants.len() as AtomId;
-                AcornValue::Exists(quants.clone(), Box::new(value.expand_lambdas(new_stack_size)))
+                AcornValue::Exists(
+                    quants.clone(),
+                    Box::new(value.expand_lambdas(new_stack_size)),
+                )
             }
             AcornValue::Lambda(args, value) => {
                 let new_stack_size = stack_size + args.len() as AtomId;
@@ -958,7 +834,9 @@ impl AcornValue {
                     .collect();
                 AcornValue::Match(Box::new(new_scrutinee), new_cases)
             }
-            AcornValue::Variable(_, _) | AcornValue::Constant(_) | AcornValue::Bool(_) => self.clone(),
+            AcornValue::Variable(_, _) | AcornValue::Constant(_) | AcornValue::Bool(_) => {
+                self.clone()
+            }
         }
     }
 
