@@ -469,7 +469,9 @@ impl Term {
         });
 
         for arg in &self.args {
-            answer.args.push(arg.replace_variables(var_ids, replacement_terms));
+            answer
+                .args
+                .push(arg.replace_variables(var_ids, replacement_terms));
         }
 
         answer

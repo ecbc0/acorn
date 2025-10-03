@@ -98,10 +98,11 @@ async fn main() {
 
     // Handle the --doc_root flag
     if let Some(doc_root) = args.doc_root {
-        let mut project = Project::new_local(&current_dir, ProjectConfig::default()).unwrap_or_else(|e| {
-            println!("Error loading project: {}", e);
-            std::process::exit(1);
-        });
+        let mut project = Project::new_local(&current_dir, ProjectConfig::default())
+            .unwrap_or_else(|e| {
+                println!("Error loading project: {}", e);
+                std::process::exit(1);
+            });
         project.add_src_targets();
         match DocGenerator::new(&project).generate(&doc_root) {
             Ok(count) => {

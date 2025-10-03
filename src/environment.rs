@@ -613,7 +613,6 @@ impl Environment {
         cursor.descend(0);
         &cursor.env().bindings
     }
-
 }
 
 /// Each line has a LineType, to handle line-based user interface.

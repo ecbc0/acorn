@@ -40,7 +40,11 @@ impl ProjectManager {
         let guard = self.project.read().await;
         let cancel = self.cancel.read().await.clone();
         let epoch = self.epoch.load(Ordering::SeqCst);
-        ProjectView { guard, cancel, epoch }
+        ProjectView {
+            guard,
+            cancel,
+            epoch,
+        }
     }
 
     /// Mutates the project with exclusive access

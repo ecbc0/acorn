@@ -621,7 +621,7 @@ impl TermGraph {
                 discovered_inequalities.push((unequal_group, new_group));
             }
         }
-        
+
         // Handle inequalities discovered through rekeying
         for (group1, group2) in discovered_inequalities {
             self.handle_inequality(group1, group2);
@@ -630,7 +630,9 @@ impl TermGraph {
         // Merge the old info into the new info
         {
             let new_info = match &mut self.groups[new_group.get() as usize] {
-                PossibleGroupInfo::Remapped(id) => panic!("group {} is remapped to {}", new_group, id),
+                PossibleGroupInfo::Remapped(id) => {
+                    panic!("group {} is remapped to {}", new_group, id)
+                }
                 PossibleGroupInfo::Info(info) => info,
             };
             new_info.terms.extend(old_info.terms);
@@ -641,16 +643,22 @@ impl TermGraph {
                 }
             }
         }
-        
+
         // Collect inequalities that need reverse updates
         let inequalities_to_check: Vec<_> = {
             let new_info = match &self.groups[new_group.get() as usize] {
-                PossibleGroupInfo::Remapped(id) => panic!("group {} is remapped to {}", new_group, id),
+                PossibleGroupInfo::Remapped(id) => {
+                    panic!("group {} is remapped to {}", new_group, id)
+                }
                 PossibleGroupInfo::Info(info) => info,
             };
-            new_info.inequalities.iter().map(|(&g, &v)| (g, v)).collect()
+            new_info
+                .inequalities
+                .iter()
+                .map(|(&g, &v)| (g, v))
+                .collect()
         };
-        
+
         // Now update the reverse inequalities and collect new ones to handle
         let mut new_inequalities = Vec::new();
         for (group, value) in inequalities_to_check {
@@ -663,7 +671,7 @@ impl TermGraph {
                 new_inequalities.push((group, new_group));
             }
         }
-        
+
         // Handle all new inequalities discovered through group merging
         for (group1, group2) in new_inequalities {
             self.handle_inequality(group1, group2);

@@ -1,23 +1,8 @@
-# Acorn Development Guide
+## Instructions
 
-Primarily for the use of the Claude Code tool.
-
-## Build/Test Commands
-
-- The Rust test suite: `cargo test -q`
-- Run a single Rust test: `cargo test -q test_name`
-
-- The slow and extensive global reverify:
-  `cargo run --release -- --reverify`
-  This generally doesn't have to be run, but if the user asks for it we can.
-
-## Code Style Guidelines
-
-- Use Rust 2021 edition idioms
-- Variable names: snake_case
-- Type names: PascalCase
-- When adding new features, follow existing patterns for similar constructs
-- For language features, make sure to test both valid and invalid inputs
+- When writing Rust code, before telling the user you're finished, you should run the tests and autoformat:
+  `cargo test`
+  `cargo fmt`
 
 ## Project Structure
 

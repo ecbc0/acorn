@@ -345,7 +345,10 @@ impl<'a> Builder<'a> {
     pub fn log_loading_error(&mut self, descriptor: &ModuleDescriptor, error: &CompilationError) {
         let display_path = self.project.display_path(descriptor);
         let line = error.range().start.line + 1;
-        let log_message = format!("{}, line {}: compilation error: {}", display_path, line, error);
+        let log_message = format!(
+            "{}, line {}: compilation error: {}",
+            display_path, line, error
+        );
         let diagnostic = Diagnostic {
             range: error.range(),
             severity: Some(DiagnosticSeverity::ERROR),

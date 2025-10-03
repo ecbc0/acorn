@@ -21,9 +21,7 @@ const MODEL_BYTES: &[u8] = include_bytes!("../files/models/model-2024-09-25-15-3
 
 fn make_session(bytes: &[u8]) -> Result<Arc<Session>, Box<dyn Error>> {
     ort::init()
-        .with_execution_providers([CPUExecutionProvider::default()
-            .build()
-            .error_on_failure()])
+        .with_execution_providers([CPUExecutionProvider::default().build().error_on_failure()])
         .commit()?;
 
     let session = Session::builder()?
@@ -38,10 +36,11 @@ impl OrtModel {
     // Loads a model from bytes.
     // The bytes are typically preloaded into the binary with include_bytes!.
     fn load_bytes(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
-        let session = GLOBAL_SESSION.get_or_init(|| {
-            make_session(bytes).expect("Failed to initialize ORT session")
-        });
-        Ok(OrtModel { session: Arc::clone(session) })
+        let session = GLOBAL_SESSION
+            .get_or_init(|| make_session(bytes).expect("Failed to initialize ORT session"));
+        Ok(OrtModel {
+            session: Arc::clone(session),
+        })
     }
 
     // Loads the hardcoded model.

@@ -1930,10 +1930,8 @@ impl Environment {
         for quantifier in &fas.quantifiers {
             // Check if the name is already bound
             if let Declaration::Typed(name_token, _) = quantifier {
-                self.bindings.check_unqualified_name_available(
-                    &name_token.to_string(),
-                    name_token,
-                )?;
+                self.bindings
+                    .check_unqualified_name_available(&name_token.to_string(), name_token)?;
             }
             let (arg_name, arg_type) = self.evaluator(project).evaluate_declaration(quantifier)?;
             args.push((arg_name, arg_type));

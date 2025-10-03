@@ -15,8 +15,8 @@ static GLOBAL: MiMalloc = MiMalloc;
 fn main() {
     let current_dir = std::env::current_dir().unwrap();
     for _ in 0..1 {
-        let mut verifier =
-            Verifier::new(current_dir.clone(), ProjectConfig::default(), None).expect("Failed to create verifier");
+        let mut verifier = Verifier::new(current_dir.clone(), ProjectConfig::default(), None)
+            .expect("Failed to create verifier");
         verifier.builder.check_hashes = false;
 
         let output = verifier.run().unwrap();

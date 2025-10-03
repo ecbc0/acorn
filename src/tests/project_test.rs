@@ -12,7 +12,9 @@ use indoc::indoc;
 fn expect_build_ok(project: &Project) -> i32 {
     let mut events: Vec<BuildEvent> = vec![];
     let (status, searches_success) = {
-        let mut builder = Builder::new(&project, CancellationToken::new(), |event| events.push(event));
+        let mut builder = Builder::new(&project, CancellationToken::new(), |event| {
+            events.push(event)
+        });
         builder.build();
         (builder.status, builder.metrics.searches_success)
     };
@@ -31,7 +33,6 @@ type NotFoo: axiom
 let foo: Foo = axiom
 define fooify(x: Foo) -> Foo { foo }
 "#;
-
 
 #[test]
 fn test_update_file_first_call_drops_modules() {
@@ -65,7 +66,8 @@ fn test_update_file_first_call_drops_modules() {
 
     // Step 3: Now call update_file with new content that adds a theorem
     // This simulates VS Code opening the file and making the first edit+save
-    let content_with_theorem = "type Nat: axiom\nlet zero: Nat = axiom\n\ntheorem test_theorem { true }";
+    let content_with_theorem =
+        "type Nat: axiom\nlet zero: Nat = axiom\n\ntheorem test_theorem { true }";
 
     // This is the FIRST update_file call for this path
     // The bug: it won't drop modules because the file isn't in open_files yet
@@ -225,7 +227,6 @@ fn test_target_outside_library() {
         .expect("adding outside target failed");
     expect_build_ok(&p);
 }
-
 
 #[test]
 fn test_completions() {

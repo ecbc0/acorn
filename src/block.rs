@@ -423,9 +423,9 @@ impl Node {
         prop: Option<Proposition>,
     ) -> Node {
         let fact = match prop {
-            Some(prop) => Some(Fact::Proposition(
-                Arc::new(env.bindings.expand_theorems(prop, project)),
-            )),
+            Some(prop) => Some(Fact::Proposition(Arc::new(
+                env.bindings.expand_theorems(prop, project),
+            ))),
             None => None,
         };
         Node::Block(block, fact)
@@ -490,7 +490,6 @@ impl Node {
         }
     }
 
-
     /// Whether the fact at this node is importable.
     pub fn importable(&self) -> bool {
         self.source().map_or(false, |s| s.importable)
@@ -511,7 +510,6 @@ impl Node {
     pub fn source_name(&self) -> Option<String> {
         self.source()?.name()
     }
-
 
     /// Returns the name and value, if this node is a theorem.
     pub fn as_theorem(&self) -> Option<(&str, &AcornValue)> {
@@ -595,8 +593,6 @@ impl<'a> NodeCursor<'a> {
         let (env, index) = self.annotated_path.last().unwrap();
         &env.nodes[*index]
     }
-
-
 
     /// Can use this as an identifier for the iterator, to compare two of them
     pub fn path(&self) -> Vec<usize> {

@@ -434,7 +434,7 @@ impl NormalizerView<'_> {
     // Returns terms representing the applied skolem functions.
     fn make_skolem_terms(
         &mut self,
-        skolem_types: &Vec<AcornType>,
+        skolem_types: &[AcornType],
         stack: &Vec<TermBinding>,
         synthesized: &mut Vec<AtomId>,
     ) -> Result<Vec<Term>, String> {
@@ -472,6 +472,17 @@ impl NormalizerView<'_> {
             output.push(skolem_term);
         }
         Ok(output)
+    }
+
+    fn make_skolem_term(
+        &mut self,
+        skolem_type: &AcornType,
+        stack: &Vec<TermBinding>,
+        synthesized: &mut Vec<AtomId>,
+    ) -> Result<Term, String> {
+        let mut terms =
+            self.make_skolem_terms(std::slice::from_ref(skolem_type), stack, synthesized)?;
+        Ok(terms.pop().unwrap())
     }
 
     // Convert an "exists" node in a value, or the equivalent, to CNF.
@@ -982,6 +993,8 @@ impl NormalizerView<'_> {
             AcornValue::Bool(_) => Err("boolean in unexpected position".to_string()),
             value if value.is_bool_type() => {
                 // Synthesize a term to represent this value.
+
+                let _skolem_term = self.make_skolem_term(&AcornType::Bool, stack, synth)?;
 
                 // TODO:
                 // 1. make the skolem term
