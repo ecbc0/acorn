@@ -993,14 +993,15 @@ impl NormalizerView<'_> {
             AcornValue::Bool(_) => Err("boolean in unexpected position".to_string()),
             value if value.is_bool_type() => {
                 // Synthesize a term to represent this value.
-
-                let _skolem_term = self.make_skolem_term(&AcornType::Bool, stack, synth)?;
+                let skolem_term = self.make_skolem_term(&AcornType::Bool, stack, synth)?;
+                let _skolem_value = self
+                    .as_ref()
+                    .denormalize_term(&skolem_term, &mut None, None);
 
                 // TODO:
-                // 1. make the skolem term
-                // 2. do eq_to_cnf to get the definition
-                // 3. add the definition
-                // 4. return the skolem term
+                // 1. do eq_to_cnf to get the definition
+                // 2. add the definition
+                // 3. return the skolem term
 
                 Err("TODO: synthesize term for boolean".to_string())
             }
@@ -1077,8 +1078,8 @@ impl Normalizer {
                 //      f(a) = g(b)
                 //   2. Make extensionality more powerful, so that it can deduce f(a) = g(b).
                 let view = NormalizerView::Ref(self);
-                let left_term = view.force_simple_value_to_term(left, &mut vec![])?;
-                let right_term = view.force_simple_value_to_term(right, &mut vec![])?;
+                let left_term = view.force_simple_value_to_term(left, &vec![])?;
+                let right_term = view.force_simple_value_to_term(right, &vec![])?;
                 let literal = Literal::new(true, left_term, right_term);
                 let clause = Clause::new(vec![literal]);
                 clauses.push(clause);
@@ -1116,7 +1117,7 @@ impl Normalizer {
                 SourceType::ConstantDefinition(value, _) => {
                     let view = NormalizerView::Ref(self);
                     let term = view
-                        .force_simple_value_to_term(value, &mut vec![])
+                        .force_simple_value_to_term(value, &vec![])
                         .map_err(|msg| {
                             BuildError::new(
                                 range,
@@ -1183,7 +1184,7 @@ impl Normalizer {
         &self,
         atom_type: TypeId,
         atom: &Atom,
-        var_types: &mut Vec<AcornType>,
+        var_types: &mut Option<Vec<AcornType>>,
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
         let acorn_type = self.normalization_map.get_type(atom_type).clone();
@@ -1206,13 +1207,15 @@ impl Normalizer {
                         return AcornValue::constant(name.clone(), vec![], acorn_type);
                     }
                 }
-                let index = *i as usize;
-                if index < var_types.len() {
-                    assert_eq!(var_types[index], acorn_type);
-                } else if index == var_types.len() {
-                    var_types.push(acorn_type.clone());
-                } else {
-                    panic!("variable index out of order");
+                if let Some(var_types) = var_types {
+                    let index = *i as usize;
+                    if index < var_types.len() {
+                        assert_eq!(var_types[index], acorn_type);
+                    } else if index == var_types.len() {
+                        var_types.push(acorn_type.clone());
+                    } else {
+                        panic!("variable index out of order");
+                    }
                 }
                 AcornValue::Variable(*i, acorn_type)
             }
@@ -1230,7 +1233,7 @@ impl Normalizer {
     fn denormalize_term(
         &self,
         term: &Term,
-        var_types: &mut Vec<AcornType>,
+        var_types: &mut Option<Vec<AcornType>>,
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
         let head = self.denormalize_atom(term.head_type, &term.head, var_types, arbitrary_names);
@@ -1244,11 +1247,12 @@ impl Normalizer {
 
     /// If arbitrary names are provided, any free variables of the keyed types are converted
     /// to constants.
+    /// If var_types is provided, we accumulate the types of any free variables we encounter.
     /// Any other free variables are left unbound. Their types are accumulated.
     fn denormalize_literal(
         &self,
         literal: &Literal,
-        var_types: &mut Vec<AcornType>,
+        var_types: &mut Option<Vec<AcornType>>,
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
         let left = self.denormalize_term(&literal.left, var_types, arbitrary_names);
@@ -1280,7 +1284,7 @@ impl Normalizer {
         if clause.literals.is_empty() {
             return AcornValue::Bool(false);
         }
-        let mut var_types = vec![];
+        let mut var_types = Some(vec![]);
         let mut denormalized_literals = vec![];
         for literal in &clause.literals {
             denormalized_literals.push(self.denormalize_literal(
@@ -1290,7 +1294,7 @@ impl Normalizer {
             ));
         }
         let disjunction = AcornValue::reduce(BinaryOp::Or, denormalized_literals);
-        AcornValue::forall(var_types, disjunction)
+        AcornValue::forall(var_types.unwrap(), disjunction)
     }
 
     pub fn denormalize_type(&self, type_id: TypeId) -> AcornType {
