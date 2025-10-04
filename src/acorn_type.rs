@@ -239,14 +239,14 @@ impl fmt::Display for TypeParam {
 impl TypeParam {
     /// Converts a list of type parameters to a string representation.
     pub fn params_to_str(params: &[TypeParam]) -> String {
-        let mut result = "<".to_string();
+        let mut result = "[".to_string();
         for (i, param) in params.iter().enumerate() {
             if i > 0 {
                 result.push_str(", ");
             }
             result.push_str(&format!("{}", param));
         }
-        result.push('>');
+        result.push(']');
         result
     }
 }
@@ -560,7 +560,7 @@ impl fmt::Display for AcornType {
             AcornType::Data(datatype, params) => {
                 write!(f, "{}", datatype.name)?;
                 if !params.is_empty() {
-                    write!(f, "<{}>", AcornType::types_to_str(params))?;
+                    write!(f, "[{}]", AcornType::types_to_str(params))?;
                 }
                 Ok(())
             }
