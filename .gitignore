@@ -7,3 +7,4 @@ profile.json*
 *vsix
 
 **/.claude/settings.local.json
+bun.lock
