@@ -994,14 +994,16 @@ impl NormalizerView<'_> {
             value if value.is_bool_type() => {
                 // Synthesize a term to represent this value.
                 let skolem_term = self.make_skolem_term(&AcornType::Bool, stack, synth)?;
-                let _skolem_value = self
+                let skolem_value = self
                     .as_ref()
                     .denormalize_term(&skolem_term, &mut None, None);
 
+                let _definition_cnf =
+                    self.eq_to_cnf(&skolem_value, value, false, stack, next_var_id, synth)?;
+
                 // TODO:
-                // 1. do eq_to_cnf to get the definition
-                // 2. add the definition
-                // 3. return the skolem term
+                // 1. add the definition
+                // 2. return the skolem term
 
                 Err("TODO: synthesize term for boolean".to_string())
             }
