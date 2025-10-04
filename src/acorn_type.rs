@@ -126,7 +126,7 @@ impl PotentialType {
 
     /// If this potential type represents a base datatype, ie with no type parameters,
     /// return a reference to the datatype.
-    /// Thus, Nat is a base datatype, and List<T> is a base datatype, but List<Bool> is not.
+    /// Thus, Nat is a base datatype, and List[T] is a base datatype, but List[Bool] is not.
     pub fn as_base_datatype(&self) -> Option<&Datatype> {
         match self {
             PotentialType::Resolved(AcornType::Data(datatype, params)) => {
@@ -276,7 +276,7 @@ pub enum AcornType {
     /// For example, in:
     ///
     /// ```acorn
-    /// theorem reverse_twice<T>(list: List<T>) {
+    /// theorem reverse_twice[T](list: List[T]) {
     ///     // Imagine some proof here.
     ///     list.reverse.reverse = list
     /// }
