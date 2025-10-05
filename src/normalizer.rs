@@ -994,18 +994,20 @@ impl NormalizerView<'_> {
             value if value.is_bool_type() => {
                 // Synthesize a term to represent this value.
                 let skolem_term = self.make_skolem_term(&AcornType::Bool, stack, synth)?;
+                let skolem_id = if let Atom::Synthetic(id) = skolem_term.head {
+                    id
+                } else {
+                    return Err("internal error: skolem term is not synthetic".to_string());
+                };
                 let skolem_value = self
                     .as_ref()
                     .denormalize_term(&skolem_term, &mut None, None);
-
-                let _definition_cnf =
+                let definition_cnf =
                     self.eq_to_cnf(&skolem_value, value, false, stack, next_var_id, synth)?;
-
-                // TODO:
-                // 1. add the definition
-                // 2. return the skolem term
-
-                Err("TODO: synthesize term for boolean".to_string())
+                let clauses = definition_cnf.clone().into_clauses();
+                self.as_mut()?
+                    .define_synthetic_atoms(vec![skolem_id], clauses)?;
+                Ok(ExtendedTerm::Term(skolem_term))
             }
             _ => Err(format!("cannot convert '{}' to extended term", value)),
         }
