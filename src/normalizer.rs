@@ -1032,12 +1032,27 @@ impl Normalizer {
         let mut mut_view = NormalizerView::Mut(self);
         let clauses = mut_view.nice_value_to_clauses(&value, &mut skolem_ids)?;
 
-        if !skolem_ids.is_empty() {
-            // We have to define the skolem atoms that were declared during skolemization.
-            self.define_synthetic_atoms(skolem_ids, clauses.clone())?;
+        // For any of the created ids that have not been defined yet, the output
+        // clauses will be their definition.
+        let mut output = vec![];
+        let mut undefined_ids = vec![];
+        for id in skolem_ids {
+            if let Some(def) = self.synthetic_definitions.get(&id) {
+                for clause in &def.clauses {
+                    output.push(clause.clone());
+                }
+            } else {
+                undefined_ids.push(id);
+            }
         }
 
-        Ok(clauses)
+        if !undefined_ids.is_empty() {
+            // We have to define the skolem atoms that were declared during skolemization.
+            self.define_synthetic_atoms(undefined_ids, clauses.clone())?;
+        }
+
+        output.extend(clauses.into_iter());
+        Ok(output)
     }
 
     /// Converts a value to CNF: Conjunctive Normal Form.
