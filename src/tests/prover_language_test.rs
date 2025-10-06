@@ -1407,3 +1407,21 @@ fn test_proving_with_default_required_attribute() {
         "#;
     verify_succeeds(text);
 }
+
+#[test]
+fn test_proving_with_boxed_bool() {
+    let text = r#"
+    structure BoxedBool {
+        value: Bool
+    }
+
+    define boxed_and(a: BoxedBool, b: BoxedBool) -> BoxedBool {
+        BoxedBool.new(a.value and b.value)
+    }
+    
+    theorem goal(b: BoxedBool) {
+        not b.value implies not boxed_and(b, b).value
+    }
+    "#;
+    verify_succeeds(text);
+}
