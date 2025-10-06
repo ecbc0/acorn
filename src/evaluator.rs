@@ -866,7 +866,12 @@ impl<'a> Evaluator<'a> {
                 }
                 TokenType::Equals | TokenType::Iff => {
                     AcornType::Bool.check_eq(expected_type, token)?;
-                    let left_value = self.evaluate_value_with_stack(stack, left, None)?;
+                    let left_expected = if token.token_type == TokenType::Iff {
+                        Some(&AcornType::Bool)
+                    } else {
+                        None
+                    };
+                    let left_value = self.evaluate_value_with_stack(stack, left, left_expected)?;
                     let right_value =
                         self.evaluate_value_with_stack(stack, right, Some(&left_value.get_type()))?;
                     AcornValue::Binary(
