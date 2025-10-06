@@ -2021,3 +2021,16 @@ fn test_iff_basics() {
     "#,
     )
 }
+
+#[test]
+fn test_iff_not_allowed_for_non_bool() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+    type Nat: axiom
+    let m: Nat = axiom
+    let n: Nat = axiom
+    "#,
+    );
+    env.bad("let b: Bool = (m iff n)");
+}
