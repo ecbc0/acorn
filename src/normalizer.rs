@@ -2219,12 +2219,16 @@ mod tests {
         "#,
         );
 
-        // TODO: flip the experiment to true
-        let experiment = false;
-
-        if experiment {
-            let mut norm = Normalizer::new();
-            norm.check(&env, "goal", &["todo"]);
-        }
+        let mut norm = Normalizer::new();
+        norm.check(
+            &env,
+            "goal",
+            &[
+                "not s0(x0, x1) or BoxedBool.value(x0)",
+                "not s0(x0, x1) or BoxedBool.value(x1)",
+                "not BoxedBool.value(x0) or not BoxedBool.value(x1) or s0(x0, x1)",
+                "BoxedBool.new(s0(x0, x1)) = f(x0, x1)",
+            ],
+        );
     }
 }
