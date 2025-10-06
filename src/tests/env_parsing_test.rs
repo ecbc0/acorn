@@ -2009,3 +2009,15 @@ fn test_reusing_goal_arg_name() {
         "#,
     );
 }
+
+#[test]
+fn test_iff_basics() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+    theorem goal(a: Bool, b: Bool) {
+        a or b iff b or a
+    }
+    "#,
+    )
+}
