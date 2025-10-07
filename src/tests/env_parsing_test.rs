@@ -529,24 +529,28 @@ fn test_cant_reuse_type_param_name() {
 }
 
 #[test]
-fn test_no_params_on_member_functions() {
+fn test_params_on_member_functions() {
     let mut env = Environment::test();
     env.add(
         r#"
-            structure BoolPair {
-                first: Bool
-                second: Bool
-            }
-            "#,
+        structure BoolPair {
+            first: Bool
+            second: Bool
+        }
+        "#,
     );
-    env.bad(
+    env.add(
         r#"
-            attributes BoolPair {
-                define apply_first<T>(self, f: Bool -> T) -> T {
-                    f(self.first)
-                }
+        attributes BoolPair {
+            define apply_first<T>(self, f: Bool -> T) -> T {
+                f(self.first)
             }
-            "#,
+        }
+
+        theorem type_attr_syntax(b: BoolPair, f: Bool -> Bool) {
+            BoolPair.apply_first(b, f) = f(b.first)
+        }
+        "#,
     );
 }
 
@@ -1788,24 +1792,24 @@ fn test_generic_return_types() {
     );
 }
 
-// #[test]
-// fn test_env_attribute_with_extra_type_param() {
-//     let mut env = Environment::test();
-//     env.add(
-//         r#"
-//     structure Pair<T, U> {
-//         first: T
-//         second: U
-//     }
+#[test]
+fn test_env_attribute_with_extra_type_param() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+    structure Pair<T, U> {
+        first: T
+        second: U
+    }
 
-//     attributes Pair<T, U> {
-//         define map_first<V>(self, f: T -> V) -> V {
-//             f(self.first)
-//         }
-//     }
-//     "#,
-//     );
-// }
+    attributes Pair<T, U> {
+        define map_first<V>(self, f: T -> V) -> V {
+            f(self.first)
+        }
+    }
+    "#,
+    );
+}
 
 #[test]
 fn test_aliasing_a_generic_type() {
