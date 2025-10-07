@@ -1588,7 +1588,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn test_generic_types() {
         check_type("List[List[T]]");
         check_type("List[List[X] -> List[Y], List[Y] -> List[X]]");
