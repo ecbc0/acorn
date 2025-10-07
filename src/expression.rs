@@ -1588,21 +1588,22 @@ mod tests {
     }
 
     #[test]
+    #[test]
     fn test_generic_types() {
-        check_type("List<List<T>>");
-        check_type("List<List<X> -> List<Y>, List<Y> -> List<X>>");
-        check_type("List<(foo.Foo, bar.Bar) -> baz.Baz<Qux>>");
-        check_type("Pair<Bool, Bool>");
+        check_type("List[List[T]]");
+        check_type("List[List[X] -> List[Y], List[Y] -> List[X]]");
+        check_type("List[(foo.Foo, bar.Bar) -> baz.Baz[Qux]]");
+        check_type("Pair[Bool, Bool]");
     }
 
     #[test]
     fn test_type_params_in_expressions() {
-        check_value("foo<T>");
-        check_value("List<T>.new");
-        check_value("map(add<Int>, myList)");
-        check_value("is_surjective(identity<T>)");
-        check_value("foo.bar<T>");
-        check_value("maps_to<Bool, Bool>(not2, false)");
+        check_value("foo[T]");
+        check_value("List[T].new");
+        check_value("map(add[Int], myList)");
+        check_value("is_surjective(identity[T])");
+        check_value("foo.bar[T]");
+        check_value("maps_to[Bool, Bool](not2, false)");
     }
 
     #[test]
@@ -1612,11 +1613,16 @@ mod tests {
 
     #[test]
     fn test_multiple_type_params_in_argument() {
-        check_value("forall(p: Pair<Bool, Bool>) { true }");
+        check_value("forall(p: Pair[Bool, Bool]) { true }");
     }
 
     #[test]
     fn test_instantiated_method_expression() {
-        check_value("Pair<Foo, Bar>.new(foo, bar)");
+        check_value("Pair[Foo, Bar].new(foo, bar)");
+    }
+
+    #[test]
+    fn test_nested_generics_with_method() {
+        check_value("List[Pair[T1, T2]].new(nil)");
     }
 }
