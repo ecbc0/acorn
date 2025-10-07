@@ -519,7 +519,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parsing_attribute_with_extra_explicit_type_param() {
+    fn test_parsing_attribute_with_extra_type_param() {
         ok(indoc! {"
         attributes List<T> {
             define map<U>(self, f: T -> U) -> List<U> {
