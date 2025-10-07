@@ -550,6 +550,10 @@ fn test_param_on_member_function() {
         theorem type_attr_syntax(b: BoolPair, f: Bool -> Bool) {
             BoolPair.apply_first(b, f) = f(b.first)
         }
+
+        theorem obj_attr_syntax(b: BoolPair, f: Bool -> Bool) {
+            b.apply_first(f) = f(b.first)
+        }
         "#,
     );
 }
@@ -572,6 +576,10 @@ fn test_env_attribute_with_extra_type_param() {
 
         theorem type_attr_syntax<A, B, C>(p: Pair<A, B>, f: A -> C) {
             Pair.map_first(p, f) = f(p.first)
+        }
+
+        theorem obj_attr_syntax<A, B, C>(p: Pair<A, B>, f: A -> C) {
+            p.map_first(f) = f(p.first)
         }
         "#,
     );

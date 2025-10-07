@@ -431,7 +431,7 @@ impl<'a> Evaluator<'a> {
         receiver: AcornValue,
         attr_name: &str,
         source: &dyn ErrorSource,
-    ) -> compilation::Result<AcornValue> {
+    ) -> compilation::Result<PotentialValue> {
         let base_type = receiver.get_type();
 
         let function = match &base_type {
@@ -455,7 +455,7 @@ impl<'a> Evaluator<'a> {
             }
         };
         self.bindings
-            .apply_potential(function, vec![receiver], None, source)
+            .try_apply_potential(function, vec![receiver], None, source)
     }
 
     /// Evaluates a single name, which may be namespaced to another named entity.
@@ -470,8 +470,8 @@ impl<'a> Evaluator<'a> {
         let name = name_token.text();
         let entity = match namespace {
             Some(NamedEntity::Value(instance)) => {
-                let value = self.evaluate_value_attr(instance, name, name_token)?;
-                NamedEntity::Value(value)
+                let potential = self.evaluate_value_attr(instance, name, name_token)?;
+                NamedEntity::new(potential)
             }
             Some(NamedEntity::Type(t)) => {
                 match &t {
@@ -739,7 +739,16 @@ impl<'a> Evaluator<'a> {
         let right_value = self.evaluate_value_with_stack(stack, right, None)?;
 
         // Get the partial application to the left
-        let partial = self.evaluate_value_attr(left_value, name, expression)?;
+        let potential = self.evaluate_value_attr(left_value, name, expression)?;
+        let partial = match potential {
+            PotentialValue::Resolved(v) => v,
+            PotentialValue::Unresolved(_) => {
+                return Err(expression.error(&format!(
+                    "cannot use unresolved generic function for '{}' operator",
+                    token
+                )))
+            }
+        };
         let mut fa = match partial {
             AcornValue::Application(fa) => fa,
             _ => {
@@ -836,7 +845,16 @@ impl<'a> Evaluator<'a> {
                 token_type => match token_type.to_prefix_magic_method_name() {
                     Some(name) => {
                         let subvalue = self.evaluate_value_with_stack(stack, expr, None)?;
-                        let value = self.evaluate_value_attr(subvalue, name, token)?;
+                        let potential = self.evaluate_value_attr(subvalue, name, token)?;
+                        let value = match potential {
+                            PotentialValue::Resolved(v) => v,
+                            PotentialValue::Unresolved(_) => {
+                                return Err(token.error(&format!(
+                                    "cannot use unresolved generic function for '{}' operator",
+                                    token
+                                )))
+                            }
+                        };
                         value.check_type(expected_type, token)?;
                         value
                     }

@@ -185,10 +185,6 @@ impl<'a> TypeUnifier<'a> {
         let unresolved_return_type = if args.is_empty() {
             unresolved.generic_type.clone()
         } else if let AcornType::Function(unresolved_function_type) = &unresolved.generic_type {
-            if unresolved_function_type.has_arbitrary() {
-                return Err(source.error("unresolved function type has arbitrary"));
-            }
-
             for (i, arg) in args.iter().enumerate() {
                 if arg.has_generic() {
                     return Err(
@@ -246,6 +242,100 @@ impl<'a> TypeUnifier<'a> {
         let value = AcornValue::apply(instance_fn, args);
         value.check_type(expected_return_type, source)?;
         Ok(value)
+    }
+
+    /// Try to resolve with inference, allowing partial resolution.
+    /// If all type parameters can be inferred, returns a resolved value.
+    /// If some cannot be inferred, returns an unresolved partial application.
+    pub fn try_resolve_with_inference(
+        &mut self,
+        unresolved: UnresolvedConstant,
+        args: Vec<AcornValue>,
+        expected_return_type: Option<&AcornType>,
+        source: &dyn ErrorSource,
+    ) -> compilation::Result<PotentialValue> {
+        // Use the arguments to infer types
+        let unresolved_return_type = if args.is_empty() {
+            unresolved.generic_type.clone()
+        } else if let AcornType::Function(unresolved_function_type) = &unresolved.generic_type {
+            for (i, arg) in args.iter().enumerate() {
+                if arg.has_generic() {
+                    return Err(
+                        source.error(&format!("argument {} ({}) has unresolved type", i, arg))
+                    );
+                }
+                let arg_type: &AcornType = match &unresolved_function_type.arg_types.get(i) {
+                    Some(t) => t,
+                    None => {
+                        return Err(source.error(&format!(
+                            "expected {} arguments but got {}",
+                            unresolved_function_type.arg_types.len(),
+                            args.len()
+                        )));
+                    }
+                };
+                self.user_match_instance(
+                    arg_type,
+                    &arg.get_type(),
+                    &format!("argument {}", i),
+                    source,
+                )?;
+            }
+
+            unresolved_function_type.applied_type(args.len())
+        } else {
+            return Err(source.error("expected a function type"));
+        };
+
+        if let Some(target_type) = expected_return_type {
+            // Use the expected type to infer types
+            self.user_match_instance(&unresolved_return_type, target_type, "return value", source)?;
+        }
+
+        // Determine which parameters have been inferred and which haven't
+        let mut all_params = vec![];
+        let mut uninferred_params = vec![];
+
+        for param in &unresolved.params {
+            match self.mapping.get(&param.name) {
+                Some(t) => {
+                    // Parameter was inferred from arguments
+                    all_params.push(t.clone());
+                }
+                None => {
+                    // Parameter not inferred - keep as type variable
+                    all_params.push(AcornType::Variable(param.clone()));
+                    uninferred_params.push(param.clone());
+                }
+            }
+        }
+
+        if uninferred_params.is_empty() {
+            // All parameters inferred - fully resolve
+            let instance_fn = unresolved.resolve(source, all_params)?;
+            let value = AcornValue::apply(instance_fn, args);
+            value.check_type(expected_return_type, source)?;
+            Ok(PotentialValue::Resolved(value))
+        } else {
+            // Some parameters not inferred - partially resolve and keep rest unresolved
+            let const_name = unresolved.name.clone();
+
+            // Resolve with mix of inferred types and type variables
+            let partial_fn = unresolved.resolve(source, all_params)?;
+
+            // Apply the arguments to get a partial application
+            let partial_value = AcornValue::apply(partial_fn, args);
+
+            // Create a new unresolved constant with the remaining parameters
+            let partial_type = partial_value.get_type();
+            let unresolved_partial = UnresolvedConstant {
+                name: const_name,
+                params: uninferred_params,
+                generic_type: partial_type,
+            };
+
+            Ok(PotentialValue::Unresolved(unresolved_partial))
+        }
     }
 
     /// If we have an expected type and this is still a potential value, resolve it.

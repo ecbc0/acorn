@@ -1495,6 +1495,28 @@ impl BindingMap {
         Ok(value)
     }
 
+    /// Try to apply a potential value to arguments, allowing partial resolution.
+    /// If all type parameters can be inferred, returns a resolved value.
+    /// If some type parameters cannot be inferred, returns an unresolved value.
+    pub fn try_apply_potential(
+        &self,
+        potential: PotentialValue,
+        args: Vec<AcornValue>,
+        expected_type: Option<&AcornType>,
+        source: &dyn ErrorSource,
+    ) -> compilation::Result<PotentialValue> {
+        match potential {
+            PotentialValue::Resolved(f) => {
+                let value = f.check_apply(args, expected_type, source)?;
+                Ok(PotentialValue::Resolved(value))
+            }
+            PotentialValue::Unresolved(u) => {
+                self.unifier()
+                    .try_resolve_with_inference(u, args, expected_type, source)
+            }
+        }
+    }
+
     /// Apply an unresolved name to arguments, inferring the types.
     pub fn infer_and_apply(
         &self,
