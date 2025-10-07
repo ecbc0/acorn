@@ -519,6 +519,33 @@ mod tests {
     }
 
     #[test]
+    fn test_parsing_attribute_with_explicit_type_params() {
+        ok(indoc! {"
+        attributes Pair<T, U> {
+            define swap<T, U>(self) -> Pair<U, T> {
+                Pair.new(self.second, self.first)
+            }
+        }"});
+    }
+
+    #[test]
+    fn test_parsing_attribute_with_extra_explicit_type_params() {
+        ok(indoc! {"
+        attributes List<T> {
+            define map<T, U>(self, f: T -> U) -> List<U> {
+                match self {
+                    List.nil {
+                        List.nil<U>
+                    }
+                    List.cons(head, tail) {
+                        List.cons(f(head), map(tail, f))
+                    }
+                }
+            }
+        }"});
+    }
+
+    #[test]
     fn test_parsing_typeclass_statement_theorems() {
         ok(indoc! {"
         typeclass T: MyTypeclass {
