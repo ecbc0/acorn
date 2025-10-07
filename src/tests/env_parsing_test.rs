@@ -1751,7 +1751,7 @@ fn test_methods_on_generic_classes() {
     );
 
     // Originally this intentionally didn't work.
-    // But need this syntax to work for typeclasses anyway.
+    // But we need this syntax to work for typeclasses anyway.
     env.add(
         r#"
             let p3: Pair<Foo, Bar> = Pair.new<Foo, Bar>(f, b)
@@ -1787,6 +1787,25 @@ fn test_generic_return_types() {
             "#,
     );
 }
+
+// #[test]
+// fn test_env_attribute_with_extra_type_param() {
+//     let mut env = Environment::test();
+//     env.add(
+//         r#"
+//     structure Pair<T, U> {
+//         first: T
+//         second: U
+//     }
+
+//     attributes Pair<T, U> {
+//         define map_first<V>(self, f: T -> V) -> V {
+//             f(self.first)
+//         }
+//     }
+//     "#,
+//     );
+// }
 
 #[test]
 fn test_aliasing_a_generic_type() {

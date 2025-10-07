@@ -519,20 +519,10 @@ mod tests {
     }
 
     #[test]
-    fn test_parsing_attribute_with_explicit_type_params() {
-        ok(indoc! {"
-        attributes Pair<T, U> {
-            define swap<T, U>(self) -> Pair<U, T> {
-                Pair.new(self.second, self.first)
-            }
-        }"});
-    }
-
-    #[test]
-    fn test_parsing_attribute_with_extra_explicit_type_params() {
+    fn test_parsing_attribute_with_extra_explicit_type_param() {
         ok(indoc! {"
         attributes List<T> {
-            define map<T, U>(self, f: T -> U) -> List<U> {
+            define map<U>(self, f: T -> U) -> List<U> {
                 match self {
                     List.nil {
                         List.nil<U>
