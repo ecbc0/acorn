@@ -1471,14 +1471,14 @@ fn test_proving_with_attribute_params() {
 }
 
 #[test]
-fn test_attribute_equivalence() {
+fn test_proving_with_generic_attribute_recursion() {
     let text = r#"
     inductive List<T> {
         nil
         cons(T, List<T>)
     }
-    
-    
+
+
     attributes List<T> {
         define map<U>(self, f: T -> U) -> List<U> {
             match self {
@@ -1491,8 +1491,8 @@ fn test_attribute_equivalence() {
             }
         }
     }
-    
-    // Note that this actually isn't recursive, to make the proof simple.
+
+    // Note that this one actually isn't recursive, to make the proof simple.
     define map<T, U>(items: List<T>, f: T -> U) -> List<U> {
         match items {
             List.nil {
@@ -1503,7 +1503,7 @@ fn test_attribute_equivalence() {
             }
         }
     }
-    
+
     theorem map_equivalence<T, U> {
         List.map<T, U> = map<T, U>
     }
