@@ -1471,6 +1471,34 @@ fn test_proving_with_attribute_params() {
 }
 
 #[test]
+fn test_proving_with_generic_attribute_match() {
+    let text = r#"
+    inductive Option<T> {
+        none
+        some(T)
+    }
+
+    attributes Option<T> {
+        define map<U>(self, f: T -> U) -> Option<U> {
+            match self {
+                Option.none {
+                    Option.none<U>
+                }
+                Option.some(t) {
+                    Option.some(f(t))
+                }
+            }
+        }
+    }
+
+    theorem goal<T, U>(t: T, f: T -> U) {
+        Option.some(t).map(f) = Option.some(f(t))
+    }
+    "#;
+    verify_succeeds(text);
+}
+
+#[test]
 fn test_proving_with_generic_attribute_recursion() {
     let text = r#"
     inductive List<T> {
