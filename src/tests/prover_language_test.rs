@@ -1469,3 +1469,44 @@ fn test_proving_with_attribute_params() {
     "#;
     verify_succeeds(text);
 }
+
+#[test]
+fn test_attribute_equivalence() {
+    let text = r#"
+    inductive List<T> {
+        nil
+        cons(T, List<T>)
+    }
+    
+    
+    attributes List<T> {
+        define map<U>(self, f: T -> U) -> List<U> {
+            match self {
+                List.nil {
+                    List.nil<U>
+                }
+                List.cons(head, tail) {
+                    List.cons(f(head), tail.map(f))
+                }
+            }
+        }
+    }
+    
+    // Note that this actually isn't recursive, to make the proof simple.
+    define map<T, U>(items: List<T>, f: T -> U) -> List<U> {
+        match items {
+            List.nil {
+                List.nil<U>
+            }
+            List.cons(head, tail) {
+                List.cons(f(head), tail.map(f))
+            }
+        }
+    }
+    
+    theorem map_equivalence<T, U> {
+        List.map<T, U> = map<T, U>
+    }
+    "#;
+    verify_succeeds(text);
+}
