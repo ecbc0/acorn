@@ -1463,9 +1463,9 @@ fn test_proving_with_attribute_params() {
         Pair.map_first(p, f) = f(p.first)
     }
 
-    // theorem obj_attr_generic<A, B, C>(p: Pair<A, B>, f: A -> C) {
-    //     p.map_first(f) = f(p.first)
-    // }
+    theorem obj_attr_generic<A, B, C>(p: Pair<A, B>, f: A -> C) {
+        p.map_first(f) = f(p.first)
+    }
     "#;
     verify_succeeds(text);
 }

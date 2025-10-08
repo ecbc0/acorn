@@ -331,20 +331,14 @@ impl<'a> TypeUnifier<'a> {
             // Combine stored args with new args
             let combined_args = [unresolved.args.clone(), args].concat();
 
-            // We need the generic type after substituting inferred params
-            let named_params: Vec<_> = unresolved
-                .params
-                .iter()
-                .zip(all_params.iter())
-                .map(|(param, t)| (param.name.clone(), t.clone()))
-                .collect();
-            let substituted_type = unresolved.generic_type.instantiate(&named_params);
-
+            // Keep the ORIGINAL generic_type unchanged!
+            // When we later call resolve_with_inference(), it will match combined_args against
+            // the original type, not a partially-reduced type.
             let unresolved_partial = UnresolvedConstant {
                 name: unresolved.name.clone(),
-                params: uninferred_params,
-                generic_type: substituted_type, // Use type with inferred params substituted
-                args: combined_args,            // Store ALL arguments that have been applied
+                params: unresolved.params.clone(), // Keep ALL original params
+                generic_type: unresolved.generic_type.clone(), // Keep ORIGINAL type
+                args: combined_args,
             };
 
             Ok(PotentialValue::Unresolved(unresolved_partial))
