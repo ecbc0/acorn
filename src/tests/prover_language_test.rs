@@ -1492,20 +1492,8 @@ fn test_proving_with_generic_attribute_recursion() {
         }
     }
 
-    // Note that this one actually isn't recursive, to make the proof simple.
-    define map<T, U>(items: List<T>, f: T -> U) -> List<U> {
-        match items {
-            List.nil {
-                List.nil<U>
-            }
-            List.cons(head, tail) {
-                List.cons(f(head), tail.map(f))
-            }
-        }
-    }
-
-    theorem map_equivalence<T, U> {
-        List.map<T, U> = map<T, U>
+    theorem goal<T, U>(head: T, tail: List<T>, f: T -> U) {
+        List.cons(head, tail).map(f) = List.cons(f(head), tail.map(f))
     }
     "#;
     verify_succeeds(text);

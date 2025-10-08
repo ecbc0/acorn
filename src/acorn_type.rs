@@ -526,6 +526,19 @@ impl AcornType {
         }
     }
 
+    /// Returns whether this type contains a specific arbitrary type parameter.
+    pub fn has_arbitrary_type_param(&self, param: &TypeParam) -> bool {
+        match self {
+            AcornType::Arbitrary(p) => p == param,
+            AcornType::Function(ftype) => {
+                ftype.arg_types.iter().any(|t| t.has_arbitrary_type_param(param))
+                    || ftype.return_type.has_arbitrary_type_param(param)
+            }
+            AcornType::Data(_, params) => params.iter().any(|t| t.has_arbitrary_type_param(param)),
+            _ => false,
+        }
+    }
+
     /// Returns whether this type is a function type.
     pub fn is_functional(&self) -> bool {
         match self {

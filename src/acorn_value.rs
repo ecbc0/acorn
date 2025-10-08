@@ -149,7 +149,8 @@ impl ConstantInstance {
 
     /// Change the arbitrary types in this list of parameters to generic ones.
     pub fn genericize(&self, params: &[TypeParam]) -> ConstantInstance {
-        let instance_type = self.instance_type.genericize(params);
+        let old_instance_type = &self.instance_type;
+        let instance_type = old_instance_type.genericize(params);
         let params = if instance_type.has_generic() && self.params.is_empty() {
             // This constant is defined in terms of the arbitrary type, but now we are
             // genericizing it.
@@ -164,6 +165,24 @@ impl ConstantInstance {
                 .iter()
                 .map(|param| AcornType::Variable(param.clone()))
                 .collect()
+        } else if !self.params.is_empty() && old_instance_type.has_arbitrary() {
+            // This is a successive genericization. Check if the instance_type before genericization
+            // had arbitrary types that match the params we're genericizing with.
+            // If so, we need to append the new params.
+            let mut result_params: Vec<AcornType> = self.params.iter().map(|t| t.genericize(params)).collect();
+
+            // Check which params from the current genericization apply to this constant
+            // and aren't already in the result
+            for param in params {
+                if old_instance_type.has_arbitrary_type_param(param) {
+                    let param_as_type = AcornType::Variable(param.clone());
+                    // Only add if not already present
+                    if !result_params.contains(&param_as_type) {
+                        result_params.push(param_as_type);
+                    }
+                }
+            }
+            result_params
         } else {
             // Just genericize what we started with, same as usual
             self.params.iter().map(|t| t.genericize(params)).collect()
