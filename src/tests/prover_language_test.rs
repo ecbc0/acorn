@@ -1418,10 +1418,54 @@ fn test_proving_with_boxed_bool() {
     define boxed_and(a: BoxedBool, b: BoxedBool) -> BoxedBool {
         BoxedBool.new(a.value and b.value)
     }
-    
+
     theorem goal(b: BoxedBool) {
         not b.value implies not boxed_and(b, b).value
     }
+    "#;
+    verify_succeeds(text);
+}
+
+#[test]
+fn test_proving_with_attribute_params() {
+    let text = r#"
+    structure BoolPair {
+        first: Bool
+        second: Bool
+    }
+
+    attributes BoolPair {
+        define apply_first<T>(self, f: Bool -> T) -> T {
+            f(self.first)
+        }
+    }
+
+    theorem type_attr_syntax(b: BoolPair, f: Bool -> Bool) {
+        BoolPair.apply_first(b, f) = f(b.first)
+    }
+
+    theorem obj_attr_syntax(b: BoolPair, f: Bool -> Bool) {
+        b.apply_first(f) = f(b.first)
+    }
+
+    // structure Pair<T, U> {
+    //     first: T
+    //     second: U
+    // }
+
+    // attributes Pair<T, U> {
+    //     define map_first<V>(self, f: T -> V) -> V {
+    //         f(self.first)
+    //     }
+    // }
+
+    // theorem type_attr_generic<A, B, C>(p: Pair<A, B>, f: A -> C) {
+    //     Pair.map_first(p, f) = f(p.first)
+    // }
+
+    // theorem obj_attr_generic<A, B, C>(p: Pair<A, B>, f: A -> C) {
+    //     p.map_first(f) = f(p.first)
+    // }
     "#;
     verify_succeeds(text);
 }

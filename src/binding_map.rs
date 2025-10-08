@@ -956,6 +956,7 @@ impl BindingMap {
                 name: constant_name.clone(),
                 params,
                 generic_type: constant_type,
+                args: vec![],
             })
         };
 

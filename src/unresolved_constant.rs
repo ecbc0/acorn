@@ -17,6 +17,10 @@ pub struct UnresolvedConstant {
 
     /// The generic type uses the params.
     pub generic_type: AcornType,
+
+    /// Arguments that have been partially applied to this constant.
+    /// When this is resolved, these arguments will be applied to the resolved value.
+    pub args: Vec<AcornValue>,
 }
 
 impl UnresolvedConstant {
@@ -41,20 +45,30 @@ impl UnresolvedConstant {
             .map(|(param, t)| (param.name.clone(), t.clone()))
             .collect();
         let resolved_type = self.generic_type.instantiate(&named_params);
-        Ok(AcornValue::constant(
-            self.name.clone(),
-            params,
-            resolved_type,
-        ))
+        let mut value = AcornValue::constant(self.name.clone(), params, resolved_type);
+
+        // Apply any stored arguments
+        if !self.args.is_empty() {
+            value = AcornValue::apply(value, self.args.clone());
+        }
+
+        Ok(value)
     }
 
     /// Turn this into a constant value by keeping each parameter as a type variable.
     pub fn to_generic_value(self) -> AcornValue {
         let params = self
             .params
-            .into_iter()
-            .map(|p| AcornType::Variable(p))
+            .iter()
+            .map(|p| AcornType::Variable(p.clone()))
             .collect();
-        AcornValue::constant(self.name.clone(), params, self.generic_type)
+        let mut value = AcornValue::constant(self.name.clone(), params, self.generic_type);
+
+        // Apply any stored arguments
+        if !self.args.is_empty() {
+            value = AcornValue::apply(value, self.args);
+        }
+
+        value
     }
 }

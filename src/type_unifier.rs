@@ -177,15 +177,19 @@ impl<'a> TypeUnifier<'a> {
     pub fn resolve_with_inference(
         &mut self,
         unresolved: UnresolvedConstant,
-        args: Vec<AcornValue>,
+        mut args: Vec<AcornValue>,
         expected_return_type: Option<&AcornType>,
         source: &dyn ErrorSource,
     ) -> compilation::Result<AcornValue> {
+        // If the unresolved constant has stored args, prepend them to the new args
+        let mut all_args = unresolved.args.clone();
+        all_args.append(&mut args);
+
         // Use the arguments to infer types
-        let unresolved_return_type = if args.is_empty() {
+        let unresolved_return_type = if all_args.is_empty() {
             unresolved.generic_type.clone()
         } else if let AcornType::Function(unresolved_function_type) = &unresolved.generic_type {
-            for (i, arg) in args.iter().enumerate() {
+            for (i, arg) in all_args.iter().enumerate() {
                 if arg.has_generic() {
                     return Err(
                         source.error(&format!("argument {} ({}) has unresolved type", i, arg))
@@ -197,7 +201,7 @@ impl<'a> TypeUnifier<'a> {
                         return Err(source.error(&format!(
                             "expected {} arguments but got {}",
                             unresolved_function_type.arg_types.len(),
-                            args.len()
+                            all_args.len()
                         )));
                     }
                 };
@@ -209,7 +213,7 @@ impl<'a> TypeUnifier<'a> {
                 )?;
             }
 
-            unresolved_function_type.applied_type(args.len())
+            unresolved_function_type.applied_type(all_args.len())
         } else {
             return Err(source.error("expected a function type"));
         };
@@ -237,9 +241,15 @@ impl<'a> TypeUnifier<'a> {
             }
         }
 
-        // Resolve
-        let instance_fn = unresolved.resolve(source, instance_params)?;
-        let value = AcornValue::apply(instance_fn, args);
+        // Resolve the constant (this will no longer apply stored args since we're using a temporary unresolved)
+        let unresolved_without_args = UnresolvedConstant {
+            name: unresolved.name,
+            params: unresolved.params,
+            generic_type: unresolved.generic_type,
+            args: vec![], // Don't apply args in resolve(), we'll apply all_args here
+        };
+        let instance_fn = unresolved_without_args.resolve(source, instance_params)?;
+        let value = AcornValue::apply(instance_fn, all_args);
         value.check_type(expected_return_type, source)?;
         Ok(value)
     }
@@ -318,20 +328,23 @@ impl<'a> TypeUnifier<'a> {
             Ok(PotentialValue::Resolved(value))
         } else {
             // Some parameters not inferred - partially resolve and keep rest unresolved
-            let const_name = unresolved.name.clone();
+            // Combine stored args with new args
+            let combined_args = [unresolved.args.clone(), args].concat();
 
-            // Resolve with mix of inferred types and type variables
-            let partial_fn = unresolved.resolve(source, all_params)?;
+            // We need the generic type after substituting inferred params
+            let named_params: Vec<_> = unresolved
+                .params
+                .iter()
+                .zip(all_params.iter())
+                .map(|(param, t)| (param.name.clone(), t.clone()))
+                .collect();
+            let substituted_type = unresolved.generic_type.instantiate(&named_params);
 
-            // Apply the arguments to get a partial application
-            let partial_value = AcornValue::apply(partial_fn, args);
-
-            // Create a new unresolved constant with the remaining parameters
-            let partial_type = partial_value.get_type();
             let unresolved_partial = UnresolvedConstant {
-                name: const_name,
+                name: unresolved.name.clone(),
                 params: uninferred_params,
-                generic_type: partial_type,
+                generic_type: substituted_type, // Use type with inferred params substituted
+                args: combined_args,            // Store ALL arguments that have been applied
             };
 
             Ok(PotentialValue::Unresolved(unresolved_partial))
