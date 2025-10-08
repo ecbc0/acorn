@@ -931,12 +931,6 @@ impl BindingMap {
             if let Err(e) = definition.validate() {
                 panic!("invalid definition for constant {}: {}", constant_name, e);
             }
-            if let Err(e) = definition.validate_constants(self) {
-                panic!(
-                    "invalid constant params in definition for {}: {}",
-                    constant_name, e
-                );
-            }
             if params.is_empty() && definition.has_generic() {
                 panic!("there should not be generic types in non-parametrized definitions");
             }
@@ -970,7 +964,7 @@ impl BindingMap {
         let info = ConstantDefinition {
             value: value.clone(),
             canonical: true,
-            definition,
+            definition: definition.clone(),
             theorem: false,
             constructor,
             doc_comments,
@@ -979,6 +973,17 @@ impl BindingMap {
         };
 
         self.add_constant_def(constant_name.clone(), info);
+
+        // Validate constants AFTER adding the definition, so recursive references can be checked
+        if let Some(definition) = &definition {
+            if let Err(e) = definition.validate_constants(self) {
+                panic!(
+                    "invalid constant params in definition for {}: {}",
+                    constant_name, e
+                );
+            }
+        }
+
         value
     }
 
