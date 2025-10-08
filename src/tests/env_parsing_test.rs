@@ -554,8 +554,13 @@ fn test_param_on_member_function() {
         theorem obj_attr_syntax(b: BoolPair, f: Bool -> Bool) {
             b.apply_first(f) = f(b.first)
         }
+
+        let bp: BoolPair = axiom
         "#,
     );
+
+    // Unresolved type
+    env.bad("let g = bp.apply_first");
 }
 
 #[test]
@@ -581,8 +586,15 @@ fn test_env_attribute_with_extra_type_param() {
         theorem obj_attr_syntax<A, B, C>(p: Pair<A, B>, f: A -> C) {
             p.map_first(f) = f(p.first)
         }
+
+        type Nat: axiom
+        let zero: Nat = axiom
+        let p = Pair.new(zero, zero)
         "#,
     );
+
+    // Unresolved type
+    env.bad("let f = p.map_first");
 }
 
 #[test]

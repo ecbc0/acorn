@@ -1448,20 +1448,20 @@ fn test_proving_with_attribute_params() {
         b.apply_first(f) = f(b.first)
     }
 
-    // structure Pair<T, U> {
-    //     first: T
-    //     second: U
-    // }
+    structure Pair<T, U> {
+        first: T
+        second: U
+    }
 
-    // attributes Pair<T, U> {
-    //     define map_first<V>(self, f: T -> V) -> V {
-    //         f(self.first)
-    //     }
-    // }
+    attributes Pair<T, U> {
+        define map_first<V>(self, f: T -> V) -> V {
+            f(self.first)
+        }
+    }
 
-    // theorem type_attr_generic<A, B, C>(p: Pair<A, B>, f: A -> C) {
-    //     Pair.map_first(p, f) = f(p.first)
-    // }
+    theorem type_attr_generic<A, B, C>(p: Pair<A, B>, f: A -> C) {
+        Pair.map_first(p, f) = f(p.first)
+    }
 
     // theorem obj_attr_generic<A, B, C>(p: Pair<A, B>, f: A -> C) {
     //     p.map_first(f) = f(p.first)
