@@ -1506,7 +1506,6 @@ fn test_proving_with_generic_attribute_recursion() {
         cons(T, List<T>)
     }
 
-
     attributes List<T> {
         define map<U>(self, f: T -> U) -> List<U> {
             match self {
