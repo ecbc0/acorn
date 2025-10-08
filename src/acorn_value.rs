@@ -169,7 +169,8 @@ impl ConstantInstance {
             // This is a successive genericization. Check if the instance_type before genericization
             // had arbitrary types that match the params we're genericizing with.
             // If so, we need to append the new params.
-            let mut result_params: Vec<AcornType> = self.params.iter().map(|t| t.genericize(params)).collect();
+            let mut result_params: Vec<AcornType> =
+                self.params.iter().map(|t| t.genericize(params)).collect();
 
             // Check which params from the current genericization apply to this constant
             // and aren't already in the result
@@ -1049,7 +1050,8 @@ impl AcornValue {
             if error.is_some() {
                 return; // Already found an error
             }
-            if let Some((_def, def_params)) = bindings.get_definition_and_params(&ci.name) {
+            if let Some((def, def_params)) = bindings.get_definition_and_params(&ci.name) {
+                // Check param count
                 if ci.params.len() != def_params.len() {
                     error = Some(format!(
                         "Constant {} has {} params but definition has {}",
@@ -1057,6 +1059,25 @@ impl AcornValue {
                         ci.params.len(),
                         def_params.len()
                     ));
+                    return;
+                }
+
+                // Check that instance_type matches what we'd get by substituting params
+                if !ci.params.is_empty() {
+                    let substitution: Vec<_> = def_params.iter()
+                        .zip(ci.params.iter())
+                        .map(|(def_param, actual_param)| (def_param.name.clone(), actual_param.clone()))
+                        .collect();
+                    let expected_type = def.get_type().instantiate(&substitution);
+                    if ci.instance_type != expected_type {
+                        error = Some(format!(
+                            "Constant {} has inconsistent instance_type.\nParams: {:?}\nExpected type: {}\nActual type: {}",
+                            ci.name,
+                            ci.params,
+                            expected_type,
+                            ci.instance_type
+                        ));
+                    }
                 }
             }
         });

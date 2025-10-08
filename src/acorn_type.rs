@@ -531,7 +531,10 @@ impl AcornType {
         match self {
             AcornType::Arbitrary(p) => p == param,
             AcornType::Function(ftype) => {
-                ftype.arg_types.iter().any(|t| t.has_arbitrary_type_param(param))
+                ftype
+                    .arg_types
+                    .iter()
+                    .any(|t| t.has_arbitrary_type_param(param))
                     || ftype.return_type.has_arbitrary_type_param(param)
             }
             AcornType::Data(_, params) => params.iter().any(|t| t.has_arbitrary_type_param(param)),
