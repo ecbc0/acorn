@@ -1016,6 +1016,34 @@ impl AcornValue {
         }
     }
 
+    /// Validate that all constants have the correct number of type parameters.
+    /// Requires access to bindings to look up constant definitions.
+    ///
+    /// This catches bugs where a constant is instantiated with the wrong number of params,
+    /// which can happen when UnresolvedConstant is incorrectly constructed during type inference.
+    pub fn validate_constants(
+        &self,
+        bindings: &crate::binding_map::BindingMap,
+    ) -> Result<(), String> {
+        let mut error = None;
+        self.for_each_constant(&mut |ci| {
+            if error.is_some() {
+                return; // Already found an error
+            }
+            if let Some((_def, def_params)) = bindings.get_definition_and_params(&ci.name) {
+                if ci.params.len() != def_params.len() {
+                    error = Some(format!(
+                        "Constant {} has {} params but definition has {}",
+                        ci.name,
+                        ci.params.len(),
+                        def_params.len()
+                    ));
+                }
+            }
+        });
+        error.map_or(Ok(()), Err)
+    }
+
     // Replace some type variables with other types.
     pub fn instantiate(&self, params: &[(String, AcornType)]) -> AcornValue {
         match self {

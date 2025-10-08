@@ -931,6 +931,12 @@ impl BindingMap {
             if let Err(e) = definition.validate() {
                 panic!("invalid definition for constant {}: {}", constant_name, e);
             }
+            if let Err(e) = definition.validate_constants(self) {
+                panic!(
+                    "invalid constant params in definition for {}: {}",
+                    constant_name, e
+                );
+            }
             if params.is_empty() && definition.has_generic() {
                 panic!("there should not be generic types in non-parametrized definitions");
             }

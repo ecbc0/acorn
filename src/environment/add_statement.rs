@@ -500,6 +500,9 @@ impl Environment {
         if let Err(message) = external_claim.validate() {
             return Err(ts.claim.error(&message));
         }
+        if let Err(message) = external_claim.validate_constants(&self.bindings) {
+            return Err(ts.claim.error(&message));
+        }
 
         let (premise, goal) = match &unbound_claim {
             AcornValue::Binary(BinaryOp::Implies, left, right) => {
