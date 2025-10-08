@@ -131,6 +131,28 @@ pub fn keywords_with_prefix(prefix: &str) -> impl Iterator<Item = &str> {
         .map(|(key, _)| *key)
 }
 
+pub fn unicode_symbol_map() -> &'static BTreeMap<&'static str, TokenType> {
+    static UNICODE_SYMBOL_MAP: OnceLock<BTreeMap<&'static str, TokenType>> = OnceLock::new();
+    UNICODE_SYMBOL_MAP.get_or_init(|| {
+        BTreeMap::from([
+            ("union", TokenType::Union),
+            ("intersection", TokenType::Intersection),
+            ("in", TokenType::In),
+            ("not in", TokenType::NotIn),
+            ("subset", TokenType::Subset),
+            ("superset", TokenType::Superset),
+            ("without", TokenType::Without),
+        ])
+    })
+}
+
+pub fn unicode_symbol_with_prefix(prefix: &str) -> impl Iterator<Item = &str> {
+    unicode_symbol_map()
+        .range(prefix..)
+        .take_while(move |(key, _)| key.starts_with(prefix))
+        .map(|(key, _)| *key)
+}
+
 // The token types that we export via the language server protocol
 pub const LSP_TOKEN_TYPES: &[SemanticTokenType] = &[
     SemanticTokenType::VARIABLE,
