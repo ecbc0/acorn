@@ -974,7 +974,7 @@ impl BindingMap {
 
         self.add_constant_def(constant_name.clone(), info);
 
-        // Validate constants AFTER adding the definition, so recursive references can be checked
+        // Validate constants after adding the definition, so recursive references can be checked
         if let Some(definition) = &definition {
             if let Err(e) = definition.validate_constants(self) {
                 panic!(
