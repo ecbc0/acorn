@@ -2081,3 +2081,32 @@ fn test_iff_not_allowed_for_non_bool() {
     );
     env.bad("let b: Bool = (m iff n)");
 }
+
+#[test]
+fn test_env_recursive_attribute() {
+    // This tests that recursive generic attribute functions have the correct number of type parameters.
+    // When an attribute function on List<T> has its own type parameter <U>, the recursive reference
+    // should have both T and U parameters, not just U.
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        inductive List<T> {
+            nil
+            cons(T, List<T>)
+        }
+
+        attributes List<T> {
+            define map<U>(self, f: T -> U) -> List<U> {
+                match self {
+                    List.nil {
+                        List.nil<U>
+                    }
+                    List.cons(head, tail) {
+                        List.cons(f(head), tail.map(f))
+                    }
+                }
+            }
+        }
+        "#,
+    );
+}
