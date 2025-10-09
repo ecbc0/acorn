@@ -1604,12 +1604,13 @@ impl BindingMap {
     /// It has declarations, introducing new variables and types that exist just for this value,
     /// and it has the value itself, which can use those declarations.
     ///
-    /// type_params is a list of tokens for the generic types introduced for this scope.
+    /// type_param_exprs is a list of tokens for the generic types introduced for this scope.
     /// args is a list of the new variables declared for this scope.
     /// value_type_expr is an optional expression for the type of the value.
     ///   (None means expect a boolean value.)
     /// value_expr is the expression for the value itself.
     /// function_name, when it is provided, can be used recursively.
+    /// datatype_params: if this is a method on a parametrized datatype, these are the datatype's params.
     ///
     /// This function mutates the binding map but sets it back to its original state when finished.
     ///
@@ -1636,6 +1637,7 @@ impl BindingMap {
         value_expr: &Expression,
         class_type: Option<&AcornType>,
         function_name: Option<&ConstantName>,
+        datatype_params: Option<&Vec<TypeParam>>,
         project: &Project,
         mut token_map: Option<&mut TokenMap>,
     ) -> compilation::Result<(
@@ -1662,13 +1664,22 @@ impl BindingMap {
         };
 
         if let Some(function_name) = function_name {
-            let fn_type =
+            let mut fn_type =
                 AcornType::functional(internal_arg_types.clone(), internal_value_type.clone());
             // The function is bound to its name locally, to handle recursive definitions.
-            // Internally to the definition, this function is not polymorphic.
+            // Internally to the definition, this function is not polymorphic, but it may have
+            // type parameters from both the datatype (if it's a method) and the function itself.
+            let mut all_params = datatype_params.cloned().unwrap_or_default();
+            all_params.extend(type_params.clone());
+
+            // If we have params, genericize the type so it uses type variables instead of arbitrary types
+            if !all_params.is_empty() {
+                fn_type = fn_type.genericize(&all_params);
+            }
+
             self.add_constant_name(
                 function_name,
-                vec![],
+                all_params,
                 fn_type,
                 None,
                 None,
@@ -1729,15 +1740,22 @@ impl BindingMap {
                     // In this case, internally it's not polymorphic. It's just a constant
                     // with a type that depends on the arbitrary types we introduced.
                     // But, externally we need to make it polymorphic.
-                    let generic_params = type_params
+                    // For methods on parametrized datatypes, we need to include both
+                    // the datatype params and the function's own params.
+                    let mut all_params_for_genericize =
+                        datatype_params.cloned().unwrap_or_default();
+                    all_params_for_genericize.extend(type_params.clone());
+                    let generic_params: Vec<_> = all_params_for_genericize
                         .iter()
                         .map(|param| AcornType::Variable(param.clone()))
                         .collect();
                     let derecursed = internal_value.set_params(function_name, &generic_params);
-                    Some(derecursed.genericize(&type_params))
+                    Some(derecursed.genericize(&all_params_for_genericize))
                 } else {
                     // There's no name for this function so it can't possibly be recursive.
                     // This is simpler, but we still need to remove arbitrary local types.
+                    // We only genericize the function's own type params, not datatype params
+                    // since this isn't recursive.
                     Some(internal_value.genericize(&type_params))
                 }
             } else {

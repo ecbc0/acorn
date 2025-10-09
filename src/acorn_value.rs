@@ -151,7 +151,7 @@ impl ConstantInstance {
     pub fn genericize(&self, params: &[TypeParam]) -> ConstantInstance {
         let old_instance_type = &self.instance_type;
         let instance_type = old_instance_type.genericize(params);
-        let params = if instance_type.has_generic() && self.params.is_empty() {
+        let new_params = if instance_type.has_generic() && self.params.is_empty() {
             // This constant is defined in terms of the arbitrary type, but now we are
             // genericizing it.
             // The only situation I can think of where this happens is when we define
@@ -188,7 +188,7 @@ impl ConstantInstance {
             // Just genericize what we started with, same as usual
             self.params.iter().map(|t| t.genericize(params)).collect()
         };
-        self.same_name(params, instance_type)
+        self.same_name(new_params, instance_type)
     }
 
     fn has_arbitrary(&self) -> bool {
