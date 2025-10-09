@@ -181,7 +181,9 @@ impl TypeParamExpr {
     // Parses a type parameter list, if it's there.
     // If the tokens don't start with '[', just return an empty list.
     pub fn parse_list(tokens: &mut TokenIter) -> Result<Vec<TypeParamExpr>> {
-        if tokens.peek_type() != Some(TokenType::LeftBracket) && tokens.peek_type() != Some(TokenType::LessThan) {
+        if tokens.peek_type() != Some(TokenType::LeftBracket)
+            && tokens.peek_type() != Some(TokenType::LessThan)
+        {
             return Ok(vec![]);
         }
         let left_delimiter = tokens.next();
@@ -776,7 +778,7 @@ fn parse_partial_expressions(
                 }
                 (ExpressionType::Type, TokenType::Comma)
                 | (ExpressionType::Type, TokenType::RightArrow)
-                | (ExpressionType::Type, TokenType::Dot) 
+                | (ExpressionType::Type, TokenType::Dot)
                 | (ExpressionType::Type, TokenType::LessThan)
                 | (ExpressionType::Type, TokenType::GreaterThan) => {
                     // These are okay in types
@@ -1078,7 +1080,7 @@ fn check_partial_expressions(partials: &VecDeque<PartialExpression>) -> Result<(
                     // Our sanity checks don't work for type parameters.
                     continue;
                 }
-            }            
+            }
             let right = &partials[i + 1];
             match (left, right) {
                 (PartialExpression::Binary(a), PartialExpression::Binary(b))

@@ -118,7 +118,9 @@ impl<'a> Evaluator<'a> {
                 let Expression::Grouping(opening, expr, _) = params.as_ref() else {
                     return Err(params.error("expected type parameters in type application"));
                 };
-                if opening.token_type != TokenType::LeftBracket && opening.token_type != TokenType::LessThan {
+                if opening.token_type != TokenType::LeftBracket
+                    && opening.token_type != TokenType::LessThan
+                {
                     return Err(opening.error("expected '[' or 'or' for type params"));
                 }
                 let param_exprs = expr.flatten_comma_separated_list();
@@ -980,7 +982,9 @@ impl<'a> Evaluator<'a> {
                 let arg_exprs = match args_expr.as_ref() {
                     Expression::Grouping(left_delimiter, e, _) => {
                         let exprs = e.flatten_comma_separated_list();
-                        if left_delimiter.token_type == TokenType::LeftBracket || left_delimiter.token_type == TokenType::LessThan {
+                        if left_delimiter.token_type == TokenType::LeftBracket
+                            || left_delimiter.token_type == TokenType::LessThan
+                        {
                             // This is a type parameter list
                             if let PotentialValue::Unresolved(unresolved) = function {
                                 let mut type_params = vec![];
