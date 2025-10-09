@@ -256,7 +256,9 @@ impl<'a> TypeUnifier<'a> {
 
     /// Try to resolve with inference, allowing partial resolution.
     /// If all type parameters can be inferred, returns a resolved value.
-    /// If some cannot be inferred, returns an unresolved partial application.
+    /// If some cannot be inferred, returns an unresolved value with args accumulated.
+    /// This method never "partially resolves". It either fully resolves the type, or just adds
+    /// arguments to the unresolved constant.
     pub fn try_resolve_with_inference(
         &mut self,
         unresolved: UnresolvedConstant,
