@@ -179,35 +179,63 @@ impl fmt::Display for TypeParamExpr {
 
 impl TypeParamExpr {
     // Parses a type parameter list, if it's there.
-    // If the tokens don't start with '<', just return an empty list.
+    // If the tokens don't start with '[', just return an empty list.
     pub fn parse_list(tokens: &mut TokenIter) -> Result<Vec<TypeParamExpr>> {
-        if tokens.peek_type() != Some(TokenType::LessThan) {
+        if tokens.peek_type() != Some(TokenType::LeftBracket) && tokens.peek_type() != Some(TokenType::LessThan) {
             return Ok(vec![]);
         }
-        tokens.next();
+        let left_delimiter = tokens.next();
         let mut params = vec![];
-        loop {
-            let name = tokens.expect_type(TokenType::Identifier)?;
-            let terminator = tokens.expect_token()?;
-            let (typeclass, terminator) = if terminator.token_type == TokenType::Colon {
-                let (typeclass, terminator) = Expression::parse_type(
-                    tokens,
-                    Terminator::Or(TokenType::Comma, TokenType::GreaterThan),
-                )?;
-                (Some(typeclass), terminator)
-            } else {
-                (None, terminator)
-            };
-            params.push(TypeParamExpr { name, typeclass });
-            match terminator.token_type {
-                TokenType::GreaterThan => {
-                    break;
+        if left_delimiter.clone().unwrap().token_type == TokenType::LessThan {
+            loop {
+                let name = tokens.expect_type(TokenType::Identifier)?;
+                let terminator = tokens.expect_token()?;
+                let (typeclass, terminator) = if terminator.token_type == TokenType::Colon {
+                    let (typeclass, terminator) = Expression::parse_type(
+                        tokens,
+                        Terminator::Or(TokenType::Comma, TokenType::GreaterThan),
+                    )?;
+                    (Some(typeclass), terminator)
+                } else {
+                    (None, terminator)
+                };
+                params.push(TypeParamExpr { name, typeclass });
+                match terminator.token_type {
+                    TokenType::GreaterThan => {
+                        break;
+                    }
+                    TokenType::Comma => {
+                        continue;
+                    }
+                    _ => {
+                        return Err(terminator.error("expected '>' or ',' after each type param"));
+                    }
                 }
-                TokenType::Comma => {
-                    continue;
-                }
-                _ => {
-                    return Err(terminator.error("expected '>' or ',' after each type param"));
+            }
+        } else if left_delimiter.clone().unwrap().token_type == TokenType::LeftBracket {
+            loop {
+                let name = tokens.expect_type(TokenType::Identifier)?;
+                let terminator = tokens.expect_token()?;
+                let (typeclass, terminator) = if terminator.token_type == TokenType::Colon {
+                    let (typeclass, terminator) = Expression::parse_type(
+                        tokens,
+                        Terminator::Or(TokenType::Comma, TokenType::RightBracket),
+                    )?;
+                    (Some(typeclass), terminator)
+                } else {
+                    (None, terminator)
+                };
+                params.push(TypeParamExpr { name, typeclass });
+                match terminator.token_type {
+                    TokenType::RightBracket => {
+                        break;
+                    }
+                    TokenType::Comma => {
+                        continue;
+                    }
+                    _ => {
+                        return Err(terminator.error("expected ']' or ',' after each type param"));
+                    }
                 }
             }
         }
@@ -375,9 +403,9 @@ impl Expression {
         Expression::generate_grouping(exprs, TokenType::LeftParen, TokenType::RightParen)
     }
 
-    // Generate a comma-separated grouping in angle brackets
+    // Generate a comma-separated grouping in square brackets
     pub fn generate_params(exprs: Vec<Expression>) -> Expression {
-        Expression::generate_grouping(exprs, TokenType::LessThan, TokenType::GreaterThan)
+        Expression::generate_grouping(exprs, TokenType::LeftBracket, TokenType::RightBracket)
     }
 
     // Generates a unary expression, parenthesizing if necessary according to precedence.
@@ -627,7 +655,7 @@ impl Expression {
         Expression::expect_parse(input, ExpressionType::Value)
     }
 
-    // For the purposes of this function, type params like <T, U> are considered types.
+    // For the purposes of this function, type params like [T, U] are considered types.
     pub fn is_type(&self) -> bool {
         match &self {
             Expression::Singleton(token) => token.is_type_name(),
@@ -657,10 +685,9 @@ enum PartialExpression {
     // Tokens that are only part of an expression
     Unary(Token),
 
-    // Binary includes < and > which might be used for type parameters.
     Binary(Token),
 
-    // An implicit binary expression, like "f(x)" or "List<Bool>".
+    // An implicit binary expression, like "f(x)" or "List[Bool]".
     // It's located between the f and the (x).
     Implicit(Token),
 }
@@ -711,6 +738,20 @@ fn parse_partial_expressions(
             return Ok((partials, token));
         }
 
+        if token.token_type == TokenType::LeftBracket {
+            // The start of a type parameter list.
+            // If so, we need to parse the whole list as a single expression.
+            let (subexpression, last_token) = Expression::parse(
+                tokens,
+                ExpressionType::Type,
+                Terminator::Is(TokenType::RightBracket),
+            )?;
+            partials.push_back(PartialExpression::Implicit(token.clone()));
+            let group = Expression::Grouping(token, Box::new(subexpression), last_token);
+            partials.push_back(PartialExpression::Expression(group));
+            continue;
+        }
+
         if token.token_type == TokenType::LessThan && expected_type == ExpressionType::Type {
             // The start of a type parameter list.
             // If so, we need to parse the whole list as a single expression.
@@ -735,7 +776,7 @@ fn parse_partial_expressions(
                 }
                 (ExpressionType::Type, TokenType::Comma)
                 | (ExpressionType::Type, TokenType::RightArrow)
-                | (ExpressionType::Type, TokenType::Dot)
+                | (ExpressionType::Type, TokenType::Dot) 
                 | (ExpressionType::Type, TokenType::LessThan)
                 | (ExpressionType::Type, TokenType::GreaterThan) => {
                     // These are okay in types
@@ -1037,7 +1078,7 @@ fn check_partial_expressions(partials: &VecDeque<PartialExpression>) -> Result<(
                     // Our sanity checks don't work for type parameters.
                     continue;
                 }
-            }
+            }            
             let right = &partials[i + 1];
             match (left, right) {
                 (PartialExpression::Binary(a), PartialExpression::Binary(b))
@@ -1548,20 +1589,20 @@ mod tests {
 
     #[test]
     fn test_generic_types() {
-        check_type("List<List<T>>");
-        check_type("List<List<X> -> List<Y>, List<Y> -> List<X>>");
-        check_type("List<(foo.Foo, bar.Bar) -> baz.Baz<Qux>>");
-        check_type("Pair<Bool, Bool>");
+        check_type("List[List[T]]");
+        check_type("List[List[X] -> List[Y], List[Y] -> List[X]]");
+        check_type("List[(foo.Foo, bar.Bar) -> baz.Baz[Qux]]");
+        check_type("Pair[Bool, Bool]");
     }
 
     #[test]
     fn test_type_params_in_expressions() {
-        check_value("foo<T>");
-        check_value("List<T>.new");
-        check_value("map(add<Int>, myList)");
-        check_value("is_surjective(identity<T>)");
-        check_value("foo.bar<T>");
-        check_value("maps_to<Bool, Bool>(not2, false)");
+        check_value("foo[T]");
+        check_value("List[T].new");
+        check_value("map(add[Int], myList)");
+        check_value("is_surjective(identity[T])");
+        check_value("foo.bar[T]");
+        check_value("maps_to[Bool, Bool](not2, false)");
     }
 
     #[test]
@@ -1571,11 +1612,16 @@ mod tests {
 
     #[test]
     fn test_multiple_type_params_in_argument() {
-        check_value("forall(p: Pair<Bool, Bool>) { true }");
+        check_value("forall(p: Pair[Bool, Bool]) { true }");
     }
 
     #[test]
     fn test_instantiated_method_expression() {
-        check_value("Pair<Foo, Bar>.new(foo, bar)");
+        check_value("Pair[Foo, Bar].new(foo, bar)");
+    }
+
+    #[test]
+    fn test_nested_generics_with_method() {
+        check_value("List[Pair[T1, T2]].new(nil)");
     }
 }

@@ -88,7 +88,7 @@ fn test_template_typechecking() {
     let mut env = Environment::test();
     env.add("type Nat: axiom");
     env.add("let zero: Nat = axiom");
-    env.add("define eq<T>(a: T, b: T) -> Bool { a = b }");
+    env.add("define eq[T](a: T, b: T) -> Bool { a = b }");
     env.add("theorem t1 { eq(zero, zero) }");
     env.add("theorem t2 { eq(zero = zero, zero = zero) }");
     env.add("theorem t3 { eq(zero = zero, eq(zero, zero)) }");
@@ -500,7 +500,7 @@ fn test_cant_reuse_type_param_name() {
     let mut env = Environment::test();
     env.add(
         r#"
-            structure Pair<T, U> {
+            structure Pair[T, U] {
                 first: T
                 second: U
             }
@@ -510,7 +510,7 @@ fn test_cant_reuse_type_param_name() {
     // Reusing in a different scope is fine.
     env.add(
         r#"
-            structure Pair2<T, U> {
+            structure Pair2[T, U] {
                 first: T
                 second: U
             }
@@ -520,7 +520,7 @@ fn test_cant_reuse_type_param_name() {
     // Reusing a global name is not.
     env.bad(
         r#"
-            structure T<Pair, U> {
+            structure T[Pair, U] {
                 first: Pair
                 second: U
             }
@@ -598,7 +598,7 @@ fn test_env_attribute_with_extra_type_param() {
 }
 
 #[test]
-fn test_class_with_mismatched_num_params() {
+fn test_env_attributes_must_provide_all_params() {
     let mut env = Environment::test();
     env.add(
         r#"
@@ -610,7 +610,7 @@ fn test_class_with_mismatched_num_params() {
     );
     env.bad(
         r#"
-            attributes Pair<T> {
+            attributes Pair[T] {
                 let t: Bool = true
             }
             "#,
@@ -622,7 +622,7 @@ fn test_structures_cant_reuse_param_names() {
     let mut env = Environment::test();
     env.bad(
         r#"
-            structure Pair<T, T> {
+            structure Pair[T, T] {
                 first: T
                 second: T
             }
@@ -635,7 +635,7 @@ fn test_struct_params_leave_scope() {
     let mut env = Environment::test();
     env.add(
         r#"
-            structure Pair<T, U> {
+            structure Pair[T, U] {
                 first: T
                 second: U
             }
@@ -653,7 +653,7 @@ fn test_class_params_leave_scope() {
     let mut env = Environment::test();
     env.add(
         r#"
-            structure Pair<T, U> {
+            structure Pair[T, U] {
                 first: T
                 second: U
             }
@@ -661,7 +661,7 @@ fn test_class_params_leave_scope() {
     );
     env.add(
         r#"
-            attributes Pair<T, U> {
+            attributes Pair[T, U] {
                 let t: T = axiom
                 let u: U = axiom
             }
@@ -692,12 +692,12 @@ fn test_no_templated_define_inside_proof() {
 
     env.bad(
         r#"
-            theorem baz<T> {
+            theorem baz[T] {
                 forall(x: T) {
                     true
                 }
             } by {
-                define qux<U>(x: U) -> Bool {
+                define qux[U](x: U) -> Bool {
                     true
                 }
             }
@@ -1384,7 +1384,7 @@ fn test_templated_recursive_function() {
                 zero
                 suc(Nat)
             }
-            define repeat<T>(n: Nat, f: T -> T, a: T) -> T {
+            define repeat[T](n: Nat, f: T -> T, a: T) -> T {
                 match n {
                     Nat.zero {
                         a
@@ -1713,7 +1713,7 @@ fn test_generic_structure() {
     let mut env = Environment::test();
     env.add(
         r#"
-            structure Pair<T, U> {
+            structure Pair[T, U] {
                 first: T
                 second: U
             }
@@ -1726,13 +1726,13 @@ fn test_generic_class_statement() {
     let mut env = Environment::test();
     env.add(
         r#"
-            structure Pair<T, U> {
+            structure Pair[T, U] {
                 first: T
                 second: U
             }
 
-            attributes Pair<T, U> {
-                define swap(self) -> Pair<U, T> {
+            attributes Pair[T, U] {
+                define swap(self) -> Pair[U, T] {
                     Pair.new(self.second, self.first)
                 }
             }
@@ -1745,7 +1745,7 @@ fn test_aliases_for_generics() {
     let mut env = Environment::test();
     env.add(
         r#"
-            structure Pair<T, U> {
+            structure Pair[T, U] {
                 first: T
                 second: U
             }
@@ -1753,7 +1753,7 @@ fn test_aliases_for_generics() {
     );
     env.add(
         r#"
-            type BoolPair: Pair<Bool, Bool>
+            type BoolPair: Pair[Bool, Bool]
             let truetrue: BoolPair = Pair.new(true, true)
             "#,
     );
@@ -1764,7 +1764,7 @@ fn test_theorem_with_instantiated_arg_type() {
     let mut env = Environment::test();
     env.add(
         r#"
-            structure Pair<T, U> {
+            structure Pair[T, U] {
                 first: T
                 second: U
             }
@@ -1772,7 +1772,7 @@ fn test_theorem_with_instantiated_arg_type() {
     );
     env.add(
         r#"
-            theorem goal(p: Pair<Bool, Bool>) {
+            theorem goal(p: Pair[Bool, Bool]) {
                 p.first = p.second or p.first = not p.second
             }
             "#,
@@ -1786,14 +1786,14 @@ fn test_methods_on_generic_classes() {
         r#"
             type Foo: axiom
             type Bar: axiom
-            structure Pair<T, U> {
+            structure Pair[T, U] {
                 first: T
                 second: U
             }
             let f: Foo = axiom
             let b: Bar = axiom
-            let p1: Pair<Foo, Bar> = Pair.new(f, b)
-            let p2: Pair<Foo, Bar> = Pair<Foo, Bar>.new(f, b)
+            let p1: Pair[Foo, Bar] = Pair.new(f, b)
+            let p2: Pair[Foo, Bar] = Pair[Foo, Bar].new(f, b)
             "#,
     );
 
@@ -1801,7 +1801,7 @@ fn test_methods_on_generic_classes() {
     // But we need this syntax to work for typeclasses anyway.
     env.add(
         r#"
-            let p3: Pair<Foo, Bar> = Pair.new<Foo, Bar>(f, b)
+            let p3: Pair[Foo, Bar] = Pair.new[Foo, Bar](f, b)
             "#,
     );
 }
@@ -1813,24 +1813,24 @@ fn test_generic_return_types() {
         r#"
             type Foo: axiom
             type Bar: axiom
-            structure Pair<T, U> {
+            structure Pair[T, U] {
                 first: T
                 second: U
             }
             
-            attributes Pair<T, U> {
-                define swap(self) -> Pair<U, T> {
+            attributes Pair[T, U] {
+                define swap(self) -> Pair[U, T] {
                     Pair.new(self.second, self.first)
                 }
             }
 
-            let s: Pair<Foo, Bar> -> Pair<Bar, Foo> = Pair<Foo, Bar>.swap
+            let s: Pair[Foo, Bar] -> Pair[Bar, Foo] = Pair[Foo, Bar].swap
             let f: Foo = axiom
             let b: Bar = axiom
-            let p1: Pair<Foo, Bar> = Pair.new(f, b)
-            let p2: Pair<Bar, Foo> = p1.swap
-            let p3: Pair<Foo, Bar> = p2.swap
-            let p4: Pair<Foo, Bar> = p1.swap.swap
+            let p1: Pair[Foo, Bar] = Pair.new(f, b)
+            let p2: Pair[Bar, Foo] = p1.swap
+            let p3: Pair[Foo, Bar] = p2.swap
+            let p4: Pair[Foo, Bar] = p1.swap.swap
             "#,
     );
 }
@@ -1840,7 +1840,7 @@ fn test_aliasing_a_generic_type() {
     let mut env = Environment::test();
     env.add(
         r#"
-            structure Pair<T, U> {
+            structure Pair[T, U] {
                 first: T
                 second: U
             }
@@ -1918,7 +1918,7 @@ fn test_params_with_arg_application() {
         r#"
             type Nat: axiom
 
-            define maps_to<T, U>(f: T -> U, u: U) -> Bool {
+            define maps_to[T, U](f: T -> U, u: U) -> Bool {
                 exists(t: T) {
                     f(t) = u
                 }
@@ -1929,7 +1929,7 @@ fn test_params_with_arg_application() {
             }
 
             theorem foo {
-                maps_to<Bool, Bool>(not2, false)
+                maps_to[Bool, Bool](not2, false)
             }
         "#,
     );
