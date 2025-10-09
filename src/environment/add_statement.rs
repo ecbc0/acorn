@@ -356,11 +356,6 @@ impl Environment {
                 .name_token
                 .error("parametrized functions may only be defined at the top level"));
         }
-        if self_type.is_some() && !ds.type_params.is_empty() {
-            return Err(ds
-                .name_token
-                .error("member functions may not have type parameters"));
-        }
         if self.bindings.constant_name_in_use(&defined_name) {
             return Err(ds.name_token.error(&format!(
                 "function name '{}' already defined in this scope",
@@ -377,6 +372,7 @@ impl Environment {
                 &ds.return_value,
                 self_type,
                 defined_name.as_constant(),
+                datatype_params,
                 project,
                 Some(&mut self.token_map),
             )?;
@@ -406,7 +402,16 @@ impl Environment {
             let params = if let Some(datatype_params) = datatype_params {
                 // When a datatype is parametrized, the member gets parameters from the datatype.
                 fn_value = fn_value.genericize(&datatype_params);
-                datatype_params.clone()
+
+                // If the member function has additional type parameters, add them too
+                if !fn_param_names.is_empty() {
+                    fn_value = fn_value.genericize(&fn_param_names);
+                    let mut combined_params = datatype_params.clone();
+                    combined_params.extend(fn_param_names);
+                    combined_params
+                } else {
+                    datatype_params.clone()
+                }
             } else {
                 // When there's no datatype, we just have the function's own type parameters.
                 fn_param_names
@@ -426,9 +431,20 @@ impl Environment {
 
         // Defining an axiom
         let new_axiom_type = AcornType::functional(arg_types, value_type);
+        let params = if let Some(datatype_params) = datatype_params {
+            if !fn_param_names.is_empty() {
+                let mut combined_params = datatype_params.clone();
+                combined_params.extend(fn_param_names);
+                combined_params
+            } else {
+                datatype_params.clone()
+            }
+        } else {
+            fn_param_names
+        };
         self.define_constant(
             defined_name,
-            fn_param_names,
+            params,
             new_axiom_type,
             None,
             range,
@@ -463,6 +479,7 @@ impl Environment {
             &ts.claim,
             None,
             None,
+            None,
             project,
             Some(&mut self.token_map),
         )?;
@@ -483,6 +500,9 @@ impl Environment {
         // Externally we use the theorem in unnamed, "forall" form
         let external_claim = AcornValue::forall(arg_types.clone(), unbound_claim.clone());
         if let Err(message) = external_claim.validate() {
+            return Err(ts.claim.error(&message));
+        }
+        if let Err(message) = external_claim.validate_constants(&self.bindings) {
             return Err(ts.claim.error(&message));
         }
 
@@ -645,6 +665,7 @@ impl Environment {
             &fss.declarations,
             None,
             &fss.condition,
+            None,
             None,
             None,
             project,
@@ -1568,6 +1589,7 @@ impl Environment {
                         &condition.args,
                         None,
                         &condition.claim,
+                        None,
                         None,
                         None,
                         project,

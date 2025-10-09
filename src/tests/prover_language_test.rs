@@ -1407,3 +1407,121 @@ fn test_proving_with_default_required_attribute() {
         "#;
     verify_succeeds(text);
 }
+
+#[test]
+fn test_proving_with_boxed_bool() {
+    let text = r#"
+    structure BoxedBool {
+        value: Bool
+    }
+
+    define boxed_and(a: BoxedBool, b: BoxedBool) -> BoxedBool {
+        BoxedBool.new(a.value and b.value)
+    }
+
+    theorem goal(b: BoxedBool) {
+        not b.value implies not boxed_and(b, b).value
+    }
+    "#;
+    verify_succeeds(text);
+}
+
+#[test]
+fn test_proving_with_attribute_params() {
+    let text = r#"
+    structure BoolPair {
+        first: Bool
+        second: Bool
+    }
+
+    attributes BoolPair {
+        define apply_first<T>(self, f: Bool -> T) -> T {
+            f(self.first)
+        }
+    }
+
+    theorem type_attr_syntax(b: BoolPair, f: Bool -> Bool) {
+        BoolPair.apply_first(b, f) = f(b.first)
+    }
+
+    theorem obj_attr_syntax(b: BoolPair, f: Bool -> Bool) {
+        b.apply_first(f) = f(b.first)
+    }
+
+    structure Pair<T, U> {
+        first: T
+        second: U
+    }
+
+    attributes Pair<T, U> {
+        define map_first<V>(self, f: T -> V) -> V {
+            f(self.first)
+        }
+    }
+
+    theorem type_attr_generic<A, B, C>(p: Pair<A, B>, f: A -> C) {
+        Pair.map_first(p, f) = f(p.first)
+    }
+
+    theorem obj_attr_generic<A, B, C>(p: Pair<A, B>, f: A -> C) {
+        p.map_first(f) = f(p.first)
+    }
+    "#;
+    verify_succeeds(text);
+}
+
+#[test]
+fn test_proving_with_generic_attribute_match() {
+    let text = r#"
+    inductive Option<T> {
+        none
+        some(T)
+    }
+
+    attributes Option<T> {
+        define map<U>(self, f: T -> U) -> Option<U> {
+            match self {
+                Option.none {
+                    Option.none<U>
+                }
+                Option.some(t) {
+                    Option.some(f(t))
+                }
+            }
+        }
+    }
+
+    theorem goal<T, U>(t: T, f: T -> U) {
+        Option.some(t).map(f) = Option.some(f(t))
+    }
+    "#;
+    verify_succeeds(text);
+}
+
+#[test]
+fn test_proving_with_generic_attribute_recursion() {
+    let text = r#"
+    inductive List<T> {
+        nil
+        cons(T, List<T>)
+    }
+
+    attributes List<T> {
+        define map<U>(self, f: T -> U) -> List<U> {
+            match self {
+                List.nil {
+                    List.nil<U>
+                }
+                List.cons(head, tail) {
+                    List.cons(f(head), tail.map(f))
+                }
+            }
+        }
+    }
+
+    theorem goal<T, U>(head: T, tail: List<T>, f: T -> U) {
+        List.cons(head, tail).map(f) = List.cons(f(head), tail.map(f))
+    }
+    "#;
+    verify_succeeds(text);
+}

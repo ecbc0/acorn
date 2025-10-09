@@ -526,6 +526,36 @@ impl AcornType {
         }
     }
 
+    /// Returns whether this type contains a specific arbitrary type parameter.
+    pub fn has_arbitrary_type_param(&self, param: &TypeParam) -> bool {
+        match self {
+            AcornType::Arbitrary(p) => p == param,
+            AcornType::Function(ftype) => {
+                ftype
+                    .arg_types
+                    .iter()
+                    .any(|t| t.has_arbitrary_type_param(param))
+                    || ftype.return_type.has_arbitrary_type_param(param)
+            }
+            AcornType::Data(_, params) => params.iter().any(|t| t.has_arbitrary_type_param(param)),
+            _ => false,
+        }
+    }
+
+    /// Returns whether this type contains a specific type parameter (as a Variable or Arbitrary).
+    /// This checks recursively, including nested type parameters inside Data and Function types.
+    pub fn contains_type_var(&self, param: &TypeParam) -> bool {
+        match self {
+            AcornType::Variable(p) | AcornType::Arbitrary(p) => p == param,
+            AcornType::Data(_, type_args) => type_args.iter().any(|t| t.contains_type_var(param)),
+            AcornType::Function(ftype) => {
+                ftype.arg_types.iter().any(|t| t.contains_type_var(param))
+                    || ftype.return_type.contains_type_var(param)
+            }
+            _ => false,
+        }
+    }
+
     /// Returns whether this type is a function type.
     pub fn is_functional(&self) -> bool {
         match self {
@@ -570,12 +600,10 @@ impl fmt::Display for AcornType {
                 // A type variable has a name that is generally hidden from the user.
                 // You can't use these in explicit code, so this won't be used for codegen.
                 // So just print out the typeclass name.
-                let nice_tc = match &param.typeclass {
-                    Some(tc) => &tc.name,
-                    None => "*",
-                };
-                write!(f, "{}", nice_tc)?;
-                Ok(())
+                match &param.typeclass {
+                    Some(tc) => write!(f, "{}", tc.name),
+                    None => write!(f, "{}*", param.name),
+                }
             }
             AcornType::Arbitrary(param) => {
                 // An arbitrary type will look to the user just like an opaque type.

@@ -177,19 +177,19 @@ impl<'a> TypeUnifier<'a> {
     pub fn resolve_with_inference(
         &mut self,
         unresolved: UnresolvedConstant,
-        args: Vec<AcornValue>,
+        mut args: Vec<AcornValue>,
         expected_return_type: Option<&AcornType>,
         source: &dyn ErrorSource,
     ) -> compilation::Result<AcornValue> {
+        // If the unresolved constant has stored args, prepend them to the new args
+        let mut all_args = unresolved.args.clone();
+        all_args.append(&mut args);
+
         // Use the arguments to infer types
-        let unresolved_return_type = if args.is_empty() {
+        let unresolved_return_type = if all_args.is_empty() {
             unresolved.generic_type.clone()
         } else if let AcornType::Function(unresolved_function_type) = &unresolved.generic_type {
-            if unresolved_function_type.has_arbitrary() {
-                return Err(source.error("unresolved function type has arbitrary"));
-            }
-
-            for (i, arg) in args.iter().enumerate() {
+            for (i, arg) in all_args.iter().enumerate() {
                 if arg.has_generic() {
                     return Err(
                         source.error(&format!("argument {} ({}) has unresolved type", i, arg))
@@ -201,7 +201,7 @@ impl<'a> TypeUnifier<'a> {
                         return Err(source.error(&format!(
                             "expected {} arguments but got {}",
                             unresolved_function_type.arg_types.len(),
-                            args.len()
+                            all_args.len()
                         )));
                     }
                 };
@@ -213,7 +213,7 @@ impl<'a> TypeUnifier<'a> {
                 )?;
             }
 
-            unresolved_function_type.applied_type(args.len())
+            unresolved_function_type.applied_type(all_args.len())
         } else {
             return Err(source.error("expected a function type"));
         };
@@ -241,11 +241,123 @@ impl<'a> TypeUnifier<'a> {
             }
         }
 
-        // Resolve
-        let instance_fn = unresolved.resolve(source, instance_params)?;
-        let value = AcornValue::apply(instance_fn, args);
+        // Resolve the constant (this will no longer apply stored args since we're using a temporary unresolved)
+        let unresolved_without_args = UnresolvedConstant {
+            name: unresolved.name,
+            params: unresolved.params,
+            generic_type: unresolved.generic_type,
+            args: vec![], // Don't apply args in resolve(), we'll apply all_args here
+        };
+        let instance_fn = unresolved_without_args.resolve(source, instance_params)?;
+        let value = AcornValue::apply(instance_fn, all_args);
         value.check_type(expected_return_type, source)?;
         Ok(value)
+    }
+
+    /// Try to resolve with inference, allowing partial resolution.
+    /// If all type parameters can be inferred, returns a resolved value.
+    /// If some cannot be inferred, returns an unresolved value with args accumulated.
+    /// This method never "partially resolves". It either fully resolves the type, or just adds
+    /// arguments to the unresolved constant.
+    pub fn try_resolve_with_inference(
+        &mut self,
+        unresolved: UnresolvedConstant,
+        args: Vec<AcornValue>,
+        expected_return_type: Option<&AcornType>,
+        source: &dyn ErrorSource,
+    ) -> compilation::Result<PotentialValue> {
+        // Calculate the offset for new args (accounting for stored args)
+        let arg_offset = unresolved.args.len();
+        let total_args = arg_offset + args.len();
+
+        // Use the arguments to infer types
+        let unresolved_return_type = if args.is_empty() {
+            unresolved.generic_type.clone()
+        } else if let AcornType::Function(unresolved_function_type) = &unresolved.generic_type {
+            for (i, arg) in args.iter().enumerate() {
+                let arg_index = arg_offset + i;
+                if arg.has_generic() {
+                    return Err(source.error(&format!(
+                        "argument {} ({}) has unresolved type",
+                        arg_index, arg
+                    )));
+                }
+                let arg_type: &AcornType = match &unresolved_function_type.arg_types.get(arg_index)
+                {
+                    Some(t) => t,
+                    None => {
+                        return Err(source.error(&format!(
+                            "expected {} arguments but got {}",
+                            unresolved_function_type.arg_types.len(),
+                            total_args
+                        )));
+                    }
+                };
+                self.user_match_instance(
+                    arg_type,
+                    &arg.get_type(),
+                    &format!("argument {}", arg_index),
+                    source,
+                )?;
+            }
+
+            unresolved_function_type.applied_type(total_args)
+        } else {
+            return Err(source.error("expected a function type"));
+        };
+
+        if let Some(target_type) = expected_return_type {
+            // Use the expected type to infer types
+            self.user_match_instance(&unresolved_return_type, target_type, "return value", source)?;
+        }
+
+        // Determine which parameters have been inferred and which haven't
+        let mut all_params = vec![];
+        let mut uninferred_params = vec![];
+
+        for param in &unresolved.params {
+            match self.mapping.get(&param.name) {
+                Some(t) => {
+                    // Parameter was inferred from arguments
+                    all_params.push(t.clone());
+                }
+                None => {
+                    // Parameter not inferred - keep as type variable
+                    all_params.push(AcornType::Variable(param.clone()));
+                    uninferred_params.push(param.clone());
+                }
+            }
+        }
+
+        // Combine stored args with new args
+        let combined_args = [unresolved.args.clone(), args].concat();
+
+        if uninferred_params.is_empty() {
+            // All parameters inferred - fully resolve
+            // Create unresolved without stored args to avoid double-application
+            let unresolved_without_args = UnresolvedConstant {
+                name: unresolved.name,
+                params: unresolved.params,
+                generic_type: unresolved.generic_type,
+                args: vec![], // Don't apply args in resolve(), we'll apply combined_args here
+            };
+            let instance_fn = unresolved_without_args.resolve(source, all_params)?;
+            let value = AcornValue::apply(instance_fn, combined_args);
+            value.check_type(expected_return_type, source)?;
+            Ok(PotentialValue::Resolved(value))
+        } else {
+            // We could not infer all parameters.
+            // We don't partially infer, here. We just append the new arguments.
+            // Later we will use them to fully infer.
+            let unresolved_partial = UnresolvedConstant {
+                name: unresolved.name.clone(),
+                params: unresolved.params.clone(),
+                generic_type: unresolved.generic_type.clone(),
+                args: combined_args,
+            };
+
+            Ok(PotentialValue::Unresolved(unresolved_partial))
+        }
     }
 
     /// If we have an expected type and this is still a potential value, resolve it.

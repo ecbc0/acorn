@@ -519,6 +519,23 @@ mod tests {
     }
 
     #[test]
+    fn test_parsing_attribute_with_extra_type_param() {
+        ok(indoc! {"
+        attributes List[T] {
+            define map[U](self, f: T -> U) -> List<U> {
+                match self {
+                    List.nil {
+                        List.nil<U>
+                    }
+                    List.cons(head, tail) {
+                        List.cons(f(head), map(tail, f))
+                    }
+                }
+            }
+        }"});
+    }
+
+    #[test]
     fn test_parsing_typeclass_statement_theorems() {
         ok(indoc! {"
         typeclass T: MyTypeclass {

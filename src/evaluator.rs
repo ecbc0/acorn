@@ -431,7 +431,7 @@ impl<'a> Evaluator<'a> {
         receiver: AcornValue,
         attr_name: &str,
         source: &dyn ErrorSource,
-    ) -> compilation::Result<AcornValue> {
+    ) -> compilation::Result<PotentialValue> {
         let base_type = receiver.get_type();
 
         let function = match &base_type {
@@ -455,7 +455,7 @@ impl<'a> Evaluator<'a> {
             }
         };
         self.bindings
-            .apply_potential(function, vec![receiver], None, source)
+            .try_apply_potential(function, vec![receiver], None, source)
     }
 
     /// Evaluates a single name, which may be namespaced to another named entity.
@@ -470,8 +470,8 @@ impl<'a> Evaluator<'a> {
         let name = name_token.text();
         let entity = match namespace {
             Some(NamedEntity::Value(instance)) => {
-                let value = self.evaluate_value_attr(instance, name, name_token)?;
-                NamedEntity::Value(value)
+                let potential = self.evaluate_value_attr(instance, name, name_token)?;
+                NamedEntity::new(potential)
             }
             Some(NamedEntity::Type(t)) => {
                 match &t {
@@ -739,29 +739,62 @@ impl<'a> Evaluator<'a> {
         let right_value = self.evaluate_value_with_stack(stack, right, None)?;
 
         // Get the partial application to the left
-        let partial = self.evaluate_value_attr(left_value, name, expression)?;
-        let mut fa = match partial {
-            AcornValue::Application(fa) => fa,
-            _ => {
-                return Err(expression.error(&format!(
-                    "the '{}' operator requires a method named '{}'",
-                    token, name
-                )))
+        let potential = self.evaluate_value_attr(left_value, name, expression)?;
+
+        // Handle Resolved and Unresolved cases differently
+        let value = match potential {
+            PotentialValue::Resolved(partial) => {
+                // Resolved case: use the old logic to preserve value structure for code generation
+                let mut fa = match partial {
+                    AcornValue::Application(fa) => fa,
+                    _ => {
+                        return Err(expression.error(&format!(
+                            "the '{}' operator requires a method named '{}'",
+                            token, name
+                        )))
+                    }
+                };
+                match fa.function.get_type() {
+                    AcornType::Function(f) => {
+                        if f.arg_types.len() != 2 {
+                            return Err(expression.error(&format!(
+                                "expected a binary function for '{}' method",
+                                name
+                            )));
+                        }
+                        right_value.check_type(Some(&f.arg_types[1]), expression)?;
+                    }
+                    _ => {
+                        return Err(
+                            expression.error(&format!("unexpected type for '{}' method", name))
+                        )
+                    }
+                };
+
+                fa.args.push(right_value);
+                AcornValue::apply(*fa.function, fa.args)
             }
-        };
-        match fa.function.get_type() {
-            AcornType::Function(f) => {
-                if f.arg_types.len() != 2 {
-                    return Err(expression
-                        .error(&format!("expected a binary function for '{}' method", name)));
+            PotentialValue::Unresolved(_) => {
+                // Unresolved case: use type inference to resolve the method
+                let applied_potential = self.bindings.try_apply_potential(
+                    potential,
+                    vec![right_value],
+                    expected_type,
+                    expression,
+                )?;
+
+                match applied_potential {
+                    PotentialValue::Resolved(v) => v,
+                    PotentialValue::Unresolved(_) => {
+                        return Err(expression.error(&format!(
+                            "cannot infer type parameters for '{}' operator",
+                            token
+                        )))
+                    }
                 }
-                right_value.check_type(Some(&f.arg_types[1]), expression)?;
             }
-            _ => return Err(expression.error(&format!("unexpected type for '{}' method", name))),
         };
 
-        fa.args.push(right_value);
-        let value = AcornValue::apply(*fa.function, fa.args);
         value.check_type(expected_type, expression)?;
         Ok(value)
     }
@@ -836,7 +869,16 @@ impl<'a> Evaluator<'a> {
                 token_type => match token_type.to_prefix_magic_method_name() {
                     Some(name) => {
                         let subvalue = self.evaluate_value_with_stack(stack, expr, None)?;
-                        let value = self.evaluate_value_attr(subvalue, name, token)?;
+                        let potential = self.evaluate_value_attr(subvalue, name, token)?;
+                        let value = match potential {
+                            PotentialValue::Resolved(v) => v,
+                            PotentialValue::Unresolved(_) => {
+                                return Err(token.error(&format!(
+                                    "cannot use unresolved generic function for '{}' operator",
+                                    token
+                                )))
+                            }
+                        };
                         value.check_type(expected_type, token)?;
                         value
                     }
@@ -864,9 +906,14 @@ impl<'a> Evaluator<'a> {
                         Box::new(right_value),
                     )
                 }
-                TokenType::Equals => {
+                TokenType::Equals | TokenType::Iff => {
                     AcornType::Bool.check_eq(expected_type, token)?;
-                    let left_value = self.evaluate_value_with_stack(stack, left, None)?;
+                    let left_expected = if token.token_type == TokenType::Iff {
+                        Some(&AcornType::Bool)
+                    } else {
+                        None
+                    };
+                    let left_value = self.evaluate_value_with_stack(stack, left, left_expected)?;
                     let right_value =
                         self.evaluate_value_with_stack(stack, right, Some(&left_value.get_type()))?;
                     AcornValue::Binary(

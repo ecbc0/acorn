@@ -529,33 +529,80 @@ fn test_cant_reuse_type_param_name() {
 }
 
 #[test]
-fn test_no_params_on_member_functions() {
+fn test_param_on_member_function() {
     let mut env = Environment::test();
     env.add(
         r#"
-            structure BoolPair {
-                first: Bool
-                second: Bool
-            }
-            "#,
+        structure BoolPair {
+            first: Bool
+            second: Bool
+        }
+        "#,
     );
-    env.bad(
+    env.add(
         r#"
-            attributes BoolPair {
-                define apply_first[T](self, f: Bool -> T) -> T {
-                    f(self.first)
-                }
+        attributes BoolPair {
+            define apply_first<T>(self, f: Bool -> T) -> T {
+                f(self.first)
             }
-            "#,
+        }
+
+        theorem type_attr_syntax(b: BoolPair, f: Bool -> Bool) {
+            BoolPair.apply_first(b, f) = f(b.first)
+        }
+
+        theorem obj_attr_syntax(b: BoolPair, f: Bool -> Bool) {
+            b.apply_first(f) = f(b.first)
+        }
+
+        let bp: BoolPair = axiom
+        "#,
     );
+
+    // Unresolved type
+    env.bad("let g = bp.apply_first");
 }
 
 #[test]
-fn test_class_with_mismatched_num_params() {
+fn test_env_attribute_with_extra_type_param() {
     let mut env = Environment::test();
     env.add(
         r#"
-            structure Pair[T, U] {
+        structure Pair<T, U> {
+            first: T
+            second: U
+        }
+
+        attributes Pair<T, U> {
+            define map_first<V>(self, f: T -> V) -> V {
+                f(self.first)
+            }
+        }
+
+        theorem type_attr_syntax<A, B, C>(p: Pair<A, B>, f: A -> C) {
+            Pair.map_first(p, f) = f(p.first)
+        }
+
+        theorem obj_attr_syntax<A, B, C>(p: Pair<A, B>, f: A -> C) {
+            p.map_first(f) = f(p.first)
+        }
+
+        type Nat: axiom
+        let zero: Nat = axiom
+        let p = Pair.new(zero, zero)
+        "#,
+    );
+
+    // Unresolved type
+    env.bad("let f = p.map_first");
+}
+
+#[test]
+fn test_env_attributes_must_provide_all_params() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+            structure Pair<T, U> {
                 first: T
                 second: U
             }
@@ -1751,7 +1798,7 @@ fn test_methods_on_generic_classes() {
     );
 
     // Originally this intentionally didn't work.
-    // But need this syntax to work for typeclasses anyway.
+    // But we need this syntax to work for typeclasses anyway.
     env.add(
         r#"
             let p3: Pair[Foo, Bar] = Pair.new[Foo, Bar](f, b)
@@ -2006,6 +2053,98 @@ fn test_reusing_goal_arg_name() {
                     a = a
                 }(a)
             }
+        "#,
+    );
+}
+
+#[test]
+fn test_iff_basics() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+    theorem goal(a: Bool, b: Bool) {
+        a or b iff b or a
+    }
+    "#,
+    )
+}
+
+#[test]
+fn test_iff_not_allowed_for_non_bool() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+    type Nat: axiom
+    let m: Nat = axiom
+    let n: Nat = axiom
+    "#,
+    );
+    env.bad("let b: Bool = (m iff n)");
+}
+
+#[test]
+fn test_env_recursive_attribute() {
+    // This tests that recursive generic attribute functions have the correct number of type parameters.
+    // When an attribute function on List<T> has its own type parameter <U>, the recursive reference
+    // should have both T and U parameters, not just U.
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        inductive List<T> {
+            nil
+            cons(T, List<T>)
+        }
+
+        attributes List<T> {
+            define map<U>(self, f: T -> U) -> List<U> {
+                match self {
+                    List.nil {
+                        List.nil<U>
+                    }
+                    List.cons(head, tail) {
+                        List.cons(f(head), tail.map(f))
+                    }
+                }
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn test_env_infix_with_extra_param() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        inductive List<T> {
+            nil
+            cons(T, List<T>)
+        }
+
+        attributes List<T> {
+            define mul<U>(self, f: T -> U) -> List<U> {
+                match self {
+                    List.nil {
+                        List.nil<U>
+                    }
+                    List.cons(head, tail) {
+                        List.cons(f(head), tail.mul(f))
+                    }
+                }
+            }
+        }
+
+        define function1<T, U>(items: List<T>, f: T -> U) -> List<U> {
+            items * f
+        }
+
+        theorem theorem1<T, U>(items: List<T>, f: T -> List<U>, items_1: List<List<U>>) {
+            items.mul(f) = items_1
+        }
+
+        define function2<T, U>(items: List<T>, f: T -> List<U>, items_1: List<List<U>>) -> Bool {
+            items.mul(f) = items_1
+        }
         "#,
     );
 }

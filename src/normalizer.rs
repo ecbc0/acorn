@@ -994,18 +994,20 @@ impl NormalizerView<'_> {
             value if value.is_bool_type() => {
                 // Synthesize a term to represent this value.
                 let skolem_term = self.make_skolem_term(&AcornType::Bool, stack, synth)?;
+                let skolem_id = if let Atom::Synthetic(id) = skolem_term.head {
+                    id
+                } else {
+                    return Err("internal error: skolem term is not synthetic".to_string());
+                };
                 let skolem_value = self
                     .as_ref()
                     .denormalize_term(&skolem_term, &mut None, None);
-
-                let _definition_cnf =
+                let definition_cnf =
                     self.eq_to_cnf(&skolem_value, value, false, stack, next_var_id, synth)?;
-
-                // TODO:
-                // 1. add the definition
-                // 2. return the skolem term
-
-                Err("TODO: synthesize term for boolean".to_string())
+                let clauses = definition_cnf.clone().into_clauses();
+                self.as_mut()?
+                    .define_synthetic_atoms(vec![skolem_id], clauses)?;
+                Ok(ExtendedTerm::Term(skolem_term))
             }
             _ => Err(format!("cannot convert '{}' to extended term", value)),
         }
@@ -1030,12 +1032,27 @@ impl Normalizer {
         let mut mut_view = NormalizerView::Mut(self);
         let clauses = mut_view.nice_value_to_clauses(&value, &mut skolem_ids)?;
 
-        if !skolem_ids.is_empty() {
-            // We have to define the skolem atoms that were declared during skolemization.
-            self.define_synthetic_atoms(skolem_ids, clauses.clone())?;
+        // For any of the created ids that have not been defined yet, the output
+        // clauses will be their definition.
+        let mut output = vec![];
+        let mut undefined_ids = vec![];
+        for id in skolem_ids {
+            if let Some(def) = self.synthetic_definitions.get(&id) {
+                for clause in &def.clauses {
+                    output.push(clause.clone());
+                }
+            } else {
+                undefined_ids.push(id);
+            }
         }
 
-        Ok(clauses)
+        if !undefined_ids.is_empty() {
+            // We have to define the skolem atoms that were declared during skolemization.
+            self.define_synthetic_atoms(undefined_ids, clauses.clone())?;
+        }
+
+        output.extend(clauses.into_iter());
+        Ok(output)
     }
 
     /// Converts a value to CNF: Conjunctive Normal Form.
@@ -2202,12 +2219,16 @@ mod tests {
         "#,
         );
 
-        // TODO: flip the experiment to true
-        let experiment = false;
-
-        if experiment {
-            let mut norm = Normalizer::new();
-            norm.check(&env, "goal", &["todo"]);
-        }
+        let mut norm = Normalizer::new();
+        norm.check(
+            &env,
+            "goal",
+            &[
+                "not s0(x0, x1) or BoxedBool.value(x0)",
+                "not s0(x0, x1) or BoxedBool.value(x1)",
+                "not BoxedBool.value(x0) or not BoxedBool.value(x1) or s0(x0, x1)",
+                "BoxedBool.new(s0(x0, x1)) = f(x0, x1)",
+            ],
+        );
     }
 }
