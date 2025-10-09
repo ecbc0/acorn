@@ -2141,6 +2141,10 @@ fn test_env_infix_with_extra_param() {
         theorem theorem1<T, U>(items: List<T>, f: T -> List<U>, items_1: List<List<U>>) {
             items.mul(f) = items_1
         }
+
+        define function2<T, U>(items: List<T>, f: T -> List<U>, items_1: List<List<U>>) -> Bool {
+            items.mul(f) = items_1
+        }
         "#,
     );
 }
