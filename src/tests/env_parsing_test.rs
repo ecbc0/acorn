@@ -2112,7 +2112,7 @@ fn test_env_recursive_attribute() {
 }
 
 #[test]
-fn test_env_multi_generic_infix() {
+fn test_env_infix_with_extra_param() {
     let mut env = Environment::test();
     env.add(
         r#"
@@ -2134,8 +2134,12 @@ fn test_env_multi_generic_infix() {
             }
         }
 
-        define alt_mul<T, U>(items: List<T>, f: T -> U) -> List<U> {
+        define function1<T, U>(items: List<T>, f: T -> U) -> List<U> {
             items * f
+        }
+
+        theorem theorem1<T, U>(items: List<T>, f: T -> List<U>, items_1: List<List<U>>) {
+            items.mul(f) = items_1
         }
         "#,
     );
