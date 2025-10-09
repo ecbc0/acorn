@@ -177,8 +177,14 @@ impl ConstantInstance {
             for param in params {
                 if old_instance_type.has_arbitrary_type_param(param) {
                     let param_as_type = AcornType::Variable(param.clone());
-                    // Only add if not already present
-                    if !result_params.contains(&param_as_type) {
+
+                    // Check if this type param is already used anywhere in result_params
+                    // We need to check recursively because it might be nested inside a Data type
+                    let param_already_used = result_params
+                        .iter()
+                        .any(|existing_type| existing_type.contains_type_var(param));
+
+                    if !param_already_used {
                         result_params.push(param_as_type);
                     }
                 }
@@ -1680,5 +1686,88 @@ impl AcornValue {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::module::ModuleId;
+
+    #[test]
+    fn test_genericize_with_nested_type_params() {
+        // Test the bug where genericizing a ConstantInstance with params like [T, List<U>]
+        // incorrectly adds U as a third parameter.
+
+        // Create type params T and U
+        let t_param = TypeParam {
+            name: "T".to_string(),
+            typeclass: None,
+        };
+        let u_param = TypeParam {
+            name: "U".to_string(),
+            typeclass: None,
+        };
+
+        // Create List datatype
+        let list_datatype = Datatype {
+            module_id: ModuleId(0),
+            name: "List".to_string(),
+        };
+
+        // Create a ConstantInstance with params: [Arbitrary(T), Data(List, [Arbitrary(U)])]
+        // This is like a function that takes T and returns something with List<U>
+        let instance = ConstantInstance {
+            name: ConstantName::unqualified(ModuleId(0), "test_fn"),
+            params: vec![
+                AcornType::Arbitrary(t_param.clone()),
+                AcornType::Data(
+                    list_datatype.clone(),
+                    vec![AcornType::Arbitrary(u_param.clone())],
+                ),
+            ],
+            instance_type: AcornType::functional(
+                vec![
+                    AcornType::Arbitrary(t_param.clone()),
+                    AcornType::functional(
+                        vec![AcornType::Arbitrary(t_param.clone())],
+                        AcornType::Data(
+                            list_datatype.clone(),
+                            vec![AcornType::Arbitrary(u_param.clone())],
+                        ),
+                    ),
+                ],
+                AcornType::Data(
+                    list_datatype.clone(),
+                    vec![AcornType::Data(
+                        list_datatype.clone(),
+                        vec![AcornType::Arbitrary(u_param.clone())],
+                    )],
+                ),
+            ),
+        };
+
+        // Genericize with [T, U]
+        let genericized = instance.genericize(&[t_param.clone(), u_param.clone()]);
+
+        // The result should have exactly 2 params: [Variable(T), Data(List, [Variable(U)])]
+        // NOT 3 params with Variable(U) added as a third parameter
+        assert_eq!(
+            genericized.params.len(),
+            2,
+            "Expected 2 params after genericization, got {}: {:?}",
+            genericized.params.len(),
+            genericized.params
+        );
+
+        // Verify the params are what we expect
+        assert_eq!(genericized.params[0], AcornType::Variable(t_param.clone()));
+        assert_eq!(
+            genericized.params[1],
+            AcornType::Data(
+                list_datatype.clone(),
+                vec![AcornType::Variable(u_param.clone())]
+            )
+        );
     }
 }

@@ -542,6 +542,20 @@ impl AcornType {
         }
     }
 
+    /// Returns whether this type contains a specific type parameter (as a Variable or Arbitrary).
+    /// This checks recursively, including nested type parameters inside Data and Function types.
+    pub fn contains_type_var(&self, param: &TypeParam) -> bool {
+        match self {
+            AcornType::Variable(p) | AcornType::Arbitrary(p) => p == param,
+            AcornType::Data(_, type_args) => type_args.iter().any(|t| t.contains_type_var(param)),
+            AcornType::Function(ftype) => {
+                ftype.arg_types.iter().any(|t| t.contains_type_var(param))
+                    || ftype.return_type.contains_type_var(param)
+            }
+            _ => false,
+        }
+    }
+
     /// Returns whether this type is a function type.
     pub fn is_functional(&self) -> bool {
         match self {
