@@ -2110,3 +2110,33 @@ fn test_env_recursive_attribute() {
         "#,
     );
 }
+
+#[test]
+fn test_env_multi_generic_infix() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        inductive List<T> {
+            nil
+            cons(T, List<T>)
+        }
+
+        attributes List<T> {
+            define mul<U>(self, f: T -> U) -> List<U> {
+                match self {
+                    List.nil {
+                        List.nil<U>
+                    }
+                    List.cons(head, tail) {
+                        List.cons(f(head), tail.mul(f))
+                    }
+                }
+            }
+        }
+
+        define alt_mul<T, U>(items: List<T>, f: T -> U) -> List<U> {
+            items * f
+        }
+        "#,
+    );
+}
