@@ -2152,3 +2152,33 @@ fn test_env_infix_with_extra_param() {
         "#,
     );
 }
+
+#[test]
+fn test_env_set_product_with_extra_type_param() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        structure Set[K] {
+            contains: K -> Bool
+        }
+        structure Pair[K1, K2] {
+            first: K1
+            second: K2
+        }
+        define elem_in_product[K1,K2](a1: Set[K1], a2: Set[K2], p: Pair[K1,K2]) -> Bool {
+            a1.contains(p.first) and a2.contains(p.second)
+        }
+        attributes Set[K1] {
+            define mul[K2](self, a: Set[K2]) -> Set[Pair[K1,K2]] {
+                Set[Pair[K1,K2]].new(elem_in_product(self, a))
+            }
+        }
+        theorem foo_3[K1, K2](a1: Set[K1], a2: Set[K2]) {
+            a1.mul(a2) = a1 * a2
+        }
+        theorem foo_4[K1, K2](a1: Set[K1], a2: Set[K2]) {
+            a1 * a2 = a1.mul(a2)
+        }
+        "#,
+    );
+}
