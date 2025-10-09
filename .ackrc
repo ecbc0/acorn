@@ -7,3 +7,4 @@
 --ignore-file=match:/[.]ipynb$
 --ignore-file=match:profile.json$
 --ignore-dir=vscode/extension/build
+--ignore-dir=vscode/extension/acornlib/build
