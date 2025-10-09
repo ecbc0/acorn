@@ -346,14 +346,13 @@ impl<'a> TypeUnifier<'a> {
             value.check_type(expected_return_type, source)?;
             Ok(PotentialValue::Resolved(value))
         } else {
-            // Some parameters not inferred - partially resolve and keep rest unresolved
-            // Keep the ORIGINAL generic_type unchanged!
-            // When we later call resolve_with_inference(), it will match combined_args against
-            // the original type, not a partially-reduced type.
+            // We could not infer all parameters.
+            // We don't partially infer, here. We just append the new arguments.
+            // Later we will use them to fully infer.
             let unresolved_partial = UnresolvedConstant {
                 name: unresolved.name.clone(),
-                params: unresolved.params.clone(), // Keep ALL original params
-                generic_type: unresolved.generic_type.clone(), // Keep ORIGINAL type
+                params: unresolved.params.clone(),
+                generic_type: unresolved.generic_type.clone(),
                 args: combined_args,
             };
 
