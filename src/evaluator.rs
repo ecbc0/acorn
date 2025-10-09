@@ -740,37 +740,61 @@ impl<'a> Evaluator<'a> {
 
         // Get the partial application to the left
         let potential = self.evaluate_value_attr(left_value, name, expression)?;
-        let partial = match potential {
-            PotentialValue::Resolved(v) => v,
+
+        // Handle Resolved and Unresolved cases differently
+        let value = match potential {
+            PotentialValue::Resolved(partial) => {
+                // Resolved case: use the old logic to preserve value structure for code generation
+                let mut fa = match partial {
+                    AcornValue::Application(fa) => fa,
+                    _ => {
+                        return Err(expression.error(&format!(
+                            "the '{}' operator requires a method named '{}'",
+                            token, name
+                        )))
+                    }
+                };
+                match fa.function.get_type() {
+                    AcornType::Function(f) => {
+                        if f.arg_types.len() != 2 {
+                            return Err(expression.error(&format!(
+                                "expected a binary function for '{}' method",
+                                name
+                            )));
+                        }
+                        right_value.check_type(Some(&f.arg_types[1]), expression)?;
+                    }
+                    _ => {
+                        return Err(
+                            expression.error(&format!("unexpected type for '{}' method", name))
+                        )
+                    }
+                };
+
+                fa.args.push(right_value);
+                AcornValue::apply(*fa.function, fa.args)
+            }
             PotentialValue::Unresolved(_) => {
-                return Err(expression.error(&format!(
-                    "cannot use unresolved generic function for '{}' operator",
-                    token
-                )))
-            }
-        };
-        let mut fa = match partial {
-            AcornValue::Application(fa) => fa,
-            _ => {
-                return Err(expression.error(&format!(
-                    "the '{}' operator requires a method named '{}'",
-                    token, name
-                )))
-            }
-        };
-        match fa.function.get_type() {
-            AcornType::Function(f) => {
-                if f.arg_types.len() != 2 {
-                    return Err(expression
-                        .error(&format!("expected a binary function for '{}' method", name)));
+                // Unresolved case: use type inference to resolve the method
+                let applied_potential = self.bindings.try_apply_potential(
+                    potential,
+                    vec![right_value],
+                    expected_type,
+                    expression,
+                )?;
+
+                match applied_potential {
+                    PotentialValue::Resolved(v) => v,
+                    PotentialValue::Unresolved(_) => {
+                        return Err(expression.error(&format!(
+                            "cannot infer type parameters for '{}' operator",
+                            token
+                        )))
+                    }
                 }
-                right_value.check_type(Some(&f.arg_types[1]), expression)?;
             }
-            _ => return Err(expression.error(&format!("unexpected type for '{}' method", name))),
         };
 
-        fa.args.push(right_value);
-        let value = AcornValue::apply(*fa.function, fa.args);
         value.check_type(expected_type, expression)?;
         Ok(value)
     }
