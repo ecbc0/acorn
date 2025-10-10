@@ -1555,3 +1555,32 @@ fn test_proving_avoids_infinitely_nested_types() {
     "#;
     verify_succeeds(text);
 }
+
+#[test]
+fn test_proving_crash_report() {
+    let text = r#"
+    
+    inductive List<T> {
+        nil
+        cons(T, List<T>)
+    }
+
+    attributes List<T> {
+        define map<U>(self, f: T -> U) -> List<U> {
+            match self {
+                List.nil {
+                    List.nil<U>
+                }
+                List.cons(head, tail) {
+                    List.cons(f(head), tail.map(f))
+                }
+            }
+        }
+    }
+
+    theorem foo_1<T, U>(items: List<T>, f: T -> U, g: U -> U, items_1: List<U>) {
+        items.map(f).map(g) = items_1
+    }
+    "#;
+    verify_succeeds(text);
+}
