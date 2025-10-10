@@ -2179,6 +2179,12 @@ fn test_env_set_product_with_extra_type_param() {
         theorem foo_4[K1, K2](a1: Set[K1], a2: Set[K2]) {
             a1 * a2 = a1.mul(a2)
         }
+        theorem foo_5[K, L](a: Set[K], b1: Set[L], b2: Set[L]) {
+            a.mul(b1).mul(b2) = a.mul(b1).mul(b2)
+        }
+        theorem foo_6[K](a: Set[K], b: Set[K]) {
+            a.mul(b) = a.mul(b)
+        }
         "#,
     );
 }
