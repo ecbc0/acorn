@@ -1188,6 +1188,7 @@ impl Normalizer {
         }
         let fact = Fact::proposition(counterfactual.clone(), prop.source.as_negated_goal());
         steps.extend(self.normalize_fact(fact)?);
+
         let ng = NormalizedGoal {
             name: goal.name.clone(),
             counterfactual,

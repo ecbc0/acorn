@@ -564,6 +564,31 @@ impl AcornType {
         }
     }
 
+    /// Computes the maximum nesting depth of type parameters.
+    /// For example, Nat has depth 0, List[Nat] has depth 1, Pair[Pair[K, L], L] has depth 2.
+    pub fn nesting_depth(&self) -> usize {
+        match self {
+            AcornType::Data(_, params) => {
+                if params.is_empty() {
+                    0
+                } else {
+                    1 + params.iter().map(|t| t.nesting_depth()).max().unwrap_or(0)
+                }
+            }
+            AcornType::Function(ftype) => {
+                let arg_depth = ftype
+                    .arg_types
+                    .iter()
+                    .map(|t| t.nesting_depth())
+                    .max()
+                    .unwrap_or(0);
+                let ret_depth = ftype.return_type.nesting_depth();
+                arg_depth.max(ret_depth)
+            }
+            _ => 0,
+        }
+    }
+
     /// Returns the typeclass if this type is an abstract representative of a typeclass.
     /// This means that with this type, you can use typeclass attributes with dot syntax.
     /// Specifically, this is type variables or arbitrary types.

@@ -1527,35 +1527,31 @@ fn test_proving_with_generic_attribute_recursion() {
 }
 
 #[test]
-fn test_proving_with_set_products() {
+fn test_proving_avoids_infinitely_nested_types() {
     let text = r#"
         structure Set[K] {
             contains: K -> Bool
         }
+
         structure Pair[K1, K2] {
             first: K1
             second: K2
         }
+
         define elem_in_product[K1,K2](a1: Set[K1], a2: Set[K2], p: Pair[K1,K2]) -> Bool {
             a1.contains(p.first) and a2.contains(p.second)
         }
+
         attributes Set[K1] {
             define mul[K2](self, a: Set[K2]) -> Set[Pair[K1,K2]] {
                 Set[Pair[K1,K2]].new(elem_in_product(self, a))
             }
         }
-        // theorem foo_3[K1, K2](a1: Set[K1], a2: Set[K2]) {
-        //     a1.mul(a2) = a1 * a2
-        // }
-        // theorem foo_4[K1, K2](a1: Set[K1], a2: Set[K2]) {
-        //     a1 * a2 = a1.mul(a2)
-        // }
+
+        // This theorem monomorphizes into indefinitely nested types if if you don't limit it.
         theorem foo_5[K, L](a: Set[K], b1: Set[L], b2: Set[L]) {
             a.mul(b1).mul(b2) = a.mul(b1).mul(b2)
         }
-        // theorem foo_6[K](a: Set[K], b: Set[K]) {
-        //     a.mul(b) = a.mul(b)
-        // }
     "#;
     verify_succeeds(text);
 }

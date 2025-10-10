@@ -106,7 +106,6 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
     for cursor in env.iter_goals() {
         let facts = cursor.usable_facts(&project);
         let goal = cursor.goal().unwrap();
-        println!("proving: {}", goal.name);
 
         let mut processor = Processor::new();
         for fact in facts {

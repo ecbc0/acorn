@@ -11,6 +11,10 @@ use crate::proof_step::Truthiness;
 use crate::proposition::{MonomorphicProposition, Proposition};
 use crate::type_unifier::{self, TypeUnifier, TypeclassRegistry};
 
+/// Maximum depth of nested type parameters to prevent infinite expansion.
+/// For example, Pair[Pair[Pair[K, L], L], L] has depth 3.
+const MAX_TYPE_NESTING_DEPTH: usize = 3;
+
 /// The type variables used in a generic proposition, along with the types they map to.
 /// Can be a partial instantiation.
 /// If it isn't fully instantiated, the strings map to generic types.
@@ -297,6 +301,14 @@ impl Monomorphizer {
     fn monomorphize_matching_props(&mut self, constant: &ConstantInstance) {
         let params = ConstantParams::new(constant.params.clone());
         params.assert_full();
+
+        // Check if any of the types are too deeply nested to prevent infinite expansion
+        for param_type in &params.params {
+            if param_type.nesting_depth() > MAX_TYPE_NESTING_DEPTH {
+                return;
+            }
+        }
+
         let info = self
             .constant_info
             .entry(constant.name.clone())
