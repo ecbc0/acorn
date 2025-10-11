@@ -6,7 +6,7 @@ use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, Range};
 use crate::acorn_type::{AcornType, Datatype, PotentialType, TypeParam, Typeclass, UnresolvedType};
 use crate::acorn_value::AcornValue;
 use crate::code_generator::CodeGenerator;
-use crate::compilation::{self, ErrorSource, PanicOnError};
+use crate::compilation::{self, ErrorSource};
 use crate::evaluator::Evaluator;
 use crate::expression::{Declaration, Expression, TypeParamExpr};
 use crate::module::ModuleId;
@@ -224,20 +224,17 @@ impl BindingMap {
     /// Returns a PotentialValue representing this name, if there is one.
     /// This can be either a resolved or unresolved value.
     /// This function assumes that you are calling the correct binding map.
-    pub fn get_constant_value(
-        &self,
-        name: &DefinedName,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<PotentialValue> {
+    pub fn get_constant_value(&self, name: &DefinedName) -> Result<PotentialValue, String> {
         match name {
             DefinedName::Constant(constant_name) => match self.constant_defs.get(constant_name) {
                 Some(info) => Ok(info.value.clone()),
-                None => Err(source.error(&format!("local constant {} not found", name))),
+                None => Err(format!("local constant {} not found", name)),
             },
             DefinedName::Instance(instance_name) => {
-                let definition = self.instance_attr_defs.get(instance_name).ok_or_else(|| {
-                    source.error(&format!("instance constant {} not found", name))
-                })?;
+                let definition = self
+                    .instance_attr_defs
+                    .get(instance_name)
+                    .ok_or_else(|| format!("instance constant {} not found", name))?;
                 let value = AcornValue::instance_constant(
                     instance_name.clone(),
                     definition.value.get_type(),
@@ -731,7 +728,8 @@ impl BindingMap {
         let typeclass_attr_name = DefinedName::typeclass_attr(typeclass, attr_name);
         let typeclass_attr = self
             .get_bindings(typeclass.module_id, &project)
-            .get_constant_value(&typeclass_attr_name, source)?;
+            .get_constant_value(&typeclass_attr_name)
+            .map_err(|e| source.error(&e))?;
         let uc = typeclass_attr.to_unresolved(source)?;
         let resolved_attr = uc.resolve(source, vec![instance_type.clone()])?;
         let resolved_attr_type = resolved_attr.get_type();
@@ -740,7 +738,9 @@ impl BindingMap {
         let instance_datatype = instance_type.get_datatype(source)?;
         let instance_attr_name =
             DefinedName::instance(typeclass.clone(), attr_name, instance_datatype.clone());
-        let instance_attr = self.get_constant_value(&instance_attr_name, source)?;
+        let instance_attr = self
+            .get_constant_value(&instance_attr_name)
+            .map_err(|e| source.error(&e))?;
         let instance_attr = instance_attr.as_value(source)?;
         let instance_attr_type = instance_attr.get_type();
         if instance_attr_type != resolved_attr_type {
@@ -1865,9 +1865,7 @@ impl BindingMap {
     /// Check that the given name actually does have this type in the environment.
     pub fn expect_type(&self, name: &str, type_string: &str) {
         let name = DefinedName::unqualified(self.module_id, name);
-        let value = self
-            .get_constant_value(&name, &PanicOnError)
-            .expect("no such constant");
+        let value = self.get_constant_value(&name).expect("no such constant");
         let env_type = value.get_type();
         assert_eq!(env_type.to_string(), type_string);
     }

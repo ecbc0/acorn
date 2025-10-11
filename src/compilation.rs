@@ -98,11 +98,3 @@ pub type Result<T> = std::result::Result<T, CompilationError>;
 pub trait ErrorSource {
     fn error(&self, message: &str) -> CompilationError;
 }
-
-pub struct PanicOnError;
-
-impl ErrorSource for PanicOnError {
-    fn error(&self, message: &str) -> CompilationError {
-        panic!("{}", message)
-    }
-}

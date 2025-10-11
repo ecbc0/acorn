@@ -8,7 +8,7 @@ use crate::acorn_type::{AcornType, Datatype, TypeParam};
 use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::binding_map::BindingMap;
 use crate::block::{Block, BlockParams, Node, NodeCursor};
-use crate::compilation::{self, ErrorSource, PanicOnError};
+use crate::compilation::{self, ErrorSource};
 use crate::evaluator::Evaluator;
 use crate::fact::Fact;
 use crate::module::ModuleId;
@@ -178,7 +178,7 @@ impl Environment {
         // This constant can be generic, with type variables in it.
         let potential = self
             .bindings
-            .get_constant_value(defined_name, &PanicOnError)
+            .get_constant_value(defined_name)
             .expect("bad add_definition call");
         let range = self
             .bindings

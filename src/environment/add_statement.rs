@@ -1790,7 +1790,10 @@ impl Environment {
                 if self.bindings.constant_name_in_use(&datatype_attr_name) {
                     // Check that the types match
                     let tc_attr_name = DefinedName::typeclass_attr(&typeclass, attr_name);
-                    let tc_attr = self.bindings.get_constant_value(&tc_attr_name, statement)?;
+                    let tc_attr = self
+                        .bindings
+                        .get_constant_value(&tc_attr_name)
+                        .map_err(|e| statement.error(&e))?;
                     let tc_unresolved = tc_attr.to_unresolved(statement)?;
                     let tc_resolved =
                         tc_unresolved.resolve(statement, vec![instance_type.clone()])?;
@@ -1798,7 +1801,8 @@ impl Environment {
 
                     let dt_attr = self
                         .bindings
-                        .get_constant_value(&datatype_attr_name, statement)?;
+                        .get_constant_value(&datatype_attr_name)
+                        .map_err(|e| statement.error(&e))?;
                     let dt_value = dt_attr.as_value(statement)?;
                     let dt_type = dt_value.get_type();
 

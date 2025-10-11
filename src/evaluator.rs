@@ -378,7 +378,9 @@ impl<'a> Evaluator<'a> {
         // Get the bindings from the module where this attribute was actually defined
         let bindings = self.get_bindings(module_id);
         let defined_name = DefinedName::Constant(const_name);
-        let value = bindings.get_constant_value(&defined_name, source)?;
+        let value = bindings
+            .get_constant_value(&defined_name)
+            .map_err(|e| source.error(&e))?;
         if !defined_name.is_typeclass_attr() {
             return Ok(value);
         };
@@ -406,7 +408,9 @@ impl<'a> Evaluator<'a> {
             // Get the bindings from the module where this attribute was actually defined
             let bindings = self.get_bindings(module_id);
             let defined_name = DefinedName::Constant(name);
-            let attr_value = bindings.get_constant_value(&defined_name, source)?;
+            let attr_value = bindings
+                .get_constant_value(&defined_name)
+                .map_err(|e| source.error(&e))?;
             return Ok(attr_value);
         }
 
@@ -574,7 +578,8 @@ impl<'a> Evaluator<'a> {
                                 DefinedName::unqualified(self.bindings.module_id(), name);
                             NamedEntity::new(
                                 self.bindings
-                                    .get_constant_value(&constant_name, name_token)?,
+                                    .get_constant_value(&constant_name)
+                                    .map_err(|e| name_token.error(&e))?,
                             )
                         }
                     }
