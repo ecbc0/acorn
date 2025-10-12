@@ -558,7 +558,7 @@ impl Token {
     }
 
     pub fn identifierish(ch: char) -> bool {
-        ch.is_alphanumeric() || ch == '_'
+        ch.is_alphanumeric() || ch == '_' || ch == '!'
     }
 
     /// Extracts the content from a doc comment token.
@@ -712,7 +712,7 @@ impl Token {
                     '.' => TokenType::Dot,
                     '!' => match char_indices.next_if_eq(&(char_index + 1, '=')) {
                         Some(_) => TokenType::NotEquals,
-                        None => TokenType::Invalid,
+                        None => TokenType::Identifier,
                     },
                     '=' => TokenType::Equals,
                     '+' => TokenType::Plus,
@@ -922,7 +922,7 @@ impl TokenIter {
             TokenType::SelfToken => {}
             TokenType::Identifier => match name_token.text().chars().next() {
                 Some(c) => {
-                    if !c.is_ascii_lowercase() {
+                    if !(c.is_ascii_lowercase() || c == '!') {
                         return Err(name_token.error("invalid variable name"));
                     }
                 }
