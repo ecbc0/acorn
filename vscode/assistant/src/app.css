@@ -32,3 +32,13 @@ body {
   text-indent: -2ch;
   padding-left: 6ch;
 }
+
+button {
+  color:#8534ff;
+  background-color:transparent;
+  border-color:#2b8900
+}
+  
+hr {
+  border-color:#4422ff
+}
