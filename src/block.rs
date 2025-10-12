@@ -98,17 +98,21 @@ pub enum BlockParams<'a> {
 
 impl Block {
     /// Creates a new block, as a direct child of the given environment.
+    ///
+    /// Note: The range from first_token to last_token may include part of the surrounding
+    /// statement that introduces the block (e.g., "if", "theorem", etc.). If you just want
+    /// the range within braces, you should look at the "body" parameter.
     pub fn new(
         project: &mut Project,
         env: &Environment,
         type_params: Vec<TypeParam>,
         args: Vec<(String, AcornType)>,
         params: BlockParams,
-        first_line: u32,
-        last_line: u32,
+        first_token: &Token,
+        last_token: &Token,
         body: Option<&Body>,
     ) -> compilation::Result<Block> {
-        let mut subenv = env.create_child(first_line, body.is_none());
+        let mut subenv = env.create_child(first_token.line_number, body.is_none());
 
         // Inside the block, the type parameters are arbitrary types.
         let param_pairs: Vec<(String, AcornType)> = type_params
@@ -226,7 +230,7 @@ impl Block {
             Some(body) => {
                 subenv.add_line_types(
                     LineType::Opening,
-                    first_line,
+                    first_token.line_number,
                     body.left_brace.line_number as u32,
                 );
                 for s in &body.statements {
@@ -240,7 +244,11 @@ impl Block {
             }
             None => {
                 // The subenv is an implicit block, so consider all the lines to be "opening".
-                subenv.add_line_types(LineType::Opening, first_line, last_line);
+                subenv.add_line_types(
+                    LineType::Opening,
+                    first_token.line_number,
+                    last_token.line_number,
+                );
             }
         };
 

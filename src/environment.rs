@@ -281,8 +281,8 @@ impl Environment {
         project: &mut Project,
         condition: AcornValue,
         range: Range,
-        first_line: u32,
-        last_line: u32,
+        first_token: &Token,
+        last_token: &Token,
         body: &Body,
         if_claim: Option<AcornValue>,
     ) -> compilation::Result<Option<AcornValue>> {
@@ -296,8 +296,8 @@ impl Environment {
             vec![],
             vec![],
             BlockParams::Conditional(&condition, range),
-            first_line,
-            last_line,
+            first_token,
+            last_token,
             Some(body),
         )?;
         let (outer_claim, claim_range) = block.externalize_last_claim(self, &body.right_brace)?;
@@ -328,7 +328,7 @@ impl Environment {
         let index = self.add_node(Node::block(project, self, block, Some(prop)));
         self.add_line_types(
             LineType::Node(index),
-            first_line,
+            first_token.line_number,
             body.right_brace.line_number,
         );
         Ok(last_claim)

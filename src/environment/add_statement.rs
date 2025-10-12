@@ -570,8 +570,8 @@ impl Environment {
                     premise,
                     goal,
                 ),
-                statement.first_line(),
-                statement.last_line(),
+                &statement.first_token,
+                &statement.last_token,
                 ts.body.as_ref(),
             )?;
             Node::block(project, self, block, Some(prop))
@@ -698,8 +698,8 @@ impl Environment {
                 return_type.clone(),
                 fss.condition.range(),
             ),
-            statement.first_line(),
-            statement.last_line(),
+            &statement.first_token,
+            &statement.last_token,
             fss.body.as_ref(),
         )?;
 
@@ -807,8 +807,8 @@ impl Environment {
                 vec![], // no type params
                 vec![], // no args, because we already handled them
                 block_params,
-                statement.first_line(),
-                statement.last_line(),
+                &statement.first_token,
+                &statement.last_token,
                 ss.body.as_ref(),
             )?;
             let index = self.add_node(Node::block(project, self, block, None));
@@ -1868,8 +1868,8 @@ impl Environment {
                 vec![], // no type params
                 vec![], // no args
                 block_params,
-                statement.first_line(),
-                statement.last_line(),
+                &statement.first_token,
+                &statement.last_token,
                 is.body.as_ref(),
             )?;
             Node::Block(block, Some(instance_fact))
@@ -1969,8 +1969,8 @@ impl Environment {
             vec![],
             args,
             BlockParams::ForAll,
-            statement.first_line(),
-            statement.last_line(),
+            &statement.first_token,
+            &statement.last_token,
             Some(&fas.body),
         )?;
 
@@ -1997,8 +1997,8 @@ impl Environment {
             project,
             condition.clone(),
             range,
-            statement.first_line(),
-            statement.last_line(),
+            &statement.first_token,
+            &statement.last_token,
             &is.body,
             None,
         )?;
@@ -2007,8 +2007,8 @@ impl Environment {
                 project,
                 condition.negate(),
                 range,
-                else_body.left_brace.line_number as u32,
-                else_body.right_brace.line_number as u32,
+                &else_body.left_brace,
+                &else_body.right_brace,
                 else_body,
                 if_claim,
             )?;
@@ -2116,8 +2116,8 @@ impl Environment {
             vec![],
             vec![],
             BlockParams::Problem,
-            statement.first_line(),
-            statement.last_line(),
+            &statement.first_token,
+            &statement.last_token,
             Some(body),
         )?;
 
@@ -2139,8 +2139,8 @@ impl Environment {
             vec![],
             vec![],
             BlockParams::Todo,
-            statement.first_line(),
-            statement.last_line(),
+            &statement.first_token,
+            &statement.last_token,
             Some(&ts.body),
         )?;
 
@@ -2180,8 +2180,8 @@ impl Environment {
                 vec![],
                 vec![],
                 params,
-                body.left_brace.line_number,
-                body.right_brace.line_number,
+                &body.left_brace,
+                &body.right_brace,
                 Some(body),
             )?;
 
