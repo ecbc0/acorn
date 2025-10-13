@@ -1588,3 +1588,124 @@ fn test_proving_avoids_infinite_monomorphization_recursion() {
     // This should not crash, even though the theorem is not provable
     verify_fails(text);
 }
+
+#[test]
+fn test_proving_reported_stack_overflow() {
+    let text = r#"
+    structure Set[K] {
+        contains: K -> Bool
+    }
+    
+    define constant_false[K](x: K) -> Bool {
+        false
+    }
+    
+    attributes Set[K] {
+        let empty_set = Set[K].new(constant_false[K])
+    }
+    
+    structure Map[K, L] {
+        in_space: Set[K]
+        out_space: Set[L]
+        fn: K -> L
+    } constraint {
+        forall(x: K) {
+            in_space.contains(x) implies out_space.contains(fn(x))
+        }
+    }
+    
+    attributes Map[K, L] {
+        define is_surjective(self) -> Bool {
+            forall(y: L) {
+                self.out_space.contains(y) implies exists(x: K) {
+                    self.in_space.contains(x) and self.fn(x) = y
+                }
+            }
+        }
+    }
+    
+    /// the set theory version of product_index
+    define elem_in_product_index_map[I, K](m: Map[I, Set[K]], x: I -> K) -> Bool {
+        forall(i: I) {
+            m.in_space.contains(i) implies m.fn(i).contains(x(i))
+        }
+    }
+    
+    define product_index_map[I, K](m: Map[I, Set[K]]) -> Set[I -> K] {
+        Set[I -> K].new(elem_in_product_index_map(m))
+    }
+    
+    attributes Set[K] {
+        define superset(self, a: Set[K]) -> Set[K] {
+            forall(x: K) {
+                a.contains(x) implies self.contains(x)
+            }
+        }
+    }
+    
+    define power_set[K](a: Set[K]) -> Set[Set[K]] {
+        Set[Set[K]].new(a.superset)
+    }
+    
+    inductive Nat {
+        0
+        suc(Nat)
+    }
+    
+    attributes Nat {
+        define add(self, other: Nat) -> Nat {
+            match other {
+                Nat.0 {
+                    self
+                }
+                Nat.suc(pred) {
+                    (self + pred).suc
+                }
+            }
+        }
+    }
+    
+    numerals Nat
+    
+    attributes Nat {
+        define lt(self, other: Nat) -> Bool {
+            exists(n: Nat) {
+                n != 0 and self + n = other
+            }
+        }
+    }
+    
+    // 0 ~ n-1
+    define element_in_finite_index(n: Nat, a: Nat) -> Bool {
+        if n = 0 {
+            false
+        } else {
+            a < n
+        }
+    }
+    
+    define finite_index(n: Nat) -> Set[Nat] {
+        Set[Nat].new(element_in_finite_index(n))
+    }
+    attributes Set[K] {
+        define is_finite_set(self) -> Bool {
+            if self = Set[K].empty_set {
+                true
+            } else {
+                exists(num: Nat, m: Map[Nat, K]) {
+                    m.in_space = finite_index(num) and
+                    m.out_space = self and
+                    m.is_surjective
+                }
+            }
+        }
+    }
+    
+    structure Finite[K] {
+        s: Set[K]
+    } constraint {
+        s.is_finite_set
+    }
+        "#;
+    verify_succeeds(text);
+}
