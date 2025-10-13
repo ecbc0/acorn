@@ -1603,7 +1603,7 @@ fn test_proving_avoids_another_infinite_monomorphization_recursion() {
     attributes Set[K] {
         let empty_set = Set[K].new(constant_false[K])
     }
-    
+
     structure Map[K, L] {
         in_space: Set[K]
         out_space: Set[L]
@@ -1627,6 +1627,8 @@ fn test_proving_avoids_another_infinite_monomorphization_recursion() {
         }
     }
     
+    // We should be able to prove the goal, but this definition introduced new
+    // types and causes an infinite recursion. (At the time the bug was reported.)
     define product_index_map[I, K](m: Map[I, Set[K]]) -> Set[I -> K] {
         Set[I -> K].new(elem_in_product_index_map(m))
     }
@@ -1663,5 +1665,5 @@ fn test_proving_avoids_another_infinite_monomorphization_recursion() {
         }
     }
     "#;
-    verify_fails(text);
+    verify_succeeds(text);
 }
