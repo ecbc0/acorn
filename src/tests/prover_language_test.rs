@@ -1557,7 +1557,7 @@ fn test_proving_avoids_infinitely_nested_types() {
 }
 
 #[test]
-fn test_proving_crash_report() {
+fn test_proving_avoids_infinite_monomorphization_recursion() {
     // This is a regression test to ensure we don't crash when processing
     // nested generic attribute calls with multiple type parameters.
     // The theorem is not provable, but we should handle it gracefully.
