@@ -1651,17 +1651,16 @@ fn test_proving_avoids_another_infinite_monomorphization_recursion() {
                 true
             } else {
                 exists(num: Nat, m: Map[Nat, K]) {
-                    m.out_space = self and
-                    m.is_surjective
+                    m.out_space = self
                 }
             }
         }
     }
     
-    structure Finite[K] {
-        s: Set[K]
-    } constraint {
-        s.is_finite_set
+    theorem goal[K] {
+        exists(s: Set[K]) {
+            s.is_finite_set
+        }
     }
     "#;
     verify_fails(text);
