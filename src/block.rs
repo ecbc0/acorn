@@ -252,7 +252,10 @@ impl Block {
             }
         };
 
-        let goal = goal_prop.map(|prop| Goal::block(&subenv, &prop));
+        let goal = goal_prop
+            .map(|prop| Goal::block(&subenv, &prop))
+            .transpose()
+            .map_err(|e| first_token.error(&e))?;
 
         Ok(Block {
             args,
@@ -716,7 +719,7 @@ impl<'a> NodeCursor<'a> {
             }
         } else {
             let prop = node.proposition().unwrap();
-            Ok(Goal::interior(self.env(), &prop))
+            Goal::interior(self.env(), &prop)
         }
     }
 

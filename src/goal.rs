@@ -30,9 +30,6 @@ pub struct Goal {
     pub last_line: u32,
 }
 
-// Whether to be strict about goal names
-const STRICT: bool = false;
-
 impl Goal {
     /// Creates a new Goal with the given parameters.
     fn new(
@@ -41,26 +38,19 @@ impl Goal {
         proof_insertion_line: u32,
         first_line: u32,
         last_line: u32,
-    ) -> Goal {
+    ) -> Result<Goal, String> {
         // Goals should never be generic.
         assert!(!prop.value.has_generic());
 
         let name = if let Some(name) = prop.theorem_name() {
             name.to_string()
         } else {
-            match CodeGenerator::new(&env.bindings).value_to_code(&prop.value) {
-                Ok(code) => code,
-                Err(e) => {
-                    if STRICT {
-                        panic!("could not create goal name: {}", e);
-                    } else {
-                        format!("line{}", first_line + 1)
-                    }
-                }
-            }
+            CodeGenerator::new(&env.bindings)
+                .value_to_code(&prop.value)
+                .map_err(|e| e.to_string())?
         };
 
-        Goal {
+        Ok(Goal {
             module_id: env.module_id,
             name,
             proposition: prop.clone(),
@@ -69,18 +59,18 @@ impl Goal {
             inconsistency_okay: env.includes_explicit_false,
             first_line,
             last_line,
-        }
+        })
     }
 
     /// Creates a Goal for a block that has a goal.
-    pub fn block(env: &Environment, prop: &Proposition) -> Goal {
+    pub fn block(env: &Environment, prop: &Proposition) -> Result<Goal, String> {
         let first_line = env.first_line;
         let last_line = env.last_line();
         Self::new(env, prop, last_line, first_line, last_line)
     }
 
     /// Creates a Goal for a proposition that is inside a block (or standalone).
-    pub fn interior(env: &Environment, prop: &Proposition) -> Goal {
+    pub fn interior(env: &Environment, prop: &Proposition) -> Result<Goal, String> {
         let first_line = prop.source.range.start.line;
         let last_line = prop.source.range.end.line;
         Self::new(env, prop, first_line, first_line, last_line)
