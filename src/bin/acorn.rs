@@ -67,6 +67,14 @@ struct Args {
         help = "Appends input to a file (can only be used if target is \"-\")"
     )]
     append_to: Option<String>,
+
+    /// Set the directory to look for acornlib in CLI mode
+    #[clap(
+        long,
+        help = "Set the directory to look for acornlib in CLI mode.",
+        value_name = "DIR"
+    )]
+    lib: Option<String>,
 }
 
 #[tokio::main]
@@ -88,11 +96,15 @@ async fn main() {
         std::process::exit(1);
     }
 
-    let current_dir = match std::env::current_dir() {
-        Ok(dir) => dir,
-        Err(e) => {
-            println!("Error getting current directory: {}", e);
-            std::process::exit(1);
+    let current_dir = if let Some(lib_dir) = &args.lib {
+        std::path::PathBuf::from(lib_dir)
+    } else {
+        match std::env::current_dir() {
+            Ok(dir) => dir,
+            Err(e) => {
+                println!("Error getting current directory: {}", e);
+                std::process::exit(1);
+            }
         }
     };
 
