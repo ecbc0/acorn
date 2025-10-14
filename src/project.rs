@@ -804,7 +804,7 @@ impl Project {
         errors
     }
 
-    fn read_file(&mut self, path: &PathBuf) -> Result<String, ProjectError> {
+    pub fn read_file(&self, path: &PathBuf) -> Result<String, ProjectError> {
         if let Some((content, _)) = self.open_files.get(path) {
             return Ok(content.clone());
         }

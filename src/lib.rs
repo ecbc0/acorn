@@ -26,6 +26,7 @@ pub mod features;
 pub mod fingerprint;
 pub mod generalization_set;
 pub mod goal;
+pub mod goal_context;
 pub mod interfaces;
 pub mod literal;
 pub mod manifest;
