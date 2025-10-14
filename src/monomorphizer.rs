@@ -11,10 +11,6 @@ use crate::proof_step::Truthiness;
 use crate::proposition::{MonomorphicProposition, Proposition};
 use crate::type_unifier::{self, TypeUnifier, TypeclassRegistry};
 
-/// Maximum depth of nested type parameters to prevent infinite expansion.
-/// For example, Pair[Pair[Pair[K, L], L], L] has depth 3.
-const MAX_TYPE_NESTING_DEPTH: usize = 3;
-
 /// Maximum number of steps from non-global facts for monomorphization.
 /// Generation 0 = constants directly in non-global facts
 /// Generation 1 = constants produced by monomorphizing generation 0, etc.
@@ -328,13 +324,6 @@ impl Monomorphizer {
     fn monomorphize_matching_props(&mut self, constant: &ConstantInstance, generation: usize) {
         let params = ConstantParams::new(constant.params.clone());
         params.assert_full();
-
-        // Check if any of the types are too deeply nested to prevent infinite expansion
-        for param_type in &params.params {
-            if param_type.nesting_depth() > MAX_TYPE_NESTING_DEPTH {
-                return;
-            }
-        }
 
         // Check if this constant is too many generations away from non-global facts
         let key = (constant.name.clone(), params.clone());

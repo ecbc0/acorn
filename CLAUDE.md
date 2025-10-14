@@ -4,6 +4,9 @@
   `cargo test`
   `cargo fmt`
 
+- If we make changes to the normalizer or the checker, we should run a full reverify to ensure we didn't break anything.
+  `cargo run --profile release -- --reverify`
+
 ## Project Structure
 
 - `/src` - Core Rust implementation
