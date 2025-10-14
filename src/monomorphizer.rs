@@ -15,6 +15,11 @@ use crate::type_unifier::{self, TypeUnifier, TypeclassRegistry};
 /// For example, Pair[Pair[Pair[K, L], L], L] has depth 3.
 const MAX_TYPE_NESTING_DEPTH: usize = 3;
 
+/// Maximum number of steps from non-global facts for monomorphization.
+/// Generation 0 = constants directly in non-global facts
+/// Generation 1 = constants produced by monomorphizing generation 0, etc.
+const MAX_MONOMORPHIZATION_GENERATION: usize = 10;
+
 /// The type variables used in a generic proposition, along with the types they map to.
 /// Can be a partial instantiation.
 /// If it isn't fully instantiated, the strings map to generic types.
@@ -58,7 +63,7 @@ struct GenericPropInfo {
 
 // The instantiation of a constant.
 // Ordered the same way as the constant's parameters.
-#[derive(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone, Hash)]
 struct ConstantParams {
     params: Vec<AcornType>,
 }
@@ -113,12 +118,13 @@ impl GenericConstantInfo {
     }
 }
 
-///
+/// Represents a monomorphization attempt that failed due to typeclass constraints.
 #[derive(Clone)]
 struct InstantiationFailure {
     prop_id: usize,
     generic_params: ConstantParams,
     monomorph_params: ConstantParams,
+    generation: usize,
 }
 
 /// A helper structure to determine which monomorphs are necessary.
@@ -151,6 +157,11 @@ pub struct Monomorphizer {
     /// Later, if we discover that the type is actually an instance of the typeclass,
     /// we can monomorphize the proposition.
     instantiation_failures: HashMap<(Datatype, Typeclass), Vec<InstantiationFailure>>,
+
+    /// Tracks the generation (distance from non-global facts) for each monomorphic constant.
+    /// Generation 0 = used directly in non-global facts
+    /// Generation 1 = created by monomorphizing generation 0 constants, etc.
+    constant_generations: HashMap<(ConstantName, ConstantParams), usize>,
 }
 
 impl Monomorphizer {
@@ -162,6 +173,7 @@ impl Monomorphizer {
             extends: HashMap::new(),
             instances: HashMap::new(),
             instantiation_failures: HashMap::new(),
+            constant_generations: HashMap::new(),
         }
     }
 
@@ -186,6 +198,7 @@ impl Monomorphizer {
                     failure.prop_id,
                     &failure.generic_params,
                     &failure.monomorph_params,
+                    failure.generation,
                 );
             }
         }
@@ -233,7 +246,8 @@ impl Monomorphizer {
     fn add_proposition(&mut self, proposition: Arc<Proposition>) {
         // We don't monomorphize to match constants in global facts, because it would blow up.
         if proposition.source.truthiness() != Truthiness::Factual {
-            self.add_monomorphs(&proposition.value);
+            // Non-global facts are generation 0
+            self.add_monomorphs(&proposition.value, 0);
         }
 
         if let Some(mp) = proposition.as_monomorphic() {
@@ -272,7 +286,18 @@ impl Monomorphizer {
             let instance_params = ConstantParams::new(c.params);
             if let Some(info) = self.constant_info.get(&c_name) {
                 for monomorph_params in info.instantiations.clone() {
-                    self.try_to_monomorphize_prop(i, &monomorph_params, &instance_params);
+                    // Look up the generation of this existing monomorph, default to 0
+                    let generation = self
+                        .constant_generations
+                        .get(&(c_name.clone(), monomorph_params.clone()))
+                        .copied()
+                        .unwrap_or(0);
+                    self.try_to_monomorphize_prop(
+                        i,
+                        &monomorph_params,
+                        &instance_params,
+                        generation,
+                    );
                 }
             }
         }
@@ -285,20 +310,22 @@ impl Monomorphizer {
 
     /// Call this on any value that we want to use in proofs.
     /// Makes sure that we are generating any monomorphizations that are used in this value.
-    fn add_monomorphs(&mut self, value: &AcornValue) {
+    /// The generation parameter tracks how many steps away from non-global facts we are.
+    fn add_monomorphs(&mut self, value: &AcornValue, generation: usize) {
         let mut monomorphs = vec![];
         value.find_constants(
             &|c| !c.params.is_empty() && !c.has_generic(),
             &mut monomorphs,
         );
         for c in monomorphs {
-            self.monomorphize_matching_props(&c);
+            self.monomorphize_matching_props(&c, generation);
         }
     }
 
     /// Monomorphizes our props to create this particular monomorphic constant wherever possible.
     /// This is idempotent, because we only need to do each particular monomorphization once.
-    fn monomorphize_matching_props(&mut self, constant: &ConstantInstance) {
+    /// The generation parameter tracks how many steps this constant is from non-global facts.
+    fn monomorphize_matching_props(&mut self, constant: &ConstantInstance, generation: usize) {
         let params = ConstantParams::new(constant.params.clone());
         params.assert_full();
 
@@ -308,6 +335,24 @@ impl Monomorphizer {
                 return;
             }
         }
+
+        // Check if this constant is too many generations away from non-global facts
+        let key = (constant.name.clone(), params.clone());
+        if let Some(&existing_gen) = self.constant_generations.get(&key) {
+            // Already processed this constant at an earlier or equal generation
+            if existing_gen <= generation {
+                return;
+            }
+            // Found it at a later generation, update to the earlier one
+        }
+
+        // Stop if we're beyond the max generation
+        if generation > MAX_MONOMORPHIZATION_GENERATION {
+            return;
+        }
+
+        // Record this constant's generation
+        self.constant_generations.insert(key, generation);
 
         let info = self
             .constant_info
@@ -324,7 +369,7 @@ impl Monomorphizer {
         // For every prop that mentions this constant, try to monomorphize the prop to match it.
         if let Some(info) = self.constant_info.get(&constant.name) {
             for (prop_id, generic_params) in info.occurrences.clone() {
-                self.try_to_monomorphize_prop(prop_id, &generic_params, &params);
+                self.try_to_monomorphize_prop(prop_id, &generic_params, &params, generation);
             }
         }
     }
@@ -338,11 +383,14 @@ impl Monomorphizer {
     /// For example, this may be a proposition about foo<Bool, T>, and our goal
     /// is saying something about foo<Nat, Nat>.
     /// Then we can't match them up.
+    ///
+    /// The generation parameter is the generation of the constant that triggered this monomorphization.
     fn try_to_monomorphize_prop(
         &mut self,
         prop_id: usize,
         generic_params: &ConstantParams,
         monomorph_params: &ConstantParams,
+        generation: usize,
     ) {
         // Our goal is to find the "prop params", a way in which we can instantiate
         // the whole proposition so that the instance params become the monomorph params.
@@ -366,6 +414,7 @@ impl Monomorphizer {
                             prop_id,
                             generic_params: generic_params.clone(),
                             monomorph_params: monomorph_params.clone(),
+                            generation,
                         });
                     return;
                 }
@@ -403,7 +452,8 @@ impl Monomorphizer {
         }
         info.instantiations.push(prop_params);
 
-        self.add_monomorphs(&monomorphic_prop.value);
+        // Constants in this new monomorph are one generation further from non-global facts
+        self.add_monomorphs(&monomorphic_prop.value, generation + 1);
         self.output.push(monomorphic_prop);
     }
 }
