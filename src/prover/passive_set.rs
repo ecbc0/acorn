@@ -1,10 +1,10 @@
+use super::score::Score;
+use super::scorer::{default_scorer, Scorer};
 use crate::clause::{Clause, ClauseTrace, LiteralTrace};
 use crate::features::Features;
 use crate::fingerprint::FingerprintSpecializer;
 use crate::literal::Literal;
 use crate::proof_step::ProofStep;
-use crate::score::Score;
-use crate::scorer::{default_scorer, Scorer};
 use crate::term::Term;
 use crate::variable_map::VariableMap;
 use std::collections::hash_map::Entry;

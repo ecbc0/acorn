@@ -1,7 +1,7 @@
 use std::error::Error;
 
+use super::ort_model::OrtModel;
 use crate::features::Features;
-use crate::ort_model::OrtModel;
 
 pub trait Scorer {
     fn score(&self, features: &Features) -> Result<f32, Box<dyn Error>>;

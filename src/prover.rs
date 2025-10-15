@@ -1,4 +1,9 @@
 pub mod active_set;
+pub mod dataset;
+pub mod ort_model;
+pub mod passive_set;
+pub mod score;
+pub mod scorer;
 
 use std::collections::HashSet;
 use std::fmt;
@@ -7,6 +12,7 @@ use tokio_util::sync::CancellationToken;
 use tower_lsp::lsp_types::Url;
 
 use self::active_set::ActiveSet;
+use self::passive_set::PassiveSet;
 use crate::binding_map::BindingMap;
 use crate::certificate::Certificate;
 use crate::clause::Clause;
@@ -16,7 +22,6 @@ use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
 use crate::literal::Literal;
 use crate::module::ModuleId;
 use crate::normalizer::{NormalizedGoal, Normalizer};
-use crate::passive_set::PassiveSet;
 use crate::project::Project;
 use crate::proof::{Difficulty, Proof};
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};

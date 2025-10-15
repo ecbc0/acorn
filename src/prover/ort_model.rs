@@ -6,8 +6,8 @@ use ort::execution_providers::CPUExecutionProvider;
 use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
 
+use super::scorer::Scorer;
 use crate::features::Features;
-use crate::scorer::Scorer;
 
 // The OrtModel uses ort to load an onnx model and uses it to score feature vectors.
 pub struct OrtModel {
@@ -17,7 +17,7 @@ pub struct OrtModel {
 
 static GLOBAL_SESSION: OnceLock<Arc<Session>> = OnceLock::new();
 
-const MODEL_BYTES: &[u8] = include_bytes!("../files/models/model-2024-09-25-15-33-10.onnx");
+const MODEL_BYTES: &[u8] = include_bytes!("../../files/models/model-2024-09-25-15-33-10.onnx");
 
 fn make_session(bytes: &[u8]) -> Result<Arc<Session>, Box<dyn Error>> {
     ort::init()
