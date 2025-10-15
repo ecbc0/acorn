@@ -1,8 +1,8 @@
+use super::features::Features;
+use super::fingerprint::FingerprintSpecializer;
 use super::score::Score;
 use super::scorer::{default_scorer, Scorer};
 use crate::clause::{Clause, ClauseTrace, LiteralTrace};
-use crate::features::Features;
-use crate::fingerprint::FingerprintSpecializer;
 use crate::literal::Literal;
 use crate::proof_step::ProofStep;
 use crate::term::Term;

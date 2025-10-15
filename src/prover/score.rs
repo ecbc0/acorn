@@ -1,7 +1,7 @@
 use ordered_float::OrderedFloat;
 
+use super::features::Features;
 use super::scorer::Scorer;
-use crate::features::Features;
 
 // Each proof step has a score, which encapsulates all heuristic judgments about
 // the proof step.

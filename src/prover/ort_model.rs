@@ -6,8 +6,8 @@ use ort::execution_providers::CPUExecutionProvider;
 use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
 
+use super::features::Features;
 use super::scorer::Scorer;
-use crate::features::Features;
 
 // The OrtModel uses ort to load an onnx model and uses it to score feature vectors.
 pub struct OrtModel {
