@@ -75,6 +75,14 @@ struct Args {
         value_name = "DIR"
     )]
     lib: Option<String>,
+
+    /// Generate training data to the specified file (automatically enables reverify mode)
+    #[clap(
+        long,
+        help = "Generate training data to the specified file (automatically enables reverify mode).",
+        value_name = "FILE"
+    )]
+    generate_training: Option<String>,
 }
 
 #[tokio::main]
@@ -151,9 +159,21 @@ async fn main() {
         }
     };
     verifier.builder.verbose = args.line.is_some();
-    verifier.builder.reverify = args.reverify;
-    verifier.builder.check_hashes = !args.nohash && !args.reverify;
     verifier.line = args.line;
+
+    // Handle training data generation
+    if let Some(training_file) = args.generate_training {
+        // Automatically enable reverify mode and disable hash checking
+        verifier.builder.reverify = true;
+        verifier.builder.check_hashes = false;
+        if let Err(e) = verifier.builder.set_training_output_file(&training_file) {
+            println!("Error setting training output file: {}", e);
+            std::process::exit(1);
+        }
+    } else {
+        verifier.builder.reverify = args.reverify;
+        verifier.builder.check_hashes = !args.nohash && !args.reverify;
+    }
     match verifier.run() {
         Err(e) => {
             println!("{}", e);
