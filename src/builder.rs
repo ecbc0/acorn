@@ -1,4 +1,6 @@
 use std::collections::HashSet;
+use std::fs::File;
+use std::io::BufWriter;
 use std::rc::Rc;
 use std::sync::atomic::AtomicU32;
 use std::time::Duration;
@@ -12,6 +14,7 @@ use crate::certificate::{Certificate, CertificateStore, CertificateWorklist};
 use crate::compilation::CompilationError;
 use crate::environment::Environment;
 use crate::goal::Goal;
+use crate::goal_context::GoalContext;
 use crate::module::{LoadState, ModuleDescriptor, ModuleId};
 use crate::processor::Processor;
 use crate::project::Project;
@@ -74,6 +77,10 @@ pub struct Builder<'a> {
 
     /// Cancellation token to stop the build.
     cancellation_token: CancellationToken,
+
+    /// Optional writer for training data output.
+    /// When set, writes goal context and proofs for verified certificates.
+    training_output: Option<BufWriter<File>>,
 }
 
 /// Metrics collected during a build.
@@ -293,6 +300,29 @@ impl<'a> Builder<'a> {
             single_goal: None,
             verbose: false,
             cancellation_token,
+            training_output: None,
+        }
+    }
+
+    /// Set the training output file.
+    /// This only works in reverify mode.
+    /// When set, the builder will write goal contexts and proofs for all verified certificates.
+    pub fn set_training_output_file(&mut self, filename: &str) -> Result<(), String> {
+        if !self.reverify {
+            return Err("Training output can only be used in reverify mode".to_string());
+        }
+        let file = File::create(filename)
+            .map_err(|e| format!("Failed to create training output file: {}", e))?;
+        self.training_output = Some(BufWriter::new(file));
+        Ok(())
+    }
+
+    /// Flush the training output file if it's open.
+    fn flush_training_output(&mut self) {
+        if let Some(ref mut writer) = self.training_output {
+            if let Err(e) = std::io::Write::flush(writer) {
+                self.log_global(format!("Warning: failed to flush training output: {}", e));
+            }
         }
     }
 
@@ -587,8 +617,8 @@ impl<'a> Builder<'a> {
         // Check for a cached cert
         let indexes = worklist.get_indexes(&goal.name);
         for i in indexes {
-            let cert = worklist.get_cert(*i).unwrap();
-            match processor.check_cert(cert, Some(goal), self.project, &env.bindings) {
+            let cert = worklist.get_cert(*i).unwrap().clone();
+            match processor.check_cert(&cert, Some(goal), self.project, &env.bindings) {
                 Ok(()) => {
                     self.metrics.certs_cached += 1;
                     self.metrics.goals_done += 1;
@@ -596,6 +626,31 @@ impl<'a> Builder<'a> {
                     self.log_verified(goal.first_line, goal.last_line);
                     new_certs.push(cert.clone());
                     worklist.remove(&goal.name, *i);
+
+                    // Write training data if output is enabled
+                    let mut training_error = None;
+                    if let Some(ref mut writer) = self.training_output {
+                        if let Some(context) =
+                            GoalContext::from_project_and_goal(self.project, goal)
+                        {
+                            // Write both context and proof to the training file
+                            if let Err(e) = context.write_to(&mut *writer) {
+                                training_error = Some(format!(
+                                    "Warning: failed to write goal context to training file: {}",
+                                    e
+                                ));
+                            } else if let Err(e) = cert.write_proof_to(&mut *writer) {
+                                training_error = Some(format!(
+                                    "Warning: failed to write proof to training file: {}",
+                                    e
+                                ));
+                            }
+                        }
+                    }
+                    if let Some(error_msg) = training_error {
+                        self.log_global(error_msg);
+                    }
+
                     return Ok(());
                 }
                 Err(e) if self.reverify => {
@@ -878,9 +933,13 @@ impl<'a> Builder<'a> {
 
             if let Err(e) = self.verify_module(&target, env) {
                 self.log_build_error(&e);
+                self.flush_training_output();
                 return;
             }
         }
+
+        // Flush training output at the end of a successful build
+        self.flush_training_output();
     }
 
     /// Tries to skip building a module if it and all its dependencies are unchanged.
