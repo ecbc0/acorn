@@ -1,3 +1,5 @@
+use std::io::{self, Write};
+
 use crate::code_generator::CodeGenerator;
 use crate::goal::Goal;
 use crate::project::Project;
@@ -85,5 +87,39 @@ impl GoalContext {
             hypothesis,
             counterfactual,
         })
+    }
+
+    /// Write the GoalContext to a writer in flat format.
+    /// Sections are separated by special marker lines:
+    /// @T for theorem prefix lines
+    /// @G for goal lines
+    /// @H for hypothesis
+    /// @C for counterfactual
+    pub fn write_to<W: Write>(&self, mut w: W) -> io::Result<()> {
+        // Add theorem prefix lines if present
+        if let Some(prefix_lines) = &self.theorem_prefix_lines {
+            writeln!(w, "@T")?;
+            for line in prefix_lines {
+                writeln!(w, "{}", line)?;
+            }
+        }
+
+        // Add goal lines
+        writeln!(w, "@G")?;
+        for line in &self.goal_lines {
+            writeln!(w, "{}", line)?;
+        }
+
+        // Add hypothesis if present
+        if let Some(hypothesis) = &self.hypothesis {
+            writeln!(w, "@H")?;
+            writeln!(w, "{}", hypothesis)?;
+        }
+
+        // Add counterfactual
+        writeln!(w, "@C")?;
+        writeln!(w, "{}", self.counterfactual)?;
+
+        Ok(())
     }
 }
