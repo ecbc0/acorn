@@ -20,6 +20,7 @@ use crate::proof::{Difficulty, Proof};
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
 use crate::term_graph::TermGraphContradiction;
 
+/// A superposition-based saturation prover.
 #[derive(Clone)]
 pub struct Prover {
     /// The "active" clauses are the ones we use for reasoning.

@@ -14,8 +14,8 @@ pub struct GoalContext {
     pub goal_lines: Vec<String>,
 
     /// Stringified version of the hypothesis from negate_goal.
-    /// Empty string if there is none.
-    pub hypothesis: String,
+    /// None if there is no hypothesis.
+    pub hypothesis: Option<String>,
 
     /// Stringified version of the counterfactual from negate_goal
     pub counterfactual: String,
@@ -71,9 +71,9 @@ impl GoalContext {
 
         // Stringify the hypothesis (if it exists)
         let hypothesis = if let Some(hyp) = hypothesis_value {
-            code_gen.value_to_code(&hyp).ok()?
+            Some(code_gen.value_to_code(&hyp).ok()?)
         } else {
-            String::new()
+            None
         };
 
         // Stringify the counterfactual
