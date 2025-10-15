@@ -6,11 +6,12 @@ use crate::project::Project;
 /// Contains relevant code snippets and goal information.
 #[derive(Clone, Debug)]
 pub struct GoalContext {
-    /// Everything before first_line in the document
-    pub prefix_lines: String,
+    /// Lines from the start of the enclosing theorem to the line before the goal.
+    /// None if all relevant context is already in goal_lines.
+    pub theorem_prefix_lines: Option<Vec<String>>,
 
     /// Lines from first_line through last_line (the goal itself)
-    pub goal_lines: String,
+    pub goal_lines: Vec<String>,
 
     /// Stringified version of the hypothesis from negate_goal.
     /// Empty string if there is none.
@@ -33,25 +34,39 @@ impl GoalContext {
         // Split into lines
         let lines: Vec<&str> = content.lines().collect();
 
-        // Extract prefix_lines (everything before first_line)
-        let prefix_lines = if goal.first_line > 0 {
-            lines[..goal.first_line as usize].join("\n")
-        } else {
-            String::new()
-        };
+        // Get the environment for the goal's line to find the enclosing theorem
+        let env = project.get_env_by_id(goal.module_id)?;
+        let env_for_goal = env.env_for_line(goal.first_line);
+        let theorem_first_line = env_for_goal.first_line;
 
         // Extract goal_lines (first_line through last_line)
-        let goal_lines = if goal.last_line as usize >= lines.len() {
-            lines[goal.first_line as usize..].join("\n")
+        let goal_lines: Vec<String> = if goal.last_line as usize >= lines.len() {
+            lines[goal.first_line as usize..]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
         } else {
-            lines[goal.first_line as usize..=goal.last_line as usize].join("\n")
+            lines[goal.first_line as usize..=goal.last_line as usize]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        };
+
+        // Extract prefix_lines (from theorem start to before the goal)
+        // Only include if the theorem starts before the goal
+        let prefix_lines = if theorem_first_line < goal.first_line {
+            let prefix: Vec<String> = lines[theorem_first_line as usize..goal.first_line as usize]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            Some(prefix)
+        } else {
+            None
         };
 
         // Negate the goal to get hypothesis and counterfactual
         let (hypothesis_value, counterfactual_value) = goal.proposition.value.clone().negate_goal();
 
-        // Get the environment for code generation
-        let env = project.get_env_by_id(goal.module_id)?;
         let mut code_gen = CodeGenerator::new(&env.bindings);
 
         // Stringify the hypothesis (if it exists)
@@ -65,7 +80,7 @@ impl GoalContext {
         let counterfactual = code_gen.value_to_code(&counterfactual_value).ok()?;
 
         Some(GoalContext {
-            prefix_lines,
+            theorem_prefix_lines: prefix_lines,
             goal_lines,
             hypothesis,
             counterfactual,
