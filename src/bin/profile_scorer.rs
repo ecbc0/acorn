@@ -5,10 +5,10 @@
 //   cargo build --bin=profile_scorer --profile=fastdev
 //   samply record target/fastdev/profile_scorer
 
-use acorn::features::Features;
-use acorn::ort_model::OrtModel;
+use acorn::prover::features::Features;
+use acorn::prover::ort_model::OrtModel;
 use acorn::proof_step::ProofStep;
-use acorn::scorer::Scorer;
+use acorn::prover::scorer::Scorer;
 use mimalloc::MiMalloc;
 
 #[global_allocator]

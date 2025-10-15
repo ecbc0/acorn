@@ -1,7 +1,8 @@
 ## Instructions
 
-- When writing Rust code, before telling the user you're finished, you should run the tests and autoformat:
+- When writing Rust code, before telling the user you're finished, you should run the tests, check, and autoformat:
   `cargo test`
+  `cargo check`
   `cargo fmt`
 
 - If we make changes to the normalizer or the checker, we should run a full reverify to ensure we didn't break anything.
