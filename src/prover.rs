@@ -1,10 +1,12 @@
+pub mod active_set;
+
 use std::collections::HashSet;
 use std::fmt;
 use tokio_util::sync::CancellationToken;
 
 use tower_lsp::lsp_types::Url;
 
-use crate::active_set::ActiveSet;
+use self::active_set::ActiveSet;
 use crate::binding_map::BindingMap;
 use crate::certificate::Certificate;
 use crate::clause::Clause;
