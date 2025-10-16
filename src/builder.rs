@@ -521,13 +521,6 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Logs a message associated with a goal that only appears in the logs, not in the UI.
-    fn log_silent(&mut self, goal: &Goal, message: &str) {
-        let full_message = format!("{} {}", goal.name, message);
-        let event = self.make_event(goal.proposition.source.range, &full_message, None);
-        (self.event_handler)(event);
-    }
-
     /// Note that this will blue-squiggle in VS Code, so don't just use this willy-nilly.
     fn log_info(&mut self, goal: &Goal, message: &str) {
         let full_message = format!("{} {}", goal.name, message);
@@ -664,7 +657,6 @@ impl<'a> Builder<'a> {
         }
 
         // Try searching
-        self.log_silent(goal, "- searching for a proof...");
         let processor = Rc::make_mut(&mut processor);
         processor.set_goal(goal)?;
         let start = std::time::Instant::now();
