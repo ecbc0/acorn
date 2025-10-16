@@ -76,11 +76,11 @@ struct Args {
     )]
     lib: Option<String>,
 
-    /// Generate training data to the specified file (automatically enables reverify mode)
+    /// Generate training data to the specified directory (automatically enables reverify mode)
     #[clap(
         long,
-        help = "Generate training data to the specified file (automatically enables reverify mode).",
-        value_name = "FILE"
+        help = "Generate training data to the specified directory (automatically enables reverify mode).",
+        value_name = "DIR"
     )]
     generate_training: Option<String>,
 }
@@ -162,12 +162,12 @@ async fn main() {
     verifier.line = args.line;
 
     // Handle training data generation
-    if let Some(training_file) = args.generate_training {
+    if let Some(training_dir) = args.generate_training {
         // Automatically enable reverify mode and disable hash checking
         verifier.builder.reverify = true;
         verifier.builder.check_hashes = false;
-        if let Err(e) = verifier.builder.set_training_output_file(&training_file) {
-            println!("Error setting training output file: {}", e);
+        if let Err(e) = verifier.builder.set_training_output_dir(&training_dir) {
+            println!("Error setting training output directory: {}", e);
             std::process::exit(1);
         }
     } else {

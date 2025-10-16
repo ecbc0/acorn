@@ -1,6 +1,4 @@
 use std::collections::HashSet;
-use std::fs::File;
-use std::io::BufWriter;
 use std::rc::Rc;
 use std::sync::atomic::AtomicU32;
 use std::time::Duration;
@@ -19,6 +17,7 @@ use crate::module::{LoadState, ModuleDescriptor, ModuleId};
 use crate::processor::Processor;
 use crate::project::Project;
 use crate::prover::{Outcome, ProverParams};
+use crate::training_data_writer::TrainingDataWriter;
 
 static NEXT_BUILD_ID: AtomicU32 = AtomicU32::new(1);
 
@@ -79,8 +78,8 @@ pub struct Builder<'a> {
     cancellation_token: CancellationToken,
 
     /// Optional writer for training data output.
-    /// When set, writes goal context and proofs for verified certificates.
-    training_output: Option<BufWriter<File>>,
+    /// When set, writes goal context and proofs for verified certificates to numbered files.
+    training_output: Option<TrainingDataWriter>,
 }
 
 /// Metrics collected during a build.
@@ -304,24 +303,25 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Set the training output file.
+    /// Set the training output directory.
     /// This only works in reverify mode.
-    /// When set, the builder will write goal contexts and proofs for all verified certificates.
-    pub fn set_training_output_file(&mut self, filename: &str) -> Result<(), String> {
+    /// When set, the builder will write goal contexts and proofs for all verified certificates
+    /// to numbered files in the specified directory.
+    pub fn set_training_output_dir(&mut self, dir: &str) -> Result<(), String> {
         if !self.reverify {
             return Err("Training output can only be used in reverify mode".to_string());
         }
-        let file = File::create(filename)
-            .map_err(|e| format!("Failed to create training output file: {}", e))?;
-        self.training_output = Some(BufWriter::new(file));
+        let writer = TrainingDataWriter::new(dir)?;
+        self.training_output = Some(writer);
         Ok(())
     }
 
-    /// Flush the training output file if it's open.
-    fn flush_training_output(&mut self) {
-        if let Some(ref mut writer) = self.training_output {
-            if let Err(e) = std::io::Write::flush(writer) {
-                self.log_global(format!("Warning: failed to flush training output: {}", e));
+    /// Log a summary of training data written.
+    fn log_training_summary(&mut self) {
+        if let Some(ref writer) = self.training_output {
+            let count = writer.count();
+            if count > 0 {
+                self.log_global(format!("Wrote {} training data files", count));
             }
         }
     }
@@ -628,27 +628,18 @@ impl<'a> Builder<'a> {
                     worklist.remove(&goal.name, *i);
 
                     // Write training data if output is enabled
-                    let mut training_error = None;
-                    if let Some(ref mut writer) = self.training_output {
+                    if let Some(ref writer) = self.training_output {
                         if let Some(context) =
                             GoalContext::from_project_and_goal(self.project, goal)
                         {
-                            // Write both context and proof to the training file
-                            if let Err(e) = context.write_to(&mut *writer) {
-                                training_error = Some(format!(
-                                    "Warning: failed to write goal context to training file: {}",
-                                    e
-                                ));
-                            } else if let Err(e) = cert.write_proof_to(&mut *writer) {
-                                training_error = Some(format!(
-                                    "Warning: failed to write proof to training file: {}",
+                            // Write both context and proof to a numbered file
+                            if let Err(e) = writer.write_proof(&context, &cert) {
+                                self.log_global(format!(
+                                    "Warning: failed to write training data: {}",
                                     e
                                 ));
                             }
                         }
-                    }
-                    if let Some(error_msg) = training_error {
-                        self.log_global(error_msg);
                     }
 
                     return Ok(());
@@ -933,13 +924,13 @@ impl<'a> Builder<'a> {
 
             if let Err(e) = self.verify_module(&target, env) {
                 self.log_build_error(&e);
-                self.flush_training_output();
+                self.log_training_summary();
                 return;
             }
         }
 
-        // Flush training output at the end of a successful build
-        self.flush_training_output();
+        // Log training summary at the end of a successful build
+        self.log_training_summary();
     }
 
     /// Tries to skip building a module if it and all its dependencies are unchanged.
