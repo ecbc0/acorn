@@ -315,10 +315,12 @@ impl Environment {
                     // For local names, 'let x = y' should create an alias for y, not a new constant.
                     // Aliases for local names are handled in the binding map.
                     DefinedName::Constant(constant_name) => {
+                        let doc_comments = self.take_doc_comments();
                         self.bindings.add_constant_alias(
                             constant_name.clone(),
                             simple_name.clone(),
                             PotentialValue::Resolved(value.clone()),
+                            doc_comments,
                             Some(def_str),
                         );
                         return Ok(());

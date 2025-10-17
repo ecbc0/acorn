@@ -1035,6 +1035,7 @@ impl BindingMap {
         alias: ConstantName,
         canonical: ConstantName,
         value: PotentialValue,
+        doc_comments: Vec<String>,
         definition_string: Option<String>,
     ) {
         if canonical.module_id() != self.module_id {
@@ -1049,7 +1050,7 @@ impl BindingMap {
             theorem: false,
             definition: None,
             constructor: None,
-            doc_comments: vec![],
+            doc_comments,
             range: None,
             definition_string,
         };
@@ -1454,6 +1455,7 @@ impl BindingMap {
                         ConstantName::unqualified(self.module_id, name),
                         constant_name.clone(),
                         PotentialValue::Resolved(value.clone()),
+                        vec![],
                         None,
                     );
                     Ok(entity)
@@ -1477,6 +1479,7 @@ impl BindingMap {
                     ConstantName::unqualified(self.module_id, name),
                     uc.name.clone(),
                     PotentialValue::Unresolved(uc.clone()),
+                    vec![],
                     None,
                 );
                 Ok(entity)
