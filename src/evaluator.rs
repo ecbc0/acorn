@@ -742,8 +742,13 @@ impl<'a> Evaluator<'a> {
         name: &str,
         expected_type: Option<&AcornType>,
     ) -> compilation::Result<AcornValue> {
-        let left_value = self.evaluate_value_with_stack(stack, left, None)?;
-        let right_value = self.evaluate_value_with_stack(stack, right, None)?;
+        let mut left_value = self.evaluate_value_with_stack(stack, left, None)?;
+        let mut right_value = self.evaluate_value_with_stack(stack, right, None)?;
+
+        // swap left and right for infix op `∈` and `∉`, e.g. `x ∈ a` will be mapped to `a.contains(x)` 
+        if token.token_type == TokenType::ElemOf || token.token_type == TokenType::NotElemOf {
+            std::mem::swap(&mut left_value, &mut right_value);
+        }
 
         // Get the partial application to the left
         let potential = self.evaluate_value_attr(left_value, name, expression)?;
