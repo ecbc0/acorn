@@ -556,22 +556,32 @@ impl Environment {
         }
     }
 
-    /// Expects the given line to be bad
-    pub fn bad(&mut self, input: &str) {
+    /// Expects the given line to be bad and returns the error message
+    pub fn bad(&mut self, input: &str) -> String {
         let start_line = self.next_line();
         let tokens = Token::scan_with_start_line(input, start_line);
         let mut tokens = TokenIter::new(tokens);
 
-        if let Ok((Some(statement), _)) = Statement::parse(&mut tokens, false) {
-            assert!(
-                self.add_statement(&mut Project::new_mock(), &statement)
-                    .is_err(),
-                "expected error in: {}",
-                input
-            );
+        match Statement::parse(&mut tokens, false) {
+            Ok((Some(statement), _)) => {
+                match self.add_statement(&mut Project::new_mock(), &statement) {
+                    Err(e) => {
+                        // Clear the token map to prevent duplicate token insertion errors in subsequent tests
+                        self.token_map = TokenMap::new();
+                        return e.to_string();
+                    }
+                    Ok(_) => {
+                        panic!("expected error in: {}", input);
+                    }
+                }
+            }
+            Ok((None, _)) => {
+                return "failed to parse (no statement)".to_string();
+            }
+            Err(e) => {
+                return format!("parse error: {}", e);
+            }
         }
-        // Clear the token map to prevent duplicate token insertion errors in subsequent tests
-        self.token_map = TokenMap::new();
     }
 
     /// Check that the given name actually does have this type in the environment.

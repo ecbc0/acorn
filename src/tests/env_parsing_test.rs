@@ -1332,7 +1332,7 @@ fn test_no_recursive_simple_infinite_loops() {
                 not loop(a)
             }
             "#,
-    )
+    );
 }
 
 #[test]

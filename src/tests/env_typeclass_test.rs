@@ -1241,3 +1241,41 @@ fn test_required_attributes_type_mismatch() {
         "#,
     );
 }
+
+#[test]
+fn test_method_binding_in_typeclass_conditions() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+            type Nat: axiom
+
+            // Helper function for testing
+            let cardinality_is[T]: Nat -> Bool = axiom
+
+            typeclass F: FiniteField {
+                n: Nat
+
+                has_cardinality {
+                    cardinality_is<F>(F.n)
+                }
+            }
+        "#,
+    );
+
+    // This should fail with a better error message than "expected a function type"
+    let error = env.bad(
+        r#"
+            typeclass F2: FiniteField2 {
+                n: Nat
+
+                alt_has_cardinality(f: F2) {
+                    cardinality_is<F2>(f.n)
+                }
+            }
+        "#,
+    );
+
+    // Currently gives "expected a function type" which is confusing
+    assert!(error.contains("expected a function type"),
+        "unexpected error message: {}", error);
+}
