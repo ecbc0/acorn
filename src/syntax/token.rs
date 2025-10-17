@@ -847,7 +847,7 @@ impl Token {
                 if !char.is_ascii_uppercase() {
                     return false;
                 }
-            } else if !char.is_alphanumeric() {
+            } else if !(char.is_alphanumeric() || char == '_') {
                 return false;
             }
         }
