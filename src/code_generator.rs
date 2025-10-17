@@ -566,6 +566,10 @@ impl CodeGenerator<'_> {
                             if let Some(op) = TokenType::from_infix_magic_method_name(&attr) {
                                 let right = arg_exprs.pop().unwrap();
                                 let left = arg_exprs.pop().unwrap();
+                                // swap left and right for infix op `∈` and `∉` in display, e.g. display of proof step in Acorn assistance
+                                if op == TokenType::ElemOf || op == TokenType::NotElemOf {
+                                    return Ok(Expression::generate_binary(right, op, left));
+                                }
                                 return Ok(Expression::generate_binary(left, op, right));
                             }
 

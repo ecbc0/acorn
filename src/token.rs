@@ -71,6 +71,17 @@ pub enum TokenType {
     Extends,
     DocComment,
     Lib,
+    Union,
+    Intersection,
+    Backslash,
+    ElemOf,
+    NotElemOf,
+    Contains,
+    NotContains,
+    SubsetEq,
+    SupersetEq,
+    Subset,
+    Superset,
 }
 
 // Add a new token here if there's an alphabetical name for it.
@@ -148,6 +159,17 @@ const INFIX_MAGIC_METHODS: &[(&str, TokenType)] = &[
     ("mul", TokenType::Asterisk),
     ("mod", TokenType::Percent),
     ("div", TokenType::Slash),
+    ("union", TokenType::Union),
+    ("intersection", TokenType::Intersection),
+    ("difference", TokenType::Backslash),
+    ("contains", TokenType::ElemOf),
+    ("not_contains", TokenType::NotElemOf),
+    ("contains", TokenType::Contains),
+    ("not_contains", TokenType::NotContains),
+    ("subset_eq", TokenType::SubsetEq),
+    ("superset_eq", TokenType::SupersetEq),
+    ("subset", TokenType::Subset),
+    ("superset", TokenType::Superset),
 ];
 
 // Prefix operators.
@@ -183,6 +205,17 @@ impl TokenType {
             TokenType::Percent => true,
             TokenType::Slash => true,
             TokenType::Implies => true,
+            TokenType::Union => true,
+            TokenType::Intersection => true,
+            TokenType::Backslash => true,
+            TokenType::ElemOf => true,
+            TokenType::NotElemOf => true,
+            TokenType::Contains => true,
+            TokenType::NotContains => true,
+            TokenType::SubsetEq => true,
+            TokenType::SupersetEq => true,
+            TokenType::Subset => true,
+            TokenType::Superset => true,
             _ => false,
         }
     }
@@ -220,6 +253,17 @@ impl TokenType {
             TokenType::RightArrow => 3,
             TokenType::Implies => 3,
             TokenType::Colon => 2,
+            TokenType::Union => 11,
+            TokenType::Intersection => 12,
+            TokenType::Backslash => 11,
+            TokenType::ElemOf => 9,
+            TokenType::NotElemOf => 9,
+            TokenType::Contains => 9,
+            TokenType::NotContains => 9,
+            TokenType::SubsetEq => 9,
+            TokenType::SupersetEq => 9,
+            TokenType::Subset => 9,
+            TokenType::Superset => 9,
             TokenType::Comma => 1,
             _ => 0,
         }
@@ -383,6 +427,17 @@ impl TokenType {
             TokenType::Extends => "extends",
             TokenType::DocComment => "///",
             TokenType::Lib => "lib",
+            TokenType::Union => "∪",
+            TokenType::Intersection => "∩",
+            TokenType::Backslash => "∖",
+            TokenType::ElemOf => "∈",
+            TokenType::NotElemOf => "∉",
+            TokenType::Contains => "∋",
+            TokenType::NotContains => "∌",
+            TokenType::SubsetEq => "⊆",
+            TokenType::SupersetEq => "⊇",
+            TokenType::Subset => "⊂",
+            TokenType::Superset => "⊃",
         }
     }
 
@@ -538,7 +593,18 @@ impl Token {
             | TokenType::Minus
             | TokenType::Asterisk
             | TokenType::Percent
-            | TokenType::Slash => Some(SemanticTokenType::OPERATOR),
+            | TokenType::Slash 
+            | TokenType::Union
+            | TokenType::Intersection
+            | TokenType::Backslash 
+            | TokenType::ElemOf
+            | TokenType::NotElemOf
+            | TokenType::Contains
+            | TokenType::NotContains
+            | TokenType::SubsetEq
+            | TokenType::SupersetEq
+            | TokenType::Subset 
+            | TokenType::Superset => Some(SemanticTokenType::OPERATOR),
 
             TokenType::Let
             | TokenType::Axiom
@@ -646,6 +712,17 @@ impl Token {
                     '+' => TokenType::Plus,
                     '*' => TokenType::Asterisk,
                     '%' => TokenType::Percent,
+                    '∪' => TokenType::Union,
+                    '∩' => TokenType::Intersection,
+                    '∖' => TokenType::Backslash,
+                    '∈' => TokenType::ElemOf,
+                    '∉' => TokenType::NotElemOf,
+                    '∋' => TokenType::Contains,
+                    '∌' => TokenType::NotContains,
+                    '⊆' => TokenType::SubsetEq,
+                    '⊇' => TokenType::SupersetEq,
+                    '⊂' => TokenType::Subset,
+                    '⊃' => TokenType::Superset,
                     '-' => match char_indices.next_if_eq(&(char_index + 1, '>')) {
                         Some(_) => TokenType::RightArrow,
                         None => TokenType::Minus,
