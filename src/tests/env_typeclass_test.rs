@@ -1262,7 +1262,7 @@ fn test_method_binding_in_typeclass_conditions() {
         "#,
     );
 
-    // This should fail with a better error message than "expected a function type"
+    // This should fail with a helpful error message
     let error = env.bad(
         r#"
             typeclass F2: FiniteField2 {
@@ -1275,7 +1275,10 @@ fn test_method_binding_in_typeclass_conditions() {
         "#,
     );
 
-    // Currently gives "expected a function type" which is confusing
-    assert!(error.contains("expected a function type"),
-        "unexpected error message: {}", error);
+    // Should get a helpful message about accessing via the type, not the value
+    assert!(
+        error.contains("type-level attribute") || error.contains("Use 'F2.n'"),
+        "unexpected error message: {}",
+        error
+    );
 }

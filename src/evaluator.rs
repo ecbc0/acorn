@@ -451,7 +451,18 @@ impl<'a> Evaluator<'a> {
                         param.name
                     )));
                 };
-                self.evaluate_typeclass_attr(typeclass, attr_name, source)?
+                let potential = self.evaluate_typeclass_attr(typeclass, attr_name, source)?;
+
+                // Check if this is a non-function typeclass attribute
+                let attr_type = potential.get_type();
+                if !matches!(attr_type, AcornType::Function(_)) {
+                    return Err(source.error(&format!(
+                        "'.{}' is a type-level attribute, not a method. Use '{}.{}' to access it",
+                        attr_name, param.name, attr_name
+                    )));
+                }
+
+                potential
             }
             _ => {
                 return Err(source.error(&format!(
@@ -745,7 +756,7 @@ impl<'a> Evaluator<'a> {
         let mut left_value = self.evaluate_value_with_stack(stack, left, None)?;
         let mut right_value = self.evaluate_value_with_stack(stack, right, None)?;
 
-        // swap left and right for infix op `∈` and `∉`, e.g. `x ∈ a` will be mapped to `a.contains(x)` 
+        // swap left and right for infix op `∈` and `∉`, e.g. `x ∈ a` will be mapped to `a.contains(x)`
         if token.token_type == TokenType::ElemOf || token.token_type == TokenType::NotElemOf {
             std::mem::swap(&mut left_value, &mut right_value);
         }

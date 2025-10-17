@@ -778,7 +778,8 @@ impl Environment {
             if TokenType::is_magic_method_name(&field_name_token.text())
             // `contains` is magic method name now, so we need to enable using `contains` when defining structure Set or List
             && field_name_token.text() != "contains"
-            && field_name_token.text() != "not_contains" {
+            && field_name_token.text() != "not_contains"
+            {
                 return Err(field_name_token.error(&format!(
                     "'{}' is a reserved word. use a different name",
                     field_name_token.text()

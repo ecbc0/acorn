@@ -593,17 +593,17 @@ impl Token {
             | TokenType::Minus
             | TokenType::Asterisk
             | TokenType::Percent
-            | TokenType::Slash 
+            | TokenType::Slash
             | TokenType::Union
             | TokenType::Intersection
-            | TokenType::Backslash 
+            | TokenType::Backslash
             | TokenType::ElemOf
             | TokenType::NotElemOf
             | TokenType::Contains
             | TokenType::NotContains
             | TokenType::SubsetEq
             | TokenType::SupersetEq
-            | TokenType::Subset 
+            | TokenType::Subset
             | TokenType::Superset => Some(SemanticTokenType::OPERATOR),
 
             TokenType::Let
