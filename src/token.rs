@@ -54,6 +54,7 @@ pub enum TokenType {
     Asterisk,
     Percent,
     Slash,
+    Power,
     Numeral,
     Numerals,
     From,
@@ -159,6 +160,7 @@ const INFIX_MAGIC_METHODS: &[(&str, TokenType)] = &[
     ("mul", TokenType::Asterisk),
     ("mod", TokenType::Percent),
     ("div", TokenType::Slash),
+    ("pow", TokenType::Power),
     ("union", TokenType::Union),
     ("intersection", TokenType::Intersection),
     ("difference", TokenType::Backslash),
@@ -204,6 +206,7 @@ impl TokenType {
             TokenType::Asterisk => true,
             TokenType::Percent => true,
             TokenType::Slash => true,
+            TokenType::Power => true,
             TokenType::Implies => true,
             TokenType::Union => true,
             TokenType::Intersection => true,
@@ -236,6 +239,7 @@ impl TokenType {
     pub fn binary_precedence(&self) -> i8 {
         match self {
             TokenType::Dot => 14,
+            TokenType::Power => 13,
             TokenType::Asterisk => 12,
             TokenType::Slash => 12,
             TokenType::Plus => 11,
@@ -284,6 +288,7 @@ impl TokenType {
             TokenType::Dot => false,
             TokenType::Comma => false,
             TokenType::Colon => false,
+            TokenType::Power => false,
             _ => true,
         }
     }
@@ -292,6 +297,7 @@ impl TokenType {
     pub fn right_space(&self) -> bool {
         match self {
             TokenType::Dot => false,
+            TokenType::Power => false,
             _ => true,
         }
     }
@@ -410,6 +416,7 @@ impl TokenType {
             TokenType::Asterisk => "*",
             TokenType::Percent => "%",
             TokenType::Slash => "/",
+            TokenType::Power => "^",
             TokenType::Numeral => "<numeral>",
             TokenType::Numerals => "numerals",
             TokenType::From => "from",
@@ -594,6 +601,7 @@ impl Token {
             | TokenType::Asterisk
             | TokenType::Percent
             | TokenType::Slash
+            | TokenType::Power
             | TokenType::Union
             | TokenType::Intersection
             | TokenType::Backslash
@@ -715,6 +723,7 @@ impl Token {
                     '∪' => TokenType::Union,
                     '∩' => TokenType::Intersection,
                     '∖' => TokenType::Backslash,
+                    '^' => TokenType::Power,
                     '∈' => TokenType::ElemOf,
                     '∉' => TokenType::NotElemOf,
                     '∋' => TokenType::Contains,
