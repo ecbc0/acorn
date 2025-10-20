@@ -401,9 +401,9 @@ fn test_rewrite_consistency() {
 }
 
 #[test]
-fn test_normalization_failure_errors() {
-    // We can't normalize lambdas inside function calls, but we shouldn't crash on them.
-    let r = verify(
+fn test_basic_lambda_normalization() {
+    // We can normalize lambdas inside function calls by synthesizing terms for them.
+    verify_succeeds(
         r#"
             type Nat: axiom
             let zero: Nat = axiom
@@ -411,7 +411,6 @@ fn test_normalization_failure_errors() {
             theorem goal { apply(function(x: Nat) { x }, zero) = zero }
         "#,
     );
-    assert!(r.is_err(), "expected error");
 }
 
 #[test]

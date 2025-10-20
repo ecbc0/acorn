@@ -354,7 +354,7 @@ impl NormalizerView<'_> {
             AcornValue::Application(app) => {
                 let mut arg_exts = vec![];
                 for arg in &app.args {
-                    arg_exts.push(self.value_to_extended_term(arg, stack, next_var_id, synth)?);
+                    arg_exts.push(self.arg_to_extended_term(arg, stack, next_var_id, synth)?);
                 }
                 self.apply_to_cnf(&app.function, arg_exts, negate, stack, next_var_id, synth)
             }
@@ -945,6 +945,31 @@ impl NormalizerView<'_> {
         Ok(skolem_term)
     }
 
+    /// Converts a value to an ExtendedTerm when it's being used as an argument.
+    /// This handles lambdas specially by synthesizing terms for them,
+    /// since lambdas can't be directly converted to plain terms.
+    fn arg_to_extended_term(
+        &mut self,
+        value: &AcornValue,
+        stack: &mut Vec<TermBinding>,
+        next_var_id: &mut AtomId,
+        synth: &mut Vec<AtomId>,
+    ) -> Result<ExtendedTerm, String> {
+        match value {
+            AcornValue::Lambda(_, _) => {
+                // Synthesize a term to represent this lambda
+                let lambda_type = value.get_type();
+                let skolem_term =
+                    self.synthesize_term(value, &lambda_type, stack, next_var_id, synth)?;
+                Ok(ExtendedTerm::Term(skolem_term))
+            }
+            _ => {
+                // For non-lambda values, use the standard conversion
+                self.value_to_extended_term(value, stack, next_var_id, synth)
+            }
+        }
+    }
+
     /// Converts a value to an ExtendedTerm, which can appear in places a Term does.
     fn value_to_extended_term(
         &mut self,
@@ -970,7 +995,7 @@ impl NormalizerView<'_> {
             AcornValue::Application(app) => {
                 let mut arg_exts = vec![];
                 for arg in &app.args {
-                    arg_exts.push(self.value_to_extended_term(arg, stack, next_var_id, synth)?);
+                    arg_exts.push(self.arg_to_extended_term(arg, stack, next_var_id, synth)?);
                 }
                 self.apply_to_extended_term(&app.function, arg_exts, stack, next_var_id, synth)
             }
