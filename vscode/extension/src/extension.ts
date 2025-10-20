@@ -29,20 +29,63 @@ function log(message: string) {
 
 /**
  * Downloads a file from the given URL and saves it to the specified path.
+ * Downloads to a temporary file first, then atomically renames on success.
+ * This prevents partial downloads from being treated as valid binaries.
  * @param url - The URL to download from.
  * @param filePath - The full path where the file will be saved.
  */
 async function downloadFile(url: string, filePath: string): Promise<void> {
+  const tempPath = filePath + ".tmp";
+
+  // Clean up any existing temp file from a previous failed download
+  try {
+    if (fs.existsSync(tempPath)) {
+      fs.unlinkSync(tempPath);
+    }
+  } catch (err) {
+    console.warn("failed to clean up old temp file:", err);
+  }
+
   let response = await axios.get(url, { responseType: "stream" });
 
-  let fileStream = fs.createWriteStream(filePath);
+  let fileStream = fs.createWriteStream(tempPath);
 
   return new Promise((resolve, reject) => {
+    const cleanup = (err?: Error) => {
+      // Clean up temp file on error
+      fs.unlink(tempPath, (unlinkErr) => {
+        if (unlinkErr && unlinkErr.code !== "ENOENT") {
+          console.error("failed to clean up temp file:", unlinkErr);
+        }
+        if (err) {
+          reject(err);
+        }
+      });
+    };
+
     response.data.pipe(fileStream);
 
-    fileStream.on("finish", resolve); // Resolve on success
+    // Handle successful completion
+    fileStream.on("finish", () => {
+      // Atomically rename temp file to final destination
+      fs.rename(tempPath, filePath, (err) => {
+        if (err) {
+          cleanup(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+
+    // Handle file stream errors
     fileStream.on("error", (err) => {
-      fs.unlink(filePath, () => reject(err)); // Clean up on error
+      cleanup(err);
+    });
+
+    // Handle network/stream errors from axios
+    response.data.on("error", (err) => {
+      fileStream.destroy(); // Stop writing
+      cleanup(err);
     });
   });
 }
@@ -314,7 +357,7 @@ async function registerCommands(context: vscode.ExtensionContext) {
       let oldBins = await fs.promises.readdir(binDir);
       for (let oldBin of oldBins) {
         let oldBinPath = path.join(binDir, oldBin);
-        log(`removing old binary ${oldBinPath}`);
+        log(`removing ${oldBinPath}`);
         fs.unlinkSync(oldBinPath);
       }
       log("binary cache cleared");
