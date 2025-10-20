@@ -194,7 +194,7 @@ fn test_anonymous_function_equality() {
 }
 
 #[test]
-fn test_anonymous_function_always_false() {
+fn test_anonymous_const_false() {
     let text = r#"
     type Thing: axiom
     let u: Thing = axiom
@@ -210,7 +210,7 @@ fn test_anonymous_function_always_false() {
 }
 
 #[test]
-fn test_anonymous_function_always_true() {
+fn test_anonymous_const_true() {
     let text = r#"
     type Thing: axiom
     let u: Thing = axiom
@@ -220,6 +220,26 @@ fn test_anonymous_function_always_true() {
 
     theorem anon_const_false {
         not not_apply_u(function(t: Thing) { true })
+    }
+    "#;
+    verify_succeeds(text);
+}
+
+#[test]
+fn test_more_anonymous_const_false() {
+    let text = r#"
+    structure Set[T] {
+        contains: T -> Bool
+    }
+
+    attributes Set[K] {
+        let ee = Set[K].new(function(x: K) { false })
+    }
+
+    theorem goal[K] {
+        exists(d: Set[K]) {
+            d = Set[K].ee
+        }
     }
     "#;
     verify_succeeds(text);
