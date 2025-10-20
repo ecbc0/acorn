@@ -14,6 +14,9 @@ mod prover_core_test;
 mod prover_language_test;
 
 #[cfg(test)]
+mod normalization_test;
+
+#[cfg(test)]
 mod project_test;
 
 #[cfg(test)]
