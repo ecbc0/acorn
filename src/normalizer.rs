@@ -912,6 +912,39 @@ impl NormalizerView<'_> {
         }
     }
 
+    /// Synthesizes a term to represent a value by creating a synthetic atom
+    /// and defining it to equal the value.
+    /// This is used for values that can't be directly converted to terms,
+    /// like boolean logic expressions or lambdas.
+    fn synthesize_term(
+        &mut self,
+        value: &AcornValue,
+        value_type: &AcornType,
+        stack: &mut Vec<TermBinding>,
+        next_var_id: &mut AtomId,
+        synth: &mut Vec<AtomId>,
+    ) -> Result<Term, String> {
+        // Create a skolem term with the value's type
+        let skolem_term = self.make_skolem_term(value_type, stack, synth)?;
+        let skolem_id = if let Atom::Synthetic(id) = skolem_term.head {
+            id
+        } else {
+            return Err("internal error: skolem term is not synthetic".to_string());
+        };
+
+        // Define the synthetic term to equal the value
+        let skolem_value = self
+            .as_ref()
+            .denormalize_term(&skolem_term, &mut None, None);
+        let definition_cnf =
+            self.eq_to_cnf(&skolem_value, value, false, stack, next_var_id, synth)?;
+        let clauses = definition_cnf.clone().into_clauses();
+        self.as_mut()?
+            .define_synthetic_atoms(vec![skolem_id], clauses)?;
+
+        Ok(skolem_term)
+    }
+
     /// Converts a value to an ExtendedTerm, which can appear in places a Term does.
     fn value_to_extended_term(
         &mut self,
@@ -992,21 +1025,9 @@ impl NormalizerView<'_> {
             }
             AcornValue::Bool(_) => Err("boolean in unexpected position".to_string()),
             value if value.is_bool_type() => {
-                // Synthesize a term to represent this value.
-                let skolem_term = self.make_skolem_term(&AcornType::Bool, stack, synth)?;
-                let skolem_id = if let Atom::Synthetic(id) = skolem_term.head {
-                    id
-                } else {
-                    return Err("internal error: skolem term is not synthetic".to_string());
-                };
-                let skolem_value = self
-                    .as_ref()
-                    .denormalize_term(&skolem_term, &mut None, None);
-                let definition_cnf =
-                    self.eq_to_cnf(&skolem_value, value, false, stack, next_var_id, synth)?;
-                let clauses = definition_cnf.clone().into_clauses();
-                self.as_mut()?
-                    .define_synthetic_atoms(vec![skolem_id], clauses)?;
+                // Synthesize a term to represent this boolean value.
+                let skolem_term =
+                    self.synthesize_term(value, &AcornType::Bool, stack, next_var_id, synth)?;
                 Ok(ExtendedTerm::Term(skolem_term))
             }
             _ => Err(format!("cannot convert '{}' to extended term", value)),
