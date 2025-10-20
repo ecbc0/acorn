@@ -916,6 +916,7 @@ impl NormalizerView<'_> {
     /// and defining it to equal the value.
     /// This is used for values that can't be directly converted to terms,
     /// like boolean logic expressions or lambdas.
+    /// If an equivalent definition already exists, reuses the existing synthetic atom.
     fn synthesize_term(
         &mut self,
         value: &AcornValue,
@@ -924,7 +925,7 @@ impl NormalizerView<'_> {
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
     ) -> Result<Term, String> {
-        // Create a skolem term with the value's type
+        // Create a tentative skolem term with the value's type
         let skolem_term = self.make_skolem_term(value_type, stack, synth)?;
         let skolem_id = if let Atom::Synthetic(id) = skolem_term.head {
             id
@@ -932,17 +933,41 @@ impl NormalizerView<'_> {
             return Err("internal error: skolem term is not synthetic".to_string());
         };
 
-        // Define the synthetic term to equal the value
+        // Create the definition for this synthetic term
         let skolem_value = self
             .as_ref()
             .denormalize_term(&skolem_term, &mut None, None);
         let definition_cnf =
             self.eq_to_cnf(&skolem_value, value, false, stack, next_var_id, synth)?;
         let clauses = definition_cnf.clone().into_clauses();
-        self.as_mut()?
-            .define_synthetic_atoms(vec![skolem_id], clauses)?;
 
-        Ok(skolem_term)
+        // Check if an equivalent definition already exists
+        let synthetic_key_form: Vec<_> = clauses
+            .iter()
+            .map(|c| c.invalidate_synthetics(&[skolem_id]))
+            .collect();
+        let key = SyntheticKey {
+            clauses: synthetic_key_form,
+            num_atoms: 1,
+        };
+
+        if let Some(existing_def) = self.as_ref().synthetic_map.get(&key) {
+            // Reuse the existing synthetic atom
+            let existing_id = existing_def.atoms[0];
+            let existing_atom = Atom::Synthetic(existing_id);
+            let reused_term = Term::new(
+                skolem_term.term_type,
+                skolem_term.head_type,
+                existing_atom,
+                skolem_term.args.clone(),
+            );
+            Ok(reused_term)
+        } else {
+            // Define the new synthetic atom
+            self.as_mut()?
+                .define_synthetic_atoms(vec![skolem_id], clauses)?;
+            Ok(skolem_term)
+        }
     }
 
     /// Converts a value to an ExtendedTerm when it's being used as an argument.

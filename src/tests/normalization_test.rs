@@ -179,16 +179,16 @@ fn test_anonymous_function_as_argument() {
     verify_succeeds(text);
 }
 
-// #[test]
-// fn test_anonymous_function_equality() {
-//     let text = r#"
-//     type Thing: axiom
-//     let u: Thing = axiom
-//     let f: (Thing -> Bool) -> Thing = axiom
+#[test]
+fn test_anonymous_function_equality() {
+    let text = r#"
+    type Thing: axiom
+    let u: Thing = axiom
+    let f: (Thing -> Bool) -> Thing = axiom
 
-//     theorem goal {
-//         f(function(t: Thing) { t = u }) = f(function(t: Thing) { t = u })
-//     }
-//     "#;
-//     verify_succeeds(text);
-// }
+    theorem goal {
+        f(function(t: Thing) { t = u }) = f(function(t: Thing) { t = u })
+    }
+    "#;
+    verify_succeeds(text);
+}
