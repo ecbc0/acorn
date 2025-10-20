@@ -192,3 +192,35 @@ fn test_anonymous_function_equality() {
     "#;
     verify_succeeds(text);
 }
+
+#[test]
+fn test_anonymous_function_always_false() {
+    let text = r#"
+    type Thing: axiom
+    let u: Thing = axiom
+    define not_apply_u(t: Thing -> Bool) -> Bool {
+        not t(u)
+    }
+
+    theorem anon_const_false {
+        not_apply_u(function(t: Thing) { false })
+    }
+    "#;
+    verify_succeeds(text);
+}
+
+#[test]
+fn test_anonymous_function_always_true() {
+    let text = r#"
+    type Thing: axiom
+    let u: Thing = axiom
+    define not_apply_u(t: Thing -> Bool) -> Bool {
+        not t(u)
+    }
+
+    theorem anon_const_false {
+        not not_apply_u(function(t: Thing) { true })
+    }
+    "#;
+    verify_succeeds(text);
+}
