@@ -38,8 +38,8 @@
     {
       "label": "language server: cargo build",
       "type": "shell",
-      "command": "cargo",
-      "args": ["build", "--bin=acorn", "--profile=fastdev"],
+      "command": "bash",
+      "args": ["-c", "unset CC SOURCE_DATE_EPOCH && cargo build --bin=acorn --profile=fastdev"],
       "group": {
         "kind": "build",
         "isDefault": true

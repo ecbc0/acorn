@@ -11,5 +11,13 @@
     "a11y-missing-attribute": "ignore"
   },
   "rust-analyzer.linkedProjects": ["./Cargo.toml"],
-  "rust-analyzer.showUnlinkedFileNotification": false
+  "rust-analyzer.showUnlinkedFileNotification": false,
+  "terminal.integrated.env.linux": {
+    "CC": null,
+    "SOURCE_DATE_EPOCH": null
+  },
+  "rust-analyzer.server.extraEnv": {
+    "CC": null,
+    "SOURCE_DATE_EPOCH": null
+  }
 }
