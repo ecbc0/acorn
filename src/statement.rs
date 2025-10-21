@@ -540,10 +540,16 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Stateme
                     vec![Declaration::Typed(name_token, type_expr)],
                 );
             }
+            // Skip newlines after = to allow line continuation
+            if middle_token.token_type == TokenType::Equals {
+                tokens.skip_newlines();
+            }
             (Some(type_expr), middle_token)
         }
         TokenType::Equals => {
             // Type inference syntax: let name = value
+            // Skip newlines after = to allow line continuation
+            tokens.skip_newlines();
             (None, next_token)
         }
         _ => {

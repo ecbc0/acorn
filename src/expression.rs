@@ -809,7 +809,11 @@ fn parse_partial_expressions(
                 }
             }
 
-            partials.push_back(PartialExpression::Binary(token));
+            partials.push_back(PartialExpression::Binary(token.clone()));
+            // Skip newlines after = and != to allow line continuation
+            if token.token_type == TokenType::Equals || token.token_type == TokenType::NotEquals {
+                tokens.skip_newlines();
+            }
             continue;
         }
         if token.token_type.is_unary() {
