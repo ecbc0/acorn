@@ -25,7 +25,7 @@ pub struct Processor {
 impl Processor {
     pub fn new() -> Processor {
         Processor {
-            prover: Prover::with_tokens(vec![]),
+            prover: Prover::new(vec![]),
             normalizer: Normalizer::new(),
             checker: Checker::new(),
         }
@@ -33,7 +33,7 @@ impl Processor {
 
     pub fn with_token(cancellation_token: CancellationToken) -> Processor {
         Processor {
-            prover: Prover::with_tokens(vec![cancellation_token]),
+            prover: Prover::new(vec![cancellation_token]),
             normalizer: Normalizer::new(),
             checker: Checker::new(),
         }
@@ -41,7 +41,7 @@ impl Processor {
 
     pub fn with_dual_tokens(token1: CancellationToken, token2: CancellationToken) -> Processor {
         Processor {
-            prover: Prover::with_tokens(vec![token1, token2]),
+            prover: Prover::new(vec![token1, token2]),
             normalizer: Normalizer::new(),
             checker: Checker::new(),
         }

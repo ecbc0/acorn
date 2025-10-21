@@ -129,9 +129,9 @@ impl ProverParams {
 }
 
 impl Prover {
-    /// Creates a new Prover instance with cancellation tokens.
-    /// Pass an empty vec for no cancellation tokens.
-    pub fn with_tokens(tokens: Vec<CancellationToken>) -> Prover {
+    /// Creates a new Prover instance.
+    /// The prover must stop when any of its cancellation tokens are canceled.
+    pub fn new(tokens: Vec<CancellationToken>) -> Prover {
         Prover {
             active_set: ActiveSet::new(),
             passive_set: PassiveSet::new(),
@@ -486,7 +486,7 @@ impl Prover {
 
     /// Activates the next clause from the queue, unless we're already done.
     /// Returns whether the prover finished.
-    pub fn activate_next(&mut self) -> bool {
+    fn activate_next(&mut self) -> bool {
         if self.final_step.is_some() {
             return true;
         }
