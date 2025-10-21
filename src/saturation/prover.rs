@@ -305,7 +305,7 @@ impl Prover {
     /// We always include all of the steps that are mathematically necessary for the proof.
     /// The include_inspiration flag determines whether we include the "inspiration" steps,
     /// which the prover used to find the proof, but are not needed for the proof to be valid.
-    pub fn get_uncondensed_proof<'a>(
+    fn get_uncondensed_proof<'a>(
         &'a self,
         normalizer: &'a Normalizer,
         include_inspiration: bool,
