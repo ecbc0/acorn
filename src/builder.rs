@@ -695,12 +695,7 @@ impl<'a> Builder<'a> {
             // We need to recurse into children
             cursor.descend(0);
             loop {
-                self.verify_node(
-                    Rc::clone(&processor),
-                    cursor,
-                    new_certs,
-                    worklist,
-                )?;
+                self.verify_node(Rc::clone(&processor), cursor, new_certs, worklist)?;
 
                 if let Some(fact) = cursor.node().get_fact() {
                     Rc::make_mut(&mut processor).add_fact(fact)?;

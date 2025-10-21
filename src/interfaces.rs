@@ -77,6 +77,20 @@ pub struct SearchParams {
 
 #[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SelectionParams {
+    // Which document
+    pub uri: Url,
+    pub version: i32,
+
+    // The selected line in the document
+    pub selected_line: u32,
+
+    // The selection id, set by the extension.
+    pub id: u32,
+}
+
+#[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ClauseInfo {
     // A format for the user to see.
     // None if this is a contradiction.
@@ -241,7 +255,6 @@ pub struct SearchResponse {
     pub insert_block: bool,
 
     // The status of the search process.
-    // If it has not completed yet, this is None.
     pub status: SearchStatus,
 
     // The id for the search, provided by the extension
@@ -260,6 +273,45 @@ impl SearchResponse {
             status: SearchStatus::default(),
             proof_insertion_line: 0,
             insert_block: false,
+            id: params.id,
+        }
+    }
+}
+
+// The SelectionResponse is sent from language server -> extension with information about what
+// is at the selected line, without starting a proof search.
+#[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectionResponse {
+    // Which document this selection is for.
+    pub uri: Url,
+    pub version: i32,
+
+    // A failure is when the user requested some operation that we can't do.
+    // When we have a failure, this contains a failure message.
+    pub failure: Option<String>,
+
+    // When loading is true, it means that we can't process this selection, because the version
+    // requested is not loaded. The caller can wait and retry, or just abandon.
+    pub loading: bool,
+
+    // Information about the goal at this location, if any
+    pub goal_name: Option<String>,
+    pub goal_range: Option<Range>,
+
+    // The id for the selection, provided by the extension
+    pub id: u32,
+}
+
+impl SelectionResponse {
+    pub fn new(params: SelectionParams) -> SelectionResponse {
+        SelectionResponse {
+            uri: params.uri,
+            version: params.version,
+            failure: None,
+            loading: false,
+            goal_name: None,
+            goal_range: None,
             id: params.id,
         }
     }

@@ -18,10 +18,12 @@ use tower_lsp::jsonrpc;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
+use crate::block::NodeCursor;
 use crate::interfaces::{
     DocumentProgress, InfoParams, InfoResponse, ProgressParams, ProgressResponse, SearchParams,
-    SearchResponse,
+    SearchResponse, SelectionParams, SelectionResponse,
 };
+use crate::module::LoadState;
 use crate::project::{Project, ProjectConfig};
 
 // Trait abstracting the LSP client methods we need
@@ -428,6 +430,77 @@ impl AcornLanguageServer {
             .handle_info_request(params, &self.project_manager)
             .await
     }
+
+    async fn handle_selection_request(
+        &self,
+        params: SelectionParams,
+    ) -> jsonrpc::Result<SelectionResponse> {
+        let mut response = SelectionResponse::new(params.clone());
+
+        let project = self.project_manager.read().await;
+        let path = match to_path(&params.uri) {
+            Some(path) => path,
+            None => {
+                response.failure = Some("no path available".to_string());
+                return Ok(response);
+            }
+        };
+
+        // Check if the requested version is loaded
+        match project.get_version(&path) {
+            Some(project_version) => {
+                if params.version < project_version {
+                    response.failure = Some(format!(
+                        "requested version {} but the project has version {}",
+                        params.version, project_version
+                    ));
+                    return Ok(response);
+                }
+                if params.version > project_version {
+                    // The requested version is not loaded yet.
+                    response.loading = true;
+                    return Ok(response);
+                }
+            }
+            None => {
+                // We don't have any version of this file.
+                // Probably this indicates a file that is open in VS Code but unchanged.
+                // Just fall through.
+            }
+        }
+
+        let descriptor = match project.descriptor_from_path(&path) {
+            Ok(name) => name,
+            Err(e) => {
+                response.failure = Some(format!("descriptor_from_path failed: {:?}", e));
+                return Ok(response);
+            }
+        };
+
+        let env = match project.get_module(&descriptor) {
+            LoadState::Ok(env) => env,
+            _ => {
+                response.failure = Some(format!("could not load module from {:?}", descriptor));
+                return Ok(response);
+            }
+        };
+
+        let node_path = match env.path_for_line(params.selected_line) {
+            Ok(path) => path,
+            Err(e) => {
+                response.failure = Some(format!("path_for_line failed: {}", e));
+                return Ok(response);
+            }
+        };
+
+        let cursor = NodeCursor::from_path(env, &node_path);
+        if let Ok(goal) = cursor.goal() {
+            response.goal_name = Some(goal.name.clone());
+            response.goal_range = Some(goal.proposition.source.range);
+        }
+
+        Ok(response)
+    }
 }
 
 #[tower_lsp::async_trait]
@@ -660,6 +733,10 @@ pub async fn run_server(args: &ServerArgs) {
                 AcornLanguageServer::handle_progress_request,
             )
             .custom_method("acorn/search", AcornLanguageServer::handle_search_request)
+            .custom_method(
+                "acorn/selection",
+                AcornLanguageServer::handle_selection_request,
+            )
             .finish();
 
     Server::new(stdin, stdout, socket).serve(service).await;
