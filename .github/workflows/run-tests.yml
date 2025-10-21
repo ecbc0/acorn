@@ -56,5 +56,5 @@ jobs:
       - name: Verify acornlib
         run: |
           cd vscode/extension/acornlib
-          time ../../../target/release/acorn
-          time ../../../target/release/acorn --nohash
+          time ../../../target/release/acorn verify
+          time ../../../target/release/acorn verify --nohash
