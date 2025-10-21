@@ -2188,3 +2188,31 @@ fn test_env_set_product_with_extra_type_param() {
         "#,
     );
 }
+
+#[test]
+fn test_line_continuation_with_equals() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        let x: Bool =
+            true
+        "#,
+    );
+    env.add(
+        r#"
+        type Nat: axiom
+        theorem foo(a: Nat, b: Nat) {
+            a = b or a != b
+        } by {
+            if not a != b {
+                a =
+                    b
+            }
+            if not a = b {
+                a !=
+                    b
+            }
+        }
+        "#,
+    );
+}
