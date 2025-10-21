@@ -13,7 +13,6 @@ use crate::code_generator::{CodeGenerator, Error};
 use crate::display::DisplayClause;
 use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
 use crate::literal::Literal;
-use crate::module::ModuleId;
 use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::project::Project;
 use crate::proof::{Difficulty, Proof};
@@ -130,17 +129,8 @@ impl ProverParams {
 }
 
 impl Prover {
-    /// Creates a new Prover instance
-    pub fn new() -> Prover {
-        Self::with_tokens(vec![])
-    }
-
-    /// Creates a new Prover instance with a single cancellation token
-    pub fn with_token(token: CancellationToken) -> Prover {
-        Self::with_tokens(vec![token])
-    }
-
-    /// Creates a new Prover instance with multiple cancellation tokens
+    /// Creates a new Prover instance with cancellation tokens.
+    /// Pass an empty vec for no cancellation tokens.
     pub fn with_tokens(tokens: Vec<CancellationToken>) -> Prover {
         Prover {
             active_set: ActiveSet::new(),

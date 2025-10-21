@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::atomic::AtomicU32;
 use std::time::Duration;
@@ -600,7 +599,6 @@ impl<'a> Builder<'a> {
         env: &Environment,
         new_certs: &mut Vec<Certificate>,
         worklist: &mut CertificateWorklist,
-        new_premises: &mut HashSet<(ModuleId, String)>,
     ) -> Result<(), BuildError> {
         // Check if we've been cancelled before starting any work
         if self.cancellation_token.is_cancelled() {
@@ -686,7 +684,6 @@ impl<'a> Builder<'a> {
         &mut self,
         mut processor: Rc<Processor>,
         cursor: &mut NodeCursor,
-        new_premises: &mut HashSet<(ModuleId, String)>,
         new_certs: &mut Vec<Certificate>,
         worklist: &mut CertificateWorklist,
     ) -> Result<(), BuildError> {
@@ -701,7 +698,6 @@ impl<'a> Builder<'a> {
                 self.verify_node(
                     Rc::clone(&processor),
                     cursor,
-                    new_premises,
                     new_certs,
                     worklist,
                 )?;
@@ -733,7 +729,6 @@ impl<'a> Builder<'a> {
                 cursor.goal_env().unwrap(),
                 new_certs,
                 worklist,
-                new_premises,
             )?;
         }
 
@@ -765,21 +760,15 @@ impl<'a> Builder<'a> {
         // Loop over all the nodes that are right below the top level.
         loop {
             if cursor.requires_verification() {
-                {
-                    // We do need to verify this.
+                // We do need to verify this.
 
-                    // The premises we use while verifying this block.
-                    let mut new_premises = HashSet::new();
-
-                    // This call will recurse and verify everything within this top-level block.
-                    self.verify_node(
-                        Rc::clone(&processor),
-                        &mut cursor,
-                        &mut new_premises,
-                        &mut new_certs,
-                        &mut worklist,
-                    )?;
-                }
+                // This call will recurse and verify everything within this top-level block.
+                self.verify_node(
+                    Rc::clone(&processor),
+                    &mut cursor,
+                    &mut new_certs,
+                    &mut worklist,
+                )?;
             } else {
                 self.log_verified(cursor.node().first_line(), cursor.node().last_line());
             }

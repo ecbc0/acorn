@@ -1,7 +1,6 @@
 use super::common::*;
 use crate::project::Project;
 use crate::saturation::Outcome;
-use std::collections::HashSet;
 
 #[test]
 fn test_specialization() {
