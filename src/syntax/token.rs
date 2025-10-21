@@ -577,7 +577,12 @@ impl Token {
     }
 
     pub fn identifierish(ch: char) -> bool {
-        ch.is_alphanumeric() || ch == '_' || ch == '!'
+        if ch.is_alphabetic() || ch.is_numeric() { true } else {
+            match ch {
+                '_' | '!' => true,
+                _ => false
+            } 
+        }
     }
 
     /// Extracts the content from a doc comment token.
@@ -853,10 +858,10 @@ impl Token {
         }
         for (i, char) in self.text().chars().enumerate() {
             if i == 0 {
-                if !char.is_ascii_uppercase() {
+                if !char.is_uppercase() {
                     return false;
                 }
-            } else if !(char.is_alphanumeric() || char == '_') {
+            } else if !(char.is_alphabetic() || char.is_numeric() || char == '_') {
                 return false;
             }
         }
@@ -950,7 +955,7 @@ impl TokenIter {
             TokenType::SelfToken => {}
             TokenType::Identifier => match name_token.text().chars().next() {
                 Some(c) => {
-                    if !(c.is_ascii_lowercase() || c == '!') {
+                    if !(c.is_lowercase() || c == '!') {
                         return Err(name_token.error("invalid variable name"));
                     }
                 }
