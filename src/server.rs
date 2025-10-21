@@ -497,6 +497,9 @@ impl AcornLanguageServer {
         if let Ok(goal) = cursor.goal() {
             response.goal_name = Some(goal.name.clone());
             response.goal_range = Some(goal.proposition.source.range);
+
+            // Check if there's a verified certificate for this goal
+            response.has_cached_proof = project.find_cert(&goal, env).is_some();
         }
 
         Ok(response)

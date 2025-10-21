@@ -12,13 +12,16 @@ use crate::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::acorn_value::AcornValue;
 use crate::binding_map::BindingMap;
 use crate::build_cache::BuildCache;
+use crate::certificate::Certificate;
 use crate::code_generator::{self, CodeGenerator};
 use crate::compilation;
 use crate::environment::Environment;
 use crate::fact::Fact;
+use crate::goal::Goal;
 use crate::module::{LoadState, Module, ModuleDescriptor, ModuleId};
 use crate::named_entity::NamedEntity;
 use crate::names::ConstantName;
+use crate::processor::Processor;
 use crate::token::Token;
 use crate::token_map::TokenInfo;
 
@@ -1117,6 +1120,35 @@ impl Project {
             facts.extend(env.importable_facts(filter));
         }
         facts
+    }
+
+    /// Find a verified certificate for the given goal.
+    /// Returns the first certificate that successfully verifies against the current code.
+    /// Returns None if no valid certificate exists in the build cache.
+    pub fn find_cert(&self, goal: &Goal, env: &Environment) -> Option<Certificate> {
+        // Get the module descriptor for this goal
+        let descriptor = self.get_module_descriptor(goal.module_id)?;
+
+        // Get the certificate store for this module
+        let cert_store = self.build_cache.get_certificates(descriptor)?;
+
+        // Create a processor for verification
+        let processor = Processor::new();
+
+        // Try each certificate with a matching goal name
+        for cert in &cert_store.certs {
+            if cert.goal == goal.name {
+                // Try to verify this certificate
+                if processor
+                    .check_cert(cert, Some(goal), self, &env.bindings)
+                    .is_ok()
+                {
+                    return Some(cert.clone());
+                }
+            }
+        }
+
+        None
     }
 
     // path is the file we're in.

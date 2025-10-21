@@ -299,6 +299,9 @@ pub struct SelectionResponse {
     pub goal_name: Option<String>,
     pub goal_range: Option<Range>,
 
+    // Whether there is a cached proof that verifies for this goal
+    pub has_cached_proof: bool,
+
     // The id for the selection, provided by the extension
     pub id: u32,
 }
@@ -312,6 +315,7 @@ impl SelectionResponse {
             loading: false,
             goal_name: None,
             goal_range: None,
+            has_cached_proof: false,
             id: params.id,
         }
     }
