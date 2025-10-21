@@ -5,7 +5,7 @@ use acorn::doc_generator::DocGenerator;
 use acorn::project::{Project, ProjectConfig};
 use acorn::server::{run_server, ServerArgs};
 use acorn::verifier::Verifier;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use mimalloc::MiMalloc;
 
 #[global_allocator]
@@ -15,94 +15,80 @@ static GLOBAL: MiMalloc = MiMalloc;
 #[clap(
     name = "acorn",
     about = "A theorem prover and programming language",
-    long_about = "Acorn is a theorem prover and programming language.\n\nYou can:\n- Run a language server for IDE integration\n- Verify theorems and proofs\n- Search for proofs at specific locations",
+    long_about = "Acorn is a theorem prover and programming language.\n\nYou can:\n- Run a language server for IDE integration\n- Verify theorems and proofs\n- Generate documentation\n- Generate training data",
     version = env!("CARGO_PKG_VERSION")
 )]
 struct Args {
-    /// The root folder the user has open (language server mode only)
-    #[clap(long, hide = true)]
-    workspace_root: Option<String>,
-
-    /// The root folder of the extension (enables language server mode)
-    #[clap(long, hide = true)]
-    extension_root: Option<String>,
-
-    /// Target module or file to verify (can be a filename or module name)
-    #[clap(
-        value_name = "TARGET",
-        help = "Module or filename to verify. If not provided, verifies all files in the library. If \"-\" is provided, it reads from stdin."
-    )]
-    target: Option<String>,
-
-    /// Don't skip goals based on hash checks
-    #[clap(long, help = "Don't skip goals based on hash checks.")]
-    nohash: bool,
-
-    /// Verify mode: error if any goal requires a search instead of just checking the cert
+    /// Set the directory to look for acornlib
     #[clap(
         long,
-        help = "Reverify all goals, erroring if any goal requires a search instead of just checking the cert."
-    )]
-    reverify: bool,
-
-    /// Search for a proof at a specific line number (requires target)
-    #[clap(
-        long,
-        help = "Search for a proof at a specific line number.",
-        value_name = "LINE"
-    )]
-    line: Option<u32>,
-
-    /// Generate documentation in the given directory
-    #[clap(
-        long,
-        help = "Generate documentation in the given directory.",
-        value_name = "DIR"
-    )]
-    doc_root: Option<String>,
-
-    // Appends input to a file (can only be used if target is \"-\")
-    #[clap(
-        long,
-        help = "Appends input to a file (can only be used if target is \"-\")"
-    )]
-    append_to: Option<String>,
-
-    /// Set the directory to look for acornlib in CLI mode
-    #[clap(
-        long,
-        help = "Set the directory to look for acornlib in CLI mode.",
+        global = true,
+        help = "Set the directory to look for acornlib.",
         value_name = "DIR"
     )]
     lib: Option<String>,
 
-    /// Generate training data to the specified directory (automatically enables reverify mode)
-    #[clap(
-        long,
-        help = "Generate training data to the specified directory (automatically enables reverify mode).",
-        value_name = "DIR"
-    )]
-    generate_training: Option<String>,
+    #[clap(subcommand)]
+    command: Option<Command>,
+}
+
+// Note that we cannot use flags named "--update" or "--clean" because those get intercepted by the JS wrapper.
+#[derive(Subcommand)]
+enum Command {
+    /// Run the language server for IDE integration
+    Serve {
+        /// The root folder the user has open
+        #[clap(long)]
+        workspace_root: Option<String>,
+
+        /// The root folder of the extension
+        #[clap(long)]
+        extension_root: String,
+    },
+
+    /// Generate documentation
+    Docs {
+        /// Directory to generate documentation in
+        #[clap(value_name = "DIR")]
+        dir: String,
+    },
+
+    /// Generate training data
+    Training {
+        /// Directory to generate training data in
+        #[clap(value_name = "DIR")]
+        dir: String,
+    },
+
+    /// Verify theorems and proofs (default)
+    Verify {
+        /// Target module or file to verify (can be a filename or module name)
+        #[clap(
+            value_name = "TARGET",
+            help = "Module or filename to verify. If not provided, verifies all files in the library. If \"-\" is provided, it reads from stdin."
+        )]
+        target: Option<String>,
+
+        /// Don't skip goals based on hash checks
+        #[clap(long, help = "Don't skip goals based on hash checks.")]
+        nohash: bool,
+
+        /// Search for a proof at a specific line number (requires target)
+        #[clap(
+            long,
+            help = "Search for a proof at a specific line number.",
+            value_name = "LINE"
+        )]
+        line: Option<u32>,
+    },
+
+    /// Reverify all goals, erroring if any goal requires a search
+    Reverify,
 }
 
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-
-    // Check for language server mode.
-    if let Some(extension_root) = args.extension_root {
-        let server_args = ServerArgs {
-            workspace_root: args.workspace_root,
-            extension_root,
-        };
-        run_server(&server_args).await;
-        return;
-    }
-
-    if args.workspace_root.is_some() {
-        println!("--workspace-root is only relevant in language server mode.");
-        std::process::exit(1);
-    }
 
     let current_dir = if let Some(lib_dir) = &args.lib {
         std::path::PathBuf::from(lib_dir)
@@ -116,73 +102,145 @@ async fn main() {
         }
     };
 
-    // Handle the --doc_root flag
-    if let Some(doc_root) = args.doc_root {
-        let mut project = Project::new_local(&current_dir, ProjectConfig::default())
-            .unwrap_or_else(|e| {
-                println!("Error loading project: {}", e);
-                std::process::exit(1);
-            });
-        project.add_src_targets();
-        match DocGenerator::new(&project).generate(&doc_root) {
-            Ok(count) => {
-                println!("{} files generated in {}", count, doc_root);
-                return;
+    match args.command {
+        Some(Command::Serve {
+            workspace_root,
+            extension_root,
+        }) => {
+            let server_args = ServerArgs {
+                workspace_root,
+                extension_root,
+            };
+            run_server(&server_args).await;
+        }
+
+        Some(Command::Docs { dir }) => {
+            let mut project = Project::new_local(&current_dir, ProjectConfig::default())
+                .unwrap_or_else(|e| {
+                    println!("Error loading project: {}", e);
+                    std::process::exit(1);
+                });
+            project.add_src_targets();
+            match DocGenerator::new(&project).generate(&dir) {
+                Ok(count) => {
+                    println!("{} files generated in {}", count, dir);
+                }
+                Err(e) => {
+                    println!("Error generating documentation: {}", e);
+                    std::process::exit(1);
+                }
             }
-            Err(e) => {
-                println!("Error generating documentation: {}", e);
+        }
+
+        Some(Command::Training { dir }) => {
+            let mut verifier = match Verifier::new(current_dir, ProjectConfig::default(), None) {
+                Ok(v) => v,
+                Err(e) => {
+                    println!("{}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            // Training mode automatically enables reverify and disables hash checking
+            verifier.builder.reverify = true;
+            verifier.builder.check_hashes = false;
+            if let Err(e) = verifier.builder.set_training_output_dir(&dir) {
+                println!("Error setting training output directory: {}", e);
                 std::process::exit(1);
             }
-        }
-    }
 
-    // Handle the --append_to flag
-    let target = if let Some(append) = args.append_to {
-        let Some(target) = &args.target else {
-            println!("Error: --append_to requires a target file to be specified.");
-            std::process::exit(1);
-        };
-        if target != "-" {
-            println!("Error: target is required to be \"-\".");
-            std::process::exit(1);
+            match verifier.run() {
+                Err(e) => {
+                    println!("{}", e);
+                    std::process::exit(1);
+                }
+                Ok(output) => {
+                    if !output.is_success() {
+                        std::process::exit(1);
+                    }
+                }
+            }
         }
-        Some(target.to_string() + ":" + &append)
-    } else {
-        args.target.clone()
-    };
 
-    let mut verifier = match Verifier::new(current_dir, ProjectConfig::default(), target) {
-        Ok(v) => v,
-        Err(e) => {
-            println!("{}", e);
-            std::process::exit(1);
-        }
-    };
-    verifier.builder.verbose = args.line.is_some();
-    verifier.line = args.line;
+        Some(Command::Verify {
+            target,
+            nohash,
+            line,
+        }) => {
+            let mut verifier = match Verifier::new(current_dir, ProjectConfig::default(), target) {
+                Ok(v) => v,
+                Err(e) => {
+                    println!("{}", e);
+                    std::process::exit(1);
+                }
+            };
 
-    // Handle training data generation
-    if let Some(training_dir) = args.generate_training {
-        // Automatically enable reverify mode and disable hash checking
-        verifier.builder.reverify = true;
-        verifier.builder.check_hashes = false;
-        if let Err(e) = verifier.builder.set_training_output_dir(&training_dir) {
-            println!("Error setting training output directory: {}", e);
-            std::process::exit(1);
+            verifier.builder.verbose = line.is_some();
+            verifier.line = line;
+            verifier.builder.reverify = false;
+            verifier.builder.check_hashes = !nohash;
+
+            match verifier.run() {
+                Err(e) => {
+                    println!("{}", e);
+                    std::process::exit(1);
+                }
+                Ok(output) => {
+                    if !output.is_success() {
+                        std::process::exit(1);
+                    }
+                }
+            }
         }
-    } else {
-        verifier.builder.reverify = args.reverify;
-        verifier.builder.check_hashes = !args.nohash && !args.reverify;
-    }
-    match verifier.run() {
-        Err(e) => {
-            println!("{}", e);
-            std::process::exit(1);
+
+        Some(Command::Reverify) => {
+            let mut verifier = match Verifier::new(current_dir, ProjectConfig::default(), None) {
+                Ok(v) => v,
+                Err(e) => {
+                    println!("{}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            verifier.builder.reverify = true;
+            verifier.builder.check_hashes = false;
+
+            match verifier.run() {
+                Err(e) => {
+                    println!("{}", e);
+                    std::process::exit(1);
+                }
+                Ok(output) => {
+                    if !output.is_success() {
+                        std::process::exit(1);
+                    }
+                }
+            }
         }
-        Ok(output) => {
-            if !output.is_success() {
-                // Make sure CI-type environments fail.
-                std::process::exit(1);
+
+        // Default to do a global verify if no subcommand is provided
+        None => {
+            let mut verifier = match Verifier::new(current_dir, ProjectConfig::default(), None) {
+                Ok(v) => v,
+                Err(e) => {
+                    println!("{}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            verifier.builder.reverify = false;
+            verifier.builder.check_hashes = true;
+
+            match verifier.run() {
+                Err(e) => {
+                    println!("{}", e);
+                    std::process::exit(1);
+                }
+                Ok(output) => {
+                    if !output.is_success() {
+                        std::process::exit(1);
+                    }
+                }
             }
         }
     }

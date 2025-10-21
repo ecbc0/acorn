@@ -380,8 +380,8 @@ async function registerCommands(context: vscode.ExtensionContext) {
 export async function activate(context: vscode.ExtensionContext) {
   let command = await getServerPath(context);
 
-  // Add workspace root argument if available
-  let args = ["--extension-root", context.extensionPath];
+  // Build the serve subcommand arguments
+  let args = ["serve", "--extension-root", context.extensionPath];
   if (
     vscode.workspace.workspaceFolders &&
     vscode.workspace.workspaceFolders.length > 0
