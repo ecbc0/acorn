@@ -158,11 +158,6 @@ impl Prover {
         self.goal = Some(ng);
     }
 
-    /// Returns the final step of the proof if available
-    pub fn get_final_step(&self) -> Option<&ProofStep> {
-        self.final_step.as_ref()
-    }
-
     /// Returns an iterator over the active proof steps
     pub fn iter_active_steps(&self) -> impl Iterator<Item = (usize, &ProofStep)> {
         self.active_set.iter_steps()
