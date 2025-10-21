@@ -1,21 +1,11 @@
-pub mod active_set;
-pub mod dataset;
-pub mod features;
-pub mod fingerprint;
-pub mod ort_model;
-pub mod passive_set;
-pub mod rewrite_tree;
-pub mod score;
-pub mod scorer;
-
 use std::collections::HashSet;
 use std::fmt;
 use tokio_util::sync::CancellationToken;
 
 use tower_lsp::lsp_types::Url;
 
-use self::active_set::ActiveSet;
-use self::passive_set::PassiveSet;
+use super::active_set::ActiveSet;
+use super::passive_set::PassiveSet;
 use crate::binding_map::BindingMap;
 use crate::certificate::Certificate;
 use crate::clause::Clause;
