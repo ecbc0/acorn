@@ -30,7 +30,15 @@ use crate::proof::{Difficulty, Proof};
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
 use crate::term_graph::TermGraphContradiction;
 
-/// A superposition-based saturation prover.
+/// A traditional saturation prover. Uses just a bit of AI for scoring.
+///
+/// Uses the "given-clause" algorithm.
+/// Passive clauses are those generated but no yet processed.
+/// Active clauses are those already selected for inference.
+///
+/// At each iteration, the prover selects a given clause from the passive set, moves it to the
+/// active set, and performs inferences between it and the active clauses. This continues until
+/// a contradiction is found or the search saturates.
 #[derive(Clone)]
 pub struct Prover {
     /// The "active" clauses are the ones we use for reasoning.
