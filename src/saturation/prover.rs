@@ -808,30 +808,4 @@ impl Prover {
             num_consequences,
         })
     }
-
-    /// Should only be called after proving completes successfully.
-    /// Gets the qualified name of every fact that was used in the proof.
-    /// This includes the "inspiration" facts that were used to find the proof but are
-    /// not mathematically necessary for the proof to be valid.
-    pub fn get_useful_source_names(
-        &self,
-        names: &mut HashSet<(ModuleId, String)>,
-        normalizer: &Normalizer,
-    ) {
-        let proof = match self.get_uncondensed_proof(&normalizer, true) {
-            Some(proof) => proof,
-            None => return,
-        };
-        for (_, step) in proof.all_steps {
-            if let Rule::Assumption(ai) = &step.rule {
-                if !ai.source.importable {
-                    // Non-importable facts are local ones that don't count.
-                    continue;
-                }
-                if let Some(qn) = ai.source.qualified_name() {
-                    names.insert(qn);
-                }
-            }
-        }
-    }
 }

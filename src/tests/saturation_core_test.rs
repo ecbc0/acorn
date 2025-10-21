@@ -861,41 +861,6 @@ fn test_proving_identity_is_surjective() {
 }
 
 #[test]
-fn test_useful_fact_extraction() {
-    let mut p = Project::new_mock();
-    p.mock(
-        "/mock/main.ac",
-        r#"
-            type Foo: axiom
-            let foo: Foo -> Bool = axiom
-            let bar: Foo = axiom
-            let baz: Foo = axiom
-            axiom foo_bar {
-                foo(bar)
-            }
-            axiom foo_bar_imp_foo_baz {
-                foo(bar) implies foo(baz)
-            }
-            theorem goal {
-               foo(baz)
-            }
-        "#,
-    );
-    let (processor, outcome, _) = prove_with_old_codegen(&mut p, "main", "goal");
-    assert_eq!(outcome, Outcome::Success);
-    let mut name_set = HashSet::new();
-    processor
-        .prover()
-        .get_useful_source_names(&mut name_set, processor.normalizer());
-    let mut names = name_set
-        .into_iter()
-        .map(|(_, name)| name)
-        .collect::<Vec<_>>();
-    names.sort();
-    assert_eq!(names, &["foo_bar", "foo_bar_imp_foo_baz"]);
-}
-
-#[test]
 fn test_lib_keyword() {
     let mut p = Project::new_mock();
     p.mock(

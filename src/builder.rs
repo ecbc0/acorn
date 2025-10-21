@@ -676,9 +676,6 @@ impl<'a> Builder<'a> {
             }
         }
         self.search_finished(processor, goal, outcome, start.elapsed());
-        processor
-            .prover()
-            .get_useful_source_names(new_premises, processor.normalizer());
         Ok(())
     }
 
