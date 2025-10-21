@@ -237,7 +237,7 @@ impl TokenType {
             TokenType::Dot => 14,
             TokenType::Power => 13,
             TokenType::Asterisk => 12,
-            TokenType::Slash => 12,
+            TokenType::Slash => 13,
             TokenType::Plus => 11,
             TokenType::Minus => 11,
             TokenType::Percent => 10,
