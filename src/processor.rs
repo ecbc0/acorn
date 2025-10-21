@@ -10,7 +10,7 @@ use crate::goal::Goal;
 use crate::normalizer::Normalizer;
 use crate::project::Project;
 use crate::proof::Proof;
-use crate::prover::{Outcome, Prover, ProverParams};
+use crate::saturation::{Outcome, Prover, ProverParams};
 use tokio_util::sync::CancellationToken;
 
 /// The processor represents all of the stuff that can accept a stream of facts.

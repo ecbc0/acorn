@@ -6,9 +6,9 @@
 //   samply record target/fastdev/profile_scorer
 
 use acorn::proof_step::ProofStep;
-use acorn::prover::features::Features;
-use acorn::prover::ort_model::OrtModel;
-use acorn::prover::scorer::Scorer;
+use acorn::saturation::features::Features;
+use acorn::saturation::ort_model::OrtModel;
+use acorn::saturation::scorer::Scorer;
 use mimalloc::MiMalloc;
 
 #[global_allocator]

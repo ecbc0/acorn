@@ -8,10 +8,10 @@ mod env_parsing_test;
 mod env_typeclass_test;
 
 #[cfg(test)]
-mod prover_core_test;
+mod saturation_core_test;
 
 #[cfg(test)]
-mod prover_language_test;
+mod saturation_language_test;
 
 #[cfg(test)]
 mod normalization_test;

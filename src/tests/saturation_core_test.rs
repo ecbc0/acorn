@@ -1,6 +1,6 @@
 use super::common::*;
 use crate::project::Project;
-use crate::prover::Outcome;
+use crate::saturation::Outcome;
 use std::collections::HashSet;
 
 #[test]

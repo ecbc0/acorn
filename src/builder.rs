@@ -16,7 +16,7 @@ use crate::goal_context::GoalContext;
 use crate::module::{LoadState, ModuleDescriptor, ModuleId};
 use crate::processor::Processor;
 use crate::project::Project;
-use crate::prover::{Outcome, ProverParams};
+use crate::saturation::{Outcome, ProverParams};
 use crate::training_data_writer::TrainingDataWriter;
 
 static NEXT_BUILD_ID: AtomicU32 = AtomicU32::new(1);

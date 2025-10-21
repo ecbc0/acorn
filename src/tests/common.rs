@@ -4,7 +4,7 @@ use crate::environment::Environment;
 use crate::module::LoadState;
 use crate::processor::Processor;
 use crate::project::Project;
-use crate::prover::{Outcome, ProverParams};
+use crate::saturation::{Outcome, ProverParams};
 
 // Helper to do a proof for a particular goal.
 fn prove_helper<'a>(

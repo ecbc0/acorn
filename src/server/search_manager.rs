@@ -10,7 +10,7 @@ use crate::block::NodeCursor;
 use crate::interfaces::{InfoParams, InfoResponse, SearchParams, SearchResponse, SearchStatus};
 use crate::module::{LoadState, ModuleDescriptor};
 use crate::processor::Processor;
-use crate::prover::{Outcome, ProverParams};
+use crate::saturation::{Outcome, ProverParams};
 use crate::server::project_manager::ProjectManager;
 
 use super::live_document::LiveDocument;

@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use tower_lsp::lsp_types::{Range, Url};
 
-use crate::prover::{Outcome, Prover};
+use crate::saturation::{Outcome, Prover};
 
 // Verification progress for a single document.
 #[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
