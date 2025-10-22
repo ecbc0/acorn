@@ -16,7 +16,7 @@
       "name": "keyword.logic_operator"
     },
     {
-      "match": "-|>|<|\\+|=|\\*|/|\\^",
+      "match": "-|>|<|\\+|=|\\*|/|\\^|⋅",
       "name": "keyword.operator"
     },
     {
