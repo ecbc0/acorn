@@ -34,7 +34,7 @@ pub enum StepReason {
     SyntheticDefinition,
 
     /// The checker already had a contradiction, so everything is trivially true.
-    DirectContradiction,
+    Contradiction,
 
     /// The reason is missing from our reason-tracking data structure.
     /// This indicates a bug, if we ever run into it.
@@ -171,7 +171,7 @@ impl Checker {
     /// Returns None if the clause cannot be proven.
     pub fn check_clause(&mut self, clause: &Clause) -> Option<StepReason> {
         if self.has_contradiction() {
-            return Some(StepReason::DirectContradiction);
+            return Some(StepReason::Contradiction);
         }
 
         // Check the term graph for concrete evaluation

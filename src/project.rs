@@ -1125,7 +1125,11 @@ impl Project {
     /// Find a verified certificate for the given goal.
     /// Returns the first certificate that successfully verifies against the current code.
     /// Returns None if no valid certificate exists in the build cache.
-    pub fn find_cert(&self, goal: &Goal, env: &Environment) -> Option<Certificate> {
+    pub fn find_cert(
+        &self,
+        goal: &Goal,
+        env: &Environment,
+    ) -> Option<(&Certificate, Vec<crate::checker::CertificateStep>)> {
         // Get the module descriptor for this goal
         let descriptor = self.get_module_descriptor(goal.module_id)?;
 
@@ -1139,11 +1143,8 @@ impl Project {
         for cert in &cert_store.certs {
             if cert.goal == goal.name {
                 // Try to verify this certificate
-                if processor
-                    .check_cert(cert, Some(goal), self, &env.bindings)
-                    .is_ok()
-                {
-                    return Some(cert.clone());
+                if let Ok(steps) = processor.check_cert(cert, Some(goal), self, &env.bindings) {
+                    return Some((cert, steps));
                 }
             }
         }

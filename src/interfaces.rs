@@ -278,6 +278,20 @@ impl SearchResponse {
     }
 }
 
+// Information about one step in a cached proof.
+#[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Step {
+    // The statement from the certificate (a normalized line of code).
+    pub statement: String,
+
+    // The reason this step is valid.
+    pub reason: String,
+
+    // Location is set when this step is based on a specific part of the codebase.
+    pub location: Option<Location>,
+}
+
 // The SelectionResponse is sent from language server -> extension with information about what
 // is at the selected line, without starting a proof search.
 #[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
@@ -302,6 +316,9 @@ pub struct SelectionResponse {
     // Whether there is a cached proof that verifies for this goal
     pub has_cached_proof: bool,
 
+    // The steps from the cached proof, if the goal has a proof
+    pub steps: Option<Vec<Step>>,
+
     // The id for the selection, provided by the extension
     pub id: u32,
 }
@@ -316,6 +333,7 @@ impl SelectionResponse {
             goal_name: None,
             goal_range: None,
             has_cached_proof: false,
+            steps: None,
             id: params.id,
         }
     }

@@ -499,7 +499,44 @@ impl AcornLanguageServer {
             response.goal_range = Some(goal.proposition.source.range);
 
             // Check if there's a verified certificate for this goal
-            response.has_cached_proof = project.find_cert(&goal, env).is_some();
+            if let Some((_cert, certificate_steps)) = project.find_cert(&goal, env) {
+                response.has_cached_proof = true;
+
+                // Convert CertificateSteps to interface::Step objects
+                let steps: Vec<crate::interfaces::Step> = certificate_steps
+                    .into_iter()
+                    .map(|cert_step| {
+                        use crate::checker::StepReason;
+
+                        let (reason, location) = match cert_step.reason {
+                            StepReason::TermGraph => ("simplification".to_string(), None),
+                            StepReason::Specialization(source) => {
+                                let location = project
+                                    .path_from_module_id(source.module_id)
+                                    .and_then(|path| {
+                                        tower_lsp::lsp_types::Url::from_file_path(path).ok()
+                                    })
+                                    .map(|uri| crate::interfaces::Location {
+                                        uri,
+                                        range: source.range,
+                                    });
+                                (source.description(), location)
+                            }
+                            StepReason::SyntheticDefinition => ("TODO".to_string(), None),
+                            StepReason::Contradiction => ("ex falso".to_string(), None),
+                            StepReason::Missing => ("missing".to_string(), None),
+                        };
+
+                        crate::interfaces::Step {
+                            statement: cert_step.statement,
+                            reason,
+                            location,
+                        }
+                    })
+                    .collect();
+
+                response.steps = Some(steps);
+            }
         }
 
         Ok(response)
