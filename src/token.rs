@@ -51,7 +51,7 @@ pub enum TokenType {
     Else,
     Class,
     Attributes,
-    Asterisk,
+    Multiply,
     Percent,
     Slash,
     Power,
@@ -157,7 +157,7 @@ const INFIX_MAGIC_METHODS: &[(&str, TokenType)] = &[
     ("lte", TokenType::LessThanOrEquals),
     ("add", TokenType::Plus),
     ("sub", TokenType::Minus),
-    ("mul", TokenType::Asterisk),
+    ("mul", TokenType::Multiply),
     ("mod", TokenType::Percent),
     ("div", TokenType::Slash),
     ("pow", TokenType::Power),
@@ -203,7 +203,7 @@ impl TokenType {
             TokenType::Comma => true,
             TokenType::Colon => true,
             TokenType::Dot => true,
-            TokenType::Asterisk => true,
+            TokenType::Multiply => true,
             TokenType::Percent => true,
             TokenType::Slash => true,
             TokenType::Power => true,
@@ -240,7 +240,7 @@ impl TokenType {
         match self {
             TokenType::Dot => 14,
             TokenType::Power => 13,
-            TokenType::Asterisk => 12,
+            TokenType::Multiply => 12,
             TokenType::Slash => 13,
             TokenType::Plus => 11,
             TokenType::Minus => 11,
@@ -419,7 +419,7 @@ impl TokenType {
             TokenType::Else => "else",
             TokenType::Class => "class",
             TokenType::Attributes => "attributes",
-            TokenType::Asterisk => "*",
+            TokenType::Multiply => "⋅",
             TokenType::Percent => "%",
             TokenType::Slash => "/",
             TokenType::Power => "^",
@@ -567,7 +567,7 @@ impl Token {
     pub fn identifierish(ch: char) -> bool {
         if ch.is_alphabetic() || ch.is_numeric() { true } else {
             match ch {
-                '_' | '!' => true,
+                '_' | '!' | '*' => true,
                 _ => false
             } 
         }
@@ -609,7 +609,7 @@ impl Token {
             | TokenType::LessThanOrEquals
             | TokenType::Plus
             | TokenType::Minus
-            | TokenType::Asterisk
+            | TokenType::Multiply
             | TokenType::Percent
             | TokenType::Slash
             | TokenType::Power
@@ -729,7 +729,7 @@ impl Token {
                     },
                     '=' => TokenType::Equals,
                     '+' => TokenType::Plus,
-                    '*' => TokenType::Asterisk,
+                    '⋅' => TokenType::Multiply,
                     '%' => TokenType::Percent,
                     '∪' => TokenType::Union,
                     '∩' => TokenType::Intersection,
