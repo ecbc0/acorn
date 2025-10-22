@@ -59,7 +59,7 @@ impl Processor {
     pub fn add_fact(&mut self, fact: Fact) -> Result<(), BuildError> {
         let steps = self.normalizer.normalize_fact(fact)?;
         for step in &steps {
-            self.checker.insert_clause(&step.clause);
+            self.checker.insert_step(step);
         }
         self.prover.add_steps(steps);
         Ok(())
@@ -99,13 +99,14 @@ impl Processor {
     /// Checks a certificate by cloning the checker and normalizer, and creating a Cow for bindings.
     /// This encapsulates the pattern used throughout the codebase.
     /// If the goal is provided, it is added to the checker before checking the certificate.
+    /// Returns a list of CertificateSteps showing how each step was verified.
     pub fn check_cert(
         &self,
         cert: &Certificate,
         goal: Option<&Goal>,
         project: &Project,
         bindings: &BindingMap,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<crate::checker::CertificateStep>, Error> {
         let mut checker = self.checker.clone();
         let mut normalizer = self.normalizer.clone();
 

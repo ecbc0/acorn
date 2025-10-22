@@ -610,7 +610,7 @@ impl<'a> Builder<'a> {
         for i in indexes {
             let cert = worklist.get_cert(*i).unwrap().clone();
             match processor.check_cert(&cert, Some(goal), self.project, &env.bindings) {
-                Ok(()) => {
+                Ok(_steps) => {
                     self.metrics.certs_cached += 1;
                     self.metrics.goals_done += 1;
                     self.metrics.goals_success += 1;

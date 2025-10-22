@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::acorn_type::AcornType;
@@ -14,9 +14,39 @@ use crate::generalization_set::GeneralizationSet;
 use crate::names::ConstantName;
 use crate::normalizer::{Normalizer, NormalizerView};
 use crate::project::Project;
+use crate::proof_step::{ProofStep, Rule};
+use crate::source::Source;
 use crate::stack::Stack;
 use crate::statement::{Statement, StatementInfo};
 use crate::term_graph::{StepId, TermGraph};
+
+/// The reason why a certificate step was accepted.
+#[derive(Debug, Clone)]
+pub enum StepReason {
+    /// Proven by the term graph (concrete reasoning via congruence closure and propositional logic).
+    TermGraph,
+
+    /// Proven by specializing a general theorem or axiom from the environment.
+    /// Contains the source information for where it was originally defined.
+    Specialization(Source),
+
+    /// A let...satisfy statement that introduces a synthetic/skolem definition.
+    /// These are generated in certificates and don't have meaningful source locations.
+    SyntheticDefinition,
+
+    /// The checker already had a contradiction, so everything is trivially true.
+    DirectContradiction,
+}
+
+/// Information about a single step in a certificate proof.
+#[derive(Debug, Clone)]
+pub struct CertificateStep {
+    /// The statement from the certificate (the code line).
+    pub statement: String,
+
+    /// The reason this step was accepted.
+    pub reason: StepReason,
+}
 
 /// The checker quickly checks if a clause can be proven in a single step from known clauses.
 ///
@@ -48,6 +78,10 @@ pub struct Checker {
     /// A hack, but we need to break out of loops, since equality factoring and boolean
     /// reduction can create cycles.
     past_boolean_reductions: HashSet<Clause>,
+
+    /// Maps step_id to source for clauses that came from assumptions.
+    /// Used to provide source info when a clause is proven via specialization.
+    step_sources: HashMap<usize, Source>,
 }
 
 impl Checker {
@@ -60,6 +94,7 @@ impl Checker {
             verbose: false,
             insertions: Vec::new(),
             past_boolean_reductions: HashSet::new(),
+            step_sources: HashMap::new(),
         }
     }
 
@@ -122,25 +157,41 @@ impl Checker {
         }
     }
 
-    /// Returns true if the clause is known to be true.
-    /// If we have found any contradiction, we can degenerately conclude the clause is true.
-    pub fn check_clause(&mut self, clause: &Clause) -> bool {
+    /// Adds a proof step to the checker, tracking source information for assumptions.
+    /// This is the preferred method for adding clauses from the environment.
+    pub fn insert_step(&mut self, step: &ProofStep) {
+        // Extract source from assumptions before inserting the clause
+        if let Rule::Assumption(info) = &step.rule {
+            let step_id = self.next_step_id;
+            self.step_sources.insert(step_id, info.source.clone());
+        }
+
+        self.insert_clause(&step.clause);
+    }
+
+    /// Checks if a clause is known to be true, and returns the reason if so.
+    /// Returns None if the clause cannot be proven.
+    pub fn check_clause_with_reason(&mut self, clause: &Clause) -> Option<StepReason> {
         if self.has_contradiction() {
-            return true;
+            return Some(StepReason::DirectContradiction);
         }
 
         // Check the term graph for concrete evaluation
         if self.term_graph.check_clause(clause) {
-            return true;
+            return Some(StepReason::TermGraph);
         }
 
         // If not found in term graph, check if there's a generalization in the clause set
-        if self
-            .generalization_set
-            .find_generalization(clause.clone())
-            .is_some()
-        {
-            return true;
+        if let Some(step_id) = self.generalization_set.find_generalization(clause.clone()) {
+            // Look up the source for this step_id
+            if let Some(source) = self.step_sources.get(&step_id).cloned() {
+                return Some(StepReason::Specialization(source));
+            } else {
+                // We found a generalization but don't have source info for it.
+                // This can happen for clauses that weren't assumptions from the environment.
+                // Fall back to TermGraph.
+                return Some(StepReason::TermGraph);
+            }
         }
 
         if self.verbose {
@@ -152,7 +203,13 @@ impl Checker {
             println!("Failed check: \"{}\"", clause);
         }
 
-        false
+        None
+    }
+
+    /// Returns true if the clause is known to be true.
+    /// If we have found any contradiction, we can degenerately conclude the clause is true.
+    pub fn check_clause(&mut self, clause: &Clause) -> bool {
+        self.check_clause_with_reason(clause).is_some()
     }
 
     /// Returns true if the checker has encountered a contradiction.
@@ -174,6 +231,7 @@ impl Checker {
         project: &Project,
         bindings: &mut Cow<BindingMap>,
         normalizer: &mut Normalizer,
+        certificate_steps: &mut Vec<CertificateStep>,
     ) -> Result<(), Error> {
         // Parse as a statement with in_block=true to allow bare expressions
         let statement = Statement::parse_str_with_options(&code, true)?;
@@ -251,6 +309,13 @@ impl Checker {
                 for clause in clauses {
                     self.insert_clause(&clause);
                 }
+
+                // Record this as a synthetic definition step
+                certificate_steps.push(CertificateStep {
+                    statement: code.to_string(),
+                    reason: StepReason::SyntheticDefinition,
+                });
+
                 Ok(())
             }
             StatementInfo::Claim(claim) => {
@@ -261,15 +326,34 @@ impl Checker {
                 // So we use the denormalized clause.
                 let mut view = NormalizerView::Ref(&normalizer);
                 let clauses = view.value_to_denormalized_clauses(&value)?;
+
+                // We'll use the reason from the first clause that provides one.
+                // I'm not sure if this is a problem.
+                let mut reason = None;
                 for mut clause in clauses {
-                    if !self.check_clause(&clause) {
-                        return Err(Error::GeneratedBadCode(format!(
-                            "In claim '{}', the clause '{}' is not obviously true",
-                            code, clause
-                        )));
+                    match self.check_clause_with_reason(&clause) {
+                        Some(r) => {
+                            if reason.is_none() {
+                                reason = Some(r);
+                            }
+                        }
+                        None => {
+                            return Err(Error::GeneratedBadCode(format!(
+                                "In claim '{}', the clause '{}' is not obviously true",
+                                code, clause
+                            )));
+                        }
                     }
                     clause.normalize();
                     self.insert_clause(&clause);
+                }
+
+                // Record the certificate step with the reason we found
+                if let Some(reason) = reason {
+                    certificate_steps.push(CertificateStep {
+                        statement: code.to_string(),
+                        reason,
+                    });
                 }
 
                 Ok(())
@@ -284,25 +368,29 @@ impl Checker {
     }
 
     /// Check a certificate. It is expected that the certificate has a proof.
+    /// Returns a list of CertificateSteps showing how each step was verified.
     pub fn check_cert(
         &mut self,
         cert: &Certificate,
         project: &Project,
         bindings: &mut Cow<BindingMap>,
         normalizer: &mut Normalizer,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<CertificateStep>, Error> {
         let Some(proof) = &cert.proof else {
             return Err(Error::NoProof);
         };
+
+        let mut certificate_steps = Vec::new();
+
         for code in proof {
             if self.has_contradiction() {
-                return Ok(());
+                return Ok(certificate_steps);
             }
-            self.check_code(code, project, bindings, normalizer)?;
+            self.check_code(code, project, bindings, normalizer, &mut certificate_steps)?;
         }
 
         if self.has_contradiction() {
-            Ok(())
+            Ok(certificate_steps)
         } else {
             Err(Error::GeneratedBadCode(
                 "proof does not result in a contradiction".to_string(),
