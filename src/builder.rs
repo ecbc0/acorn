@@ -736,47 +736,50 @@ impl<'a> Builder<'a> {
         target: &ModuleDescriptor,
         env: &Environment,
     ) -> Result<(), BuildError> {
-        if env.nodes.is_empty() {
-            // Nothing to prove
-            return Ok(());
-        }
         let mut worklist = self.project.build_cache.make_worklist(target);
         let mut new_certs = vec![];
 
-        self.module_proving_started(target.clone());
+        if !env.nodes.is_empty() {
+            self.module_proving_started(target.clone());
 
-        let mut processor = Processor::with_token(self.cancellation_token.clone());
-        for fact in self.project.imported_facts(env.module_id, None) {
-            processor.add_fact(fact.clone())?;
+            let mut processor = Processor::with_token(self.cancellation_token.clone());
+            for fact in self.project.imported_facts(env.module_id, None) {
+                processor.add_fact(fact.clone())?;
+            }
+            let mut processor = Rc::new(processor);
+            let mut cursor = NodeCursor::new(&env, 0);
+
+            // Loop over all the nodes that are right below the top level.
+            loop {
+                if cursor.requires_verification() {
+                    // We do need to verify this.
+
+                    // This call will recurse and verify everything within this top-level block.
+                    self.verify_node(
+                        Rc::clone(&processor),
+                        &mut cursor,
+                        &mut new_certs,
+                        &mut worklist,
+                    )?;
+                } else {
+                    self.log_verified(cursor.node().first_line(), cursor.node().last_line());
+                }
+                if !cursor.has_next() {
+                    break;
+                }
+                if let Some(fact) = cursor.node().get_fact() {
+                    Rc::make_mut(&mut processor).add_fact(fact.clone())?;
+                }
+                cursor.next();
+            }
         }
-        let mut processor = Rc::new(processor);
-        let mut cursor = NodeCursor::new(&env, 0);
 
-        // Loop over all the nodes that are right below the top level.
-        loop {
-            if cursor.requires_verification() {
-                // We do need to verify this.
-
-                // This call will recurse and verify everything within this top-level block.
-                self.verify_node(
-                    Rc::clone(&processor),
-                    &mut cursor,
-                    &mut new_certs,
-                    &mut worklist,
-                )?;
-            } else {
-                self.log_verified(cursor.node().first_line(), cursor.node().last_line());
-            }
-            if !cursor.has_next() {
-                break;
-            }
-            if let Some(fact) = cursor.node().get_fact() {
-                Rc::make_mut(&mut processor).add_fact(fact.clone())?;
-            }
-            cursor.next();
-        }
-
-        let module_good = self.module_proving_good(target);
+        let module_good = if env.nodes.is_empty() {
+            // Modules with no goals are always "good"
+            true
+        } else {
+            self.module_proving_good(target)
+        };
 
         if self.single_goal.is_some() {
             return Ok(());
