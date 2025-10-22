@@ -169,7 +169,7 @@ impl Checker {
 
     /// Checks if a clause is known to be true, and returns the reason if so.
     /// Returns None if the clause cannot be proven.
-    pub fn check_clause_with_reason(&mut self, clause: &Clause) -> Option<StepReason> {
+    pub fn check_clause(&mut self, clause: &Clause) -> Option<StepReason> {
         if self.has_contradiction() {
             return Some(StepReason::DirectContradiction);
         }
@@ -201,12 +201,6 @@ impl Checker {
         }
 
         None
-    }
-
-    /// Returns true if the clause is known to be true.
-    /// If we have found any contradiction, we can degenerately conclude the clause is true.
-    pub fn check_clause(&mut self, clause: &Clause) -> bool {
-        self.check_clause_with_reason(clause).is_some()
     }
 
     /// Returns true if the checker has encountered a contradiction.
@@ -328,7 +322,7 @@ impl Checker {
                 // I'm not sure if this is a problem.
                 let mut reason = None;
                 for mut clause in clauses {
-                    match self.check_clause_with_reason(&clause) {
+                    match self.check_clause(&clause) {
                         Some(r) => {
                             if reason.is_none() {
                                 reason = Some(r);
@@ -408,7 +402,7 @@ impl Checker {
     #[cfg(test)]
     pub fn check_clause_str(&mut self, s: &str) {
         let clause = Clause::parse(s);
-        if !self.check_clause(&clause) {
+        if !self.check_clause(&clause).is_some() {
             panic!("check_clause_str(\"{}\") failed", s);
         }
     }
