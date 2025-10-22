@@ -14,7 +14,6 @@ use crate::generalization_set::GeneralizationSet;
 use crate::names::ConstantName;
 use crate::normalizer::{Normalizer, NormalizerView};
 use crate::project::Project;
-use crate::proof_step::{ProofStep, Rule};
 use crate::source::Source;
 use crate::stack::Stack;
 use crate::statement::{Statement, StatementInfo};
@@ -36,6 +35,10 @@ pub enum StepReason {
 
     /// The checker already had a contradiction, so everything is trivially true.
     DirectContradiction,
+
+    /// The reason is missing from our reason-tracking data structure.
+    /// This indicates a bug, if we ever run into it.
+    Missing,
 }
 
 /// Information about a single step in a certificate proof.
@@ -105,7 +108,9 @@ impl Checker {
     }
 
     /// Adds a true clause to the checker.
-    pub fn insert_clause(&mut self, clause: &Clause) {
+    /// The source parameter indicates where this clause came from, if known.
+    /// Single-source derived clauses (from equality resolution, etc.) inherit the same source.
+    pub fn insert_clause(&mut self, clause: &Clause, source: Option<&Source>) {
         if self.verbose {
             self.insertions.push(clause.to_string());
         }
@@ -118,6 +123,11 @@ impl Checker {
         let step_id = self.next_step_id;
         self.next_step_id += 1;
 
+        // Track the source for this step, if we have one
+        if let Some(source) = source {
+            self.step_sources.insert(step_id, source.clone());
+        }
+
         if clause.has_any_variable() {
             // The clause has free variables, so it can be a generalization.
             Arc::make_mut(&mut self.generalization_set).insert(clause.clone(), step_id);
@@ -125,12 +135,12 @@ impl Checker {
             // We only need to do equality resolution for clauses with free variables,
             // because resolvable concrete literals would already have been simplified out.
             for resolution in clause.equality_resolutions() {
-                self.insert_clause(&resolution);
+                self.insert_clause(&resolution, source);
             }
 
             if let Some(extensionality) = clause.find_extensionality() {
                 let clause = Clause::new(extensionality);
-                self.insert_clause(&clause);
+                self.insert_clause(&clause, source);
             }
         } else {
             // The clause is concrete.
@@ -140,11 +150,11 @@ impl Checker {
         }
 
         for factoring in clause.equality_factorings() {
-            self.insert_clause(&factoring);
+            self.insert_clause(&factoring, source);
         }
 
         for injectivity in clause.injectivities() {
-            self.insert_clause(&injectivity);
+            self.insert_clause(&injectivity, source);
         }
 
         for boolean_reduction in clause.boolean_reductions() {
@@ -153,20 +163,8 @@ impl Checker {
             }
             self.past_boolean_reductions
                 .insert(boolean_reduction.clone());
-            self.insert_clause(&boolean_reduction);
+            self.insert_clause(&boolean_reduction, source);
         }
-    }
-
-    /// Adds a proof step to the checker, tracking source information for assumptions.
-    /// This is the preferred method for adding clauses from the environment.
-    pub fn insert_step(&mut self, step: &ProofStep) {
-        // Extract source from assumptions before inserting the clause
-        if let Rule::Assumption(info) = &step.rule {
-            let step_id = self.next_step_id;
-            self.step_sources.insert(step_id, info.source.clone());
-        }
-
-        self.insert_clause(&step.clause);
     }
 
     /// Checks if a clause is known to be true, and returns the reason if so.
@@ -189,8 +187,7 @@ impl Checker {
             } else {
                 // We found a generalization but don't have source info for it.
                 // This can happen for clauses that weren't assumptions from the environment.
-                // Fall back to TermGraph.
-                return Some(StepReason::TermGraph);
+                return Some(StepReason::Missing);
             }
         }
 
@@ -307,7 +304,7 @@ impl Checker {
                 let mut view = NormalizerView::Ref(&normalizer);
                 let clauses = view.nice_value_to_clauses(&value, &mut vec![])?;
                 for clause in clauses {
-                    self.insert_clause(&clause);
+                    self.insert_clause(&clause, None);
                 }
 
                 // Record this as a synthetic definition step
@@ -345,7 +342,7 @@ impl Checker {
                         }
                     }
                     clause.normalize();
-                    self.insert_clause(&clause);
+                    self.insert_clause(&clause, None);
                 }
 
                 // Record the certificate step with the reason we found
@@ -403,7 +400,7 @@ impl Checker {
         let mut checker = Checker::new();
         for clause_str in clauses {
             let clause = Clause::parse(clause_str);
-            checker.insert_clause(&clause);
+            checker.insert_clause(&clause, None);
         }
         checker
     }

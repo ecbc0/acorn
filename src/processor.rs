@@ -57,9 +57,10 @@ impl Processor {
 
     /// Normalizes a fact and adds the resulting proof steps to the prover.
     pub fn add_fact(&mut self, fact: Fact) -> Result<(), BuildError> {
+        let source = fact.source().clone();
         let steps = self.normalizer.normalize_fact(fact)?;
         for step in &steps {
-            self.checker.insert_step(step);
+            self.checker.insert_clause(&step.clause, Some(&source));
         }
         self.prover.add_steps(steps);
         Ok(())
@@ -67,9 +68,10 @@ impl Processor {
 
     /// Normalizes a goal and sets it as the prover's goal.
     pub fn set_goal(&mut self, goal: &Goal) -> Result<(), BuildError> {
+        let source = &goal.proposition.source;
         let (ng, steps) = self.normalizer.normalize_goal(goal)?;
         for step in &steps {
-            self.checker.insert_clause(&step.clause);
+            self.checker.insert_clause(&step.clause, Some(source));
         }
         self.prover.set_goal(ng, steps);
         Ok(())
@@ -111,9 +113,10 @@ impl Processor {
         let mut normalizer = self.normalizer.clone();
 
         if let Some(goal) = goal {
+            let source = &goal.proposition.source;
             let (_, steps) = normalizer.normalize_goal(goal).map_err(|e| e.message)?;
             for step in &steps {
-                checker.insert_clause(&step.clause);
+                checker.insert_clause(&step.clause, Some(source));
             }
         }
 
