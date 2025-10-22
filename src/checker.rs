@@ -29,8 +29,11 @@ pub enum StepReason {
     /// Contains the source information for where it was originally defined.
     Specialization(Source),
 
-    /// A let...satisfy statement that introduces a synthetic/skolem definition.
-    /// These are generated in certificates and don't have meaningful source locations.
+    /// A let...satisfy statement that skolemizes an exists statement.
+    /// The source points to where the exists was originally defined.
+    Skolemization(Source),
+
+    /// A let...satisfy statement that introduces a synthetic definition.
     SyntheticDefinition,
 
     /// The checker already had a contradiction, so everything is trivially true.
@@ -264,7 +267,7 @@ impl Checker {
                 // Create an exists value
                 let types = decls.iter().map(|(_, ty)| ty.clone()).collect();
 
-                if condition_value != AcornValue::Bool(true) {
+                let source = if condition_value != AcornValue::Bool(true) {
                     let exists_value = AcornValue::exists(types, condition_value);
 
                     // Check if this matches any existing skolem
@@ -273,8 +276,12 @@ impl Checker {
                             "statement '{}' does not match any skolem definition",
                             code
                         )));
-                    };
-                }
+                    }
+                    normalizer.get_synthetic_source(&exists_value).cloned()
+                } else {
+                    // For trivial cases, no source is available
+                    None
+                };
 
                 // Add all the variables in decls to the bindings and the normalizer
                 for (name, acorn_type) in decls {
@@ -301,10 +308,13 @@ impl Checker {
                     self.insert_clause(&clause, None);
                 }
 
-                // Record this as a synthetic definition step
+                // Record this step
                 certificate_steps.push(CertificateStep {
                     statement: code.to_string(),
-                    reason: StepReason::SyntheticDefinition,
+                    reason: match source {
+                        Some(source) => StepReason::Skolemization(source),
+                        None => StepReason::SyntheticDefinition,
+                    },
                 });
 
                 Ok(())

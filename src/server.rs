@@ -508,9 +508,10 @@ impl AcornLanguageServer {
                     .map(|cert_step| {
                         use crate::checker::StepReason;
 
-                        let (reason, location) = match cert_step.reason {
+                        let (reason, location) = match &cert_step.reason {
                             StepReason::TermGraph => ("simplification".to_string(), None),
-                            StepReason::Specialization(source) => {
+                            StepReason::Specialization(source)
+                            | StepReason::Skolemization(source) => {
                                 let location = project
                                     .path_from_module_id(source.module_id)
                                     .and_then(|path| {
@@ -522,7 +523,7 @@ impl AcornLanguageServer {
                                     });
                                 (source.description(), location)
                             }
-                            StepReason::SyntheticDefinition => ("TODO".to_string(), None),
+                            StepReason::SyntheticDefinition => ("definition".to_string(), None),
                             StepReason::Contradiction => ("ex falso".to_string(), None),
                             StepReason::Missing => ("missing".to_string(), None),
                         };

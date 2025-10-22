@@ -15,7 +15,7 @@ use crate::monomorphizer::Monomorphizer;
 use crate::names::ConstantName;
 use crate::normalization_map::{NewConstantType, NormalizationMap};
 use crate::proof_step::{ProofStep, Truthiness};
-use crate::source::SourceType;
+use crate::source::{Source, SourceType};
 use crate::term::{Term, TypeId, BOOL};
 
 /// Information about the definition of a set of synthetic atoms.
@@ -29,6 +29,9 @@ pub struct SyntheticDefinition {
     /// for "let x = ___" type definitions, because it might be a value that expands
     /// to multiple clauses.
     pub clauses: Vec<Clause>,
+
+    /// The source location where this synthetic definition originated.
+    pub source: Option<Source>,
 }
 
 impl std::fmt::Display for SyntheticDefinition {
@@ -103,10 +106,11 @@ impl Normalizer {
         &self.synthetic_types[id as usize]
     }
 
-    /// Checks if there's an exact match for a synthetic definition for the given value.
-    /// The value should be of the form "exists ___ (forall x and forall y and ...)".
-    /// This is a really wacky algorithm, it seems like we should clean it up.
-    pub fn has_synthetic_definition(&mut self, value: &AcornValue) -> bool {
+    /// Helper to get a synthetic definition for a value.
+    fn get_synthetic_definition(
+        &mut self,
+        value: &AcornValue,
+    ) -> Option<&Arc<SyntheticDefinition>> {
         let (num_definitions, alt_value) = match value {
             AcornValue::Exists(quants, subvalue) => (
                 quants.len(),
@@ -116,7 +120,7 @@ impl Normalizer {
         };
         let mut view = NormalizerView::Ref(self);
         let Ok(uninstantiated) = view.value_to_denormalized_clauses(&alt_value) else {
-            return false;
+            return None;
         };
         let clauses = uninstantiated
             .iter()
@@ -126,7 +130,21 @@ impl Normalizer {
             clauses,
             num_atoms: num_definitions,
         };
-        self.synthetic_map.contains_key(&key)
+        self.synthetic_map.get(&key)
+    }
+
+    /// Checks if there's an exact match for a synthetic definition for the given value.
+    /// The value should be of the form "exists ___ (forall x and forall y and ...)".
+    /// This is a really wacky algorithm, it seems like we should clean it up.
+    pub fn has_synthetic_definition(&mut self, value: &AcornValue) -> bool {
+        self.get_synthetic_definition(value).is_some()
+    }
+
+    /// Gets the source for a synthetic definition if it exists.
+    /// Similar to has_synthetic_definition but returns the source.
+    pub fn get_synthetic_source(&mut self, value: &AcornValue) -> Option<&Source> {
+        self.get_synthetic_definition(value)
+            .and_then(|def| def.source.as_ref())
     }
 
     // This declares a synthetic atom, but does not define it.
@@ -148,6 +166,7 @@ impl Normalizer {
         &mut self,
         atoms: Vec<AtomId>,
         clauses: Vec<Clause>,
+        source: Option<Source>,
     ) -> Result<(), String> {
         // Check if any atoms are already defined
         for atom in &atoms {
@@ -169,6 +188,7 @@ impl Normalizer {
         let info = Arc::new(SyntheticDefinition {
             clauses,
             atoms: atoms.clone(),
+            source,
         });
         for atom in &atoms {
             self.synthetic_definitions.insert(*atom, info.clone());
@@ -964,8 +984,9 @@ impl NormalizerView<'_> {
             Ok(reused_term)
         } else {
             // Define the new synthetic atom
+            // No source available here since we're synthesizing during normalization
             self.as_mut()?
-                .define_synthetic_atoms(vec![skolem_id], clauses)?;
+                .define_synthetic_atoms(vec![skolem_id], clauses, None)?;
             Ok(skolem_term)
         }
     }
@@ -1092,6 +1113,7 @@ impl Normalizer {
         &mut self,
         value: &AcornValue,
         ctype: NewConstantType,
+        source: &Source,
     ) -> Result<Vec<Clause>, String> {
         self.normalization_map.add_from(&value, ctype);
 
@@ -1119,7 +1141,7 @@ impl Normalizer {
 
         if !undefined_ids.is_empty() {
             // We have to define the skolem atoms that were declared during skolemization.
-            self.define_synthetic_atoms(undefined_ids, clauses.clone())?;
+            self.define_synthetic_atoms(undefined_ids, clauses.clone(), Some(source.clone()))?;
         }
 
         output.extend(clauses.into_iter());
@@ -1138,6 +1160,7 @@ impl Normalizer {
         &mut self,
         value: &AcornValue,
         ctype: NewConstantType,
+        source: &Source,
     ) -> Result<Vec<Clause>, String> {
         if let Err(e) = value.validate() {
             return Err(format!(
@@ -1147,7 +1170,7 @@ impl Normalizer {
         }
         assert!(value.is_bool_type());
 
-        let mut clauses = self.ugly_value_to_clauses(value, ctype)?;
+        let mut clauses = self.ugly_value_to_clauses(value, ctype, source)?;
 
         if let AcornValue::Binary(BinaryOp::Equals, left, right) = &value {
             if left.get_type().is_functional() && left.is_term() && right.is_term() {
@@ -1201,7 +1224,7 @@ impl Normalizer {
                 NewConstantType::Local
             };
             let clauses = self
-                .normalize_value(&proposition.value, ctype)
+                .normalize_value(&proposition.value, ctype, &proposition.source)
                 .map_err(|msg| BuildError::new(range, msg))?;
             let defined = match &proposition.source.source_type {
                 SourceType::ConstantDefinition(value, _) => {
@@ -1433,7 +1456,7 @@ impl Normalizer {
             .validate()
             .expect("denormalized clause should validate");
         let renormalized = self
-            .normalize_value(&denormalized, NewConstantType::Local)
+            .normalize_value(&denormalized, NewConstantType::Local, &Source::mock())
             .unwrap();
         if renormalized.len() != 1 {
             if true {
@@ -1460,7 +1483,9 @@ impl Normalizer {
     fn check_value(&mut self, value: &AcornValue, expected: &[&str]) {
         use crate::display::DisplayClause;
 
-        let actual = self.normalize_value(value, NewConstantType::Local).unwrap();
+        let actual = self
+            .normalize_value(value, NewConstantType::Local, &Source::mock())
+            .unwrap();
         if actual.len() != expected.len() {
             panic!(
                 "expected {} clauses, got {}:\n{}",
