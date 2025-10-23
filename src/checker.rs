@@ -13,6 +13,7 @@ use crate::expression::Declaration;
 use crate::generalization_set::GeneralizationSet;
 use crate::names::ConstantName;
 use crate::normalizer::{Normalizer, NormalizerView};
+use crate::potential_value::PotentialValue;
 use crate::project::Project;
 use crate::source::Source;
 use crate::stack::Stack;
@@ -264,48 +265,78 @@ impl Checker {
                     Some(&AcornType::Bool),
                 )?;
 
-                // Create an exists value
+                // Create an exists value and check if it matches any existing synthetic definition
                 let types = decls.iter().map(|(_, ty)| ty.clone()).collect();
+                let exists_value = AcornValue::exists(types, condition_value.clone());
 
-                let source = if condition_value != AcornValue::Bool(true) {
-                    let exists_value = AcornValue::exists(types, condition_value);
-
-                    // Check if this matches any existing skolem
-                    if !normalizer.has_synthetic_definition(&exists_value) {
-                        return Err(Error::GeneratedBadCode(format!(
-                            "statement '{}' does not match any skolem definition",
-                            code
-                        )));
-                    }
-                    normalizer.get_synthetic_source(&exists_value).cloned()
-                } else {
-                    // For trivial cases, no source is available
-                    None
-                };
+                let (source, synthetic_atoms) =
+                    match normalizer.get_synthetic_definition(&exists_value) {
+                        Some(def) => {
+                            // Found an existing synthetic definition
+                            (def.source.clone(), Some(def.atoms.clone()))
+                        }
+                        None => {
+                            // No synthetic definition found
+                            if condition_value != AcornValue::Bool(true) {
+                                // Non-trivial condition must match a synthetic definition
+                                return Err(Error::GeneratedBadCode(format!(
+                                    "statement '{}' does not match any synthetic definition",
+                                    code
+                                )));
+                            }
+                            // Trivial case: no source or synthetic atoms
+                            (None, None)
+                        }
+                    };
 
                 // Add all the variables in decls to the bindings and the normalizer
-                for (name, acorn_type) in decls {
-                    let cname = ConstantName::unqualified(bindings.module_id(), &name);
-                    bindings.to_mut().add_unqualified_constant(
-                        &name,
-                        vec![],
-                        acorn_type,
-                        None,
-                        None,
-                        vec![],
-                        None,
-                        String::new(),
-                    );
-                    normalizer.add_local_constant(cname);
+                if let Some(atoms) = &synthetic_atoms {
+                    // We have an existing synthetic definition, create aliases to it
+                    for (i, (name, acorn_type)) in decls.iter().enumerate() {
+                        let synthetic_id = atoms[i];
+                        let synthetic_cname = ConstantName::Synthetic(synthetic_id);
+                        let value = AcornValue::constant(
+                            synthetic_cname.clone(),
+                            vec![],
+                            acorn_type.clone(),
+                        );
+                        let user_cname = ConstantName::unqualified(bindings.module_id(), name);
+                        bindings.to_mut().add_constant_alias(
+                            user_cname,
+                            synthetic_cname,
+                            PotentialValue::Resolved(value),
+                            vec![],
+                            None,
+                        );
+                    }
+                } else {
+                    // Trivial case, create new constants
+                    for (name, acorn_type) in decls {
+                        let cname = ConstantName::unqualified(bindings.module_id(), &name);
+                        bindings.to_mut().add_unqualified_constant(
+                            &name,
+                            vec![],
+                            acorn_type,
+                            None,
+                            None,
+                            vec![],
+                            None,
+                            String::new(),
+                        );
+                        normalizer.add_local_constant(cname);
+                    }
                 }
 
-                // Re-parse the expression with the newly defined variables
-                let mut evaluator = Evaluator::new(project, bindings, None);
-                let value = evaluator.evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
-                let mut view = NormalizerView::Ref(&normalizer);
-                let clauses = view.nice_value_to_clauses(&value, &mut vec![])?;
-                for clause in clauses {
-                    self.insert_clause(&clause, None);
+                // Re-parse the expression with the newly defined variables and insert clauses
+                // Only do this for non-trivial conditions (not Bool(true))
+                if condition_value != AcornValue::Bool(true) {
+                    let mut evaluator = Evaluator::new(project, bindings, None);
+                    let value = evaluator.evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
+                    let mut view = NormalizerView::Ref(&normalizer);
+                    let clauses = view.nice_value_to_clauses(&value, &mut vec![])?;
+                    for clause in clauses {
+                        self.insert_clause(&clause, None);
+                    }
                 }
 
                 // Record this step

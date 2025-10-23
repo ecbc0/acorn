@@ -1038,7 +1038,7 @@ impl BindingMap {
         doc_comments: Vec<String>,
         definition_string: Option<String>,
     ) {
-        if canonical.module_id() != self.module_id {
+        if !canonical.is_synthetic() && canonical.module_id() != self.module_id {
             // Prefer this alias locally to using the qualified, canonical name
             self.constant_to_alias
                 .entry(canonical)

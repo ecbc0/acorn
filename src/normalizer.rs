@@ -106,8 +106,9 @@ impl Normalizer {
         &self.synthetic_types[id as usize]
     }
 
-    /// Helper to get a synthetic definition for a value.
-    fn get_synthetic_definition(
+    /// Gets a synthetic definition for a value, if one exists.
+    /// The value should be of the form "exists ___ (forall x and forall y and ...)".
+    pub fn get_synthetic_definition(
         &mut self,
         value: &AcornValue,
     ) -> Option<&Arc<SyntheticDefinition>> {
@@ -131,20 +132,6 @@ impl Normalizer {
             num_atoms: num_definitions,
         };
         self.synthetic_map.get(&key)
-    }
-
-    /// Checks if there's an exact match for a synthetic definition for the given value.
-    /// The value should be of the form "exists ___ (forall x and forall y and ...)".
-    /// This is a really wacky algorithm, it seems like we should clean it up.
-    pub fn has_synthetic_definition(&mut self, value: &AcornValue) -> bool {
-        self.get_synthetic_definition(value).is_some()
-    }
-
-    /// Gets the source for a synthetic definition if it exists.
-    /// Similar to has_synthetic_definition but returns the source.
-    pub fn get_synthetic_source(&mut self, value: &AcornValue) -> Option<&Source> {
-        self.get_synthetic_definition(value)
-            .and_then(|def| def.source.as_ref())
     }
 
     // This declares a synthetic atom, but does not define it.
