@@ -83,7 +83,22 @@ enum Command {
     },
 
     /// Reverify all goals, erroring if any goal requires a search
-    Reverify,
+    Reverify {
+        /// Target module or file to reverify (can be a filename or module name)
+        #[clap(
+            value_name = "TARGET",
+            help = "Module or filename to reverify. If not provided, reverifies all files in the library."
+        )]
+        target: Option<String>,
+
+        /// Search for a proof at a specific line number (requires target)
+        #[clap(
+            long,
+            help = "Search for a proof at a specific line number.",
+            value_name = "LINE"
+        )]
+        line: Option<u32>,
+    },
 }
 
 #[tokio::main]
@@ -193,8 +208,8 @@ async fn main() {
             }
         }
 
-        Some(Command::Reverify) => {
-            let mut verifier = match Verifier::new(current_dir, ProjectConfig::default(), None) {
+        Some(Command::Reverify { target, line }) => {
+            let mut verifier = match Verifier::new(current_dir, ProjectConfig::default(), target) {
                 Ok(v) => v,
                 Err(e) => {
                     println!("{}", e);
@@ -202,6 +217,8 @@ async fn main() {
                 }
             };
 
+            verifier.builder.verbose = line.is_some();
+            verifier.line = line;
             verifier.builder.reverify = true;
             verifier.builder.check_hashes = false;
 
