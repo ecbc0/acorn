@@ -14,7 +14,10 @@ mod saturation_core_test;
 mod saturation_language_test;
 
 #[cfg(test)]
-mod normalization_test;
+mod saturation_norm_test;
+
+#[cfg(test)]
+mod normalizer_test;
 
 #[cfg(test)]
 mod project_test;
