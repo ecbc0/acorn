@@ -1081,7 +1081,13 @@ impl NormalizerView<'_> {
 
                 Ok(ExtendedTerm::Lambda(args, body_term))
             }
-            AcornValue::Bool(_) => Err("boolean in unexpected position".to_string()),
+            AcornValue::Bool(b) => {
+                if *b {
+                    Ok(ExtendedTerm::Term(Term::new_true()))
+                } else {
+                    Err("false literal in unexpected position".to_string())
+                }
+            }
             value if value.is_bool_type() => {
                 // Synthesize a term to represent this boolean value.
                 let skolem_term =
