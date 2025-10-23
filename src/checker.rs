@@ -328,9 +328,10 @@ impl Checker {
                 let mut view = NormalizerView::Ref(&normalizer);
                 let clauses = view.value_to_denormalized_clauses(&value)?;
 
-                // We'll use the reason from the first clause that provides one.
-                // I'm not sure if this is a problem.
+                // For multi-clause claims, we'll use the reason from the first clause that provides one.
+                // This is unclear, but it's just informational for a rare case, so it's not too bad.
                 let mut reason = None;
+                let num_clauses = clauses.len();
                 for mut clause in clauses {
                     match self.check_clause(&clause) {
                         Some(r) => {
@@ -339,9 +340,23 @@ impl Checker {
                             }
                         }
                         None => {
+                            if num_clauses == 1 {
+                                return Err(Error::GeneratedBadCode(format!(
+                                    "Claim '{}' is not obviously true",
+                                    code
+                                )));
+                            }
+
+                            // Convert the clause to readable code using the environment's names
+                            let value = normalizer.denormalize(&clause, None);
+                            let mut code_gen = crate::code_generator::CodeGenerator::new(bindings);
+                            let clause_code = code_gen
+                                .value_to_code(&value)
+                                .unwrap_or_else(|_| format!("{} (internal)", clause));
+
                             return Err(Error::GeneratedBadCode(format!(
                                 "In claim '{}', the clause '{}' is not obviously true",
-                                code, clause
+                                code, clause_code
                             )));
                         }
                     }
