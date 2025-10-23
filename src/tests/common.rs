@@ -120,6 +120,14 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
         if outcome != Outcome::Success {
             return Ok(outcome);
         }
+        let env = cursor.goal_env().unwrap();
+        let cert = processor
+            .prover()
+            .make_cert(&project, &env.bindings, processor.normalizer(), true)
+            .map_err(|e| e.to_string())?;
+        if let Err(e) = processor.check_cert(&cert, None, &project, &env.bindings) {
+            panic!("check_cert failed: {}", e);
+        }
     }
     Ok(Outcome::Success)
 }

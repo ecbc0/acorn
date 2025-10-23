@@ -1498,3 +1498,31 @@ fn test_proving_with_generic_attribute_recursion() {
     "#;
     verify_succeeds(text);
 }
+
+#[test]
+fn test_proving_with_anonymous_function() {
+    let text = r#"
+    type Nat: axiom
+    let z: Nat = axiom
+    let f1: (Nat -> Nat) -> Bool = axiom
+    let f2: (Nat -> Nat) -> Bool = axiom
+    let f3: (Nat -> Nat) -> Bool = axiom
+
+    axiom a1 {
+        not f1(function(x: Nat) { z })
+    }
+
+    axiom a2(h: Nat -> Nat) {
+        f1(h) or f2(h) or f3(h)
+    }
+
+    axiom a3(h: Nat -> Nat) {
+        f2(h) implies f3(h)
+    }
+
+    theorem goal {
+        f3(function(x: Nat) { z })
+    }
+    "#;
+    verify_succeeds(text);
+}
