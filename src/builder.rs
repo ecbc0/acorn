@@ -662,6 +662,12 @@ impl<'a> Builder<'a> {
         if outcome == Outcome::Success {
             match processor.make_cert(self.project, &env.bindings, self.verbose) {
                 Ok(cert) => {
+                    if self.verbose {
+                        // Since we aren't performance-sensitive, check the cert.
+                        processor
+                            .check_cert(&cert, Some(goal), self.project, &env.bindings)
+                            .expect("newly generated cert should be checkable");
+                    }
                     new_certs.push(cert);
                     self.metrics.certs_created += 1;
                 }
