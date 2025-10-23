@@ -105,11 +105,11 @@ impl ProverParams {
     };
 
     /// Search in verification mode to see if this goal can be easily proven.
-    /// The time-based limit is set high enough so that hopefully it will not apply,
-    /// because we don't want the result of verification to be machine-dependent.
+    /// The effective limit is not running out of time, as much as running
+    /// out of memory.
     pub const VERIFICATION: ProverParams = ProverParams {
-        activation_limit: 2000,
-        seconds: 5.0,
+        activation_limit: 5000,
+        seconds: 10.0,
         shallow_only: false,
     };
 
