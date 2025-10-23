@@ -89,6 +89,31 @@ interface InfoResponse {
   result: InfoResult | null;
 }
 
+interface SelectionParams {
+  uri: string;
+  version: number;
+  selectedLine: number;
+  id: number;
+}
+
+interface Step {
+  statement: string;
+  reason: string;
+  location: Location | null;
+}
+
+interface SelectionResponse {
+  uri: string;
+  version: number;
+  failure: string | null;
+  loading: boolean;
+  goalName: string | null;
+  goalRange: Range | null;
+  hasCachedProof: boolean;
+  steps: Array<Step> | null;
+  id: number;
+}
+
 // This section is for the extension to communicate with the assistant.
 // There's no Rust equivalent for these interfaces.
 
