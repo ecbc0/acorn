@@ -95,6 +95,20 @@ fn test_basic_import() {
 }
 
 #[test]
+fn test_from_import_does_not_bind_module_name() {
+    let mut p = Project::new_mock();
+    p.mock("/mock/foo.ac", FOO_AC);
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        from foo import Foo
+        let foo: Bool = true
+    "#,
+    );
+    p.expect_ok("main");
+}
+
+#[test]
 fn test_direct_import_nonexistent() {
     let mut p = Project::new_mock();
     p.expect_load_err("main");
