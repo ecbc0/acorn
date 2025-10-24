@@ -899,13 +899,13 @@ mod tests {
         p.mock(
             "/mock/main.ac",
             r#"
-            import stuff
-            let st1: Bool = stuff.thing1
+            from stuff import thing1, thing2
+            let st1: Bool = thing1
         "#,
         );
-        p.check_code_into("main", "stuff.thing1", "st1");
-        p.check_code("main", "st1");
-        p.check_code("main", "stuff.thing2");
+        p.check_code_into("main", "thing1", "thing1");
+        p.check_code("main", "thing1");
+        p.check_code("main", "thing2");
     }
 
     #[test]
@@ -923,18 +923,17 @@ mod tests {
         p.mock(
             "/mock/main.ac",
             r#"
-            import boolpair
-            type BoolPair: boolpair.BoolPair
+            from boolpair import BoolPair
             let first: BoolPair -> Bool = BoolPair.first
         "#,
         );
         p.expect_ok("main");
         p.check_code("main", "first");
         p.check_code_into("main", "BoolPair.first", "first");
-        p.check_code_into("main", "boolpair.BoolPair.first", "first");
+        p.check_code_into("main", "lib(boolpair).BoolPair.first", "first");
 
         p.check_code("main", "BoolPair.second");
-        p.check_code_into("main", "boolpair.BoolPair.second", "BoolPair.second");
+        p.check_code_into("main", "lib(boolpair).BoolPair.second", "BoolPair.second");
     }
 
     #[test]
@@ -1060,10 +1059,10 @@ mod tests {
         p.mock(
             "/mock/main.ac",
             r#"
-            import boolbox
+            from boolbox import BoolBox
         "#,
         );
-        p.check_code("main", "forall(x0: boolbox.BoolBox) { true }");
+        p.check_code("main", "forall(x0: BoolBox) { true }");
     }
 
     #[test]
@@ -1106,10 +1105,10 @@ mod tests {
         p.mock(
             "/mock/main.ac",
             r#"
-            import pair
+            from pair import Pair
             "#,
         );
-        p.check_code("main", "forall(x0: pair.Pair[Bool, Bool]) { true }");
+        p.check_code("main", "forall(x0: Pair[Bool, Bool]) { true }");
     }
 
     #[test]
@@ -1174,10 +1173,10 @@ mod tests {
         p.mock(
             "/mock/main.ac",
             r#"
-            import pair
+            from pair import double
             "#,
         );
-        p.check_code("main", "pair.double(true)");
+        p.check_code("main", "double(true)");
     }
 
     #[test]
@@ -1194,13 +1193,13 @@ mod tests {
         p.mock(
             "/mock/main.ac",
             r#"
-            import magma
+            from magma import Magma
 
             inductive Z1 {
                 zero
             }
 
-            instance Z1: magma.Magma {
+            instance Z1: Magma {
                 define op(self, other: Z1) -> Z1 {
                     Z1.zero
                 }

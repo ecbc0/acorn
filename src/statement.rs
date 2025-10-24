@@ -846,18 +846,11 @@ fn parse_module_components(
 }
 
 /// Parses an import statement where the "import" keyword has already been found.
-fn parse_import_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
-    let (components, last_token) = parse_module_components(tokens, TokenType::NewLine)?;
-    let is = ImportStatement {
-        components,
-        names: vec![],
-    };
-    let statement = Statement {
-        first_token: keyword,
-        last_token,
-        statement: StatementInfo::Import(is),
-    };
-    Ok(statement)
+/// This syntax is now deprecated in favor of "from foo import bar".
+fn parse_import_statement(keyword: Token, _tokens: &mut TokenIter) -> Result<Statement> {
+    Err(keyword.error(
+        "\"import foo\" syntax is deprecated. try \"from foo import bar\" format for imports",
+    ))
 }
 
 /// Parses a "from" statement where the "from" keyword has already been found.

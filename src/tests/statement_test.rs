@@ -388,7 +388,7 @@ mod tests {
 
     #[test]
     fn test_import_statement() {
-        ok("import foo.bar.baz");
+        fail_with("import foo.bar.baz", "\"import foo\" syntax is deprecated");
     }
 
     #[test]

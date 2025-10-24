@@ -90,7 +90,7 @@ fn test_update_file_first_call_drops_modules() {
 fn test_basic_import() {
     let mut p = Project::new_mock();
     p.mock("/mock/foo.ac", FOO_AC);
-    p.mock("/mock/main.ac", "import foo");
+    p.mock("/mock/main.ac", "from foo import Foo");
     p.expect_ok("main");
 }
 
@@ -143,7 +143,7 @@ fn test_self_import() {
 fn test_import_from_subdir() {
     let mut p = Project::new_mock();
     p.mock("/mock/stuff/foo.ac", FOO_AC);
-    p.mock("/mock/main.ac", "import stuff.foo");
+    p.mock("/mock/main.ac", "from stuff.foo import Foo");
     p.expect_ok("main");
 }
 
@@ -154,9 +154,9 @@ fn test_good_imported_types() {
     p.mock(
         "/mock/main.ac",
         r#"
-        import foo
-        type MyFoo: foo.AlsoFoo
-        let x: foo.Foo = axiom
+        from foo import Foo, AlsoFoo
+        type MyFoo: AlsoFoo
+        let x: Foo = axiom
         let y: MyFoo = axiom
         let z: Bool = (x = y)
     "#,
@@ -188,9 +188,9 @@ fn test_imported_constants() {
     p.mock(
         "/mock/main.ac",
         r#"
-        import foo
-        let x: foo.Foo = axiom
-        let y: foo.Foo = foo.foo
+        from foo import Foo
+        let x: Foo = axiom
+        let y: Foo = lib(foo).foo
         let z: Bool = (x = y)
     "#,
     );
@@ -204,9 +204,9 @@ fn test_building_project() {
     p.mock(
         "/mock/main.ac",
         r#"
-        import foo
-        let new_foo: foo.Foo = axiom
-        theorem goal { foo.fooify(new_foo) = foo.foo }
+        from foo import Foo, fooify
+        let new_foo: Foo = axiom
+        theorem goal { fooify(new_foo) = lib(foo).foo }
     "#,
     );
     p.load_module_by_name("foo").expect("loading foo failed");
@@ -310,9 +310,9 @@ fn test_build_cache() {
     }
     "#;
     let main_text = r#"
-    import foo
+    from foo import thing1, thing2
     theorem two {
-        foo.thing1 = foo.thing2
+        thing1 = thing2
     }
     "#;
     p.mock("/mock/foo.ac", foo_text);
@@ -627,9 +627,8 @@ fn test_instance_separate_from_class_and_typeclass() {
     p.mock(
         "/mock/main.ac",
         r#"
-        from foo import Foo
+        from relate import Foo
         from pointed import Pointed
-        import relate
 
         define get_point[P: Pointed](p: P) -> P {
             P.origin
@@ -891,8 +890,8 @@ fn test_import_default_ac() {
     p.mock(
         "/mock/main.ac",
         r#"
-        import foo
-        let x: foo.Foo = foo.foo_value
+        from foo import Foo, foo_value
+        let x: Foo = foo_value
         "#,
     );
 
@@ -945,7 +944,7 @@ fn test_typeclass_attributes_across_files() {
         "/mock/addable_attrs.ac",
         r#"
         from addable import Addable
-        
+
         attributes A: Addable {
             define is_zero(self) -> Bool {
                 self = A.zero
@@ -957,17 +956,16 @@ fn test_typeclass_attributes_across_files() {
     p.mock(
         "/mock/main.ac",
         r#"
-        from addable import Addable
-        import addable_attrs
-        
+        from addable_attrs import Addable
+
         inductive MyType {
             value
         }
-        
+
         instance MyType: Addable {
             let zero = MyType.value
         }
-        
+
         theorem test_use_attribute {
             MyType.value.is_zero
         }

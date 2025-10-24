@@ -223,8 +223,8 @@ fn test_using_imported_axiom() {
     p.mock(
         "/mock/main.ac",
         r#"
-    import bar
-    theorem goal(a: bar.Bar, b: bar.Bar) { bar.morph(a) = bar.morph(b) }
+    from bar import Bar, morph
+    theorem goal(a: Bar, b: Bar) { morph(a) = morph(b) }
     "#,
     );
     let (_, outcome, _) = prove_with_old_codegen(&mut p, "main", "goal");

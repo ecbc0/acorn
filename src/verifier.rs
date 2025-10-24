@@ -485,8 +485,12 @@ mod tests {
     fn test_verifier_fails_on_circular_import() {
         let (acornlib, src, _) = setup();
 
-        src.child("foo.ac").write_str("import bar").unwrap();
-        src.child("bar.ac").write_str("import foo").unwrap();
+        src.child("foo.ac")
+            .write_str("from bar import Bar")
+            .unwrap();
+        src.child("bar.ac")
+            .write_str("from foo import Foo")
+            .unwrap();
 
         let result = Verifier::new(
             acornlib.path().to_path_buf(),
@@ -525,7 +529,9 @@ mod tests {
             .unwrap();
 
         // Try to import the ambiguous module
-        src.child("main.ac").write_str("import foo").unwrap();
+        src.child("main.ac")
+            .write_str("from foo import Foo")
+            .unwrap();
 
         let mut verifier = Verifier::new(
             acornlib.path().to_path_buf(),
@@ -594,9 +600,9 @@ mod tests {
         src.child("bar.ac")
             .write_str(
                 r#"
-                import foo
+                from foo import thing
                 theorem bar_goal {
-                    foo.thing = foo.thing
+                    thing = thing
                 }
                 "#,
             )
@@ -663,9 +669,9 @@ mod tests {
         src.child("bar.ac")
             .write_str(
                 r#"
-                import foo
+                from foo import thing
                 theorem bar_goal {
-                    foo.thing = foo.thing
+                    thing = thing
                 }
                 "#,
             )
