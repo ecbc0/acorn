@@ -172,7 +172,7 @@ pub struct ImportStatement {
     pub components: Vec<Token>,
 
     /// What names to import from the module.
-    /// If this is empty, we just import the module itself.
+    /// This cannot be empty - must use "from foo import bar" syntax.
     pub names: Vec<Token>,
 }
 

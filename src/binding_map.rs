@@ -761,9 +761,17 @@ impl BindingMap {
     }
 
     /// All other modules that we directly depend on, besides this one.
-    /// Sorted by the name of the import, so that the order will be consistent.
+    /// Sorted by the module name, so that the order will be consistent.
     pub fn direct_dependencies(&self) -> Vec<ModuleId> {
-        self.name_to_module.values().copied().collect()
+        let mut deps: Vec<(ModuleId, &Vec<String>)> = self
+            .module_info
+            .iter()
+            .filter(|(&id, _)| id != self.module_id)
+            .map(|(&id, info)| (id, &info.full_name))
+            .collect();
+        // Sort by full name for consistent ordering
+        deps.sort_by(|a, b| a.1.cmp(b.1));
+        deps.into_iter().map(|(id, _)| id).collect()
     }
 
     pub fn set_numerals(&mut self, datatype: Datatype) {
@@ -1155,24 +1163,17 @@ impl BindingMap {
         }
     }
 
-    /// Adds this name to the environment as a module.
+    /// Imports a module's typeclass and datatype info.
+    /// Does NOT bind the module name - used for "from foo import bar" syntax.
     /// Copies over all the datatype_defs from the module's bindings.
     /// This enables "mixins".
     /// Also copy over all the typeclass_defs from the module's bindings.
     pub fn import_module(
         &mut self,
-        local_name: &str,
         full_name: Vec<String>,
         bindings: &BindingMap,
         source: &dyn ErrorSource,
     ) -> compilation::Result<()> {
-        if self
-            .name_to_module
-            .insert(local_name.to_string(), bindings.module_id)
-            .is_some()
-        {
-            return Err(source.error(&format!("name {} is already bound", local_name)));
-        }
         // Copy over module info from the imported module, but don't override entries with local names
         for (module_id, imported_info) in bindings.module_info.iter() {
             if !self.module_info.contains_key(module_id) {
@@ -1185,9 +1186,9 @@ impl BindingMap {
             }
         }
 
-        // Now add/update the directly imported module with its local name
+        // Add the directly imported module WITHOUT a local name (no name binding)
         let module_info = ModuleInfo {
-            local_name: Some(local_name.to_string()),
+            local_name: None,
             full_name,
         };
         self.module_info.insert(bindings.module_id, module_info);

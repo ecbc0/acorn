@@ -2031,10 +2031,13 @@ impl Environment {
     ) -> compilation::Result<()> {
         self.add_other_lines(statement);
 
-        // Give a local name to the imported module
-        let local_name = is.components.last().unwrap().text();
-        self.bindings
-            .check_unqualified_name_available(local_name, statement)?;
+        // The old "import foo" syntax is not supported - must use "from foo import bar"
+        if is.names.is_empty() {
+            return Err(statement.error(
+                "import statement must specify names to import. use 'from foo import bar' syntax",
+            ));
+        }
+
         let full_name_vec: Vec<_> = is.components.iter().map(|t| t.text().to_string()).collect();
         let full_name = full_name_vec.join(".");
         let module_id = match project.load_module_by_name(&full_name) {
@@ -2053,7 +2056,7 @@ impl Environment {
                 ));
             }
         };
-        match project.get_bindings(module_id) {
+        let bindings = match project.get_bindings(module_id) {
             None => {
                 // The fundamental error is in the other module, not this one.
                 return Err(CompilationError::indirect(
@@ -2062,15 +2065,12 @@ impl Environment {
                     &format!("error in '{}' module", full_name),
                 ));
             }
-            Some(bindings) => {
-                self.bindings.import_module(
-                    local_name,
-                    full_name_vec,
-                    &bindings,
-                    &statement.first_token,
-                )?;
-            }
-        }
+            Some(bindings) => bindings,
+        };
+
+        // Import module info (typeclass/datatype defs) without binding the module name
+        self.bindings
+            .import_module(full_name_vec, &bindings, &statement.first_token)?;
 
         // Track token for the module (only the last component represents the module)
         if let Some(last_component) = is.components.last() {
@@ -2079,6 +2079,7 @@ impl Environment {
         }
 
         // Bring the imported names into this environment
+        // Note: we do NOT bind the module name itself
         for name in &is.names {
             let entity = self.bindings.import_name(project, module_id, name)?;
             self.token_map.track_token(name, &entity);
