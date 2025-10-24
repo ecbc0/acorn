@@ -9,6 +9,7 @@
 
   // These are updated to reflect the last valid responses from the extension.
   let searchResponse: SearchResponse | null = null;
+  let selectionResponse: SelectionResponse | null = null;
   let infoResult: InfoResult | null = null;
   let help: Help | null = null;
 
@@ -27,6 +28,21 @@
     searchResponse = response;
   }
 
+  function handleSelectionResponse(response: SelectionResponse) {
+    if (response.failure || response.goalName === null) {
+      // Failure responses should not reach this point.
+      console.error("unexpected upstream failure:", response.failure);
+      return;
+    }
+
+    if (selectionResponse !== null && selectionResponse.id !== response.id) {
+      // A successful selection invalidates the other data
+      infoResult = null;
+    }
+
+    selectionResponse = response;
+  }
+
   function handleInfoResponse(response: InfoResponse) {
     // Only accept info responses that match the current search response.
     if (
@@ -43,6 +59,10 @@
     window.addEventListener("message", (event) => {
       if (event.data.type === "search") {
         handleSearchResponse(event.data.response);
+        return;
+      }
+      if (event.data.type === "selection") {
+        handleSelectionResponse(event.data.response);
         return;
       }
       if (event.data.type === "info") {
@@ -112,7 +132,9 @@
 </script>
 
 <main>
-  {#if searchResponse === null || searchResponse.goalName === null}
+  {#if selectionResponse !== null && selectionResponse.goalName !== null}
+    TODO
+  {:else if searchResponse === null || searchResponse.goalName === null}
     {#if help !== null && help.noSelection}
       Select a proposition to see its proof.
     {:else if help !== null && help.newDocument}
