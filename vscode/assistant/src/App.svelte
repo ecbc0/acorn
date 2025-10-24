@@ -133,7 +133,21 @@
 
 <main>
   {#if selectionResponse !== null && selectionResponse.goalName !== null}
-    TODO
+    <Goal
+      goalName={selectionResponse.goalName}
+      goalRange={selectionResponse.goalRange}
+      uri={selectionResponse.uri}
+      {showLocation}
+    />
+    <hr />
+    <br />
+    <div class="block">
+      <br />
+      TODO
+      <br />
+    </div>
+    <br />
+    <hr />
   {:else if searchResponse === null || searchResponse.goalName === null}
     {#if help !== null && help.noSelection}
       Select a proposition to see its proof.
@@ -153,7 +167,12 @@
     For help, see the
     <a href="https://acornprover.org">documentation</a>.
   {:else}
-    <Goal {searchResponse} {showLocation} />
+    <Goal
+      goalName={searchResponse.goalName}
+      goalRange={searchResponse.goalRange}
+      uri={searchResponse.uri}
+      {showLocation}
+    />
     <hr />
     <br />
     {#if searchResponse.status.outcome === null}

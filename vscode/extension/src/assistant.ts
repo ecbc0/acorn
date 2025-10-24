@@ -21,7 +21,7 @@ const showLocationDecoration = window.createTextEditorDecorationType({
 });
 
 // Experimental flag to use selection requests instead of search requests
-const experiment = false;
+const experiment = true;
 
 export class Assistant implements Disposable {
   client: LanguageClient;
