@@ -129,7 +129,7 @@
     {/if}
     <br /><br />
     For help, see the
-    <a href="https://acornprover.org/docs/getting-started/">documentation</a>.
+    <a href="https://acornprover.org">documentation</a>.
   {:else}
     <Goal {searchResponse} {showLocation} />
     <hr />
