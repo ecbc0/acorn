@@ -1334,3 +1334,52 @@ fn test_doc_comment_lookup() {
     let comments = p.get_constant_doc_comments(main_env, &quux_constant_name);
     assert_eq!(comments.unwrap(), &vec!["quux_doc_comment".to_string()]);
 }
+
+#[test]
+fn test_handle_selection_with_cached_proof() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/test.ac",
+        indoc! {"
+        type Nat: axiom
+        let f: Nat -> Bool = axiom
+        let g: Nat -> Bool = axiom
+        let h: Nat -> Bool = axiom
+
+        axiom a1(x: Nat) {
+            f(x) implies g(x)
+        }
+
+        axiom a2(x: Nat) {
+            g(x) implies h(x)
+        }
+
+        theorem simple_theorem(x: Nat) {
+            f(x) implies h(x)
+        }
+        "},
+    );
+
+    // Build the project to create cached proofs
+    expect_build_ok(&p);
+
+    // Now test handle_selection on the theorem line
+    let path = PathBuf::from("/mock/test.ac");
+    let result = p.handle_selection(&path, 14);
+
+    // Check that we got a result
+    assert!(result.is_ok(), "handle_selection should succeed");
+    let (goal_name, goal_range, steps) = result.unwrap();
+
+    // Verify the goal was found
+    assert_eq!(goal_name, Some("simple_theorem".to_string()));
+    assert!(goal_range.is_some());
+
+    // This is the key assertion that will fail if steps aren't being returned
+    assert!(
+        steps.is_some(),
+        "expected steps to be returned from cached proof"
+    );
+    let steps = steps.unwrap();
+    assert!(!steps.is_empty(), "expected at least one step in the proof");
+}
