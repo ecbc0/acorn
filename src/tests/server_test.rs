@@ -323,11 +323,29 @@ async fn test_build_cancellation() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_selection_after_fresh_build() {
     use crate::interfaces::SelectionParams;
+    use indoc::indoc;
 
     let fx = TestFixture::new();
 
     // Create a file with a simple theorem
-    let content = "theorem simple_theorem { true }";
+    let content = indoc! {"
+        type Nat: axiom
+        let f: Nat -> Bool = axiom
+        let g: Nat -> Bool = axiom
+        let h: Nat -> Bool = axiom
+
+        axiom a1(x: Nat) {
+            f(x) implies g(x)
+        }
+
+        axiom a2(x: Nat) {
+            g(x) implies h(x)
+        }
+
+        theorem simple_theorem(x: Nat) {
+            f(x) implies h(x)
+        }
+    "};
     fx.open("test.ac", content, 1).await;
     fx.save("test.ac", content).await;
 
@@ -343,7 +361,7 @@ async fn test_selection_after_fresh_build() {
     let params = SelectionParams {
         uri: url,
         version: 1,
-        selected_line: 0, // The theorem is on line 0
+        selected_line: 14, // The theorem is on line 14
         id: 1,
     };
 

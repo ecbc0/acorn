@@ -1129,15 +1129,18 @@ impl Project {
         &self,
         goal: &Goal,
         env: &Environment,
+        cursor: &crate::block::NodeCursor,
     ) -> Option<(&Certificate, Vec<crate::checker::CertificateStep>)> {
-        // Get the module descriptor for this goal
         let descriptor = self.get_module_descriptor(goal.module_id)?;
-
-        // Get the certificate store for this module
         let cert_store = self.build_cache.get_certificates(descriptor)?;
 
-        // Create a processor for verification
-        let processor = Processor::new();
+        let mut processor = Processor::new();
+        let facts = cursor.usable_facts(self);
+        for fact in &facts {
+            if let Err(_) = processor.add_fact(fact.clone()) {
+                return None;
+            }
+        }
 
         // Try each certificate with a matching goal name
         for cert in &cert_store.certs {
@@ -1158,8 +1161,16 @@ impl Project {
         &self,
         path: &Path,
         selected_line: u32,
-    ) -> Result<(Option<String>, Option<tower_lsp::lsp_types::Range>, Option<Vec<crate::interfaces::Step>>), String> {
-        let descriptor = self.descriptor_from_path(path)
+    ) -> Result<
+        (
+            Option<String>,
+            Option<tower_lsp::lsp_types::Range>,
+            Option<Vec<crate::interfaces::Step>>,
+        ),
+        String,
+    > {
+        let descriptor = self
+            .descriptor_from_path(path)
             .map_err(|e| format!("descriptor_from_path failed: {:?}", e))?;
 
         let env = match self.get_module(&descriptor) {
@@ -1167,18 +1178,25 @@ impl Project {
             _ => return Err(format!("could not load module from {:?}", descriptor)),
         };
 
-        let node_path = env.path_for_line(selected_line)
+        let node_path = env
+            .path_for_line(selected_line)
             .map_err(|e| format!("path_for_line failed: {}", e))?;
 
         let cursor = crate::block::NodeCursor::from_path(env, &node_path);
-        let goal = cursor.goal()
+        let goal = cursor
+            .goal()
             .map_err(|_| "no goal at this location".to_string())?;
 
         let goal_name = Some(goal.name.clone());
         let goal_range = Some(goal.proposition.source.range);
 
+        // Get the environment for this specific goal
+        let goal_env = cursor
+            .goal_env()
+            .map_err(|e| format!("goal_env failed: {}", e))?;
+
         // Check if there's a verified certificate for this goal
-        if let Some((_cert, certificate_steps)) = self.find_cert(&goal, env) {
+        if let Some((_cert, certificate_steps)) = self.find_cert(&goal, goal_env, &cursor) {
             // Convert CertificateSteps to interface::Step objects
             let steps: Vec<crate::interfaces::Step> = certificate_steps
                 .into_iter()
@@ -1187,8 +1205,7 @@ impl Project {
 
                     let (reason, location) = match &cert_step.reason {
                         StepReason::TermGraph => ("simplification".to_string(), None),
-                        StepReason::Specialization(source)
-                        | StepReason::Skolemization(source) => {
+                        StepReason::Specialization(source) | StepReason::Skolemization(source) => {
                             let location = self
                                 .path_from_module_id(source.module_id)
                                 .and_then(|path| {
