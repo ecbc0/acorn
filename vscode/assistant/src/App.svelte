@@ -141,11 +141,42 @@
     />
     <hr />
     <br />
-    <div class="block">
+    {#if selectionResponse.steps === null}
+      We don't have a proof for this goal yet.
       <br />
-      TODO
-      <br />
-    </div>
+    {:else if selectionResponse.steps.length === 0}
+      Trivial.
+    {:else}
+      <div class="block">
+        <br />
+        <table>
+          <tr>
+            <th>Statement</th>
+            <th>Reason</th>
+          </tr>
+          {#each selectionResponse.steps as step}
+            <tr>
+              <td>{step.statement}</td>
+              <td>
+                {#if step.location !== null}
+                  from <span
+                    class="preview-link"
+                    on:click={() => {
+                      if (step.location !== null) {
+                        showLocation(step.location.uri, step.location.range);
+                      }
+                    }}>{step.reason}</span
+                  >
+                {:else}
+                  by <span>{step.reason}</span>
+                {/if}
+              </td>
+            </tr>
+          {/each}
+        </table>
+        <br />
+      </div>
+    {/if}
     <br />
     <hr />
   {:else if searchResponse === null || searchResponse.goalName === null}
@@ -261,3 +292,14 @@
     <br />
   {/if}
 </main>
+
+<style>
+  .preview-link {
+    cursor: pointer;
+    color: var(--vscode-textLink-foreground);
+  }
+
+  .preview-link:hover {
+    text-decoration: underline;
+  }
+</style>

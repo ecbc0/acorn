@@ -183,12 +183,12 @@ export class Assistant implements Disposable {
           this.panel.webview.postMessage({ type: "selection", response });
         }
 
-        if (response.status.outcome !== null) {
-          // The search is complete.
+        if (!response.loading) {
+          // The selection request is complete.
           return;
         }
 
-        // The search is not complete. Send another request after waiting a bit.
+        // The request is not complete. Send another request after waiting a bit.
         let ms = 50;
         await new Promise((resolve) => setTimeout(resolve, ms));
         if (!this.panel || params.id != this.currentSearchId) {
