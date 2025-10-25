@@ -1152,6 +1152,73 @@ impl Project {
         None
     }
 
+    /// Handle a selection request for a given file and line number.
+    /// Returns (goal_name, goal_range, steps) or an error message.
+    pub fn handle_selection(
+        &self,
+        path: &Path,
+        selected_line: u32,
+    ) -> Result<(Option<String>, Option<tower_lsp::lsp_types::Range>, Option<Vec<crate::interfaces::Step>>), String> {
+        let descriptor = self.descriptor_from_path(path)
+            .map_err(|e| format!("descriptor_from_path failed: {:?}", e))?;
+
+        let env = match self.get_module(&descriptor) {
+            LoadState::Ok(env) => env,
+            _ => return Err(format!("could not load module from {:?}", descriptor)),
+        };
+
+        let node_path = env.path_for_line(selected_line)
+            .map_err(|e| format!("path_for_line failed: {}", e))?;
+
+        let cursor = crate::block::NodeCursor::from_path(env, &node_path);
+        let goal = cursor.goal()
+            .map_err(|_| "no goal at this location".to_string())?;
+
+        let goal_name = Some(goal.name.clone());
+        let goal_range = Some(goal.proposition.source.range);
+
+        // Check if there's a verified certificate for this goal
+        if let Some((_cert, certificate_steps)) = self.find_cert(&goal, env) {
+            // Convert CertificateSteps to interface::Step objects
+            let steps: Vec<crate::interfaces::Step> = certificate_steps
+                .into_iter()
+                .map(|cert_step| {
+                    use crate::checker::StepReason;
+
+                    let (reason, location) = match &cert_step.reason {
+                        StepReason::TermGraph => ("simplification".to_string(), None),
+                        StepReason::Specialization(source)
+                        | StepReason::Skolemization(source) => {
+                            let location = self
+                                .path_from_module_id(source.module_id)
+                                .and_then(|path| {
+                                    tower_lsp::lsp_types::Url::from_file_path(path).ok()
+                                })
+                                .map(|uri| crate::interfaces::Location {
+                                    uri,
+                                    range: source.range,
+                                });
+                            (source.description(), location)
+                        }
+                        StepReason::SyntheticDefinition => ("definition".to_string(), None),
+                        StepReason::Contradiction => ("ex falso".to_string(), None),
+                        StepReason::Missing => ("missing".to_string(), None),
+                    };
+
+                    crate::interfaces::Step {
+                        statement: cert_step.statement,
+                        reason,
+                        location,
+                    }
+                })
+                .collect();
+
+            Ok((goal_name, goal_range, Some(steps)))
+        } else {
+            Ok((goal_name, goal_range, None))
+        }
+    }
+
     // path is the file we're in.
     // env_line is zero-based. It's the closest unchanged line, to use for finding the environment.
     // prefix is the entire line they've typed so far. Generally different from env_line.

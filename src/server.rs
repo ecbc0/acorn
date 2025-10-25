@@ -18,12 +18,10 @@ use tower_lsp::jsonrpc;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
-use crate::block::NodeCursor;
 use crate::interfaces::{
     DocumentProgress, InfoParams, InfoResponse, ProgressParams, ProgressResponse, SearchParams,
     SearchResponse, SelectionParams, SelectionResponse,
 };
-use crate::module::LoadState;
 use crate::project::{Project, ProjectConfig};
 
 // Trait abstracting the LSP client methods we need
@@ -469,74 +467,16 @@ impl AcornLanguageServer {
             }
         }
 
-        let descriptor = match project.descriptor_from_path(&path) {
-            Ok(name) => name,
+        match project.handle_selection(&path, params.selected_line) {
+            Ok((goal_name, goal_range, steps)) => {
+                response.goal_name = goal_name;
+                response.goal_range = goal_range;
+                response.has_cached_proof = steps.is_some();
+                response.steps = steps;
+            }
             Err(e) => {
-                response.failure = Some(format!("descriptor_from_path failed: {:?}", e));
+                response.failure = Some(e);
                 return Ok(response);
-            }
-        };
-
-        let env = match project.get_module(&descriptor) {
-            LoadState::Ok(env) => env,
-            _ => {
-                response.failure = Some(format!("could not load module from {:?}", descriptor));
-                return Ok(response);
-            }
-        };
-
-        let node_path = match env.path_for_line(params.selected_line) {
-            Ok(path) => path,
-            Err(e) => {
-                response.failure = Some(format!("path_for_line failed: {}", e));
-                return Ok(response);
-            }
-        };
-
-        let cursor = NodeCursor::from_path(env, &node_path);
-        if let Ok(goal) = cursor.goal() {
-            response.goal_name = Some(goal.name.clone());
-            response.goal_range = Some(goal.proposition.source.range);
-
-            // Check if there's a verified certificate for this goal
-            if let Some((_cert, certificate_steps)) = project.find_cert(&goal, env) {
-                response.has_cached_proof = true;
-
-                // Convert CertificateSteps to interface::Step objects
-                let steps: Vec<crate::interfaces::Step> = certificate_steps
-                    .into_iter()
-                    .map(|cert_step| {
-                        use crate::checker::StepReason;
-
-                        let (reason, location) = match &cert_step.reason {
-                            StepReason::TermGraph => ("simplification".to_string(), None),
-                            StepReason::Specialization(source)
-                            | StepReason::Skolemization(source) => {
-                                let location = project
-                                    .path_from_module_id(source.module_id)
-                                    .and_then(|path| {
-                                        tower_lsp::lsp_types::Url::from_file_path(path).ok()
-                                    })
-                                    .map(|uri| crate::interfaces::Location {
-                                        uri,
-                                        range: source.range,
-                                    });
-                                (source.description(), location)
-                            }
-                            StepReason::SyntheticDefinition => ("definition".to_string(), None),
-                            StepReason::Contradiction => ("ex falso".to_string(), None),
-                            StepReason::Missing => ("missing".to_string(), None),
-                        };
-
-                        crate::interfaces::Step {
-                            statement: cert_step.statement,
-                            reason,
-                            location,
-                        }
-                    })
-                    .collect();
-
-                response.steps = Some(steps);
             }
         }
 
