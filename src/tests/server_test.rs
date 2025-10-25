@@ -319,3 +319,43 @@ async fn test_build_cancellation() {
     // Check that certificates were created for the successful build
     fx.assert_build_file_will_exist("test.jsonl").await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_selection_after_fresh_build() {
+    use crate::interfaces::SelectionParams;
+
+    let fx = TestFixture::new();
+
+    // Create a file with a simple theorem
+    let content = "theorem simple_theorem { true }";
+    fx.open("test.ac", content, 1).await;
+    fx.save("test.ac", content).await;
+
+    // Wait for the build to complete and certificates to be created
+    fx.assert_build_completes().await;
+    fx.assert_build_file_will_exist("test.jsonl").await;
+
+    // Give a bit more time for the build cache to be updated
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Now request selection information for the theorem line
+    let url = fx.url("test.ac");
+    let params = SelectionParams {
+        uri: url,
+        version: 1,
+        selected_line: 0, // The theorem is on line 0
+        id: 1,
+    };
+
+    let response = fx.server.handle_selection_request(params).await.unwrap();
+
+    // Verify the goal was found
+    assert_eq!(response.goal_name, Some("simple_theorem".to_string()));
+    assert!(response.goal_range.is_some());
+
+    // Even for trivial proofs, we should get Some([]) rather than None
+    assert!(
+        response.steps.is_some(),
+        "Expected steps to be returned from cached proof (got None)."
+    );
+}

@@ -429,7 +429,7 @@ impl AcornLanguageServer {
             .await
     }
 
-    async fn handle_selection_request(
+    pub async fn handle_selection_request(
         &self,
         params: SelectionParams,
     ) -> jsonrpc::Result<SelectionResponse> {
