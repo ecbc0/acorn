@@ -1227,7 +1227,7 @@ impl Expression {
                 let left_doc = left.pretty_ref(allocator, flat);
                 let right_doc = right.pretty_ref(allocator, flat);
 
-                if token.token_type.left_space() {
+                let doc = if token.token_type.left_space() {
                     left_doc
                         .append(allocator.space())
                         .append(allocator.text(token.text()))
@@ -1235,11 +1235,23 @@ impl Expression {
                     left_doc.append(allocator.text(token.text()))
                 }
                 .append(if token.token_type.right_space() {
-                    allocator.space()
+                    // For "or" operator, use a soft line when not in flat mode
+                    if token.token_type == TokenType::Or && !flat {
+                        allocator.line()
+                    } else {
+                        allocator.space()
+                    }
                 } else {
                     allocator.nil()
                 })
-                .append(right_doc)
+                .append(right_doc);
+
+                // Group "or" expressions so they can stay on one line if they fit
+                if token.token_type == TokenType::Or && !flat {
+                    doc.group()
+                } else {
+                    doc
+                }
             }
             Expression::Concatenation(left, right) => left
                 .pretty_ref(allocator, flat)
