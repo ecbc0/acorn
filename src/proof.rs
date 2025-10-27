@@ -1175,7 +1175,18 @@ impl<'a> Proof<'a> {
                 }
             };
 
-            if !unifier.unify_literals(base_scope, base_literal, scope, literal, flipped) {
+            // For eliminated literals (from simplifications), polarities are opposite.
+            // For signed boolean terms (atom = true or atom != true), we just unify the atoms.
+            // For equalities, we use the standard literal unification.
+            let unified = if base_literal.is_signed_term() && literal.is_signed_term() {
+                // Both are signed terms, so just unify the left sides (the atoms)
+                unifier.unify(base_scope, &base_literal.left, scope, &literal.left)
+            } else {
+                // Use standard literal unification
+                unifier.unify_literals(base_scope, base_literal, scope, literal, flipped)
+            };
+
+            if !unified {
                 return Err(Error::internal(format!(
                     "failed to unify base literal {} with trace literal {}",
                     base_literal, literal

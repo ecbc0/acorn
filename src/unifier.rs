@@ -319,15 +319,19 @@ impl Unifier {
         full_term: &Term,
         full_scope: Scope,
     ) -> Option<bool> {
-        // Check if var_term has a variable head with exactly one argument
+        // Check if var_term has a variable head with arguments
         if let Atom::Variable(var_id) = var_term.head {
-            if var_term.args.len() == 1 && full_term.args.len() > 1 {
-                // We want to unify x0(arg) with f(a1, a2, ...)
-                // This means x0 should map to f(a1, a2, ..., an-1) and arg should unify with an
+            let var_args_len = var_term.args.len();
+            let full_args_len = full_term.args.len();
 
-                // Build the partial application: all of full_term except the last arg
-                let n = full_term.args.len();
-                let partial_args = full_term.args[0..n - 1].to_vec();
+            if var_args_len >= 1 && full_args_len > var_args_len {
+                // We want to unify x0(arg1, ..., argN) with f(a1, ..., aM) where M > N
+                // This means x0 should map to f(a1, ..., a(M-N))
+                // and each argi should unify with a(M-N+i)
+
+                // Build the partial application: first (M-N) args of full_term
+                let num_partial_args = full_args_len - var_args_len;
+                let partial_args = full_term.args[0..num_partial_args].to_vec();
 
                 // Create the partial application term
                 // Use the head_type of var_term (the variable's type) as the term_type
@@ -343,13 +347,19 @@ impl Unifier {
                     return Some(false);
                 }
 
-                // Unify the argument with the last argument of full_term
-                return Some(self.unify_internal(
-                    var_scope,
-                    &var_term.args[0],
-                    full_scope,
-                    &full_term.args[n - 1],
-                ));
+                // Unify each var_term argument with the corresponding full_term argument
+                for i in 0..var_args_len {
+                    if !self.unify_internal(
+                        var_scope,
+                        &var_term.args[i],
+                        full_scope,
+                        &full_term.args[num_partial_args + i],
+                    ) {
+                        return Some(false);
+                    }
+                }
+
+                return Some(true);
             }
         }
         None
