@@ -334,4 +334,9 @@
     padding-bottom: 0.5em;
     text-align: left;
   }
+
+  td:first-child {
+    white-space: pre-wrap;
+    font-family: monospace;
+  }
 </style>

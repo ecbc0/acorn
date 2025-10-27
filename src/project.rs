@@ -13,15 +13,18 @@ use crate::acorn_value::AcornValue;
 use crate::binding_map::BindingMap;
 use crate::build_cache::BuildCache;
 use crate::certificate::Certificate;
+use crate::checker::StepReason;
 use crate::code_generator::{self, CodeGenerator};
 use crate::compilation;
 use crate::environment::Environment;
 use crate::fact::Fact;
 use crate::goal::Goal;
+use crate::interfaces::{Location, Step};
 use crate::module::{LoadState, Module, ModuleDescriptor, ModuleId};
 use crate::named_entity::NamedEntity;
 use crate::names::ConstantName;
 use crate::processor::Processor;
+use crate::statement::Statement;
 use crate::token::Token;
 use crate::token_map::TokenInfo;
 
@@ -1198,11 +1201,9 @@ impl Project {
         // Check if there's a verified certificate for this goal
         if let Some((_cert, certificate_steps)) = self.find_cert(&goal, goal_env, &cursor) {
             // Convert CertificateSteps to interface::Step objects
-            let steps: Vec<crate::interfaces::Step> = certificate_steps
+            let steps: Vec<Step> = certificate_steps
                 .into_iter()
                 .map(|cert_step| {
-                    use crate::checker::StepReason;
-
                     let (reason, location) = match &cert_step.reason {
                         StepReason::TermGraph => ("simplification".to_string(), None),
                         StepReason::Specialization(source) | StepReason::Skolemization(source) => {
@@ -1211,7 +1212,7 @@ impl Project {
                                 .and_then(|path| {
                                     tower_lsp::lsp_types::Url::from_file_path(path).ok()
                                 })
-                                .map(|uri| crate::interfaces::Location {
+                                .map(|uri| Location {
                                     uri,
                                     range: source.range,
                                 });
@@ -1225,8 +1226,13 @@ impl Project {
                         StepReason::Testing => ("testing".to_string(), None),
                     };
 
-                    crate::interfaces::Step {
-                        statement: cert_step.statement,
+                    // Pretty-print the statement by parsing and formatting it
+                    let statement = Statement::parse_str_with_options(&cert_step.statement, true)
+                        .map(|s| s.to_string())
+                        .unwrap_or(cert_step.statement);
+
+                    Step {
+                        statement,
                         reason,
                         location,
                     }
