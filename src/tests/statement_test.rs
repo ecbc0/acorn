@@ -92,6 +92,30 @@ mod tests {
     }
 
     #[test]
+    fn test_long_or_expressions() {
+        // Test that long "or" expressions get split across lines when needed
+        ok(indoc! {"
+        theorem long_or_chain {
+            some_long_variable_name or another_long_variable_name or
+            yet_another_long_name or
+            final_variable
+        }"});
+
+        // Test that short "or" expressions stay on one line
+        ok(indoc! {"
+        theorem short_or {
+            a or b or c
+        }"});
+
+        // Test that very long variable names force breaks
+        ok(indoc! {"
+        theorem very_long_names {
+            extremely_long_variable_name_that_is_very_verbose or
+            another_extremely_long_variable_name_that_exceeds_width
+        }"});
+    }
+
+    #[test]
     fn test_prop_statements() {
         ok(indoc! {"
         theorem goal {
