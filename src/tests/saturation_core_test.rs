@@ -2076,3 +2076,29 @@ fn test_proving_and_inside_arg() {
 
     prove(&mut p, "main", "boxed_and_true_true");
 }
+
+#[test]
+fn test_verify_reflexivity() {
+    verify_succeeds(
+        r#"
+        define is_reflexive[T](f: (T, T) -> Bool) -> Bool {
+            forall(t: T) {
+                f(t, t)
+            }
+        }
+            
+        define lte_from[T](lt: (T, T) -> Bool, x: T, y: T) -> Bool {
+            lt(x, y) or x = y    
+        }
+            
+        theorem lte_is_reflexive[T](lt: (T, T) -> Bool) {
+            is_reflexive(lte_from(lt))
+        } by {
+            forall(x: T) {
+                x = x
+                lte_from(lt)(x, x)
+            }
+        }
+        "#,
+    );
+}
