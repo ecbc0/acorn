@@ -162,38 +162,51 @@ impl BuildMetrics {
         Self::default()
     }
 
-    pub fn print(&self, status: BuildStatus) {
-        println!();
+    pub fn info_lines(&self) -> Vec<String> {
+        let mut lines = Vec::new();
+
         if self.modules_cached > 0 {
-            println!(
+            lines.push(format!(
                 "{}/{} modules cached",
                 self.modules_cached, self.modules_total
-            );
+            ));
         }
         if self.certs_created > 0 {
-            println!("{} certificates created", self.certs_created);
+            lines.push(format!("{} certificates created", self.certs_created));
         }
         if self.certs_cached > 0 {
-            println!("{} certificates cached", self.certs_cached);
+            lines.push(format!("{} certificates cached", self.certs_cached));
         }
         if self.certs_unused > 0 {
-            println!("{} certificates unused", self.certs_unused);
+            lines.push(format!("{} certificates unused", self.certs_unused));
         }
-        println!("{} searches performed", self.searches_total);
+        lines.push(format!("{} searches performed", self.searches_total));
         if self.searches_total > 0 {
             let success_percent = 100.0 * self.searches_success as f64 / self.searches_total as f64;
-            println!("{:.2}% search success rate", success_percent);
+            lines.push(format!("{:.2}% search success rate", success_percent));
             let num_activated = self.clauses_activated as f64 / self.searches_success as f64;
-            println!("{:.2} average activations", num_activated);
+            lines.push(format!("{:.2} average activations", num_activated));
             let mean_square_activated =
                 self.clauses_sum_square_activated as f64 / self.searches_total as f64;
-            println!("{:.1} mean square activations", mean_square_activated);
+            lines.push(format!(
+                "{:.1} mean square activations",
+                mean_square_activated
+            ));
             let num_clauses = self.clauses_total as f64 / self.searches_total as f64;
-            println!("{:.2} average clauses", num_clauses);
+            lines.push(format!("{:.2} average clauses", num_clauses));
             let search_time_ms = 1000.0 * self.search_time / self.searches_total as f64;
-            println!("{:.1} ms average search time", search_time_ms);
+            lines.push(format!("{:.1} ms average search time", search_time_ms));
         }
-        println!("{}/{} OK", self.goals_success, self.goals_total);
+        lines.push(format!("{}/{} OK", self.goals_success, self.goals_total));
+
+        lines
+    }
+
+    pub fn print(&self, status: BuildStatus) {
+        println!();
+        for line in self.info_lines() {
+            println!("{}", line);
+        }
         match status {
             BuildStatus::Error => {
                 println!("Compilation failed.");

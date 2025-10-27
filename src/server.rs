@@ -368,6 +368,9 @@ impl AcornLanguageServer {
                     seconds
                 ));
 
+                let lines = builder.metrics.info_lines().join(". ");
+                log(&lines);
+
                 // Return the build cache if successful
                 builder.into_build_cache()
             });
