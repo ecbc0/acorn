@@ -176,6 +176,8 @@ pub struct ImportStatement {
     /// What names to import from the module.
     /// This cannot be empty - must use "from foo import bar" syntax.
     pub names: Vec<Token>,
+
+    pub aliases: Vec<Option<Token>>,
 }
 
 /// An attributes statement defines additional attributes for a type or typeclass.
@@ -999,24 +1001,37 @@ fn parse_import_statement(keyword: Token, _tokens: &mut TokenIter) -> Result<Sta
 fn parse_from_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
     let (components, _) = parse_module_components(tokens, TokenType::Import)?;
     let mut names = vec![];
+    let mut aliases = vec![];
     let last_token = loop {
         let token = tokens.expect_type(TokenType::Identifier)?;
+        // check if the next token is `as`
+        let alias = if matches!(tokens.peek_type(), Some(TokenType::As)) {
+            tokens.next(); // consume the 'as' token
+            Some(tokens.expect_type(TokenType::Identifier)?)
+        } else {
+            None
+        };
         let separator = tokens.expect_token()?;
         match separator.token_type {
             TokenType::NewLine => {
                 names.push(token.clone());
+                aliases.push(alias);
                 break token;
             }
             TokenType::Comma => {
-                names.push(token);
+                names.push(token.clone());
+                aliases.push(alias);
                 continue;
             }
             _ => {
-                return Err(token.error("expected comma or newline"));
+                match alias {
+                    Some(token) => return Err(token.error("expected comma or newline")),
+                    None => return Err(token.error("expected comma or newline or as"))
+                };
             }
         }
     };
-    let is = ImportStatement { components, names };
+    let is = ImportStatement { components, names, aliases };
     let statement = Statement {
         first_token: keyword,
         last_token,

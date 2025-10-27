@@ -32,6 +32,10 @@
       "name": "keyword.import"
     },
     {
+      "match": "\\bas\\b",
+      "name": "keyword.as"
+    },
+    {
       "match": "\\bfrom\\b",
       "name": "keyword.from"
     },
