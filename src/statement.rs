@@ -7,6 +7,8 @@ use crate::token::{Token, TokenIter, TokenType};
 use pretty::{DocAllocator, DocBuilder, Pretty};
 use std::fmt;
 
+const PRINT_WIDTH: usize = 60;
+
 pub struct Body {
     pub left_brace: Token,
     pub statements: Vec<Statement>,
@@ -220,7 +222,7 @@ impl fmt::Display for TypeclassCondition {
         let allocator = pretty::Arena::<()>::new();
         let doc = self.pretty_ref(&allocator, false);
         // Break lines really aggressively
-        doc.render_fmt(1, f)?;
+        doc.render_fmt(PRINT_WIDTH, f)?;
         Ok(())
     }
 }
@@ -338,7 +340,7 @@ impl fmt::Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let allocator = pretty::Arena::<()>::new();
         let doc = self.pretty_ref(&allocator, allocator.nil());
-        doc.render_fmt(1, f)?;
+        doc.render_fmt(PRINT_WIDTH, f)?;
         Ok(())
     }
 }
@@ -1573,12 +1575,12 @@ impl Statement {
                     .append(allocator.text(" satisfy {"))
                     .append(
                         allocator
-                            .line()
+                            .hardline()
                             .nest(4)
                             .append(fss.condition.pretty_ref(allocator, false))
                             .nest(4),
                     )
-                    .append(allocator.line())
+                    .append(allocator.hardline())
                     .append(allocator.text("}"));
                 if let Some(body) = &fss.body {
                     doc = doc.append(allocator.text(" by"));
