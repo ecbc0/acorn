@@ -146,9 +146,15 @@
       <br />
     {:else if selectionResponse.steps.length === 0}
       Trivial.
+      <br />
     {:else}
       <div class="block">
         <br />
+        The detailed proof has {pluralize(
+          selectionResponse.steps.length,
+          "step"
+        )}:
+        <br /><br />
         <table>
           <tr>
             <th>Statement</th>
@@ -159,7 +165,7 @@
               <td>{step.statement}</td>
               <td>
                 {#if step.location !== null}
-                  from <span
+                  <span
                     class="preview-link"
                     on:click={() => {
                       if (step.location !== null) {
@@ -168,7 +174,7 @@
                     }}>{step.reason}</span
                   >
                 {:else}
-                  by <span>{step.reason}</span>
+                  <span>{step.reason}</span>
                 {/if}
               </td>
             </tr>
@@ -301,5 +307,31 @@
 
   .preview-link:hover {
     text-decoration: underline;
+  }
+
+  table {
+    width: 100%;
+    table-layout: fixed;
+    border-spacing: 0;
+  }
+
+  th:first-child,
+  td:first-child {
+    width: 66.66%;
+  }
+
+  th:last-child,
+  td:last-child {
+    width: 33.33%;
+  }
+
+  td {
+    padding-top: 0.5em;
+    padding-bottom: 0.5em;
+  }
+
+  th {
+    padding-bottom: 0.5em;
+    text-align: left;
   }
 </style>

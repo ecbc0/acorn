@@ -1217,9 +1217,12 @@ impl Project {
                                 });
                             (source.description(), location)
                         }
-                        StepReason::SyntheticDefinition => ("definition".to_string(), None),
+                        StepReason::SyntheticDefinition => {
+                            ("synthetic definition".to_string(), None)
+                        }
                         StepReason::Contradiction => ("ex falso".to_string(), None),
-                        StepReason::Missing => ("missing".to_string(), None),
+                        StepReason::PreviousClaim => ("previous claim".to_string(), None),
+                        StepReason::Testing => ("testing".to_string(), None),
                     };
 
                     crate::interfaces::Step {

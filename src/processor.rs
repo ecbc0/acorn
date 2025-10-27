@@ -71,7 +71,14 @@ impl Processor {
         let source = &goal.proposition.source;
         let (ng, steps) = self.normalizer.normalize_goal(goal)?;
         for step in &steps {
-            self.checker.insert_clause(&step.clause, Some(source));
+            // Use the step's own source if it's an assumption (which includes negated goals),
+            // otherwise use the goal's source
+            let step_source = if let crate::proof_step::Rule::Assumption(info) = &step.rule {
+                &info.source
+            } else {
+                source
+            };
+            self.checker.insert_clause(&step.clause, Some(step_source));
         }
         self.prover.set_goal(ng, steps);
         Ok(())
@@ -116,7 +123,14 @@ impl Processor {
             let source = &goal.proposition.source;
             let (_, steps) = normalizer.normalize_goal(goal).map_err(|e| e.message)?;
             for step in &steps {
-                checker.insert_clause(&step.clause, Some(source));
+                // Use the step's own source if it's an assumption (which includes negated goals),
+                // otherwise use the goal's source
+                let step_source = if let crate::proof_step::Rule::Assumption(info) = &step.rule {
+                    &info.source
+                } else {
+                    source
+                };
+                checker.insert_clause(&step.clause, Some(step_source));
             }
         }
 

@@ -40,9 +40,11 @@ pub enum StepReason {
     /// The checker already had a contradiction, so everything is trivially true.
     Contradiction,
 
-    /// The reason is missing from our reason-tracking data structure.
-    /// This indicates a bug, if we ever run into it.
-    Missing,
+    /// A claim statement from a previous certificate step.
+    PreviousClaim,
+
+    /// A clause inserted during testing.
+    Testing,
 }
 
 /// Information about a single step in a certificate proof.
@@ -86,9 +88,8 @@ pub struct Checker {
     /// reduction can create cycles.
     past_boolean_reductions: HashSet<Clause>,
 
-    /// Maps step_id to source for clauses that came from assumptions.
-    /// Used to provide source info when a clause is proven via specialization.
-    step_sources: HashMap<usize, Source>,
+    /// Maps step_id to reason for all inserted clauses.
+    step_reasons: HashMap<usize, StepReason>,
 }
 
 impl Checker {
@@ -101,7 +102,7 @@ impl Checker {
             verbose: false,
             insertions: Vec::new(),
             past_boolean_reductions: HashSet::new(),
-            step_sources: HashMap::new(),
+            step_reasons: HashMap::new(),
         }
     }
 
@@ -127,9 +128,10 @@ impl Checker {
         let step_id = self.next_step_id;
         self.next_step_id += 1;
 
-        // Track the source for this step, if we have one
+        // Track the reason for this step
         if let Some(source) = source {
-            self.step_sources.insert(step_id, source.clone());
+            self.step_reasons
+                .insert(step_id, StepReason::Specialization(source.clone()));
         }
 
         if clause.has_any_variable() {
@@ -171,6 +173,62 @@ impl Checker {
         }
     }
 
+    /// Adds a true clause to the checker with a specific reason.
+    /// Use this for clauses that don't have a source location.
+    pub fn insert_clause_with_reason(&mut self, clause: &Clause, reason: StepReason) {
+        if self.verbose {
+            self.insertions.push(clause.to_string());
+        }
+
+        if clause.is_impossible() {
+            self.direct_contradiction = true;
+            return;
+        }
+
+        let step_id = self.next_step_id;
+        self.next_step_id += 1;
+
+        // Track the reason for this step
+        self.step_reasons.insert(step_id, reason);
+
+        if clause.has_any_variable() {
+            // The clause has free variables, so it can be a generalization.
+            Arc::make_mut(&mut self.generalization_set).insert(clause.clone(), step_id);
+
+            // We only need to do equality resolution for clauses with free variables,
+            // because resolvable concrete literals would already have been simplified out.
+            for resolution in clause.equality_resolutions() {
+                self.insert_clause_with_reason(&resolution, StepReason::PreviousClaim);
+            }
+
+            if let Some(extensionality) = clause.find_extensionality() {
+                let clause = Clause::new(extensionality);
+                self.insert_clause_with_reason(&clause, StepReason::PreviousClaim);
+            }
+        } else {
+            // The clause is concrete.
+            self.term_graph.insert_clause(clause, StepId(step_id));
+        }
+
+        for factoring in clause.equality_factorings() {
+            self.insert_clause_with_reason(&factoring, StepReason::PreviousClaim);
+        }
+
+        for injectivity in clause.injectivities() {
+            self.insert_clause_with_reason(&injectivity, StepReason::PreviousClaim);
+        }
+
+        for boolean_reduction in clause.boolean_reductions() {
+            // Guard against infinite loops
+            if self.past_boolean_reductions.contains(&boolean_reduction) {
+                continue;
+            }
+            self.past_boolean_reductions
+                .insert(boolean_reduction.clone());
+            self.insert_clause_with_reason(&boolean_reduction, StepReason::PreviousClaim);
+        }
+    }
+
     /// Checks if a clause is known to be true, and returns the reason if so.
     /// Returns None if the clause cannot be proven.
     pub fn check_clause(&mut self, clause: &Clause) -> Option<StepReason> {
@@ -185,14 +243,15 @@ impl Checker {
 
         // If not found in term graph, check if there's a generalization in the clause set
         if let Some(step_id) = self.generalization_set.find_generalization(clause.clone()) {
-            // Look up the source for this step_id
-            if let Some(source) = self.step_sources.get(&step_id).cloned() {
-                return Some(StepReason::Specialization(source));
-            } else {
-                // We found a generalization but don't have source info for it.
-                // This can happen for clauses that weren't assumptions from the environment.
-                return Some(StepReason::Missing);
+            // Every generalization should have a reason tracked
+            if let Some(reason) = self.step_reasons.get(&step_id).cloned() {
+                return Some(reason);
             }
+            // This should not happen - every generalization should have a reason
+            panic!(
+                "Found generalization with step_id {} but no reason tracked",
+                step_id
+            );
         }
 
         if self.verbose {
@@ -335,7 +394,7 @@ impl Checker {
                     let mut view = NormalizerView::Ref(&normalizer);
                     let clauses = view.nice_value_to_clauses(&value, &mut vec![])?;
                     for clause in clauses {
-                        self.insert_clause(&clause, None);
+                        self.insert_clause_with_reason(&clause, StepReason::SyntheticDefinition);
                     }
                 }
 
@@ -392,7 +451,7 @@ impl Checker {
                         }
                     }
                     clause.normalize();
-                    self.insert_clause(&clause, None);
+                    self.insert_clause_with_reason(&clause, StepReason::PreviousClaim);
                 }
 
                 // Record the certificate step with the reason we found
@@ -450,7 +509,7 @@ impl Checker {
         let mut checker = Checker::new();
         for clause_str in clauses {
             let clause = Clause::parse(clause_str);
-            checker.insert_clause(&clause, None);
+            checker.insert_clause_with_reason(&clause, StepReason::Testing);
         }
         checker
     }
