@@ -1460,6 +1460,7 @@ impl BindingMap {
         project: &Project,
         module: ModuleId,
         name_token: &Token,
+        alias_token: &Option<Token>
     ) -> compilation::Result<NamedEntity> {
         // Check if this name is lowercase
         let name = name_token.text();
@@ -1481,6 +1482,8 @@ impl BindingMap {
             &Stack::new(),
             None,
         )?;
+
+        let name = alias_token.as_ref().map_or(name, |token| token.text());
 
         match &entity {
             NamedEntity::Value(value) => {
