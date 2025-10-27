@@ -218,7 +218,7 @@ impl fmt::Display for TypeclassCondition {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // Use the pretty-printing logic with a narrow width for mobile-friendly docs
         let allocator = pretty::Arena::<()>::new();
-        let doc = self.pretty_ref(&allocator);
+        let doc = self.pretty_ref(&allocator, false);
         // Break lines really aggressively
         doc.render_fmt(1, f)?;
         Ok(())
@@ -231,12 +231,12 @@ where
     D: DocAllocator<'a, A>,
 {
     fn pretty(self, allocator: &'a D) -> DocBuilder<'a, D, A> {
-        self.pretty_ref(allocator)
+        self.pretty_ref(allocator, false)
     }
 }
 
 impl TypeclassCondition {
-    fn pretty_ref<'a, D, A>(&'a self, allocator: &'a D) -> DocBuilder<'a, D, A>
+    fn pretty_ref<'a, D, A>(&'a self, allocator: &'a D, _flat: bool) -> DocBuilder<'a, D, A>
     where
         A: 'a,
         D: DocAllocator<'a, A>,
@@ -336,10 +336,8 @@ pub enum StatementInfo {
 
 impl fmt::Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // Use the pretty-printing logic with a narrow width for mobile-friendly docs
         let allocator = pretty::Arena::<()>::new();
         let doc = self.pretty_ref(&allocator, allocator.nil());
-        // Break lines really aggressively
         doc.render_fmt(1, f)?;
         Ok(())
     }
@@ -1472,12 +1470,12 @@ impl Statement {
                 match &ls.type_expr {
                     Some(type_expr) => doc
                         .append(allocator.text(": "))
-                        .append(type_expr.pretty_ref(allocator))
+                        .append(type_expr.pretty_ref(allocator, false))
                         .append(allocator.text(" = "))
-                        .append(ls.value.pretty_ref(allocator)),
+                        .append(ls.value.pretty_ref(allocator, false)),
                     None => doc
                         .append(allocator.text(" = "))
-                        .append(ls.value.pretty_ref(allocator)),
+                        .append(ls.value.pretty_ref(allocator, false)),
                 }
             }
 
@@ -1488,12 +1486,12 @@ impl Statement {
                 doc = write_type_params_pretty(allocator, doc, &ds.type_params);
                 doc = write_args_pretty(allocator, doc, &ds.args);
                 doc.append(allocator.text(" -> "))
-                    .append(ds.return_type.pretty_ref(allocator))
+                    .append(ds.return_type.pretty_ref(allocator, false))
                     .append(allocator.text(" {"))
                     .append(
                         allocator
                             .hardline()
-                            .append(ds.return_value.pretty_ref(allocator))
+                            .append(ds.return_value.pretty_ref(allocator, false))
                             .nest(4),
                     )
                     .append(allocator.hardline())
@@ -1519,13 +1517,13 @@ impl Statement {
                 doc
             }
 
-            StatementInfo::Claim(ps) => ps.claim.pretty_ref(allocator),
+            StatementInfo::Claim(ps) => ps.claim.pretty_ref(allocator, false),
 
             StatementInfo::Type(ts) => allocator
                 .text("type ")
                 .append(allocator.text(ts.name_token.text()))
                 .append(allocator.text(": "))
-                .append(ts.type_expr.pretty_ref(allocator)),
+                .append(ts.type_expr.pretty_ref(allocator, false)),
 
             StatementInfo::ForAll(fas) => {
                 let mut doc = allocator.text("forall");
@@ -1536,7 +1534,7 @@ impl Statement {
             StatementInfo::If(is) => {
                 let mut doc = allocator
                     .text("if ")
-                    .append(is.condition.pretty_ref(allocator));
+                    .append(is.condition.pretty_ref(allocator, false));
                 doc = write_block_pretty(allocator, doc, &is.body.statements);
                 if let Some(else_body) = &is.else_body {
                     doc = doc.append(allocator.text(" else"));
@@ -1548,7 +1546,7 @@ impl Statement {
             StatementInfo::VariableSatisfy(vss) => {
                 let mut doc = allocator.text("let ");
                 if vss.declarations.len() == 1 {
-                    doc = doc.append(vss.declarations[0].pretty_ref(allocator));
+                    doc = doc.append(vss.declarations[0].pretty_ref(allocator, false));
                 } else {
                     doc = write_args_pretty(allocator, doc, &vss.declarations);
                 }
@@ -1556,7 +1554,7 @@ impl Statement {
                     .append(
                         allocator
                             .hardline()
-                            .append(vss.condition.pretty_ref(allocator))
+                            .append(vss.condition.pretty_ref(allocator, false))
                             .nest(4),
                     )
                     .append(allocator.hardline())
@@ -1571,13 +1569,13 @@ impl Statement {
                 doc = write_args_pretty(allocator, doc, &fss.declarations[..i]);
                 doc = doc
                     .append(allocator.text(" -> "))
-                    .append(fss.declarations[i].pretty_ref(allocator))
+                    .append(fss.declarations[i].pretty_ref(allocator, false))
                     .append(allocator.text(" satisfy {"))
                     .append(
                         allocator
                             .line()
                             .nest(4)
-                            .append(fss.condition.pretty_ref(allocator))
+                            .append(fss.condition.pretty_ref(allocator, false))
                             .nest(4),
                     )
                     .append(allocator.line())
@@ -1601,7 +1599,7 @@ impl Statement {
                         .append(allocator.hardline())
                         .append(allocator.text(name.text()))
                         .append(allocator.text(": "))
-                        .append(type_expr.pretty_ref(allocator));
+                        .append(type_expr.pretty_ref(allocator, false));
                 }
                 doc = doc
                     .append(fields_inner.nest(4))
@@ -1613,7 +1611,7 @@ impl Statement {
                         .append(
                             allocator
                                 .hardline()
-                                .append(constraint.pretty_ref(allocator))
+                                .append(constraint.pretty_ref(allocator, false))
                                 .nest(4),
                         )
                         .append(allocator.hardline())
@@ -1638,7 +1636,7 @@ impl Statement {
                         .append(allocator.hardline())
                         .append(allocator.text(name.text()));
                     if let Some(te) = type_expr {
-                        inner = inner.append(te.pretty_ref(allocator));
+                        inner = inner.append(te.pretty_ref(allocator, false));
                     }
                 }
                 doc.append(inner.nest(4))
@@ -1694,7 +1692,7 @@ impl Statement {
 
             StatementInfo::Numerals(ds) => allocator
                 .text("default ")
-                .append(ds.type_expr.pretty_ref(allocator)),
+                .append(ds.type_expr.pretty_ref(allocator, false)),
 
             StatementInfo::Problem(body) => {
                 let doc = allocator.text("problem");
@@ -1709,13 +1707,13 @@ impl Statement {
             StatementInfo::Match(ms) => {
                 let doc = allocator
                     .text("match ")
-                    .append(ms.scrutinee.pretty_ref(allocator))
+                    .append(ms.scrutinee.pretty_ref(allocator, false))
                     .append(allocator.text(" {"));
                 let mut inner = allocator.nil();
                 for (pattern, body) in &ms.cases {
                     inner = inner
                         .append(allocator.hardline())
-                        .append(pattern.pretty_ref(allocator));
+                        .append(pattern.pretty_ref(allocator, false));
                     inner = write_block_pretty(allocator, inner, &body.statements);
                 }
                 doc.append(inner.nest(4))
@@ -1739,7 +1737,7 @@ impl Statement {
                         if i > 0 {
                             doc = doc.append(allocator.text(", "));
                         }
-                        doc = doc.append(typeclass.pretty_ref(allocator));
+                        doc = doc.append(typeclass.pretty_ref(allocator, false));
                     }
                 }
                 if !ts.constants.is_empty() || !ts.conditions.is_empty() {
@@ -1750,12 +1748,12 @@ impl Statement {
                             .append(allocator.hardline())
                             .append(allocator.text(name.text()))
                             .append(allocator.text(": "))
-                            .append(type_expr.pretty_ref(allocator));
+                            .append(type_expr.pretty_ref(allocator, false));
                     }
                     for theorem in &ts.conditions {
                         inner = inner
                             .append(allocator.hardline())
-                            .append(theorem.pretty_ref(allocator));
+                            .append(theorem.pretty_ref(allocator, false));
                     }
                     doc = doc
                         .append(inner.nest(4))
@@ -1770,7 +1768,7 @@ impl Statement {
                     .text("instance ")
                     .append(allocator.text(is.type_name.text()))
                     .append(allocator.text(": "))
-                    .append(is.typeclass.pretty_ref(allocator));
+                    .append(is.typeclass.pretty_ref(allocator, false));
                 if let Some(definitions) = &is.definitions {
                     doc = write_block_pretty(allocator, doc, &definitions.statements);
                 }
@@ -1801,7 +1799,7 @@ where
         if i > 0 {
             result = result.append(allocator.text(", "));
         }
-        result = result.append(param.pretty_ref(allocator));
+        result = result.append(param.pretty_ref(allocator, false));
     }
     result.append(allocator.text("]"))
 }
@@ -1823,7 +1821,7 @@ where
         if i > 0 {
             result = result.append(allocator.text(", "));
         }
-        result = result.append(arg.pretty_ref(allocator));
+        result = result.append(arg.pretty_ref(allocator, false));
     }
     result.append(allocator.text(")"))
 }
@@ -1846,7 +1844,7 @@ where
         .append(
             allocator
                 .hardline()
-                .append(claim.pretty_ref(allocator))
+                .append(claim.pretty_ref(allocator, false))
                 .nest(4),
         )
         .append(allocator.hardline())
@@ -1875,7 +1873,7 @@ where
 }
 
 impl TypeParamExpr {
-    fn pretty_ref<'a, D, A>(&'a self, allocator: &'a D) -> DocBuilder<'a, D, A>
+    fn pretty_ref<'a, D, A>(&'a self, allocator: &'a D, flat: bool) -> DocBuilder<'a, D, A>
     where
         A: 'a,
         D: DocAllocator<'a, A>,
@@ -1885,7 +1883,7 @@ impl TypeParamExpr {
             Some(typeclass) => allocator
                 .text(self.name.text())
                 .append(allocator.text(": "))
-                .append(typeclass.pretty_ref(allocator)),
+                .append(typeclass.pretty_ref(allocator, flat)),
         }
     }
 }

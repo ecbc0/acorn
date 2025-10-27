@@ -74,9 +74,9 @@ pub enum Expression {
 
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // Use the pretty-printing logic with infinite width to force everything on one line
+        // Use the pretty-printing logic in flat mode to force everything on one line
         let allocator = pretty::Arena::<()>::new();
-        let doc = self.pretty_ref(&allocator);
+        let doc = self.pretty_ref(&allocator, true);
         // Use render_fmt with a very large width to ensure no line breaks
         doc.render_fmt(usize::MAX, f)?;
         Ok(())
@@ -1192,33 +1192,40 @@ where
     D: DocAllocator<'a, A>,
 {
     fn pretty(self, allocator: &'a D) -> DocBuilder<'a, D, A> {
-        self.pretty_ref(allocator)
+        self.pretty_ref(allocator, false)
     }
 }
 
 impl Expression {
-    pub fn pretty_ref<'a, D, A>(&'a self, allocator: &'a D) -> DocBuilder<'a, D, A>
+    pub fn pretty_ref<'a, D, A>(&'a self, allocator: &'a D, flat: bool) -> DocBuilder<'a, D, A>
     where
         A: 'a,
         D: DocAllocator<'a, A>,
     {
+        let line = || {
+            if flat {
+                allocator.space()
+            } else {
+                allocator.hardline()
+            }
+        };
         match self {
             Expression::Singleton(token) => allocator.text(token.text()),
             Expression::Unary(token, subexpression) => {
                 if token.token_type == TokenType::Minus {
                     allocator
                         .text(token.text())
-                        .append(subexpression.pretty_ref(allocator))
+                        .append(subexpression.pretty_ref(allocator, flat))
                 } else {
                     allocator
                         .text(token.text())
                         .append(allocator.space())
-                        .append(subexpression.pretty_ref(allocator))
+                        .append(subexpression.pretty_ref(allocator, flat))
                 }
             }
             Expression::Binary(left, token, right) => {
-                let left_doc = left.pretty_ref(allocator);
-                let right_doc = right.pretty_ref(allocator);
+                let left_doc = left.pretty_ref(allocator, flat);
+                let right_doc = right.pretty_ref(allocator, flat);
 
                 if token.token_type.left_space() {
                     left_doc
@@ -1235,27 +1242,26 @@ impl Expression {
                 .append(right_doc)
             }
             Expression::Concatenation(left, right) => left
-                .pretty_ref(allocator)
-                .append(right.pretty_ref(allocator)),
+                .pretty_ref(allocator, flat)
+                .append(right.pretty_ref(allocator, flat)),
             Expression::Grouping(left, e, right) => allocator
                 .text(left.text())
-                .append(e.pretty_ref(allocator))
+                .append(e.pretty_ref(allocator, flat))
                 .append(allocator.text(right.text())),
             Expression::Binder(token, args, sub, _) => {
-                let args_doc = self.pretty_args(allocator, args);
+                let args_doc = self.pretty_args(allocator, args, flat);
                 allocator
                     .text(token.text())
                     .append(args_doc)
                     .append(allocator.space())
                     .append(allocator.text("{"))
                     .append(
-                        allocator
-                            .line()
+                        line()
                             .nest(4)
-                            .append(sub.pretty_ref(allocator))
+                            .append(sub.pretty_ref(allocator, flat))
                             .nest(4),
                     )
-                    .append(allocator.line())
+                    .append(line())
                     .append(allocator.text("}"))
                     .group()
             }
@@ -1263,17 +1269,16 @@ impl Expression {
                 let if_doc = allocator
                     .text("if")
                     .append(allocator.space())
-                    .append(cond.pretty_ref(allocator))
+                    .append(cond.pretty_ref(allocator, flat))
                     .append(allocator.space())
                     .append(allocator.text("{"))
                     .append(
-                        allocator
-                            .line()
+                        line()
                             .nest(4)
-                            .append(if_block.pretty_ref(allocator))
+                            .append(if_block.pretty_ref(allocator, flat))
                             .nest(4),
                     )
-                    .append(allocator.line())
+                    .append(line())
                     .append(allocator.text("}"));
 
                 match else_block {
@@ -1283,13 +1288,12 @@ impl Expression {
                         .append(allocator.space())
                         .append(allocator.text("{"))
                         .append(
-                            allocator
-                                .line()
+                            line()
                                 .nest(4)
-                                .append(else_expr.pretty_ref(allocator))
+                                .append(else_expr.pretty_ref(allocator, flat))
                                 .nest(4),
                         )
-                        .append(allocator.line())
+                        .append(line())
                         .append(allocator.text("}")),
                     None => if_doc,
                 }
@@ -1299,24 +1303,24 @@ impl Expression {
                 let doc = allocator
                     .text("match")
                     .append(allocator.space())
-                    .append(scrutinee.pretty_ref(allocator))
+                    .append(scrutinee.pretty_ref(allocator, flat))
                     .append(allocator.space())
                     .append(allocator.text("{"));
 
                 let mut cases_doc = allocator.nil();
                 for (pat, exp) in cases {
                     cases_doc = cases_doc
-                        .append(allocator.line())
-                        .append(pat.pretty_ref(allocator))
+                        .append(line())
+                        .append(pat.pretty_ref(allocator, flat))
                         .append(allocator.space())
                         .append(allocator.text("{"))
-                        .append(allocator.line().append(exp.pretty_ref(allocator)).nest(4))
-                        .append(allocator.line())
+                        .append(line().append(exp.pretty_ref(allocator, flat)).nest(4))
+                        .append(line())
                         .append(allocator.text("}"));
                 }
 
                 doc.append(cases_doc.nest(4))
-                    .append(allocator.line())
+                    .append(line())
                     .append(allocator.text("}"))
                     .group()
             }
@@ -1327,6 +1331,7 @@ impl Expression {
         &'a self,
         allocator: &'a D,
         args: &'a [Declaration],
+        flat: bool,
     ) -> DocBuilder<'a, D, A>
     where
         A: 'a,
@@ -1337,14 +1342,14 @@ impl Expression {
             if i > 0 {
                 doc = doc.append(allocator.text(", "));
             }
-            doc = doc.append(arg.pretty_ref(allocator));
+            doc = doc.append(arg.pretty_ref(allocator, flat));
         }
         doc.append(allocator.text(")"))
     }
 }
 
 impl Declaration {
-    pub fn pretty_ref<'a, D, A>(&'a self, allocator: &'a D) -> DocBuilder<'a, D, A>
+    pub fn pretty_ref<'a, D, A>(&'a self, allocator: &'a D, flat: bool) -> DocBuilder<'a, D, A>
     where
         A: 'a,
         D: DocAllocator<'a, A>,
@@ -1353,7 +1358,7 @@ impl Declaration {
             Declaration::Typed(name_token, type_expr) => allocator
                 .text(name_token.text())
                 .append(allocator.text(": "))
-                .append(type_expr.pretty_ref(allocator)),
+                .append(type_expr.pretty_ref(allocator, flat)),
             Declaration::SelfToken(token) => allocator.text(token.text()),
         }
     }
