@@ -1913,7 +1913,7 @@ impl Environment {
                 .evaluator(project)
                 .evaluate_potential_type(&ts.type_expr)?;
             self.bindings
-                .add_type_alias(ts.name_token.text(), potential);
+                .add_type_alias(ts.name_token.text(), potential, &ts.name_token)?;
         };
         Ok(())
     }

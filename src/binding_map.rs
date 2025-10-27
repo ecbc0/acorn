@@ -99,7 +99,14 @@ impl BindingMap {
             instance_attr_defs: HashMap::new(),
             datatype_defs: HashMap::new(),
         };
-        answer.add_type_alias("Bool", PotentialType::Resolved(AcornType::Bool));
+        let dummy_token = Token::empty();
+        answer
+            .add_type_alias(
+                "Bool",
+                PotentialType::Resolved(AcornType::Bool),
+                &dummy_token,
+            )
+            .expect("Bool type should not already be bound");
         answer
     }
 
@@ -526,8 +533,13 @@ impl BindingMap {
     }
 
     /// Adds both directions for a name iff type correspondence.
-    /// Panics if the name is already bound.
-    fn insert_type_name(&mut self, name: String, potential_type: PotentialType) {
+    /// Returns an error if the name is already bound.
+    fn insert_type_name(
+        &mut self,
+        name: String,
+        potential_type: PotentialType,
+        source: &dyn ErrorSource,
+    ) -> compilation::Result<()> {
         // There can be multiple names for a type.
         // If we already have a name for the reverse lookup, we don't overwrite it.
         if !self.type_to_typename.contains_key(&potential_type) {
@@ -535,12 +547,13 @@ impl BindingMap {
                 .insert(potential_type.clone(), name.clone());
         }
 
-        match self.typename_to_type.entry(name) {
+        match self.typename_to_type.entry(name.clone()) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(potential_type);
+                Ok(())
             }
-            std::collections::btree_map::Entry::Occupied(entry) => {
-                panic!("typename {} already bound", entry.key());
+            std::collections::btree_map::Entry::Occupied(_) => {
+                Err(source.error(&format!("typename {} already bound", name)))
             }
         }
     }
@@ -567,7 +580,13 @@ impl BindingMap {
         info.range = range;
         info.definition_string = definition_string;
         let t = AcornType::Data(datatype, vec![]);
-        self.insert_type_name(name.to_string(), PotentialType::Resolved(t.clone()));
+        let dummy_token = Token::empty();
+        self.insert_type_name(
+            name.to_string(),
+            PotentialType::Resolved(t.clone()),
+            &dummy_token,
+        )
+        .expect("typename should not already be bound");
         t
     }
 
@@ -602,7 +621,9 @@ impl BindingMap {
         info.definition_string = definition_string;
         let ut = UnresolvedType { datatype, params };
         let potential = PotentialType::Unresolved(ut);
-        self.insert_type_name(name.to_string(), potential.clone());
+        let dummy_token = Token::empty();
+        self.insert_type_name(name.to_string(), potential.clone(), &dummy_token)
+            .expect("typename should not already be bound");
         potential
     }
 
@@ -613,15 +634,22 @@ impl BindingMap {
         let name = param.name.to_string();
         let arbitrary_type = AcornType::Arbitrary(param);
         let potential = PotentialType::Resolved(arbitrary_type.clone());
-        self.insert_type_name(name, potential);
+        let dummy_token = Token::empty();
+        self.insert_type_name(name, potential, &dummy_token)
+            .expect("typename should not already be bound");
         arbitrary_type
     }
 
     /// Adds a new type name that's an alias for an existing type.
     /// Bindings are the bindings that we are importing the type from.
     /// If the alias is a local one, bindings is None.
-    /// Panics if the alias is already bound.
-    pub fn add_type_alias(&mut self, alias: &str, potential: PotentialType) {
+    /// Returns an error if the alias is already bound.
+    pub fn add_type_alias(
+        &mut self,
+        alias: &str,
+        potential: PotentialType,
+        source: &dyn ErrorSource,
+    ) -> compilation::Result<()> {
         // Local type aliases for concrete types should be preferred.
         if let PotentialType::Resolved(AcornType::Data(datatype, params)) = &potential {
             if params.is_empty() {
@@ -635,7 +663,7 @@ impl BindingMap {
             self.add_datatype_alias(&u.datatype, alias);
         }
 
-        self.insert_type_name(alias.to_string(), potential);
+        self.insert_type_name(alias.to_string(), potential, source)
     }
 
     /// Adds a newly-defined typeclass to this environment.
@@ -1466,7 +1494,11 @@ impl BindingMap {
                 }
             }
             NamedEntity::Type(acorn_type) => {
-                self.add_type_alias(&name, PotentialType::Resolved(acorn_type.clone()));
+                self.add_type_alias(
+                    &name,
+                    PotentialType::Resolved(acorn_type.clone()),
+                    name_token,
+                )?;
                 Ok(entity)
             }
             NamedEntity::Module(_) => Err(name_token.error("cannot import modules indirectly")),
@@ -1487,7 +1519,7 @@ impl BindingMap {
             }
 
             NamedEntity::UnresolvedType(u) => {
-                self.add_type_alias(&name, PotentialType::Unresolved(u.clone()));
+                self.add_type_alias(&name, PotentialType::Unresolved(u.clone()), name_token)?;
                 Ok(entity)
             }
         }

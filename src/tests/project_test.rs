@@ -562,6 +562,28 @@ fn test_importing_define_attr_conflict() {
 }
 
 #[test]
+fn test_double_import() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/foo.ac",
+        r#"
+        inductive Foo {
+            foo
+        }
+        "#,
+    );
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        from foo import Foo
+        from foo import Foo
+        "#,
+    );
+    p.expect_ok("foo");
+    p.expect_module_err("main");
+}
+
+#[test]
 fn test_diamond_attribute_conflict() {
     // bar and baz are both all right on their own, but they conflict with each other.
     let mut p = Project::new_mock();
