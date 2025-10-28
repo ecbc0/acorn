@@ -78,12 +78,6 @@ pub struct Checker {
     /// Whether a contradiction was directly inserted into the checker.
     direct_contradiction: bool,
 
-    /// Whether to track clause insertions in verbose mode.
-    verbose: bool,
-
-    /// Stringified versions of inserted clauses when verbose is true.
-    insertions: Vec<String>,
-
     /// A hack, but we need to break out of loops, since equality factoring and boolean
     /// reduction can create cycles.
     past_boolean_reductions: HashSet<Clause>,
@@ -99,25 +93,13 @@ impl Checker {
             generalization_set: Arc::new(GeneralizationSet::new()),
             next_step_id: 0,
             direct_contradiction: false,
-            verbose: false,
-            insertions: Vec::new(),
             past_boolean_reductions: HashSet::new(),
             step_reasons: HashMap::new(),
         }
     }
 
-    pub fn new_verbose() -> Self {
-        let mut c = Checker::new();
-        c.verbose = true;
-        c
-    }
-
     /// Adds a true clause to the checker with a specific reason.
     pub fn insert_clause(&mut self, clause: &Clause, reason: StepReason) {
-        if self.verbose {
-            self.insertions.push(clause.to_string());
-        }
-
         if clause.is_impossible() {
             self.direct_contradiction = true;
             return;
@@ -190,15 +172,6 @@ impl Checker {
                 "Found generalization with step_id {} but no reason tracked",
                 step_id
             );
-        }
-
-        if self.verbose {
-            println!("With Checker::with_clauses(&[");
-            for insertion in &self.insertions {
-                println!("    \"{}\",", insertion);
-            }
-            println!("]);");
-            println!("Failed check: \"{}\"", clause);
         }
 
         None
