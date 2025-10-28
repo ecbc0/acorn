@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::acorn_type::AcornType;
@@ -73,8 +73,6 @@ pub struct Checker {
     /// For looking up specializations of clauses with free variables.
     generalization_set: Arc<GeneralizationSet>,
 
-    next_step_id: usize,
-
     /// Whether a contradiction was directly inserted into the checker.
     direct_contradiction: bool,
 
@@ -82,8 +80,8 @@ pub struct Checker {
     /// reduction can create cycles.
     past_boolean_reductions: HashSet<Clause>,
 
-    /// Maps step_id to reason for all inserted clauses.
-    step_reasons: HashMap<usize, StepReason>,
+    /// The reason for each step. The step_id is the index in this vector.
+    step_reasons: Vec<StepReason>,
 }
 
 impl Checker {
@@ -91,10 +89,9 @@ impl Checker {
         Checker {
             term_graph: TermGraph::new(),
             generalization_set: Arc::new(GeneralizationSet::new()),
-            next_step_id: 0,
             direct_contradiction: false,
             past_boolean_reductions: HashSet::new(),
-            step_reasons: HashMap::new(),
+            step_reasons: Vec::new(),
         }
     }
 
@@ -105,8 +102,8 @@ impl Checker {
             return;
         }
 
-        let step_id = self.next_step_id;
-        self.next_step_id += 1;
+        let step_id = self.step_reasons.len();
+        self.step_reasons.push(reason.clone());
 
         if clause.has_any_variable() {
             // The clause has free variables, so it can be a generalization.
@@ -144,9 +141,6 @@ impl Checker {
                 .insert(boolean_reduction.clone());
             self.insert_clause(&boolean_reduction, reason.clone());
         }
-
-        // Track the reason for this step
-        self.step_reasons.insert(step_id, reason);
     }
 
     /// Checks if a clause is known to be true, and returns the reason if so.
@@ -163,15 +157,7 @@ impl Checker {
 
         // If not found in term graph, check if there's a generalization in the clause set
         if let Some(step_id) = self.generalization_set.find_generalization(clause.clone()) {
-            // Every generalization should have a reason tracked
-            if let Some(reason) = self.step_reasons.get(&step_id).cloned() {
-                return Some(reason);
-            }
-            // This should not happen - every generalization should have a reason
-            panic!(
-                "Found generalization with step_id {} but no reason tracked",
-                step_id
-            );
+            return Some(self.step_reasons[step_id].clone());
         }
 
         None
