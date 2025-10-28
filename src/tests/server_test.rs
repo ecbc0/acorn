@@ -377,3 +377,55 @@ async fn test_selection_after_fresh_build() {
         "Expected steps to be returned from cached proof (got None)."
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_selection_inside_partially_complete_proof() {
+    use crate::interfaces::SelectionParams;
+    use indoc::indoc;
+
+    let fx = TestFixture::new();
+
+    // Create a file with a theorem that has a proof block
+    let content = indoc! {"
+        type Nat: axiom
+
+        theorem foo(a: Nat, b: Nat) {
+            a = b
+        } by {
+            a = a
+        }
+    "};
+    fx.open("test.ac", content, 1).await;
+    fx.save("test.ac", content).await;
+
+    // Wait for the build to complete
+    // Note: The overall theorem won't verify, but individual statements inside should have certificates
+    fx.assert_build_completes().await;
+
+    // Give a bit more time for the build cache to be updated
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Now request selection information for the statement inside the proof block
+    // Line 5 is "a = a" which should have a certificate even though the overall theorem doesn't verify
+    let url = fx.url("test.ac");
+    let params = SelectionParams {
+        uri: url,
+        version: 1,
+        selected_line: 5,
+        id: 1,
+    };
+
+    let response = fx.server.handle_selection_request(params).await.unwrap();
+
+    // Verify the goal was found
+    println!("Response goal_name: {:?}", response.goal_name);
+    println!("Response steps: {:?}", response.steps);
+    println!("Response has_cached_proof: {:?}", response.has_cached_proof);
+
+    // We should get the proof steps for "a = a" statement inside proof block
+    assert!(
+        response.steps.is_some(),
+        "Expected steps to be returned for 'a = a' statement inside proof block (got None). Goal name: {:?}",
+        response.goal_name
+    );
+}
