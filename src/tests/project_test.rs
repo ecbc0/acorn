@@ -562,7 +562,27 @@ fn test_importing_define_attr_conflict() {
 }
 
 #[test]
-fn test_double_import() {
+fn test_double_import_value() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/foo.ac",
+        r#"
+        let bar: Bool = true
+        "#,
+    );
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        from foo import bar
+        from foo import bar
+        "#,
+    );
+    p.expect_ok("foo");
+    p.expect_module_err("main");
+}
+
+#[test]
+fn test_double_import_type() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/foo.ac",
@@ -577,6 +597,28 @@ fn test_double_import() {
         r#"
         from foo import Foo
         from foo import Foo
+        "#,
+    );
+    p.expect_ok("foo");
+    p.expect_module_err("main");
+}
+
+#[test]
+fn test_double_import_typeclass() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/foo.ac",
+        r#"
+        typeclass M: Magma {
+            mul: (M, M) -> M
+        }
+        "#,
+    );
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        from foo import Magma
+        from foo import Magma
         "#,
     );
     p.expect_ok("foo");

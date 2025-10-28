@@ -834,7 +834,7 @@ impl Environment {
         let doc_comments = self.take_doc_comments();
         let definition_string = Some(statement.to_string());
         let potential_type = self.bindings.add_potential_type(
-            ss.name_token.text(),
+            &ss.name_token,
             typeclasses,
             doc_comments,
             Some(ss.name_token.range()),
@@ -1034,7 +1034,7 @@ impl Environment {
         let doc_comments = self.take_doc_comments();
         let definition_string = Some(statement.to_string());
         let potential_type = self.bindings.add_potential_type(
-            is.name_token.text(),
+            &is.name_token,
             typeclasses,
             doc_comments,
             Some(is.name_token.range()),
@@ -1902,7 +1902,7 @@ impl Environment {
             let doc_comments = self.take_doc_comments();
             let definition_string = Some(statement.to_string());
             self.bindings.add_potential_type(
-                ts.name_token.text(),
+                &ts.name_token,
                 vec![],
                 doc_comments,
                 Some(ts.name_token.range()),

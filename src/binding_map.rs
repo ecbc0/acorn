@@ -593,12 +593,13 @@ impl BindingMap {
     /// Panics if the name is already bound.
     pub fn add_potential_type(
         &mut self,
-        name: &str,
+        name_token: &Token,
         params: Vec<Option<Typeclass>>,
         doc_comments: Vec<String>,
         range: Option<Range>,
         definition_string: Option<String>,
     ) -> PotentialType {
+        let name = name_token.text();
         if params.len() == 0 {
             return PotentialType::Resolved(self.add_data_type(
                 name,
@@ -621,8 +622,7 @@ impl BindingMap {
         info.definition_string = definition_string;
         let ut = UnresolvedType { datatype, params };
         let potential = PotentialType::Unresolved(ut);
-        let dummy_token = Token::empty();
-        self.insert_type_name(name.to_string(), potential.clone(), &dummy_token)
+        self.insert_type_name(name.to_string(), potential.clone(), name_token)
             .expect("typename should not already be bound");
         potential
     }
@@ -719,21 +719,27 @@ impl BindingMap {
                 );
             }
         }
-        self.add_typeclass_name(&name, typeclass);
+        self.add_typeclass_name(&name, typeclass, source)?;
         Ok(())
     }
 
     /// Adds a local name for this typeclass.
-    /// Panics if the name is already bound - that should be checked before calling this.
-    fn add_typeclass_name(&mut self, name: &str, typeclass: Typeclass) {
+    /// Returns an error if the name is already bound.
+    fn add_typeclass_name(
+        &mut self,
+        name: &str,
+        typeclass: Typeclass,
+        source: &dyn ErrorSource,
+    ) -> compilation::Result<()> {
         self.add_typeclass_alias(&typeclass, name);
 
         match self.name_to_typeclass.entry(name.to_string()) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(typeclass);
+                Ok(())
             }
-            std::collections::btree_map::Entry::Occupied(entry) => {
-                panic!("typeclass name {} is already bound", entry.key());
+            std::collections::btree_map::Entry::Occupied(_) => {
+                Err(source.error(&format!("typeclass name {} is already bound", name)))
             }
         }
     }
@@ -1503,7 +1509,7 @@ impl BindingMap {
             }
             NamedEntity::Module(_) => Err(name_token.error("cannot import modules indirectly")),
             NamedEntity::Typeclass(tc) => {
-                self.add_typeclass_name(&name, tc.clone());
+                self.add_typeclass_name(&name, tc.clone(), name_token)?;
                 Ok(entity)
             }
 
