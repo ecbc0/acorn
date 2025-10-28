@@ -99,6 +99,17 @@ enum Command {
         )]
         line: Option<u32>,
     },
+
+    /// Display proof details for a specific line
+    Select {
+        /// Module or file to select from
+        #[clap(value_name = "MODULE")]
+        module: String,
+
+        /// Line number to select
+        #[clap(value_name = "LINE")]
+        line: u32,
+    },
 }
 
 #[tokio::main]
@@ -231,6 +242,87 @@ async fn main() {
                     if !output.is_success() {
                         std::process::exit(1);
                     }
+                }
+            }
+        }
+
+        Some(Command::Select { module, line }) => {
+            let mut project = Project::new_local(&current_dir, ProjectConfig::default())
+                .unwrap_or_else(|e| {
+                    println!("Error loading project: {}", e);
+                    std::process::exit(1);
+                });
+
+            // Add target and resolve path, same way as verify does
+            let path = if module.ends_with(".ac") {
+                // Treat as a filename
+                let path = std::path::PathBuf::from(&module);
+                if let Err(e) = project.add_target_by_path(&path) {
+                    println!("Error loading module: {}", e);
+                    std::process::exit(1);
+                }
+                path
+            } else {
+                // Treat as a module name
+                if let Err(e) = project.add_target_by_name(&module) {
+                    println!("Error loading module '{}': {}", module, e);
+                    std::process::exit(1);
+                }
+                match project.path_from_module_name(&module) {
+                    Ok(path) => path,
+                    Err(e) => {
+                        println!("Error resolving module '{}': {}", module, e);
+                        std::process::exit(1);
+                    }
+                }
+            };
+
+            match project.handle_selection(&path, line) {
+                Ok((goal_name, _range, steps)) => {
+                    if let Some(name) = goal_name {
+                        println!("{}", name);
+                        println!();
+                    }
+
+                    if let Some(steps) = steps {
+                        if steps.is_empty() {
+                            println!("Trivial.");
+                        } else {
+                            let step_word = if steps.len() == 1 { "step" } else { "steps" };
+                            println!("The detailed proof has {} {}:\n", steps.len(), step_word);
+
+                            // Find the maximum width for statement column
+                            let max_statement_width = steps
+                                .iter()
+                                .map(|s| s.statement.len())
+                                .max()
+                                .unwrap_or(20)
+                                .max(20); // Minimum width of 20
+
+                            // Print header
+                            println!(
+                                "{:<width$}    Reason",
+                                "Statement",
+                                width = max_statement_width
+                            );
+
+                            // Print each step
+                            for step in steps {
+                                println!(
+                                    "{:<width$}    {}",
+                                    step.statement,
+                                    step.reason,
+                                    width = max_statement_width
+                                );
+                            }
+                        }
+                    } else {
+                        println!("No proof available.");
+                    }
+                }
+                Err(e) => {
+                    println!("Error: {}", e);
+                    std::process::exit(1);
                 }
             }
         }
