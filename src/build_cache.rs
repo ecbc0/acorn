@@ -83,6 +83,13 @@ impl BuildCache {
         self.cache.get(descriptor)
     }
 
+    pub fn get_certificates_mut(
+        &mut self,
+        descriptor: &ModuleDescriptor,
+    ) -> Option<&mut CertificateStore> {
+        self.cache.get_mut(descriptor)
+    }
+
     pub fn manifest_matches(&self, descriptor: &ModuleDescriptor, hash: blake3::Hash) -> bool {
         match descriptor {
             ModuleDescriptor::Name(parts) => self.manifest.matches_entry(parts, hash),

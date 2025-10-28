@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::atomic::AtomicU32;
 use std::time::Duration;
@@ -63,6 +64,10 @@ pub struct Builder<'a> {
 
     /// The new build cache, that is being produced as a result of this build.
     pub build_cache: Option<BuildCache>,
+
+    /// Tracks the number of used certificates per module (before appending unused certs).
+    /// Used to trim unused certs if the final build status is Good.
+    used_cert_counts: HashMap<ModuleDescriptor, usize>,
 
     /// When this is set, the builder only builds a single goal.
     /// We specify goal by (module, line number).
@@ -308,6 +313,7 @@ impl<'a> Builder<'a> {
             current_module: None,
             current_module_good: true,
             build_cache: None,
+            used_cert_counts: HashMap::new(),
             single_goal: None,
             verbose: false,
             cancellation_token,
@@ -793,7 +799,7 @@ impl<'a> Builder<'a> {
             }
         }
 
-        let module_good = if env.nodes.is_empty() {
+        let _module_good = if env.nodes.is_empty() {
             // Modules with no goals are always "good"
             true
         } else {
@@ -806,15 +812,21 @@ impl<'a> Builder<'a> {
 
         self.metrics.certs_unused += worklist.unused() as i32;
 
+        let used_cert_count = new_certs.len();
         let mut cert_store = CertificateStore { certs: new_certs };
 
-        let content_hash = if module_good {
+        // Always preserve unused certs during verification.
+        // We'll remove them later if the final build status is Good.
+        cert_store.append(&worklist);
+
+        // Track how many used certs this module has, so we can trim unused certs later
+        self.used_cert_counts
+            .insert(target.clone(), used_cert_count);
+
+        let content_hash = if _module_good {
             // We successfully verified this module, so put its hash in the manifest.
             self.project.get_module_content_hash(env.module_id)
         } else {
-            // Include the unused certs, because we might want them if we undo changes.
-            cert_store.append(&worklist);
-
             // This module had warnings or errors, so don't put its hash in the manifest.
             None
         };
@@ -924,6 +936,18 @@ impl<'a> Builder<'a> {
             }
         }
 
+        // If the build succeeded, remove unused certs that were preserved during verification
+        if self.status.is_good() {
+            if let Some(ref mut cache) = self.build_cache {
+                for (descriptor, used_cert_count) in &self.used_cert_counts {
+                    if let Some(cert_store) = cache.get_certificates_mut(descriptor) {
+                        // Trim to only keep the used certs (remove unused/old certs)
+                        cert_store.certs.truncate(*used_cert_count);
+                    }
+                }
+            }
+        }
+
         // Log training summary at the end of a successful build
         self.log_training_summary();
     }
@@ -999,7 +1023,10 @@ impl<'a> Builder<'a> {
     /// and we should update the cache.
     pub fn into_build_cache(self) -> Option<BuildCache> {
         // There's a lot of conditions for when we actually write to the cache
-        if self.status.is_good() && self.project.config.write_cache && self.single_goal.is_none() {
+        // We save certificates even when there are warnings (partially verified modules)
+        // so that selection requests can show proofs for individual verified statements
+        if !self.status.is_error() && self.project.config.write_cache && self.single_goal.is_none()
+        {
             self.build_cache
         } else {
             None

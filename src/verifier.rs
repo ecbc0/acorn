@@ -750,4 +750,163 @@ mod tests {
         let output = verifier1.run().unwrap();
         assert_eq!(output.status, BuildStatus::Good);
     }
+
+    #[test]
+    fn test_global_certificate_preservation_across_modules() {
+        let (acornlib, src, build) = setup();
+
+        // Phase 1: Initial build - both modules verify successfully
+        src.child("module_a.ac")
+            .write_str(
+                r#"
+                type Nat: axiom
+
+                theorem a_theorem_1(x: Nat) {
+                    x = x
+                }
+                "#,
+            )
+            .unwrap();
+
+        src.child("module_b.ac")
+            .write_str(
+                r#"
+                type Nat: axiom
+
+                theorem b_theorem_1(x: Nat) {
+                    x = x
+                }
+                "#,
+            )
+            .unwrap();
+
+        let mut verifier1 = Verifier::new(
+            acornlib.path().to_path_buf(),
+            ProjectConfig::default(),
+            None,
+        )
+        .unwrap();
+        verifier1.builder.check_hashes = false;
+        let output1 = verifier1.run().unwrap();
+        assert_eq!(output1.status, BuildStatus::Good);
+
+        // Check initial certificates: both modules should have 1 cert each
+        let cert_a = build.child("module_a.jsonl");
+        let cert_b = build.child("module_b.jsonl");
+        assert!(cert_a.exists(), "module_a.jsonl should exist");
+        assert!(cert_b.exists(), "module_b.jsonl should exist");
+
+        let cert_a_content = std::fs::read_to_string(cert_a.path()).unwrap();
+        let cert_b_content = std::fs::read_to_string(cert_b.path()).unwrap();
+        assert_eq!(
+            cert_a_content.lines().count(),
+            1,
+            "module_a should have 1 cert"
+        );
+        assert_eq!(
+            cert_b_content.lines().count(),
+            1,
+            "module_b should have 1 cert"
+        );
+
+        // Phase 2: Mixed build - module A renames its theorem, module B adds bad theorem
+        src.child("module_a.ac")
+            .write_str(
+                r#"
+                type Nat: axiom
+
+                theorem a_theorem_renamed(x: Nat) {
+                    x = x
+                }
+                "#,
+            )
+            .unwrap();
+
+        src.child("module_b.ac")
+            .write_str(
+                r#"
+                type Nat: axiom
+
+                theorem b_theorem_1(x: Nat) {
+                    x = x
+                }
+
+                theorem b_bad_theorem(x: Nat, y: Nat) {
+                    x = y
+                }
+                "#,
+            )
+            .unwrap();
+
+        let mut verifier2 = Verifier::new(
+            acornlib.path().to_path_buf(),
+            ProjectConfig::default(),
+            None,
+        )
+        .unwrap();
+        verifier2.builder.check_hashes = false;
+        let output2 = verifier2.run().unwrap();
+        // Build should have warnings (module_b has unverified theorem)
+        assert_eq!(output2.status, BuildStatus::Warning);
+
+        // Check certificates after mixed build:
+        // Module A should have 2 certs (new cert for a_theorem_renamed + old cert for a_theorem_1 preserved due to global warning)
+        // Module B should have 1 cert (only the old cert, new theorem didn't verify)
+        let cert_a_content = std::fs::read_to_string(cert_a.path()).unwrap();
+        let cert_b_content = std::fs::read_to_string(cert_b.path()).unwrap();
+        assert_eq!(
+            cert_a_content.lines().count(),
+            2,
+            "module_a should have 2 certs (a_theorem_renamed + old a_theorem_1 preserved due to global warning)"
+        );
+        assert_eq!(
+            cert_b_content.lines().count(),
+            1,
+            "module_b should still have 1 cert (only the old one)"
+        );
+
+        // Phase 3: Clean build - fix module B so it verifies
+        src.child("module_b.ac")
+            .write_str(
+                r#"
+                type Nat: axiom
+
+                theorem b_theorem_1(x: Nat) {
+                    x = x
+                }
+
+                theorem b_theorem_2(x: Nat, y: Nat) {
+                    y = y
+                }
+                "#,
+            )
+            .unwrap();
+
+        let mut verifier3 = Verifier::new(
+            acornlib.path().to_path_buf(),
+            ProjectConfig::default(),
+            None,
+        )
+        .unwrap();
+        verifier3.builder.check_hashes = false;
+        let output3 = verifier3.run().unwrap();
+        // Build should be good now
+        assert_eq!(output3.status, BuildStatus::Good);
+
+        // Check certificates after clean build:
+        // Module A should have only its current cert (old a_theorem_1 cert flushed)
+        // Module B should have both its certs
+        let cert_a_content = std::fs::read_to_string(cert_a.path()).unwrap();
+        let cert_b_content = std::fs::read_to_string(cert_b.path()).unwrap();
+        assert_eq!(
+            cert_a_content.lines().count(),
+            1,
+            "module_a should have 1 cert (only a_theorem_renamed, old a_theorem_1 flushed)"
+        );
+        assert_eq!(
+            cert_b_content.lines().count(),
+            2,
+            "module_b should have 2 certs (b_theorem_1 and b_theorem_2)"
+        );
+    }
 }

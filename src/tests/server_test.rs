@@ -417,11 +417,6 @@ async fn test_selection_inside_partially_complete_proof() {
 
     let response = fx.server.handle_selection_request(params).await.unwrap();
 
-    // Verify the goal was found
-    println!("Response goal_name: {:?}", response.goal_name);
-    println!("Response steps: {:?}", response.steps);
-    println!("Response has_cached_proof: {:?}", response.has_cached_proof);
-
     // We should get the proof steps for "a = a" statement inside proof block
     assert!(
         response.steps.is_some(),
