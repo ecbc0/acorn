@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use crate::binding_map::BindingMap;
 use crate::builder::BuildError;
 use crate::certificate::Certificate;
-use crate::checker::Checker;
+use crate::checker::{Checker, StepReason};
 use crate::code_generator::Error;
 use crate::fact::Fact;
 use crate::goal::Goal;
@@ -60,7 +60,8 @@ impl Processor {
         let source = fact.source().clone();
         let steps = self.normalizer.normalize_fact(fact)?;
         for step in &steps {
-            self.checker.insert_clause(&step.clause, Some(&source));
+            self.checker
+                .insert_clause(&step.clause, StepReason::Specialization(source.clone()));
         }
         self.prover.add_steps(steps);
         Ok(())
@@ -78,7 +79,10 @@ impl Processor {
             } else {
                 source
             };
-            self.checker.insert_clause(&step.clause, Some(step_source));
+            self.checker.insert_clause(
+                &step.clause,
+                StepReason::Specialization(step_source.clone()),
+            );
         }
         self.prover.set_goal(ng, steps);
         Ok(())
@@ -130,7 +134,10 @@ impl Processor {
                 } else {
                     source
                 };
-                checker.insert_clause(&step.clause, Some(step_source));
+                checker.insert_clause(
+                    &step.clause,
+                    StepReason::Specialization(step_source.clone()),
+                );
             }
         }
 

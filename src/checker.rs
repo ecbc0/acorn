@@ -112,70 +112,8 @@ impl Checker {
         c
     }
 
-    /// Adds a true clause to the checker.
-    /// The source parameter indicates where this clause came from, if known.
-    /// Single-source derived clauses (from equality resolution, etc.) inherit the same source.
-    pub fn insert_clause(&mut self, clause: &Clause, source: Option<&Source>) {
-        if self.verbose {
-            self.insertions.push(clause.to_string());
-        }
-
-        if clause.is_impossible() {
-            self.direct_contradiction = true;
-            return;
-        }
-
-        let step_id = self.next_step_id;
-        self.next_step_id += 1;
-
-        // Track the reason for this step
-        if let Some(source) = source {
-            self.step_reasons
-                .insert(step_id, StepReason::Specialization(source.clone()));
-        }
-
-        if clause.has_any_variable() {
-            // The clause has free variables, so it can be a generalization.
-            Arc::make_mut(&mut self.generalization_set).insert(clause.clone(), step_id);
-
-            // We only need to do equality resolution for clauses with free variables,
-            // because resolvable concrete literals would already have been simplified out.
-            for resolution in clause.equality_resolutions() {
-                self.insert_clause(&resolution, source);
-            }
-
-            if let Some(extensionality) = clause.find_extensionality() {
-                let clause = Clause::new(extensionality);
-                self.insert_clause(&clause, source);
-            }
-        } else {
-            // The clause is concrete.
-
-            // The term graph does all sorts of stuff but only for concrete clauses.
-            self.term_graph.insert_clause(clause, StepId(step_id));
-        }
-
-        for factoring in clause.equality_factorings() {
-            self.insert_clause(&factoring, source);
-        }
-
-        for injectivity in clause.injectivities() {
-            self.insert_clause(&injectivity, source);
-        }
-
-        for boolean_reduction in clause.boolean_reductions() {
-            if self.past_boolean_reductions.contains(&boolean_reduction) {
-                continue;
-            }
-            self.past_boolean_reductions
-                .insert(boolean_reduction.clone());
-            self.insert_clause(&boolean_reduction, source);
-        }
-    }
-
     /// Adds a true clause to the checker with a specific reason.
-    /// Use this for clauses that don't have a source location.
-    pub fn insert_clause_with_reason(&mut self, clause: &Clause, reason: StepReason) {
+    pub fn insert_clause(&mut self, clause: &Clause, reason: StepReason) {
         if self.verbose {
             self.insertions.push(clause.to_string());
         }
@@ -188,9 +126,6 @@ impl Checker {
         let step_id = self.next_step_id;
         self.next_step_id += 1;
 
-        // Track the reason for this step
-        self.step_reasons.insert(step_id, reason);
-
         if clause.has_any_variable() {
             // The clause has free variables, so it can be a generalization.
             Arc::make_mut(&mut self.generalization_set).insert(clause.clone(), step_id);
@@ -198,12 +133,12 @@ impl Checker {
             // We only need to do equality resolution for clauses with free variables,
             // because resolvable concrete literals would already have been simplified out.
             for resolution in clause.equality_resolutions() {
-                self.insert_clause_with_reason(&resolution, StepReason::PreviousClaim);
+                self.insert_clause(&resolution, reason.clone());
             }
 
             if let Some(extensionality) = clause.find_extensionality() {
                 let clause = Clause::new(extensionality);
-                self.insert_clause_with_reason(&clause, StepReason::PreviousClaim);
+                self.insert_clause(&clause, reason.clone());
             }
         } else {
             // The clause is concrete.
@@ -211,11 +146,11 @@ impl Checker {
         }
 
         for factoring in clause.equality_factorings() {
-            self.insert_clause_with_reason(&factoring, StepReason::PreviousClaim);
+            self.insert_clause(&factoring, reason.clone());
         }
 
         for injectivity in clause.injectivities() {
-            self.insert_clause_with_reason(&injectivity, StepReason::PreviousClaim);
+            self.insert_clause(&injectivity, reason.clone());
         }
 
         for boolean_reduction in clause.boolean_reductions() {
@@ -225,8 +160,11 @@ impl Checker {
             }
             self.past_boolean_reductions
                 .insert(boolean_reduction.clone());
-            self.insert_clause_with_reason(&boolean_reduction, StepReason::PreviousClaim);
+            self.insert_clause(&boolean_reduction, reason.clone());
         }
+
+        // Track the reason for this step
+        self.step_reasons.insert(step_id, reason);
     }
 
     /// Checks if a clause is known to be true, and returns the reason if so.
@@ -394,7 +332,7 @@ impl Checker {
                     let mut view = NormalizerView::Ref(&normalizer);
                     let clauses = view.nice_value_to_clauses(&value, &mut vec![])?;
                     for clause in clauses {
-                        self.insert_clause_with_reason(&clause, StepReason::SyntheticDefinition);
+                        self.insert_clause(&clause, StepReason::SyntheticDefinition);
                     }
                 }
 
@@ -451,7 +389,7 @@ impl Checker {
                         }
                     }
                     clause.normalize();
-                    self.insert_clause_with_reason(&clause, StepReason::PreviousClaim);
+                    self.insert_clause(&clause, StepReason::PreviousClaim);
                 }
 
                 // Record the certificate step with the reason we found
@@ -509,7 +447,7 @@ impl Checker {
         let mut checker = Checker::new();
         for clause_str in clauses {
             let clause = Clause::parse(clause_str);
-            checker.insert_clause_with_reason(&clause, StepReason::Testing);
+            checker.insert_clause(&clause, StepReason::Testing);
         }
         checker
     }
