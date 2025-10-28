@@ -1204,8 +1204,7 @@ impl Project {
             let steps: Vec<Step> = certificate_steps
                 .into_iter()
                 .map(|cert_step| {
-                    let (reason, location) = match &cert_step.reason {
-                        StepReason::TermGraph => ("simplification".to_string(), None),
+                    let location = match &cert_step.reason {
                         StepReason::Specialization(source) | StepReason::Skolemization(source) => {
                             let location = self
                                 .path_from_module_id(source.module_id)
@@ -1216,15 +1215,11 @@ impl Project {
                                     uri,
                                     range: source.range,
                                 });
-                            (source.description(), location)
+                            location
                         }
-                        StepReason::SyntheticDefinition => {
-                            ("synthetic definition".to_string(), None)
-                        }
-                        StepReason::Contradiction => ("ex falso".to_string(), None),
-                        StepReason::PreviousClaim => ("previous claim".to_string(), None),
-                        StepReason::Testing => ("testing".to_string(), None),
+                        _ => None,
                     };
+                    let reason = cert_step.reason.description();
 
                     // Pretty-print the statement by parsing and formatting it
                     let statement = Statement::parse_str_with_options(&cert_step.statement, true)

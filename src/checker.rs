@@ -45,6 +45,25 @@ pub enum StepReason {
 
     /// A clause inserted during testing.
     Testing,
+
+    /// Proven by a single step of equality resolution, based on the given step id
+    EqualityResolution(usize),
+}
+
+impl StepReason {
+    pub fn description(&self) -> String {
+        match self {
+            StepReason::TermGraph => "simplification".to_string(),
+            StepReason::Specialization(source) | StepReason::Skolemization(source) => {
+                source.description()
+            }
+            StepReason::SyntheticDefinition => "synthetic definition".to_string(),
+            StepReason::Contradiction => "ex falso".to_string(),
+            StepReason::PreviousClaim => "previous claim".to_string(),
+            StepReason::Testing => "testing".to_string(),
+            StepReason::EqualityResolution(_) => "equality resolution".to_string(),
+        }
+    }
 }
 
 /// Information about a single step in a certificate proof.
@@ -128,7 +147,7 @@ impl Checker {
             // We only need to do equality resolution for clauses with free variables,
             // because resolvable concrete literals would already have been simplified out.
             for resolution in clause.equality_resolutions() {
-                self.insert_clause(&resolution, reason.clone());
+                self.insert_clause(&resolution, StepReason::EqualityResolution(step_id));
             }
 
             if let Some(extensionality) = clause.find_extensionality() {
