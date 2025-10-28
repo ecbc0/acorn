@@ -27,7 +27,7 @@ impl Processor {
         Processor {
             prover: Prover::new(vec![]),
             normalizer: Normalizer::new(),
-            checker: Checker::new(),
+            checker: Checker::new_fast(),
         }
     }
 
@@ -35,7 +35,7 @@ impl Processor {
         Processor {
             prover: Prover::new(vec![cancellation_token]),
             normalizer: Normalizer::new(),
-            checker: Checker::new(),
+            checker: Checker::new_fast(),
         }
     }
 
@@ -43,7 +43,7 @@ impl Processor {
         Processor {
             prover: Prover::new(vec![token1, token2]),
             normalizer: Normalizer::new(),
-            checker: Checker::new(),
+            checker: Checker::new_fast(),
         }
     }
 

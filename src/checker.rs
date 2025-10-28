@@ -82,17 +82,29 @@ pub struct Checker {
 
     /// The reason for each step. The step_id is the index in this vector.
     reasons: Vec<StepReason>,
+
+    /// The clause for each step. Only tracked in verbose mode.
+    clauses: Option<Vec<Clause>>,
 }
 
 impl Checker {
-    pub fn new() -> Self {
+    fn new(clauses: Option<Vec<Clause>>) -> Checker {
         Checker {
             term_graph: TermGraph::new(),
             generalization_set: Arc::new(GeneralizationSet::new()),
             direct_contradiction: false,
             past_boolean_reductions: HashSet::new(),
             reasons: Vec::new(),
+            clauses,
         }
+    }
+
+    pub fn new_fast() -> Checker {
+        Checker::new(None)
+    }
+
+    pub fn new_verbose() -> Checker {
+        Checker::new(Some(vec![]))
     }
 
     /// Adds a true clause to the checker with a specific reason.
@@ -104,6 +116,10 @@ impl Checker {
 
         let step_id = self.reasons.len();
         self.reasons.push(reason.clone());
+
+        if let Some(clauses) = &mut self.clauses {
+            clauses.push(clause.clone());
+        }
 
         if clause.has_any_variable() {
             // The clause has free variables, so it can be a generalization.
@@ -403,7 +419,7 @@ impl Checker {
 
     #[cfg(test)]
     pub fn with_clauses(clauses: &[&str]) -> Checker {
-        let mut checker = Checker::new();
+        let mut checker = Checker::new_fast();
         for clause_str in clauses {
             let clause = Clause::parse(clause_str);
             checker.insert_clause(&clause, StepReason::Testing);
