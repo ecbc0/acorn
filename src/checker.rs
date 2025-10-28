@@ -81,7 +81,7 @@ pub struct Checker {
     past_boolean_reductions: HashSet<Clause>,
 
     /// The reason for each step. The step_id is the index in this vector.
-    step_reasons: Vec<StepReason>,
+    reasons: Vec<StepReason>,
 }
 
 impl Checker {
@@ -91,7 +91,7 @@ impl Checker {
             generalization_set: Arc::new(GeneralizationSet::new()),
             direct_contradiction: false,
             past_boolean_reductions: HashSet::new(),
-            step_reasons: Vec::new(),
+            reasons: Vec::new(),
         }
     }
 
@@ -102,8 +102,8 @@ impl Checker {
             return;
         }
 
-        let step_id = self.step_reasons.len();
-        self.step_reasons.push(reason.clone());
+        let step_id = self.reasons.len();
+        self.reasons.push(reason.clone());
 
         if clause.has_any_variable() {
             // The clause has free variables, so it can be a generalization.
@@ -157,7 +157,7 @@ impl Checker {
 
         // If not found in term graph, check if there's a generalization in the clause set
         if let Some(step_id) = self.generalization_set.find_generalization(clause.clone()) {
-            return Some(self.step_reasons[step_id].clone());
+            return Some(self.reasons[step_id].clone());
         }
 
         None
