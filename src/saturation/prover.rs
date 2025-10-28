@@ -104,12 +104,10 @@ impl ProverParams {
         shallow_only: false,
     };
 
-    /// Search in verification mode to see if this goal can be easily proven.
-    /// The effective limit is not running out of time, as much as running
-    /// out of memory.
-    pub const VERIFICATION: ProverParams = ProverParams {
-        activation_limit: 5000,
-        seconds: 10.0,
+    /// About as long as a human is willing to wait for a proof.
+    pub const INTERACTIVE: ProverParams = ProverParams {
+        activation_limit: 2000,
+        seconds: 5.0,
         shallow_only: false,
     };
 
@@ -326,16 +324,16 @@ impl Prover {
             _ => return None,
         };
 
-        let difficulty =
-            if self.nonfactual_activations > ProverParams::VERIFICATION.activation_limit {
-                // Verification mode won't find this proof, so we definitely need a shorter one
-                Difficulty::Complicated
-            } else if self.nonfactual_activations > 500 {
-                // Arbitrary heuristic
-                Difficulty::Intermediate
-            } else {
-                Difficulty::Simple
-            };
+        let difficulty = if self.nonfactual_activations > ProverParams::INTERACTIVE.activation_limit
+        {
+            // Verification mode won't find this proof, so we definitely need a shorter one
+            Difficulty::Complicated
+        } else if self.nonfactual_activations > 500 {
+            // Arbitrary heuristic
+            Difficulty::Intermediate
+        } else {
+            Difficulty::Simple
+        };
 
         let mut proof = Proof::new(&normalizer, negated_goal, difficulty);
         let mut active_ids: Vec<_> = useful_active.iter().collect();

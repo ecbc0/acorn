@@ -677,7 +677,7 @@ impl<'a> Builder<'a> {
         let processor = Rc::make_mut(&mut processor);
         processor.set_goal(goal)?;
         let start = std::time::Instant::now();
-        let outcome = processor.search(ProverParams::VERIFICATION);
+        let outcome = processor.search(ProverParams::INTERACTIVE);
         if outcome == Outcome::Success {
             match processor.make_cert(self.project, &env.bindings, self.verbose) {
                 Ok(cert) => {
@@ -799,7 +799,7 @@ impl<'a> Builder<'a> {
             }
         }
 
-        let _module_good = if env.nodes.is_empty() {
+        let module_good = if env.nodes.is_empty() {
             // Modules with no goals are always "good"
             true
         } else {
@@ -823,7 +823,7 @@ impl<'a> Builder<'a> {
         self.used_cert_counts
             .insert(target.clone(), used_cert_count);
 
-        let content_hash = if _module_good {
+        let content_hash = if module_good {
             // We successfully verified this module, so put its hash in the manifest.
             self.project.get_module_content_hash(env.module_id)
         } else {
