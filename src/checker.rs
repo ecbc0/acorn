@@ -48,6 +48,18 @@ pub enum StepReason {
 
     /// Proven by a single step of equality resolution, based on the given step id
     EqualityResolution(usize),
+
+    /// Proven by extensionality, based on the given step id
+    Extensionality(usize),
+
+    /// Proven by equality factoring, based on the given step id
+    EqualityFactoring(usize),
+
+    /// Proven by injectivity, based on the given step id
+    Injectivity(usize),
+
+    /// Proven by boolean reduction, based on the given step id
+    BooleanReduction(usize),
 }
 
 impl StepReason {
@@ -62,6 +74,10 @@ impl StepReason {
             StepReason::PreviousClaim => "previous claim".to_string(),
             StepReason::Testing => "testing".to_string(),
             StepReason::EqualityResolution(_) => "equality resolution".to_string(),
+            StepReason::Extensionality(_) => "extensionality".to_string(),
+            StepReason::EqualityFactoring(_) => "equality factoring".to_string(),
+            StepReason::Injectivity(_) => "injectivity".to_string(),
+            StepReason::BooleanReduction(_) => "boolean reduction".to_string(),
         }
     }
 }
@@ -152,7 +168,7 @@ impl Checker {
 
             if let Some(extensionality) = clause.find_extensionality() {
                 let clause = Clause::new(extensionality);
-                self.insert_clause(&clause, reason.clone());
+                self.insert_clause(&clause, StepReason::Extensionality(step_id));
             }
         } else {
             // The clause is concrete.
@@ -160,11 +176,11 @@ impl Checker {
         }
 
         for factoring in clause.equality_factorings() {
-            self.insert_clause(&factoring, reason.clone());
+            self.insert_clause(&factoring, StepReason::EqualityFactoring(step_id));
         }
 
         for injectivity in clause.injectivities() {
-            self.insert_clause(&injectivity, reason.clone());
+            self.insert_clause(&injectivity, StepReason::Injectivity(step_id));
         }
 
         for boolean_reduction in clause.boolean_reductions() {
@@ -174,7 +190,7 @@ impl Checker {
             }
             self.past_boolean_reductions
                 .insert(boolean_reduction.clone());
-            self.insert_clause(&boolean_reduction, reason.clone());
+            self.insert_clause(&boolean_reduction, StepReason::BooleanReduction(step_id));
         }
     }
 
