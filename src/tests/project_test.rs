@@ -9,19 +9,29 @@ use crate::names::ConstantName;
 use crate::project::{Project, ProjectConfig};
 use indoc::indoc;
 
-fn expect_build_ok(project: &Project) -> i32 {
+fn expect_build_ok(project: &mut Project) -> i32 {
     let mut events: Vec<BuildEvent> = vec![];
-    let (status, searches_success) = {
+    let (status, searches_success, build_cache) = {
         let mut builder = Builder::new(&project, CancellationToken::new(), |event| {
             events.push(event)
         });
         builder.build();
-        (builder.status, builder.metrics.searches_success)
+        let cache = builder.build_cache.take();
+        (builder.status, builder.metrics.searches_success, cache)
     };
     assert_eq!(status, BuildStatus::Good);
     assert!(events.len() > 0);
     let (done, total) = events.last().unwrap().progress.unwrap();
     assert_eq!(done, total, "expected number of build events didn't match");
+
+    // Update the project's build cache with the results from this build
+    // Only do this for projects that actually use caching (not mock projects)
+    if project.config.write_cache || project.config.read_cache {
+        if let Some(cache) = build_cache {
+            project.update_build_cache(cache);
+        }
+    }
+
     searches_success
 }
 
@@ -54,7 +64,7 @@ fn test_update_file_first_call_drops_modules() {
     // Step 1: Create first project and build to get baseline
     let mut p1 = Project::new(src_dir.clone(), build_dir.clone(), ProjectConfig::default());
     p1.add_target_by_path(&test_file).unwrap();
-    let initial_searches = expect_build_ok(&p1);
+    let initial_searches = expect_build_ok(&mut p1);
 
     // Step 2: Create a fresh project (simulating server restart)
     // The file exists on disk with the initial content
@@ -62,7 +72,7 @@ fn test_update_file_first_call_drops_modules() {
 
     // Load and build once - this caches the module from disk
     p2.add_target_by_path(&test_file).unwrap();
-    expect_build_ok(&p2);
+    expect_build_ok(&mut p2);
 
     // Step 3: Now call update_file with new content that adds a theorem
     // This simulates VS Code opening the file and making the first edit+save
@@ -75,7 +85,7 @@ fn test_update_file_first_call_drops_modules() {
         .expect("update should succeed");
 
     // Step 4: Build and check that the theorem was actually processed
-    let searches_after_update = expect_build_ok(&p2);
+    let searches_after_update = expect_build_ok(&mut p2);
 
     // The bug would manifest as: searches don't increase because the theorem wasn't picked up
     assert!(
@@ -229,7 +239,7 @@ fn test_building_project() {
         .expect("adding foo target failed");
     p.add_target_by_name("main")
         .expect("adding main target failed");
-    expect_build_ok(&p);
+    expect_build_ok(&mut p);
 }
 
 #[test]
@@ -239,7 +249,7 @@ fn test_target_outside_library() {
     p.mock(outside_path, FOO_AC);
     p.add_target_by_path(&PathBuf::from(outside_path))
         .expect("adding outside target failed");
-    expect_build_ok(&p);
+    expect_build_ok(&mut p);
 }
 
 #[test]
@@ -328,12 +338,12 @@ fn test_build_cache() {
     "#;
     p.mock("/mock/foo.ac", foo_text);
     p.mock("/mock/main.ac", main_text);
-    let num_success = expect_build_ok(&p);
+    let num_success = expect_build_ok(&mut p);
     assert_eq!(num_success, 2);
 
     // Just rebuilding a second time - with mock projects using certificates,
     // caching doesn't work the same way since read_cache/write_cache are false
-    let num_success = expect_build_ok(&p);
+    let num_success = expect_build_ok(&mut p);
     // Mock projects don't cache, so everything gets re-proven
     assert_eq!(num_success, 2);
 
@@ -341,14 +351,14 @@ fn test_build_cache() {
     let touched_main = format!("// Touch\n{}", main_text);
     p.update_file(PathBuf::from("/mock/main.ac"), &touched_main, 1)
         .expect("update failed");
-    let num_success = expect_build_ok(&p);
+    let num_success = expect_build_ok(&mut p);
     assert_eq!(num_success, 2);
 
     // If we change foo, we should have to rebuild both
     let touched_foo = format!("// Touch\n{}", foo_text);
     p.update_file(PathBuf::from("/mock/foo.ac"), &touched_foo, 1)
         .expect("update failed");
-    let num_success = expect_build_ok(&p);
+    let num_success = expect_build_ok(&mut p);
     assert_eq!(num_success, 2);
 }
 
@@ -368,14 +378,14 @@ fn test_build_cache_partial_rebuild() {
     ];
     let filename = "/mock/main.ac";
     p.mock(filename, &lines.join("\n"));
-    let num_success = expect_build_ok(&p);
+    let num_success = expect_build_ok(&mut p);
     assert_eq!(num_success, 3);
 
     // Change the middle theorem
     lines[4] = "    false = false";
     p.update_file(PathBuf::from(filename), &lines.join("\n"), 1)
         .expect("update failed");
-    let num_success = expect_build_ok(&p);
+    let num_success = expect_build_ok(&mut p);
     // With certificates, all theorems in the module are re-proven when any part changes
     assert_eq!(num_success, 3);
 }
@@ -1397,4 +1407,82 @@ fn test_doc_comment_lookup() {
     let quux_constant_name = ConstantName::typeclass_attr(qux_typeclass.clone(), "quux");
     let comments = p.get_constant_doc_comments(main_env, &quux_constant_name);
     assert_eq!(comments.unwrap(), &vec!["quux_doc_comment".to_string()]);
+}
+
+#[test]
+fn test_handle_selection_typeclass_attribute() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    // Create a temp directory for our test
+    let temp_dir = TempDir::new().unwrap();
+    let src_dir = temp_dir.path().join("src");
+    let build_dir = temp_dir.path().join("build");
+    fs::create_dir(&src_dir).unwrap();
+    fs::create_dir(&build_dir).unwrap();
+
+    // Create test file
+    let test_file = src_dir.join("test.ac");
+    let content = indoc! {r#"
+        type Nat: axiom
+
+        typeclass T: Thing {
+            condition {
+                true
+            }
+        }
+
+        instance Nat: Thing
+
+        attributes T: Thing {
+            let foo: T -> Bool = axiom
+        }
+
+        axiom foo_general[T: Thing](x: T) {
+            x.foo
+        }
+
+        theorem foo_specific(x: Nat) {
+            x.foo
+        }
+    "#};
+    fs::write(&test_file, content).unwrap();
+
+    // Create project and build
+    let mut p = Project::new(src_dir.clone(), build_dir.clone(), ProjectConfig::default());
+    p.add_target_by_path(&test_file).unwrap();
+    expect_build_ok(&mut p);
+
+    // Handle selection on the foo_specific theorem line (line 18)
+    let result = p.handle_selection(&test_file, 18);
+
+    assert!(result.is_ok(), "handle_selection should succeed");
+    let (goal_name, goal_range, steps) = result.unwrap();
+
+    // Verify we got the right goal
+    assert_eq!(goal_name, Some("foo_specific".to_string()));
+    assert!(goal_range.is_some());
+
+    // Verify we got steps
+    assert!(steps.is_some(), "Expected proof steps to be returned");
+    let steps = steps.unwrap();
+
+    // Find the step with the proof
+    assert!(!steps.is_empty(), "Expected at least one step");
+
+    for step in &steps {
+        println!("Step: {}, Reason: {}", step.statement, step.reason);
+    }
+
+    // The main step should contain "x.foo" in the statement
+    let main_step = steps
+        .iter()
+        .find(|s| s.statement.contains("x.foo"))
+        .expect("Expected to find a step containing 'x.foo'");
+
+    assert!(
+        main_step.reason.contains("foo_general"),
+        "Reason should refer to 'foo_general', not 'foo_specific'. Got: {}",
+        main_step.reason
+    );
 }
