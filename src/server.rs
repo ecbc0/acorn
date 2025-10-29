@@ -1,7 +1,6 @@
 // The Acorn Language Server. This is typically invoked by a VS Code extension.
 mod live_document;
 mod project_manager;
-mod search_manager;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -9,7 +8,6 @@ use std::sync::Arc;
 
 use self::live_document::LiveDocument;
 use self::project_manager::ProjectManager;
-use self::search_manager::SearchManager;
 use crate::builder::{BuildEvent, Builder};
 use color_backtrace::BacktracePrinter;
 use dashmap::DashMap;
@@ -19,8 +17,7 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 use crate::interfaces::{
-    DocumentProgress, InfoParams, InfoResponse, ProgressParams, ProgressResponse, SearchParams,
-    SearchResponse, SelectionParams, SelectionResponse,
+    DocumentProgress, ProgressParams, ProgressResponse, SelectionParams, SelectionResponse,
 };
 use crate::project::{Project, ProjectConfig};
 
@@ -275,9 +272,6 @@ pub struct AcornLanguageServer {
 
     // Maps uri to its document. The LiveDocument tracks changes.
     pub documents: DashMap<Url, Arc<RwLock<LiveDocument>>>,
-
-    // Manages search jobs
-    search_manager: SearchManager,
 }
 
 // Finds the acorn library to use, given the root folder for the current workspace.
@@ -333,7 +327,6 @@ impl AcornLanguageServer {
             client,
             build: Arc::new(RwLock::new(BuildInfo::none())),
             documents: DashMap::new(),
-            search_manager: SearchManager::new(),
         }
     }
 
@@ -432,20 +425,6 @@ impl AcornLanguageServer {
     ) -> jsonrpc::Result<ProgressResponse> {
         let progress = self.build.read().await.progress();
         Ok(progress)
-    }
-
-    // Delegate search-related requests to the SearchManager
-
-    async fn handle_search_request(&self, params: SearchParams) -> jsonrpc::Result<SearchResponse> {
-        self.search_manager
-            .handle_search_request(params, &self.project_manager, &self.documents)
-            .await
-    }
-
-    async fn handle_info_request(&self, params: InfoParams) -> jsonrpc::Result<InfoResponse> {
-        self.search_manager
-            .handle_info_request(params, &self.project_manager)
-            .await
     }
 
     pub async fn handle_selection_request(
@@ -724,12 +703,10 @@ pub async fn run_server(args: &ServerArgs) {
 
     let (service, socket) =
         LspService::build(move |client| AcornLanguageServer::new(Arc::new(client), args))
-            .custom_method("acorn/info", AcornLanguageServer::handle_info_request)
             .custom_method(
                 "acorn/progress",
                 AcornLanguageServer::handle_progress_request,
             )
-            .custom_method("acorn/search", AcornLanguageServer::handle_search_request)
             .custom_method(
                 "acorn/selection",
                 AcornLanguageServer::handle_selection_request,

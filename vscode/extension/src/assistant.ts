@@ -217,20 +217,6 @@ export class Assistant implements Disposable {
         return;
       }
 
-      if (message.command === "infoRequest") {
-        console.log(`info request for clause ${message.params.clauseId}`);
-        let response: InfoResponse = await this.client.sendRequest(
-          "acorn/info",
-          message.params
-        );
-        if (!response.result) {
-          console.log(`info request failed: {response.failure}`);
-          return;
-        }
-        this.panel.webview.postMessage({ type: "info", response });
-        return;
-      }
-
       if (message.command === "showLocation") {
         await this.showLocation(message.uri, message.range);
         return;

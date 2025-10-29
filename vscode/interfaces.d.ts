@@ -36,59 +36,6 @@ interface Location {
   range: Range;
 }
 
-interface ClauseInfo {
-  text: string | null;
-  id: number | null;
-}
-
-interface ProofStepInfo {
-  clause: ClauseInfo;
-  premises: Array<[String, ClauseInfo]>;
-  rule: string;
-  location: Location | null;
-  depth: number;
-}
-
-interface SearchStatus {
-  code: Array<string> | null;
-  codeError: string | null;
-  steps: Array<ProofStepInfo> | null;
-  outcome: string | null;
-  needsSimplification: boolean | null;
-  numActivated: number;
-}
-
-interface SearchResponse {
-  uri: string;
-  version: number;
-  failure: string | null;
-  loading: boolean;
-  goalName: string | null;
-  goalRange: Range | null;
-  proofInsertionLine: number;
-  insertBlock: boolean;
-  status: SearchStatus;
-  id: number;
-}
-
-interface InfoParams {
-  searchId: number;
-  clauseId: number;
-}
-
-interface InfoResult {
-  clause: ClauseInfo;
-  step: ProofStepInfo;
-  consequences: Array<ProofStepInfo>;
-  numConsequences: number;
-}
-
-interface InfoResponse {
-  searchId: number;
-  failure: string | null;
-  result: InfoResult | null;
-}
-
 interface SelectionParams {
   uri: string;
   version: number;

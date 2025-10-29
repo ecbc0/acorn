@@ -2,16 +2,12 @@ use std::collections::HashSet;
 use std::fmt;
 use tokio_util::sync::CancellationToken;
 
-use tower_lsp::lsp_types::Url;
-
 use super::active_set::ActiveSet;
 use super::passive_set::PassiveSet;
 use crate::binding_map::BindingMap;
 use crate::certificate::Certificate;
 use crate::clause::Clause;
 use crate::code_generator::{CodeGenerator, Error};
-use crate::display::DisplayClause;
-use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
 use crate::literal::Literal;
 use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::project::Project;
@@ -239,7 +235,7 @@ impl Prover {
     pub fn print_proof(
         &self,
         proof: &Proof,
-        project: &Project,
+        _project: &Project,
         bindings: &BindingMap,
         normalizer: &Normalizer,
     ) {
@@ -249,42 +245,41 @@ impl Prover {
         );
         println!("non-factual activations: {}", self.nonfactual_activations);
 
-        // This logic is similar to the display logic in ProofStep.svelte, but for the terminal.
-        let proof_info = self.to_proof_info(&proof, project, bindings, normalizer);
-        println!("the proof uses {} steps:", proof_info.len());
+        println!("the proof uses {} steps:", proof.all_steps.len());
         println!();
 
-        for step in proof_info {
-            let preposition = match step.location {
-                None => "by",
-                Some(_) => "from",
-            };
-            let rule = format!("{} {}", preposition, step.rule);
+        for (step_id, step) in &proof.all_steps {
+            let rule_name = step.rule.name().to_lowercase();
+            let preposition = "by";
+            let rule = format!("{} {}", preposition, rule_name);
 
-            // New
-            match step.clause.text {
-                None => {
-                    println!("Contradiction, depth {}, {}.", step.depth, rule);
-                }
-                Some(clause) => {
-                    match &step.clause.id {
-                        None => {
-                            println!(
-                                "An unactivated clause, depth {}, {}:\n    {}",
-                                step.depth, rule, clause
-                            );
-                        }
-                        Some(id) => {
-                            println!(
-                                "Clause {}, depth {}, {}:\n    {}",
-                                id, step.depth, rule, clause
-                            );
-                        }
-                    };
-                }
+            if step.clause.is_impossible() {
+                println!("Contradiction, depth {}, {}.", step.depth, rule);
+            } else {
+                let denormalized = normalizer.denormalize(&step.clause, None);
+                let clause_text = CodeGenerator::new(bindings)
+                    .value_to_code(&denormalized)
+                    .unwrap_or_else(|_| format!("{:?}", step.clause));
+
+                match step_id.active_id() {
+                    None => {
+                        println!(
+                            "An unactivated clause, depth {}, {}:\n    {}",
+                            step.depth, rule, clause_text
+                        );
+                    }
+                    Some(id) => {
+                        println!(
+                            "Clause {}, depth {}, {}:\n    {}",
+                            id, step.depth, rule, clause_text
+                        );
+                    }
+                };
             }
-            for (desc, premise) in step.premises {
-                match premise.id {
+
+            for (desc, dep_id) in self.descriptive_dependencies(&step) {
+                let dep_clause = self.get_clause(dep_id);
+                match dep_id.active_id() {
                     Some(id) => {
                         println!("  using clause {} as {}:", id, desc);
                     }
@@ -292,7 +287,15 @@ impl Prover {
                         println!("  using {}:", desc);
                     }
                 }
-                println!("    {}", premise.text.unwrap_or_else(|| "???".to_string()));
+                let dep_text = if dep_clause.is_impossible() {
+                    "contradiction".to_string()
+                } else {
+                    let denormalized = normalizer.denormalize(dep_clause, None);
+                    CodeGenerator::new(bindings)
+                        .value_to_code(&denormalized)
+                        .unwrap_or_else(|_| format!("{:?}", dep_clause))
+                };
+                println!("    {}", dep_text);
             }
             println!();
         }
@@ -636,159 +639,5 @@ impl Prover {
                 &final_step.clause
             }
         }
-    }
-
-    /// Convert a clause to a jsonable form
-    /// We only take active ids, because the others have no external meaning.
-    /// This should be used for human, not machine, consumption.
-    /// If we run into an error, do the best we can.
-    fn to_clause_info(
-        &self,
-        clause: &Clause,
-        id: Option<usize>,
-        bindings: &BindingMap,
-        normalizer: &Normalizer,
-    ) -> ClauseInfo {
-        let text = if clause.is_impossible() {
-            None
-        } else {
-            let denormalized = normalizer.denormalize(clause, None);
-            Some(
-                CodeGenerator::new(bindings)
-                    .value_to_code(&denormalized)
-                    .unwrap_or_else(|_| DisplayClause { clause, normalizer }.to_string()),
-            )
-        };
-        ClauseInfo { text, id }
-    }
-
-    fn to_proof_step_info(
-        &self,
-        step: &ProofStep,
-        active_id: Option<usize>,
-        project: &Project,
-        bindings: &BindingMap,
-        normalizer: &Normalizer,
-    ) -> ProofStepInfo {
-        let clause = self.to_clause_info(&step.clause, active_id, bindings, normalizer);
-        let mut premises = vec![];
-        for (description, id) in self.descriptive_dependencies(&step) {
-            let clause = self.get_clause(id);
-            let clause_info = self.to_clause_info(clause, id.active_id(), bindings, normalizer);
-            premises.push((description, clause_info));
-        }
-        let (rule, location) = match &step.rule {
-            Rule::Assumption(info) => {
-                let location = project
-                    .path_from_module_id(info.source.module_id)
-                    .and_then(|path| Url::from_file_path(path).ok())
-                    .map(|uri| Location {
-                        uri,
-                        range: info.source.range,
-                    });
-
-                (info.source.description(), location)
-            }
-            _ => (step.rule.name().to_lowercase(), None),
-        };
-        ProofStepInfo {
-            clause,
-            premises,
-            rule,
-            location,
-            depth: step.depth,
-        }
-    }
-
-    /// Call this after the prover succeeds to get the proof steps in jsonable form.
-    /// This is called with the bindings for the top-level environment.
-    /// However, that doesn't really seem like the right thing to od.
-    /// It isn't clear to me whether this is okay or not.
-    pub fn to_proof_info(
-        &self,
-        proof: &Proof,
-        project: &Project,
-        bindings: &BindingMap,
-        normalizer: &Normalizer,
-    ) -> Vec<ProofStepInfo> {
-        let mut result = vec![];
-        for (step_id, step) in &proof.all_steps {
-            result.push(self.to_proof_step_info(
-                step,
-                step_id.active_id(),
-                project,
-                bindings,
-                normalizer,
-            ));
-        }
-        result
-    }
-
-    /// Generates information about a clause in jsonable format.
-    /// Returns None if we don't have any information about this clause.
-    pub fn info_result(
-        &self,
-        id: usize,
-        project: &Project,
-        bindings: &BindingMap,
-        normalizer: &Normalizer,
-    ) -> Option<InfoResult> {
-        // Information for the step that proved this clause
-        if !self.active_set.has_step(id) {
-            return None;
-        }
-        let step = self.to_proof_step_info(
-            self.active_set.get_step(id),
-            Some(id),
-            project,
-            bindings,
-            normalizer,
-        );
-        let mut consequences = vec![];
-        let mut num_consequences = 0;
-        let limit = 100;
-
-        // Check if the final step is a consequence of this clause
-        if let Some(final_step) = &self.final_step {
-            if final_step.depends_on_active(id) {
-                consequences.push(self.to_proof_step_info(
-                    &final_step,
-                    None,
-                    project,
-                    bindings,
-                    normalizer,
-                ));
-                num_consequences += 1;
-            }
-        }
-
-        // Check the active set for consequences
-        for (i, step) in self.active_set.find_consequences(id) {
-            if consequences.len() < limit {
-                consequences.push(self.to_proof_step_info(
-                    step,
-                    Some(i),
-                    project,
-                    bindings,
-                    normalizer,
-                ));
-            }
-            num_consequences += 1;
-        }
-
-        // Check the passive set for consequences
-        for step in self.passive_set.find_consequences(id) {
-            if consequences.len() < limit {
-                consequences
-                    .push(self.to_proof_step_info(step, None, project, bindings, normalizer));
-            }
-            num_consequences += 1;
-        }
-
-        Some(InfoResult {
-            step,
-            consequences,
-            num_consequences,
-        })
     }
 }
