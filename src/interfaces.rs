@@ -309,6 +309,9 @@ pub struct SelectionResponse {
     // requested is not loaded. The caller can wait and retry, or just abandon.
     pub loading: bool,
 
+    // When building is true, it means that a build is currently in progress.
+    pub building: bool,
+
     // Information about the goal at this location, if any
     pub goal_name: Option<String>,
     pub goal_range: Option<Range>,
@@ -330,6 +333,7 @@ impl SelectionResponse {
             version: params.version,
             failure: None,
             loading: false,
+            building: false,
             goal_name: None,
             goal_range: None,
             has_cached_proof: false,

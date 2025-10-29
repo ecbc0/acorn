@@ -438,6 +438,13 @@ impl AcornLanguageServer {
     ) -> jsonrpc::Result<SelectionResponse> {
         let mut response = SelectionResponse::new(params.clone());
 
+        // Check if a build is currently in progress
+        let building = {
+            let build_info = self.build.read().await;
+            build_info.id.is_some() && !build_info.finished
+        };
+        response.building = building;
+
         let project = self.project_manager.read().await;
         let path = match to_path(&params.uri) {
             Some(path) => path,
