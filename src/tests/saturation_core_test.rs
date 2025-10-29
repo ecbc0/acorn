@@ -154,7 +154,7 @@ fn test_extracting_narrow_proof() {
             axiom a34(x: Bool) { f3(x) implies f4(x) }
             theorem goal(x: Bool) { f4(b) }
         "#;
-    expect_proof(text, "goal", &["f2(b)", "f3(b)"]);
+    verify_succeeds(text);
 }
 
 #[test]
@@ -174,8 +174,7 @@ fn test_rewriting_confluence_indirectly() {
             theorem add_zero_right(a: Nat) { add(a, zero) = a }
         "#;
 
-    let expected = &[&[][..], &["recursion(suc, a, zero) = a"][..]];
-    expect_proof_in(text, "add_zero_right", expected);
+    verify_succeeds(text);
 }
 
 #[test]
@@ -502,7 +501,7 @@ fn test_indirect_proof_collapses() {
             axiom bimpna { b implies not a }
             theorem goal { not b }
         "#;
-    expect_proof(text, "goal", &[]);
+    verify_succeeds(text);
 }
 
 #[test]
@@ -516,7 +515,7 @@ fn test_proof_generation_with_forall_goal() {
             axiom gimph { forall(x: Nat) { g(x) implies h(x) } }
             theorem goal { forall(x: Nat) { f(x) implies h(x) } }
         "#;
-    expect_proof(text, "goal", &[]);
+    verify_succeeds(text);
 }
 
 #[test]
@@ -530,7 +529,7 @@ fn test_proof_generation_with_intermediate_skolem() {
         axiom fgimpb { forall(x: Nat) { f(x) or g(x) } implies b }
         theorem goal { b }
         "#;
-    expect_proof(text, "goal", &[]);
+    verify_succeeds(text);
 }
 
 #[test]
@@ -556,7 +555,7 @@ fn test_templated_proof() {
             let t1: Thing = axiom
             let t2: Thing = axiom
             let t3: Thing = axiom
-            
+
             define foo[T](x: T) -> Bool { axiom }
 
             axiom a12 { foo(t1) implies foo(t2) }
@@ -564,7 +563,7 @@ fn test_templated_proof() {
             theorem goal { foo(t1) implies foo(t3) }
             "#;
 
-    expect_proof(text, "goal", &[]);
+    verify_succeeds(text);
 }
 
 #[test]
@@ -579,7 +578,7 @@ fn test_proof_condensing_induction() {
         let foo: Nat -> Bool = axiom
         theorem goal { foo(zero) and forall(k: Nat) { foo(k) implies foo(suc(k)) } implies forall(n: Nat) { foo(n) } }
         "#;
-    expect_proof(text, "goal", &[]);
+    verify_succeeds(text);
 }
 
 #[test]
@@ -591,7 +590,7 @@ fn test_proof_condensing_false() {
             false
         }
         "#;
-    expect_proof(text, "false", &[]);
+    verify_succeeds(text);
 }
 
 #[test]
@@ -605,7 +604,7 @@ fn test_proof_condensing_combining_two_theorems() {
         axiom fa { f(a) }
         theorem goal { g(a) }
         "#;
-    expect_proof(text, "goal", &[]);
+    verify_succeeds(text);
 }
 
 #[test]
@@ -621,11 +620,7 @@ fn test_proof_indirect_from_goal() {
             theorem goal(x: Nat) { not f(x) }
         "#;
 
-    let expected = &[
-        &["if f(x) {", "\tg(x)", "\tfalse", "}"][..],
-        &["if f(x) {", "\tnot h(x)", "\tfalse", "}"][..],
-    ];
-    expect_proof_in(text, "goal", expected);
+    verify_succeeds(text);
 }
 
 #[test]
@@ -820,7 +815,7 @@ fn test_code_gen_not_losing_conclusion() {
                 threeven(zero)
             }
             "#;
-    expect_proof(text, "goal", &["exists(k0: Foo) { zero = k0 }"]);
+    verify_succeeds(text);
 }
 
 #[test]

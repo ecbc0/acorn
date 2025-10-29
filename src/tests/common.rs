@@ -1,5 +1,4 @@
 use crate::certificate::Certificate;
-use crate::code_generator::Error;
 use crate::environment::Environment;
 use crate::module::LoadState;
 use crate::processor::Processor;
@@ -33,29 +32,6 @@ fn prove_helper<'a>(
     (project, env, processor, outcome)
 }
 
-// Tries to prove one thing from the project.
-// If the proof is successful, try to generate the code.
-pub fn prove_with_old_codegen(
-    project: &mut Project,
-    module_name: &str,
-    goal_name: &str,
-) -> (Processor, Outcome, Result<Vec<String>, Error>) {
-    let (project, env, processor, outcome) = prove_helper(project, module_name, goal_name);
-    let code = match processor.get_condensed_proof() {
-        Some(proof) => {
-            processor
-                .prover()
-                .print_proof(&proof, project, &env.bindings, processor.normalizer());
-            proof.to_code(&env.bindings)
-        }
-        None => {
-            println!("we do not have a proof");
-            Err(Error::NoProof)
-        }
-    };
-    (processor, outcome, code)
-}
-
 /// Expects the proof to succeed, and a valid concrete proof to be generated.
 pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certificate {
     let (project, base_env, processor, outcome) = prove_helper(project, module_name, goal_name);
@@ -78,19 +54,37 @@ pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certi
     cert
 }
 
-pub fn prove_as_main(
-    text: &str,
-    goal_name: &str,
-) -> (Processor, Outcome, Result<Vec<String>, Error>) {
+// Does one proof on the provided text for a specific goal.
+pub fn prove_text(text: &str, goal_name: &str) -> Outcome {
     let mut project = Project::new_mock();
     project.mock("/mock/main.ac", text);
-    prove_with_old_codegen(&mut project, "main", goal_name)
-}
+    let module_id = project.load_module_by_name("main").expect("load failed");
+    let env = match project.get_module_by_id(module_id) {
+        LoadState::Ok(env) => env,
+        LoadState::Error(e) => panic!("error: {}", e),
+        _ => panic!("no module"),
+    };
 
-// Does one proof on the provided text.
-pub fn prove_text(text: &str, goal_name: &str) -> Outcome {
-    let (_processor, outcome, _code) = prove_as_main(text, goal_name);
-    outcome
+    // Find the specific goal by name
+    for cursor in env.iter_goals() {
+        let goal = cursor.goal().unwrap();
+        if goal.name == goal_name {
+            let facts = cursor.usable_facts(&project);
+
+            let mut processor = Processor::new();
+            for fact in facts {
+                if let Err(_) = processor.add_fact(fact) {
+                    return Outcome::Inconsistent;
+                }
+            }
+            if let Err(_) = processor.set_goal(&goal) {
+                return Outcome::Inconsistent;
+            }
+
+            return processor.search(ProverParams::SHALLOW);
+        }
+    }
+    panic!("goal '{}' not found in text", goal_name);
 }
 
 // Verifies all the goals in the provided text, returning any non-Success outcome.
@@ -151,33 +145,6 @@ pub fn verify_fails(text: &str) {
             outcome
         );
     }
-}
-
-pub fn expect_proof(text: &str, goal_name: &str, expected: &[&str]) {
-    let (_processor, outcome, code) = prove_as_main(text, goal_name);
-    assert_eq!(outcome, Outcome::Success);
-    let actual = code.expect("code generation failed");
-    assert_eq!(actual, expected);
-}
-
-// Expects the prover to find a proof that's one of the provided ones.
-pub fn expect_proof_in(text: &str, goal_name: &str, expected: &[&[&str]]) {
-    let (_processor, outcome, code) = prove_as_main(text, goal_name);
-    assert_eq!(outcome, Outcome::Success);
-    let actual = code.expect("code generation failed");
-
-    // There's multiple things it could be that would be fine.
-    for e in expected {
-        if actual == *e {
-            return;
-        }
-    }
-
-    println!("unexpected code:");
-    for line in &actual {
-        println!("{}", line);
-    }
-    panic!("as vec: {:?}", actual);
 }
 
 pub const THING: &str = r#"

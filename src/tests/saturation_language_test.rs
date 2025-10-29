@@ -15,7 +15,7 @@ fn test_proof_inside_theorem_block() {
     }
     "#;
 
-    expect_proof(text, "reflexivity(t)", &[]);
+    verify_succeeds(text);
 }
 
 #[test]
@@ -30,7 +30,7 @@ fn test_proof_inside_forall_block() {
     }
     "#;
 
-    expect_proof(text, "x = t implies foo(x)", &[]);
+    verify_succeeds(text);
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn test_proof_inside_if_block() {
         }
     }
     "#;
-    expect_proof(text, "x = y", &[]);
+    verify_succeeds(text);
 }
 
 #[test]
@@ -961,8 +961,7 @@ fn test_normalizing_instance_aliases() {
         Magma.mul(a, a) = a * a
     }
     "#;
-    let (_, outcome, _) = prove_as_main(text, "goal");
-    assert_eq!(outcome, Outcome::Success);
+    verify_succeeds(text);
 }
 
 #[test]
