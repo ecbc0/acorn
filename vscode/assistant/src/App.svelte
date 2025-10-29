@@ -55,7 +55,11 @@
     <hr />
     <br />
     {#if selectionResponse.steps === null}
-      We don't have a proof for this goal yet.
+      {#if selectionResponse.building}
+        Building...
+      {:else}
+        We don't have a proof for this goal yet.
+      {/if}
       <br />
     {:else if selectionResponse.steps.length === 0}
       Trivial.

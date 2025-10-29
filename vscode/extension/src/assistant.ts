@@ -174,21 +174,32 @@ export class Assistant implements Disposable {
         console.log("selection failure:", response.failure);
         return;
       }
-      if (!response.loading) {
-        this.panel.webview.postMessage({ type: "selection", response });
+
+      // Handle loading state - don't send to webview, retry quickly
+      if (response.loading) {
+        let ms = 50;
+        await new Promise((resolve) => setTimeout(resolve, ms));
+        if (!this.panel || params.id != this.currentSearchId) {
+          return;
+        }
+        continue;
       }
 
-      if (!response.loading) {
-        // The selection request is complete.
-        return;
+      // Always send the response to webview when not loading
+      this.panel.webview.postMessage({ type: "selection", response });
+
+      // If building, wait longer and retry
+      if (response.building) {
+        let ms = 1000;
+        await new Promise((resolve) => setTimeout(resolve, ms));
+        if (!this.panel || params.id != this.currentSearchId) {
+          return;
+        }
+        continue;
       }
 
-      // The request is not complete. Send another request after waiting a bit.
-      let ms = 50;
-      await new Promise((resolve) => setTimeout(resolve, ms));
-      if (!this.panel || params.id != this.currentSearchId) {
-        return;
-      }
+      // The selection request is complete (not loading, not building)
+      return;
     }
   }
 
