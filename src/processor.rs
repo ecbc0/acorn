@@ -10,6 +10,7 @@ use crate::goal::Goal;
 use crate::normalizer::Normalizer;
 use crate::project::Project;
 use crate::proof::Proof;
+use crate::proof_step::Rule;
 use crate::saturation::{Outcome, Prover, ProverParams};
 use tokio_util::sync::CancellationToken;
 
@@ -57,11 +58,25 @@ impl Processor {
 
     /// Normalizes a fact and adds the resulting proof steps to the prover.
     pub fn add_fact(&mut self, fact: Fact) -> Result<(), BuildError> {
-        let source = fact.source().clone();
         let steps = self.normalizer.normalize_fact(fact)?;
         for step in &steps {
+            // Extract the source from the step's rule.
+            // When monomorphizing, the step contains the source of the general fact being specialized,
+            // not the source of the specific theorem invoking it.
+            let step_source = match &step.rule {
+                Rule::Assumption(info) => info.source.clone(),
+                _ => {
+                    return Err(BuildError::new(
+                        Default::default(),
+                        format!(
+                            "Expected assumption step from normalize_fact, got: {:?}",
+                            step.rule
+                        ),
+                    ));
+                }
+            };
             self.checker
-                .insert_clause(&step.clause, StepReason::Specialization(source.clone()));
+                .insert_clause(&step.clause, StepReason::Assumption(step_source));
         }
         self.prover.add_steps(steps);
         Ok(())
@@ -79,10 +94,8 @@ impl Processor {
             } else {
                 source
             };
-            self.checker.insert_clause(
-                &step.clause,
-                StepReason::Specialization(step_source.clone()),
-            );
+            self.checker
+                .insert_clause(&step.clause, StepReason::Assumption(step_source.clone()));
         }
         self.prover.set_goal(ng, steps);
         Ok(())
@@ -134,10 +147,7 @@ impl Processor {
                 } else {
                     source
                 };
-                checker.insert_clause(
-                    &step.clause,
-                    StepReason::Specialization(step_source.clone()),
-                );
+                checker.insert_clause(&step.clause, StepReason::Assumption(step_source.clone()));
             }
         }
 

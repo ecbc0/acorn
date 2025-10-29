@@ -1205,7 +1205,7 @@ impl Project {
                 .into_iter()
                 .map(|cert_step| {
                     let location = match &cert_step.reason {
-                        StepReason::Specialization(source) | StepReason::Skolemization(source) => {
+                        StepReason::Assumption(source) | StepReason::Skolemization(source) => {
                             let location = self
                                 .path_from_module_id(source.module_id)
                                 .and_then(|path| {

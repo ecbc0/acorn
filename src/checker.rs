@@ -26,9 +26,9 @@ pub enum StepReason {
     /// Proven by the term graph (concrete reasoning via congruence closure and propositional logic).
     TermGraph,
 
-    /// Proven by specializing a general theorem or axiom from the environment.
-    /// Contains the source information for where it was originally defined.
-    Specialization(Source),
+    /// An assumption based on normalizing a statement elsewhere in the code.
+    /// The source points to the location of the assumption.
+    Assumption(Source),
 
     /// A let...satisfy statement that skolemizes an exists statement.
     /// The source points to where the exists was originally defined.
@@ -66,7 +66,7 @@ impl StepReason {
     pub fn description(&self) -> String {
         match self {
             StepReason::TermGraph => "simplification".to_string(),
-            StepReason::Specialization(source) | StepReason::Skolemization(source) => {
+            StepReason::Assumption(source) | StepReason::Skolemization(source) => {
                 source.description()
             }
             StepReason::SyntheticDefinition => "synthetic definition".to_string(),
