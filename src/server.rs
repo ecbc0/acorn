@@ -342,6 +342,7 @@ impl AcornLanguageServer {
     // This ensures that the project doesn't change for the duration of the build.
     // The caller is responsible for stopping the previous build.
     fn spawn_build(&self) {
+        log("building...");
         let start_time = chrono::Local::now();
 
         // This channel passes the build events
@@ -384,8 +385,8 @@ impl AcornLanguageServer {
                     .await;
 
                 match result {
-                    Ok(()) => log("Build cache updated successfully"),
-                    Err(()) => log("Build cache update skipped (project changed during build)"),
+                    Ok(()) => log("build cache updated"),
+                    Err(()) => log("build cache update skipped (project changed during build)"),
                 }
             }
         });
@@ -458,14 +459,18 @@ impl AcornLanguageServer {
         match project.get_version(&path) {
             Some(project_version) => {
                 if params.version < project_version {
-                    response.failure = Some(format!(
-                        "requested version {} but the project has version {}",
+                    let message = format!(
+                        "unexpected: selection has version {}, project has version {}",
                         params.version, project_version
-                    ));
+                    );
+                    log(&message);
+                    response.failure = Some(message);
                     return Ok(response);
                 }
                 if params.version > project_version {
                     // The requested version is not loaded yet.
+                    // "Loading" is a bit of a misnomer. We get a bunch of these requests whenever
+                    // the document is unsaved.
                     response.loading = true;
                     return Ok(response);
                 }
@@ -479,12 +484,20 @@ impl AcornLanguageServer {
 
         match project.handle_selection(&path, params.selected_line) {
             Ok((goal_name, goal_range, steps)) => {
+                log(&format!(
+                    "selection: {} at line {}, version {}",
+                    path.file_name().unwrap().to_string_lossy(),
+                    params.selected_line,
+                    params.version
+                ));
                 response.goal_name = goal_name;
                 response.goal_range = goal_range;
                 response.has_cached_proof = steps.is_some();
                 response.steps = steps;
             }
             Err(e) => {
+                // This happens a lot when you click somewhere that doesn't match a goal.
+                // It's fine, but there's no real reason to log it.
                 response.failure = Some(e);
                 return Ok(response);
             }
