@@ -20,9 +20,6 @@ const showLocationDecoration = window.createTextEditorDecorationType({
   backgroundColor: "rgba(246, 185, 77, 0.3)",
 });
 
-// Experimental flag to use selection requests instead of search requests
-const experiment = true;
-
 export class Assistant implements Disposable {
   client: LanguageClient;
   currentParams: SearchParams;
@@ -155,83 +152,42 @@ export class Assistant implements Disposable {
     }
   }
 
-  // Sends a search request to the language server, passing the response on to the webview.
+  // Sends a selection request to the language server, passing the response on to the webview.
   async sendSearchRequest(params: SearchParams) {
-    if (experiment) {
-      // Use selection request instead
-      console.log(
-        `selection request ${params.id}: ${params.uri} v${params.version} line ${params.selectedLine}`
+    console.log(
+      `selection request ${params.id}: ${params.uri} v${params.version} line ${params.selectedLine}`
+    );
+    this.currentSearchId = params.id;
+    this.currentParams = params;
+
+    while (true) {
+      let response: SelectionResponse = await this.client.sendRequest(
+        "acorn/selection",
+        params
       );
-      this.currentSearchId = params.id;
-      this.currentParams = params;
 
-      while (true) {
-        let response: SelectionResponse = await this.client.sendRequest(
-          "acorn/selection",
-          params
-        );
-
-        if (!this.panel || params.id != this.currentSearchId) {
-          // The request is no longer relevant
-          return;
-        }
-        if (response.failure) {
-          console.log("selection failure:", response.failure);
-          return;
-        }
-        if (!response.loading) {
-          this.panel.webview.postMessage({ type: "selection", response });
-        }
-
-        if (!response.loading) {
-          // The selection request is complete.
-          return;
-        }
-
-        // The request is not complete. Send another request after waiting a bit.
-        let ms = 50;
-        await new Promise((resolve) => setTimeout(resolve, ms));
-        if (!this.panel || params.id != this.currentSearchId) {
-          return;
-        }
+      if (!this.panel || params.id != this.currentSearchId) {
+        // The request is no longer relevant
+        return;
       }
-    } else {
-      // Use search request (original behavior)
-      console.log(
-        `search request ${params.id}: ${params.uri} v${params.version} line ${params.selectedLine}`
-      );
-      this.currentSearchId = params.id;
-      this.currentParams = params;
+      if (response.failure) {
+        console.log("selection failure:", response.failure);
+        return;
+      }
+      if (!response.loading) {
+        this.panel.webview.postMessage({ type: "selection", response });
+      }
 
-      while (true) {
-        let response: SearchResponse = await this.client.sendRequest(
-          "acorn/search",
-          params
-        );
+      if (!response.loading) {
+        // The selection request is complete.
+        return;
+      }
 
-        if (!this.panel || params.id != this.currentSearchId) {
-          // The request is no longer relevant
-          return;
-        }
-        if (response.failure) {
-          console.log("search failure:", response.failure);
-          return;
-        }
-        if (!response.loading) {
-          this.panel.webview.postMessage({ type: "search", response });
-        }
-
-        if (response.status.outcome !== null) {
-          // The search is complete.
-          return;
-        }
-
-        // The search is not complete. Send another request after waiting a bit.
-        let ms = 50;
-        await new Promise((resolve) => setTimeout(resolve, ms));
-        if (!this.panel || params.id != this.currentSearchId) {
-          return;
-        }
+      // The request is not complete. Send another request after waiting a bit.
+      let ms = 50;
+      await new Promise((resolve) => setTimeout(resolve, ms));
+      if (!this.panel || params.id != this.currentSearchId) {
+        return;
       }
     }
   }

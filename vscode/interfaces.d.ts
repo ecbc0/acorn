@@ -107,6 +107,7 @@ interface SelectionResponse {
   version: number;
   failure: string | null;
   loading: boolean;
+  building: boolean;
   goalName: string | null;
   goalRange: Range | null;
   hasCachedProof: boolean;
