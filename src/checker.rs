@@ -80,6 +80,26 @@ impl StepReason {
             StepReason::BooleanReduction(_) => "boolean reduction".to_string(),
         }
     }
+
+    pub fn dependency(&self) -> Option<usize> {
+        match self {
+            StepReason::EqualityResolution(step_id)
+            | StepReason::Extensionality(step_id)
+            | StepReason::EqualityFactoring(step_id)
+            | StepReason::Injectivity(step_id)
+            | StepReason::BooleanReduction(step_id) => Some(*step_id),
+            _ => None,
+        }
+    }
+}
+
+/// Converts a clause to readable code using the environment's names.
+fn clause_to_code(clause: &Clause, normalizer: &Normalizer, bindings: &Cow<BindingMap>) -> String {
+    let value = normalizer.denormalize(clause, None);
+    let mut code_gen = crate::code_generator::CodeGenerator::new(bindings);
+    code_gen
+        .value_to_code(&value)
+        .unwrap_or_else(|_| format!("{} (internal)", clause))
 }
 
 /// Information about a single step in a certificate proof.
@@ -224,6 +244,39 @@ impl Checker {
     /// has_contradiction will return true.
     pub fn has_contradiction(&self) -> bool {
         self.direct_contradiction || self.term_graph.has_contradiction()
+    }
+
+    /// Creates a certificate step along with all its dependencies.
+    ///
+    /// If the checker is in verbose mode and the reason has a dependency,
+    /// this recursively includes all dependent steps first, then the current step.
+    pub fn push_step(
+        &self,
+        statement: String,
+        reason: StepReason,
+        normalizer: &Normalizer,
+        bindings: &Cow<BindingMap>,
+    ) -> Vec<CertificateStep> {
+        let mut steps = Vec::new();
+
+        // If verbose mode and reason has a dependency, recurse
+        if let Some(clauses_vec) = &self.clauses {
+            if let Some(dep_id) = reason.dependency() {
+                // Get the dependency's clause and reason
+                let dep_clause = &clauses_vec[dep_id];
+                let dep_reason = self.reasons[dep_id].clone();
+                let dep_statement = clause_to_code(dep_clause, normalizer, bindings);
+
+                // Recursively get all dependencies
+                let dep_steps = self.push_step(dep_statement, dep_reason, normalizer, bindings);
+                steps.extend(dep_steps);
+            }
+        }
+
+        // Add the current step
+        steps.push(CertificateStep { statement, reason });
+
+        steps
     }
 
     /// Helper method to check a single line of code in a proof.
@@ -385,12 +438,7 @@ impl Checker {
                                 )));
                             }
 
-                            // Convert the clause to readable code using the environment's names
-                            let value = normalizer.denormalize(&clause, None);
-                            let mut code_gen = crate::code_generator::CodeGenerator::new(bindings);
-                            let clause_code = code_gen
-                                .value_to_code(&value)
-                                .unwrap_or_else(|_| format!("{} (internal)", clause));
+                            let clause_code = clause_to_code(&clause, normalizer, bindings);
 
                             return Err(Error::GeneratedBadCode(format!(
                                 "In claim '{}', the clause '{}' is not obviously true",
