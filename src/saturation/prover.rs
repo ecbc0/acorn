@@ -11,7 +11,7 @@ use crate::code_generator::{CodeGenerator, Error};
 use crate::literal::Literal;
 use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::project::Project;
-use crate::proof::{Difficulty, Proof};
+use crate::proof::Proof;
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
 use crate::term_graph::TermGraphContradiction;
 
@@ -245,10 +245,10 @@ impl Prover {
         );
         println!("non-factual activations: {}", self.nonfactual_activations);
 
-        println!("the proof uses {} steps:", proof.all_steps.len());
+        println!("the proof uses {} steps:", proof.steps.len());
         println!();
 
-        for (step_id, step) in &proof.all_steps {
+        for (step_id, step) in &proof.steps {
             let rule_name = step.rule.name().to_lowercase();
             let preposition = "by";
             let rule = format!("{} {}", preposition, rule_name);
@@ -327,18 +327,7 @@ impl Prover {
             _ => return None,
         };
 
-        let difficulty = if self.nonfactual_activations > ProverParams::INTERACTIVE.activation_limit
-        {
-            // Verification mode won't find this proof, so we definitely need a shorter one
-            Difficulty::Complicated
-        } else if self.nonfactual_activations > 500 {
-            // Arbitrary heuristic
-            Difficulty::Intermediate
-        } else {
-            Difficulty::Simple
-        };
-
-        let mut proof = Proof::new(&normalizer, negated_goal, difficulty);
+        let mut proof = Proof::new(&normalizer, negated_goal);
         let mut active_ids: Vec<_> = useful_active.iter().collect();
         active_ids.sort();
         for i in active_ids {

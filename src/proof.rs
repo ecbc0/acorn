@@ -1,12 +1,10 @@
 use std::collections::{HashMap, HashSet};
-use std::fmt;
 
 use crate::acorn_value::AcornValue;
 use crate::binding_map::BindingMap;
 use crate::certificate::Certificate;
 use crate::clause::{Clause, LiteralTrace};
 use crate::code_generator::{CodeGenerator, Error};
-use crate::display::DisplayClause;
 use crate::literal::Literal;
 use crate::normalizer::Normalizer;
 use crate::proof_step::{ProofStep, ProofStepId, Rule};
@@ -36,10 +34,12 @@ pub struct Proof<'a> {
     normalizer: &'a Normalizer,
 
     // Steps of the proof that can be directly verified.
-    // When steps are condensed away, they still exist in all_steps.
-    // all_steps always represents a proof by contradiction, with each step depending only on
+    // Represents a proof by contradiction, with each step depending only on
     // previous steps.
-    pub all_steps: Vec<(ProofStepId, &'a ProofStep)>,
+    pub steps: Vec<(ProofStepId, &'a ProofStep)>,
+
+    // Same data as steps, but indexed.
+    step_map: HashMap<ProofStepId, &'a ProofStep>,
 
     // The graph representation of the proof.
     // Nodes are indexed by node id.
@@ -51,25 +51,6 @@ pub struct Proof<'a> {
 
     // A map from proof step ids to the ids nodes that correspond to them.
     id_map: HashMap<ProofStepId, NodeId>,
-
-    // The difficulty of finding this proof.
-    difficulty: Difficulty,
-}
-
-/// Ranking for how difficult the proof was to find.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Difficulty {
-    // When we find a simple proof, it doesn't need to be any simpler.
-    // No need to prompt the user to add more steps.
-    Simple,
-
-    // An intermediate proof would be nice to make simpler if possible.
-    // However, if there's no way to do it, it's fine.
-    // So it's up to the Proof whether to suggest simplification or not.
-    Intermediate,
-
-    // A complicated proof definitely needs to be made simpler.
-    Complicated,
 }
 
 /// To conveniently manipulate the proof, we store it as a directed graph with its own ids.
@@ -77,51 +58,12 @@ pub enum Difficulty {
 /// condensed steps won't be 1-to-1 related to the reduction steps any more.
 type NodeId = u32;
 
-/// Each node in the graph represents proving a single thing.
-/// The NodeValue represents the way the prover found it.
-/// It can either be represented by an underlying clause, or be a special case.
-#[derive(Debug)]
-enum NodeValue<'a> {
-    Clause(&'a Clause),
-
-    // This node proves a contradiction, ie a "false".
-    // It contradicts the hypothesis in the provided node.
-    // When this node is used as a premise, it means that the negated hypothesis is used.
-    Contradiction,
-
-    // The goal is not explicitly represented by a clause or the negation of a clause, and
-    // in general cannot be, because it may require multiple clauses.
-    // Thus, we represent the negated goal using a value.
-    // We only need to store a negated goal - we never generate the positive goal,
-    // because it's already expressed in the code.
-    NegatedGoal(AcornValue),
-}
-
-impl fmt::Display for NodeValue<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            NodeValue::Clause(clause) => write!(f, "Clause({})", clause),
-            NodeValue::Contradiction => write!(f, "Contradiction"),
-            NodeValue::NegatedGoal(v) => write!(f, "NegatedGoal({})", v),
-        }
-    }
-}
-
 /// The ProofGraph is made up of ProofNodes.
 ///
 /// Each node represents a single proposition, either a clause or the negation of a clause,
 /// which can be proved using other nodes in the proof, external sources, or starting a
 /// proof by reduction.
 struct ProofNode<'a> {
-    // The value that should be displayed to represent this node in the graph.
-    value: NodeValue<'a>,
-
-    // Whether the value in the proof is negated from the value used in the Prover.
-    // This is a bit unintuitive for the NegatedGoal.
-    // The prover uses the negated goal. Thus, a proof node representing the original goal
-    // (which can be left implicit) would have node.negated = true.
-    negated: bool,
-
     // Which other steps this step depends on.
     // This also includes dependencies on assumptions being proved by contradiction.
     premises: Vec<NodeId>,
@@ -134,42 +76,6 @@ struct ProofNode<'a> {
     sources: Vec<&'a Source>,
 }
 
-impl<'a> ProofNode<'a> {
-    /// Returns true if this node is the start of a proof by reduction.
-    fn starts_reduction(&self) -> bool {
-        !self.negated
-            && !self.consequences.is_empty()
-            && self.premises.is_empty()
-            && self.sources.is_empty()
-    }
-
-    /// Instead of removing nodes from the graph, we isolate them by removing all premises and
-    /// consequences.
-    fn is_isolated(&self) -> bool {
-        self.premises.is_empty() && self.consequences.is_empty()
-    }
-
-    fn to_code(&self, normalizer: &Normalizer, bindings: &BindingMap) -> Result<String, Error> {
-        match &self.value {
-            NodeValue::Clause(clause) => {
-                let mut value = normalizer.denormalize(clause, None);
-                if self.negated {
-                    value = value.pretty_negate();
-                }
-                CodeGenerator::new(&bindings).value_to_code(&value)
-            }
-            NodeValue::Contradiction => Ok("false".to_string()),
-            NodeValue::NegatedGoal(v) => {
-                if self.negated {
-                    Err(Error::ExplicitGoal)
-                } else {
-                    CodeGenerator::new(&bindings).value_to_code(v)
-                }
-            }
-        }
-    }
-}
-
 /// If the edge is already there, don't re-insert it.
 fn insert_edge(nodes: &mut Vec<ProofNode>, from: NodeId, to: NodeId) {
     if !nodes[from as usize].consequences.contains(&to) {
@@ -180,22 +86,16 @@ fn insert_edge(nodes: &mut Vec<ProofNode>, from: NodeId, to: NodeId) {
 
 impl<'a> Proof<'a> {
     /// Creates a new proof, with just one node for the negated goal.
-    pub fn new<'b>(
-        normalizer: &'a Normalizer,
-        negated_goal: &AcornValue,
-        difficulty: Difficulty,
-    ) -> Proof<'a> {
+    pub fn new<'b>(normalizer: &'a Normalizer, _negated_goal: &AcornValue) -> Proof<'a> {
         let mut proof = Proof {
             normalizer,
-            all_steps: vec![],
+            steps: vec![],
+            step_map: HashMap::new(),
             nodes: vec![],
             id_map: HashMap::new(),
-            difficulty,
         };
 
         let negated_goal = ProofNode {
-            value: NodeValue::NegatedGoal(negated_goal.clone()),
-            negated: false,
             premises: vec![],
             consequences: vec![],
             sources: vec![],
@@ -207,15 +107,8 @@ impl<'a> Proof<'a> {
 
     /// Add a new step, which becomes a node in the graph.
     pub fn add_step(&mut self, id: ProofStepId, step: &'a ProofStep) {
-        let value = match id {
-            ProofStepId::Final => NodeValue::Contradiction,
-            ProofStepId::Active(_) | ProofStepId::Passive(_) => NodeValue::Clause(&step.clause),
-        };
-
         let node_id = self.nodes.len() as NodeId;
         self.nodes.push(ProofNode {
-            value,
-            negated: false,
             premises: vec![],
             consequences: vec![],
             sources: vec![],
@@ -234,218 +127,18 @@ impl<'a> Proof<'a> {
         }
 
         self.id_map.insert(id.clone(), node_id);
-        self.all_steps.push((id, step));
-    }
-
-    pub fn has_active_id(&self, active_id: usize) -> bool {
-        let id = ProofStepId::Active(active_id);
-        self.id_map.contains_key(&id)
-    }
-
-    fn display(&self, value: &NodeValue) -> String {
-        match value {
-            NodeValue::Clause(clause) => format!(
-                "clause: {}",
-                DisplayClause {
-                    normalizer: self.normalizer,
-                    clause,
-                }
-            ),
-            NodeValue::Contradiction => "contradiction".to_string(),
-            NodeValue::NegatedGoal(_) => "negated-goal".to_string(),
-        }
-    }
-
-    pub fn print_graph(&self, message: &str) {
-        println!("\n{}", message);
-        println!("\nProof graph:");
-        for (i, node) in self.nodes.iter().enumerate() {
-            if node.is_isolated() {
-                continue;
-            }
-            print!("node {}: ", i);
-            if node.negated {
-                print!("negated ");
-            }
-            println!("{}", self.display(&node.value));
-            if !node.premises.is_empty() {
-                println!("  premises: {:?}", node.premises);
-            }
-            if !node.consequences.is_empty() {
-                println!("  consequences: {:?}", node.consequences);
-            }
-            if !node.sources.is_empty() {
-                println!(
-                    "  sources: {:?}",
-                    node.sources
-                        .iter()
-                        .map(|x| &x.source_type)
-                        .collect::<Vec<_>>()
-                );
-            }
-        }
+        self.step_map.insert(id.clone(), step);
+        self.steps.push((id, step));
     }
 
     fn get_clause(&self, id: ProofStepId) -> Result<&Clause, Error> {
-        let node_id = self.id_map.get(&id).ok_or_else(|| {
+        let step = self.step_map.get(&id).ok_or_else(|| {
             Error::internal(format!(
                 "no node found for proof step {:?} in proof graph",
                 id
             ))
         })?;
-        if let NodeValue::Clause(clause) = &self.nodes[*node_id as usize].value {
-            Ok(clause)
-        } else {
-            Err(Error::internal(format!(
-                "no clause found for proof step {:?}",
-                id
-            )))
-        }
-    }
-
-    /// Whether this proof could be simplified.
-    /// Since we already removed unprintable nodes, the proofs that cannot be simplified are
-    /// the ones in which the goal node is proven directly, with sources only, no other
-    /// nodes as premises.
-    pub fn has_simplification(&self) -> bool {
-        let goal_node = &self.nodes[0];
-
-        if goal_node.consequences.is_empty() && goal_node.premises.is_empty() {
-            // There are no other nodes connected to this goal that could be printed out
-            // to make a simplification.
-            return false;
-        }
-
-        true
-    }
-
-    /// When we run the verifier, or are using the IDE, a proof that needs simplification will
-    /// show a warning.
-    pub fn needs_simplification(&self) -> bool {
-        match self.difficulty {
-            Difficulty::Simple => false,
-
-            // When the prover says the proof was intermediate difficulty, it's like saying,
-            // "It would be nice to simplify this, but if we can't figure out how, that's okay."
-            Difficulty::Intermediate => self.has_simplification(),
-
-            Difficulty::Complicated => true,
-        }
-    }
-
-    /// Finds the contradiction that this node eventually leads to.
-    /// Returns None if it does not lead to any contradiction.
-    fn find_contradiction(&self, node_id: NodeId) -> Option<NodeId> {
-        let node = &self.nodes[node_id as usize];
-        if let NodeValue::Contradiction = node.value {
-            return Some(node_id);
-        }
-        for consequence_id in &node.consequences {
-            if let Some(result) = self.find_contradiction(*consequence_id) {
-                return Some(result);
-            }
-        }
-        None
-    }
-
-    /// Converts the proof to lines of code.
-    ///
-    /// The prover assumes the goal is false and then searches for a contradiction.
-    /// When we turn this sort of proof into code, it looks like one big proof by contradiction.
-    /// This often commingles lemma-style reasoning that seems intuitively true with
-    /// proof-by-contradiction-style reasoning that feels intuitively backwards.
-    /// Humans try to avoid mixing these different styles of reasoning.
-    ///
-    /// Code is generated with *tabs* even though I hate tabs. The consuming logic should
-    /// appropriately turn tabs into spaces.
-    pub fn to_code(&self, bindings: &BindingMap) -> Result<Vec<String>, Error> {
-        let goal_id = 0;
-        let mut next_k = 0;
-        let mut output = vec![];
-        self.to_code_helper(
-            self.normalizer,
-            bindings,
-            goal_id,
-            0,
-            true,
-            &mut next_k,
-            &mut HashSet::new(),
-            &mut output,
-        )?;
-        Ok(output)
-    }
-
-    /// Write out code for the given node, and everything needed to prove it.
-    fn to_code_helper(
-        &self,
-        normalizer: &Normalizer,
-        bindings: &BindingMap,
-        node_id: NodeId,
-        tab_level: usize,
-        node_is_goal: bool,
-        next_k: &mut u32,
-        proven: &mut HashSet<NodeId>,
-        output: &mut Vec<String>,
-    ) -> Result<(), Error> {
-        if proven.contains(&node_id) {
-            return Ok(());
-        }
-        // Mark this node as proven before we have written the proof.
-        // This should be okay if there are no cycles.
-        let node = &self.nodes[node_id as usize];
-
-        if node.starts_reduction() {
-            proven.insert(node_id);
-            let condition = node.to_code(normalizer, bindings)?;
-            output.push(format!("{}if {} {{", "\t".repeat(tab_level), condition));
-            let contradiction = match self.find_contradiction(node_id) {
-                Some(id) => id,
-                None => return Err(Error::internal("lost the conclusion of the proof")),
-            };
-            self.to_code_helper(
-                normalizer,
-                bindings,
-                contradiction,
-                tab_level + 1,
-                false,
-                next_k,
-                proven,
-                output,
-            )?;
-            output.push(format!("{}}}", "\t".repeat(tab_level)));
-            return Ok(());
-        }
-
-        for premise_id in &node.premises {
-            self.to_code_helper(
-                normalizer,
-                bindings,
-                *premise_id,
-                tab_level,
-                false,
-                next_k,
-                proven,
-                output,
-            )?;
-        }
-        proven.insert(node_id);
-
-        // We don't need to put the goal in the proof because it's already expressed in the code
-        if node_is_goal {
-            return Ok(());
-        }
-
-        match node.to_code(normalizer, bindings) {
-            Ok(code) => {
-                output.push(format!("{}{}", "\t".repeat(tab_level), code));
-                Ok(())
-            }
-            Err(e) => {
-                // We should have already filtered out any unprintable nodes, so if we
-                // hit this code path it indicates a bug.
-                Err(e)
-            }
-        }
+        Ok(&step.clause)
     }
 }
 
@@ -493,7 +186,7 @@ impl<'a> Proof<'a> {
 
         // First, reconstruct all the steps, working backwards.
         let mut concrete_steps: HashMap<ConcreteStepId, ConcreteStep> = HashMap::new();
-        for (id, step) in self.all_steps.iter().rev() {
+        for (id, step) in self.steps.iter().rev() {
             if *id == ProofStepId::Final {
                 self.reconstruct_step(*id, step, VariableMap::new(), &mut concrete_steps)?;
                 continue;
@@ -514,7 +207,7 @@ impl<'a> Proof<'a> {
         // the simplified versions?
         let mut skip_code = HashSet::new();
         let mut synthetic_definitions = Vec::new();
-        for (ps_id, step) in &self.all_steps {
+        for (ps_id, step) in &self.steps {
             let concrete_id = ConcreteStepId::ProofStep(*ps_id);
             if step.rule.is_assumption() && !step.clause.has_any_variable() {
                 let Some(cs) = concrete_steps.remove(&concrete_id) else {
@@ -536,7 +229,7 @@ impl<'a> Proof<'a> {
 
         // Start with synthetic atom definitions
         let mut answer = synthetic_definitions;
-        for (ps_id, _) in &self.all_steps {
+        for (ps_id, _) in &self.steps {
             for concrete_id in concrete_ids_for(*ps_id) {
                 let Some(cs) = concrete_steps.remove(&concrete_id) else {
                     continue;
