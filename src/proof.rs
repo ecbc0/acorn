@@ -8,28 +8,17 @@ use crate::code_generator::{CodeGenerator, Error};
 use crate::literal::Literal;
 use crate::normalizer::Normalizer;
 use crate::proof_step::{ProofStep, ProofStepId, Rule};
-use crate::source::{Source, SourceType};
 use crate::unifier::{Scope, Unifier};
 use crate::variable_map::VariableMap;
 
 /// A proof that was successfully found by the prover.
 ///
-/// This is the internal form of the proof. There are currently two different exportable
-/// forms of the proof: the Certificate, and the "condensed proof".
-/// The nice thing about the Certificate is that it always exists, and is fast to check.
-/// The condensed proof, on the other hand, is optimized for readability and direct
-/// insertability into the code. It cannot always be created.
-/// We probably want to deprecate the condensed proof, once the UI doesn't use it.
+/// This is the internal form of the proof. The exportable form is a Certificate,
+/// which can always be created and is fast to check.
 ///
-/// We store the proof in two different ways.
-/// First, we store each step of the proof in the order we found them, in `steps`.
-/// This starts with the negated goal and proves it by reducing it to a contradiction.
-///
-/// Second, we store the proof as a graph in `nodes`.
-/// This form lets us manipulate the proof to create an equivalent version that we can use
-/// for code generation.
-/// This dual representation helps us avoid the problem of proof generation creating a proof
-/// that is unreadable because it repeats itself or uses unnecessarily indirect reasoning.
+/// We store each step of the proof in the order we found them, in `steps`.
+/// This represents a proof by contradiction, with each step depending only on
+/// previous steps.
 pub struct Proof<'a> {
     normalizer: &'a Normalizer,
 
@@ -40,93 +29,20 @@ pub struct Proof<'a> {
 
     // Same data as steps, but indexed.
     step_map: HashMap<ProofStepId, &'a ProofStep>,
-
-    // The graph representation of the proof.
-    // Nodes are indexed by node id.
-    // The goal is always id zero.
-    //
-    // Nodes that get condensed out of the proof are not removed from this vector.
-    // Instead, they are modified to have no content, with nothing depending on them.
-    nodes: Vec<ProofNode<'a>>,
-
-    // A map from proof step ids to the ids nodes that correspond to them.
-    id_map: HashMap<ProofStepId, NodeId>,
-}
-
-/// To conveniently manipulate the proof, we store it as a directed graph with its own ids.
-/// We need two sorts of ids because as we manipulate the condensed proof, the
-/// condensed steps won't be 1-to-1 related to the reduction steps any more.
-type NodeId = u32;
-
-/// The ProofGraph is made up of ProofNodes.
-///
-/// Each node represents a single proposition, either a clause or the negation of a clause,
-/// which can be proved using other nodes in the proof, external sources, or starting a
-/// proof by reduction.
-struct ProofNode<'a> {
-    // Which other steps this step depends on.
-    // This also includes dependencies on assumptions being proved by contradiction.
-    premises: Vec<NodeId>,
-
-    // Which other steps depend on this step.
-    consequences: Vec<NodeId>,
-
-    // What external sources this step depends on.
-    // The goal is treated as a node rather than as a source, for the purpose of the graph.
-    sources: Vec<&'a Source>,
-}
-
-/// If the edge is already there, don't re-insert it.
-fn insert_edge(nodes: &mut Vec<ProofNode>, from: NodeId, to: NodeId) {
-    if !nodes[from as usize].consequences.contains(&to) {
-        nodes[from as usize].consequences.push(to);
-        nodes[to as usize].premises.push(from);
-    }
 }
 
 impl<'a> Proof<'a> {
-    /// Creates a new proof, with just one node for the negated goal.
+    /// Creates a new proof.
     pub fn new<'b>(normalizer: &'a Normalizer, _negated_goal: &AcornValue) -> Proof<'a> {
-        let mut proof = Proof {
+        Proof {
             normalizer,
             steps: vec![],
             step_map: HashMap::new(),
-            nodes: vec![],
-            id_map: HashMap::new(),
-        };
-
-        let negated_goal = ProofNode {
-            premises: vec![],
-            consequences: vec![],
-            sources: vec![],
-        };
-        proof.nodes.push(negated_goal);
-
-        proof
+        }
     }
 
-    /// Add a new step, which becomes a node in the graph.
+    /// Add a new step to the proof.
     pub fn add_step(&mut self, id: ProofStepId, step: &'a ProofStep) {
-        let node_id = self.nodes.len() as NodeId;
-        self.nodes.push(ProofNode {
-            premises: vec![],
-            consequences: vec![],
-            sources: vec![],
-        });
-
-        if let Rule::Assumption(info) = &step.rule {
-            if info.source.source_type == SourceType::NegatedGoal {
-                insert_edge(&mut self.nodes, 0, node_id);
-            } else {
-                self.nodes[node_id as usize].sources.push(&info.source);
-            }
-        }
-
-        for i in step.dependencies() {
-            insert_edge(&mut self.nodes, self.id_map[&i], node_id);
-        }
-
-        self.id_map.insert(id.clone(), node_id);
         self.step_map.insert(id.clone(), step);
         self.steps.push((id, step));
     }
