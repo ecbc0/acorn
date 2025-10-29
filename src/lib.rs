@@ -37,7 +37,6 @@ pub mod pattern_tree;
 pub mod potential_value;
 pub mod processor;
 pub mod project;
-pub mod proof;
 pub mod proof_step;
 pub mod proposition;
 pub mod saturation;

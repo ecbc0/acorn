@@ -4,6 +4,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::active_set::ActiveSet;
 use super::passive_set::PassiveSet;
+use super::proof::Proof;
 use crate::binding_map::BindingMap;
 use crate::certificate::Certificate;
 use crate::clause::Clause;
@@ -11,7 +12,6 @@ use crate::code_generator::{CodeGenerator, Error};
 use crate::literal::Literal;
 use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::project::Project;
-use crate::proof::Proof;
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
 use crate::term_graph::TermGraphContradiction;
 

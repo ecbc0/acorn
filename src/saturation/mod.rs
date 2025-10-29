@@ -4,6 +4,7 @@ pub mod features;
 pub mod fingerprint;
 pub mod ort_model;
 pub mod passive_set;
+pub mod proof;
 pub mod prover;
 pub mod rewrite_tree;
 pub mod score;

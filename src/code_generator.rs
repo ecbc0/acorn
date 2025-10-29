@@ -12,7 +12,7 @@ use crate::expression::{Declaration, Expression};
 use crate::module::ModuleId;
 use crate::names::{ConstantName, DefinedName};
 use crate::normalizer::Normalizer;
-use crate::proof::ConcreteStep;
+use crate::saturation::proof::ConcreteStep;
 use crate::term::{Term, TypeId};
 use crate::token::TokenType;
 use crate::type_unifier::TypeclassRegistry;
