@@ -49,9 +49,6 @@ pub struct Proof<'a> {
     // Instead, they are modified to have no content, with nothing depending on them.
     nodes: Vec<ProofNode<'a>>,
 
-    // Whether we have called condense().
-    condensed: bool,
-
     // A map from proof step ids to the ids nodes that correspond to them.
     id_map: HashMap<ProofStepId, NodeId>,
 
@@ -135,10 +132,6 @@ struct ProofNode<'a> {
     // What external sources this step depends on.
     // The goal is treated as a node rather than as a source, for the purpose of the graph.
     sources: Vec<&'a Source>,
-
-    // From the ProofStep
-    depth: u32,
-    printable: bool,
 }
 
 impl<'a> ProofNode<'a> {
@@ -177,30 +170,11 @@ impl<'a> ProofNode<'a> {
     }
 }
 
-fn remove_edge(nodes: &mut Vec<ProofNode>, from: NodeId, to: NodeId) {
-    nodes[from as usize].consequences.retain(|x| *x != to);
-    nodes[to as usize].premises.retain(|x| *x != from);
-}
-
 /// If the edge is already there, don't re-insert it.
 fn insert_edge(nodes: &mut Vec<ProofNode>, from: NodeId, to: NodeId) {
     if !nodes[from as usize].consequences.contains(&to) {
         nodes[from as usize].consequences.push(to);
         nodes[to as usize].premises.push(from);
-    }
-}
-
-fn move_sources_and_premises(nodes: &mut Vec<ProofNode>, from: NodeId, to: NodeId) {
-    let sources = std::mem::take(&mut nodes[from as usize].sources);
-    for source in sources {
-        if !nodes[to as usize].sources.contains(&source) {
-            nodes[to as usize].sources.push(source);
-        }
-    }
-    let premises = std::mem::take(&mut nodes[from as usize].premises);
-    for premise in premises {
-        nodes[premise as usize].consequences.retain(|x| *x != from);
-        insert_edge(nodes, premise, to);
     }
 }
 
@@ -215,7 +189,6 @@ impl<'a> Proof<'a> {
             normalizer,
             all_steps: vec![],
             nodes: vec![],
-            condensed: false,
             id_map: HashMap::new(),
             difficulty,
         };
@@ -226,8 +199,6 @@ impl<'a> Proof<'a> {
             premises: vec![],
             consequences: vec![],
             sources: vec![],
-            depth: 0,
-            printable: false,
         };
         proof.nodes.push(negated_goal);
 
@@ -248,8 +219,6 @@ impl<'a> Proof<'a> {
             premises: vec![],
             consequences: vec![],
             sources: vec![],
-            depth: step.depth,
-            printable: step.printable,
         });
 
         if let Rule::Assumption(info) = &step.rule {
@@ -271,87 +240,6 @@ impl<'a> Proof<'a> {
     pub fn has_active_id(&self, active_id: usize) -> bool {
         let id = ProofStepId::Active(active_id);
         self.id_map.contains_key(&id)
-    }
-
-    /// Contracts this node if possible.
-    /// (The goal and contradictions cannot be contracted.)
-    ///
-    /// If we start with
-    /// A & B -> C -> D & E
-    /// then we replace each in+out pair of C edges with an edge that goes directly.
-    /// A & B -> D & E
-    ///
-    /// Sources and premises are both copied to all consequences.
-    fn contract(&mut self, node_id: NodeId) {
-        let node = &self.nodes[node_id as usize];
-        match &node.value {
-            NodeValue::Clause(_) => {}
-            NodeValue::Contradiction | NodeValue::NegatedGoal(_) => return,
-        };
-
-        // Remove the node from the graph.
-        let premises = std::mem::take(&mut self.nodes[node_id as usize].premises);
-        let consequences = std::mem::take(&mut self.nodes[node_id as usize].consequences);
-        let sources = std::mem::take(&mut self.nodes[node_id as usize].sources);
-
-        for premise_id in &premises {
-            self.nodes[*premise_id as usize]
-                .consequences
-                .retain(|x| *x != node_id);
-        }
-
-        for consequence_id in consequences {
-            self.nodes[consequence_id as usize]
-                .premises
-                .retain(|x| *x != node_id);
-
-            for premise_id in &premises {
-                insert_edge(&mut self.nodes, *premise_id, consequence_id);
-            }
-
-            for source in &sources {
-                self.nodes[consequence_id as usize].sources.push(source);
-            }
-        }
-    }
-
-    /// An implicit node either does not need to be converted into code or cannot be
-    /// converted into code.
-    fn is_implicit(&self, node_id: NodeId) -> bool {
-        let node = &self.nodes[node_id as usize];
-        if node.depth == 0 {
-            return true;
-        }
-        match node.value {
-            NodeValue::Contradiction | NodeValue::NegatedGoal(_) => return false,
-            _ => {}
-        };
-
-        if !node.printable {
-            return true;
-        }
-
-        // If we have a printable consequence at this depth, we can use that one instead.
-        for consequence_id in &node.consequences {
-            let consequence = &self.nodes[*consequence_id as usize];
-            if let NodeValue::Contradiction = consequence.value {
-                continue;
-            }
-            if consequence.printable && consequence.depth == node.depth {
-                return true;
-            }
-        }
-
-        false
-    }
-
-    /// Remove nodes that we don't want to turn into explicit lines of code.
-    fn remove_implicit(&mut self) {
-        for node_id in 0..self.nodes.len() as NodeId {
-            if self.is_implicit(node_id) {
-                self.contract(node_id)
-            }
-        }
     }
 
     fn display(&self, value: &NodeValue) -> String {
@@ -398,83 +286,6 @@ impl<'a> Proof<'a> {
         }
     }
 
-    /// In a direct proof, all of the statements are true statements, so it's more intuitive.
-    /// Howevever, we can't always create a direct proof. So the idea is to make the proof
-    /// "as direct as possible".
-    ///
-    /// Thus, this method tries to turn one step from indirect to direct, and then repeats.
-    /// We do this by reversing the logical order of this node and its immediate consequence.
-    ///
-    /// Converts:
-    ///
-    /// if A {
-    ///   B
-    ///   false
-    /// }
-    ///
-    /// into:
-    ///
-    /// if B {
-    ///   false
-    /// }
-    /// !A
-    ///
-    /// and then continues with the new hypothesis.
-    fn try_to_make_direct(&mut self, from_id: NodeId) {
-        let mut from_id = from_id;
-        loop {
-            let node = &self.nodes[from_id as usize];
-            if !node.starts_reduction() {
-                // This node is already direct
-                return;
-            }
-            if node.negated {
-                panic!("unexpected negation in make_direct");
-            }
-            if let NodeValue::Contradiction = node.value {
-                // This is assuming !false, which is fine.
-                return;
-            }
-
-            // Find the consequences that are inside the indirect block
-            let mut counterfactual_consequences = vec![];
-            for consequence_id in &node.consequences {
-                if self.nodes[*consequence_id as usize].negated {
-                    // The consequence has been negated, which means it already must be outside
-                    continue;
-                }
-                counterfactual_consequences.push(*consequence_id);
-            }
-
-            if counterfactual_consequences.len() == 0 {
-                panic!("a counterfactual is never disproven, in the proof");
-            }
-
-            if counterfactual_consequences.len() > 1 {
-                // We can't make this direct, because it has multiple consequences.
-                return;
-            }
-
-            // We only use this node for one thing, so we can reverse the outgoing edge.
-            // Initially, the logic is that we assume "from", prove "to", then prove a contradiction.
-            // Afterwards, we are going to assume "to", prove a contradiction, and conclude "!from".
-            // Thus, we need to reverse the direction, negate from, and move all of to's sources
-            // and premises to from.
-            // If to is a contradiction, we don't want the resulting edge.
-            let to_id = counterfactual_consequences[0];
-            remove_edge(&mut self.nodes, from_id, to_id);
-
-            self.nodes[from_id as usize].negated = true;
-            move_sources_and_premises(&mut self.nodes, to_id, from_id);
-            if !matches!(self.nodes[to_id as usize].value, NodeValue::Contradiction) {
-                insert_edge(&mut self.nodes, to_id, from_id);
-            }
-
-            // Continue with the node that we just moved into the "if" condition
-            from_id = to_id;
-        }
-    }
-
     fn get_clause(&self, id: ProofStepId) -> Result<&Clause, Error> {
         let node_id = self.id_map.get(&id).ok_or_else(|| {
             Error::internal(format!(
@@ -490,15 +301,6 @@ impl<'a> Proof<'a> {
                 id
             )))
         }
-    }
-
-    /// Reduce the graph as much as possible.
-    /// Call just once.
-    pub fn condense(&mut self) {
-        assert!(!self.condensed);
-        self.remove_implicit();
-        self.try_to_make_direct(0);
-        self.condensed = true;
     }
 
     /// Whether this proof could be simplified.

@@ -306,7 +306,7 @@ impl Prover {
     /// We always include all of the steps that are mathematically necessary for the proof.
     /// The include_inspiration flag determines whether we include the "inspiration" steps,
     /// which the prover used to find the proof, but are not needed for the proof to be valid.
-    fn get_uncondensed_proof<'a>(
+    fn get_proof<'a>(
         &'a self,
         normalizer: &'a Normalizer,
         include_inspiration: bool,
@@ -370,7 +370,7 @@ impl Prover {
             .name
             .clone();
 
-        let proof = match self.get_uncondensed_proof(&normalizer, false) {
+        let proof = match self.get_proof(&normalizer, false) {
             Some(proof) => proof,
             None => {
                 // No proof found, create a placeholder certificate
