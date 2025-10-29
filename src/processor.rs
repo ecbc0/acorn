@@ -9,7 +9,6 @@ use crate::fact::Fact;
 use crate::goal::Goal;
 use crate::normalizer::Normalizer;
 use crate::project::Project;
-use crate::proof::Proof;
 use crate::proof_step::Rule;
 use crate::saturation::{Outcome, Prover, ProverParams};
 use tokio_util::sync::CancellationToken;
@@ -104,11 +103,6 @@ impl Processor {
     /// Forwards a search request to the underlying prover.
     pub fn search(&mut self, params: ProverParams) -> Outcome {
         self.prover.search(params)
-    }
-
-    /// Gets the condensed proof from the prover using the normalizer.
-    pub fn get_condensed_proof(&self) -> Option<Proof> {
-        self.prover.get_condensed_proof(&self.normalizer)
     }
 
     /// Creates a certificate from the current proof state.

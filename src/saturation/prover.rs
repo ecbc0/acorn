@@ -352,14 +352,6 @@ impl Prover {
         Some(proof)
     }
 
-    /// Returns a condensed proof, if we have a proof.
-    /// The condensed proof is what we recommend inserting into the code.
-    pub fn get_condensed_proof<'a>(&'a self, normalizer: &'a Normalizer) -> Option<Proof<'a>> {
-        let mut proof = self.get_uncondensed_proof(normalizer, false)?;
-        proof.condense();
-        Some(proof)
-    }
-
     /// Generate a certificate for the goal.
     /// If a proof was found, creates a certificate with the proof.
     /// If no proof was found, creates a placeholder certificate with no proof.
