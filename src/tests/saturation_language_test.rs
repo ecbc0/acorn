@@ -210,25 +210,15 @@ fn test_parameter_name_can_change() {
 
 #[test]
 fn test_using_imported_axiom() {
-    let mut p = Project::new_mock();
-    p.mock(
-        "/mock/bar.ac",
-        r#"
+    let text = r#"
     type Bar: axiom
     let bar: Bar = axiom
     let morph: Bar -> Bar = axiom
     axiom meq(b: Bar) { morph(b) = morph(bar) }
-    "#,
-    );
-    p.mock(
-        "/mock/main.ac",
-        r#"
-    from bar import Bar, morph
+
     theorem goal(a: Bar, b: Bar) { morph(a) = morph(b) }
-    "#,
-    );
-    let (_, outcome, _) = prove_with_old_codegen(&mut p, "main", "goal");
-    assert_eq!(outcome, Outcome::Success);
+    "#;
+    verify_succeeds(text);
 }
 
 #[test]
@@ -700,20 +690,11 @@ fn test_proving_with_generic_structure_definition() {
 
 #[test]
 fn test_prove_with_imported_generic_structure() {
-    let mut p = Project::new_mock();
-    p.mock(
-        "/mock/pair.ac",
-        r#"
+    let text = r#"
     structure Pair[T, U] {
         first: T
         second: U
     }
-    "#,
-    );
-    p.mock(
-        "/mock/main.ac",
-        r#"
-    from pair import Pair
 
     theorem check_first[T, U](t: T, u: U) {
         Pair.new(t, u).first = t
@@ -726,14 +707,8 @@ fn test_prove_with_imported_generic_structure() {
     theorem check_new[T, U](p: Pair[T, U]) {
         Pair.new(p.first, p.second) = p
     }
-    "#,
-    );
-    let (_, outcome, _) = prove_with_old_codegen(&mut p, "main", "check_first");
-    assert_eq!(outcome, Outcome::Success);
-    let (_, outcome, _) = prove_with_old_codegen(&mut p, "main", "check_second");
-    assert_eq!(outcome, Outcome::Success);
-    let (_, outcome, _) = prove_with_old_codegen(&mut p, "main", "check_new");
-    assert_eq!(outcome, Outcome::Success);
+    "#;
+    verify_succeeds(text);
 }
 
 #[test]
@@ -1268,8 +1243,36 @@ fn test_proving_with_mixin_instance() {
     }
     "#,
     );
-    let (_processor, outcome, _) = prove_with_old_codegen(&mut p, "main", "goal");
-    assert_eq!(outcome, Outcome::Success);
+
+    let module_id = p.load_module_by_name("main").expect("load failed");
+    let env = match p.get_module_by_id(module_id) {
+        crate::module::LoadState::Ok(env) => env,
+        crate::module::LoadState::Error(e) => panic!("error: {}", e),
+        _ => panic!("no module"),
+    };
+
+    for cursor in env.iter_goals() {
+        let facts = cursor.usable_facts(&p);
+        let goal = cursor.goal().unwrap();
+
+        let mut processor = crate::processor::Processor::new();
+        for fact in facts {
+            processor.add_fact(fact).unwrap();
+        }
+        processor.set_goal(&goal).unwrap();
+
+        let outcome = processor.search(crate::saturation::ProverParams::SHALLOW);
+        assert_eq!(outcome, Outcome::Success);
+
+        let goal_env = cursor.goal_env().unwrap();
+        let cert = processor
+            .prover()
+            .make_cert(&p, &goal_env.bindings, processor.normalizer(), true)
+            .expect("make_cert failed");
+        processor
+            .check_cert(&cert, None, &p, &goal_env.bindings)
+            .expect("check_cert failed");
+    }
 }
 
 #[test]

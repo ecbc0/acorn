@@ -778,31 +778,20 @@ fn test_verify_rewrite_trap() {
 
 #[test]
 fn test_prove_with_imported_skolem() {
-    let mut p = Project::new_mock();
-    p.mock(
-        "/mock/foo.ac",
-        r#"
-            type Nat: axiom
+    let text = r#"
+        type Nat: axiom
 
-            let f: Nat -> Bool = axiom
+        let f: Nat -> Bool = axiom
 
-            axiom exists_a_fa {
-                exists(a: Nat) { f(a) }
-            }
-        "#,
-    );
-    p.mock(
-        "/mock/main.ac",
-        r#"
-            from foo import Nat, f
+        axiom exists_a_fa {
+            exists(a: Nat) { f(a) }
+        }
 
-            theorem goal {
-                exists(a: Nat) { f(a) }
-            }
-        "#,
-    );
-    let (_, outcome, _) = prove_with_old_codegen(&mut p, "main", "goal");
-    assert_eq!(outcome, Outcome::Success);
+        theorem goal {
+            exists(a: Nat) { f(a) }
+        }
+    "#;
+    verify_succeeds(text);
 }
 
 #[test]
