@@ -337,12 +337,26 @@ impl AcornLanguageServer {
         }
     }
 
-    // Run a build in a background thread, proving all goals in the project.
+    // Updates the project, then runs a build in a background thread.
     // Both spawned threads hold a read lock on the project while doing their work.
     // This ensures that the project doesn't change for the duration of the build.
-    // The caller is responsible for stopping the previous build.
-    fn spawn_build(&self) {
+    async fn build(&self, path: PathBuf, text: &str, version: i32) {
         log("building...");
+
+        // Use mutate to update the file with automatic build cancellation
+        let result = self
+            .project_manager
+            .mutate(|project| {
+                project.building = true;
+                project.update_file(path, &text, version)
+            })
+            .await;
+
+        match result {
+            Ok(()) => {}
+            Err(e) => log(&format!("update failed: {:?}", e)),
+        }
+
         let start_time = chrono::Local::now();
 
         // This channel passes the build events
@@ -381,6 +395,7 @@ impl AcornLanguageServer {
                 let result = project_manager
                     .mutate_if_epoch(epoch, |project| {
                         project.update_build_cache(new_cache);
+                        project.building = false;
                     })
                     .await;
 
@@ -439,14 +454,8 @@ impl AcornLanguageServer {
     ) -> jsonrpc::Result<SelectionResponse> {
         let mut response = SelectionResponse::new(params.clone());
 
-        // Check if a build is currently in progress
-        let building = {
-            let build_info = self.build.read().await;
-            build_info.id.is_some() && !build_info.finished
-        };
-        response.building = building;
-
         let project = self.project_manager.read().await;
+        response.building = project.building;
         let path = match to_path(&params.uri) {
             Some(path) => path,
             None => {
@@ -564,7 +573,7 @@ impl LanguageServer for AcornLanguageServer {
     /// When did_save is called, we get the full text of the document.
     /// We don't get a version number, which is annoying. We have to take the last version number
     /// of the document that we saw in a change event.
-    /// We trigger a build on save.
+    /// We trigger a build if it seems like we should.
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         let url = params.text_document.uri;
         let text = match params.text {
@@ -599,30 +608,14 @@ impl LanguageServer for AcornLanguageServer {
         {
             // Check if the project already has this document state.
             // If the update is a no-op, there's no need to stop the build.
-            // TODO: does this ever happen?
+            // This happens if you save without changing anything.
             let project = self.project_manager.read().await;
             if project.has_version(&path, version) {
                 return;
             }
         }
 
-        log(&format!(
-            "updating {} with {} bytes",
-            path.display(),
-            text.len()
-        ));
-
-        // Use mutate to update the file with automatic build cancellation
-        let result = self
-            .project_manager
-            .mutate(|project| project.update_file(path, &text, version))
-            .await;
-
-        match result {
-            Ok(()) => {}
-            Err(e) => log(&format!("update failed: {:?}", e)),
-        }
-        self.spawn_build();
+        self.build(path, &text, version).await;
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {

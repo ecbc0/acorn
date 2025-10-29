@@ -64,6 +64,10 @@ pub struct Project {
     // The last known-good build cache.
     // This is different from the Builder's build cache, which is created during a build.
     pub build_cache: BuildCache,
+
+    // A flag for whether something is using the project to build right now.
+    // Only used in the parallel server code.
+    pub building: bool,
 }
 
 /// Configuration options for the project.
@@ -190,6 +194,7 @@ impl Project {
             targets: HashSet::new(),
             build_cache,
             build_dir,
+            building: false,
         }
     }
 
