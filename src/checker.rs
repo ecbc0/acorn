@@ -250,7 +250,7 @@ impl Checker {
     ///
     /// If the checker is in verbose mode and the reason has a dependency,
     /// this recursively includes all dependent steps first, then the current step.
-    pub fn push_step(
+    fn make_steps(
         &self,
         statement: String,
         reason: StepReason,
@@ -268,7 +268,7 @@ impl Checker {
                 let dep_statement = clause_to_code(dep_clause, normalizer, bindings);
 
                 // Recursively get all dependencies
-                let dep_steps = self.push_step(dep_statement, dep_reason, normalizer, bindings);
+                let dep_steps = self.make_steps(dep_statement, dep_reason, normalizer, bindings);
                 steps.extend(dep_steps);
             }
         }
@@ -400,13 +400,12 @@ impl Checker {
                 }
 
                 // Record this step
-                certificate_steps.push(CertificateStep {
-                    statement: code.to_string(),
-                    reason: match source {
-                        Some(source) => StepReason::Skolemization(source),
-                        None => StepReason::SyntheticDefinition,
-                    },
-                });
+                let reason = match source {
+                    Some(source) => StepReason::Skolemization(source),
+                    None => StepReason::SyntheticDefinition,
+                };
+                let steps = self.make_steps(code.to_string(), reason, normalizer, bindings);
+                certificate_steps.extend(steps);
 
                 Ok(())
             }
@@ -452,10 +451,8 @@ impl Checker {
 
                 // Record the certificate step with the reason we found
                 if let Some(reason) = reason {
-                    certificate_steps.push(CertificateStep {
-                        statement: code.to_string(),
-                        reason,
-                    });
+                    let steps = self.make_steps(code.to_string(), reason, normalizer, bindings);
+                    certificate_steps.extend(steps);
                 }
 
                 Ok(())
