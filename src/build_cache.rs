@@ -98,7 +98,14 @@ impl BuildCache {
     }
 
     /// Save the build cache, merging in information from an old cache.
-    pub fn save_merging_old(&mut self, old_cache: &BuildCache) -> Result<(), Box<dyn Error>> {
+    /// If preserve_old_manifest_entries is false (full build), only modules in the new
+    /// cache will be in the manifest. If true (partial build), old manifest entries
+    /// for modules not in the new cache will be preserved.
+    pub fn save_merging_old(
+        &mut self,
+        old_cache: &BuildCache,
+        preserve_old_manifest_entries: bool,
+    ) -> Result<(), Box<dyn Error>> {
         // Save only the certificate stores that are in this cache.
         // These are the ones that were actually built.
         for (descriptor, cert_store) in &self.cache {
@@ -136,16 +143,19 @@ impl BuildCache {
             }
         }
 
-        // Merge old manifest entries before saving to preserve modules that weren't rebuilt
-        for (module_name, hex_hash) in &old_cache.manifest.modules {
-            if !self.manifest.modules.contains_key(module_name) {
-                self.manifest
-                    .modules
-                    .insert(module_name.clone(), hex_hash.clone());
+        // Merge old manifest entries only if this is a partial build
+        // In a full build, only modules that were actually processed should remain
+        if preserve_old_manifest_entries {
+            for (module_name, hex_hash) in &old_cache.manifest.modules {
+                if !self.manifest.modules.contains_key(module_name) {
+                    self.manifest
+                        .modules
+                        .insert(module_name.clone(), hex_hash.clone());
+                }
             }
         }
 
-        // Save the merged manifest
+        // Save the manifest (merged or not, depending on build type)
         self.manifest.save(&self.build_dir)?;
 
         // Merge the old certificates so they're available in memory.

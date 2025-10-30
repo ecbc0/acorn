@@ -276,12 +276,14 @@ impl Project {
     }
 
     /// Updates the build cache with a new one and optionally writes it to disk.
-    pub fn update_build_cache(&mut self, mut new_cache: BuildCache) {
+    /// If is_partial_build is true, old manifest entries are preserved for modules
+    /// that weren't rebuilt. If false (full build), only newly built modules are in the manifest.
+    pub fn update_build_cache(&mut self, mut new_cache: BuildCache, is_partial_build: bool) {
         if self.config.write_cache {
-            // Save and merge: writes only new JSONL files, preserves complete manifest,
+            // Save and merge: writes only new JSONL files, preserves manifest based on build type,
             // and merges old certificates back into memory
             // TODO: how should we handle errors here?
-            let _ = new_cache.save_merging_old(&self.build_cache);
+            let _ = new_cache.save_merging_old(&self.build_cache, is_partial_build);
         }
 
         self.build_cache = new_cache;

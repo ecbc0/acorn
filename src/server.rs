@@ -387,7 +387,8 @@ impl AcornLanguageServer {
             if let Some(new_cache) = build_cache {
                 let result = project_manager
                     .mutate_if_epoch(epoch, |project| {
-                        project.update_build_cache(new_cache);
+                        // Server always does full builds of all targets, not partial builds
+                        project.update_build_cache(new_cache, false);
                         project.building = false;
                     })
                     .await;

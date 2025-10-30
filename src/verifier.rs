@@ -137,9 +137,11 @@ impl Verifier {
         };
 
         // Update the build cache if the build was successful
+        // Pass is_partial_build flag: true if we have a specific target, false for full build
         if let Some(build_cache) = self.builder.into_build_cache() {
+            let is_partial_build = self.target.is_some();
             unsafe {
-                (*self.project_ptr).update_build_cache(build_cache);
+                (*self.project_ptr).update_build_cache(build_cache, is_partial_build);
             }
         }
 
@@ -808,6 +810,88 @@ mod tests {
             manifest.modules.len(),
             2,
             "BUG: manifest should still have 2 entries after verifying only module_a, but other entries were deleted"
+        );
+    }
+
+    #[test]
+    fn test_deleted_module_removed_from_manifest_on_full_verify() {
+        let (acornlib, src, build) = setup();
+
+        // Create two modules
+        let module_a = src.child("module_a.ac");
+        module_a
+            .write_str(
+                r#"
+                type Nat: axiom
+                theorem a_theorem(x: Nat) {
+                    x = x
+                }
+                "#,
+            )
+            .unwrap();
+
+        let module_b = src.child("module_b.ac");
+        module_b
+            .write_str(
+                r#"
+                type Nat: axiom
+                theorem b_theorem(x: Nat) {
+                    x = x
+                }
+                "#,
+            )
+            .unwrap();
+
+        // Phase 1: Verify all modules - manifest should have two entries
+        let mut verifier1 = Verifier::new(
+            acornlib.path().to_path_buf(),
+            ProjectConfig::default(),
+            None,
+        )
+        .unwrap();
+        verifier1.builder.check_hashes = false;
+        let output1 = verifier1.run().unwrap();
+        assert_eq!(output1.status, BuildStatus::Good);
+
+        // Check manifest has two entries
+        let manifest_file = build.child("manifest.json");
+        assert!(manifest_file.exists(), "manifest.json should exist");
+        let manifest_content = std::fs::read_to_string(manifest_file.path()).unwrap();
+        let manifest: crate::manifest::Manifest = serde_json::from_str(&manifest_content).unwrap();
+        assert_eq!(
+            manifest.modules.len(),
+            2,
+            "manifest should have 2 entries after verifying both modules"
+        );
+
+        // Phase 2: Delete module_b
+        std::fs::remove_file(module_b.path()).unwrap();
+
+        // Phase 3: Run full verify again - manifest should now only have one entry
+        let mut verifier2 = Verifier::new(
+            acornlib.path().to_path_buf(),
+            ProjectConfig::default(),
+            None,
+        )
+        .unwrap();
+        verifier2.builder.check_hashes = false;
+        let output2 = verifier2.run().unwrap();
+        assert_eq!(output2.status, BuildStatus::Good);
+
+        // Check manifest now only has one entry (module_b should be removed)
+        let manifest_content = std::fs::read_to_string(manifest_file.path()).unwrap();
+        let manifest: crate::manifest::Manifest = serde_json::from_str(&manifest_content).unwrap();
+        assert_eq!(
+            manifest.modules.len(),
+            1,
+            "manifest should have only 1 entry after deleting module_b and running full verify"
+        );
+
+        // Verify the remaining entry is module_a
+        let module_a_name = crate::manifest::ModuleName::new(&vec!["module_a".to_string()]);
+        assert!(
+            manifest.modules.contains_key(&module_a_name),
+            "manifest should still contain module_a"
         );
     }
 

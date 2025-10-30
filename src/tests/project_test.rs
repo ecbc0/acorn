@@ -26,9 +26,10 @@ fn expect_build_ok(project: &mut Project) -> i32 {
 
     // Update the project's build cache with the results from this build
     // Only do this for projects that actually use caching (not mock projects)
+    // We default to false (full build) which is conservative for tests
     if project.config.write_cache || project.config.read_cache {
         if let Some(cache) = build_cache {
-            project.update_build_cache(cache);
+            project.update_build_cache(cache, false);
         }
     }
 
