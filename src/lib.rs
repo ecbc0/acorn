@@ -33,6 +33,7 @@ pub mod named_entity;
 pub mod names;
 pub mod normalization_map;
 pub mod normalizer;
+pub mod ort_utils;
 pub mod pattern_tree;
 pub mod potential_value;
 pub mod processor;

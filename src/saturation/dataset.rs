@@ -8,7 +8,7 @@ use super::features::Features;
 use crate::common;
 
 // The dataset is created from a verification run.
-// It is designed for training an OrtModel, for use as a Scorer.
+// It is designed for training a ScoringModel, for use as a Scorer.
 // The dataset tracks which activated proof steps are used in the proof.
 // features is the features for a particular proof step.
 // label is true if the proof step is used in the proof, and false if it is not.

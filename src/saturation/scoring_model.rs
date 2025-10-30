@@ -2,27 +2,25 @@ use std::error::Error;
 use std::sync::{Arc, OnceLock};
 
 use ndarray::{Axis, IxDyn};
-use ort::execution_providers::CPUExecutionProvider;
 use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
 
 use super::features::Features;
 use super::scorer::Scorer;
+use crate::ort_utils::ensure_ort_initialized;
 
-// The OrtModel uses ort to load an onnx model and uses it to score feature vectors.
-pub struct OrtModel {
+// The ScoringModel uses ort to load an onnx model and uses it to score feature vectors.
+pub struct ScoringModel {
     // The ONNX model.
     session: Arc<Session>,
 }
 
-static GLOBAL_SESSION: OnceLock<Arc<Session>> = OnceLock::new();
+static SCORING_SESSION: OnceLock<Arc<Session>> = OnceLock::new();
 
 const MODEL_BYTES: &[u8] = include_bytes!("../../files/models/model-2024-09-25-15-33-10.onnx");
 
 fn make_session(bytes: &[u8]) -> Result<Arc<Session>, Box<dyn Error>> {
-    ort::init()
-        .with_execution_providers([CPUExecutionProvider::default().build().error_on_failure()])
-        .commit()?;
+    ensure_ort_initialized()?;
 
     let session = Session::builder()?
         .with_intra_threads(1)?
@@ -32,24 +30,24 @@ fn make_session(bytes: &[u8]) -> Result<Arc<Session>, Box<dyn Error>> {
     Ok(Arc::new(session))
 }
 
-impl OrtModel {
+impl ScoringModel {
     // Loads a model from bytes.
     // The bytes are typically preloaded into the binary with include_bytes!.
     fn load_bytes(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
-        let session = GLOBAL_SESSION
+        let session = SCORING_SESSION
             .get_or_init(|| make_session(bytes).expect("Failed to initialize ORT session"));
-        Ok(OrtModel {
+        Ok(ScoringModel {
             session: Arc::clone(session),
         })
     }
 
     // Loads the hardcoded model.
     pub fn load() -> Result<Self, Box<dyn Error>> {
-        OrtModel::load_bytes(MODEL_BYTES)
+        ScoringModel::load_bytes(MODEL_BYTES)
     }
 }
 
-impl Scorer for OrtModel {
+impl Scorer for ScoringModel {
     // This assumes that the model is calculating a probability of the positive class,
     // where the positive class is a step that was actually taken in a proof.
     // There's a lot of unwrapping - it would be nice to handle errors more gracefully.
@@ -88,8 +86,8 @@ mod tests {
         let features = Features::new(&step);
 
         // First ort
-        let ort_model = OrtModel::load().unwrap();
-        let ort_score = ort_model.score(&features).unwrap();
+        let scoring_model = ScoringModel::load().unwrap();
+        let ort_score = scoring_model.score(&features).unwrap();
         assert!(ort_score.is_finite());
     }
 
@@ -99,16 +97,16 @@ mod tests {
         let features1 = Features::new(&step1);
         let step2 = ProofStep::mock("c4(c1, c1) = c4(c2, c2)");
         let features2 = Features::new(&step2);
-        let ort_model = OrtModel::load().unwrap();
+        let scoring_model = ScoringModel::load().unwrap();
 
-        let score1 = ort_model.score(&features1).unwrap();
-        let score2 = ort_model.score(&features2).unwrap();
+        let score1 = scoring_model.score(&features1).unwrap();
+        let score2 = scoring_model.score(&features2).unwrap();
 
         // The scores should be different, even up to floating point error
         assert!((score1 - score2).abs() > 1e-6);
 
         // Recalculate the scores in a batch
-        let scores = ort_model.score_batch(&[features1, features2]).unwrap();
+        let scores = scoring_model.score_batch(&[features1, features2]).unwrap();
         assert_eq!(scores.len(), 2);
         assert!((scores[0] - score1).abs() < 1e-6);
         assert!((scores[1] - score2).abs() < 1e-6);

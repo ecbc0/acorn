@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use super::features::Features;
-use super::ort_model::OrtModel;
+use super::scoring_model::ScoringModel;
 
 pub trait Scorer {
     fn score(&self, features: &Features) -> Result<f32, Box<dyn Error>>;
@@ -12,7 +12,7 @@ pub trait Scorer {
 }
 
 pub fn default_scorer() -> Box<dyn Scorer + Send + Sync> {
-    Box::new(OrtModel::load().unwrap())
+    Box::new(ScoringModel::load().unwrap())
 }
 
 // Developed before I had any other framework for policies.

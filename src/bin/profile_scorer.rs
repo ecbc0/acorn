@@ -7,8 +7,8 @@
 
 use acorn::proof_step::ProofStep;
 use acorn::saturation::features::Features;
-use acorn::saturation::ort_model::OrtModel;
 use acorn::saturation::scorer::Scorer;
+use acorn::saturation::scoring_model::ScoringModel;
 use mimalloc::MiMalloc;
 
 #[global_allocator]
@@ -19,7 +19,7 @@ fn main() {
     let n = 10000;
     let mut total_seconds = 0.0;
     for i in 1..(m + 1) {
-        let scorer = OrtModel::load().unwrap();
+        let scorer = ScoringModel::load().unwrap();
 
         let step1 = ProofStep::mock("c0(c3) = c2");
         let step2 = ProofStep::mock("c4(c1, c1) = c4(c2, c2)");
