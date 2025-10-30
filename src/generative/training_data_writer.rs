@@ -3,8 +3,8 @@ use std::io::{self, BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use super::goal_context::GoalContext;
 use crate::certificate::Certificate;
-use crate::goal_context::GoalContext;
 
 /// Manages writing training data proofs to numbered files in a directory.
 pub struct TrainingDataWriter {

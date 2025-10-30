@@ -11,13 +11,13 @@ use crate::build_cache::BuildCache;
 use crate::certificate::{Certificate, CertificateStore, CertificateWorklist};
 use crate::compilation::CompilationError;
 use crate::environment::Environment;
+use crate::generative::goal_context::GoalContext;
+use crate::generative::training_data_writer::TrainingDataWriter;
 use crate::goal::Goal;
-use crate::goal_context::GoalContext;
 use crate::module::{LoadState, ModuleDescriptor, ModuleId};
 use crate::processor::Processor;
 use crate::project::Project;
 use crate::saturation::{Outcome, ProverParams};
-use crate::training_data_writer::TrainingDataWriter;
 
 static NEXT_BUILD_ID: AtomicU32 = AtomicU32::new(1);
 
