@@ -1,10 +1,8 @@
 use crate::certificate::Certificate;
-use crate::environment::Environment;
 use crate::module::LoadState;
 use crate::processor::Processor;
 use crate::project::Project;
 use crate::prover::{Outcome, ProverMode};
-use crate::saturation::SaturationProver;
 
 /// Expects the proof to succeed, and a valid concrete proof to be generated.
 pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certificate {
