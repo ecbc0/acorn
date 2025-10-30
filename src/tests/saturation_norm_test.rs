@@ -244,3 +244,24 @@ fn test_more_anonymous_const_false() {
     "#;
     verify_succeeds(text);
 }
+
+#[test]
+fn test_long_if_condition() {
+    let text = r#"
+    type Nat: axiom
+    let f: Nat -> Bool = axiom
+
+    define or_switch(a: Nat, b: Nat, c: Nat, d: Nat) -> Nat {
+        if f(a) or f(b) {
+            c
+        } else {
+            d
+        }
+    }
+
+    theorem goal(a: Nat) {
+        or_switch(a, a, a, a) = a
+    }
+    "#;
+    verify_succeeds(text);
+}
