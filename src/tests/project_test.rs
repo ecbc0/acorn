@@ -1486,3 +1486,47 @@ fn test_handle_selection_typeclass_attribute() {
         main_step.reason
     );
 }
+
+#[test]
+fn test_strict_mode_rejects_axioms() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        type Nat: axiom
+        let zero: Nat = axiom
+        axiom test_axiom { true }
+        "#,
+    );
+
+    // First, verify it works without strict mode
+    p.expect_ok("main");
+
+    // Now test with strict mode enabled
+    let mut builder = Builder::new(&p, CancellationToken::new(), |_| {});
+    builder.strict = true;
+    builder.build();
+
+    // Should fail with an error
+    assert_eq!(builder.status, BuildStatus::Error);
+}
+
+#[test]
+fn test_strict_mode_allows_theorems() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        theorem test_theorem { true }
+        "#,
+    );
+
+    // Should work with strict mode since there's only a theorem, no axioms
+    let mut builder = Builder::new(&p, CancellationToken::new(), |_| {});
+    builder.strict = true;
+    builder.build();
+
+    // The build will have warnings because the theorem can't be proven,
+    // but it shouldn't error from strict mode
+    assert_ne!(builder.status, BuildStatus::Error);
+}

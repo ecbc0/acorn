@@ -55,6 +55,9 @@ pub struct Builder<'a> {
     /// Whether we skip goals that match hashes in the cache.
     pub check_hashes: bool,
 
+    /// In strict mode, reject any use of the axiom keyword.
+    pub strict: bool,
+
     /// The current module we are proving.
     current_module: Option<ModuleDescriptor>,
 
@@ -310,6 +313,7 @@ impl<'a> Builder<'a> {
             log_secondary_errors: true,
             reverify: false,
             check_hashes: true,
+            strict: false,
             current_module: None,
             current_module_good: true,
             build_cache: None,
@@ -761,6 +765,34 @@ impl<'a> Builder<'a> {
         target: &ModuleDescriptor,
         env: &Environment,
     ) -> Result<(), BuildError> {
+        // In strict mode, reject any use of the axiom keyword
+        if self.strict {
+            use crate::block::Node;
+            use crate::fact::Fact;
+            use crate::source::SourceType;
+
+            for node in &env.nodes {
+                if let Node::Structural(fact) = node {
+                    if let Fact::Proposition(prop) = fact {
+                        if matches!(prop.source.source_type, SourceType::Axiom(_)) {
+                            let range = prop.source.range;
+                            let event = self.make_event(
+                                range,
+                                "axiom keyword is not allowed in strict mode",
+                                Some(tower_lsp::lsp_types::DiagnosticSeverity::ERROR),
+                            );
+                            (self.event_handler)(event);
+                            self.status = BuildStatus::Error;
+                            return Err(BuildError::new(
+                                range,
+                                "axiom keyword is not allowed in strict mode",
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
         let mut worklist = self.project.build_cache.make_worklist(target);
         let mut new_certs = vec![];
 

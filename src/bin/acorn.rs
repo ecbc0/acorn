@@ -80,6 +80,14 @@ enum Command {
             value_name = "LINE"
         )]
         line: Option<u32>,
+
+        /// Reject any use of the axiom keyword
+        #[clap(
+            long,
+            default_value = "false",
+            help = "Reject any use of the axiom keyword."
+        )]
+        strict: bool,
     },
 
     /// Reverify all goals, erroring if any goal requires a search
@@ -192,6 +200,7 @@ async fn main() {
             target,
             nohash,
             line,
+            strict,
         }) => {
             let mut verifier = match Verifier::new(current_dir, ProjectConfig::default(), target) {
                 Ok(v) => v,
@@ -204,7 +213,8 @@ async fn main() {
             verifier.builder.verbose = line.is_some();
             verifier.line = line;
             verifier.builder.reverify = false;
-            verifier.builder.check_hashes = !nohash;
+            verifier.builder.strict = strict;
+            verifier.builder.check_hashes = !nohash && !strict;
 
             match verifier.run() {
                 Err(e) => {
