@@ -91,15 +91,6 @@ pub struct ProverParams {
 }
 
 impl ProverParams {
-    /// Searches with a short duration.
-    /// Designed to be called multiple times in succession.
-    /// The time-based limit is set low, so that it feels interactive.
-    pub const PARTIAL: ProverParams = ProverParams {
-        activation_limit: 5000,
-        seconds: 0.1,
-        shallow_only: false,
-    };
-
     /// About as long as a human is willing to wait for a proof.
     pub const INTERACTIVE: ProverParams = ProverParams {
         activation_limit: 2000,
