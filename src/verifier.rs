@@ -752,6 +752,76 @@ mod tests {
     }
 
     #[test]
+    fn test_manifest_preserved_when_verifying_single_module() {
+        let (acornlib, src, build) = setup();
+
+        // Create two modules
+        src.child("module_a.ac")
+            .write_str(
+                r#"
+                type Nat: axiom
+                theorem a_theorem(x: Nat) {
+                    x = x
+                }
+                "#,
+            )
+            .unwrap();
+
+        src.child("module_b.ac")
+            .write_str(
+                r#"
+                type Nat: axiom
+                theorem b_theorem(x: Nat) {
+                    x = x
+                }
+                "#,
+            )
+            .unwrap();
+
+        // Phase 1: Verify all modules - manifest should have two entries
+        let mut verifier1 = Verifier::new(
+            acornlib.path().to_path_buf(),
+            ProjectConfig::default(),
+            None,
+        )
+        .unwrap();
+        verifier1.builder.check_hashes = false;
+        let output1 = verifier1.run().unwrap();
+        assert_eq!(output1.status, BuildStatus::Good);
+
+        // Check manifest has two entries
+        let manifest_file = build.child("manifest.json");
+        assert!(manifest_file.exists(), "manifest.json should exist");
+        let manifest_content = std::fs::read_to_string(manifest_file.path()).unwrap();
+        let manifest: crate::manifest::Manifest = serde_json::from_str(&manifest_content).unwrap();
+        assert_eq!(
+            manifest.modules.len(),
+            2,
+            "manifest should have 2 entries after verifying both modules"
+        );
+
+        // Phase 2: Verify only module_a - manifest should STILL have two entries
+        let mut verifier2 = Verifier::new(
+            acornlib.path().to_path_buf(),
+            ProjectConfig::default(),
+            Some("module_a".to_string()),
+        )
+        .unwrap();
+        verifier2.builder.check_hashes = false;
+        let output2 = verifier2.run().unwrap();
+        assert_eq!(output2.status, BuildStatus::Good);
+
+        // Check manifest STILL has two entries (this is the bug - it will only have one)
+        let manifest_content = std::fs::read_to_string(manifest_file.path()).unwrap();
+        let manifest: crate::manifest::Manifest = serde_json::from_str(&manifest_content).unwrap();
+        assert_eq!(
+            manifest.modules.len(),
+            2,
+            "BUG: manifest should still have 2 entries after verifying only module_a, but other entries were deleted"
+        );
+    }
+
+    #[test]
     fn test_global_certificate_preservation_across_modules() {
         let (acornlib, src, build) = setup();
 
