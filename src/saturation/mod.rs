@@ -11,4 +11,4 @@ pub mod score;
 pub mod scorer;
 
 // Re-export the main public types
-pub use prover::Prover;
+pub use prover::SaturationProver;

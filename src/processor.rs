@@ -10,48 +10,53 @@ use crate::goal::Goal;
 use crate::normalizer::Normalizer;
 use crate::project::Project;
 use crate::proof_step::Rule;
-use crate::prover::{Outcome, ProverMode};
-use crate::saturation::Prover;
+use crate::prover::{Outcome, Prover, ProverMode};
+use crate::saturation::SaturationProver;
 use tokio_util::sync::CancellationToken;
 
 /// The processor represents all of the stuff that can accept a stream of facts.
 /// We might want to rename this or refactor it away later.
 #[derive(Clone)]
-pub struct Processor {
-    prover: Prover,
+pub struct Processor<P: Prover> {
+    prover: P,
     normalizer: Normalizer,
     checker: Checker,
 }
 
-impl Processor {
-    pub fn new() -> Processor {
+impl Processor<SaturationProver> {
+    pub fn new() -> Processor<SaturationProver> {
         Processor {
-            prover: Prover::new(vec![]),
+            prover: SaturationProver::new(vec![]),
             normalizer: Normalizer::new(),
             checker: Checker::new_fast(),
         }
     }
 
-    pub fn with_token(cancellation_token: CancellationToken) -> Processor {
+    pub fn with_token(cancellation_token: CancellationToken) -> Processor<SaturationProver> {
         Processor {
-            prover: Prover::new(vec![cancellation_token]),
+            prover: SaturationProver::new(vec![cancellation_token]),
             normalizer: Normalizer::new(),
             checker: Checker::new_fast(),
         }
     }
 
-    pub fn with_dual_tokens(token1: CancellationToken, token2: CancellationToken) -> Processor {
+    pub fn with_dual_tokens(
+        token1: CancellationToken,
+        token2: CancellationToken,
+    ) -> Processor<SaturationProver> {
         Processor {
-            prover: Prover::new(vec![token1, token2]),
+            prover: SaturationProver::new(vec![token1, token2]),
             normalizer: Normalizer::new(),
             checker: Checker::new_fast(),
         }
     }
 
-    pub fn prover(&self) -> &Prover {
+    pub fn prover(&self) -> &SaturationProver {
         &self.prover
     }
+}
 
+impl<P: Prover> Processor<P> {
     pub fn normalizer(&self) -> &Normalizer {
         &self.normalizer
     }

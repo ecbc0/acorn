@@ -122,15 +122,6 @@ pub struct BuildMetrics {
     /// Number of proof searches that ended in success.
     pub searches_success: i32,
 
-    /// The total number of clauses activated.
-    pub clauses_activated: i32,
-
-    /// Total sum of square num_activated.
-    pub clauses_sum_square_activated: u64,
-
-    /// Total number of clauses scored, both active and passive.
-    pub clauses_total: i32,
-
     /// The total amount of time spent in proof search, in seconds.
     pub search_time: f64,
 }
@@ -192,16 +183,6 @@ impl BuildMetrics {
         if self.searches_total > 0 {
             let success_percent = 100.0 * self.searches_success as f64 / self.searches_total as f64;
             lines.push(format!("{:.2}% search success rate", success_percent));
-            let num_activated = self.clauses_activated as f64 / self.searches_success as f64;
-            lines.push(format!("{:.2} average activations", num_activated));
-            let mean_square_activated =
-                self.clauses_sum_square_activated as f64 / self.searches_total as f64;
-            lines.push(format!(
-                "{:.1} mean square activations",
-                mean_square_activated
-            ));
-            let num_clauses = self.clauses_total as f64 / self.searches_total as f64;
-            lines.push(format!("{:.2} average clauses", num_clauses));
             let search_time_ms = 1000.0 * self.search_time / self.searches_total as f64;
             lines.push(format!("{:.1} ms average search time", search_time_ms));
         }
@@ -435,13 +416,7 @@ impl<'a> Builder<'a> {
     /// Called when a single proof search completes.
     /// Statistics are tracked here.
     /// env should be the environment that the proof happened in.
-    pub fn search_finished(
-        &mut self,
-        processor: &Processor,
-        goal: &Goal,
-        outcome: Outcome,
-        elapsed: Duration,
-    ) {
+    pub fn search_finished(&mut self, goal: &Goal, outcome: Outcome, elapsed: Duration) {
         // Time conversion
         let secs = elapsed.as_secs() as f64;
         let subsec_nanos = elapsed.subsec_nanos() as f64;
@@ -452,11 +427,6 @@ impl<'a> Builder<'a> {
         self.metrics.goals_done += 1;
         self.metrics.searches_total += 1;
         self.metrics.search_time += elapsed_f64;
-        let clauses_activated = processor.prover().num_activated() as i32;
-        self.metrics.clauses_activated += clauses_activated;
-        let num_passive = processor.prover().num_passive() as i32;
-        self.metrics.clauses_total += clauses_activated + num_passive;
-        self.metrics.clauses_sum_square_activated += (clauses_activated * clauses_activated) as u64;
 
         match outcome {
             Outcome::Success => {
@@ -615,9 +585,9 @@ impl<'a> Builder<'a> {
 
     /// Verifies a goal.
     /// env should be the environment that the proof happens in.
-    fn verify_goal(
+    fn verify_goal<P: crate::prover::Prover>(
         &mut self,
-        mut processor: Rc<Processor>,
+        mut processor: Rc<Processor<P>>,
         goal: &Goal,
         env: &Environment,
         new_certs: &mut Vec<Certificate>,
@@ -702,16 +672,16 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        self.search_finished(processor, goal, outcome, start.elapsed());
+        self.search_finished(goal, outcome, start.elapsed());
         Ok(())
     }
 
     /// Verifies a node and all its children recursively.
     /// builder tracks statistics and results for the build.
     /// If verify_node encounters an error, it stops, leaving node in a borked state.
-    pub fn verify_node(
+    pub fn verify_node<P: crate::prover::Prover>(
         &mut self,
-        mut processor: Rc<Processor>,
+        mut processor: Rc<Processor<P>>,
         cursor: &mut NodeCursor,
         new_certs: &mut Vec<Certificate>,
         worklist: &mut CertificateWorklist,

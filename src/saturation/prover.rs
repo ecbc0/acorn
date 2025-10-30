@@ -25,7 +25,7 @@ use crate::term_graph::TermGraphContradiction;
 /// active set, and performs inferences between it and the active clauses. This continues until
 /// a contradiction is found or the search saturates.
 #[derive(Clone)]
-pub struct Prover {
+pub struct SaturationProver {
     /// The "active" clauses are the ones we use for reasoning.
     active_set: ActiveSet,
 
@@ -52,11 +52,11 @@ pub struct Prover {
     goal: Option<NormalizedGoal>,
 }
 
-impl Prover {
-    /// Creates a new Prover instance.
+impl SaturationProver {
+    /// Creates a new SaturationProver instance.
     /// The prover must stop when any of its cancellation tokens are canceled.
-    pub fn new(tokens: Vec<CancellationToken>) -> Prover {
-        Prover {
+    pub fn new(tokens: Vec<CancellationToken>) -> SaturationProver {
+        SaturationProver {
             active_set: ActiveSet::new(),
             passive_set: PassiveSet::new(),
             final_step: None,
@@ -555,5 +555,30 @@ impl Prover {
                 &final_step.clause
             }
         }
+    }
+}
+
+// Implement the Prover trait for SaturationProver
+impl crate::prover::Prover for SaturationProver {
+    fn add_steps(&mut self, steps: Vec<ProofStep>) {
+        self.add_steps(steps)
+    }
+
+    fn set_goal(&mut self, goal: NormalizedGoal, steps: Vec<ProofStep>) {
+        self.set_goal(goal, steps)
+    }
+
+    fn search(&mut self, mode: ProverMode) -> Outcome {
+        self.search(mode)
+    }
+
+    fn make_cert(
+        &self,
+        project: &Project,
+        bindings: &BindingMap,
+        normalizer: &Normalizer,
+        print: bool,
+    ) -> Result<Certificate, Error> {
+        self.make_cert(project, bindings, normalizer, print)
     }
 }

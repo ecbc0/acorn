@@ -1,5 +1,12 @@
 use std::fmt;
 
+use crate::binding_map::BindingMap;
+use crate::certificate::Certificate;
+use crate::code_generator::Error;
+use crate::normalizer::{NormalizedGoal, Normalizer};
+use crate::project::Project;
+use crate::proof_step::ProofStep;
+
 /// Mode controlling proof search behavior
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProverMode {
@@ -32,4 +39,25 @@ impl fmt::Display for Outcome {
             Outcome::Constrained => write!(f, "Constrained"),
         }
     }
+}
+
+/// A trait for theorem provers
+pub trait Prover: Clone {
+    /// Add proof steps to the prover (facts or axioms)
+    fn add_steps(&mut self, steps: Vec<ProofStep>);
+
+    /// Set the goal and add goal-derived steps
+    fn set_goal(&mut self, goal: NormalizedGoal, steps: Vec<ProofStep>);
+
+    /// Run the proof search with the given mode
+    fn search(&mut self, mode: ProverMode) -> Outcome;
+
+    /// Generate a certificate for the proof
+    fn make_cert(
+        &self,
+        project: &Project,
+        bindings: &BindingMap,
+        normalizer: &Normalizer,
+        print: bool,
+    ) -> Result<Certificate, Error>;
 }

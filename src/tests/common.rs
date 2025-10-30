@@ -4,23 +4,20 @@ use crate::module::LoadState;
 use crate::processor::Processor;
 use crate::project::Project;
 use crate::prover::{Outcome, ProverMode};
+use crate::saturation::SaturationProver;
 
-// Helper to do a proof for a particular goal.
-fn prove_helper<'a>(
-    project: &'a mut Project,
-    module_name: &str,
-    goal_name: &str,
-) -> (&'a Project, &'a Environment, Processor, Outcome) {
+/// Expects the proof to succeed, and a valid concrete proof to be generated.
+pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certificate {
     let module_id = project
         .load_module_by_name(module_name)
         .expect("load failed");
     let load_state = project.get_module_by_id(module_id);
-    let env = match load_state {
+    let base_env = match load_state {
         LoadState::Ok(env) => env,
         LoadState::Error(e) => panic!("module loading error: {}", e),
         _ => panic!("no module"),
     };
-    let node = env.get_node_by_goal_name(goal_name);
+    let node = base_env.get_node_by_goal_name(goal_name);
     let facts = node.usable_facts(project);
     let goal = node.goal().unwrap();
     let mut processor = Processor::new();
@@ -29,12 +26,7 @@ fn prove_helper<'a>(
     }
     processor.set_goal(&goal).unwrap();
     let outcome = processor.search(ProverMode::Test);
-    (project, env, processor, outcome)
-}
 
-/// Expects the proof to succeed, and a valid concrete proof to be generated.
-pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certificate {
-    let (project, base_env, processor, outcome) = prove_helper(project, module_name, goal_name);
     assert_eq!(outcome, Outcome::Success);
     let cursor = base_env.get_node_by_goal_name(goal_name);
     let env = cursor.goal_env().unwrap();
