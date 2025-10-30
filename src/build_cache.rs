@@ -136,7 +136,16 @@ impl BuildCache {
             }
         }
 
-        // Save the new manifest
+        // Merge old manifest entries before saving to preserve modules that weren't rebuilt
+        for (module_name, hex_hash) in &old_cache.manifest.modules {
+            if !self.manifest.modules.contains_key(module_name) {
+                self.manifest
+                    .modules
+                    .insert(module_name.clone(), hex_hash.clone());
+            }
+        }
+
+        // Save the merged manifest
         self.manifest.save(&self.build_dir)?;
 
         // Merge the old certificates so they're available in memory.

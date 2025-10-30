@@ -189,11 +189,11 @@ mod tests {
             .unwrap();
 
         // Create a verifier starting from the acornlib directory
-        // The verifier should find the src directory and use it as the root
+        // Verify all modules (None) to test certificate caching
         let mut verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
             ProjectConfig::default(),
-            Some("foo".to_string()),
+            None,
         )
         .unwrap();
         verifier1.builder.check_hashes = false;
@@ -231,11 +231,11 @@ mod tests {
 
         assert!(build.child("manifest.json").exists());
 
-        // Verify again
+        // Verify again (all modules)
         let mut verifier2 = Verifier::new(
             acornlib.path().to_path_buf(),
             ProjectConfig::default(),
-            Some("foo".to_string()),
+            None,
         )
         .unwrap();
         verifier2.builder.check_hashes = false;
@@ -261,11 +261,11 @@ mod tests {
         let line_count = jsonl_content.lines().count();
         assert_eq!(line_count, 1,);
 
-        // Now test reverify mode with verifier3
+        // Now test reverify mode with verifier3 (all modules)
         let mut verifier3 = Verifier::new(
             acornlib.path().to_path_buf(),
             ProjectConfig::default(),
-            Some("foo".to_string()),
+            None,
         )
         .unwrap();
         verifier3.builder.check_hashes = false;
@@ -308,11 +308,11 @@ mod tests {
             )
             .unwrap();
 
-        // Create a verifier targeting the nested module
+        // Create a verifier for all modules to test certificate caching
         let mut verifier1 = Verifier::new(
             acornlib.path().to_path_buf(),
             ProjectConfig::default(),
-            Some("foo.bar".to_string()),
+            None,
         )
         .unwrap();
         verifier1.builder.check_hashes = false;
@@ -349,11 +349,11 @@ mod tests {
 
         assert!(build.child("manifest.json").exists());
 
-        // Verify again
+        // Verify again (all modules)
         let mut verifier2 = Verifier::new(
             acornlib.path().to_path_buf(),
             ProjectConfig::default(),
-            Some("foo.bar".to_string()),
+            None,
         )
         .unwrap();
         verifier2.builder.check_hashes = false;
@@ -578,13 +578,8 @@ mod tests {
 
         let config = ProjectConfig::default();
 
-        // First build with just foo.ac
-        let verifier1 = Verifier::new(
-            acornlib.path().to_path_buf(),
-            config.clone(),
-            Some("foo".to_string()),
-        )
-        .unwrap();
+        // First build with all modules (just foo.ac for now)
+        let verifier1 = Verifier::new(acornlib.path().to_path_buf(), config.clone(), None).unwrap();
         let output1 = verifier1.run().unwrap();
         assert_eq!(output1.status, BuildStatus::Good);
         assert_eq!(output1.metrics.modules_total, 1);
@@ -643,13 +638,8 @@ mod tests {
 
         let config = ProjectConfig::default();
 
-        // First build with just foo.ac
-        let verifier1 = Verifier::new(
-            acornlib.path().to_path_buf(),
-            config.clone(),
-            Some("foo".to_string()),
-        )
-        .unwrap();
+        // First build with all modules (just foo.ac for now)
+        let verifier1 = Verifier::new(acornlib.path().to_path_buf(), config.clone(), None).unwrap();
         let output1 = verifier1.run().unwrap();
         assert_eq!(output1.status, BuildStatus::Good);
 
