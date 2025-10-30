@@ -3,8 +3,7 @@ use crate::environment::Environment;
 use crate::module::LoadState;
 use crate::processor::Processor;
 use crate::project::Project;
-use crate::prover::ProverMode;
-use crate::saturation::Outcome;
+use crate::prover::{Outcome, ProverMode};
 
 // Helper to do a proof for a particular goal.
 fn prove_helper<'a>(

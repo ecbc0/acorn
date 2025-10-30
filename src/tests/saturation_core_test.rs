@@ -1,6 +1,6 @@
 use super::common::*;
 use crate::project::Project;
-use crate::saturation::Outcome;
+use crate::prover::Outcome;
 
 #[test]
 fn test_specialization() {

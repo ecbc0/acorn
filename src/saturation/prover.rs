@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::fmt;
 use tokio_util::sync::CancellationToken;
 
 use super::active_set::ActiveSet;
@@ -13,7 +12,7 @@ use crate::literal::Literal;
 use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::project::Project;
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
-use crate::prover::ProverMode;
+use crate::prover::{Outcome, ProverMode};
 use crate::term_graph::TermGraphContradiction;
 
 /// A traditional saturation prover. Uses just a bit of AI for scoring.
@@ -51,36 +50,6 @@ pub struct Prover {
     /// The goal of the prover.
     /// If this is None, the goal hasn't been set yet.
     goal: Option<NormalizedGoal>,
-}
-
-/// The outcome of a prover operation.
-/// - "Success" means we proved it.
-/// - "Exhausted" means we tried every possibility and couldn't prove it.
-/// - "Inconsistent" means that we found a contradiction just in our initial assumptions.
-/// - "Interrupted" means that the prover was explicitly stopped.
-/// - "Timeout" means that we hit a nondeterministic timing limit.
-/// - "Constrained" means that we hit some deterministic limit.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Outcome {
-    Success,
-    Exhausted,
-    Inconsistent,
-    Interrupted,
-    Timeout,
-    Constrained,
-}
-
-impl fmt::Display for Outcome {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Outcome::Success => write!(f, "Success"),
-            Outcome::Exhausted => write!(f, "Exhausted"),
-            Outcome::Inconsistent => write!(f, "Inconsistent"),
-            Outcome::Interrupted => write!(f, "Interrupted"),
-            Outcome::Timeout => write!(f, "Timeout"),
-            Outcome::Constrained => write!(f, "Constrained"),
-        }
-    }
 }
 
 impl Prover {

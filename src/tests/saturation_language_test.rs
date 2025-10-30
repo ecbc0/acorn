@@ -1,5 +1,5 @@
 use super::common::*;
-use crate::{project::Project, saturation::Outcome};
+use crate::{project::Project, prover::Outcome};
 
 // This file tests that the various language features work correctly in the prover.
 

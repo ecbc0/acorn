@@ -17,8 +17,7 @@ use crate::goal::Goal;
 use crate::module::{LoadState, ModuleDescriptor, ModuleId};
 use crate::processor::Processor;
 use crate::project::Project;
-use crate::prover::ProverMode;
-use crate::saturation::Outcome;
+use crate::prover::{Outcome, ProverMode};
 
 static NEXT_BUILD_ID: AtomicU32 = AtomicU32::new(1);
 
