@@ -2216,3 +2216,16 @@ fn test_line_continuation_with_equals() {
         "#,
     );
 }
+
+#[test]
+fn test_curry_style_type_syntax() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        type Nat: axiom
+        define foo(n: Nat, f: Nat -> Nat -> Nat) -> Nat {
+            f(n)(n)
+        }
+        "#,
+    )
+}
