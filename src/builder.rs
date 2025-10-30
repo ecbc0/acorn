@@ -17,7 +17,8 @@ use crate::goal::Goal;
 use crate::module::{LoadState, ModuleDescriptor, ModuleId};
 use crate::processor::Processor;
 use crate::project::Project;
-use crate::saturation::{Outcome, ProverParams};
+use crate::prover::ProverMode;
+use crate::saturation::Outcome;
 
 static NEXT_BUILD_ID: AtomicU32 = AtomicU32::new(1);
 
@@ -681,7 +682,7 @@ impl<'a> Builder<'a> {
         let processor = Rc::make_mut(&mut processor);
         processor.set_goal(goal)?;
         let start = std::time::Instant::now();
-        let outcome = processor.search(ProverParams::INTERACTIVE);
+        let outcome = processor.search(ProverMode::Interactive);
         if outcome == Outcome::Success {
             match processor.make_cert(self.project, &env.bindings, self.verbose) {
                 Ok(cert) => {

@@ -39,6 +39,7 @@ pub mod processor;
 pub mod project;
 pub mod proof_step;
 pub mod proposition;
+pub mod prover;
 pub mod saturation;
 pub mod server;
 pub mod source;

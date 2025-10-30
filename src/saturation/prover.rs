@@ -13,6 +13,7 @@ use crate::literal::Literal;
 use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::project::Project;
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
+use crate::prover::ProverMode;
 use crate::term_graph::TermGraphContradiction;
 
 /// A traditional saturation prover. Uses just a bit of AI for scoring.
@@ -80,30 +81,6 @@ impl fmt::Display for Outcome {
             Outcome::Constrained => write!(f, "Constrained"),
         }
     }
-}
-
-/// Parameters for controlling proof search behavior
-#[derive(Clone, Copy, Debug)]
-pub struct ProverParams {
-    pub activation_limit: i32,
-    pub seconds: f32,
-    pub shallow_only: bool,
-}
-
-impl ProverParams {
-    /// About as long as a human is willing to wait for a proof.
-    pub const INTERACTIVE: ProverParams = ProverParams {
-        activation_limit: 2000,
-        seconds: 5.0,
-        shallow_only: false,
-    };
-
-    /// A fast search that only uses shallow steps, for testing.
-    pub const TEST: ProverParams = ProverParams {
-        activation_limit: 500,
-        seconds: 0.3,
-        shallow_only: true,
-    };
 }
 
 impl Prover {
@@ -536,7 +513,12 @@ impl Prover {
     ///   Activating activation_limit nonfactual clauses
     ///   Going over the time limit, in seconds
     ///   Activating all shallow steps, if shallow_only is set
-    pub fn search(&mut self, params: ProverParams) -> Outcome {
+    pub fn search(&mut self, mode: ProverMode) -> Outcome {
+        // Convert mode to actual parameters
+        let (activation_limit, seconds, shallow_only) = match mode {
+            ProverMode::Interactive => (2000, 5.0, false),
+            ProverMode::Test => (500, 0.3, true),
+        };
         // Special test behavior: if we're in test mode and trying to prove "test_hang",
         // wait for cancellation instead of actually proving
         #[cfg(test)]
@@ -558,7 +540,7 @@ impl Prover {
 
         let start_time = std::time::Instant::now();
         loop {
-            if params.shallow_only && !self.passive_set.all_shallow {
+            if shallow_only && !self.passive_set.all_shallow {
                 return Outcome::Exhausted;
             }
             if self.activate_next() {
@@ -584,11 +566,11 @@ impl Prover {
                     return Outcome::Interrupted;
                 }
             }
-            if self.nonfactual_activations >= params.activation_limit {
+            if self.nonfactual_activations >= activation_limit {
                 return Outcome::Constrained;
             }
             let elapsed = start_time.elapsed().as_secs_f32();
-            if elapsed >= params.seconds {
+            if elapsed >= seconds {
                 return Outcome::Timeout;
             }
         }

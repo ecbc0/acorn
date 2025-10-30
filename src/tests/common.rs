@@ -3,7 +3,8 @@ use crate::environment::Environment;
 use crate::module::LoadState;
 use crate::processor::Processor;
 use crate::project::Project;
-use crate::saturation::{Outcome, ProverParams};
+use crate::prover::ProverMode;
+use crate::saturation::Outcome;
 
 // Helper to do a proof for a particular goal.
 fn prove_helper<'a>(
@@ -28,7 +29,7 @@ fn prove_helper<'a>(
         processor.add_fact(fact).unwrap();
     }
     processor.set_goal(&goal).unwrap();
-    let outcome = processor.search(ProverParams::TEST);
+    let outcome = processor.search(ProverMode::Test);
     (project, env, processor, outcome)
 }
 
@@ -81,7 +82,7 @@ pub fn prove_text(text: &str, goal_name: &str) -> Outcome {
                 return Outcome::Inconsistent;
             }
 
-            return processor.search(ProverParams::TEST);
+            return processor.search(ProverMode::Test);
         }
     }
     panic!("goal '{}' not found in text", goal_name);
@@ -110,7 +111,7 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
         // This is a key difference between our verification tests, and our real verification.
         // This helps us test that verification fails in cases where we do have an
         // infinite rabbit hole we could go down.
-        let outcome = processor.search(ProverParams::TEST);
+        let outcome = processor.search(ProverMode::Test);
         if outcome != Outcome::Success {
             return Ok(outcome);
         }

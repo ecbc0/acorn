@@ -10,7 +10,8 @@ use crate::goal::Goal;
 use crate::normalizer::Normalizer;
 use crate::project::Project;
 use crate::proof_step::Rule;
-use crate::saturation::{Outcome, Prover, ProverParams};
+use crate::prover::ProverMode;
+use crate::saturation::{Outcome, Prover};
 use tokio_util::sync::CancellationToken;
 
 /// The processor represents all of the stuff that can accept a stream of facts.
@@ -101,8 +102,8 @@ impl Processor {
     }
 
     /// Forwards a search request to the underlying prover.
-    pub fn search(&mut self, params: ProverParams) -> Outcome {
-        self.prover.search(params)
+    pub fn search(&mut self, mode: ProverMode) -> Outcome {
+        self.prover.search(mode)
     }
 
     /// Creates a certificate from the current proof state.
