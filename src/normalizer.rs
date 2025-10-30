@@ -1003,6 +1003,83 @@ impl NormalizerView<'_> {
         }
     }
 
+    /// Synthesizes a literal from a CNF by creating a new synthetic boolean atom
+    /// and adding clauses that define it to be equivalent to the CNF.
+    /// This uses a Tseitin-style transformation: for CNF C and new atom s,
+    /// we add clauses for s <-> C, which is (s -> C) and (C -> s).
+    fn synthesize_literal_from_cnf(
+        &mut self,
+        cnf: CNF,
+        stack: &Vec<TermBinding>,
+        synth: &mut Vec<AtomId>,
+    ) -> Result<Literal, String> {
+        use crate::acorn_type::AcornType;
+        use crate::atom::Atom;
+
+        // Create a new synthetic boolean atom with the appropriate function type
+        // based on free variables in the stack
+        let mut arg_types = vec![];
+        let mut args = vec![];
+        let mut seen_vars = std::collections::HashSet::new();
+
+        for binding in stack.iter() {
+            for (var_id, type_id) in binding.term().iter_vars() {
+                if seen_vars.insert(var_id) {
+                    let var_term = Term::new_variable(type_id, var_id);
+                    args.push(var_term);
+                    arg_types.push(self.map().get_type(type_id).clone());
+                }
+            }
+        }
+
+        let bool_type = AcornType::Bool;
+        let atom_type = if arg_types.is_empty() {
+            bool_type.clone()
+        } else {
+            AcornType::functional(arg_types, bool_type.clone())
+        };
+
+        // Add the atom type to the normalization map and declare the synthetic atom
+        let atom_id = self.as_mut()?.declare_synthetic_atom(atom_type.clone())?;
+        synth.push(atom_id);
+
+        // Now we can safely get type IDs
+        let bool_type_id = self.map().get_type_id(&bool_type)?;
+        let atom_type_id = self.map().get_type_id(&atom_type)?;
+
+        let atom = Atom::Synthetic(atom_id);
+        let synth_term = Term::new(bool_type_id, atom_type_id, atom, args);
+        let synth_lit = Literal::from_signed_term(synth_term.clone(), true);
+
+        // Create defining clauses for: s <-> C
+        // This is (s -> C) and (C -> s)
+        // Which is (not s or C) and (not C or s)
+        let mut defining_clauses = vec![];
+
+        // For (not s or C):
+        // C is a conjunction of clauses, so we add (not s or Ci) for each clause Ci
+        for clause_lits in cnf.clone().into_iter() {
+            let mut new_clause_lits = vec![synth_lit.negate()];
+            new_clause_lits.extend(clause_lits);
+            defining_clauses.push(Clause::new(new_clause_lits));
+        }
+
+        // For (not C or s):
+        // We negate C and add s to each resulting clause
+        let neg_cnf = cnf.negate();
+        for clause_lits in neg_cnf.into_iter() {
+            let mut new_clause_lits = clause_lits;
+            new_clause_lits.push(synth_lit.clone());
+            defining_clauses.push(Clause::new(new_clause_lits));
+        }
+
+        // Add the definition
+        self.as_mut()?
+            .define_synthetic_atoms(vec![atom_id], defining_clauses, None)?;
+
+        Ok(synth_lit)
+    }
+
     /// Converts a value to an ExtendedTerm, which can appear in places a Term does.
     fn value_to_extended_term(
         &mut self,
@@ -1014,8 +1091,11 @@ impl NormalizerView<'_> {
         match value {
             AcornValue::IfThenElse(cond_val, then_value, else_value) => {
                 let cond_cnf = self.value_to_cnf(cond_val, false, stack, next_var_id, synth)?;
-                let Some(cond_lit) = cond_cnf.to_literal() else {
-                    return Err("unhandled case: non-literal if condition".to_string());
+                let cond_lit = if cond_cnf.is_literal() {
+                    cond_cnf.to_literal().unwrap()
+                } else {
+                    // For non-literal conditions, synthesize a new boolean atom
+                    self.synthesize_literal_from_cnf(cond_cnf, stack, synth)?
                 };
                 let then_branch = self
                     .value_to_extended_term(then_value, stack, next_var_id, synth)?
