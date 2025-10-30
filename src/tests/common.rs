@@ -28,7 +28,7 @@ fn prove_helper<'a>(
         processor.add_fact(fact).unwrap();
     }
     processor.set_goal(&goal).unwrap();
-    let outcome = processor.search(ProverParams::QUICK);
+    let outcome = processor.search(ProverParams::TEST);
     (project, env, processor, outcome)
 }
 
@@ -81,7 +81,7 @@ pub fn prove_text(text: &str, goal_name: &str) -> Outcome {
                 return Outcome::Inconsistent;
             }
 
-            return processor.search(ProverParams::SHALLOW);
+            return processor.search(ProverParams::TEST);
         }
     }
     panic!("goal '{}' not found in text", goal_name);
@@ -110,7 +110,7 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
         // This is a key difference between our verification tests, and our real verification.
         // This helps us test that verification fails in cases where we do have an
         // infinite rabbit hole we could go down.
-        let outcome = processor.search(ProverParams::SHALLOW);
+        let outcome = processor.search(ProverParams::TEST);
         if outcome != Outcome::Success {
             return Ok(outcome);
         }

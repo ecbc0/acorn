@@ -1260,7 +1260,7 @@ fn test_proving_with_mixin_instance() {
         }
         processor.set_goal(&goal).unwrap();
 
-        let outcome = processor.search(crate::saturation::ProverParams::SHALLOW);
+        let outcome = processor.search(crate::saturation::ProverParams::TEST);
         assert_eq!(outcome, Outcome::Success);
 
         let goal_env = cursor.goal_env().unwrap();

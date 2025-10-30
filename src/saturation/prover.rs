@@ -98,15 +98,8 @@ impl ProverParams {
         shallow_only: false,
     };
 
-    /// A fast search, for testing.
-    pub const QUICK: ProverParams = ProverParams {
-        activation_limit: 500,
-        seconds: 0.3,
-        shallow_only: false,
-    };
-
     /// A fast search that only uses shallow steps, for testing.
-    pub const SHALLOW: ProverParams = ProverParams {
+    pub const TEST: ProverParams = ProverParams {
         activation_limit: 500,
         seconds: 0.3,
         shallow_only: true,

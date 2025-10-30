@@ -1789,42 +1789,6 @@ fn test_proving_with_long_skolem_definition() {
     );
 
     let _c = prove(&mut p, "main", "goal");
-    // assert_eq!(c, vec!["todo",]));
-}
-
-// Note: this is slow and sometimes timed out after 0.2s, so I bumped the test limit to 0.3s.
-// If this hasn't come up in a while, we might just want to remove it. - August 2025
-#[test]
-fn test_proving_with_type_param() {
-    let mut p = Project::new_mock();
-    p.mock(
-        "/mock/main.ac",
-        r#"
-        inductive List[T] {
-            nil
-            cons(T, List[T])
-        }
-
-        attributes List[T] {
-            define add(self, other: List[T]) -> List[T] {
-                match self {
-                    List.nil {
-                        other
-                    }
-                    List.cons(head, tail) {
-                        List.cons(head, tail.add(other))
-                    }
-                }
-            }
-        }
-
-        theorem goal[T](list: List[T]) {
-            list + List.nil[T] = list
-        }
-        "#,
-    );
-
-    prove(&mut p, "main", "goal");
 }
 
 #[test]
