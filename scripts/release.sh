@@ -37,6 +37,9 @@ echo "New version: $VERSION"
 
 ./scripts/crossbuild.sh
 
+# Make sure the embedded acornlib reverifies
+./target/release/acorn reverify --lib ./vscode/extension/acornlib
+
 git add .
 git commit -m "Releasing version $VERSION"
 git push
