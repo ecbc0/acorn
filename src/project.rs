@@ -302,7 +302,7 @@ impl Project {
         &mut self,
         descriptor: &ModuleDescriptor,
     ) -> Result<(), ImportError> {
-        let result = self.load_module(descriptor);
+        let result = self.load_module(descriptor, false);
         self.targets.insert(descriptor.clone());
         result.map(|_| ())
     }
@@ -993,7 +993,11 @@ impl Project {
     // If there is an error in the file, the load will return a module id, but the module
     // for the id will have an error.
     // If "open" is passed, then we cache this file's content in open files.
-    fn load_module(&mut self, descriptor: &ModuleDescriptor) -> Result<ModuleId, ImportError> {
+    fn load_module(
+        &mut self,
+        descriptor: &ModuleDescriptor,
+        strict: bool,
+    ) -> Result<ModuleId, ImportError> {
         if let Some(module_id) = self.module_map.get(&descriptor) {
             if let LoadState::Loading = self.get_module_by_id(*module_id) {
                 return Err(ImportError::Circular(*module_id));
@@ -1055,7 +1059,7 @@ impl Project {
 
         let mut env = Environment::new(module_id);
         let tokens = Token::scan(&text);
-        if let Err(e) = env.add_tokens(self, tokens) {
+        if let Err(e) = env.add_tokens(self, tokens, strict) {
             if e.circular.is_some() {
                 let err = Err(ImportError::Circular(module_id));
                 self.modules[module_id.get() as usize].load_error(e);
@@ -1073,7 +1077,17 @@ impl Project {
 
     pub fn load_module_by_name(&mut self, module_name: &str) -> Result<ModuleId, ImportError> {
         let descriptor = ModuleDescriptor::name(module_name);
-        self.load_module(&descriptor)
+        self.load_module(&descriptor, false)
+    }
+
+    #[cfg(test)]
+    pub fn load_module_by_name_strict(
+        &mut self,
+        module_name: &str,
+        strict: bool,
+    ) -> Result<ModuleId, ImportError> {
+        let descriptor = ModuleDescriptor::name(module_name);
+        self.load_module(&descriptor, strict)
     }
 
     // Appends all dependencies, including chains of direct dependencies.

@@ -48,10 +48,11 @@ impl Environment {
         &mut self,
         project: &mut Project,
         tokens: Vec<Token>,
+        strict: bool,
     ) -> compilation::Result<()> {
         let mut tokens = TokenIter::new(tokens);
         loop {
-            match Statement::parse(&mut tokens, false) {
+            match Statement::parse(&mut tokens, false, strict) {
                 Ok((Some(statement), _)) => {
                     if let Err(e) = self.add_statement(project, &statement) {
                         return Err(e);

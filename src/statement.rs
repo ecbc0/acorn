@@ -348,10 +348,10 @@ impl fmt::Display for Statement {
 /// Parses a block (a list of statements) where the left brace has already been consumed.
 /// Returns the statements along with the token for the final right brace.
 /// Consumes the right brace, but nothing after that.
-fn parse_block(tokens: &mut TokenIter) -> Result<(Vec<Statement>, Token)> {
+fn parse_block(tokens: &mut TokenIter, strict: bool) -> Result<(Vec<Statement>, Token)> {
     let mut body = Vec::new();
     loop {
-        match Statement::parse(tokens, true)? {
+        match Statement::parse(tokens, true, strict)? {
             (Some(s), maybe_right_brace) => {
                 body.push(s);
                 if let Some(brace) = maybe_right_brace {
@@ -405,7 +405,7 @@ fn parse_by_block(right_brace: Token, tokens: &mut TokenIter) -> Result<(Option<
                 }
                 tokens.next();
                 let left_brace = tokens.expect_type(TokenType::LeftBrace)?;
-                let (statements, right_brace) = parse_block(tokens)?;
+                let (statements, right_brace) = parse_block(tokens, false)?;
                 return Ok((
                     Some(Body {
                         left_brace,
@@ -482,7 +482,7 @@ fn complete_variable_satisfy(
 
 /// Parses a statement where the "let" keyword has already been found.
 /// This might not be a LetStatement because multiple statement types can start with "let".
-fn parse_let_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
+fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> Result<Statement> {
     match tokens.peek() {
         Some(token) => {
             if token.token_type == TokenType::LeftParen {
@@ -558,6 +558,11 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Stateme
     };
 
     let (value, last_token) = Expression::parse_value(tokens, Terminator::Is(TokenType::NewLine))?;
+    if strict && value.is_axiom() {
+        return Err(value
+            .first_token()
+            .error("axiom keyword is not allowed in strict mode"));
+    }
     let ls = LetStatement {
         name_token,
         type_params,
@@ -598,11 +603,16 @@ fn parse_define_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Stat
 }
 
 /// Parses a type statement where the "type" keyword has already been found.
-fn parse_type_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
+fn parse_type_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> Result<Statement> {
     let name_token = tokens.expect_type_name()?;
     tokens.expect_type(TokenType::Colon)?;
     tokens.skip_newlines();
     let (type_expr, _) = Expression::parse_type(tokens, Terminator::Is(TokenType::NewLine))?;
+    if strict && type_expr.is_axiom() {
+        return Err(type_expr
+            .first_token()
+            .error("axiom keyword is not allowed in strict mode"));
+    }
     let last_token = type_expr.last_token().clone();
     let ts = TypeStatement {
         name_token: name_token.clone(),
@@ -619,7 +629,7 @@ fn parse_type_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statem
 /// Parses a forall statement where the "forall" keyword has already been found.
 fn parse_forall_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
     let (quantifiers, left_brace) = parse_args(tokens, TokenType::LeftBrace)?;
-    let (statements, right_brace) = parse_block(tokens)?;
+    let (statements, right_brace) = parse_block(tokens, false)?;
     let body = Body {
         left_brace,
         statements,
@@ -653,7 +663,7 @@ fn parse_else_body(tokens: &mut TokenIter) -> Result<Option<Body>> {
         }
     }
     let left_brace = tokens.expect_type(TokenType::LeftBrace)?;
-    let (statements, right_brace) = parse_block(tokens)?;
+    let (statements, right_brace) = parse_block(tokens, false)?;
     let body = Body {
         left_brace,
         statements,
@@ -667,7 +677,7 @@ fn parse_if_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statemen
     let token = tokens.peek().unwrap().clone();
     let (condition, left_brace) =
         Expression::parse_value(tokens, Terminator::Is(TokenType::LeftBrace))?;
-    let (statements, right_brace) = parse_block(tokens)?;
+    let (statements, right_brace) = parse_block(tokens, false)?;
     let body = Body {
         left_brace,
         statements,
@@ -907,7 +917,7 @@ fn parse_attributes_statement(keyword: Token, tokens: &mut TokenIter) -> Result<
 
     let type_params = TypeParamExpr::parse_list(tokens)?;
     let left_brace = tokens.expect_type(TokenType::LeftBrace)?;
-    let (statements, right_brace) = parse_block(tokens)?;
+    let (statements, right_brace) = parse_block(tokens, false)?;
     let body = Body {
         left_brace,
         statements,
@@ -945,7 +955,7 @@ fn parse_match_statement(keyword: Token, tokens: &mut TokenIter) -> Result<State
         }
         let (pattern, left_brace) =
             Expression::parse_value(tokens, Terminator::Is(TokenType::LeftBrace))?;
-        let (statements, right_brace) = parse_block(tokens)?;
+        let (statements, right_brace) = parse_block(tokens, false)?;
         let body = Body {
             left_brace,
             statements,
@@ -1179,7 +1189,7 @@ fn parse_instance_statement(keyword: Token, tokens: &mut TokenIter) -> Result<St
     let (definitions, body, last_token) = match terminator.token_type {
         TokenType::LeftBrace => {
             // Block syntax: instance Type: Typeclass { ... }
-            let (statements, right_brace) = parse_block(tokens)?;
+            let (statements, right_brace) = parse_block(tokens, false)?;
             let definitions = Body {
                 left_brace: terminator,
                 statements,
@@ -1219,7 +1229,7 @@ fn parse_instance_statement(keyword: Token, tokens: &mut TokenIter) -> Result<St
 
 fn parse_todo_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
     let left_brace = tokens.expect_type(TokenType::LeftBrace)?;
-    let (statements, right_brace) = parse_block(tokens)?;
+    let (statements, right_brace) = parse_block(tokens, false)?;
     let body = Body {
         left_brace,
         statements,
@@ -1245,6 +1255,7 @@ impl Statement {
     pub fn parse(
         tokens: &mut TokenIter,
         in_block: bool,
+        strict: bool,
     ) -> Result<(Option<Statement>, Option<Token>)> {
         loop {
             if let Some(token) = tokens.peek() {
@@ -1255,11 +1266,16 @@ impl Statement {
                     }
                     TokenType::Let => {
                         let keyword = tokens.next().unwrap();
-                        let s = parse_let_statement(keyword, tokens)?;
+                        let s = parse_let_statement(keyword, tokens, strict)?;
                         return Ok((Some(s), None));
                     }
                     TokenType::Axiom => {
                         let keyword = tokens.next().unwrap();
+                        if strict {
+                            return Err(
+                                keyword.error("axiom keyword is not allowed in strict mode")
+                            );
+                        }
                         let s = parse_theorem_statement(keyword, tokens, true)?;
                         return Ok((Some(s), None));
                     }
@@ -1275,7 +1291,7 @@ impl Statement {
                     }
                     TokenType::Type => {
                         let keyword = tokens.next().unwrap();
-                        let s = parse_type_statement(keyword, tokens)?;
+                        let s = parse_type_statement(keyword, tokens, strict)?;
                         return Ok((Some(s), None));
                     }
                     TokenType::RightBrace => {
@@ -1344,7 +1360,7 @@ impl Statement {
                     TokenType::Problem => {
                         let keyword = tokens.next().unwrap();
                         let left_brace = tokens.expect_type(TokenType::LeftBrace)?;
-                        let (statements, right_brace) = parse_block(tokens)?;
+                        let (statements, right_brace) = parse_block(tokens, false)?;
                         let body = Body {
                             left_brace,
                             statements,
@@ -1421,7 +1437,7 @@ impl Statement {
     pub fn parse_str_with_options(input: &str, in_block: bool) -> Result<Statement> {
         let tokens = Token::scan(input);
         let mut tokens = TokenIter::new(tokens);
-        match Statement::parse(&mut tokens, in_block)? {
+        match Statement::parse(&mut tokens, in_block, false)? {
             (Some(statement), _) => Ok(statement),
             _ => panic!("expected statement, got EOF"),
         }

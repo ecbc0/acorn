@@ -1489,13 +1489,11 @@ fn test_handle_selection_typeclass_attribute() {
 }
 
 #[test]
-fn test_strict_mode_rejects_axioms() {
+fn test_strict_mode_rejects_axiom_statements() {
     let mut p = Project::new_mock();
     p.mock(
         "/mock/main.ac",
         r#"
-        type Nat: axiom
-        let zero: Nat = axiom
         axiom test_axiom { true }
         "#,
     );
@@ -1508,7 +1506,7 @@ fn test_strict_mode_rejects_axioms() {
     builder.strict = true;
     builder.build();
 
-    // Should fail with an error
+    // Should fail with an error - axiom statements are not allowed
     assert_eq!(builder.status, BuildStatus::Error);
 }
 
@@ -1559,4 +1557,46 @@ fn test_strict_mode_allows_inductive_types() {
 
     // Should succeed
     assert_eq!(builder.status, BuildStatus::Good);
+}
+
+#[test]
+fn test_strict_mode_rejects_axiomatic_types() {
+    use crate::statement::Statement;
+    use crate::token::{Token, TokenIter};
+
+    let input = "type Nat: axiom\n";
+    let tokens = Token::scan(input);
+    let mut tokens = TokenIter::new(tokens);
+
+    // Should error in strict mode
+    let result = Statement::parse(&mut tokens, false, true);
+    match result {
+        Ok(_) => panic!("Expected error in strict mode for 'type Nat: axiom'"),
+        Err(e) => assert!(
+            e.to_string().contains("axiom keyword is not allowed"),
+            "Error should mention axiom keyword: {}",
+            e
+        ),
+    }
+}
+
+#[test]
+fn test_strict_mode_rejects_axiomatic_constants() {
+    use crate::statement::Statement;
+    use crate::token::{Token, TokenIter};
+
+    let input = "let zero: Nat = axiom\n";
+    let tokens = Token::scan(input);
+    let mut tokens = TokenIter::new(tokens);
+
+    // Should error in strict mode
+    let result = Statement::parse(&mut tokens, false, true);
+    match result {
+        Ok(_) => panic!("Expected error in strict mode for 'let zero: Nat = axiom'"),
+        Err(e) => assert!(
+            e.to_string().contains("axiom keyword is not allowed"),
+            "Error should mention axiom keyword: {}",
+            e
+        ),
+    }
 }

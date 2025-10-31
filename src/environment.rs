@@ -531,7 +531,7 @@ impl Environment {
         let start_line = self.next_line();
         let tokens = Token::scan_with_start_line(input, start_line);
 
-        if let Err(e) = self.add_tokens(&mut Project::new_mock(), tokens) {
+        if let Err(e) = self.add_tokens(&mut Project::new_mock(), tokens, false) {
             panic!("error in add_tokens: {}", e);
         }
     }
@@ -562,7 +562,7 @@ impl Environment {
         let tokens = Token::scan_with_start_line(input, start_line);
         let mut tokens = TokenIter::new(tokens);
 
-        match Statement::parse(&mut tokens, false) {
+        match Statement::parse(&mut tokens, false, false) {
             Ok((Some(statement), _)) => {
                 match self.add_statement(&mut Project::new_mock(), &statement) {
                     Err(e) => {
