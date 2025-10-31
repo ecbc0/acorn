@@ -132,11 +132,31 @@ impl CodeGenerator<'_> {
                     args.push(self.type_to_expr(arg_type)?);
                 }
                 let lhs = if args.len() == 1 {
-                    args.pop().unwrap()
+                    let arg = args.pop().unwrap();
+                    // If the argument is a functional type, wrap it in parentheses
+                    if ft.arg_types[0].is_functional() {
+                        Expression::Grouping(
+                            TokenType::LeftParen.new_token("("),
+                            Box::new(arg),
+                            TokenType::RightParen.new_token(")"),
+                        )
+                    } else {
+                        arg
+                    }
                 } else {
                     Expression::generate_paren_grouping(args)
                 };
                 let rhs = self.type_to_expr(&ft.return_type)?;
+                // Since -> is right-associative, we need to parenthesize functional return types
+                let rhs = if ft.return_type.is_functional() {
+                    Expression::Grouping(
+                        TokenType::LeftParen.new_token("("),
+                        Box::new(rhs),
+                        TokenType::RightParen.new_token(")"),
+                    )
+                } else {
+                    rhs
+                };
                 Ok(Expression::Binary(
                     Box::new(lhs),
                     TokenType::RightArrow.generate(),

@@ -160,7 +160,15 @@ impl fmt::Display for FunctionType {
         } else {
             format!("({})", AcornType::types_to_str(&self.arg_types))
         };
-        write!(f, "{} -> {}", lhs, self.return_type)
+        // Since -> is right-associative, we need to parenthesize functional return types
+        // to avoid ambiguity. For example, ((A, B) -> C) -> D should not be printed as
+        // (A, B) -> C -> D, which would parse as (A, B) -> (C -> D).
+        let rhs = if self.return_type.is_functional() {
+            format!("({})", self.return_type)
+        } else {
+            format!("{}", self.return_type)
+        };
+        write!(f, "{} -> {}", lhs, rhs)
     }
 }
 

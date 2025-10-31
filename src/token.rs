@@ -269,6 +269,12 @@ impl TokenType {
         }
     }
 
+    // Whether this binary operator is right-associative.
+    // Most operators are left-associative, but -> is right-associative in type expressions.
+    pub fn is_right_associative(&self) -> bool {
+        matches!(self, TokenType::RightArrow)
+    }
+
     // The precedence of a unary operator.
     pub fn unary_precedence(&self) -> i8 {
         match self {

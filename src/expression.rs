@@ -951,12 +951,22 @@ fn find_last_operator(partials: &VecDeque<PartialExpression>) -> Result<Option<u
             PartialExpression::Unary(token) => {
                 // Only a unary operator at the beginning of the expression can operate last
                 if i == 0 {
-                    Some((-token.unary_precedence(), i))
+                    Some((-token.unary_precedence(), i as isize))
                 } else {
                     None
                 }
             }
-            PartialExpression::Binary(token) => Some((-token.binary_precedence(), i)),
+            PartialExpression::Binary(token) => {
+                // For right-associative operators, we negate the index so that
+                // max() will pick the leftmost operator among those with the same precedence.
+                // For left-associative operators, max() picks the rightmost.
+                let index_key = if token.token_type.is_right_associative() {
+                    -(i as isize)
+                } else {
+                    i as isize
+                };
+                Some((-token.binary_precedence(), index_key))
+            }
             PartialExpression::Implicit(_) => {
                 // Application has the same precedence as dot, so it goes left to right.
                 // This is intuitive if you look at the cases:
@@ -964,20 +974,21 @@ fn find_last_operator(partials: &VecDeque<PartialExpression>) -> Result<Option<u
                 // foo.bar(baz) is parsed as (foo.bar)(baz)
                 // foo(bar).baz is parsed as (foo(bar)).baz
                 // foo(bar)(baz) is parsed as (foo(bar))(baz)
-                Some((-TokenType::Dot.binary_precedence(), i))
+                Some((-TokenType::Dot.binary_precedence(), i as isize))
             }
             _ => None,
         }
     });
 
     match operators.max() {
-        Some((neg_precedence, index)) => {
+        Some((neg_precedence, index_key)) => {
             if neg_precedence == 0 {
+                let index = index_key.abs() as usize;
                 return Err(partials[index].error(&format!(
                     "the parser did not expect a precedence-zero thing here"
                 )));
             }
-            Ok(Some(index))
+            Ok(Some(index_key.abs() as usize))
         }
         None => Ok(None),
     }
