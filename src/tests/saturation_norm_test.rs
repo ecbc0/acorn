@@ -267,7 +267,7 @@ fn test_long_if_condition() {
 }
 
 #[test]
-fn test_nested_lambdas() {
+fn test_nested_lambdas_1() {
     let text = r#"
     type Nat: axiom
     type ListNat: axiom
@@ -289,6 +289,30 @@ fn test_nested_lambdas() {
 
     theorem goal(a: Nat, b: Nat, f: (Nat, Nat) -> Nat) {
         double_sum_1(a, b, f) = double_sum_2(a, b, f)
+    }
+    "#;
+    verify_succeeds(text);
+}
+
+#[test]
+fn test_nested_lambdas_2() {
+    let text = r#"
+    type Nat: axiom
+    type ListNat: axiom
+    let range: Nat -> ListNat = axiom
+    let sum: ListNat -> Nat = axiom
+    let map: (ListNat, Nat -> Nat) -> ListNat = axiom
+
+    define double_sum(n: Nat, m: Nat, f: (Nat, Nat) -> Nat) -> Nat {
+        sum(map(range(n), function(i: Nat) {
+            sum(map(range(m), function(j: Nat) { f(i, j) }))
+        }))
+    }
+
+    theorem goal(a: Nat, b: Nat, f: (Nat, Nat) -> Nat) {
+        double_sum(a, b, f) = sum(map(range(a), function(i: Nat) {
+            sum(map(range(b), function(j: Nat) { f(i, j) }))
+        }))
     }
     "#;
     verify_succeeds(text);
