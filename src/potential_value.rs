@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::acorn_type::{AcornType, TypeParam};
 use crate::acorn_value::AcornValue;
 use crate::compilation::{self, ErrorSource};
@@ -96,6 +98,15 @@ impl PotentialValue {
                 }
                 Ok(v.clone())
             }
+        }
+    }
+}
+
+impl fmt::Display for PotentialValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PotentialValue::Unresolved(u) => write!(f, "{}", u),
+            PotentialValue::Resolved(v) => write!(f, "{}", v),
         }
     }
 }

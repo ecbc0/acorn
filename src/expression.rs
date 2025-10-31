@@ -810,8 +810,18 @@ fn parse_partial_expressions(
             }
 
             partials.push_back(PartialExpression::Binary(token.clone()));
-            // Skip newlines after = and != to allow line continuation
-            if token.token_type == TokenType::Equals || token.token_type == TokenType::NotEquals {
+            // Skip newlines after certain operators to allow line continuation
+            if matches!(
+                token.token_type,
+                TokenType::Equals
+                    | TokenType::NotEquals
+                    | TokenType::Or
+                    | TokenType::And
+                    | TokenType::Plus
+                    | TokenType::Minus
+                    | TokenType::Asterisk
+                    | TokenType::Slash
+            ) {
                 tokens.skip_newlines();
             }
             continue;

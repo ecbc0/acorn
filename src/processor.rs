@@ -9,13 +9,21 @@ use crate::fact::Fact;
 use crate::goal::Goal;
 use crate::normalizer::Normalizer;
 use crate::project::Project;
-use crate::proof_step::Rule;
+use crate::proof_step::{ProofStep, Rule};
 use crate::prover::{Outcome, Prover, ProverMode};
 use crate::saturation::SaturationProver;
 use tokio_util::sync::CancellationToken;
 
-/// The processor represents all of the stuff that can accept a stream of facts.
-/// We might want to rename this or refactor it away later.
+const VERBOSE: bool = false;
+
+fn print_steps(steps: &[ProofStep], normalizer: &Normalizer) {
+    for step in steps {
+        let denormalized = normalizer.denormalize(&step.clause, None);
+        println!("    {}", denormalized);
+    }
+}
+
+/// The processor represents what we do with a stream of facts.
 #[derive(Clone)]
 pub struct Processor<P: Prover> {
     prover: P,
@@ -40,17 +48,6 @@ impl Processor<SaturationProver> {
         }
     }
 
-    pub fn with_dual_tokens(
-        token1: CancellationToken,
-        token2: CancellationToken,
-    ) -> Processor<SaturationProver> {
-        Processor {
-            prover: SaturationProver::new(vec![token1, token2]),
-            normalizer: Normalizer::new(),
-            checker: Checker::new_fast(),
-        }
-    }
-
     pub fn prover(&self) -> &SaturationProver {
         &self.prover
     }
@@ -63,7 +60,17 @@ impl<P: Prover> Processor<P> {
 
     /// Normalizes a fact and adds the resulting proof steps to the prover.
     pub fn add_fact(&mut self, fact: Fact) -> Result<(), BuildError> {
+        if VERBOSE {
+            match &fact {
+                Fact::Proposition(prop) => println!("\n{}", prop.value),
+                Fact::Definition(c, val, _) => println!("\ndefining {c} = {val}"),
+                _ => println!("\nother fact"),
+            }
+        }
         let steps = self.normalizer.normalize_fact(fact)?;
+        if VERBOSE {
+            print_steps(&steps, &self.normalizer);
+        }
         for step in &steps {
             // Extract the source from the step's rule.
             // When monomorphizing, the step contains the source of the general fact being specialized,
@@ -91,6 +98,10 @@ impl<P: Prover> Processor<P> {
     pub fn set_goal(&mut self, goal: &Goal) -> Result<(), BuildError> {
         let source = &goal.proposition.source;
         let (ng, steps) = self.normalizer.normalize_goal(goal)?;
+        if VERBOSE {
+            println!("\nGoal: {}", goal.proposition.value);
+            print_steps(&steps, &self.normalizer);
+        }
         for step in &steps {
             // Use the step's own source if it's an assumption (which includes negated goals),
             // otherwise use the goal's source

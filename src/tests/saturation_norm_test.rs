@@ -294,7 +294,8 @@ fn test_nested_lambdas_1() {
     verify_succeeds(text);
 }
 
-// The prover can't do this. Not ideal, but at least it doesn't crash.
+// The prover can't do this.
+// Maybe it would work if we normalized lambdas harder.
 // #[test]
 // fn test_nested_lambdas_2() {
 //     let text = r#"

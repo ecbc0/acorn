@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::acorn_type::{AcornType, TypeParam};
 use crate::acorn_value::AcornValue;
 use crate::compilation::{self, ErrorSource};
@@ -70,5 +72,32 @@ impl UnresolvedConstant {
         }
 
         value
+    }
+}
+
+impl fmt::Display for UnresolvedConstant {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.name)?;
+        if !self.params.is_empty() {
+            write!(f, "[")?;
+            for (i, param) in self.params.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}", param.name)?;
+            }
+            write!(f, "]")?;
+        }
+        if !self.args.is_empty() {
+            write!(f, "(")?;
+            for (i, arg) in self.args.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}", arg)?;
+            }
+            write!(f, ")")?;
+        }
+        Ok(())
     }
 }

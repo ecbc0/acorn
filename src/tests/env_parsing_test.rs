@@ -2218,6 +2218,84 @@ fn test_line_continuation_with_equals() {
 }
 
 #[test]
+fn test_line_continuation_with_infix_operators() {
+    let mut env = Environment::test();
+    // Test or
+    env.add(
+        r#"
+        let test_or: Bool = true or
+            false
+        "#,
+    );
+    // Test and
+    env.add(
+        r#"
+        let test_and: Bool = true and
+            true
+        "#,
+    );
+    // Test chained boolean operators
+    env.add(
+        r#"
+        let test_chain: Bool = true or
+            false and
+            true
+        "#,
+    );
+    // Test arithmetic operators with magic methods
+    env.add(
+        r#"
+        type Nat: axiom
+        attributes Nat {
+            define add(self, other: Nat) -> Nat { axiom }
+            define sub(self, other: Nat) -> Nat { axiom }
+            define mul(self, other: Nat) -> Nat { axiom }
+            define div(self, other: Nat) -> Nat { axiom }
+        }
+        let a: Nat = axiom
+        let b: Nat = axiom
+        let c: Nat = axiom
+        "#,
+    );
+    // Test +
+    env.add(
+        r#"
+        let test_plus: Nat = a +
+            b
+        "#,
+    );
+    // Test -
+    env.add(
+        r#"
+        let test_minus: Nat = a -
+            b
+        "#,
+    );
+    // Test *
+    env.add(
+        r#"
+        let test_mul: Nat = a *
+            b
+        "#,
+    );
+    // Test /
+    env.add(
+        r#"
+        let test_div: Nat = a /
+            b
+        "#,
+    );
+    // Test chained arithmetic operators
+    env.add(
+        r#"
+        let test_chain_arith: Nat = a +
+            b *
+            c
+        "#,
+    );
+}
+
+#[test]
 fn test_curry_style_type_syntax() {
     let mut env = Environment::test();
     env.add(
