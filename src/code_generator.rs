@@ -201,6 +201,17 @@ impl CodeGenerator<'_> {
         // but we need to change that.
         let infos = normalizer.find_covering_synthetic_info(&skolem_ids);
         for info in &infos {
+            // Check if all atoms in this info are already defined
+            let all_already_defined = info
+                .atoms
+                .iter()
+                .all(|id| self.synthetic_names.contains_key(id));
+            if all_already_defined {
+                // Skip this info - we've already generated code for it
+                continue;
+            }
+
+            // Assign names to any atoms that don't have them yet
             let mut decl = vec![];
             for id in &info.atoms {
                 if self.synthetic_names.contains_key(id) {
@@ -234,6 +245,14 @@ impl CodeGenerator<'_> {
                 cond_parts.push(part);
             }
             let cond_val = AcornValue::reduce(BinaryOp::And, cond_parts);
+
+            // The denormalized clauses might contain additional synthetic constants.
+            // Define them first (recursively) before we use them in this definition.
+            let additional_synthetic_ids = cond_val.find_synthetics();
+            if !additional_synthetic_ids.is_empty() {
+                self.define_synthetics(additional_synthetic_ids, normalizer, codes)?;
+            }
+
             let cond = self.value_to_code(&cond_val)?;
 
             let let_statement = format!("let {} satisfy {{ {} }}", decl, cond);
@@ -290,7 +309,8 @@ impl CodeGenerator<'_> {
         for var_map in &step.var_maps {
             self.specialization_to_code(&step.generic, var_map, normalizer, &mut defs, &mut codes)?;
         }
-        defs.sort();
+        // Deduplicate while preserving order (don't use sort which breaks dependency order)
+        defs.dedup();
         codes.sort();
         Ok((defs, codes))
     }
