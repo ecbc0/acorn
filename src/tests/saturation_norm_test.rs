@@ -295,27 +295,23 @@ fn test_nested_lambdas() {
 }
 
 // The prover can't do this.
-// Maybe it would work if we normalized lambdas harder.
 #[test]
 fn test_proof_with_unifying_closures() {
     let text = r#"
     type Nat: axiom
-    type ListNat: axiom
-    let range: Nat -> ListNat = axiom
-    let sum: ListNat -> Nat = axiom
-    let map: (ListNat, Nat -> Nat) -> ListNat = axiom
-    let foo: ListNat -> Bool = axiom
+    let foo: (Nat -> Nat) -> Bool = axiom
+    let bar: (Nat, Nat) -> Nat = axiom
 
-    axiom double_sum(n: Nat, m: Nat, f: (Nat, Nat) -> Nat) {
-        foo(map(range(n), function(i: Nat) {
-            sum(map(range(m), f(i)))
-        }))
+    axiom ax(x: Nat) {
+        foo(function(y: Nat) {
+            bar(y, x)
+        })
     }
 
-    theorem goal(a: Nat, b: Nat, f: (Nat, Nat) -> Nat) {
-        foo(map(range(a), function(i: Nat) {
-            sum(map(range(b), f(i)))
-        }))
+    theorem goal(x: Nat) {
+        foo(function(y: Nat) {
+            bar(y, x)
+        })
     }
     "#;
     verify_succeeds(text);
