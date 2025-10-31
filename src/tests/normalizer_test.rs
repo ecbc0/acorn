@@ -790,3 +790,40 @@ fn test_normalizing_and_inside_arg() {
         ],
     );
 }
+
+#[test]
+fn test_normalizing_nested_lambdas() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+    type Nat: axiom
+    type ListNat: axiom
+    let range: Nat -> ListNat = axiom
+    let sum: ListNat -> Nat = axiom
+    let map: (ListNat, Nat -> Nat) -> ListNat = axiom
+
+    define double_sum(n: Nat, m: Nat, f: (Nat, Nat) -> Nat) -> Nat {
+        sum(map(range(n), function(i: Nat) {
+            sum(map(range(m), function(j: Nat) { f(i, j) }))
+        }))
+    }
+
+    theorem goal(a: Nat, b: Nat, f: (Nat, Nat) -> Nat) {
+        double_sum(a, b, f) = sum(map(range(a), function(i: Nat) {
+            sum(map(range(b), function(j: Nat) { f(i, j) }))
+        }))
+    }
+    "#,
+    );
+
+    let mut norm = Normalizer::new();
+    norm.check(
+        &env,
+        "goal",
+        &[
+            "sum(map(range(x0), s1(x1, x0, x2, x3))) = s0(x1, x0, x2, x3)",
+            "s1(x0, x1, x2, x3, x4) = x2(x3, x4)",
+            "sum(map(range(x0), s0(x0, x1, x2))) = double_sum(x0, x1, x2)",
+        ],
+    );
+}

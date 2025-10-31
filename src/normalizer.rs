@@ -1139,14 +1139,18 @@ impl NormalizerView<'_> {
             AcornValue::Not(_) => Err("negation in unexpected position".to_string()),
             AcornValue::Lambda(arg_types, body) => {
                 // Create variable terms for each lambda argument
+                // Use stack.len() as the variable ID to ensure it matches the AcornValue's stack-position indexing
                 let mut args = vec![];
                 for arg_type in arg_types {
                     let type_id = self.map().get_type_id(arg_type)?;
-                    let var_id = *next_var_id;
-                    *next_var_id += 1;
+                    let var_id = stack.len() as AtomId;
                     let var = Term::new_variable(type_id, var_id);
                     args.push((var_id, type_id));
                     stack.push(TermBinding::Free(var));
+                    // Update next_var_id to be at least one past this variable
+                    if var_id >= *next_var_id {
+                        *next_var_id = var_id + 1;
+                    }
                 }
 
                 // Evaluate the body with the lambda arguments on the stack

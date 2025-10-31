@@ -801,18 +801,20 @@ impl AcornValue {
         match self {
             AcornValue::Application(app) => {
                 let function = app.function.expand_lambdas(stack_size);
-                if let AcornValue::Lambda(_, return_value) = function {
+                // Expand lambdas in the arguments first
+                let expanded_args: Vec<AcornValue> = app
+                    .args
+                    .iter()
+                    .map(|x| x.expand_lambdas(stack_size))
+                    .collect();
+                if let AcornValue::Lambda(_lambda_args, return_value) = function {
                     // Expand the lambda
-                    let expanded = return_value.bind_values(stack_size, stack_size, &app.args);
+                    let expanded = return_value.bind_values(stack_size, stack_size, &expanded_args);
                     expanded.expand_lambdas(stack_size)
                 } else {
                     AcornValue::Application(FunctionApplication {
                         function: Box::new(function),
-                        args: app
-                            .args
-                            .iter()
-                            .map(|x| x.expand_lambdas(stack_size))
-                            .collect(),
+                        args: expanded_args,
                     })
                 }
             }
