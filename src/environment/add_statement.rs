@@ -1306,13 +1306,12 @@ impl Environment {
         // The forall form is the anonymous truth of induction.
         // We add that as a proposition.
         let arb_forall_claim = AcornValue::forall(vec![hyp_type], unbound_claim);
-        let source = Source::theorem(
-            true,
+        let source = Source::type_definition(
             self.module_id,
             range,
-            true,
             self.depth,
-            Some(name.to_string()),
+            datatype.name.clone(),
+            "induction".to_string(),
         );
         let gen_forall_claim = arb_forall_claim.genericize(&type_params);
         let prop = Proposition::new(gen_forall_claim, type_params, source);
@@ -1627,13 +1626,12 @@ impl Environment {
                     condition.to_string(),
                 );
 
-                let source = Source::theorem(
-                    true,
+                let source = Source::type_definition(
                     self.module_id,
                     range,
-                    true,
                     self.depth,
-                    Some(defined_name.to_string()),
+                    typeclass.name.clone(),
+                    condition.name_token.text().to_string(),
                 );
                 let prop = Proposition::new(external_claim, vec![type_param.clone()], source);
                 self.add_node(Node::structural(project, self, prop));

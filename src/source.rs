@@ -8,7 +8,7 @@ use tower_lsp::lsp_types::Range;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceType {
-    /// An axiom, which may have a name.
+    /// An axiom explicitly defined by the user with the axiom keyword.
     Axiom(Option<String>),
 
     /// A theorem which may have a name.
@@ -18,7 +18,7 @@ pub enum SourceType {
     Anonymous,
 
     /// A proposition that comes from the definition of a type.
-    /// The first string is the type, the second string is a member name.
+    /// The first string is the type name, the second string is a name (e.g., member, induction, etc).
     TypeDefinition(String, String),
 
     /// A proposition that comes from the definition of a constant.

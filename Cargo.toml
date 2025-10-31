@@ -55,6 +55,10 @@ test = false
 name = "profile_verifier"
 test = false
 
+[[bin]]
+name = "test_gen"
+test = false
+
 # Fast, but including debug info.
 [profile.fastdev]
 inherits = "release"

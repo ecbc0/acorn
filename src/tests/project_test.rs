@@ -1531,3 +1531,32 @@ fn test_strict_mode_allows_theorems() {
     // but it shouldn't error from strict mode
     assert_ne!(builder.status, BuildStatus::Error);
 }
+
+#[test]
+fn test_strict_mode_allows_inductive_types() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        inductive Nat {
+            zero
+            suc(Nat)
+        }
+
+        theorem test_induction(n: Nat) {
+            n = n
+        } by {
+            Nat.induction(function(x: Nat) { x = x })
+        }
+        "#,
+    );
+
+    // Should work with strict mode since inductive types generate structural axioms,
+    // not explicit axioms from the axiom keyword
+    let mut builder = Builder::new(&p, CancellationToken::new(), |_| {});
+    builder.strict = true;
+    builder.build();
+
+    // Should succeed
+    assert_eq!(builder.status, BuildStatus::Good);
+}
