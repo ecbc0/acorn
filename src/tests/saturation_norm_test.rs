@@ -267,7 +267,7 @@ fn test_long_if_condition() {
 }
 
 #[test]
-fn test_nested_lambdas_1() {
+fn test_nested_lambdas() {
     let text = r#"
     type Nat: axiom
     type ListNat: axiom
@@ -296,26 +296,27 @@ fn test_nested_lambdas_1() {
 
 // The prover can't do this.
 // Maybe it would work if we normalized lambdas harder.
-// #[test]
-// fn test_nested_lambdas_2() {
-//     let text = r#"
-//     type Nat: axiom
-//     type ListNat: axiom
-//     let range: Nat -> ListNat = axiom
-//     let sum: ListNat -> Nat = axiom
-//     let map: (ListNat, Nat -> Nat) -> ListNat = axiom
+#[test]
+fn test_proof_with_unifying_closures() {
+    let text = r#"
+    type Nat: axiom
+    type ListNat: axiom
+    let range: Nat -> ListNat = axiom
+    let sum: ListNat -> Nat = axiom
+    let map: (ListNat, Nat -> Nat) -> ListNat = axiom
+    let foo: ListNat -> Bool = axiom
 
-//     define double_sum(n: Nat, m: Nat, f: (Nat, Nat) -> Nat) -> Nat {
-//         sum(map(range(n), function(i: Nat) {
-//             sum(map(range(m), function(j: Nat) { f(i, j) }))
-//         }))
-//     }
+    axiom double_sum(n: Nat, m: Nat, f: (Nat, Nat) -> Nat) {
+        foo(map(range(n), function(i: Nat) {
+            sum(map(range(m), f(i)))
+        }))
+    }
 
-//     theorem goal(a: Nat, b: Nat, f: (Nat, Nat) -> Nat) {
-//         double_sum(a, b, f) = sum(map(range(a), function(i: Nat) {
-//             sum(map(range(b), function(j: Nat) { f(i, j) }))
-//         }))
-//     }
-//     "#;
-//     verify_succeeds(text);
-// }
+    theorem goal(a: Nat, b: Nat, f: (Nat, Nat) -> Nat) {
+        foo(map(range(a), function(i: Nat) {
+            sum(map(range(b), f(i)))
+        }))
+    }
+    "#;
+    verify_succeeds(text);
+}
