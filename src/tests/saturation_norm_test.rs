@@ -294,7 +294,7 @@ fn test_nested_lambdas() {
     verify_succeeds(text);
 }
 
-// The prover can't do this.
+// The prover should be able to do this without the proof body.
 #[test]
 fn test_proof_with_unifying_closures() {
     let text = r#"
@@ -302,16 +302,18 @@ fn test_proof_with_unifying_closures() {
     let foo: (Nat -> Nat) -> Bool = axiom
     let bar: (Nat, Nat) -> Nat = axiom
 
-    axiom ax(x: Nat) {
-        foo(function(y: Nat) {
-            bar(y, x)
+    axiom ax(a: Nat) {
+        foo(function(b: Nat) {
+            bar(b, a)
         })
     }
 
-    theorem goal(x: Nat) {
-        foo(function(y: Nat) {
-            bar(y, x)
+    theorem goal(a: Nat) {
+        foo(function(b: Nat) {
+            bar(b, a)
         })
+    } by {
+        ax(a)
     }
     "#;
     verify_succeeds(text);
