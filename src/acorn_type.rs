@@ -77,7 +77,7 @@ impl PotentialType {
                     params.len()
                 )));
             }
-            for (i, (typeclass, param_type)) in ut.params.iter().zip(params.iter()).enumerate() {
+            /* for (i, (typeclass, param_type)) in ut.params.iter().zip(params.iter()).enumerate() {
                 match param_type {
                     AcornType::Arbitrary(param) => {
                         if typeclass != &param.typeclass {
@@ -92,7 +92,7 @@ impl PotentialType {
                         return Err(source.error("bad parameter syntax"));
                     }
                 }
-            }
+            } */
         }
         self.resolve(params, source)
     }
