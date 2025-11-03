@@ -17,6 +17,9 @@ mod saturation_core_test;
 mod saturation_language_test;
 
 #[cfg(test)]
+mod saturation_attributes_test;
+
+#[cfg(test)]
 mod saturation_norm_test;
 
 #[cfg(test)]
