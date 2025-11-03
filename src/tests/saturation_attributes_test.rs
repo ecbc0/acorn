@@ -403,3 +403,46 @@ fn test_proving_with_generic_attribute_recursion() {
     "#;
     verify_succeeds(text);
 }
+
+#[test]
+fn test_proving_with_attributes_on_parametrized_types() {
+    // Test that we can define attributes on specific instantiations of parametrized types
+    let text = r#"
+    inductive Color {
+        red
+        blue
+    }
+
+    inductive List<T> {
+        nil
+        cons(T, List<T>)
+    }
+
+    // Define an attribute specifically for List[Color]
+    attributes List[Color] {
+        define has_red(self) -> Bool {
+            match self {
+                List.nil {
+                    false
+                }
+                List.cons(head, tail) {
+                    if head = Color.red {
+                        true
+                    } else {
+                        tail.has_red
+                    }
+                }
+            }
+        }
+    }
+
+    theorem red_list_has_red {
+        List.cons(Color.red, List.nil<Color>).has_red
+    }
+
+    theorem blue_list_no_red {
+        not List.cons(Color.blue, List.nil<Color>).has_red
+    }
+    "#;
+    verify_succeeds(text);
+}
