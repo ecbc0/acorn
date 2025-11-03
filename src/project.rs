@@ -481,6 +481,12 @@ impl Project {
                     .get_datatype_attribute_module(datatype, attr_name)?;
                 self.get_env_by_id(attr_module_id)
             }
+            ConstantName::SpecificDatatypeAttribute(datatype, _types, attr_name) => {
+                let attr_module_id = env
+                    .bindings
+                    .get_datatype_attribute_module(datatype, attr_name)?;
+                self.get_env_by_id(attr_module_id)
+            }
             ConstantName::TypeclassAttribute(typeclass, attr_name) => {
                 let attr_module_id = env
                     .bindings

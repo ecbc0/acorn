@@ -200,6 +200,11 @@ impl BindingMap {
                     ConstantName::DatatypeAttribute(datatype, attr) => {
                         self.has_type_attr(datatype, attr)
                     }
+                    ConstantName::SpecificDatatypeAttribute(datatype, _types, attr) => {
+                        // For specific attributes, check if they're in the constant_defs
+                        // (already checked above, so this should always be false here)
+                        self.has_type_attr(datatype, attr)
+                    }
                     ConstantName::TypeclassAttribute(..) => {
                         // This doesn't seem right!
                         false
@@ -455,6 +460,10 @@ impl BindingMap {
                 .resolve_datatype_attr(datatype, attr)
                 .ok()
                 .map(|(module_id, name)| (module_id, name)),
+            ConstantName::SpecificDatatypeAttribute(datatype, _types, _attr) => {
+                // Specific attributes are always defined locally
+                Some((datatype.module_id, name.clone()))
+            }
             ConstantName::TypeclassAttribute(typeclass, attr) => self
                 .resolve_typeclass_attr(typeclass, attr)
                 .map(|(module_id, name)| (module_id, name)),
@@ -1034,6 +1043,15 @@ impl BindingMap {
         match &constant_name {
             ConstantName::DatatypeAttribute(datatype, attribute) => {
                 // We are defining a new datatype attribute.
+                self.datatype_defs
+                    .entry(datatype.clone())
+                    .or_insert_with(DatatypeDefinition::new)
+                    .attributes
+                    .insert(attribute.clone(), self.module_id);
+            }
+            ConstantName::SpecificDatatypeAttribute(datatype, _types, attribute) => {
+                // For specific attributes, we also add them to the datatype's attribute list
+                // This allows them to be found during resolution
                 self.datatype_defs
                     .entry(datatype.clone())
                     .or_insert_with(DatatypeDefinition::new)

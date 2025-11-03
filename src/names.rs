@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::acorn_type::{Datatype, Typeclass};
+use crate::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::atom::AtomId;
 use crate::module::ModuleId;
 
@@ -38,6 +38,9 @@ pub enum ConstantName {
     /// An attribute of a datatype.
     DatatypeAttribute(Datatype, String),
 
+    /// An attribute of a specifically parametrized datatype (e.g., Set[Color].has_red).
+    SpecificDatatypeAttribute(Datatype, Vec<AcornType>, String),
+
     /// An attribute of a typeclass.
     TypeclassAttribute(Typeclass, String),
 
@@ -53,6 +56,14 @@ impl ConstantName {
         ConstantName::DatatypeAttribute(datatype, attr.to_string())
     }
 
+    pub fn datatype_specific_attr(
+        datatype: Datatype,
+        types: Vec<AcornType>,
+        attr: &str,
+    ) -> ConstantName {
+        ConstantName::SpecificDatatypeAttribute(datatype, types, attr.to_string())
+    }
+
     pub fn typeclass_attr(tc: Typeclass, attr: &str) -> ConstantName {
         ConstantName::TypeclassAttribute(tc, attr.to_string())
     }
@@ -64,6 +75,9 @@ impl ConstantName {
     pub fn as_attribute(&self) -> Option<(ModuleId, &str, &str)> {
         match self {
             ConstantName::DatatypeAttribute(datatype, attr) => {
+                Some((datatype.module_id, &datatype.name, attr))
+            }
+            ConstantName::SpecificDatatypeAttribute(datatype, _types, attr) => {
                 Some((datatype.module_id, &datatype.name, attr))
             }
             ConstantName::TypeclassAttribute(tc, attr) => Some((tc.module_id, &tc.name, attr)),
@@ -100,6 +114,7 @@ impl ConstantName {
     pub fn module_id(&self) -> ModuleId {
         match self {
             ConstantName::DatatypeAttribute(datatype, _) => datatype.module_id,
+            ConstantName::SpecificDatatypeAttribute(datatype, _, _) => datatype.module_id,
             ConstantName::TypeclassAttribute(tc, _) => tc.module_id,
             ConstantName::Unqualified(module_id, _) => *module_id,
             ConstantName::Synthetic(_) => panic!("synthetic constants do not have a module id"),
@@ -109,6 +124,9 @@ impl ConstantName {
     pub fn is_attribute_of(&self, datatype: &Datatype) -> bool {
         match self {
             ConstantName::DatatypeAttribute(datatype_attr, _) => datatype_attr == datatype,
+            ConstantName::SpecificDatatypeAttribute(datatype_attr, _, _) => {
+                datatype_attr == datatype
+            }
             _ => false,
         }
     }
@@ -119,6 +137,16 @@ impl fmt::Display for ConstantName {
         match self {
             ConstantName::DatatypeAttribute(datatype, attr) => {
                 write!(f, "{}.{}", datatype.name, attr)
+            }
+            ConstantName::SpecificDatatypeAttribute(datatype, types, attr) => {
+                write!(f, "{}[", datatype.name)?;
+                for (i, t) in types.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", t)?;
+                }
+                write!(f, "].{}", attr)
             }
             ConstantName::TypeclassAttribute(tc, attr) => {
                 write!(f, "{}.{}", tc.name, attr)
@@ -155,6 +183,18 @@ impl DefinedName {
 
     pub fn datatype_attr(datatype: &Datatype, attr: &str) -> DefinedName {
         DefinedName::Constant(ConstantName::datatype_attr(datatype.clone(), attr))
+    }
+
+    pub fn datatype_specific_attr(
+        datatype: Datatype,
+        types: &[AcornType],
+        attr: &str,
+    ) -> DefinedName {
+        DefinedName::Constant(ConstantName::datatype_specific_attr(
+            datatype,
+            types.to_vec(),
+            attr,
+        ))
     }
 
     pub fn typeclass_attr(tc: &Typeclass, attr: &str) -> DefinedName {

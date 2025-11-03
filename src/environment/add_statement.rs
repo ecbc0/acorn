@@ -6,7 +6,7 @@ use crate::atom::AtomId;
 use crate::binding_map::ConstructorInfo;
 use crate::block::{Block, BlockParams, Node};
 use crate::compilation::{self, CompilationError, ErrorSource};
-use crate::evaluator::Evaluator;
+use crate::evaluator::{AttributesTypeArgs, Evaluator};
 use crate::expression::{Declaration, Expression};
 use crate::fact::Fact;
 use crate::named_entity::NamedEntity;
@@ -1353,53 +1353,111 @@ impl Environment {
         ats: &AttributesStatement,
         potential: crate::acorn_type::PotentialType,
     ) -> compilation::Result<()> {
-        let type_params = self
+        let type_args = self
             .evaluator(project)
-            .evaluate_type_params(&ats.type_params)?;
-        let mut params = vec![];
-        for param in &type_params {
-            params.push(self.bindings.add_arbitrary_type(param.clone()));
-        }
-        let instance_type = potential.invertible_resolve(params, &ats.name_token)?;
-        let datatype = self.check_can_add_attributes(&ats.name_token, &instance_type)?;
+            .evaluate_attributes_type_args(&ats.type_params)?;
 
-        for substatement in &ats.body.statements {
-            match &substatement.statement {
-                StatementInfo::Let(ls) => {
-                    self.add_let_statement(
-                        project,
-                        substatement,
-                        DefinedName::datatype_attr(datatype, ls.name_token.text()),
-                        ls,
-                        ls.name_token.range(),
-                        Some(&type_params),
-                    )?;
+        match type_args {
+            AttributesTypeArgs::Generic(type_params) => {
+                // Generic case: attributes Set[K]
+                let mut params = vec![];
+                for param in &type_params {
+                    params.push(self.bindings.add_arbitrary_type(param.clone()));
                 }
-                StatementInfo::Define(ds) => {
-                    self.add_define_statement(
-                        project,
-                        substatement,
-                        DefinedName::datatype_attr(datatype, ds.name_token.text()),
-                        Some(&instance_type),
-                        Some(&type_params),
-                        ds,
-                        ds.name_token.range(),
-                    )?;
+                let instance_type = potential.invertible_resolve(params, &ats.name_token)?;
+                let datatype = self.check_can_add_attributes(&ats.name_token, &instance_type)?;
+
+                for substatement in &ats.body.statements {
+                    match &substatement.statement {
+                        StatementInfo::Let(ls) => {
+                            self.add_let_statement(
+                                project,
+                                substatement,
+                                DefinedName::datatype_attr(datatype, ls.name_token.text()),
+                                ls,
+                                ls.name_token.range(),
+                                Some(&type_params),
+                            )?;
+                        }
+                        StatementInfo::Define(ds) => {
+                            self.add_define_statement(
+                                project,
+                                substatement,
+                                DefinedName::datatype_attr(datatype, ds.name_token.text()),
+                                Some(&instance_type),
+                                Some(&type_params),
+                                ds,
+                                ds.name_token.range(),
+                            )?;
+                        }
+                        StatementInfo::DocComment(s) => {
+                            // Add to self.doc_comments so it will be picked up by the next statement
+                            self.doc_comments.push(s.clone());
+                        }
+                        _ => {
+                            return Err(substatement
+                                .error("only let, define, and doc comment statements are allowed in attributes bodies"));
+                        }
+                    }
                 }
-                StatementInfo::DocComment(s) => {
-                    // Add to self.doc_comments so it will be picked up by the next statement
-                    self.doc_comments.push(s.clone());
+                for type_param in &ats.type_params {
+                    self.bindings.remove_type(type_param.name.text());
                 }
-                _ => {
-                    return Err(substatement
-                        .error("only let, define, and doc comment statements are allowed in attributes bodies"));
+                Ok(())
+            }
+            AttributesTypeArgs::Concrete(concrete_types) => {
+                // Specific case: attributes Set[Color]
+                // Use resolve instead of invertible_resolve for concrete types
+                let instance_type = potential.resolve(concrete_types.clone(), &ats.name_token)?;
+                let datatype = self.check_can_add_attributes(&ats.name_token, &instance_type)?;
+
+                // Check for conflicts with existing generic attributes
+                self.check_no_conflicting_attributes(datatype, &ats.body, &ats.name_token)?;
+
+                for substatement in &ats.body.statements {
+                    match &substatement.statement {
+                        StatementInfo::Let(ls) => {
+                            self.add_let_statement(
+                                project,
+                                substatement,
+                                DefinedName::datatype_specific_attr(
+                                    datatype.clone(),
+                                    &concrete_types,
+                                    ls.name_token.text(),
+                                ),
+                                ls,
+                                ls.name_token.range(),
+                                None, // No type parameters for specific attributes
+                            )?;
+                        }
+                        StatementInfo::Define(ds) => {
+                            self.add_define_statement(
+                                project,
+                                substatement,
+                                DefinedName::datatype_specific_attr(
+                                    datatype.clone(),
+                                    &concrete_types,
+                                    ds.name_token.text(),
+                                ),
+                                Some(&instance_type),
+                                None, // No type parameters for specific attributes
+                                ds,
+                                ds.name_token.range(),
+                            )?;
+                        }
+                        StatementInfo::DocComment(s) => {
+                            // Add to self.doc_comments so it will be picked up by the next statement
+                            self.doc_comments.push(s.clone());
+                        }
+                        _ => {
+                            return Err(substatement
+                                .error("only let, define, and doc comment statements are allowed in attributes bodies"));
+                        }
+                    }
                 }
+                Ok(())
             }
         }
-        for type_param in &ats.type_params {
-            self.bindings.remove_type(type_param.name.text());
-        }
-        Ok(())
     }
 
     fn add_typeclass_attributes(

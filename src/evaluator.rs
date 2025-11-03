@@ -13,6 +13,16 @@ use crate::token::{Token, TokenType};
 use crate::token_map::TokenMap;
 use crate::type_unifier::TypeUnifier;
 
+/// Represents the type arguments in an attributes statement.
+/// Either generic type parameters (e.g., K, T) or concrete types (e.g., Color, Nat).
+#[derive(Debug, Clone)]
+pub enum AttributesTypeArgs {
+    /// Generic type parameters like `attributes Set[K]`
+    Generic(Vec<TypeParam>),
+    /// Concrete types like `attributes Set[Color]`
+    Concrete(Vec<AcornType>),
+}
+
 /// The Evaluator turns expressions into types and values, and other things of that nature.
 pub struct Evaluator<'a> {
     /// The bindings to use for evaluation.
@@ -1205,6 +1215,65 @@ impl<'a> Evaluator<'a> {
             });
         }
         Ok(answer)
+    }
+
+    /// Evaluates type arguments for attributes statements.
+    /// Returns either a list of type parameters (for generic attributes) or
+    /// a list of concrete types (for specific attributes).
+    /// Validates that it's all-or-nothing (no mixing generic and concrete).
+    pub fn evaluate_attributes_type_args(
+        &mut self,
+        exprs: &[TypeParamExpr],
+    ) -> compilation::Result<AttributesTypeArgs> {
+        if exprs.is_empty() {
+            return Ok(AttributesTypeArgs::Generic(vec![]));
+        }
+
+        // Check if each identifier refers to an existing type
+        let mut concrete_count = 0;
+        let mut generic_count = 0;
+
+        for expr in exprs {
+            if expr.typeclass.is_some() {
+                // If there's a typeclass constraint (e.g., K: Eq), it must be generic
+                generic_count += 1;
+            } else {
+                let name = expr.name.text();
+                // Check if this name is an existing type
+                if self.bindings.get_type_for_typename(name).is_some() {
+                    concrete_count += 1;
+                } else {
+                    generic_count += 1;
+                }
+            }
+        }
+
+        // Validate all-or-nothing
+        if concrete_count > 0 && generic_count > 0 {
+            return Err(exprs[0]
+                .name
+                .error("cannot mix concrete types and type parameters in attributes statement"));
+        }
+
+        if concrete_count > 0 {
+            // All are concrete types - evaluate them
+            let mut types = vec![];
+            for expr in exprs {
+                if expr.typeclass.is_some() {
+                    return Err(expr
+                        .name
+                        .error("typeclass constraints not allowed on concrete types"));
+                }
+                let type_expr = Expression::Singleton(expr.name.clone());
+                let acorn_type = self.evaluate_type(&type_expr)?;
+                types.push(acorn_type);
+            }
+            Ok(AttributesTypeArgs::Concrete(types))
+        } else {
+            // All are generic - use the existing evaluate_type_params
+            let type_params = self.evaluate_type_params(exprs)?;
+            Ok(AttributesTypeArgs::Generic(type_params))
+        }
     }
 }
 

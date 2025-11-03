@@ -843,3 +843,115 @@ fn test_env_attribute_with_specific_parameter() {
         "#,
     );
 }
+
+#[test]
+fn test_multiple_specific_parametrizations() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        inductive Color {
+            red
+            blue
+        }
+        inductive Size {
+            small
+            large
+        }
+        structure Set[K] {
+            contains: K -> Bool
+        }
+
+        attributes Set[Color] {
+            define has_red(self) -> Bool {
+                self.contains(Color.red)
+            }
+        }
+
+        attributes Set[Size] {
+            define has_small(self) -> Bool {
+                self.contains(Size.small)
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn test_error_on_mixed_params() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        inductive Color {
+            red
+            blue
+        }
+        structure Pair[T, U] {
+            first: T
+            second: U
+        }
+        "#,
+    );
+    env.bad(
+        r#"
+        attributes Pair[Color, U] {
+            define foo(self) -> Bool { true }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn test_error_on_conflicting_attributes() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        inductive Color {
+            red
+            blue
+        }
+        structure Set[K] {
+            contains: K -> Bool
+        }
+
+        attributes Set[K] {
+            define foo(self) -> Bool { true }
+        }
+        "#,
+    );
+    env.bad(
+        r#"
+        attributes Set[Color] {
+            define foo(self) -> Bool { false }
+        }
+        "#,
+    );
+}
+
+// Note: Nested parametrization (e.g., Set[List[Color]]) is not currently supported
+// because type parameter parsing only handles simple identifiers, not complex type expressions.
+// This would require enhancing the parser to accept full type expressions in square brackets.
+// #[test]
+// fn test_nested_specific_parametrization() {
+//     let mut env = Environment::test();
+//     env.add(
+//         r#"
+//         inductive Color {
+//             red
+//             blue
+//         }
+//         inductive List[T] {
+//             nil
+//             cons(T, List[T])
+//         }
+//         structure Set[K] {
+//             contains: K -> Bool
+//         }
+//
+//         attributes Set[List[Color]] {
+//             define check_colors(self) -> Bool {
+//                 true  // simplified for testing
+//             }
+//         }
+//         "#,
+//     );
+// }

@@ -449,6 +449,11 @@ impl CodeGenerator<'_> {
                 ConstantName::DatatypeAttribute(datatype, attr) => {
                     Expression::generate_identifier(&datatype.name).add_dot_str(attr)
                 }
+                ConstantName::SpecificDatatypeAttribute(datatype, _types, attr) => {
+                    // Generate the same expression as for generic attributes
+                    // The specific type information is not needed in the generated code
+                    Expression::generate_identifier(&datatype.name).add_dot_str(attr)
+                }
                 ConstantName::TypeclassAttribute(tc, attr) => {
                     Expression::generate_identifier(&tc.name).add_dot_str(attr)
                 }
@@ -490,6 +495,9 @@ impl CodeGenerator<'_> {
         match &ci.name {
             ConstantName::Unqualified(_, name) => Ok(module.add_dot_str(name)),
             ConstantName::DatatypeAttribute(datatype, attr) => {
+                Ok(module.add_dot_str(&datatype.name).add_dot_str(attr))
+            }
+            ConstantName::SpecificDatatypeAttribute(datatype, _types, attr) => {
                 Ok(module.add_dot_str(&datatype.name).add_dot_str(attr))
             }
             ConstantName::TypeclassAttribute(tc, attr) => {
