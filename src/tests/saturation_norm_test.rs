@@ -318,3 +318,28 @@ fn test_proof_with_unifying_closures() {
     "#;
     verify_succeeds(text);
 }
+
+#[test]
+fn test_nested_ifs() {
+    let text = r#"
+    type Nat: axiom
+    let f: Nat -> Bool = axiom
+
+    define foo(a: Nat, b: Nat, c: Nat, d: Nat, e: Nat) -> Nat {
+        if f(a) {
+            b
+        } else {
+            if f(c) {
+                d
+            } else {
+                e
+            }
+        }
+    }
+
+    theorem goal(a: Nat) {
+        foo(a, a, a, a, a) = a
+    }
+    "#;
+    verify_succeeds(text);
+}
