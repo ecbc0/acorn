@@ -1080,6 +1080,111 @@ impl NormalizerView<'_> {
         Ok(synth_lit)
     }
 
+    /// Converts an ExtendedTerm to a plain Term.
+    /// If the ExtendedTerm is an If expression, synthesizes a new atom for it.
+    fn extended_term_to_term(
+        &mut self,
+        ext_term: ExtendedTerm,
+        synth: &mut Vec<AtomId>,
+    ) -> Result<Term, String> {
+        match ext_term {
+            ExtendedTerm::Term(t) => Ok(t),
+            ExtendedTerm::If(cond_lit, then_term, else_term) => {
+                // Optimization: if both branches are the same, just return that term
+                if then_term == else_term {
+                    return Ok(then_term);
+                }
+                // We need to synthesize a new atom that represents this if-expression
+                // The defining clauses will be:
+                // For atom s representing "if cond then then_term else else_term":
+                // (cond -> s = then_term) and (not cond -> s = else_term)
+                // Which is (not cond or s = then_term) and (cond or s = else_term)
+
+                use crate::acorn_type::AcornType;
+                use crate::atom::Atom;
+
+                // Determine the type of the result (should be same as then_term and else_term)
+                let result_type_id = then_term.term_type;
+                let result_type = self.map().get_type(result_type_id).clone();
+
+                // Create a new synthetic atom with the appropriate function type
+                // based on free variables in the if-expression
+                let mut arg_types = vec![];
+                let mut args = vec![];
+                let mut seen_vars = std::collections::HashSet::new();
+
+                // Collect free variables from the condition literal
+                for (var_id, type_id) in cond_lit.left.iter_vars() {
+                    if seen_vars.insert(var_id) {
+                        let var_term = Term::new_variable(type_id, var_id);
+                        args.push(var_term);
+                        arg_types.push(self.map().get_type(type_id).clone());
+                    }
+                }
+                for (var_id, type_id) in cond_lit.right.iter_vars() {
+                    if seen_vars.insert(var_id) {
+                        let var_term = Term::new_variable(type_id, var_id);
+                        args.push(var_term);
+                        arg_types.push(self.map().get_type(type_id).clone());
+                    }
+                }
+
+                // Collect free variables from the then branch
+                for (var_id, type_id) in then_term.iter_vars() {
+                    if seen_vars.insert(var_id) {
+                        let var_term = Term::new_variable(type_id, var_id);
+                        args.push(var_term);
+                        arg_types.push(self.map().get_type(type_id).clone());
+                    }
+                }
+
+                // Collect free variables from the else branch
+                for (var_id, type_id) in else_term.iter_vars() {
+                    if seen_vars.insert(var_id) {
+                        let var_term = Term::new_variable(type_id, var_id);
+                        args.push(var_term);
+                        arg_types.push(self.map().get_type(type_id).clone());
+                    }
+                }
+
+                let atom_type = if arg_types.is_empty() {
+                    result_type.clone()
+                } else {
+                    AcornType::functional(arg_types, result_type.clone())
+                };
+
+                // Add the atom type to the normalization map and declare the synthetic atom
+                let atom_id = self.as_mut()?.declare_synthetic_atom(atom_type.clone())?;
+                synth.push(atom_id);
+
+                // Now we can safely get type IDs
+                let atom_type_id = self.map().get_type_id(&atom_type)?;
+
+                let atom = Atom::Synthetic(atom_id);
+                let synth_term = Term::new(result_type_id, atom_type_id, atom, args);
+
+                // Create defining clauses for the if-expression
+                // (not cond or synth_term = then_term) and (cond or synth_term = else_term)
+                let mut defining_clauses = vec![];
+
+                // First clause: not cond or synth_term = then_term
+                let then_eq = Literal::new(true, synth_term.clone(), then_term);
+                defining_clauses.push(Clause::new(vec![cond_lit.negate(), then_eq]));
+
+                // Second clause: cond or synth_term = else_term
+                let else_eq = Literal::new(true, synth_term.clone(), else_term);
+                defining_clauses.push(Clause::new(vec![cond_lit.clone(), else_eq]));
+
+                // Add the definition
+                self.as_mut()?
+                    .define_synthetic_atoms(vec![atom_id], defining_clauses, None)?;
+
+                Ok(synth_term)
+            }
+            ExtendedTerm::Lambda(_, t) => Err(format!("cannot convert lambda {} to plain term", t)),
+        }
+    }
+
     /// Converts a value to an ExtendedTerm, which can appear in places a Term does.
     fn value_to_extended_term(
         &mut self,
@@ -1097,12 +1202,12 @@ impl NormalizerView<'_> {
                     // For non-literal conditions, synthesize a new boolean atom
                     self.synthesize_literal_from_cnf(cond_cnf, stack, synth)?
                 };
-                let then_branch = self
-                    .value_to_extended_term(then_value, stack, next_var_id, synth)?
-                    .to_term()?;
-                let else_branch = self
-                    .value_to_extended_term(else_value, stack, next_var_id, synth)?
-                    .to_term()?;
+                let then_ext =
+                    self.value_to_extended_term(then_value, stack, next_var_id, synth)?;
+                let then_branch = self.extended_term_to_term(then_ext, synth)?;
+                let else_ext =
+                    self.value_to_extended_term(else_value, stack, next_var_id, synth)?;
+                let else_branch = self.extended_term_to_term(else_ext, synth)?;
                 Ok(ExtendedTerm::If(cond_lit, then_branch, else_branch))
             }
             AcornValue::Application(app) => {

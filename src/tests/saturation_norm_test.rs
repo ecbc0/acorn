@@ -339,6 +339,12 @@ fn test_nested_ifs() {
 
     theorem goal(a: Nat) {
         foo(a, a, a, a, a) = a
+    } by {
+        if f(a) {
+            foo(a, a, a, a, a) = a
+        } else {
+            foo(a, a, a, a, a) = a
+        }
     }
     "#;
     verify_succeeds(text);
