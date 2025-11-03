@@ -927,31 +927,61 @@ fn test_error_on_conflicting_attributes() {
     );
 }
 
-// Note: Nested parametrization (e.g., Set[List[Color]]) is not currently supported
-// because type parameter parsing only handles simple identifiers, not complex type expressions.
-// This would require enhancing the parser to accept full type expressions in square brackets.
-// #[test]
-// fn test_nested_specific_parametrization() {
-//     let mut env = Environment::test();
-//     env.add(
-//         r#"
-//         inductive Color {
-//             red
-//             blue
-//         }
-//         inductive List[T] {
-//             nil
-//             cons(T, List[T])
-//         }
-//         structure Set[K] {
-//             contains: K -> Bool
-//         }
-//
-//         attributes Set[List[Color]] {
-//             define check_colors(self) -> Bool {
-//                 true  // simplified for testing
-//             }
-//         }
-//         "#,
-//     );
-// }
+#[test]
+fn test_nested_specific_parametrization() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        inductive Color {
+            red
+            blue
+        }
+        inductive List[T] {
+            nil
+            cons(T, List[T])
+        }
+        structure Set[K] {
+            contains: K -> Bool
+        }
+
+        attributes Set[List[Color]] {
+            define check_colors(self) -> Bool {
+                true  // simplified for testing
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn test_double_nested_parametrization() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        inductive Color {
+            red
+            blue
+        }
+        inductive Size {
+            small
+            large
+        }
+        inductive List[T] {
+            nil
+            cons(T, List[T])
+        }
+        structure Set[K] {
+            contains: K -> Bool
+        }
+        structure Map[K, V] {
+            get: K -> V
+        }
+
+        attributes Map[List[Color], Set[Size]] {
+            define complex_method(self) -> Bool {
+                true
+            }
+        }
+        "#,
+    );
+}

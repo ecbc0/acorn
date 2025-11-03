@@ -1200,6 +1200,13 @@ impl<'a> Evaluator<'a> {
     ) -> compilation::Result<Vec<TypeParam>> {
         let mut answer: Vec<TypeParam> = vec![];
         for expr in exprs {
+            // Reject complex type expressions in type parameter context
+            if expr.type_expr.is_some() {
+                return Err(expr.name.error(
+                    "type parameters must be simple identifiers, not complex type expressions",
+                ));
+            }
+
             let name = expr.name.text().to_string();
             self.bindings.check_typename_available(&name, &expr.name)?;
             if answer.iter().any(|tp| tp.name == name) {
@@ -1237,6 +1244,9 @@ impl<'a> Evaluator<'a> {
             if expr.typeclass.is_some() {
                 // If there's a typeclass constraint (e.g., K: Eq), it must be generic
                 generic_count += 1;
+            } else if expr.type_expr.is_some() {
+                // Complex type expression like List[Color] - definitely concrete
+                concrete_count += 1;
             } else {
                 let name = expr.name.text();
                 // Check if this name is an existing type
@@ -1264,8 +1274,17 @@ impl<'a> Evaluator<'a> {
                         .name
                         .error("typeclass constraints not allowed on concrete types"));
                 }
-                let type_expr = Expression::Singleton(expr.name.clone());
-                let acorn_type = self.evaluate_type(&type_expr)?;
+
+                // Handle both simple and complex types
+                let acorn_type = if let Some(type_expression) = &expr.type_expr {
+                    // Complex type like List[Color]
+                    self.evaluate_type(type_expression)?
+                } else {
+                    // Simple type like Color
+                    let type_expr = Expression::Singleton(expr.name.clone());
+                    self.evaluate_type(&type_expr)?
+                };
+
                 types.push(acorn_type);
             }
             Ok(AttributesTypeArgs::Concrete(types))

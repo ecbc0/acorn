@@ -162,17 +162,31 @@ impl Declaration {
 }
 
 // A single type parameter that may or may not have a typeclass, like "G: Group".
+// Can also represent a complex type expression like "List[Color]" for specific attributes.
 #[derive(Debug)]
 pub struct TypeParamExpr {
     pub name: Token,
+
+    // For complex type expressions like List[Color]
+    // None for simple identifiers like K
+    // Some(expr) for complex types
+    pub type_expr: Option<Expression>,
+
     pub typeclass: Option<Expression>,
 }
 
 impl fmt::Display for TypeParamExpr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // Handle complex type expressions
+        let base_str = if let Some(type_expr) = &self.type_expr {
+            format!("{}", type_expr)
+        } else {
+            format!("{}", self.name)
+        };
+
         match &self.typeclass {
-            None => write!(f, "{}", self.name),
-            Some(typeclass) => write!(f, "{}: {}", self.name, typeclass),
+            None => write!(f, "{}", base_str),
+            Some(typeclass) => write!(f, "{}: {}", base_str, typeclass),
         }
     }
 }
@@ -191,6 +205,27 @@ impl TypeParamExpr {
         if left_delimiter.clone().unwrap().token_type == TokenType::LessThan {
             loop {
                 let name = tokens.expect_type(TokenType::Identifier)?;
+
+                // Check if this is a complex type expression (e.g., List[Color])
+                let type_expr = if tokens.peek_type() == Some(TokenType::LeftBracket) {
+                    // Parse the nested type parameters
+                    let name_expr = Expression::Singleton(name.clone());
+                    let left_bracket = tokens.next().unwrap();
+
+                    let (inner_expr, right_bracket) =
+                        Expression::parse_type(tokens, Terminator::Is(TokenType::RightBracket))?;
+
+                    let params_expr =
+                        Expression::Grouping(left_bracket, Box::new(inner_expr), right_bracket);
+
+                    Some(Expression::Concatenation(
+                        Box::new(name_expr),
+                        Box::new(params_expr),
+                    ))
+                } else {
+                    None
+                };
+
                 let terminator = tokens.expect_token()?;
                 let (typeclass, terminator) = if terminator.token_type == TokenType::Colon {
                     let (typeclass, terminator) = Expression::parse_type(
@@ -201,7 +236,11 @@ impl TypeParamExpr {
                 } else {
                     (None, terminator)
                 };
-                params.push(TypeParamExpr { name, typeclass });
+                params.push(TypeParamExpr {
+                    name,
+                    type_expr,
+                    typeclass,
+                });
                 match terminator.token_type {
                     TokenType::GreaterThan => {
                         break;
@@ -217,6 +256,27 @@ impl TypeParamExpr {
         } else if left_delimiter.clone().unwrap().token_type == TokenType::LeftBracket {
             loop {
                 let name = tokens.expect_type(TokenType::Identifier)?;
+
+                // Check if this is a complex type expression (e.g., List[Color])
+                let type_expr = if tokens.peek_type() == Some(TokenType::LeftBracket) {
+                    // Parse the nested type parameters
+                    let name_expr = Expression::Singleton(name.clone());
+                    let left_bracket = tokens.next().unwrap();
+
+                    let (inner_expr, right_bracket) =
+                        Expression::parse_type(tokens, Terminator::Is(TokenType::RightBracket))?;
+
+                    let params_expr =
+                        Expression::Grouping(left_bracket, Box::new(inner_expr), right_bracket);
+
+                    Some(Expression::Concatenation(
+                        Box::new(name_expr),
+                        Box::new(params_expr),
+                    ))
+                } else {
+                    None
+                };
+
                 let terminator = tokens.expect_token()?;
                 let (typeclass, terminator) = if terminator.token_type == TokenType::Colon {
                     let (typeclass, terminator) = Expression::parse_type(
@@ -227,7 +287,11 @@ impl TypeParamExpr {
                 } else {
                     (None, terminator)
                 };
-                params.push(TypeParamExpr { name, typeclass });
+                params.push(TypeParamExpr {
+                    name,
+                    type_expr,
+                    typeclass,
+                });
                 match terminator.token_type {
                     TokenType::RightBracket => {
                         break;
