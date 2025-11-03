@@ -821,3 +821,25 @@ fn test_env_set_product_with_extra_type_param() {
         "#,
     );
 }
+
+#[test]
+fn test_env_attribute_with_specific_parameter() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        inductive Color {
+            red
+            blue
+        }
+        structure Set[K] {
+            contains: K -> Bool
+        }
+
+        attributes Set[Color] {
+            define has_red(self) -> Bool {
+                self.contains(Color.red)
+            }
+        }
+        "#,
+    );
+}
