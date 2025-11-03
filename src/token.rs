@@ -58,12 +58,10 @@ pub enum TokenType {
     Numerals,
     From,
     Solve,
-    Problem,
     Satisfy,
     SelfToken,
     Inductive,
     Match,
-    Todo,
     Constraint,
     Implies,
     Typeclass,
@@ -109,7 +107,6 @@ pub fn keyword_map() -> &'static BTreeMap<&'static str, TokenType> {
             ("numerals", TokenType::Numerals),
             ("from", TokenType::From),
             ("solve", TokenType::Solve),
-            ("problem", TokenType::Problem),
             ("satisfy", TokenType::Satisfy),
             ("and", TokenType::And),
             ("or", TokenType::Or),
@@ -117,7 +114,6 @@ pub fn keyword_map() -> &'static BTreeMap<&'static str, TokenType> {
             ("self", TokenType::SelfToken),
             ("inductive", TokenType::Inductive),
             ("match", TokenType::Match),
-            ("todo", TokenType::Todo),
             ("constraint", TokenType::Constraint),
             ("implies", TokenType::Implies),
             ("typeclass", TokenType::Typeclass),
@@ -420,12 +416,10 @@ impl TokenType {
             TokenType::Numerals => "numerals",
             TokenType::From => "from",
             TokenType::Solve => "solve",
-            TokenType::Problem => "problem",
             TokenType::Satisfy => "satisfy",
             TokenType::SelfToken => "self",
             TokenType::Inductive => "inductive",
             TokenType::Match => "match",
-            TokenType::Todo => "todo",
             TokenType::Constraint => "constraint",
             TokenType::Implies => "implies",
             TokenType::Typeclass => "typeclass",
@@ -632,7 +626,6 @@ impl Token {
             | TokenType::Numerals
             | TokenType::From
             | TokenType::Solve
-            | TokenType::Problem
             | TokenType::Satisfy
             | TokenType::Not
             | TokenType::Or
@@ -640,7 +633,6 @@ impl Token {
             | TokenType::SelfToken
             | TokenType::Inductive
             | TokenType::Match
-            | TokenType::Todo
             | TokenType::Constraint
             | TokenType::Implies
             | TokenType::Typeclass

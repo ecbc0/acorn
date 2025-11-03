@@ -42,9 +42,6 @@ pub struct Block {
 
     /// The environment created inside the block.
     pub env: Environment,
-
-    /// Whether this block is a todo block (goals inside should not be collected)
-    pub is_todo: bool,
 }
 
 /// The different ways to construct a block.
@@ -92,8 +89,6 @@ pub enum BlockParams<'a> {
 
     /// No special params needed
     ForAll,
-    Problem,
-    Todo,
 }
 
 impl Block {
@@ -143,7 +138,6 @@ impl Block {
             internal_args.push(potential.force_value());
         }
 
-        let is_todo = matches!(params, BlockParams::Todo);
         let goal_prop = match params {
             BlockParams::Conditional(condition, range) => {
                 let source = Source::premise(env.module_id, range, subenv.depth);
@@ -223,7 +217,7 @@ impl Block {
                 let source = Source::anonymous(env.module_id, range, env.depth);
                 Some(Proposition::monomorphic(constraint, source))
             }
-            BlockParams::ForAll | BlockParams::Problem | BlockParams::Todo => None,
+            BlockParams::ForAll => None,
         };
 
         match body {
@@ -261,7 +255,6 @@ impl Block {
             args,
             env: subenv,
             goal,
-            is_todo,
         })
     }
 
@@ -620,16 +613,7 @@ impl<'a> NodeCursor<'a> {
     /// A node requires verification if it has a goal itself, or if it might have a goal
     /// in its children.
     pub fn requires_verification(&self) -> bool {
-        match self.node() {
-            Node::Block(block, _o) => {
-                if block.is_todo {
-                    return false;
-                } else {
-                    return self.node().has_goal() || self.num_children() > 0;
-                }
-            }
-            _ => return self.node().has_goal() || self.num_children() > 0,
-        }
+        self.node().has_goal() || self.num_children() > 0
     }
 
     /// child_index must be less than num_children
@@ -742,14 +726,6 @@ impl<'a> NodeCursor<'a> {
 
     /// Does a postorder traversal of everything with a goal, at and below this node
     pub fn find_goals(&mut self, output: &mut Vec<NodeCursor<'a>>) {
-        // Check if the current node is a todo block
-        if let Some(block) = self.node().get_block() {
-            if block.is_todo {
-                // Don't recurse into todo blocks
-                return;
-            }
-        }
-
         for i in 0..self.num_children() {
             self.descend(i);
             self.find_goals(output);

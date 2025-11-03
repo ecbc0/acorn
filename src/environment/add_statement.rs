@@ -17,10 +17,10 @@ use crate::proposition::Proposition;
 use crate::source::{Source, SourceType};
 use crate::stack::Stack;
 use crate::statement::{
-    AttributesStatement, Body, ClaimStatement, DefineStatement, ForAllStatement,
+    AttributesStatement, ClaimStatement, DefineStatement, ForAllStatement,
     FunctionSatisfyStatement, IfStatement, ImportStatement, InductiveStatement, InstanceStatement,
     LetStatement, MatchStatement, NumeralsStatement, Statement, StatementInfo, StructureStatement,
-    TheoremStatement, TodoStatement, TypeStatement, TypeclassStatement, VariableSatisfyStatement,
+    TheoremStatement, TypeStatement, TypeclassStatement, VariableSatisfyStatement,
 };
 use crate::token::{Token, TokenIter, TokenType};
 use crate::type_unifier::TypeclassRegistry;
@@ -151,15 +151,11 @@ impl Environment {
 
             StatementInfo::Numerals(ds) => self.add_numerals_statement(project, statement, ds),
 
-            StatementInfo::Problem(body) => self.add_problem_statement(project, statement, body),
-
             StatementInfo::Match(ms) => self.add_match_statement(project, statement, ms),
 
             StatementInfo::Typeclass(ts) => self.add_typeclass_statement(project, statement, ts),
 
             StatementInfo::Instance(is) => self.add_instance_statement(project, statement, is),
-
-            StatementInfo::Todo(ts) => self.add_todo_statement(project, statement, ts),
 
             StatementInfo::DocComment(s) => {
                 let current_line = statement.first_line();
@@ -2165,52 +2161,6 @@ impl Environment {
         } else {
             Err(ds.type_expr.error("numerals type must be a data type"))
         }
-    }
-
-    /// Adds a problem statement to the environment.
-    fn add_problem_statement(
-        &mut self,
-        project: &mut Project,
-        statement: &Statement,
-        body: &Body,
-    ) -> compilation::Result<()> {
-        let block = Block::new(
-            project,
-            &self,
-            vec![],
-            vec![],
-            BlockParams::Problem,
-            &statement.first_token,
-            &statement.last_token,
-            Some(body),
-        )?;
-
-        let index = self.add_node(Node::block(project, self, block, None));
-        self.add_node_lines(index, &statement.range());
-        Ok(())
-    }
-
-    /// Adds a todo statement to the environment.
-    fn add_todo_statement(
-        &mut self,
-        project: &mut Project,
-        statement: &Statement,
-        ts: &TodoStatement,
-    ) -> compilation::Result<()> {
-        let block = Block::new(
-            project,
-            &self,
-            vec![],
-            vec![],
-            BlockParams::Todo,
-            &statement.first_token,
-            &statement.last_token,
-            Some(&ts.body),
-        )?;
-
-        let index = self.add_node(Node::block(project, self, block, None));
-        self.add_node_lines(index, &statement.range());
-        Ok(())
     }
 
     /// Adds a match statement to the environment.

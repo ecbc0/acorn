@@ -648,16 +648,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parsing_todo_statement() {
-        ok(indoc! {"
-        todo {
-            theorem foo(a: Bool, b: Bool) {
-                a = b or a or b
-            }
-        }"});
-    }
-
-    #[test]
     fn test_parsing_match_in_define_statement() {
         ok(indoc! {"
         define foo(x: Nat) -> Nat {
