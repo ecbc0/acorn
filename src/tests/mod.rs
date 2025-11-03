@@ -2,6 +2,9 @@
 mod env_misc_test;
 
 #[cfg(test)]
+mod env_attributes_test;
+
+#[cfg(test)]
 mod env_parsing_test;
 
 #[cfg(test)]
