@@ -985,3 +985,162 @@ fn test_double_nested_parametrization() {
         "#,
     );
 }
+
+#[test]
+fn test_specific_attribute_type_checking() {
+    // Test that attributes defined on List[Color] don't work on List[Size]
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        inductive Color {
+            red
+            blue
+        }
+        inductive Size {
+            small
+            large
+        }
+        inductive List[T] {
+            nil
+            cons(T, List[T])
+        }
+
+        attributes List[Color] {
+            define has_red(self) -> Bool {
+                axiom
+            }
+        }
+
+        let color_list: List[Color] = axiom
+        let size_list: List[Size] = axiom
+
+        theorem test_color {
+            color_list.has_red
+        }
+        "#,
+    );
+
+    // This should fail - List[Size] doesn't have has_red
+    env.bad(
+        r#"
+        theorem test_size {
+            size_list.has_red
+        }
+        "#,
+    );
+}
+
+#[test]
+fn test_specific_vs_generic_attributes() {
+    // Test that generic attributes work on all types but specific ones only on the right type
+    let mut env = Environment::test();
+
+    // First test: just the generic attributes
+    env.add(
+        r#"
+        inductive Color {
+            red
+            blue
+        }
+        inductive Size {
+            small
+            large
+        }
+        inductive List[T] {
+            nil
+            cons(T, List[T])
+        }
+
+        attributes List[T] {
+            define generic_method(self) -> Bool {
+                axiom
+            }
+        }
+
+        let color_list: List[Color] = axiom
+        let size_list: List[Size] = axiom
+
+        // Generic method should work on both
+        theorem test_generic_color {
+            color_list.generic_method
+        }
+
+        theorem test_generic_size {
+            size_list.generic_method
+        }
+        "#,
+    );
+
+    // Now add specific attributes
+    env.add(
+        r#"
+        attributes List[Color] {
+            define color_specific(self) -> Bool {
+                axiom
+            }
+        }
+
+        // Specific method should only work on List[Color]
+        theorem test_specific_color {
+            color_list.color_specific
+        }
+        "#,
+    );
+
+    // This should fail - List[Size] doesn't have color_specific
+    env.bad(
+        r#"
+        theorem test_specific_size {
+            size_list.color_specific
+        }
+        "#,
+    );
+}
+
+#[test]
+fn test_nested_type_mismatch() {
+    // Test that Set[List[Color]] attributes don't work on Set[List[Size]]
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        inductive Color {
+            red
+            blue
+        }
+        inductive Size {
+            small
+            large
+        }
+        inductive List[T] {
+            nil
+            cons(T, List[T])
+        }
+        structure Set[K] {
+            contains: K -> Bool
+        }
+
+        attributes Set[List[Color]] {
+            define check_colors(self) -> Bool {
+                axiom
+            }
+        }
+
+        let color_set: Set[List[Color]] = axiom
+        let size_set: Set[List[Size]] = axiom
+
+        // Should work on Set[List[Color]]
+        theorem test_color_set {
+            color_set.check_colors
+        }
+        "#,
+    );
+
+    // Should fail on Set[List[Size]]
+    env.bad(
+        r#"
+        theorem test_size_set {
+            size_set.check_colors
+        }
+        "#,
+    );
+}

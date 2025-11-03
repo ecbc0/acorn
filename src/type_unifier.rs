@@ -131,6 +131,42 @@ impl<'a> TypeUnifier<'a> {
                 self.mapping
                     .insert(param.name.clone(), instance_type.clone());
             }
+            (AcornType::Arbitrary(param), _) => {
+                // Arbitrary types work like Variable types for unification purposes
+                if let Some(t) = self.mapping.get(&param.name) {
+                    // This type parameter is already mapped
+                    return require_eq(t, instance_type);
+                }
+                if let Some(generic_typeclass) = param.typeclass.as_ref() {
+                    match instance_type {
+                        AcornType::Data(dt, _) => {
+                            if !self.registry.is_instance_of(&dt, generic_typeclass) {
+                                return Err(Error::Datatype(dt.clone(), generic_typeclass.clone()));
+                            }
+                        }
+                        AcornType::Arbitrary(param) | AcornType::Variable(param) => {
+                            match &param.typeclass {
+                                Some(instance_typeclass) => {
+                                    if instance_typeclass != generic_typeclass
+                                        && !self
+                                            .registry
+                                            .extends(instance_typeclass, generic_typeclass)
+                                    {
+                                        return Err(Error::Typeclass(
+                                            instance_typeclass.clone(),
+                                            generic_typeclass.clone(),
+                                        ));
+                                    }
+                                }
+                                None => return Err(Error::Other),
+                            }
+                        }
+                        _ => return Err(Error::Other),
+                    }
+                }
+                self.mapping
+                    .insert(param.name.clone(), instance_type.clone());
+            }
             (AcornType::Function(f), AcornType::Function(g)) => {
                 if f.arg_types.len() != g.arg_types.len() {
                     return Err(Error::Other);

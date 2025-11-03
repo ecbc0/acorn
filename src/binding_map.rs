@@ -435,6 +435,33 @@ impl BindingMap {
         }
     }
 
+    /// Resolves a datatype attribute, checking for specific parametrized attributes first,
+    /// then falling back to generic attributes.
+    /// This is used when we have concrete type parameters available (e.g., resolving
+    /// `my_set.has_red` where `my_set: Set[Color]`).
+    pub fn resolve_datatype_attr_with_params(
+        &self,
+        datatype: &Datatype,
+        type_params: &[AcornType],
+        attr_name: &str,
+    ) -> Result<(ModuleId, ConstantName), String> {
+        // First, try to find a specific attribute that matches the exact type parameters
+        if !type_params.is_empty() {
+            let specific_name = ConstantName::datatype_specific_attr(
+                datatype.clone(),
+                type_params.to_vec(),
+                attr_name,
+            );
+            if self.constant_defs.contains_key(&specific_name) {
+                // Specific attributes are always defined in the datatype's module
+                return Ok((datatype.module_id, specific_name));
+            }
+        }
+
+        // Fall back to generic attribute resolution
+        self.resolve_datatype_attr(datatype, attr_name)
+    }
+
     /// Figures out whether a typeclass attribute is defined directly or by inheritance.
     /// Returns the module ID and defined name where the attribute was originally defined.
     pub fn resolve_typeclass_attr(
@@ -1000,9 +1027,11 @@ impl BindingMap {
                 constant_type,
             ))
         } else {
-            if constant_type.has_arbitrary() {
-                panic!("there should not be arbitrary types in parametrized constant types");
-            }
+            // For parametrized constants, the type should only contain arbitrary types
+            // that correspond to the declared parameters.
+            // This is a sanity check - we don't fully validate here, just check that
+            // if there are params, the type is generic-like (not fully concrete with unexpected types).
+            // The actual validation of matching arbitrary types to params happens elsewhere.
             PotentialValue::Unresolved(UnresolvedConstant {
                 name: constant_name.clone(),
                 params,

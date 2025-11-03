@@ -440,7 +440,7 @@ impl AcornType {
     /// Note that this does not check if typeclasses match.
     pub fn instantiate(&self, params: &[(String, AcornType)]) -> AcornType {
         match self {
-            AcornType::Variable(param) => {
+            AcornType::Variable(param) | AcornType::Arbitrary(param) => {
                 for (param_name, param_type) in params {
                     if &param.name == param_name {
                         return param_type.clone();

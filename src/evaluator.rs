@@ -451,8 +451,36 @@ impl<'a> Evaluator<'a> {
         let base_type = receiver.get_type();
 
         let function = match &base_type {
-            AcornType::Data(datatype, _) => {
-                self.evaluate_datatype_attr(datatype, attr_name, source)?
+            AcornType::Data(datatype, type_params) => {
+                // Try to resolve with specific type parameters first, then fall back to generic
+                let (module_id, const_name) = match self.bindings.resolve_datatype_attr_with_params(
+                    datatype,
+                    type_params,
+                    attr_name,
+                ) {
+                    Ok((module_id, const_name)) => (module_id, const_name),
+                    Err(err) => return Err(source.error(&err)),
+                };
+
+                // Get the bindings from the module where this attribute was actually defined
+                let bindings = self.get_bindings(module_id);
+                let defined_name = DefinedName::Constant(const_name);
+                let value = bindings
+                    .get_constant_value(&defined_name)
+                    .map_err(|e| source.error(&e))?;
+                if !defined_name.is_typeclass_attr() {
+                    value
+                } else {
+                    // If this is a typeclass attribute, instantiate it with the datatype.
+                    if let Some(u) = value.as_unresolved() {
+                        // Resolve the typeclass attribute with the specific datatype
+                        let instance_type = AcornType::Data(datatype.clone(), vec![]);
+                        let resolved = u.resolve(source, vec![instance_type])?;
+                        PotentialValue::Resolved(resolved)
+                    } else {
+                        value
+                    }
+                }
             }
             AcornType::Arbitrary(param) | AcornType::Variable(param) => {
                 let Some(typeclass) = &param.typeclass else {
