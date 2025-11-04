@@ -503,18 +503,45 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> 
         }
         None => return Err(tokens.error("unexpected end of file")),
     }
-    let name_token = tokens.expect_variable_name(true)?;
-    let _name = name_token.text().to_string();
+
+    // Parse the name, which could be a simple identifier or a dot expression like Pair.new
+    // For destructuring, we need to allow type names (capital letters) as well
+    // We also allow numerals for special numeric variable definitions
+    let first_token = tokens.expect_token()?;
+    let first_name_token = match first_token.token_type {
+        TokenType::Identifier | TokenType::Numeral => first_token,
+        _ => return Err(first_token.error("expected an identifier or numeral")),
+    };
+    let mut function_expr = Expression::Singleton(first_name_token.clone());
+
+    // Check if there's a dot, indicating an attribute access
+    while let Some(token) = tokens.peek() {
+        if token.token_type == TokenType::Dot {
+            let dot_token = tokens.next().unwrap(); // consume '.'
+            let next_token = tokens.expect_token()?;
+            if next_token.token_type != TokenType::Identifier {
+                return Err(next_token.error("expected an identifier after dot"));
+            }
+            function_expr = Expression::Binary(
+                Box::new(function_expr),
+                dot_token,
+                Box::new(Expression::Singleton(next_token)),
+            );
+        } else {
+            break;
+        }
+    }
+
     if let Some(token) = tokens.peek() {
         if token.token_type == TokenType::LeftParen {
             // This could be either:
-            // 1. A destructuring statement: let f(a) = value
+            // 1. A destructuring statement: let f(a) = value or let Pair.new(a, b) = value
             // 2. A function satisfy statement: let f(a) -> T satisfy {...}
             // Use peek_line to determine which one
 
             match tokens.peek_line(TokenType::Equals, TokenType::RightArrow) {
                 Some(TokenType::Equals) => {
-                    // This is a destructuring statement: let f(a) = value
+                    // This is a destructuring statement
                     tokens.next(); // consume '('
 
                     // Collect argument names
@@ -536,10 +563,8 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> 
                     let (value, last_token) =
                         Expression::parse_value(tokens, Terminator::Is(TokenType::NewLine))?;
 
-                    let function = Expression::Singleton(name_token.clone());
-
                     let ds = DestructuringStatement {
-                        function,
+                        function: function_expr,
                         args,
                         value,
                     };
@@ -552,6 +577,10 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> 
                 }
                 Some(TokenType::RightArrow) => {
                     // This is a function satisfy statement
+                    // Note: function satisfy doesn't support dot expressions, only simple names
+                    if !matches!(function_expr, Expression::Singleton(_)) {
+                        return Err(first_name_token.error("function satisfy statements only support simple function names, not dot expressions"));
+                    }
                     tokens.next(); // consume '('
                     let mut declarations = Declaration::parse_list(tokens)?;
                     tokens.expect_type(TokenType::RightArrow)?;
@@ -563,7 +592,7 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> 
                         Expression::parse_value(tokens, Terminator::Is(TokenType::RightBrace))?;
                     let (body, last_token) = parse_by_block(right_brace, tokens)?;
                     let fss = FunctionSatisfyStatement {
-                        name_token,
+                        name_token: first_name_token.clone(),
                         declarations,
                         satisfy_token,
                         condition,
@@ -581,6 +610,22 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> 
             }
         }
     }
+
+    // If we get here, this is a regular let statement, not destructuring
+    // So the name must be lowercase (unless we already parsed dots, which would be an error)
+    if !matches!(function_expr, Expression::Singleton(_)) {
+        return Err(first_name_token.error("unexpected dot expression in let statement"));
+    }
+
+    // Check that the variable name is lowercase (or a numeral)
+    if first_name_token.token_type == TokenType::Identifier {
+        if let Some(c) = first_name_token.text().chars().next() {
+            if !c.is_ascii_lowercase() {
+                return Err(first_name_token.error("invalid variable name"));
+            }
+        }
+    }
+
     let type_params = TypeParamExpr::parse_list(tokens)?;
 
     // Check if there's a colon (type annotation) or equals (type inference)
@@ -596,7 +641,7 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> 
                 return complete_variable_satisfy(
                     keyword,
                     tokens,
-                    vec![Declaration::Typed(name_token, type_expr)],
+                    vec![Declaration::Typed(first_name_token, type_expr)],
                 );
             }
             // Skip newlines after = to allow line continuation
@@ -623,7 +668,7 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> 
             .error("axiom keyword is not allowed in strict mode"));
     }
     let ls = LetStatement {
-        name_token,
+        name_token: first_name_token,
         type_params,
         type_expr,
         value,

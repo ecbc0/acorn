@@ -1503,6 +1503,30 @@ fn test_env_destructuring_let() {
     );
 }
 
-// TODO: additional env tests for destructuring.
-// There should be a clean error if you try to reuse a variable name on the left hand side.
-// It should also work to destructure with an attribute, like "let Foo.bar(x) = y".
+#[test]
+fn test_env_destructuring_no_duplicate_names() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        type Nat: axiom
+        let zero: Nat = axiom
+        let f: (Nat, Nat) -> Nat = axiom
+        "#,
+    );
+    env.bad("let f(a, a) = zero");
+}
+
+#[test]
+fn test_env_destructuring_with_attribute() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        structure Pair {
+            first: Bool
+            second: Bool
+        }
+        let p: Pair = Pair.new(true, false)
+        let Pair.new(x, y) = p
+        "#,
+    );
+}
