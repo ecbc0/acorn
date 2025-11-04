@@ -674,7 +674,17 @@ mod tests {
     }
 
     #[test]
-    fn test_parsing_destructuring_let() {
+    fn test_parsing_destructuring_simple() {
         ok("let f(a) = b");
+        ok("let foo.bar(a) = b");
+        ok("let Foo.bar(a) = b");
+    }
+
+    #[test]
+    fn test_parsing_destructuring_with_body() {
+        ok(indoc! {"
+        let f(a) = b by {
+            zip = zap
+        }"});
     }
 }

@@ -304,6 +304,9 @@ pub struct DestructuringStatement {
     /// The value that is being destructured.
     /// p in "let Pair.new(a, b) = p".
     pub value: Expression,
+
+    /// The body is a proof that this destructuring is satisfiable, if needed.
+    pub body: Option<Body>,
 }
 
 /// Acorn is a statement-based language. There are several types.
@@ -560,13 +563,38 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> 
                     tokens.skip_newlines();
 
                     // Parse the value being destructured
-                    let (value, last_token) =
-                        Expression::parse_value(tokens, Terminator::Is(TokenType::NewLine))?;
+                    // Stop at newline or 'by' keyword
+                    let (value, value_end_token) = Expression::parse_value(
+                        tokens,
+                        Terminator::Or(TokenType::NewLine, TokenType::By),
+                    )?;
+
+                    // Check if there's a 'by' block
+                    // If value_end_token is 'by', we need to "unget" it so parse_by_block can find it
+                    // But parse_by_block expects the *previous* token, not the 'by' token itself
+                    // So we need to use value.last_token() and let parse_by_block peek for 'by'
+                    let (body, last_token) = if value_end_token.token_type == TokenType::By {
+                        // The 'by' was consumed by parse_value but parse_by_block expects to peek for it
+                        // We can't "unget" a token, so we need to manually handle this case
+                        let left_brace = tokens.expect_type(TokenType::LeftBrace)?;
+                        let (statements, right_brace) = parse_block(tokens, false)?;
+                        (
+                            Some(Body {
+                                left_brace,
+                                statements,
+                                right_brace: right_brace.clone(),
+                            }),
+                            right_brace,
+                        )
+                    } else {
+                        (None, value_end_token)
+                    };
 
                     let ds = DestructuringStatement {
                         function: function_expr,
                         args,
                         value,
+                        body,
                     };
 
                     return Ok(Statement {
@@ -1860,8 +1888,15 @@ impl Statement {
                     }
                     doc = doc.append(allocator.text(arg.text()));
                 }
-                doc.append(allocator.text(") = "))
-                    .append(ds.value.pretty_ref(allocator, false))
+                doc = doc
+                    .append(allocator.text(") = "))
+                    .append(ds.value.pretty_ref(allocator, false));
+
+                if let Some(body) = &ds.body {
+                    doc = doc.append(allocator.text(" by"));
+                    doc = write_block_pretty(allocator, doc, &body.statements);
+                }
+                doc
             }
 
             StatementInfo::DocComment(s) => allocator.text("/// ").append(allocator.text(s)),
