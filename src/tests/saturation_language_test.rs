@@ -1122,3 +1122,22 @@ fn test_proving_with_anonymous_function() {
     "#;
     verify_succeeds(text);
 }
+
+#[test]
+fn test_proving_with_destructuring() {
+    let text = r#"
+    inductive Nat {
+        zero
+        suc(Nat)
+    }
+
+    let one = Nat.suc(Nat.zero)
+    let two = Nat.suc(one)
+    let Nat.suc(one_again) = two
+
+    theorem goal {
+        one_again = one
+    }
+    "#;
+    verify_succeeds(text);
+}
