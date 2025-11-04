@@ -289,6 +289,23 @@ pub struct InstanceStatement {
     pub body: Option<Body>,
 }
 
+/// A destructuring statement defines arguments by giving a function to call on them to
+/// equal a value.
+/// Like "let Pair.new(a, b) = p".
+pub struct DestructuringStatement {
+    /// The function being called.
+    /// "Pair.new" in "let Pair.new(a, b) = p".
+    pub function: Expression,
+
+    /// The arguments to the function.
+    /// a, b in "let Pair.new(a, b) = p".
+    pub args: Vec<Token>,
+
+    /// The value that is being destructured.
+    /// p in "let Pair.new(a, b) = p".
+    pub value: Expression,
+}
+
 /// Acorn is a statement-based language. There are several types.
 /// Each type has its own struct.
 pub struct Statement {
@@ -322,6 +339,7 @@ pub enum StatementInfo {
     Match(MatchStatement),
     Typeclass(TypeclassStatement),
     Instance(InstanceStatement),
+    Destructuring(DestructuringStatement),
 
     /// A doc comment is not actually a statement, but it is treated like one in the parser.
     /// Has the leading /// along with leading and trailing whitespace stripped.
@@ -489,29 +507,78 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> 
     let _name = name_token.text().to_string();
     if let Some(token) = tokens.peek() {
         if token.token_type == TokenType::LeftParen {
-            // This is a function defined via let..satisfy.
-            tokens.next();
-            let mut declarations = Declaration::parse_list(tokens)?;
-            tokens.expect_type(TokenType::RightArrow)?;
-            let (return_value, satisfy_token) =
-                Declaration::parse(tokens, Terminator::Is(TokenType::Satisfy))?;
-            declarations.push(return_value);
-            tokens.expect_type(TokenType::LeftBrace)?;
-            let (condition, right_brace) =
-                Expression::parse_value(tokens, Terminator::Is(TokenType::RightBrace))?;
-            let (body, last_token) = parse_by_block(right_brace, tokens)?;
-            let fss = FunctionSatisfyStatement {
-                name_token,
-                declarations,
-                satisfy_token,
-                condition,
-                body,
-            };
-            return Ok(Statement {
-                first_token: keyword,
-                last_token,
-                statement: StatementInfo::FunctionSatisfy(fss),
-            });
+            // This could be either:
+            // 1. A destructuring statement: let f(a) = value
+            // 2. A function satisfy statement: let f(a) -> T satisfy {...}
+            // Use peek_line to determine which one
+
+            match tokens.peek_line(TokenType::Equals, TokenType::RightArrow) {
+                Some(TokenType::Equals) => {
+                    // This is a destructuring statement: let f(a) = value
+                    tokens.next(); // consume '('
+
+                    // Collect argument names
+                    let mut args = vec![];
+                    loop {
+                        let token = tokens.expect_token()?;
+                        match token.token_type {
+                            TokenType::RightParen => break,
+                            TokenType::Identifier | TokenType::Numeral => args.push(token),
+                            TokenType::Comma => continue,
+                            _ => {}
+                        }
+                    }
+
+                    tokens.expect_type(TokenType::Equals)?;
+                    tokens.skip_newlines();
+
+                    // Parse the value being destructured
+                    let (value, last_token) =
+                        Expression::parse_value(tokens, Terminator::Is(TokenType::NewLine))?;
+
+                    let function = Expression::Singleton(name_token.clone());
+
+                    let ds = DestructuringStatement {
+                        function,
+                        args,
+                        value,
+                    };
+
+                    return Ok(Statement {
+                        first_token: keyword,
+                        last_token,
+                        statement: StatementInfo::Destructuring(ds),
+                    });
+                }
+                Some(TokenType::RightArrow) => {
+                    // This is a function satisfy statement
+                    tokens.next(); // consume '('
+                    let mut declarations = Declaration::parse_list(tokens)?;
+                    tokens.expect_type(TokenType::RightArrow)?;
+                    let (return_value, satisfy_token) =
+                        Declaration::parse(tokens, Terminator::Is(TokenType::Satisfy))?;
+                    declarations.push(return_value);
+                    tokens.expect_type(TokenType::LeftBrace)?;
+                    let (condition, right_brace) =
+                        Expression::parse_value(tokens, Terminator::Is(TokenType::RightBrace))?;
+                    let (body, last_token) = parse_by_block(right_brace, tokens)?;
+                    let fss = FunctionSatisfyStatement {
+                        name_token,
+                        declarations,
+                        satisfy_token,
+                        condition,
+                        body,
+                    };
+                    return Ok(Statement {
+                        first_token: keyword,
+                        last_token,
+                        statement: StatementInfo::FunctionSatisfy(fss),
+                    });
+                }
+                _ => {
+                    return Err(tokens.error("expected '=' or '->' after argument list"));
+                }
+            }
         }
     }
     let type_params = TypeParamExpr::parse_list(tokens)?;
@@ -1735,6 +1802,21 @@ impl Statement {
                     doc = write_block_pretty(allocator, doc, &definitions.statements);
                 }
                 doc.group()
+            }
+
+            StatementInfo::Destructuring(ds) => {
+                let mut doc = allocator
+                    .text("let ")
+                    .append(ds.function.pretty_ref(allocator, false))
+                    .append(allocator.text("("));
+                for (i, arg) in ds.args.iter().enumerate() {
+                    if i > 0 {
+                        doc = doc.append(allocator.text(", "));
+                    }
+                    doc = doc.append(allocator.text(arg.text()));
+                }
+                doc.append(allocator.text(") = "))
+                    .append(ds.value.pretty_ref(allocator, false))
             }
 
             StatementInfo::DocComment(s) => allocator.text("/// ").append(allocator.text(s)),

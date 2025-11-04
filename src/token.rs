@@ -1,7 +1,5 @@
 use std::collections::BTreeMap;
-use std::iter::Peekable;
 use std::sync::Arc;
-use std::vec::IntoIter;
 use std::{fmt, sync::OnceLock};
 use tower_lsp::lsp_types::{Position, Range, SemanticTokenType};
 
@@ -856,36 +854,43 @@ impl Token {
 }
 
 pub struct TokenIter {
-    inner: Peekable<IntoIter<Token>>,
-
-    last: Token,
+    tokens: Vec<Token>,
+    position: usize,
 }
 
 impl TokenIter {
     pub fn new(tokens: Vec<Token>) -> TokenIter {
-        let last = tokens.last().cloned().unwrap_or_else(Token::empty);
         TokenIter {
-            inner: tokens.into_iter().peekable(),
-            last,
+            tokens,
+            position: 0,
         }
     }
 
-    pub fn peek(&mut self) -> Option<&Token> {
-        self.inner.peek()
+    pub fn peek(&self) -> Option<&Token> {
+        self.tokens.get(self.position)
     }
 
-    pub fn peek_type(&mut self) -> Option<TokenType> {
+    pub fn peek_type(&self) -> Option<TokenType> {
         self.peek().map(|t| t.token_type)
     }
 
     pub fn next(&mut self) -> Option<Token> {
-        self.inner.next()
+        if self.position < self.tokens.len() {
+            let token = self.tokens[self.position].clone();
+            self.position += 1;
+            Some(token)
+        } else {
+            None
+        }
     }
 
-    pub fn error(&mut self, message: &str) -> CompilationError {
+    pub fn error(&self, message: &str) -> CompilationError {
         match self.peek() {
             Some(token) => token.error(message),
-            None => self.last.error(message),
+            None => {
+                // Use the last token if we're at the end
+                self.tokens.last().unwrap_or(&Token::empty()).error(message)
+            }
         }
     }
 
@@ -946,6 +951,25 @@ impl TokenIter {
                 break;
             }
         }
+    }
+
+    /// Peek ahead on the current line to see which of two token types appears first.
+    /// Returns Some(token_type) if one of the given types is found before a newline.
+    /// Returns None if neither is found before a newline or end of tokens.
+    pub fn peek_line(&self, type1: TokenType, type2: TokenType) -> Option<TokenType> {
+        for i in self.position..self.tokens.len() {
+            let token_type = self.tokens[i].token_type;
+            if token_type == TokenType::NewLine {
+                return None;
+            }
+            if token_type == type1 {
+                return Some(type1);
+            }
+            if token_type == type2 {
+                return Some(type2);
+            }
+        }
+        None
     }
 }
 

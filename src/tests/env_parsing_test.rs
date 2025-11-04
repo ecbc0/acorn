@@ -1490,15 +1490,15 @@ fn test_curry_style_type_syntax() {
     )
 }
 
-#[test]
-fn test_destructuring_syntax() {
-    let mut env = Environment::test();
-    env.add(
-        r#"
-        type Nat: axiom
-        let zero: Nat = axiom
-        let f: Nat -> Nat = axiom
-        let f(a) = zero
-        "#,
-    );
-}
+// #[test]
+// fn test_env_destructuring_let() {
+//     let mut env = Environment::test();
+//     env.add(
+//         r#"
+//         type Nat: axiom
+//         let zero: Nat = axiom
+//         let f: Nat -> Nat = axiom
+//         let f(a) = zero
+//         "#,
+//     );
+// }

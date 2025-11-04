@@ -672,4 +672,9 @@ mod tests {
             "must have at least one argument",
         );
     }
+
+    #[test]
+    fn test_parsing_destructuring_let() {
+        ok("let f(a) = b");
+    }
 }

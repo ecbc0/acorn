@@ -17,7 +17,7 @@ use crate::proposition::Proposition;
 use crate::source::{Source, SourceType};
 use crate::stack::Stack;
 use crate::statement::{
-    AttributesStatement, ClaimStatement, DefineStatement, ForAllStatement,
+    AttributesStatement, ClaimStatement, DefineStatement, DestructuringStatement, ForAllStatement,
     FunctionSatisfyStatement, IfStatement, ImportStatement, InductiveStatement, InstanceStatement,
     LetStatement, MatchStatement, NumeralsStatement, Statement, StatementInfo, StructureStatement,
     TheoremStatement, TypeStatement, TypeclassStatement, VariableSatisfyStatement,
@@ -156,6 +156,10 @@ impl Environment {
             StatementInfo::Typeclass(ts) => self.add_typeclass_statement(project, statement, ts),
 
             StatementInfo::Instance(is) => self.add_instance_statement(project, statement, is),
+
+            StatementInfo::Destructuring(ds) => {
+                self.add_destructuring_statement(project, statement, ds)
+            }
 
             StatementInfo::DocComment(s) => {
                 let current_line = statement.first_line();
@@ -2223,5 +2227,23 @@ impl Environment {
         Err(ms
             .scrutinee
             .error("not all cases are covered in match statement"))
+    }
+
+    fn add_destructuring_statement(
+        &mut self,
+        _project: &mut Project,
+        statement: &Statement,
+        _ds: &DestructuringStatement,
+    ) -> compilation::Result<()> {
+        self.add_other_lines(statement);
+
+        // For now, treat destructuring as a way to introduce new variables
+        // by pattern matching. We'll need to:
+        // 1. Evaluate the value being destructured
+        // 2. For each argument, bind it to the appropriate component of the value
+
+        // This is a placeholder implementation that just returns an error for now
+        // TODO: Implement proper destructuring logic
+        Err(statement.error("destructuring statements are not yet fully implemented"))
     }
 }
