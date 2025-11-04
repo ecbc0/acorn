@@ -1490,15 +1490,19 @@ fn test_curry_style_type_syntax() {
     )
 }
 
-// #[test]
-// fn test_env_destructuring_let() {
-//     let mut env = Environment::test();
-//     env.add(
-//         r#"
-//         type Nat: axiom
-//         let zero: Nat = axiom
-//         let f: Nat -> Nat = axiom
-//         let f(a) = zero
-//         "#,
-//     );
-// }
+#[test]
+fn test_env_destructuring_let() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        type Nat: axiom
+        let zero: Nat = axiom
+        let f: Nat -> Nat = axiom
+        let f(a) = zero
+        "#,
+    );
+}
+
+// TODO: additional env tests for destructuring.
+// There should be a clean error if you try to reuse a variable name on the left hand side.
+// It should also work to destructure with an attribute, like "let Foo.bar(x) = y".

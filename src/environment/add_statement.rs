@@ -2231,19 +2231,99 @@ impl Environment {
 
     fn add_destructuring_statement(
         &mut self,
-        _project: &mut Project,
+        project: &mut Project,
         statement: &Statement,
-        _ds: &DestructuringStatement,
+        ds: &DestructuringStatement,
     ) -> compilation::Result<()> {
         self.add_other_lines(statement);
 
-        // For now, treat destructuring as a way to introduce new variables
-        // by pattern matching. We'll need to:
-        // 1. Evaluate the value being destructured
-        // 2. For each argument, bind it to the appropriate component of the value
+        // Check that all arg names are unique
+        let mut arg_names = vec![];
+        for arg_token in &ds.args {
+            let arg_name = arg_token.text().to_string();
+            if arg_names.contains(&arg_name) {
+                return Err(arg_token.error(&format!(
+                    "duplicate argument name '{}' in destructuring pattern",
+                    arg_name
+                )));
+            }
+            arg_names.push(arg_name.clone());
 
-        // This is a placeholder implementation that just returns an error for now
-        // TODO: Implement proper destructuring logic
-        Err(statement.error("destructuring statements are not yet fully implemented"))
+            // Check that the name isn't already bound
+            self.bindings
+                .check_unqualified_name_available(&arg_name, arg_token)?;
+        }
+
+        // Evaluate the function being called
+        let function = self.evaluator(project).evaluate_value(&ds.function, None)?;
+
+        // Evaluate the value being destructured
+        let value = self.evaluator(project).evaluate_value(&ds.value, None)?;
+
+        // The function should be a function type
+        let function_type = function.get_type();
+        let (arg_types, return_type) = match &function_type {
+            AcornType::Function(ft) => (ft.arg_types.clone(), ft.return_type.as_ref().clone()),
+            _ => {
+                return Err(ds.function.error(&format!(
+                    "expected a function type, but got {}",
+                    function_type
+                )));
+            }
+        };
+
+        // Check that the number of arguments matches
+        if arg_types.len() != ds.args.len() {
+            return Err(statement.error(&format!(
+                "function expects {} arguments, but {} were provided in the pattern",
+                arg_types.len(),
+                ds.args.len()
+            )));
+        }
+
+        // Check that the return type matches the value type
+        if return_type != value.get_type() {
+            return Err(ds.value.error(&format!(
+                "type mismatch: function returns {} but value has type {}",
+                return_type,
+                value.get_type()
+            )));
+        }
+
+        // Now bind the arguments as constants
+        // We need to prove that there exist values for the args such that function(args...) = value
+        // For now, we'll just bind them as axioms with the appropriate types
+        for (arg_token, arg_type) in ds.args.iter().zip(&arg_types) {
+            let arg_name = arg_token.text();
+            self.bindings.add_unqualified_constant(
+                arg_name,
+                vec![],
+                arg_type.clone(),
+                None, // Axiom - no value provided
+                None,
+                vec![],
+                Some(arg_token.range()),
+                format!("{}: {}", arg_name, arg_type),
+            );
+        }
+
+        // Add a claim that function(args...) = value
+        let arg_values: Vec<_> = ds
+            .args
+            .iter()
+            .zip(&arg_types)
+            .map(|(token, arg_type)| {
+                let name = ConstantName::unqualified(self.module_id, token.text());
+                AcornValue::constant(name, vec![], arg_type.clone())
+            })
+            .collect();
+
+        let applied = AcornValue::apply(function, arg_values);
+        let equality = AcornValue::equals(applied, value);
+        let source = Source::anonymous(self.module_id, statement.range(), self.depth);
+        let prop = Proposition::monomorphic(equality, source);
+        self.add_node(Node::structural(project, self, prop));
+
+        Ok(())
     }
 }
