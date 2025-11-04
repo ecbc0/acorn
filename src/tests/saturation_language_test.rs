@@ -1142,16 +1142,15 @@ fn test_proving_with_destructuring() {
     verify_succeeds(text);
 }
 
-// TODO: we need to actually prove that the let statement is satisfiable.
-// #[test]
-// fn test_proving_can_fail_with_destructuring() {
-//     let text = r#"
-//     inductive Nat {
-//         zero
-//         suc(Nat)
-//     }
+#[test]
+fn test_proving_can_fail_with_destructuring() {
+    let text = r#"
+    inductive Nat {
+        zero
+        suc(Nat)
+    }
 
-//     let Nat.suc(negative_one) = Nat.zero
-//     "#;
-//     verify_fails(text);
-// }
+    let Nat.suc(negative_one) = Nat.zero
+    "#;
+    verify_fails(text);
+}

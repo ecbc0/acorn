@@ -2290,16 +2290,52 @@ impl Environment {
             )));
         }
 
+        // Create the general existence claim: exists args... . function(args...) = value
+        // First, create a stack and bind the arguments as quantified variables
+        let mut stack = Stack::new();
+        let quant_names: Vec<String> = arg_names.clone();
+        let quant_types = arg_types.clone();
+
+        // Insert variables into stack and collect their atom IDs
+        let atom_ids: Vec<AtomId> = quant_names
+            .iter()
+            .zip(&quant_types)
+            .map(|(name, arg_type)| stack.insert(name.clone(), arg_type.clone()))
+            .collect();
+
+        // Create the equality value: function(args...) = value
+        // Evaluate the function and value with the stack
+        let mut no_token_evaluator = Evaluator::new(project, &self.bindings, None);
+        let general_function =
+            no_token_evaluator.evaluate_value_with_stack(&mut stack, &ds.function, None)?;
+        let general_value =
+            no_token_evaluator.evaluate_value_with_stack(&mut stack, &ds.value, None)?;
+
+        // Create variable values using atom IDs
+        let general_arg_values: Vec<_> = atom_ids
+            .iter()
+            .zip(&quant_types)
+            .map(|(atom_id, arg_type)| AcornValue::Variable(*atom_id, arg_type.clone()))
+            .collect();
+
+        let general_applied = AcornValue::apply(general_function, general_arg_values);
+        let general_equality = AcornValue::equals(general_applied, general_value);
+
+        // Wrap in exists quantifier
+        let general_claim = AcornValue::Exists(quant_types.clone(), Box::new(general_equality));
+        let source = Source::anonymous(self.module_id, statement.range(), self.depth);
+        let general_prop = Proposition::monomorphic(general_claim, source);
+        let index = self.add_node(Node::claim(project, self, general_prop));
+        self.add_node_lines(index, &statement.range());
+
         // Now bind the arguments as constants
-        // We need to prove that there exist values for the args such that function(args...) = value
-        // For now, we'll just bind them as axioms with the appropriate types
         for (arg_token, arg_type) in ds.args.iter().zip(&arg_types) {
             let arg_name = arg_token.text();
             self.bindings.add_unqualified_constant(
                 arg_name,
                 vec![],
                 arg_type.clone(),
-                None, // Axiom - no value provided
+                None, // No value provided - will be proven to exist
                 None,
                 vec![],
                 Some(arg_token.range()),
@@ -2307,7 +2343,7 @@ impl Environment {
             );
         }
 
-        // Add a claim that function(args...) = value
+        // Add the specific equality as a structural assumption
         let arg_values: Vec<_> = ds
             .args
             .iter()
