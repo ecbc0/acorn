@@ -359,11 +359,53 @@ mod tests {
         cleaner.clean().expect("cleaning should succeed");
 
         // Read and return the cleaned file
-        fs::read_to_string(&test_file).unwrap()
+        let output = fs::read_to_string(&test_file).unwrap();
+        println!("Cleaned content:\n{}", output);
+        output
     }
 
     #[test]
-    fn test_cleaner_basic() {
+    fn test_cleaning_partial() {
+        let input = indoc! {r#"
+            inductive Color {
+                red
+                blue
+            }
+
+            axiom foo(f: Color -> Bool, c: Color) {
+                f(c)
+            }
+
+            theorem cheat(c: Color) {
+                c = Color.red
+            } by {
+                Color.red != Color.blue
+                define f(d: Color) -> Bool {
+                    d = Color.red
+                }
+                Color.red != Color.blue
+                foo(f, c)
+                Color.red != Color.blue
+            }
+        "#};
+
+        let output = clean(input);
+
+        // The core theorem structure should be preserved
+        assert!(output.contains("theorem cheat"));
+        assert!(output.contains(indoc! {r#"
+            theorem cheat(c: Color) {
+                c = Color.red
+            } by {
+                define f(d: Color) -> Bool {
+                    d = Color.red
+                }
+                foo(f, c)
+            }"#}));
+    }
+
+    #[test]
+    fn test_cleaning_full() {
         let input = indoc! {r#"
             inductive Color {
                 red
@@ -383,17 +425,13 @@ mod tests {
         "#};
 
         let output = clean(input);
-        println!("Cleaned content:\n{}", output);
 
-        // The theorem should be preserved (not cleanable at depth 0)
+        // Most stuff should be preserved
         assert!(output.contains("theorem possibilities"));
-
-        // The entire proof body should be cleaned (both forall and the claim)
-        assert!(output.contains("by {\n}"));
-        assert!(!output.contains("forall"));
-
-        // Top-level values should be preserved
         assert!(output.contains("let fav"));
         assert!(output.contains("inductive Color"));
+
+        // All the "by" blocks should be cleaned
+        assert!(!output.contains("by"));
     }
 }
