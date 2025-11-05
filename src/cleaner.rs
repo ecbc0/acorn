@@ -335,8 +335,9 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    #[test]
-    fn test_cleaner_basic() {
+    /// Helper function to clean Acorn code and return the result.
+    /// Creates a temporary project, writes the input code, runs the cleaner, and returns the cleaned code.
+    fn clean(input: &str) -> String {
         // Create a test project
         let temp_dir = TempDir::new().unwrap();
         let src_dir = temp_dir.path().join("src");
@@ -344,9 +345,26 @@ mod tests {
         let toml_file = temp_dir.path().join("acorn.toml");
         fs::write(&toml_file, "").unwrap();
 
-        // Create a simple test file
+        // Create the test file
         let test_file = src_dir.join("test.ac");
-        let content = indoc! {r#"
+        fs::write(&test_file, input).unwrap();
+
+        // Create a cleaner for this module
+        let cleaner = Cleaner::new(
+            temp_dir.path().to_path_buf(),
+            ModuleDescriptor::name("test"),
+        );
+
+        // Run the cleaning operation
+        cleaner.clean().expect("cleaning should succeed");
+
+        // Read and return the cleaned file
+        fs::read_to_string(&test_file).unwrap()
+    }
+
+    #[test]
+    fn test_cleaner_basic() {
+        let input = indoc! {r#"
             inductive Color {
                 red
                 blue
@@ -363,34 +381,19 @@ mod tests {
                 Color.red != Color.blue
             }
         "#};
-        fs::write(&test_file, content).unwrap();
 
-        // Create a cleaner for this module
-        let cleaner = Cleaner::new(
-            temp_dir.path().to_path_buf(),
-            ModuleDescriptor::name("test"),
-        );
-
-        // Run the cleaning operation
-        let stats = cleaner.clean().expect("cleaning should succeed");
-
-        // Check the results
-        println!("Claims deleted: {}", stats.claims_deleted);
-        println!("Claims kept: {}", stats.claims_kept);
-
-        // Read the cleaned file
-        let cleaned_content = fs::read_to_string(&test_file).unwrap();
-        println!("Cleaned content:\n{}", cleaned_content);
+        let output = clean(input);
+        println!("Cleaned content:\n{}", output);
 
         // The theorem should be preserved (not cleanable at depth 0)
-        assert!(cleaned_content.contains("theorem possibilities"));
+        assert!(output.contains("theorem possibilities"));
 
         // The entire proof body should be cleaned (both forall and the claim)
-        assert!(cleaned_content.contains("by {\n}"));
-        assert!(!cleaned_content.contains("forall"));
+        assert!(output.contains("by {\n}"));
+        assert!(!output.contains("forall"));
 
         // Top-level values should be preserved
-        assert!(cleaned_content.contains("let fav"));
-        assert!(cleaned_content.contains("inductive Color"));
+        assert!(output.contains("let fav"));
+        assert!(output.contains("inductive Color"));
     }
 }
