@@ -224,6 +224,12 @@ impl Cleaner {
                 break;
             };
 
+            // Calculate how many goals are already cleaned (skipped/processed)
+            // This is the number we've already decided on (deleted or kept)
+            let goals_cleaned = claims_deleted + claims_kept;
+            let total_goals = goals_cleaned + ranges.len();
+            println!("{}/{} goals cleaned", goals_cleaned, total_goals);
+
             // Try to delete this claim
             if self.try_delete(range_to_try)? {
                 // Deletion succeeded
@@ -302,5 +308,63 @@ impl Cleaner {
         let file_path = project.path_from_descriptor(&self.module_spec)?;
         let content = std::fs::read_to_string(&file_path)?;
         Ok(content.lines().count())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use indoc::indoc;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_cleaner_basic() {
+        // Create a test project
+        let temp_dir = TempDir::new().unwrap();
+        let src_dir = temp_dir.path().join("src");
+        fs::create_dir(&src_dir).unwrap();
+        let toml_file = temp_dir.path().join("acorn.toml");
+        fs::write(&toml_file, "").unwrap();
+
+        // Create a simple test file
+        let test_file = src_dir.join("test.ac");
+        let content = indoc! {r#"
+            inductive Color {
+                red
+                blue
+            }
+
+            theorem possibilities(c: Color) {
+                c = Color.red or c = Color.blue
+            } by {
+                Color.red != Color.blue
+            }
+        "#};
+        fs::write(&test_file, content).unwrap();
+
+        // Create a cleaner for this module
+        let cleaner = Cleaner::new(
+            temp_dir.path().to_path_buf(),
+            ModuleDescriptor::name("test"),
+        );
+
+        // Run the cleaning operation
+        let stats = cleaner.clean().expect("cleaning should succeed");
+
+        // Check the results
+        println!("Claims deleted: {}", stats.claims_deleted);
+        println!("Claims kept: {}", stats.claims_kept);
+        assert_eq!(stats.claims_deleted, 1);
+
+        // Read the cleaned file
+        let cleaned_content = fs::read_to_string(&test_file).unwrap();
+        println!("Cleaned content:\n{}", cleaned_content);
+
+        assert!(cleaned_content.contains("theorem possibilities"));
+
+        // But the "necessary" claim inside the proof should be gone
+        // The proof block should be empty now
+        assert!(cleaned_content.contains("by {\n}"));
     }
 }
