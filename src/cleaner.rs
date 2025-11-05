@@ -258,6 +258,10 @@ impl Cleaner {
         let mut claims_kept = 0;
         let mut last_required_range: Option<Range> = None;
 
+        // Get the initial total number of cleanable goals
+        let initial_ranges = self.ranges()?;
+        let total_goals = initial_ranges.len();
+
         loop {
             // Get current cleanable ranges
             let ranges = self.ranges()?;
@@ -276,10 +280,8 @@ impl Cleaner {
                 break;
             };
 
-            // Calculate how many goals are already cleaned (skipped/processed)
-            // This is the number we've already decided on (deleted or kept)
+            // Calculate how many goals have been processed
             let goals_cleaned = claims_deleted + claims_kept;
-            let total_goals = goals_cleaned + ranges.len();
             println!("{}/{} goals cleaned", goals_cleaned, total_goals);
 
             // Try to delete this claim
@@ -325,8 +327,8 @@ impl Cleaner {
             )));
         }
 
-        // Post-process: remove empty "by { }" blocks
-        self.remove_empty_by_blocks()?;
+        // Post-process: remove empty blocks
+        self.remove_empty_blocks()?;
 
         // Recount lines after post-processing
         let final_lines = self.count_lines()?;
@@ -352,10 +354,10 @@ impl Cleaner {
         Ok(stats)
     }
 
-    /// Removes empty "by { }" blocks from the module file.
+    /// Removes empty blocks from the module file.
     /// This is a post-processing step after cleaning to remove unnecessary syntax.
-    /// We do this textually by looking for the pattern "} by {\n}" and replacing with "}".
-    fn remove_empty_by_blocks(&self) -> Result<(), CleanerError> {
+    /// We do this textually by looking for patterns like "} by {\n}" or "forall(...) {\n}" and removing them.
+    fn remove_empty_blocks(&self) -> Result<(), CleanerError> {
         let config = ProjectConfig {
             use_filesystem: true,
             read_cache: true,
@@ -367,8 +369,7 @@ impl Cleaner {
         // Read the file
         let content = std::fs::read_to_string(&file_path)?;
 
-        // Look for empty by blocks: "} by {\n}"
-        // We need to handle potential whitespace/newlines between tokens
+        // Look for empty blocks
         let mut new_content = content.clone();
         let mut changed = true;
 
@@ -376,8 +377,6 @@ impl Cleaner {
         while changed {
             let before = new_content.clone();
 
-            // Pattern: } followed by optional whitespace, "by", optional whitespace, {, optional whitespace, }
-            // But we need to be careful to only match truly empty blocks
             let lines: Vec<&str> = new_content.lines().collect();
             let mut result_lines = Vec::new();
             let mut i = 0;
@@ -385,7 +384,7 @@ impl Cleaner {
             while i < lines.len() {
                 let line = lines[i];
 
-                // Check if this line ends with "} by {"
+                // Check for "} by {" pattern (empty by blocks)
                 if line.trim_end().ends_with("} by {") {
                     // Look ahead to see if the next line is just "}"
                     if i + 1 < lines.len() && lines[i + 1].trim() == "}" {
@@ -394,6 +393,21 @@ impl Cleaner {
                         result_lines.push(format!("{}}}", before_by));
                         i += 2; // Skip both lines
                         continue;
+                    }
+                }
+
+                // Check for empty forall blocks: "forall(...) {" followed by "}"
+                // Look for lines ending with ") {" that start with forall
+                if line.trim_end().ends_with(") {") {
+                    let trimmed = line.trim();
+                    // Check if this starts with forall
+                    if trimmed.starts_with("forall(") {
+                        // Look ahead to see if the next line is just "}"
+                        if i + 1 < lines.len() && lines[i + 1].trim() == "}" {
+                            // Found an empty forall block! Skip both lines entirely
+                            i += 2;
+                            continue;
+                        }
                     }
                 }
 
@@ -407,6 +421,14 @@ impl Cleaner {
             }
 
             changed = new_content != before;
+        }
+
+        // Consolidate whitespace after removing blocks
+        while new_content.contains(" \n") {
+            new_content = new_content.replace(" \n", "\n");
+        }
+        while new_content.contains("\n\n\n") {
+            new_content = new_content.replace("\n\n\n", "\n\n");
         }
 
         // Write back if changed
@@ -490,6 +512,9 @@ mod tests {
                 Color.red != Color.blue
                 Color.red != Color.blue
                 Color.red != Color.blue
+
+                forall(k: Color) {
+                }
 
                 foo(f, c)
                 Color.red != Color.blue
