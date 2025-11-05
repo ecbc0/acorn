@@ -44,6 +44,11 @@ pub struct Verifier {
     /// If this is set, target must be as well.
     pub line: Option<u32>,
 
+    /// When this flag is set, verification exits immediately upon encountering any warning.
+    /// This is useful for operations like the cleaner where any warning means the change
+    /// should be reverted, so there's no point continuing verification.
+    pub exit_on_warning: bool,
+
     /// Events collected during verification
     events: Rc<RefCell<Vec<BuildEvent>>>,
 
@@ -103,6 +108,7 @@ impl Verifier {
             project_ptr,
             target: target.clone(),
             line: None,
+            exit_on_warning: false,
             events,
             builder,
         })
@@ -121,6 +127,9 @@ impl Verifier {
                 return Err(format!("Failed to set single goal: {}", e));
             }
         }
+
+        // Pass the exit_on_warning flag to the builder
+        self.builder.exit_on_warning = self.exit_on_warning;
 
         // Build
         self.builder.build();

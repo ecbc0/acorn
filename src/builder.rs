@@ -58,6 +58,11 @@ pub struct Builder<'a> {
     /// In strict mode, reject any use of the axiom keyword.
     pub strict: bool,
 
+    /// When this flag is set, the build exits immediately upon encountering any warning.
+    /// This is useful for operations like the cleaner where any warning means the change
+    /// should be reverted, so there's no point continuing verification.
+    pub exit_on_warning: bool,
+
     /// The current module we are proving.
     current_module: Option<ModuleDescriptor>,
 
@@ -295,6 +300,7 @@ impl<'a> Builder<'a> {
             reverify: false,
             check_hashes: true,
             strict: false,
+            exit_on_warning: false,
             current_module: None,
             current_module_good: true,
             build_cache: None,
@@ -934,6 +940,11 @@ impl<'a> Builder<'a> {
             if let Err(e) = self.verify_module(&target, env) {
                 self.log_build_error(&e);
                 self.log_training_summary();
+                return;
+            }
+
+            // Early exit if we have a warning and exit_on_warning is enabled
+            if self.exit_on_warning && !self.status.is_good() {
                 return;
             }
         }

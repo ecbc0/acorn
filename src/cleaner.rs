@@ -174,7 +174,9 @@ impl Cleaner {
             ProjectConfig::default(),
             Some(self.module_spec.to_string()),
         ) {
-            Ok(verifier) => {
+            Ok(mut verifier) => {
+                // Enable early exit on warning - no need to continue verifying once we hit any issue
+                verifier.exit_on_warning = true;
                 // Run verification
                 match verifier.run() {
                     Ok(output) => output.is_success(),
