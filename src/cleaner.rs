@@ -240,6 +240,36 @@ impl Cleaner {
         // Count final lines
         let final_lines = self.count_lines()?;
 
+        // Final verification: verify the entire project (not just the module)
+        // If this fails, there's a bug in the cleaning algorithm
+        println!("Running final verification on entire project...");
+        let final_verification_result = match Verifier::new(
+            self.project_root.clone(),
+            ProjectConfig::default(),
+            None, // Verify all modules, not just this one
+        ) {
+            Ok(verifier) => {
+                // Don't enable early exit here - we want to see all issues if there are any
+                match verifier.run() {
+                    Ok(output) => output.is_success(),
+                    Err(e) => {
+                        println!("Final verification failed with error: {}", e);
+                        false
+                    }
+                }
+            }
+            Err(e) => {
+                println!("Failed to initialize final verification: {}", e);
+                false
+            }
+        };
+
+        if !final_verification_result {
+            return Err(CleanerError::Project(crate::project::ProjectError(
+                "BUG: Final verification failed after cleaning. This indicates a bug in the cleaning algorithm.".to_string(),
+            )));
+        }
+
         let stats = CleanStats {
             claims_deleted,
             claims_kept,
