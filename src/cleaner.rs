@@ -134,7 +134,8 @@ impl Cleaner {
         }
     }
 
-    /// Attempts to delete the lines in the given range from the module file.
+    /// Attempts to delete the given range from the module file.
+    /// Handles both full-line and partial-line deletions based on character positions in the range.
     /// If the module still verifies after deletion, returns Ok(true) and keeps the deletion.
     /// If verification fails (including parse errors), restores the original file and returns Ok(false).
     /// Returns Err only for unexpected errors (file not found, permission issues, etc.).
@@ -154,10 +155,12 @@ impl Cleaner {
         // Read the original file content
         let original_content = std::fs::read_to_string(&file_path)?;
 
-        // Delete the lines in the range
+        // Delete the range (handles both full-line and partial-line deletions)
         let lines: Vec<&str> = original_content.lines().collect();
         let start_line = range.start.line as usize;
         let end_line = range.end.line as usize;
+        let start_char = range.start.character as usize;
+        let end_char = range.end.character as usize;
 
         // Validate range - panic if invalid since this indicates a bug
         assert!(
@@ -167,13 +170,37 @@ impl Cleaner {
             lines.len()
         );
 
-        // Build new content without the deleted lines
+        // Build new content with the range deleted
         let mut new_lines = Vec::new();
         for (i, line) in lines.iter().enumerate() {
             if i < start_line || i > end_line {
-                new_lines.push(*line);
+                // Line is outside the range, keep it as-is
+                new_lines.push(line.to_string());
+            } else if i == start_line && i == end_line {
+                // Deletion is within a single line - keep the part before start and after end
+                let before = &line[..start_char.min(line.len())];
+                let after = &line[end_char.min(line.len())..];
+                let combined = format!("{}{}", before, after);
+                // Only add the line if there's content left after deletion
+                if !combined.trim().is_empty() || i == 0 || i == lines.len() - 1 {
+                    new_lines.push(combined);
+                }
+            } else if i == start_line {
+                // First line of multi-line deletion - keep the part before start_char
+                let before = &line[..start_char.min(line.len())];
+                if !before.trim().is_empty() || i == 0 {
+                    new_lines.push(before.to_string());
+                }
+            } else if i == end_line {
+                // Last line of multi-line deletion - keep the part after end_char
+                let after = &line[end_char.min(line.len())..];
+                if !after.trim().is_empty() || i == lines.len() - 1 {
+                    new_lines.push(after.to_string());
+                }
             }
+            // else: middle lines of multi-line deletion are completely skipped
         }
+
         let new_content = new_lines.join("\n");
         // Add trailing newline if original had one
         let new_content = if original_content.ends_with('\n') {
@@ -260,9 +287,6 @@ impl Cleaner {
             }
         }
 
-        // Count final lines
-        let final_lines = self.count_lines()?;
-
         // Final verification: verify the entire project (not just the module)
         // If this fails, there's a bug in the cleaning algorithm
         println!("Running final verification on entire project...");
@@ -293,6 +317,12 @@ impl Cleaner {
             )));
         }
 
+        // Post-process: remove empty "by { }" blocks
+        self.remove_empty_by_blocks()?;
+
+        // Recount lines after post-processing
+        let final_lines = self.count_lines()?;
+
         let stats = CleanStats {
             claims_deleted,
             claims_kept,
@@ -312,6 +342,71 @@ impl Cleaner {
         );
 
         Ok(stats)
+    }
+
+    /// Removes empty "by { }" blocks from the module file.
+    /// This is a post-processing step after cleaning to remove unnecessary syntax.
+    /// We do this textually by looking for the pattern "} by {\n}" and replacing with "}".
+    fn remove_empty_by_blocks(&self) -> Result<(), CleanerError> {
+        let config = ProjectConfig {
+            use_filesystem: true,
+            read_cache: true,
+            write_cache: false,
+        };
+        let project = Project::new_local(self.project_root.as_path(), config)?;
+        let file_path = project.path_from_descriptor(&self.module_spec)?;
+
+        // Read the file
+        let content = std::fs::read_to_string(&file_path)?;
+
+        // Look for empty by blocks: "} by {\n}"
+        // We need to handle potential whitespace/newlines between tokens
+        let mut new_content = content.clone();
+        let mut changed = true;
+
+        // Keep replacing until no more changes (handles nested cases)
+        while changed {
+            let before = new_content.clone();
+
+            // Pattern: } followed by optional whitespace, "by", optional whitespace, {, optional whitespace, }
+            // But we need to be careful to only match truly empty blocks
+            let lines: Vec<&str> = new_content.lines().collect();
+            let mut result_lines = Vec::new();
+            let mut i = 0;
+
+            while i < lines.len() {
+                let line = lines[i];
+
+                // Check if this line ends with "} by {"
+                if line.trim_end().ends_with("} by {") {
+                    // Look ahead to see if the next line is just "}"
+                    if i + 1 < lines.len() && lines[i + 1].trim() == "}" {
+                        // Found an empty by block! Replace these two lines with just the closing brace
+                        let before_by = &line[..line.rfind("} by {").unwrap()];
+                        result_lines.push(format!("{}}}", before_by));
+                        i += 2; // Skip both lines
+                        continue;
+                    }
+                }
+
+                result_lines.push(line.to_string());
+                i += 1;
+            }
+
+            new_content = result_lines.join("\n");
+            if content.ends_with('\n') && !new_content.ends_with('\n') {
+                new_content.push('\n');
+            }
+
+            changed = new_content != before;
+        }
+
+        // Write back if changed
+        if new_content != content {
+            std::fs::write(&file_path, &new_content)?;
+        }
+
+        Ok(())
     }
 
     /// Counts the number of lines in the module file.
