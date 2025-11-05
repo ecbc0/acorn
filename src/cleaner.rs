@@ -203,11 +203,19 @@ impl Cleaner {
 
         let new_content = new_lines.join("\n");
         // Add trailing newline if original had one
-        let new_content = if original_content.ends_with('\n') {
+        let mut new_content = if original_content.ends_with('\n') {
             format!("{}\n", new_content)
         } else {
             new_content
         };
+
+        // Consolidate whitespace
+        while new_content.contains(" \n") {
+            new_content = new_content.replace(" \n", "\n");
+        }
+        while new_content.contains("\n\n\n") {
+            new_content = new_content.replace("\n\n\n", "\n\n");
+        }
 
         // Write the modified content to disk
         std::fs::write(&file_path, &new_content)?;
@@ -478,7 +486,11 @@ mod tests {
                 define f(d: Color) -> Bool {
                     d = Color.red
                 }
+
                 Color.red != Color.blue
+                Color.red != Color.blue
+                Color.red != Color.blue
+
                 foo(f, c)
                 Color.red != Color.blue
             }
@@ -495,6 +507,7 @@ mod tests {
                 define f(d: Color) -> Bool {
                     d = Color.red
                 }
+
                 foo(f, c)
             }"#}));
     }
