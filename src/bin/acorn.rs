@@ -1,7 +1,9 @@
 // The Acorn CLI.
 // You can run a language server, verify a file, or reverify the whole project.
 
+use acorn::cleaner::Cleaner;
 use acorn::doc_generator::DocGenerator;
+use acorn::module::ModuleDescriptor;
 use acorn::project::{Project, ProjectConfig};
 use acorn::server::{run_server, ServerArgs};
 use acorn::verifier::Verifier;
@@ -117,6 +119,13 @@ enum Command {
         /// Line number to select
         #[clap(value_name = "LINE")]
         line: u32,
+    },
+
+    /// Remove redundant claims from a module
+    Clean {
+        /// Module name to clean
+        #[clap(value_name = "MODULE")]
+        module: String,
     },
 }
 
@@ -332,6 +341,21 @@ async fn main() {
                 }
                 Err(e) => {
                     println!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        Some(Command::Clean { module }) => {
+            let module_spec = ModuleDescriptor::name(&module);
+            let cleaner = Cleaner::new(current_dir, module_spec);
+
+            match cleaner.clean() {
+                Ok(_stats) => {
+                    // Stats are already printed by clean()
+                }
+                Err(e) => {
+                    println!("Error cleaning module: {:?}", e);
                     std::process::exit(1);
                 }
             }

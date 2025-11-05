@@ -16,6 +16,15 @@ pub struct Cleaner {
     module_spec: ModuleDescriptor,
 }
 
+/// Statistics from a cleaning operation.
+#[derive(Debug)]
+pub struct CleanStats {
+    pub claims_deleted: usize,
+    pub claims_kept: usize,
+    pub original_lines: usize,
+    pub final_lines: usize,
+}
+
 /// Errors that can occur when using the Cleaner.
 #[derive(Debug)]
 pub enum CleanerError {
@@ -183,5 +192,83 @@ impl Cleaner {
 
         // Verification succeeded - keep the deletion
         Ok(true)
+    }
+
+    /// Iteratively removes redundant claims from the module.
+    /// Returns statistics about the cleaning operation.
+    pub fn clean(&self) -> Result<CleanStats, CleanerError> {
+        // Count original lines
+        let original_lines = self.count_lines()?;
+
+        let mut claims_deleted = 0;
+        let mut claims_kept = 0;
+        let mut last_required_range: Option<Range> = None;
+
+        loop {
+            // Get current claim ranges
+            let ranges = self.claim_ranges()?;
+
+            // Find the first claim range that comes after last_required_range
+            let next_range = ranges.iter().find(|range| {
+                if let Some(ref last_req) = last_required_range {
+                    range.start.line > last_req.start.line
+                } else {
+                    true // No last required, so first range is next
+                }
+            });
+
+            // If no more claims to try, we're done
+            let Some(&range_to_try) = next_range else {
+                break;
+            };
+
+            // Try to delete this claim
+            if self.try_delete(range_to_try)? {
+                // Deletion succeeded
+                claims_deleted += 1;
+                // Continue loop - ranges will be recalculated
+            } else {
+                // Deletion failed - this claim is required
+                last_required_range = Some(range_to_try);
+                claims_kept += 1;
+                // Continue to next claim
+            }
+        }
+
+        // Count final lines
+        let final_lines = self.count_lines()?;
+
+        let stats = CleanStats {
+            claims_deleted,
+            claims_kept,
+            original_lines,
+            final_lines,
+        };
+
+        // Print stats
+        println!("Cleaning complete!");
+        println!("  Claims deleted: {}", stats.claims_deleted);
+        println!("  Claims kept: {}", stats.claims_kept);
+        println!(
+            "  Lines: {} -> {} (removed {} lines)",
+            stats.original_lines,
+            stats.final_lines,
+            stats.original_lines - stats.final_lines
+        );
+
+        Ok(stats)
+    }
+
+    /// Counts the number of lines in the module file.
+    fn count_lines(&self) -> Result<usize, CleanerError> {
+        let config = ProjectConfig {
+            use_filesystem: true,
+            read_cache: true,
+            write_cache: false,
+        };
+        let project = Project::new_local(self.project_root.as_path(), config)?;
+        let file_path = project.path_from_descriptor(&self.module_spec)?;
+        let content = std::fs::read_to_string(&file_path)?;
+        Ok(content.lines().count())
     }
 }
