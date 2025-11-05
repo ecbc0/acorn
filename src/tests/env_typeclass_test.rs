@@ -1282,3 +1282,37 @@ fn test_method_binding_in_typeclass_conditions() {
         error
     );
 }
+
+#[test]
+fn test_attribute_with_typeclass_parameter() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        inductive Color {
+            red
+            blue
+        }
+        structure Set[K] {
+            contains: K -> Bool
+        }
+
+        typeclass T: Twosome {
+            has_two {
+                exists(a: T, b: T) {
+                    a != b
+                }
+            }
+        }
+
+        instance Color: Twosome
+
+        attributes Set[T: Twosome] {
+            define splits(self) -> Bool {
+                exists(a: T, b: T) {
+                    self.contains(a) and not self.contains(b)
+                }
+            }
+        }
+        "#,
+    );
+}
