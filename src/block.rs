@@ -42,6 +42,11 @@ pub struct Block {
 
     /// The environment created inside the block.
     pub env: Environment,
+
+    /// The source range for this block, if it came from source code.
+    /// This spans from the opening keyword (forall, if, by, etc.) to the closing brace.
+    /// Synthetic blocks created by the compiler will have None.
+    pub source_range: Option<Range>,
 }
 
 /// The different ways to construct a block.
@@ -251,10 +256,17 @@ impl Block {
             .transpose()
             .map_err(|e| first_token.error(&e))?;
 
+        // Create the source range from first_token to last_token
+        let source_range = Some(Range {
+            start: first_token.start_pos(),
+            end: last_token.end_pos(),
+        });
+
         Ok(Block {
             args,
             env: subenv,
             goal,
+            source_range,
         })
     }
 

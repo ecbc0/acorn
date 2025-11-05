@@ -62,12 +62,12 @@ impl Cleaner {
         }
     }
 
-    /// Returns the ranges of all Node::Claim nodes in the specified module,
-    /// in preorder traversal order. Recurses into blocks but doesn't report
-    /// the blocks themselves.
+    /// Returns the ranges of all cleanable nodes in the specified module,
+    /// including both Node::Claim nodes and Node::Block nodes with source ranges.
+    /// Returns ranges in preorder traversal order.
     ///
     /// Loads a fresh Project each time to ensure it picks up any changes.
-    pub fn claim_ranges(&self) -> Result<Vec<Range>, CleanerError> {
+    pub fn ranges(&self) -> Result<Vec<Range>, CleanerError> {
         // Load a fresh project
         let config = ProjectConfig {
             use_filesystem: true,
@@ -92,23 +92,40 @@ impl Cleaner {
             LoadState::None => return Err(CleanerError::ModuleNotLoaded),
         };
 
-        // Collect claim ranges
+        // Collect ranges from the module environment (depth 0)
         let mut ranges = Vec::new();
-        Self::collect_claim_ranges(env, &mut ranges);
+        Self::collect_ranges(env, &mut ranges);
         Ok(ranges)
     }
 
-    /// Recursively collects claim ranges from an environment and all nested blocks.
-    fn collect_claim_ranges(env: &Environment, ranges: &mut Vec<Range>) {
+    /// Recursively collects cleanable ranges from an environment.
+    /// This includes both Claim nodes and Block nodes with source ranges.
+    /// Only collects items inside proofs (env.depth >= 1), never top-level items.
+    /// - depth 0: top-level module (not cleanable - might be imported)
+    /// - depth 1+: inside theorem/axiom proof blocks (cleanable - local to proof)
+    fn collect_ranges(env: &Environment, ranges: &mut Vec<Range>) {
+        // Only collect ranges when we're inside a proof (depth >= 1)
+        let inside_proof = env.depth >= 1;
+
         for node in &env.nodes {
             match node {
                 Node::Claim(prop) => {
-                    // Add this claim's range
-                    ranges.push(prop.source.range);
+                    // Only collect claims when inside proofs
+                    if inside_proof {
+                        ranges.push(prop.source.range);
+                    }
                 }
                 Node::Block(block, _) => {
-                    // Recurse into the block's environment
-                    Self::collect_claim_ranges(&block.env, ranges);
+                    // Only collect blocks when inside proofs
+                    // This means forall/if/by blocks inside theorems are cleanable,
+                    // but top-level theorem blocks themselves are not
+                    if inside_proof {
+                        if let Some(range) = block.source_range {
+                            ranges.push(range);
+                        }
+                    }
+                    // Always recurse into the block to find nested cleanable items
+                    Self::collect_ranges(&block.env, ranges);
                 }
                 Node::Structural(_) => {
                     // Skip structural nodes
@@ -207,8 +224,8 @@ impl Cleaner {
         let mut last_required_range: Option<Range> = None;
 
         loop {
-            // Get current claim ranges
-            let ranges = self.claim_ranges()?;
+            // Get current cleanable ranges
+            let ranges = self.ranges()?;
 
             // Find the first claim range that comes after last_required_range
             let next_range = ranges.iter().find(|range| {
@@ -335,9 +352,14 @@ mod tests {
                 blue
             }
 
+            let fav: Color = Color.red
+
             theorem possibilities(c: Color) {
                 c = Color.red or c = Color.blue
             } by {
+                forall(d: Color) {
+                    true
+                }
                 Color.red != Color.blue
             }
         "#};
@@ -355,16 +377,20 @@ mod tests {
         // Check the results
         println!("Claims deleted: {}", stats.claims_deleted);
         println!("Claims kept: {}", stats.claims_kept);
-        assert_eq!(stats.claims_deleted, 1);
 
         // Read the cleaned file
         let cleaned_content = fs::read_to_string(&test_file).unwrap();
         println!("Cleaned content:\n{}", cleaned_content);
 
+        // The theorem should be preserved (not cleanable at depth 0)
         assert!(cleaned_content.contains("theorem possibilities"));
 
-        // But the "necessary" claim inside the proof should be gone
-        // The proof block should be empty now
+        // The entire proof body should be cleaned (both forall and the claim)
         assert!(cleaned_content.contains("by {\n}"));
+        assert!(!cleaned_content.contains("forall"));
+
+        // Top-level values should be preserved
+        assert!(cleaned_content.contains("let fav"));
+        assert!(cleaned_content.contains("inductive Color"));
     }
 }
