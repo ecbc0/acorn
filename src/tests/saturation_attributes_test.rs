@@ -446,3 +446,49 @@ fn test_proving_with_attributes_on_parametrized_types() {
     "#;
     verify_succeeds(text);
 }
+
+#[test]
+fn test_proving_with_typeclass_constrained_attributes() {
+    // Test that we can define attributes with typeclass constraints (Foo[T: Bar] syntax)
+    // and prove a simple theorem using them
+    let text = r#"
+    inductive Color {
+        red
+        blue
+    }
+
+    structure Set[K] {
+        contains: K -> Bool
+    }
+
+    typeclass T: HasCompare {
+        compare: (T, T) -> Bool
+    }
+
+    let color_compare: (Color, Color) -> Bool = axiom
+
+    instance Color: HasCompare {
+        let compare: (Color, Color) -> Bool = color_compare
+    }
+
+    // Define an attribute on Set[T: HasCompare]
+    attributes Set[T: HasCompare] {
+        define has_both(self, a: T, b: T) -> Bool {
+            self.contains(a) and self.contains(b)
+        }
+    }
+
+    // Just prove the definition expands correctly
+    theorem has_both_def(s: Set[Color], a: Color, b: Color) {
+        s.has_both(a, b) = (s.contains(a) and s.contains(b))
+    } by {
+        if s.has_both(a, b) {
+            s.contains(a) and s.contains(b)
+        }
+        if s.contains(a) and s.contains(b) {
+            s.has_both(a, b)
+        }
+    }
+    "#;
+    verify_succeeds(text);
+}
