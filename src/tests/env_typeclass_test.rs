@@ -129,20 +129,18 @@ fn test_env_typeclass_in_structure() {
 #[test]
 fn test_env_typeclasses_match_between_structure_and_class() {
     let mut env = Environment::test();
+    // Attributes can add more restrictive typeclass constraints than the base structure
     env.add(
         r#"
             typeclass M: Magma {
                 mul: (M, M) -> M
             }
-            
+
             structure MagmaPair[T] {
                 first: T
                 second: T
             }
-            "#,
-    );
-    env.bad(
-        r#"
+
             attributes MagmaPair[T: Magma] {
                 define prod(self) -> T {
                     self.first.mul(self.second)

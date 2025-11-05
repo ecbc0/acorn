@@ -1359,12 +1359,12 @@ impl Environment {
 
         match type_args {
             AttributesTypeArgs::Generic(type_params) => {
-                // Generic case: attributes Set[K]
+                // Generic case: attributes Set[K] or attributes Set[T: Twosome]
                 let mut params = vec![];
                 for param in &type_params {
                     params.push(self.bindings.add_arbitrary_type(param.clone()));
                 }
-                let instance_type = potential.invertible_resolve(params, &ats.name_token)?;
+                let instance_type = potential.resolve_with_arbitrary(params, &ats.name_token)?;
                 let datatype = self.check_can_add_attributes(&ats.name_token, &instance_type)?;
 
                 for substatement in &ats.body.statements {

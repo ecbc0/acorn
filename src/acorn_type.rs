@@ -97,6 +97,44 @@ impl PotentialType {
         self.resolve(params, source)
     }
 
+    /// Resolves the type given parameters with arbitrary types.
+    /// Like invertible_resolve, but allows the parameters to have more restrictive typeclass
+    /// constraints than the base type. This is useful for attributes blocks where we want to
+    /// add additional typeclass constraints.
+    /// For example: structure Set[K] can have attributes Set[T: Twosome].
+    pub fn resolve_with_arbitrary(
+        self,
+        params: Vec<AcornType>,
+        source: &dyn ErrorSource,
+    ) -> Result<AcornType> {
+        if let PotentialType::Unresolved(ut) = &self {
+            if ut.params.len() != params.len() {
+                return Err(source.error(&format!(
+                    "type {} expects {} parameters, but got {}",
+                    ut.datatype.name,
+                    ut.params.len(),
+                    params.len()
+                )));
+            }
+            for (i, param_type) in params.iter().enumerate() {
+                match param_type {
+                    AcornType::Arbitrary(_) => {
+                        // Arbitrary types are allowed.
+                        // We don't validate typeclass constraints here because attributes
+                        // are allowed to add more restrictive constraints.
+                    }
+                    _ => {
+                        return Err(source.error(&format!(
+                            "expected param {} to be an arbitrary type variable",
+                            i
+                        )));
+                    }
+                }
+            }
+        }
+        self.resolve(params, source)
+    }
+
     /// Resolves the type given the parameters.
     /// Reports an error if the parameters don't match what we expected.
     pub fn resolve(self, params: Vec<AcornType>, source: &dyn ErrorSource) -> Result<AcornType> {
