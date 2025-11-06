@@ -471,10 +471,10 @@ impl Checker {
     /// Check a certificate. It is expected that the certificate has a proof.
     /// Returns a list of CertificateSteps showing how each step was verified.
     ///
-    /// Consumes bindings and normalizer since they may be modified during checking
-    /// and should not be reused afterwards to prevent bugs.
+    /// Consumes bindings, normalizer and the checker itself since they may be
+    /// modified during checking and should not be reused afterwards.
     pub fn check_cert(
-        &mut self,
+        mut self,
         cert: &Certificate,
         project: &Project,
         mut bindings: Cow<BindingMap>,
