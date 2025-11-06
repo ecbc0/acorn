@@ -55,6 +55,10 @@ pub struct Builder<'a> {
     /// Whether we skip goals that match hashes in the cache.
     pub check_hashes: bool,
 
+    /// When this flag is set, clean certificates by removing unnecessary steps.
+    /// This implies check_hashes = false.
+    pub clean_certs: bool,
+
     /// In strict mode, reject any use of the axiom keyword.
     pub strict: bool,
 
@@ -299,6 +303,7 @@ impl<'a> Builder<'a> {
             log_secondary_errors: true,
             reverify: false,
             check_hashes: true,
+            clean_certs: false,
             strict: false,
             exit_on_warning: false,
             current_module: None,
@@ -608,13 +613,31 @@ impl<'a> Builder<'a> {
         let indexes = worklist.get_indexes(&goal.name);
         for i in indexes {
             let cert = worklist.get_cert(*i).unwrap().clone();
-            match processor.check_cert(&cert, Some(goal), self.project, &env.bindings) {
+
+            // If clean_certs is enabled, clean the certificate
+            let (cert_to_use, check_result) = if self.clean_certs {
+                match processor.clean_cert(cert, Some(goal), self.project, &env.bindings) {
+                    Ok((cleaned_cert, steps)) => (cleaned_cert, Ok(steps)),
+                    Err(e) => {
+                        return Err(BuildError::goal(
+                            goal,
+                            &format!("failed to clean certificate: {}", e),
+                        ))
+                    }
+                }
+            } else {
+                // Normal path: just check the certificate
+                let result = processor.check_cert(&cert, Some(goal), self.project, &env.bindings);
+                (cert, result)
+            };
+
+            match check_result {
                 Ok(_steps) => {
                     self.metrics.certs_cached += 1;
                     self.metrics.goals_done += 1;
                     self.metrics.goals_success += 1;
                     self.log_verified(goal.first_line, goal.last_line);
-                    new_certs.push(cert.clone());
+                    new_certs.push(cert_to_use.clone());
                     worklist.remove(&goal.name, *i);
 
                     // Write training data if output is enabled
@@ -623,7 +646,7 @@ impl<'a> Builder<'a> {
                             GoalContext::from_project_and_goal(self.project, goal)
                         {
                             // Write both context and proof to a numbered file
-                            if let Err(e) = writer.write_proof(&context, &cert) {
+                            if let Err(e) = writer.write_proof(&context, &cert_to_use) {
                                 self.log_global(format!(
                                     "Warning: failed to write training data: {}",
                                     e
@@ -849,6 +872,11 @@ impl<'a> Builder<'a> {
 
     /// Builds all open modules, logging build events.
     pub fn build(&mut self) {
+        // If clean_certs is enabled, disable check_hashes
+        if self.clean_certs {
+            self.check_hashes = false;
+        }
+
         // Initialize the build cache
         self.build_cache = Some(BuildCache::new(self.project.build_dir.clone()));
 

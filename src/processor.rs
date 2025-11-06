@@ -148,22 +148,32 @@ impl<P: Prover> Processor<P> {
         let mut normalizer = self.normalizer.clone();
 
         if let Some(goal) = goal {
-            let source = &goal.proposition.source;
-            let (_, steps) = normalizer.normalize_goal(goal).map_err(|e| e.message)?;
-            for step in &steps {
-                // Use the step's own source if it's an assumption (which includes negated goals),
-                // otherwise use the goal's source
-                let step_source = if let Rule::Assumption(info) = &step.rule {
-                    &info.source
-                } else {
-                    source
-                };
-                checker.insert_clause(&step.clause, StepReason::Assumption(step_source.clone()));
-            }
+            checker.insert_goal(goal, &mut normalizer)?;
         }
 
         let bindings = Cow::Borrowed(bindings);
         let normalizer = Cow::Owned(normalizer);
         checker.check_cert(cert, project, bindings, normalizer)
+    }
+
+    /// Cleans a certificate by removing unnecessary steps.
+    /// Similar to check_cert but returns the cleaned certificate along with the steps.
+    pub fn clean_cert(
+        &self,
+        cert: Certificate,
+        goal: Option<&Goal>,
+        project: &Project,
+        bindings: &BindingMap,
+    ) -> Result<(Certificate, Vec<CertificateStep>), Error> {
+        let mut checker = self.checker.clone();
+        let mut normalizer = self.normalizer.clone();
+
+        if let Some(goal) = goal {
+            checker.insert_goal(goal, &mut normalizer)?;
+        }
+
+        let bindings = Cow::Borrowed(bindings);
+        let normalizer = Cow::Owned(normalizer);
+        checker.clean_cert(cert, project, bindings, normalizer)
     }
 }

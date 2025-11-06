@@ -468,6 +468,30 @@ impl Checker {
         }
     }
 
+    /// Insert goal clauses into the checker.
+    /// Normalizes the goal and inserts all resulting clauses as assumptions.
+    pub fn insert_goal(
+        &mut self,
+        goal: &crate::goal::Goal,
+        normalizer: &mut crate::normalizer::Normalizer,
+    ) -> Result<(), Error> {
+        use crate::proof_step::Rule;
+
+        let source = &goal.proposition.source;
+        let (_, steps) = normalizer.normalize_goal(goal).map_err(|e| e.message)?;
+        for step in &steps {
+            // Use the step's own source if it's an assumption (which includes negated goals),
+            // otherwise use the goal's source
+            let step_source = if let Rule::Assumption(info) = &step.rule {
+                &info.source
+            } else {
+                source
+            };
+            self.insert_clause(&step.clause, StepReason::Assumption(step_source.clone()));
+        }
+        Ok(())
+    }
+
     /// Check a certificate. It is expected that the certificate has a proof.
     /// Returns a list of CertificateSteps showing how each step was verified.
     ///
