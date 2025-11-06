@@ -297,6 +297,36 @@ impl ModuleCleaner {
             }
         }
 
+        // Clean certificates: run verification with clean_certs enabled to minimize all certificates
+        println!("Cleaning certificates...");
+        let cert_cleaning_result = match Verifier::new(
+            self.project_root.clone(),
+            ProjectConfig::default(),
+            Some(self.module_spec.to_string()), // Only clean this module
+        ) {
+            Ok(mut verifier) => {
+                verifier.builder.clean_certs = true;
+                match verifier.run() {
+                    Ok(output) => output.is_success(),
+                    Err(e) => {
+                        println!("Certificate cleaning failed with error: {}", e);
+                        false
+                    }
+                }
+            }
+            Err(e) => {
+                println!("Failed to initialize certificate cleaning: {}", e);
+                false
+            }
+        };
+
+        if !cert_cleaning_result {
+            return Err(CleanerError::Project(crate::project::ProjectError(
+                "BUG: Certificate cleaning failed. This indicates a bug in the cleaning algorithm."
+                    .to_string(),
+            )));
+        }
+
         // Final verification: verify the entire project (not just the module)
         // If this fails, there's a bug in the cleaning algorithm
         println!("Running final verification on entire project...");
