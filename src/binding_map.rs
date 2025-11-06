@@ -1352,7 +1352,7 @@ impl BindingMap {
             let name_token = TokenType::Identifier.new_token(&name);
 
             // Use the existing import_name logic to import each name
-            let _ = self.import_name(project, prelude_bindings.module_id, &name_token)?;
+            let _ = self.import_name(project, prelude_bindings.module_id, &name_token, &None)?;
         }
 
         // Import all type names that aren't already imported via unqualified constants

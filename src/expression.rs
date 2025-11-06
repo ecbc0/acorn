@@ -883,7 +883,7 @@ fn parse_partial_expressions(
                     | TokenType::And
                     | TokenType::Plus
                     | TokenType::Minus
-                    | TokenType::Asterisk
+                    | TokenType::Multiply
                     | TokenType::Slash
             ) {
                 tokens.skip_newlines();

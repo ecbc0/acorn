@@ -20,7 +20,7 @@
       "name": "keyword.operator"
     },
     {
-      "match": "∪|∩|×|∈|∉|⊆|⊇|∖",
+      "match": "∪|∩|×|∈|∉|⊆|⊇|∖|⊂|⊃",
       "name": "keyword.set_operator"
     },
     {
