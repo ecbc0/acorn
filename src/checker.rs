@@ -285,7 +285,7 @@ impl Checker {
         code: &str,
         project: &Project,
         bindings: &mut Cow<BindingMap>,
-        normalizer: &mut Normalizer,
+        normalizer: &mut Cow<Normalizer>,
         certificate_steps: &mut Vec<CertificateStep>,
     ) -> Result<(), Error> {
         // Parse as a statement with in_block=true to allow bare expressions
@@ -330,7 +330,7 @@ impl Checker {
                 let exists_value = AcornValue::exists(types, condition_value.clone());
 
                 let (source, synthetic_atoms) =
-                    match normalizer.get_synthetic_definition(&exists_value) {
+                    match normalizer.to_mut().get_synthetic_definition(&exists_value) {
                         Some(def) => {
                             // Found an existing synthetic definition
                             (def.source.clone(), Some(def.atoms.clone()))
@@ -383,7 +383,7 @@ impl Checker {
                             None,
                             String::new(),
                         );
-                        normalizer.add_local_constant(cname);
+                        normalizer.to_mut().add_local_constant(cname);
                     }
                 }
 
@@ -392,6 +392,8 @@ impl Checker {
                 if condition_value != AcornValue::Bool(true) {
                     let mut evaluator = Evaluator::new(project, bindings, None);
                     let value = evaluator.evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
+
+                    // The NormalizerView::Ref prevents us from accidentally mutating the normalizer here.
                     let mut view = NormalizerView::Ref(&normalizer);
                     let clauses = view.nice_value_to_clauses(&value, &mut vec![])?;
                     for clause in clauses {
@@ -468,12 +470,15 @@ impl Checker {
 
     /// Check a certificate. It is expected that the certificate has a proof.
     /// Returns a list of CertificateSteps showing how each step was verified.
+    ///
+    /// Consumes bindings and normalizer since they may be modified during checking
+    /// and should not be reused afterwards to prevent bugs.
     pub fn check_cert(
         &mut self,
         cert: &Certificate,
         project: &Project,
-        bindings: &mut Cow<BindingMap>,
-        normalizer: &mut Normalizer,
+        mut bindings: Cow<BindingMap>,
+        mut normalizer: Cow<Normalizer>,
     ) -> Result<Vec<CertificateStep>, Error> {
         let Some(proof) = &cert.proof else {
             return Err(Error::NoProof);
@@ -485,7 +490,13 @@ impl Checker {
             if self.has_contradiction() {
                 return Ok(certificate_steps);
             }
-            self.check_code(code, project, bindings, normalizer, &mut certificate_steps)?;
+            self.check_code(
+                code,
+                project,
+                &mut bindings,
+                &mut normalizer,
+                &mut certificate_steps,
+            )?;
         }
 
         if self.has_contradiction() {

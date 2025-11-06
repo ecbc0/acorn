@@ -133,8 +133,8 @@ impl<P: Prover> Processor<P> {
             .make_cert(project, bindings, &self.normalizer, print)
     }
 
-    /// Checks a certificate by cloning the checker and normalizer, and creating a Cow for bindings.
-    /// This encapsulates the pattern used throughout the codebase.
+    /// Checks a certificate.
+    /// Clones the checker and normalizer, because the checking process despoils them.
     /// If the goal is provided, it is added to the checker before checking the certificate.
     /// Returns a list of CertificateSteps showing how each step was verified.
     pub fn check_cert(
@@ -162,7 +162,8 @@ impl<P: Prover> Processor<P> {
             }
         }
 
-        let mut bindings = Cow::Borrowed(bindings);
-        checker.check_cert(cert, project, &mut bindings, &mut normalizer)
+        let bindings = Cow::Borrowed(bindings);
+        let normalizer = Cow::Owned(normalizer);
+        checker.check_cert(cert, project, bindings, normalizer)
     }
 }
