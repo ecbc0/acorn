@@ -508,6 +508,51 @@ impl Checker {
         }
     }
 
+    /// Remove unneeded steps from the certificate.
+    /// The certificate passed in should be valid.
+    ///
+    /// Consumes bindings, normalizer and the checker itself since they may be
+    /// modified during checking and should not be reused afterwards.
+    pub fn clean_cert(
+        self,
+        cert: Certificate,
+        project: &Project,
+        bindings: Cow<BindingMap>,
+        normalizer: Cow<Normalizer>,
+    ) -> Result<(Certificate, Vec<CertificateStep>), Error> {
+        let mut good_cert = cert;
+        let mut keep_count = 0;
+
+        loop {
+            let Some(proof) = &good_cert.proof else {
+                return Err(Error::NoProof);
+            };
+
+            if keep_count >= proof.len() {
+                // All steps are necessary, run final check
+                let steps = self.check_cert(&good_cert, project, bindings, normalizer)?;
+                return Ok((good_cert, steps));
+            }
+
+            // Try removing the step at index keep_count
+            let mut test_cert = good_cert.clone();
+            if let Some(test_proof) = &mut test_cert.proof {
+                test_proof.remove(keep_count);
+            }
+
+            // Try checking with a fresh checker
+            let c = self.clone();
+            match c.check_cert(&test_cert, project, bindings.clone(), normalizer.clone()) {
+                Ok(_) => {
+                    good_cert = test_cert;
+                }
+                Err(_) => {
+                    keep_count += 1;
+                }
+            }
+        }
+    }
+
     #[cfg(test)]
     pub fn with_clauses(clauses: &[&str]) -> Checker {
         let mut checker = Checker::new_fast();
