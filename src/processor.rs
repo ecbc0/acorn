@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use crate::binding_map::BindingMap;
 use crate::builder::BuildError;
 use crate::certificate::Certificate;
-use crate::checker::{Checker, StepReason};
+use crate::checker::{CertificateStep, Checker, StepReason};
 use crate::code_generator::Error;
 use crate::fact::Fact;
 use crate::goal::Goal;
@@ -105,7 +105,7 @@ impl<P: Prover> Processor<P> {
         for step in &steps {
             // Use the step's own source if it's an assumption (which includes negated goals),
             // otherwise use the goal's source
-            let step_source = if let crate::proof_step::Rule::Assumption(info) = &step.rule {
+            let step_source = if let Rule::Assumption(info) = &step.rule {
                 &info.source
             } else {
                 source
@@ -143,7 +143,7 @@ impl<P: Prover> Processor<P> {
         goal: Option<&Goal>,
         project: &Project,
         bindings: &BindingMap,
-    ) -> Result<Vec<crate::checker::CertificateStep>, Error> {
+    ) -> Result<Vec<CertificateStep>, Error> {
         let mut checker = self.checker.clone();
         let mut normalizer = self.normalizer.clone();
 
@@ -153,7 +153,7 @@ impl<P: Prover> Processor<P> {
             for step in &steps {
                 // Use the step's own source if it's an assumption (which includes negated goals),
                 // otherwise use the goal's source
-                let step_source = if let crate::proof_step::Rule::Assumption(info) = &step.rule {
+                let step_source = if let Rule::Assumption(info) = &step.rule {
                     &info.source
                 } else {
                     source
