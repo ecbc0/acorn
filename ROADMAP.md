@@ -63,36 +63,6 @@ Ie, instead of returning a nonsense `Foo` when the constraint is false, the cons
 
 At a high level, we need to build these things in the order of, options, uninhabited types, dependent types. At a lower level, here are some bullet points.
 
-### Unwrapping with "let"
-
-This seems intuitive:
-
-```
-let Option.some(x) = y
-```
-
-You have to prove that there is such an x. This will also be useful for unwrapping other inductive types.
-
-### Question mark syntax.
-
-I think it would be even nicer to be able to do
-
-```
-let first_plus_last = list.first? + list.last?
-```
-
-Here the `?` requires proving that its argument is not none. Like syntactic sugar for
-
-```
-let Option.some(first) = list.first
-let Option.some(last) = list.last
-let first_plus_last = first + last
-```
-
-This way you can deal with options that happen inside an expression, not just options that happen inside a statement.
-
-This might be tricky not just for the syntax, but to get the prover to nicely support this sort of thing.
-
 ### A "core" module
 
 If we have basic language syntax using options then we either need to import option all the time or make it automatically imported. Probably just automatically import it. Not rocket science but still something that logistically needs to happen.
@@ -180,3 +150,30 @@ Vector[Real, k]
 ```
 
 What else?
+
+## Open Questions
+
+### Question mark syntax.
+
+It seems nice to be able to do
+
+```
+let first_plus_last = list.first? + list.last?
+```
+
+Here the `?` requires proving that its argument is not none. Like syntactic sugar for
+
+```
+let Option.some(first) = list.first
+let Option.some(last) = list.last
+let first_plus_last = first + last
+```
+
+This way you can deal with options that happen inside an expression, not just options that happen inside a statement.
+
+One issue is that the current prover is bad at proving "foo and bar" type goals. The harness could just give the prover one goal at a time when this happens. But we would need to change the interface so that a point in the code could be associated with multiple goals.
+
+Another issue is that syntactically, not every expression can be associated with a proving goal, so this
+syntax wouldn't be usable everywhere, which would lead to some confusion.
+
+Another possibility would be to implement a more general solution, a way of expressing when one type could be converted into another type, and treat this as a case of converting an `Option[T]` into a `T`.
