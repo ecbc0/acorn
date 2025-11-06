@@ -9,9 +9,9 @@ use crate::module::{LoadState, ModuleDescriptor};
 use crate::project::{ImportError, Project, ProjectConfig, ProjectError};
 use crate::verifier::Verifier;
 
-/// A Cleaner analyzes loaded modules to extract information about claims and proofs.
+/// A ModuleCleaner analyzes loaded modules to extract information about claims and proofs.
 /// It stores the project root and module spec, but loads fresh Projects for each operation.
-pub struct Cleaner {
+pub struct ModuleCleaner {
     project_root: PathBuf,
     module_spec: ModuleDescriptor,
 }
@@ -25,7 +25,7 @@ pub struct CleanStats {
     pub final_lines: usize,
 }
 
-/// Errors that can occur when using the Cleaner.
+/// Errors that can occur when using the ModuleCleaner.
 #[derive(Debug)]
 pub enum CleanerError {
     Project(ProjectError),
@@ -53,10 +53,10 @@ impl From<io::Error> for CleanerError {
     }
 }
 
-impl Cleaner {
-    /// Creates a new Cleaner for the specified project and module.
+impl ModuleCleaner {
+    /// Creates a new ModuleCleaner for the specified project and module.
     pub fn new(project_root: PathBuf, module_spec: ModuleDescriptor) -> Self {
-        Cleaner {
+        ModuleCleaner {
             project_root,
             module_spec,
         }
@@ -453,6 +453,85 @@ impl Cleaner {
     }
 }
 
+/// A ProjectCleaner cleans all modules in a project.
+/// It finds all modules in the project and runs a ModuleCleaner on each one.
+pub struct ProjectCleaner {
+    project_root: PathBuf,
+}
+
+impl ProjectCleaner {
+    /// Creates a new ProjectCleaner for the specified project.
+    pub fn new(project_root: PathBuf) -> Self {
+        ProjectCleaner { project_root }
+    }
+
+    /// Cleans all modules in the project.
+    /// Returns the total statistics across all modules.
+    pub fn clean(&self) -> Result<CleanStats, CleanerError> {
+        // Load the project to discover all modules
+        let config = ProjectConfig {
+            use_filesystem: true,
+            read_cache: true,
+            write_cache: false,
+        };
+        let mut project = Project::new_local(self.project_root.as_path(), config)?;
+
+        // Add all source files as targets
+        project.add_src_targets();
+
+        // Collect all module descriptors
+        let modules: Vec<ModuleDescriptor> = project
+            .iter_modules()
+            .map(|(descriptor, _)| descriptor.clone())
+            .collect();
+
+        println!("Found {} modules to clean", modules.len());
+
+        // Clean each module and accumulate stats
+        let mut total_claims_deleted = 0;
+        let mut total_claims_kept = 0;
+        let mut total_original_lines = 0;
+        let mut total_final_lines = 0;
+
+        for (i, module_spec) in modules.iter().enumerate() {
+            println!(
+                "\n[{}/{}] Cleaning module: {}",
+                i + 1,
+                modules.len(),
+                module_spec
+            );
+
+            let cleaner = ModuleCleaner::new(self.project_root.clone(), module_spec.clone());
+
+            let stats = cleaner.clean()?;
+            total_claims_deleted += stats.claims_deleted;
+            total_claims_kept += stats.claims_kept;
+            total_original_lines += stats.original_lines;
+            total_final_lines += stats.final_lines;
+        }
+
+        let total_stats = CleanStats {
+            claims_deleted: total_claims_deleted,
+            claims_kept: total_claims_kept,
+            original_lines: total_original_lines,
+            final_lines: total_final_lines,
+        };
+
+        // Print summary
+        println!("\n=== Project Cleaning Summary ===");
+        println!("  Total claims deleted: {}", total_stats.claims_deleted);
+        println!("  Total claims kept: {}", total_stats.claims_kept);
+        println!(
+            "  Total lines: {} -> {} (removed {} lines)",
+            total_stats.original_lines,
+            total_stats.final_lines,
+            total_stats.original_lines - total_stats.final_lines
+        );
+
+        Ok(total_stats)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -475,7 +554,7 @@ mod tests {
         fs::write(&test_file, input).unwrap();
 
         // Create a cleaner for this module
-        let cleaner = Cleaner::new(
+        let cleaner = ModuleCleaner::new(
             temp_dir.path().to_path_buf(),
             ModuleDescriptor::name("test"),
         );

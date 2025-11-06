@@ -1,7 +1,7 @@
 // The Acorn CLI.
 // You can run a language server, verify a file, or reverify the whole project.
 
-use acorn::cleaner::Cleaner;
+use acorn::cleaner::{ModuleCleaner, ProjectCleaner};
 use acorn::doc_generator::DocGenerator;
 use acorn::module::ModuleDescriptor;
 use acorn::project::{Project, ProjectConfig};
@@ -121,11 +121,11 @@ enum Command {
         line: u32,
     },
 
-    /// Remove redundant claims from a module
+    /// Remove redundant claims from a module or entire project
     Clean {
-        /// Module name to clean
+        /// Module name to clean (if not provided, cleans all modules in the project)
         #[clap(value_name = "MODULE")]
-        module: String,
+        module: Option<String>,
     },
 }
 
@@ -347,16 +347,35 @@ async fn main() {
         }
 
         Some(Command::Clean { module }) => {
-            let module_spec = ModuleDescriptor::name(&module);
-            let cleaner = Cleaner::new(current_dir, module_spec);
+            match module {
+                Some(module_name) => {
+                    // Clean a specific module
+                    let module_spec = ModuleDescriptor::name(&module_name);
+                    let cleaner = ModuleCleaner::new(current_dir, module_spec);
 
-            match cleaner.clean() {
-                Ok(_stats) => {
-                    // Stats are already printed by clean()
+                    match cleaner.clean() {
+                        Ok(_stats) => {
+                            // Stats are already printed by clean()
+                        }
+                        Err(e) => {
+                            println!("Error cleaning module: {:?}", e);
+                            std::process::exit(1);
+                        }
+                    }
                 }
-                Err(e) => {
-                    println!("Error cleaning module: {:?}", e);
-                    std::process::exit(1);
+                None => {
+                    // Clean the entire project
+                    let cleaner = ProjectCleaner::new(current_dir);
+
+                    match cleaner.clean() {
+                        Ok(_stats) => {
+                            // Stats are already printed by clean()
+                        }
+                        Err(e) => {
+                            println!("Error cleaning project: {:?}", e);
+                            std::process::exit(1);
+                        }
+                    }
                 }
             }
         }
