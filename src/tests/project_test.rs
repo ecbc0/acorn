@@ -1600,3 +1600,17 @@ fn test_strict_mode_rejects_axiomatic_constants() {
         ),
     }
 }
+
+#[test]
+fn test_prelude_auto_import() {
+    let mut p = Project::new_mock();
+
+    // Create a prelude.ac file with a constant
+    p.mock("/mock/prelude.ac", "let foo: Bool = true");
+
+    // Create a module that uses the prelude constant without importing
+    p.mock("/mock/main.ac", "let bar: Bool = not(foo)");
+
+    // This should work because prelude is auto-imported
+    p.expect_ok("main");
+}

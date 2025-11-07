@@ -17,7 +17,7 @@ use crate::project::Project;
 use crate::proposition::Proposition;
 use crate::stack::Stack;
 use crate::termination_checker::TerminationChecker;
-use crate::token::{self, Token};
+use crate::token::{self, Token, TokenType};
 use crate::token_map::TokenMap;
 use crate::type_unifier::{TypeUnifier, TypeclassRegistry};
 use crate::unresolved_constant::UnresolvedConstant;
@@ -1325,6 +1325,53 @@ impl BindingMap {
                 entry.required.insert(required_attr.clone());
             }
         }
+        Ok(())
+    }
+
+    /// Imports all exportable names from a prelude module.
+    /// This is similar to import_module + import_name for all names, but done automatically.
+    /// Used to auto-import prelude.ac into every module.
+    pub fn import_prelude(
+        &mut self,
+        prelude_bindings: &BindingMap,
+        project: &Project,
+    ) -> compilation::Result<()> {
+        // First, import the module's typeclass and datatype info
+        self.import_module(
+            vec!["prelude".to_string()],
+            prelude_bindings,
+            &Token::empty(),
+        )?;
+
+        // Import all unqualified names from prelude
+        // We need to clone the keys because we'll be mutating self
+        let names: Vec<String> = prelude_bindings.unqualified.keys().cloned().collect();
+
+        for name in names {
+            // Create a token for this name for error reporting
+            let name_token = TokenType::Identifier.new_token(&name);
+
+            // Use the existing import_name logic to import each name
+            let _ = self.import_name(project, prelude_bindings.module_id, &name_token)?;
+        }
+
+        // Import all type names that aren't already imported via unqualified constants
+        for typename in prelude_bindings.typename_to_type.keys() {
+            // Skip Bool since it's a built-in
+            if typename != "Bool" && !self.typename_to_type.contains_key(typename) {
+                if let Some(potential_type) = prelude_bindings.typename_to_type.get(typename) {
+                    let _ = self.add_type_alias(typename, potential_type.clone(), &Token::empty());
+                }
+            }
+        }
+
+        // Import all typeclass names
+        for (tc_name, typeclass) in &prelude_bindings.name_to_typeclass {
+            if !self.name_to_typeclass.contains_key(tc_name) {
+                let _ = self.add_typeclass_name(tc_name, typeclass.clone(), &Token::empty());
+            }
+        }
+
         Ok(())
     }
 

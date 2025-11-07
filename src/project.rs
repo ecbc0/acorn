@@ -1064,6 +1064,20 @@ impl Project {
         self.module_map.insert(descriptor.clone(), module_id);
 
         let mut env = Environment::new(module_id);
+
+        // Auto-import prelude if it exists and we're not loading prelude itself
+        let is_prelude = matches!(descriptor, ModuleDescriptor::Name(parts) if parts.len() == 1 && parts[0] == "prelude");
+        if !is_prelude {
+            let prelude_descriptor = ModuleDescriptor::name("prelude");
+            // Try to load prelude, but don't fail if it doesn't exist
+            if let Ok(prelude_id) = self.load_module(&prelude_descriptor, false) {
+                if let Some(prelude_bindings) = self.get_bindings(prelude_id) {
+                    // Silently ignore errors when importing prelude
+                    let _ = env.bindings.import_prelude(prelude_bindings, self);
+                }
+            }
+        }
+
         let tokens = Token::scan(&text);
         if let Err(e) = env.add_tokens(self, tokens, strict) {
             if e.circular.is_some() {
