@@ -53,7 +53,16 @@ All commands are run from `~/acorn`.
 
    Meanwhile, you can edit the release description [here](https://github.com/acornprover/acorn/releases).
 
-3. Publish the extension to the Visual Studio Marketplace.
+3. If something goes wrong
+
+   Figure out the tag, something like `v0.1.2`.
+
+   ```
+   git tag -d $TAG
+   git push --delete upstream $TAG
+   ```
+
+4. Publish the extension to the Visual Studio Marketplace.
 
    ```bash
    ./scripts/publish.sh
