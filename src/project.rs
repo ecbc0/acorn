@@ -414,7 +414,14 @@ impl Project {
     // Set the file content. This has priority over the actual filesystem.
     pub fn mock(&mut self, filename: &str, content: &str) {
         assert!(!self.config.use_filesystem);
-        let path = PathBuf::from(filename);
+        // Convert Unix-style /mock/ paths to be relative to src_dir.
+        // This is needed because on Windows, PathBuf::from("/mock/foo.ac") creates
+        // a relative path "\mock\foo.ac", not an absolute path.
+        let path = if filename.starts_with("/mock/") {
+            self.src_dir.join(&filename[6..]) // strip "/mock/"
+        } else {
+            PathBuf::from(filename)
+        };
         let next_version = match self.get_version(&path) {
             Some(version) => version + 1,
             None => 0,
