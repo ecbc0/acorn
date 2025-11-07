@@ -13,6 +13,7 @@ use color_backtrace::BacktracePrinter;
 use dashmap::DashMap;
 use tokio::sync::{mpsc, RwLock};
 use tower_lsp::jsonrpc;
+use tower_lsp::lsp_types::request::GotoImplementationResponse;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
@@ -514,6 +515,7 @@ impl LanguageServer for AcornLanguageServer {
                 text_document_sync: Some(sync_options),
                 completion_provider: Some(CompletionOptions::default()),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
+                definition_provider: Some(OneOf::Left(true)),
                 ..ServerCapabilities::default()
             },
         })
@@ -681,6 +683,36 @@ impl LanguageServer for AcornLanguageServer {
     async fn shutdown(&self) -> jsonrpc::Result<()> {
         log("shutdown");
         Ok(())
+    }
+
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> jsonrpc::Result<Option<GotoImplementationResponse>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
+        let project = self.project_manager.read().await;
+
+        // We log something in the conditions that are unexpected
+        let Some(path) = to_path(&uri) else {
+            log(&format!("could not convert to path: {}", uri));
+            return Ok(None);
+        };
+        let Ok(descriptor) = project.descriptor_from_path(&path) else {
+            log(&format!(
+                "could not get descriptor for path: {}",
+                path.display()
+            ));
+            return Ok(None);
+        };
+        let Some(env) = project.get_env(&descriptor) else {
+            log(&format!("no environment for module: {:?}", descriptor));
+            return Ok(None);
+        };
+
+        Ok(project
+            .definition_location(&env, pos.line, pos.character)
+            .map(GotoDefinitionResponse::Scalar))
     }
 }
 

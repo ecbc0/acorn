@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::{fmt, io};
 
 use regex::Regex;
-use tower_lsp::lsp_types::{CompletionItem, Hover, HoverContents, MarkedString, Url};
+use tower_lsp::lsp_types::{self, CompletionItem, Hover, HoverContents, MarkedString, Url};
 use walkdir::WalkDir;
 
 use crate::acorn_type::{AcornType, Datatype, Typeclass};
@@ -705,8 +705,12 @@ impl Project {
         Ok(HoverContents::Array(parts))
     }
 
-    /// Create a "Go to definition" link for the given entity.
-    fn create_go_to_link(&self, entity: &NamedEntity, env: &Environment) -> Option<String> {
+    /// Gets the location and the name of a definition if available
+    fn definition_info(
+        &self,
+        entity: &NamedEntity,
+        env: &Environment,
+    ) -> Option<(String, Location)> {
         let (name, range, module_id) = match entity {
             NamedEntity::Value(value) => {
                 if let Some(constant_name) = value.as_simple_constant() {
@@ -781,14 +785,38 @@ impl Project {
         let descriptor = self.get_module_descriptor(module_id)?;
         let file_path = self.path_from_descriptor(descriptor).ok()?;
 
+        let uri = Url::from_file_path(file_path).ok()?;
+
+        Some((name, Location { uri, range: *range }))
+    }
+
+    /// Create a "Go to definition" link for the given entity.
+    fn create_go_to_link(&self, entity: &NamedEntity, env: &Environment) -> Option<String> {
+        let (name, location) = self.definition_info(entity, env)?;
+
         // Create a VSCode-style URI link
         // The format is: file:///path/to/file.ac#line,character
-        let line = range.start.line + 1; // VSCode uses 1-based line numbers for links
-        let character = range.start.character + 1; // VSCode uses 1-based character numbers for links
-        let file_uri = format!("file://{}", file_path.to_string_lossy());
+        let line = location.range.start.line + 1; // VSCode uses 1-based line numbers for links
+        let character = location.range.start.character + 1; // VSCode uses 1-based character numbers for links
+        let file_uri = location.uri.as_str();
         let link = format!("[Go to {}]({}#{},{})", name, file_uri, line, character);
 
         Some(link)
+    }
+
+    /// Figure out the definition location of the item at the given line_number and character
+    pub fn definition_location(
+        &self,
+        env: &Environment,
+        line_number: u32,
+        character: u32,
+    ) -> Option<lsp_types::Location> {
+        let (env, _, info) = env.find_token(line_number, character)?;
+        self.definition_info(&info.entity, env)
+            .map(|(_, location)| lsp_types::Location {
+                uri: location.uri,
+                range: location.range,
+            })
     }
 
     /// Figure out the hover information to display.

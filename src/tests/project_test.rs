@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
+use im::HashMap;
 use tokio_util::sync::CancellationToken;
+use tower_lsp::lsp_types::{Location, Position, Range, Url};
 
 use crate::builder::{BuildEvent, BuildStatus, Builder};
 use crate::environment::LineType;
@@ -957,6 +959,221 @@ fn test_hover_with_imports() {
 
     let val_hover = format!("{:?}", p.hover(&env, 1, 21));
     assert!(val_hover.contains("val_doc_comment"));
+}
+
+#[test]
+fn test_definition_location_basic() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        indoc! {r#"
+    /// Nat_doc_comment
+    inductive Nat {                           // line 1
+        0
+        suc(Nat)                              // line 3
+    }
+    // 3456789012345678901234567890
+    let one: Nat = Nat.suc(Nat.0)             // line 6
+    define make_nat(odd: Bool) -> Nat {       // line 7
+        if odd {
+            one                               // line 9
+        } else {
+            Nat.suc(one)                      // line 11
+        }
+    }
+    /// HasZero_doc_comment
+    typeclass Z: HasZero {                    // line 15
+        0: Z
+    }
+    typeclass O: HasOne extends HasZero {     // line 18
+        1: O
+    }
+    // 34567890123456789012345678901
+    instance Nat: HasZero {                   // line 22
+        let 0 = Nat.0                         // line 23
+    }
+    theorem eq_zero[Z: HasZero](a: Z) {       // line 25
+        a = Z.0
+    } by {
+        let b: Z = a
+    }
+    /// equals_doc_comment
+    define equals[T](x: T, y: T) -> Bool {    // line 31
+        x = y
+    }
+    let z_eq_z = equals(Nat.0, Nat.0)         // line 34
+    /// num_doc_comment
+    let num: Nat = make_nat(true)             // line 36
+    /// List_doc_comment
+    inductive List[T] {                       // line 38
+        nil
+        cons(T, List[T])                      // line 40
+    }
+    let l = List.cons(num, List.nil[Nat])     // line 42
+    // 34567890123456789012345678901
+    let m: Nat satisfy {                      // line 44
+        m = m
+    }
+    "#},
+    );
+    p.expect_ok("main");
+    let desc = ModuleDescriptor::name("main");
+    let env = p.get_env(&desc).expect("no env for main");
+
+    let location = |line, start_character, end_character| Location {
+        uri: Url::from_file_path("/mock/main.ac").unwrap(),
+        range: Range {
+            start: Position {
+                line,
+                character: start_character,
+            },
+            end: Position {
+                line,
+                character: end_character,
+            },
+        },
+    };
+
+    // expected locations
+    let nat = Some(location(1, 10, 13));
+    let one = Some(location(6, 4, 7));
+    let make_nat = Some(location(7, 7, 15));
+    let has_zero = Some(location(15, 13, 20));
+    let equals = Some(location(31, 7, 13));
+    let list = Some(location(38, 10, 14));
+
+    // expected definition-linkable references,
+    // first value is the expected definition location,
+    // second value is the line of the reference,
+    // third value is the start character of the reference, and
+    // fourth value is the end character of the reference (exclusive)
+    let expected_definition_links = [
+        (&nat, 3, 8, 11),        // recursive reference
+        (&nat, 6, 9, 12),        // type of let variable
+        (&nat, 6, 15, 18),       // suc inductive function call
+        (&nat, 6, 23, 26),       // 0 inductive constant
+        (&nat, 7, 30, 33),       // return type
+        (&nat, 11, 8, 11),       // suc inductive function call
+        (&nat, 22, 9, 12),       // instance Nat
+        (&nat, 23, 12, 15),      // 0 inductive constant
+        (&nat, 34, 20, 23),      // 0 inductive constant
+        (&nat, 34, 27, 30),      // 0 inductive constant
+        (&nat, 42, 32, 35),      // generic argument
+        (&nat, 44, 7, 10),       // type of let satisfy variable
+        (&nat, 36, 9, 12),       // type of let variable
+        (&one, 9, 8, 11),        // constant expression
+        (&one, 11, 16, 19),      // function parameter
+        (&make_nat, 36, 15, 23), // function call
+        (&has_zero, 18, 28, 35), // extends typeclass HasZero
+        (&has_zero, 22, 14, 21), // instance typeclass HasZero
+        (&has_zero, 25, 19, 26), // generic bound HasZero
+        (&equals, 34, 13, 19),   // function call
+        (&list, 40, 12, 16),     // recursive reference
+        (&list, 42, 8, 12),      // cons inductive function call
+        (&list, 42, 23, 27),     // nil inductive constant
+    ];
+    // turns the above into a hashmap that maps pairs (line, char) to expected definition location,
+    // non-existing pairs are expected to not reference any definition
+    let mut expected_definition_links: HashMap<(u32, u32), _> = expected_definition_links
+        .into_iter()
+        .flat_map(|(loc, line, start, end)| (start..end).map(move |char| ((line, char), loc)))
+        .collect();
+
+    // iterate over all cells in input file,
+    // we iterate more lines than there exists and more characters than there exists in one line to
+    // test those cases too
+    for line in 0..=38 {
+        for char in 0..=54 {
+            assert_eq!(
+                p.definition_location(&env, line, char),
+                *expected_definition_links
+                    .remove(&(line, char))
+                    .unwrap_or(&None),
+                "Mismatching definition location for line {} and char {}",
+                line,
+                char
+            );
+        }
+    }
+}
+
+#[test]
+fn test_definition_location_with_imports() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/foo.ac",
+        indoc! {r"
+        /// module_doc_comment
+        
+        /// type_doc_comment
+        inductive Foo {               // line 3
+            foo
+        }
+
+        /// val_doc_comment
+        let bar = (Foo.foo = Foo.foo) // line 8
+        "},
+    );
+    p.mock(
+        "/mock/main.ac",
+        indoc! {r#"
+        // 3456789012345678901234567890  
+        from foo import Foo, bar         // line 1
+        "#},
+    );
+    let desc = ModuleDescriptor::name("main");
+    let env = p.get_env(&desc).expect("no env for main");
+
+    let location = |file, line, start_character, end_character| Location {
+        uri: Url::from_file_path(file).unwrap(),
+        range: Range {
+            start: Position {
+                line,
+                character: start_character,
+            },
+            end: Position {
+                line,
+                character: end_character,
+            },
+        },
+    };
+
+    // expected locations
+    let foo_location = Some(location("/mock/foo.ac", 3, 10, 13));
+    let bar_location = Some(location("/mock/foo.ac", 8, 4, 7));
+
+    // expected definition-linkable references,
+    // first value is the expected definition location,
+    // second value is the line of the reference,
+    // third value is the start character of the reference, and
+    // fourth value is the end character of the reference (exclusive)
+    let expected_definition_links = [
+        (&foo_location, 1, 16, 19), // type import
+        (&bar_location, 1, 21, 24), // function import
+    ];
+    // turns the above into a hashmap that maps pairs (line, char) to expected definition location,
+    // non-existing pairs are expected to not reference any definition
+    let mut expected_definition_links: HashMap<(u32, u32), _> = expected_definition_links
+        .into_iter()
+        .flat_map(|(loc, line, start, end)| (start..end).map(move |char| ((line, char), loc)))
+        .collect();
+
+    // iterate over all cells in main file,
+    // we iterate more lines than there exists and more characters than there exists in one line to
+    // test those cases too
+    for line in 0..=3 {
+        for char in 0..=54 {
+            assert_eq!(
+                p.definition_location(&env, line, char),
+                *expected_definition_links
+                    .remove(&(line, char))
+                    .unwrap_or(&None),
+                "Mismatching definition location for line {} and char {}",
+                line,
+                char
+            );
+        }
+    }
 }
 
 #[test]
