@@ -15,9 +15,5 @@
   "terminal.integrated.env.linux": {
     "CC": null,
     "SOURCE_DATE_EPOCH": null
-  },
-  "rust-analyzer.server.extraEnv": {
-    "CC": null,
-    "SOURCE_DATE_EPOCH": null
   }
 }
