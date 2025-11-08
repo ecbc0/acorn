@@ -250,7 +250,7 @@ fn test_target_outside_library() {
     let mut p = Project::new_mock();
     let outside_path = "/outside/foo.ac";
     p.mock(outside_path, FOO_AC);
-    p.add_target_by_path(&PathBuf::from(outside_path))
+    p.add_target_by_path(&PathBuf::from(localize_mock_filename(outside_path)))
         .expect("adding outside target failed");
     expect_build_ok(&mut p);
 }
@@ -271,9 +271,9 @@ fn test_completions() {
         }
         "#,
     );
-    let main = PathBuf::from("/mock/main.ac");
+    let main = PathBuf::from(localize_mock_filename("/mock/main.ac"));
     p.mock(
-        main.to_str().unwrap(),
+        "/mock/main.ac",
         r#"
         from nat import Nat
         let foo: Nat = axiom
@@ -352,15 +352,23 @@ fn test_build_cache() {
 
     // If we change main, we rebuild both modules
     let touched_main = format!("// Touch\n{}", main_text);
-    p.update_file(PathBuf::from("/mock/main.ac"), &touched_main, 1)
-        .expect("update failed");
+    p.update_file(
+        PathBuf::from(localize_mock_filename("/mock/main.ac")),
+        &touched_main,
+        1,
+    )
+    .expect("update failed");
     let num_success = expect_build_ok(&mut p);
     assert_eq!(num_success, 2);
 
     // If we change foo, we should have to rebuild both
     let touched_foo = format!("// Touch\n{}", foo_text);
-    p.update_file(PathBuf::from("/mock/foo.ac"), &touched_foo, 1)
-        .expect("update failed");
+    p.update_file(
+        PathBuf::from(localize_mock_filename("/mock/foo.ac")),
+        &touched_foo,
+        1,
+    )
+    .expect("update failed");
     let num_success = expect_build_ok(&mut p);
     assert_eq!(num_success, 2);
 }
@@ -386,8 +394,12 @@ fn test_build_cache_partial_rebuild() {
 
     // Change the middle theorem
     lines[4] = "    false = false";
-    p.update_file(PathBuf::from(filename), &lines.join("\n"), 1)
-        .expect("update failed");
+    p.update_file(
+        PathBuf::from(localize_mock_filename(filename)),
+        &lines.join("\n"),
+        1,
+    )
+    .expect("update failed");
     let num_success = expect_build_ok(&mut p);
     // With certificates, all theorems in the module are re-proven when any part changes
     assert_eq!(num_success, 3);
