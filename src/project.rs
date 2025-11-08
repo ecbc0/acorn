@@ -175,6 +175,22 @@ fn check_valid_module_part(s: &str, error_name: &str) -> Result<(), ImportError>
     Ok(())
 }
 
+/// Convert a Unix-style path (like /mock/foo.ac) into a platform-specific absolute path.
+/// On Windows, this converts /mock/foo to C:\mock\foo to ensure it's treated as absolute.
+/// On Unix, the path is already absolute, so we just return it as-is.
+pub fn localize_mock_filename(s: &str) -> String {
+    if cfg!(windows) {
+        // On Windows, convert Unix-style absolute paths to Windows-style
+        if s.starts_with('/') {
+            format!("C:{}", s.replace('/', "\\"))
+        } else {
+            s.to_string()
+        }
+    } else {
+        s.to_string()
+    }
+}
+
 impl Project {
     // Create a new project.
     pub fn new(src_dir: PathBuf, build_dir: PathBuf, config: ProjectConfig) -> Project {
@@ -265,7 +281,7 @@ impl Project {
 
     // Create a Project where nothing can be imported.
     pub fn new_mock() -> Project {
-        let mock_dir = PathBuf::from("/mock");
+        let mock_dir = PathBuf::from(localize_mock_filename("/mock"));
         let build_dir = mock_dir.join("build");
         let config = ProjectConfig {
             use_filesystem: false,
@@ -412,16 +428,15 @@ impl Project {
     }
 
     // Set the file content. This has priority over the actual filesystem.
+    // The filename should be in Linux-style format (e.g., "/mock/foo.ac").
+    // It will be converted to the platform-specific format automatically.
     pub fn mock(&mut self, filename: &str, content: &str) {
         assert!(!self.config.use_filesystem);
-        // Convert Unix-style /mock/ paths to be relative to src_dir.
-        // This is needed because on Windows, PathBuf::from("/mock/foo.ac") creates
-        // a relative path "\mock\foo.ac", not an absolute path.
-        let path = if filename.starts_with("/mock/") {
-            self.src_dir.join(&filename[6..]) // strip "/mock/"
-        } else {
-            PathBuf::from(filename)
-        };
+        // Convert Unix-style /mock/ paths to platform-specific absolute paths.
+        // On Windows, this converts "/mock/foo.ac" to "C:\mock\foo.ac".
+        // On Unix, the path remains "/mock/foo.ac".
+        let localized = localize_mock_filename(filename);
+        let path = PathBuf::from(localized);
         let next_version = match self.get_version(&path) {
             Some(version) => version + 1,
             None => 0,

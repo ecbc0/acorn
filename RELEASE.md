@@ -53,14 +53,25 @@ All commands are run from `~/acorn`.
 
    Meanwhile, you can edit the release description [here](https://github.com/acornprover/acorn/releases).
 
-3. If something goes wrong
+3. If the tests fail
 
    Figure out the tag, something like `v0.1.2`.
 
+   Delete the draft release at https://github.com/acornprover/acorn/releases .
+
    ```
+   # Delete the old tag
    git tag -d $TAG
    git push --delete upstream $TAG
+
+   # Rebuild
+   ./scripts/crossbuild.sh
+   ./python/tag.py
+   ./scripts/upload.sh
    ```
+
+   Then check the build: https://github.com/acornprover/acorn/actions
+   Edit the new release description: https://github.com/acornprover/acorn/releases
 
 4. Publish the extension to the Visual Studio Marketplace.
 

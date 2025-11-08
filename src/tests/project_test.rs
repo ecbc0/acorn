@@ -8,7 +8,7 @@ use crate::builder::{BuildEvent, BuildStatus, Builder};
 use crate::environment::LineType;
 use crate::module::ModuleDescriptor;
 use crate::names::ConstantName;
-use crate::project::{Project, ProjectConfig};
+use crate::project::{localize_mock_filename, Project, ProjectConfig};
 use indoc::indoc;
 
 fn expect_build_ok(project: &mut Project) -> i32 {
@@ -1021,7 +1021,8 @@ fn test_definition_location_basic() {
     let env = p.get_env(&desc).expect("no env for main");
 
     let location = |line, start_character, end_character| Location {
-        uri: Url::from_file_path("/mock/main.ac").unwrap(),
+        uri: Url::from_file_path(localize_mock_filename("/mock/main.ac"))
+            .expect("Failed to create URL from /mock/main.ac - this path should be valid"),
         range: Range {
             start: Position {
                 line,
@@ -1125,7 +1126,8 @@ fn test_definition_location_with_imports() {
     let env = p.get_env(&desc).expect("no env for main");
 
     let location = |file, line, start_character, end_character| Location {
-        uri: Url::from_file_path(file).unwrap(),
+        uri: Url::from_file_path(localize_mock_filename(file))
+            .unwrap_or_else(|_| panic!("Failed to create URL from mock file path: {}", file)),
         range: Range {
             start: Position {
                 line,
