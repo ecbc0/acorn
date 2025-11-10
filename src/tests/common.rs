@@ -22,7 +22,7 @@ pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certi
     for fact in facts {
         processor.add_fact(fact).unwrap();
     }
-    processor.set_goal(&goal).unwrap();
+    processor.set_goal(&goal, project).unwrap();
     let outcome = processor.search(ProverMode::Test);
 
     assert_eq!(outcome, Outcome::Success);
@@ -67,7 +67,7 @@ pub fn prove_text(text: &str, goal_name: &str) -> Outcome {
                     return Outcome::Inconsistent;
                 }
             }
-            if let Err(_) = processor.set_goal(&goal) {
+            if let Err(_) = processor.set_goal(&goal, &project) {
                 return Outcome::Inconsistent;
             }
 
@@ -95,7 +95,7 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
         for fact in facts {
             processor.add_fact(fact)?;
         }
-        processor.set_goal(&goal)?;
+        processor.set_goal(&goal, &project)?;
 
         // This is a key difference between our verification tests, and our real verification.
         // This helps us test that verification fails in cases where we do have an

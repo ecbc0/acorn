@@ -8,6 +8,7 @@ use crate::binding_map::BindingMap;
 use crate::certificate::Certificate;
 use crate::clause::Clause;
 use crate::code_generator::{CodeGenerator, Error};
+use crate::goal::Goal;
 use crate::literal::Literal;
 use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::project::Project;
@@ -76,7 +77,13 @@ impl SaturationProver {
     /// Sets the prover goal and adds the goal-derived steps.
     /// This replaces the common pattern of calling `add_steps` for the goal
     /// steps followed by `set_goal`.
-    pub fn set_goal(&mut self, ng: NormalizedGoal, steps: Vec<ProofStep>) {
+    pub fn set_goal(
+        &mut self,
+        ng: NormalizedGoal,
+        steps: Vec<ProofStep>,
+        _project: &Project,
+        _original_goal: &Goal,
+    ) {
         assert!(self.goal.is_none());
         self.add_steps(steps);
         self.goal = Some(ng);
@@ -564,8 +571,14 @@ impl crate::prover::Prover for SaturationProver {
         self.add_steps(steps)
     }
 
-    fn set_goal(&mut self, goal: NormalizedGoal, steps: Vec<ProofStep>) {
-        self.set_goal(goal, steps)
+    fn set_goal(
+        &mut self,
+        goal: NormalizedGoal,
+        steps: Vec<ProofStep>,
+        project: &Project,
+        original_goal: &Goal,
+    ) {
+        self.set_goal(goal, steps, project, original_goal)
     }
 
     fn search(&mut self, mode: ProverMode) -> Outcome {

@@ -3,6 +3,7 @@ use std::fmt;
 use crate::binding_map::BindingMap;
 use crate::certificate::Certificate;
 use crate::code_generator::Error;
+use crate::goal::Goal;
 use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::project::Project;
 use crate::proof_step::ProofStep;
@@ -47,7 +48,13 @@ pub trait Prover: Clone {
     fn add_steps(&mut self, steps: Vec<ProofStep>);
 
     /// Set the goal and add goal-derived steps
-    fn set_goal(&mut self, goal: NormalizedGoal, steps: Vec<ProofStep>);
+    fn set_goal(
+        &mut self,
+        goal: NormalizedGoal,
+        steps: Vec<ProofStep>,
+        project: &Project,
+        original_goal: &Goal,
+    );
 
     /// Run the proof search with the given mode
     fn search(&mut self, mode: ProverMode) -> Outcome;

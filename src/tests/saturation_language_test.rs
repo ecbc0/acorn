@@ -1012,7 +1012,7 @@ fn test_proving_with_mixin_instance() {
         for fact in facts {
             processor.add_fact(fact).unwrap();
         }
-        processor.set_goal(&goal).unwrap();
+        processor.set_goal(&goal, &p).unwrap();
 
         let outcome = processor.search(crate::prover::ProverMode::Test);
         assert_eq!(outcome, Outcome::Success);

@@ -95,7 +95,7 @@ impl<P: Prover> Processor<P> {
     }
 
     /// Normalizes a goal and sets it as the prover's goal.
-    pub fn set_goal(&mut self, goal: &Goal) -> Result<(), BuildError> {
+    pub fn set_goal(&mut self, goal: &Goal, project: &Project) -> Result<(), BuildError> {
         let source = &goal.proposition.source;
         let (ng, steps) = self.normalizer.normalize_goal(goal)?;
         if VERBOSE {
@@ -113,7 +113,7 @@ impl<P: Prover> Processor<P> {
             self.checker
                 .insert_clause(&step.clause, StepReason::Assumption(step_source.clone()));
         }
-        self.prover.set_goal(ng, steps);
+        self.prover.set_goal(ng, steps, project, goal);
         Ok(())
     }
 

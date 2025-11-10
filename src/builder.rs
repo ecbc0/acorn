@@ -678,7 +678,7 @@ impl<'a> Builder<'a> {
 
         // Try searching
         let processor = Rc::make_mut(&mut processor);
-        processor.set_goal(goal)?;
+        processor.set_goal(goal, self.project)?;
         let start = std::time::Instant::now();
         let outcome = processor.search(ProverMode::Interactive);
         if outcome == Outcome::Success {
