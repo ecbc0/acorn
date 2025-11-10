@@ -1,5 +1,5 @@
 // Test binary for the TacticsModel generative model.
-// Usage: cargo run --bin test_gen -- <path_to_onnx_model>
+// Usage: cargo run --bin test_gen -- <path_to_model_directory>
 
 use acorn::generative::tactics_model::TacticsModel;
 use std::env;
@@ -8,11 +8,12 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("Usage: {} <model_path>", args[0]);
+        eprintln!("Usage: {} <model_directory>", args[0]);
         eprintln!(
-            "Example: {} ~/tactics/tactics-2025-10-16-13-51-07.onnx",
+            "Example: {} ~/tactics/export/tactics-2025-11-10-11-58-39",
             args[0]
         );
+        eprintln!("\nThe directory should contain: model.onnx, tokenizer.json, and config.json");
         std::process::exit(1);
     }
 
@@ -28,6 +29,7 @@ fn main() {
     };
 
     println!("Model loaded successfully!");
+    println!("Vocabulary size: {}", model.vocab_size());
     println!("Context length: {}", model.context_length());
 
     // Test 1: Encoding/decoding
@@ -57,8 +59,8 @@ fn main() {
 
             // Sample a token
             let next_token = model.sample_token(&logits, 1.0);
-            let next_char = (next_token as u8) as char;
-            println!("Sampled next token: {} ('{}')", next_token, next_char);
+            let next_text = model.decode(&[next_token]);
+            println!("Sampled next token: {} ('{}')", next_token, next_text);
         }
         Err(e) => {
             eprintln!("Inference error: {}", e);
