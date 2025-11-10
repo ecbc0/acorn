@@ -6,6 +6,7 @@ use super::passive_set::PassiveSet;
 use super::proof::Proof;
 use crate::binding_map::BindingMap;
 use crate::certificate::Certificate;
+use crate::checker::Checker;
 use crate::clause::Clause;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::goal::Goal;
@@ -83,6 +84,7 @@ impl SaturationProver {
         steps: Vec<ProofStep>,
         _project: &Project,
         _original_goal: &Goal,
+        _checker: &Checker,
     ) {
         assert!(self.goal.is_none());
         self.add_steps(steps);
@@ -577,8 +579,9 @@ impl crate::prover::Prover for SaturationProver {
         steps: Vec<ProofStep>,
         project: &Project,
         original_goal: &Goal,
+        checker: &Checker,
     ) {
-        self.set_goal(goal, steps, project, original_goal)
+        self.set_goal(goal, steps, project, original_goal, checker)
     }
 
     fn search(&mut self, mode: ProverMode) -> Outcome {

@@ -113,7 +113,8 @@ impl<P: Prover> Processor<P> {
             self.checker
                 .insert_clause(&step.clause, StepReason::Assumption(step_source.clone()));
         }
-        self.prover.set_goal(ng, steps, project, goal);
+        self.prover
+            .set_goal(ng, steps, project, goal, &self.checker);
         Ok(())
     }
 

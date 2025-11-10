@@ -2,6 +2,7 @@ use std::fmt;
 
 use crate::binding_map::BindingMap;
 use crate::certificate::Certificate;
+use crate::checker::Checker;
 use crate::code_generator::Error;
 use crate::goal::Goal;
 use crate::normalizer::{NormalizedGoal, Normalizer};
@@ -54,6 +55,7 @@ pub trait Prover: Clone {
         steps: Vec<ProofStep>,
         project: &Project,
         original_goal: &Goal,
+        checker: &Checker,
     );
 
     /// Run the proof search with the given mode

@@ -189,6 +189,43 @@ impl TacticsModel {
         Ok(self.decode(&generated_tokens))
     }
 
+    /// Generate a single line of text, stopping at newline or max_tokens
+    /// Returns the generated text without the trailing newline
+    pub fn generate_line(
+        &self,
+        prompt: &str,
+        max_tokens: usize,
+        temperature: f32,
+    ) -> Result<String, Box<dyn Error>> {
+        let mut current_tokens = self.encode(prompt);
+        let mut generated_tokens = Vec::new();
+
+        for _ in 0..max_tokens {
+            // Truncate to context length if needed
+            let start = if current_tokens.len() > self.context_length {
+                current_tokens.len() - self.context_length
+            } else {
+                0
+            };
+            let context_prompt = self.decode(&current_tokens[start..]);
+
+            let logits = self.infer(&context_prompt)?;
+            let next_token = self.sample_token(&logits, temperature);
+
+            // Check if this token contains a newline
+            let token_text = self.decode(&[next_token]);
+            if token_text.contains('\n') {
+                // Don't include the newline in the generated tokens
+                break;
+            }
+
+            generated_tokens.push(next_token);
+            current_tokens.push(next_token);
+        }
+
+        Ok(self.decode(&generated_tokens))
+    }
+
     pub fn context_length(&self) -> usize {
         self.context_length
     }
