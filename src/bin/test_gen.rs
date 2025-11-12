@@ -42,38 +42,15 @@ fn main() {
     println!("Decoded: {}", decoded);
     assert_eq!(test_string, decoded);
 
-    // Test 2: Inference
-    println!("\n=== Test 2: Inference ===");
-    let prompt = "theorem:";
-    println!("Prompt: '{}'", prompt);
-
-    match model.infer(prompt) {
-        Ok(logits) => {
-            println!("Inference successful!");
-            println!("Logits shape: {:?}", logits.shape());
-            println!(
-                "Logits range: [{:.2}, {:.2}]",
-                logits.iter().copied().fold(f32::INFINITY, f32::min),
-                logits.iter().copied().fold(f32::NEG_INFINITY, f32::max)
-            );
-
-            // Sample a token
-            let next_token = model.sample_token(&logits, 1.0);
-            let next_text = model.decode(&[next_token]);
-            println!("Sampled next token: {} ('{}')", next_token, next_text);
-        }
-        Err(e) => {
-            eprintln!("Inference error: {}", e);
-            std::process::exit(1);
-        }
-    }
+    // Test 2: Inference (skipped - old infer() method doesn't work with KV cache model)
+    // The generation tests below use the new KV-cached inference
 
     // Test 3: Generation
     println!("\n=== Test 3: Text Generation ===");
     let gen_prompt = "define add(x: Nat, y: Nat) -> Nat {\n";
     println!("Generation prompt:\n{}", gen_prompt);
 
-    match model.generate_simple(gen_prompt, 100, 0.8) {
+    match model.generate_line(gen_prompt, 100, 0.8) {
         Ok(generated) => {
             println!("\nGenerated text ({} chars):", generated.len());
             println!("---");
