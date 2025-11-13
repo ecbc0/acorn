@@ -40,9 +40,10 @@ fn main() {
     // Create the config
     let config = GenerativeProverConfig {
         tactics_model_path: model_path.to_string(),
-        num_steps_per_rollout: 100, // Run for 100 generation attempts
+        num_steps_per_rollout: 100, // 100 steps per rollout
         max_tokens_per_line: 100,
         temperature: 0.8,
+        time_limit_secs: 5.0, // 5 second time limit
     };
 
     // Load the project (using acornlib)
@@ -106,61 +107,28 @@ fn main() {
     println!("Configuration:");
     println!("  - Max tokens per line: {}", config.max_tokens_per_line);
     println!("  - Temperature: {}", config.temperature);
-    println!("  - Steps per rollout: {}", config.num_steps_per_rollout);
+    println!(
+        "  - Max steps per rollout: {}",
+        config.num_steps_per_rollout
+    );
+    println!("  - Time limit: {:.1}s", config.time_limit_secs);
     println!();
-
-    let mut total_successful_lines = 0;
-    let mut total_failed_attempts = 0;
-    let mut total_tokens_generated = 0;
 
     let overall_start = Instant::now();
 
-    // Run a single rollout to measure performance
-    for step in 0..config.num_steps_per_rollout {
-        let step_start = Instant::now();
-
-        match prover.generate_and_check_line(&project, &mut bindings, &mut normalizer) {
-            Ok(success) => {
-                let step_duration = step_start.elapsed();
-
-                if success {
-                    total_successful_lines += 1;
-                    println!(
-                        "[Step {:3}] ✓ Success in {:.2}ms",
-                        step,
-                        step_duration.as_secs_f64() * 1000.0
-                    );
-                } else {
-                    total_failed_attempts += 1;
-                    println!(
-                        "[Step {:3}] ✗ Failed to check in {:.2}ms",
-                        step,
-                        step_duration.as_secs_f64() * 1000.0
-                    );
-                }
-
-                // Estimate tokens (rough approximation: ~50 tokens per attempt)
-                total_tokens_generated += 50;
-            }
-            Err(e) => {
-                eprintln!("[Step {:3}] Error: {}", step, e);
-                break;
-            }
-        }
-
-        // Check if we found a proof
-        if prover.has_contradiction() {
-            println!();
-            println!("🎉 Proof found!");
-            break;
-        }
-    }
+    // Run the search (multiple rollouts until time limit)
+    let outcome = prover.search(&project, &mut bindings, &mut normalizer);
 
     let overall_duration = overall_start.elapsed();
+
+    // Get statistics from the prover
+    let (total_successful_lines, total_failed_attempts) = prover.stats();
+    let total_tokens_generated = (total_successful_lines + total_failed_attempts) * 50; // Estimate
 
     // Print statistics
     println!();
     println!("=== Performance Results ===");
+    println!("Outcome: {:?}", outcome);
     println!("Total duration: {:.2}s", overall_duration.as_secs_f64());
     println!("Successful lines: {}", total_successful_lines);
     println!("Failed attempts: {}", total_failed_attempts);
@@ -191,11 +159,4 @@ fn main() {
         overall_duration.as_secs_f64() * 1000.0
             / (total_successful_lines + total_failed_attempts) as f64
     );
-    println!();
-
-    if prover.has_contradiction() {
-        println!("Status: PROVED ✓");
-    } else {
-        println!("Status: INCOMPLETE (no proof found)");
-    }
 }

@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::error::Error;
+use std::time::Instant;
 
 use crate::binding_map::BindingMap;
 use crate::checker::Checker;
@@ -23,6 +24,9 @@ pub struct GenerativeProverConfig {
 
     /// Sampling temperature for generation (higher = more random)
     pub temperature: f32,
+
+    /// Time limit in seconds for a rollout (default: 5.0)
+    pub time_limit_secs: f32,
 }
 
 impl Default for GenerativeProverConfig {
@@ -32,6 +36,7 @@ impl Default for GenerativeProverConfig {
             num_steps_per_rollout: 10,
             max_tokens_per_line: 100,
             temperature: 0.8,
+            time_limit_secs: 5.0,
         }
     }
 }
@@ -67,15 +72,28 @@ pub struct GenerativeProver {
     /// This grows as we add successful lines to the context
     context_cache: Option<GenerationCache>,
 
+    /// Initial state: the base cache with just the goal context (before any generated lines)
+    /// This is cloned at the start of each rollout
+    initial_cache: Option<GenerationCache>,
+
+    /// Initial checker state (before any generated lines)
+    /// This is cloned at the start of each rollout
+    initial_checker: Checker,
+
     /// Statistics about the current rollout
     successful_lines: usize,
     failed_attempts: usize,
+
+    /// Overall statistics across all rollouts
+    total_successful_lines: usize,
+    total_failed_attempts: usize,
 }
 
 impl GenerativeProver {
     /// Create a new GenerativeProver from a config and initial checker state
     pub fn new(config: GenerativeProverConfig, checker: Checker) -> Result<Self, Box<dyn Error>> {
         let tactics_model = TacticsModel::load(&config.tactics_model_path)?;
+        let initial_checker = checker.clone();
 
         Ok(Self {
             tactics_model,
@@ -83,8 +101,12 @@ impl GenerativeProver {
             config,
             goal_context: None,
             context_cache: None,
+            initial_cache: None,
+            initial_checker,
             successful_lines: 0,
             failed_attempts: 0,
+            total_successful_lines: 0,
+            total_failed_attempts: 0,
         })
     }
 
@@ -112,9 +134,31 @@ impl GenerativeProver {
         }
 
         self.goal_context = Some(goal_context);
+        // Store both as initial state (for rollout resets) and current state
+        self.initial_cache = Some(cache.clone());
         self.context_cache = Some(cache);
 
         Ok(())
+    }
+
+    /// Reset state for a new rollout
+    /// This restores the cache and checker to their initial state (just the goal context)
+    fn reset_for_new_rollout(&mut self) {
+        // Accumulate rollout stats into overall stats
+        self.total_successful_lines += self.successful_lines;
+        self.total_failed_attempts += self.failed_attempts;
+
+        // Clone the initial cache (with just goal context, no generated lines)
+        if let Some(ref initial_cache) = self.initial_cache {
+            self.context_cache = Some(initial_cache.clone());
+        }
+
+        // Clone the initial checker
+        self.checker = self.initial_checker.clone();
+
+        // Reset per-rollout statistics
+        self.successful_lines = 0;
+        self.failed_attempts = 0;
     }
 
     /// Attempt to generate and check a single line
@@ -172,7 +216,7 @@ impl GenerativeProver {
         }
     }
 
-    /// Run a full rollout: generate up to num_steps_per_rollout lines
+    /// Run a single rollout: generate up to num_steps_per_rollout lines
     /// Stops early if we find a contradiction
     pub fn rollout(
         &mut self,
@@ -200,7 +244,46 @@ impl GenerativeProver {
             }
         }
 
-        // Exhausted our step budget
+        // Exhausted our step budget for this rollout
+        if self.has_contradiction() {
+            RolloutOutcome::Proved
+        } else {
+            RolloutOutcome::Incomplete
+        }
+    }
+
+    /// Run a full search: perform multiple rollouts until time runs out or proof is found
+    /// This is the main entry point matching the Prover trait pattern
+    pub fn search(
+        &mut self,
+        project: &Project,
+        bindings: &mut Cow<BindingMap>,
+        normalizer: &mut Cow<Normalizer>,
+    ) -> RolloutOutcome {
+        let start_time = Instant::now();
+        let time_limit = std::time::Duration::from_secs_f32(self.config.time_limit_secs);
+
+        loop {
+            // Check if we've hit the time limit
+            if start_time.elapsed() >= time_limit {
+                break;
+            }
+
+            // Run a single rollout
+            let outcome = self.rollout(project, bindings, normalizer);
+
+            match outcome {
+                RolloutOutcome::Proved => return RolloutOutcome::Proved,
+                RolloutOutcome::Error(e) => return RolloutOutcome::Error(e),
+                RolloutOutcome::Incomplete => {
+                    // This rollout didn't find a proof, reset and try another one
+                    self.reset_for_new_rollout();
+                    continue;
+                }
+            }
+        }
+
+        // Time limit exhausted
         if self.has_contradiction() {
             RolloutOutcome::Proved
         } else {
@@ -213,8 +296,12 @@ impl GenerativeProver {
         self.checker.has_contradiction()
     }
 
-    /// Get statistics about the current search
+    /// Get statistics about the overall search (across all rollouts)
     pub fn stats(&self) -> (usize, usize) {
-        (self.successful_lines, self.failed_attempts)
+        // Include current rollout stats if any
+        (
+            self.total_successful_lines + self.successful_lines,
+            self.total_failed_attempts + self.failed_attempts,
+        )
     }
 }
