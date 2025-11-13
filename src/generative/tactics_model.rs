@@ -186,9 +186,56 @@ impl TacticsModel {
         self.vocab_size
     }
 
+    pub fn n_layers(&self) -> usize {
+        self.n_layers
+    }
+
+    pub fn n_heads(&self) -> usize {
+        self.n_heads
+    }
+
+    pub fn head_dim(&self) -> usize {
+        self.head_dim
+    }
+
+    /// Generate a single line of text using an existing cache, stopping at newline or max_tokens
+    /// This allows the cache to be pre-populated with a prefix for efficient generation
+    /// Returns the generated text without the trailing newline
+    pub fn generate_line_with_cache(
+        &self,
+        cache: &mut GenerationCache,
+        max_tokens: usize,
+        temperature: f32,
+    ) -> Result<String, Box<dyn Error>> {
+        let mut generated_tokens = Vec::new();
+
+        // We need a starting token to generate from
+        // For now, we'll use a newline token as a separator if the cache is non-empty
+        // If there's context in the cache, we assume the last generated token is part of it
+        // So we just start generating fresh tokens
+        let newline_tokens = self.encode("\n");
+        let mut last_token = *newline_tokens.first().unwrap_or(&0);
+
+        for _ in 0..max_tokens {
+            let logits = self.infer_with_cache(last_token, cache)?;
+            let next_token = self.sample_token(&logits, temperature);
+
+            // Check for newline
+            let token_text = self.decode(&[next_token]);
+            if token_text.contains('\n') {
+                break;
+            }
+
+            generated_tokens.push(next_token);
+            last_token = next_token;
+        }
+
+        Ok(self.decode(&generated_tokens))
+    }
+
     /// Run inference for a single token using KV cache
     /// Returns logits for the next token
-    fn infer_with_cache(
+    pub fn infer_with_cache(
         &self,
         token: i64,
         cache: &mut GenerationCache,
@@ -258,19 +305,25 @@ impl TacticsModel {
 }
 
 /// Cache for KV states during generation
+#[derive(Clone)]
 pub struct GenerationCache {
     /// For each layer: (key, value) tensors
     /// Shape: (1, n_heads, seq_len, head_dim)
-    layer_caches: Vec<(Array4<f32>, Array4<f32>)>,
+    pub(crate) layer_caches: Vec<(Array4<f32>, Array4<f32>)>,
 }
 
 impl GenerationCache {
-    fn empty(n_layers: usize, n_heads: usize, head_dim: usize) -> Self {
+    /// Create a new empty cache
+    pub fn new(n_layers: usize, n_heads: usize, head_dim: usize) -> Self {
         // Create empty caches with shape (1, n_heads, 0, head_dim)
         let empty_cache = (1, n_heads, 0, head_dim);
         Self {
             layer_caches: vec![(Array4::zeros(empty_cache), Array4::zeros(empty_cache)); n_layers],
         }
+    }
+
+    fn empty(n_layers: usize, n_heads: usize, head_dim: usize) -> Self {
+        Self::new(n_layers, n_heads, head_dim)
     }
 }
 

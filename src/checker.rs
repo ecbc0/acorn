@@ -280,7 +280,7 @@ impl Checker {
     }
 
     /// Helper method to check a single line of code in a proof.
-    fn check_code(
+    pub fn check_code(
         &mut self,
         code: &str,
         project: &Project,
