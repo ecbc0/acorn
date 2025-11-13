@@ -45,7 +45,11 @@ name = "acorn"
 test = false
 
 [[bin]]
-name = "profile_prover"
+name = "profile_saturation"
+test = false
+
+[[bin]]
+name = "profile_generation"
 test = false
 
 [[bin]]
