@@ -18,16 +18,15 @@ pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certi
     let node = base_env.get_node_by_goal_name(goal_name);
     let facts = node.usable_facts(project);
     let goal = node.goal().unwrap();
+    let env = node.goal_env().unwrap();
     let mut processor = Processor::new();
     for fact in facts {
         processor.add_fact(fact).unwrap();
     }
     processor.set_goal(&goal, project).unwrap();
-    let outcome = processor.search(ProverMode::Test);
+    let outcome = processor.search(ProverMode::Test, project, &env.bindings);
 
     assert_eq!(outcome, Outcome::Success);
-    let cursor = base_env.get_node_by_goal_name(goal_name);
-    let env = cursor.goal_env().unwrap();
 
     let cert =
         match processor
@@ -60,6 +59,7 @@ pub fn prove_text(text: &str, goal_name: &str) -> Outcome {
         let goal = cursor.goal().unwrap();
         if goal.name == goal_name {
             let facts = cursor.usable_facts(&project);
+            let goal_env = cursor.goal_env().unwrap();
 
             let mut processor = Processor::new();
             for fact in facts {
@@ -71,7 +71,7 @@ pub fn prove_text(text: &str, goal_name: &str) -> Outcome {
                 return Outcome::Inconsistent;
             }
 
-            return processor.search(ProverMode::Test);
+            return processor.search(ProverMode::Test, &project, &goal_env.bindings);
         }
     }
     panic!("goal '{}' not found in text", goal_name);
@@ -90,6 +90,7 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
     for cursor in env.iter_goals() {
         let facts = cursor.usable_facts(&project);
         let goal = cursor.goal().unwrap();
+        let goal_env = cursor.goal_env().unwrap();
 
         let mut processor = Processor::new();
         for fact in facts {
@@ -100,16 +101,15 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
         // This is a key difference between our verification tests, and our real verification.
         // This helps us test that verification fails in cases where we do have an
         // infinite rabbit hole we could go down.
-        let outcome = processor.search(ProverMode::Test);
+        let outcome = processor.search(ProverMode::Test, &project, &goal_env.bindings);
         if outcome != Outcome::Success {
             return Ok(outcome);
         }
-        let env = cursor.goal_env().unwrap();
         let cert = processor
             .prover()
-            .make_cert(&project, &env.bindings, processor.normalizer(), true)
+            .make_cert(&project, &goal_env.bindings, processor.normalizer(), true)
             .map_err(|e| e.to_string())?;
-        if let Err(e) = processor.check_cert(&cert, None, &project, &env.bindings) {
+        if let Err(e) = processor.check_cert(&cert, None, &project, &goal_env.bindings) {
             panic!("check_cert failed: {}", e);
         }
     }

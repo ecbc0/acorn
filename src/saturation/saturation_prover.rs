@@ -69,28 +69,6 @@ impl SaturationProver {
         }
     }
 
-    /// Add proof steps to the prover.
-    /// These can be used as initial facts for starting the proof.
-    pub fn add_steps(&mut self, steps: Vec<ProofStep>) {
-        self.passive_set.push_batch(steps);
-    }
-
-    /// Sets the prover goal and adds the goal-derived steps.
-    /// This replaces the common pattern of calling `add_steps` for the goal
-    /// steps followed by `set_goal`.
-    pub fn set_goal(
-        &mut self,
-        ng: NormalizedGoal,
-        steps: Vec<ProofStep>,
-        _project: &Project,
-        _original_goal: &Goal,
-        _checker: &Checker,
-    ) {
-        assert!(self.goal.is_none());
-        self.add_steps(steps);
-        self.goal = Some(ng);
-    }
-
     /// Returns an iterator over the active proof steps
     pub fn iter_active_steps(&self) -> impl Iterator<Item = (usize, &ProofStep)> {
         self.active_set.iter_steps()
@@ -487,11 +465,39 @@ impl SaturationProver {
         false
     }
 
+    /// Gets a clause by its proof step ID
+    fn get_clause(&self, id: ProofStepId) -> &Clause {
+        match id {
+            ProofStepId::Active(i) => self.active_set.get_clause(i),
+            ProofStepId::Passive(i) => &self.useful_passive[i as usize].clause,
+            ProofStepId::Final => {
+                let final_step = self.final_step.as_ref().unwrap();
+                &final_step.clause
+            }
+        }
+    }
+}
+
+// Implement the Prover trait for SaturationProver
+impl crate::prover::Prover for SaturationProver {
+    /// Add proof steps to the prover.
+    /// These can be used as initial facts for starting the proof.
+    fn add_steps(&mut self, steps: Vec<ProofStep>) {
+        self.passive_set.push_batch(steps);
+    }
+
     /// The prover will exit with Outcome::Constrained if it hits a constraint:
     ///   Activating activation_limit nonfactual clauses
     ///   Going over the time limit, in seconds
     ///   Activating all shallow steps, if shallow_only is set
-    pub fn search(&mut self, mode: ProverMode) -> Outcome {
+    fn search(
+        &mut self,
+        mode: ProverMode,
+        _project: &Project,
+        _bindings: &BindingMap,
+        _normalizer: &Normalizer,
+        _checker: &Checker,
+    ) -> Outcome {
         // Convert mode to actual parameters
         let (activation_limit, seconds, shallow_only) = match mode {
             ProverMode::Interactive => (2000, 5.0, false),
@@ -554,38 +560,16 @@ impl SaturationProver {
         }
     }
 
-    /// Gets a clause by its proof step ID
-    fn get_clause(&self, id: ProofStepId) -> &Clause {
-        match id {
-            ProofStepId::Active(i) => self.active_set.get_clause(i),
-            ProofStepId::Passive(i) => &self.useful_passive[i as usize].clause,
-            ProofStepId::Final => {
-                let final_step = self.final_step.as_ref().unwrap();
-                &final_step.clause
-            }
-        }
-    }
-}
-
-// Implement the Prover trait for SaturationProver
-impl crate::prover::Prover for SaturationProver {
-    fn add_steps(&mut self, steps: Vec<ProofStep>) {
-        self.add_steps(steps)
-    }
-
     fn set_goal(
         &mut self,
-        goal: NormalizedGoal,
+        ng: NormalizedGoal,
         steps: Vec<ProofStep>,
-        project: &Project,
-        original_goal: &Goal,
-        checker: &Checker,
+        _project: &Project,
+        _original_goal: &Goal,
     ) {
-        self.set_goal(goal, steps, project, original_goal, checker)
-    }
-
-    fn search(&mut self, mode: ProverMode) -> Outcome {
-        self.search(mode)
+        assert!(self.goal.is_none());
+        self.add_steps(steps);
+        self.goal = Some(ng);
     }
 
     fn make_cert(

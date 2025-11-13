@@ -3,9 +3,14 @@ use std::error::Error;
 use std::time::Instant;
 
 use crate::binding_map::BindingMap;
+use crate::certificate::Certificate;
 use crate::checker::Checker;
-use crate::normalizer::Normalizer;
+use crate::code_generator::Error as CodeGenError;
+use crate::goal::Goal;
+use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::project::Project;
+use crate::proof_step::ProofStep;
+use crate::prover::{Outcome, Prover, ProverMode};
 
 use super::goal_context::GoalContext;
 use super::tactics_model::{GenerationCache, TacticsModel};
@@ -41,26 +46,11 @@ impl Default for GenerativeProverConfig {
     }
 }
 
-/// Result of a rollout attempt
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RolloutOutcome {
-    /// Found a contradiction (proof complete!)
-    Proved,
-
-    /// Exhausted num_steps_per_rollout without finding contradiction
-    Incomplete,
-
-    /// Hit an error during generation or checking
-    Error(String),
-}
-
 /// A generative theorem prover that uses a neural language model to generate proof steps
+#[derive(Clone)]
 pub struct GenerativeProver {
     /// The neural model for generating proof tactics
     tactics_model: TacticsModel,
-
-    /// The checker for verifying generated steps
-    checker: Checker,
 
     /// Configuration parameters
     config: GenerativeProverConfig,
@@ -76,10 +66,6 @@ pub struct GenerativeProver {
     /// This is cloned at the start of each rollout
     initial_cache: Option<GenerationCache>,
 
-    /// Initial checker state (before any generated lines)
-    /// This is cloned at the start of each rollout
-    initial_checker: Checker,
-
     /// Statistics about the current rollout
     successful_lines: usize,
     failed_attempts: usize,
@@ -90,24 +76,22 @@ pub struct GenerativeProver {
 }
 
 impl GenerativeProver {
-    /// Create a new GenerativeProver from a config and initial checker state
-    pub fn new(config: GenerativeProverConfig, checker: Checker) -> Result<Self, Box<dyn Error>> {
-        let tactics_model = TacticsModel::load(&config.tactics_model_path)?;
-        let initial_checker = checker.clone();
+    /// Create a new GenerativeProver from a config
+    pub fn new(config: GenerativeProverConfig) -> Self {
+        let tactics_model =
+            TacticsModel::load(&config.tactics_model_path).expect("Failed to load tactics model");
 
-        Ok(Self {
+        Self {
             tactics_model,
-            checker,
             config,
             goal_context: None,
             context_cache: None,
             initial_cache: None,
-            initial_checker,
             successful_lines: 0,
             failed_attempts: 0,
             total_successful_lines: 0,
             total_failed_attempts: 0,
-        })
+        }
     }
 
     /// Set the goal context and initialize the KV cache with the prompt
@@ -142,7 +126,7 @@ impl GenerativeProver {
     }
 
     /// Reset state for a new rollout
-    /// This restores the cache and checker to their initial state (just the goal context)
+    /// This restores the cache to its initial state (just the goal context)
     fn reset_for_new_rollout(&mut self) {
         // Accumulate rollout stats into overall stats
         self.total_successful_lines += self.successful_lines;
@@ -153,30 +137,28 @@ impl GenerativeProver {
             self.context_cache = Some(initial_cache.clone());
         }
 
-        // Clone the initial checker
-        self.checker = self.initial_checker.clone();
-
         // Reset per-rollout statistics
         self.successful_lines = 0;
         self.failed_attempts = 0;
     }
 
     /// Attempt to generate and check a single line
-    /// Returns Ok(true) if the line checked successfully, Ok(false) if it failed to check
+    /// Returns true if the line checked successfully, false if it failed to check
     ///
     /// On success: the cache is updated with the new line, so future generations build on it
     /// On failure: the cache is unchanged, so the failed line doesn't pollute context
     pub fn generate_and_check_line(
         &mut self,
+        checker: &mut Checker,
         project: &Project,
         bindings: &mut Cow<BindingMap>,
         normalizer: &mut Cow<Normalizer>,
-    ) -> Result<bool, Box<dyn Error>> {
-        // Make sure we have a cache initialized
+    ) -> bool {
+        // Get the cache (must be initialized via set_goal_context)
         let base_cache = self
             .context_cache
             .as_ref()
-            .ok_or("No goal context set - call set_goal_context first")?;
+            .expect("No goal context set - call set_goal_context first");
 
         // Clone the cache before generation
         // If the line fails to check, we discard this clone
@@ -184,16 +166,19 @@ impl GenerativeProver {
         let mut working_cache = base_cache.clone();
 
         // Generate a line using the cloned cache
-        let generated_line = self.tactics_model.generate_line_with_cache(
-            &mut working_cache,
-            self.config.max_tokens_per_line,
-            self.config.temperature,
-        )?;
+        let generated_line = self
+            .tactics_model
+            .generate_line_with_cache(
+                &mut working_cache,
+                self.config.max_tokens_per_line,
+                self.config.temperature,
+            )
+            .expect("Failed to generate line");
 
         // Try to check the generated line
         let mut certificate_steps = Vec::new();
 
-        match self.checker.check_code(
+        match checker.check_code(
             &generated_line,
             project,
             bindings,
@@ -205,13 +190,13 @@ impl GenerativeProver {
                 // Keep the updated cache (which now includes the generated line tokens)
                 self.context_cache = Some(working_cache);
                 self.successful_lines += 1;
-                Ok(true)
+                true
             }
             Err(_) => {
                 // Failed to check - checker state unchanged
                 // Discard the working_cache, keep the original
                 self.failed_attempts += 1;
-                Ok(false)
+                false
             }
         }
     }
@@ -220,48 +205,44 @@ impl GenerativeProver {
     /// Stops early if we find a contradiction
     pub fn rollout(
         &mut self,
+        checker: &mut Checker,
         project: &Project,
         bindings: &mut Cow<BindingMap>,
         normalizer: &mut Cow<Normalizer>,
-    ) -> RolloutOutcome {
+    ) -> Outcome {
         for _ in 0..self.config.num_steps_per_rollout {
             // Check if we've already found a contradiction
-            if self.has_contradiction() {
-                return RolloutOutcome::Proved;
+            if checker.has_contradiction() {
+                return Outcome::Success;
             }
 
             // Try to generate and check a line
-            match self.generate_and_check_line(project, bindings, normalizer) {
-                Ok(true) => {
-                    // Successfully checked a line, continue
-                }
-                Ok(false) => {
-                    // Failed to check, but that's okay - just try again
-                }
-                Err(e) => {
-                    return RolloutOutcome::Error(e.to_string());
-                }
-            }
+            // Returns true if successful, false if failed to check (both are fine, we continue)
+            let _ = self.generate_and_check_line(checker, project, bindings, normalizer);
         }
 
         // Exhausted our step budget for this rollout
-        if self.has_contradiction() {
-            RolloutOutcome::Proved
+        if checker.has_contradiction() {
+            Outcome::Success
         } else {
-            RolloutOutcome::Incomplete
+            Outcome::Constrained
         }
     }
 
     /// Run a full search: perform multiple rollouts until time runs out or proof is found
-    /// This is the main entry point matching the Prover trait pattern
     pub fn search(
         &mut self,
         project: &Project,
-        bindings: &mut Cow<BindingMap>,
-        normalizer: &mut Cow<Normalizer>,
-    ) -> RolloutOutcome {
+        bindings: &BindingMap,
+        normalizer: &Normalizer,
+        checker: &Checker,
+    ) -> Outcome {
         let start_time = Instant::now();
         let time_limit = std::time::Duration::from_secs_f32(self.config.time_limit_secs);
+
+        // Wrap in Cow for internal methods
+        let mut bindings = Cow::Borrowed(bindings);
+        let mut normalizer = Cow::Borrowed(normalizer);
 
         loop {
             // Check if we've hit the time limit
@@ -269,31 +250,28 @@ impl GenerativeProver {
                 break;
             }
 
-            // Run a single rollout
-            let outcome = self.rollout(project, bindings, normalizer);
+            // Clone the checker for this rollout
+            let mut rollout_checker = checker.clone();
 
-            match outcome {
-                RolloutOutcome::Proved => return RolloutOutcome::Proved,
-                RolloutOutcome::Error(e) => return RolloutOutcome::Error(e),
-                RolloutOutcome::Incomplete => {
-                    // This rollout didn't find a proof, reset and try another one
-                    self.reset_for_new_rollout();
-                    continue;
-                }
+            // Run a single rollout
+            let outcome = self.rollout(
+                &mut rollout_checker,
+                project,
+                &mut bindings,
+                &mut normalizer,
+            );
+
+            if outcome == Outcome::Success {
+                return outcome;
             }
+
+            // For any other outcome, just continue trying
+            self.reset_for_new_rollout();
+            continue;
         }
 
         // Time limit exhausted
-        if self.has_contradiction() {
-            RolloutOutcome::Proved
-        } else {
-            RolloutOutcome::Incomplete
-        }
-    }
-
-    /// Check if we've found a contradiction (proof complete)
-    pub fn has_contradiction(&self) -> bool {
-        self.checker.has_contradiction()
+        Outcome::Timeout
     }
 
     /// Get statistics about the overall search (across all rollouts)
@@ -303,5 +281,57 @@ impl GenerativeProver {
             self.total_successful_lines + self.successful_lines,
             self.total_failed_attempts + self.failed_attempts,
         )
+    }
+}
+
+impl Prover for GenerativeProver {
+    /// Add proof steps to the prover
+    /// For the generative prover, we don't use explicit proof steps - the model generates them
+    fn add_steps(&mut self, _steps: Vec<ProofStep>) {
+        // The generative prover doesn't use explicit proof steps
+        // It gets them indirectly through the Checker
+    }
+
+    /// Set the goal and initialize the prover
+    fn set_goal(
+        &mut self,
+        _goal: NormalizedGoal,
+        _steps: Vec<ProofStep>,
+        project: &Project,
+        original_goal: &Goal,
+    ) {
+        // Create a goal context from the original goal
+        let goal_context = GoalContext::from_project_and_goal(project, original_goal)
+            .expect("Failed to create goal context from goal");
+
+        // Set the goal context
+        self.set_goal_context(goal_context)
+            .expect("Failed to set goal context");
+    }
+
+    /// Run the proof search
+    fn search(
+        &mut self,
+        _mode: ProverMode,
+        project: &Project,
+        bindings: &BindingMap,
+        normalizer: &Normalizer,
+        checker: &Checker,
+    ) -> Outcome {
+        self.search(project, bindings, normalizer, checker)
+    }
+
+    /// Generate a certificate for the proof
+    /// The generative prover doesn't produce certificates yet
+    fn make_cert(
+        &self,
+        _project: &Project,
+        _bindings: &BindingMap,
+        _normalizer: &Normalizer,
+        _print: bool,
+    ) -> Result<Certificate, CodeGenError> {
+        Err(CodeGenError::GeneratedBadCode(
+            "GenerativeProver does not yet support certificate generation".to_string(),
+        ))
     }
 }

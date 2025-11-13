@@ -113,14 +113,19 @@ impl<P: Prover> Processor<P> {
             self.checker
                 .insert_clause(&step.clause, StepReason::Assumption(step_source.clone()));
         }
-        self.prover
-            .set_goal(ng, steps, project, goal, &self.checker);
+        self.prover.set_goal(ng, steps, project, goal);
         Ok(())
     }
 
     /// Forwards a search request to the underlying prover.
-    pub fn search(&mut self, mode: ProverMode) -> Outcome {
-        self.prover.search(mode)
+    pub fn search(
+        &mut self,
+        mode: ProverMode,
+        project: &Project,
+        bindings: &BindingMap,
+    ) -> Outcome {
+        self.prover
+            .search(mode, project, bindings, &self.normalizer, &self.checker)
     }
 
     /// Creates a certificate from the current proof state.

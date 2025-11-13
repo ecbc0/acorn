@@ -1008,16 +1008,16 @@ fn test_proving_with_mixin_instance() {
         let facts = cursor.usable_facts(&p);
         let goal = cursor.goal().unwrap();
 
+        let goal_env = cursor.goal_env().unwrap();
+
         let mut processor = crate::processor::Processor::new();
         for fact in facts {
             processor.add_fact(fact).unwrap();
         }
         processor.set_goal(&goal, &p).unwrap();
 
-        let outcome = processor.search(crate::prover::ProverMode::Test);
+        let outcome = processor.search(crate::prover::ProverMode::Test, &p, &goal_env.bindings);
         assert_eq!(outcome, Outcome::Success);
-
-        let goal_env = cursor.goal_env().unwrap();
         let cert = processor
             .prover()
             .make_cert(&p, &goal_env.bindings, processor.normalizer(), true)

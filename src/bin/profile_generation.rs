@@ -7,7 +7,6 @@
 // For profiling with samply:
 //   samply record target/release/profile_generation <model_path>
 
-use std::borrow::Cow;
 use std::env;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -77,13 +76,12 @@ fn main() {
     println!("Goal context created");
     println!();
 
-    // Create a checker
-    let checker = Checker::new_fast();
-
     // Initialize the generative prover
     println!("Initializing generative prover...");
-    let mut prover =
-        GenerativeProver::new(config.clone(), checker).expect("Failed to create generative prover");
+    let mut prover = GenerativeProver::new(config.clone());
+
+    // Create a checker
+    let checker = Checker::new_fast();
 
     // Set the goal context (initializes the KV cache)
     println!("Setting goal context and warming up KV cache...");
@@ -99,8 +97,8 @@ fn main() {
     println!();
 
     // Prepare bindings and normalizer
-    let mut bindings = Cow::Borrowed(&env.bindings);
-    let mut normalizer = Cow::Owned(Normalizer::new());
+    let bindings = &env.bindings;
+    let normalizer = Normalizer::new();
 
     // Run generation performance test
     println!("Starting generation performance test...");
@@ -117,7 +115,7 @@ fn main() {
     let overall_start = Instant::now();
 
     // Run the search (multiple rollouts until time limit)
-    let outcome = prover.search(&project, &mut bindings, &mut normalizer);
+    let outcome = prover.search(&project, bindings, &normalizer, &checker);
 
     let overall_duration = overall_start.elapsed();
 

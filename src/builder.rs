@@ -680,7 +680,7 @@ impl<'a> Builder<'a> {
         let processor = Rc::make_mut(&mut processor);
         processor.set_goal(goal, self.project)?;
         let start = std::time::Instant::now();
-        let outcome = processor.search(ProverMode::Interactive);
+        let outcome = processor.search(ProverMode::Interactive, self.project, &env.bindings);
         if outcome == Outcome::Success {
             match processor.make_cert(self.project, &env.bindings, self.verbose) {
                 Ok(cert) => {

@@ -48,18 +48,24 @@ pub trait Prover: Clone {
     /// Add proof steps to the prover (facts or axioms)
     fn add_steps(&mut self, steps: Vec<ProofStep>);
 
-    /// Set the goal and add goal-derived steps
+    /// Set the goal and add goal-derived steps.
     fn set_goal(
         &mut self,
         goal: NormalizedGoal,
         steps: Vec<ProofStep>,
         project: &Project,
         original_goal: &Goal,
-        checker: &Checker,
     );
 
     /// Run the proof search with the given mode
-    fn search(&mut self, mode: ProverMode) -> Outcome;
+    fn search(
+        &mut self,
+        mode: ProverMode,
+        project: &Project,
+        bindings: &BindingMap,
+        normalizer: &Normalizer,
+        checker: &Checker,
+    ) -> Outcome;
 
     /// Generate a certificate for the proof
     fn make_cert(

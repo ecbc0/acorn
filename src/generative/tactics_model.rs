@@ -17,11 +17,12 @@ use crate::ort_utils::ensure_ort_initialized;
 // - Output: logits with shape (batch_size, context_length, vocab_size)
 // Unlike ScoringModel, this loads the model from a directory path at runtime.
 // The directory should contain: model.onnx, tokenizer.json, and config.json
+#[derive(Clone)]
 pub struct TacticsModel {
     // The ONNX model session.
     session: Arc<Session>,
     // The tokenizer for encoding/decoding text
-    tokenizer: Tokenizer,
+    tokenizer: Arc<Tokenizer>,
     // Maximum context length (typically 256)
     context_length: usize,
     // Vocabulary size
@@ -34,7 +35,8 @@ pub struct TacticsModel {
     head_dim: usize,
 }
 
-static TACTICS_SESSION: OnceLock<Arc<Session>> = OnceLock::new();
+static TACTICS_MODEL: OnceLock<Arc<TacticsModel>> = OnceLock::new();
+static TACTICS_MODEL_PATH: OnceLock<String> = OnceLock::new();
 
 fn make_session(bytes: &[u8]) -> Result<Arc<Session>, Box<dyn Error>> {
     ensure_ort_initialized()?;
@@ -50,15 +52,27 @@ fn make_session(bytes: &[u8]) -> Result<Arc<Session>, Box<dyn Error>> {
 impl TacticsModel {
     // Loads a model from a directory path at runtime.
     // The directory should contain: model.onnx, tokenizer.json, and config.json
+    // This can only be called once - subsequent calls with a different path will panic.
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn Error>> {
         let dir_path = path.as_ref();
+        let path_str = dir_path.to_string_lossy().to_string();
+
+        // Check if we've already loaded a model
+        if let Some(cached_path) = TACTICS_MODEL_PATH.get() {
+            if cached_path != &path_str {
+                panic!(
+                    "TacticsModel::load called with different path. First: {}, Second: {}",
+                    cached_path, path_str
+                );
+            }
+            // Return a clone of the cached model
+            return Ok((**TACTICS_MODEL.get().unwrap()).clone());
+        }
 
         // Load the ONNX model
         let model_path = dir_path.join("model.onnx");
         let bytes = fs::read(&model_path)?;
-        let session = TACTICS_SESSION.get_or_init(|| {
-            make_session(&bytes).expect("Failed to initialize tactics model session")
-        });
+        let session = make_session(&bytes)?;
 
         // Load the tokenizer
         let tokenizer_path = dir_path.join("tokenizer.json");
@@ -86,15 +100,20 @@ impl TacticsModel {
             .as_u64()
             .ok_or("head_dim not found in config.json")? as usize;
 
-        Ok(TacticsModel {
-            session: Arc::clone(session),
-            tokenizer,
+        let model = TacticsModel {
+            session,
+            tokenizer: Arc::new(tokenizer),
             context_length,
             vocab_size,
             n_layers,
             n_heads,
             head_dim,
-        })
+        };
+
+        // Cache the path and model
+        TACTICS_MODEL_PATH.set(path_str).ok();
+        let cached = TACTICS_MODEL.get_or_init(|| Arc::new(model.clone()));
+        Ok((**cached).clone())
     }
 
     /// Encodes a string prompt into token indices using the BPE tokenizer
