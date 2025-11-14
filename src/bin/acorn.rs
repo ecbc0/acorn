@@ -110,6 +110,24 @@ enum Command {
         line: Option<u32>,
     },
 
+    /// Re-prove goals without using the cache (neither reads from nor writes to cache)
+    Reprove {
+        /// Target module or file to reprove (can be a filename or module name)
+        #[clap(
+            value_name = "TARGET",
+            help = "Module or filename to reprove. If not provided, reproves all files in the library."
+        )]
+        target: Option<String>,
+
+        /// Search for a proof at a specific line number (requires target)
+        #[clap(
+            long,
+            help = "Search for a proof at a specific line number.",
+            value_name = "LINE"
+        )]
+        line: Option<u32>,
+    },
+
     /// Display proof details for a specific line
     Select {
         /// Module or file to select from
@@ -251,6 +269,40 @@ async fn main() {
             verifier.line = line;
             verifier.builder.reverify = true;
             verifier.builder.check_hashes = false;
+
+            match verifier.run() {
+                Err(e) => {
+                    println!("{}", e);
+                    std::process::exit(1);
+                }
+                Ok(output) => {
+                    if !output.is_success() {
+                        std::process::exit(1);
+                    }
+                }
+            }
+        }
+
+        Some(Command::Reprove { target, line }) => {
+            // Create a config that disables both reading and writing to the cache
+            let config = ProjectConfig {
+                use_filesystem: true,
+                read_cache: false,
+                write_cache: false,
+            };
+
+            let mut verifier = match Verifier::new(current_dir, config, target) {
+                Ok(v) => v,
+                Err(e) => {
+                    println!("{}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            verifier.builder.verbose = line.is_some();
+            verifier.line = line;
+            verifier.builder.reverify = false; // Run search like verify does
+            verifier.builder.check_hashes = false; // Don't skip based on hashes
 
             match verifier.run() {
                 Err(e) => {
