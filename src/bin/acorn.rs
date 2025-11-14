@@ -1,8 +1,10 @@
 // The Acorn CLI.
 // You can run a language server, verify a file, or reverify the whole project.
 
+use acorn::builder::ProverConfig;
 use acorn::cleaner::{ModuleCleaner, ProjectCleaner};
 use acorn::doc_generator::DocGenerator;
+use acorn::generative::generative_prover::GenerativeProverConfig;
 use acorn::module::ModuleDescriptor;
 use acorn::project::{Project, ProjectConfig};
 use acorn::server::{run_server, ServerArgs};
@@ -126,6 +128,14 @@ enum Command {
             value_name = "LINE"
         )]
         line: Option<u32>,
+
+        /// Use the generative prover instead of the saturation prover
+        #[clap(
+            long,
+            help = "Path to the directory containing the generative model (model.onnx, tokenizer.json, config.json)",
+            value_name = "MODEL_DIR"
+        )]
+        generative: Option<String>,
     },
 
     /// Display proof details for a specific line
@@ -283,7 +293,11 @@ async fn main() {
             }
         }
 
-        Some(Command::Reprove { target, line }) => {
+        Some(Command::Reprove {
+            target,
+            line,
+            generative,
+        }) => {
             // Create a config that disables both reading and writing to the cache
             let config = ProjectConfig {
                 use_filesystem: true,
@@ -291,13 +305,23 @@ async fn main() {
                 write_cache: false,
             };
 
-            let mut verifier = match Verifier::new(current_dir, config, target) {
-                Ok(v) => v,
-                Err(e) => {
-                    println!("{}", e);
-                    std::process::exit(1);
-                }
+            // Create the prover config based on the --generative flag
+            let prover_config = if let Some(model_path) = generative {
+                let mut gen_config = GenerativeProverConfig::default();
+                gen_config.generative_model_path = model_path;
+                ProverConfig::Generative(gen_config)
+            } else {
+                ProverConfig::default()
             };
+
+            let mut verifier =
+                match Verifier::with_prover(current_dir, config, target, prover_config) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        println!("{}", e);
+                        std::process::exit(1);
+                    }
+                };
 
             verifier.builder.verbose = line.is_some();
             verifier.line = line;

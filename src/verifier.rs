@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use tokio_util::sync::CancellationToken;
 
-use crate::builder::{BuildEvent, BuildMetrics, BuildStatus, Builder};
+use crate::builder::{BuildEvent, BuildMetrics, BuildStatus, Builder, ProverConfig};
 use crate::project::{Project, ProjectConfig};
 
 /// Output from running the verifier
@@ -32,6 +32,7 @@ impl VerifierOutput {
 }
 
 /// The Verifier manages the run of a single build.
+/// It creates its own project.
 pub struct Verifier {
     /// Pointer to the manually managed project for cleanup
     project_ptr: *mut Project,
@@ -62,6 +63,15 @@ impl Verifier {
         config: ProjectConfig,
         target: Option<String>,
     ) -> Result<Self, String> {
+        Self::with_prover(start_path, config, target, ProverConfig::default())
+    }
+
+    pub fn with_prover(
+        start_path: PathBuf,
+        config: ProjectConfig,
+        target: Option<String>,
+        prover_config: ProverConfig,
+    ) -> Result<Self, String> {
         let mut project = Project::new_local(&start_path, config.clone())?;
 
         // Add targets to the project
@@ -91,14 +101,19 @@ impl Verifier {
         let events_clone = events.clone();
 
         // Set up the builder with event handler
-        let mut builder = Builder::new(project, CancellationToken::new(), move |event| {
-            if let Some(m) = &event.log_message {
-                println!("{}", m);
-            }
+        let mut builder = Builder::with_prover(
+            project,
+            CancellationToken::new(),
+            move |event| {
+                if let Some(m) = &event.log_message {
+                    println!("{}", m);
+                }
 
-            // Store the event
-            events_clone.borrow_mut().push(event);
-        });
+                // Store the event
+                events_clone.borrow_mut().push(event);
+            },
+            prover_config,
+        );
 
         if target.is_none() {
             builder.log_secondary_errors = false;

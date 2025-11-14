@@ -302,6 +302,10 @@ impl GenerativeProver {
 }
 
 impl Prover for GenerativeProver {
+    fn box_clone(&self) -> Box<dyn Prover> {
+        Box::new(self.clone())
+    }
+
     /// Add proof steps to the prover
     /// For the generative prover, we don't use explicit proof steps - the model generates them
     fn add_steps(&mut self, _steps: Vec<ProofStep>) {

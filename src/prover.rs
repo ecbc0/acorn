@@ -44,7 +44,10 @@ impl fmt::Display for Outcome {
 }
 
 /// A trait for theorem provers
-pub trait Prover: Clone {
+pub trait Prover {
+    /// Clone this prover into a boxed trait object
+    fn box_clone(&self) -> Box<dyn Prover>;
+
     /// Add proof steps to the prover (facts or axioms)
     fn add_steps(&mut self, steps: Vec<ProofStep>);
 

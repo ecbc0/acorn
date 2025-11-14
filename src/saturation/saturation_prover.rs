@@ -470,6 +470,10 @@ impl SaturationProver {
 
 // Implement the Prover trait for SaturationProver
 impl crate::prover::Prover for SaturationProver {
+    fn box_clone(&self) -> Box<dyn crate::prover::Prover> {
+        Box::new(self.clone())
+    }
+
     /// Add proof steps to the prover.
     /// These can be used as initial facts for starting the proof.
     fn add_steps(&mut self, steps: Vec<ProofStep>) {

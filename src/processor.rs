@@ -6,6 +6,7 @@ use crate::certificate::Certificate;
 use crate::checker::{CertificateStep, Checker, StepReason};
 use crate::code_generator::Error;
 use crate::fact::Fact;
+use crate::generative::generative_prover::{GenerativeProver, GenerativeProverConfig};
 use crate::goal::Goal;
 use crate::normalizer::Normalizer;
 use crate::project::Project;
@@ -24,36 +25,50 @@ fn print_steps(steps: &[ProofStep], normalizer: &Normalizer) {
 }
 
 /// The processor represents what we do with a stream of facts.
-#[derive(Clone)]
-pub struct Processor<P: Prover> {
-    prover: P,
+pub struct Processor {
+    prover: Box<dyn Prover>,
     normalizer: Normalizer,
     checker: Checker,
 }
 
-impl Processor<SaturationProver> {
-    pub fn new() -> Processor<SaturationProver> {
+impl Clone for Processor {
+    fn clone(&self) -> Self {
         Processor {
-            prover: SaturationProver::new(vec![]),
-            normalizer: Normalizer::new(),
-            checker: Checker::new_fast(),
+            prover: self.prover.box_clone(),
+            normalizer: self.normalizer.clone(),
+            checker: self.checker.clone(),
         }
-    }
-
-    pub fn with_token(cancellation_token: CancellationToken) -> Processor<SaturationProver> {
-        Processor {
-            prover: SaturationProver::new(vec![cancellation_token]),
-            normalizer: Normalizer::new(),
-            checker: Checker::new_fast(),
-        }
-    }
-
-    pub fn prover(&self) -> &SaturationProver {
-        &self.prover
     }
 }
 
-impl<P: Prover> Processor<P> {
+impl Processor {
+    pub fn new() -> Processor {
+        Processor {
+            prover: Box::new(SaturationProver::new(vec![])),
+            normalizer: Normalizer::new(),
+            checker: Checker::new_fast(),
+        }
+    }
+
+    pub fn with_token(cancellation_token: CancellationToken) -> Processor {
+        Processor {
+            prover: Box::new(SaturationProver::new(vec![cancellation_token])),
+            normalizer: Normalizer::new(),
+            checker: Checker::new_fast(),
+        }
+    }
+
+    pub fn new_generative(config: GenerativeProverConfig) -> Processor {
+        Processor {
+            prover: Box::new(GenerativeProver::new(config)),
+            normalizer: Normalizer::new(),
+            checker: Checker::new_fast(),
+        }
+    }
+
+    pub fn prover(&self) -> &dyn Prover {
+        &*self.prover
+    }
     pub fn normalizer(&self) -> &Normalizer {
         &self.normalizer
     }

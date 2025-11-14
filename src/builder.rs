@@ -11,6 +11,7 @@ use crate::build_cache::BuildCache;
 use crate::certificate::{Certificate, CertificateStore, CertificateWorklist};
 use crate::compilation::CompilationError;
 use crate::environment::Environment;
+use crate::generative::generative_prover::GenerativeProverConfig;
 use crate::generative::goal_context::GoalContext;
 use crate::generative::training_data_writer::TrainingDataWriter;
 use crate::goal::Goal;
@@ -20,6 +21,21 @@ use crate::project::Project;
 use crate::prover::{Outcome, ProverMode};
 
 static NEXT_BUILD_ID: AtomicU32 = AtomicU32::new(1);
+
+/// Configuration for which prover to use during verification
+#[derive(Clone, Debug)]
+pub enum ProverConfig {
+    /// Use the saturation-based prover (default)
+    Saturation,
+    /// Use the generative prover
+    Generative(GenerativeProverConfig),
+}
+
+impl Default for ProverConfig {
+    fn default() -> Self {
+        ProverConfig::Saturation
+    }
+}
 
 /// The Builder contains all the mutable state for a single build.
 /// This is separate from the Project because you can read information from the Project from other
@@ -96,6 +112,9 @@ pub struct Builder<'a> {
     /// Optional writer for training data output.
     /// When set, writes goal context and proofs for verified certificates to numbered files.
     training_output: Option<TrainingDataWriter>,
+
+    /// Configuration for which prover to use.
+    prover_config: ProverConfig,
 }
 
 /// Metrics collected during a build.
@@ -292,6 +311,20 @@ impl<'a> Builder<'a> {
         cancellation_token: CancellationToken,
         event_handler: impl FnMut(BuildEvent) + 'a,
     ) -> Self {
+        Self::with_prover(
+            project,
+            cancellation_token,
+            event_handler,
+            ProverConfig::default(),
+        )
+    }
+
+    pub fn with_prover(
+        project: &'a Project,
+        cancellation_token: CancellationToken,
+        event_handler: impl FnMut(BuildEvent) + 'a,
+        prover_config: ProverConfig,
+    ) -> Self {
         let event_handler = Box::new(event_handler);
         Builder {
             project,
@@ -314,6 +347,7 @@ impl<'a> Builder<'a> {
             verbose: false,
             cancellation_token,
             training_output: None,
+            prover_config,
         }
     }
 
@@ -596,9 +630,9 @@ impl<'a> Builder<'a> {
 
     /// Verifies a goal.
     /// env should be the environment that the proof happens in.
-    fn verify_goal<P: crate::prover::Prover>(
+    fn verify_goal(
         &mut self,
-        mut processor: Rc<Processor<P>>,
+        mut processor: Rc<Processor>,
         goal: &Goal,
         env: &Environment,
         new_certs: &mut Vec<Certificate>,
@@ -708,9 +742,9 @@ impl<'a> Builder<'a> {
     /// Verifies a node and all its children recursively.
     /// builder tracks statistics and results for the build.
     /// If verify_node encounters an error, it stops, leaving node in a borked state.
-    pub fn verify_node<P: crate::prover::Prover>(
+    pub fn verify_node(
         &mut self,
-        mut processor: Rc<Processor<P>>,
+        mut processor: Rc<Processor>,
         cursor: &mut NodeCursor,
         new_certs: &mut Vec<Certificate>,
         worklist: &mut CertificateWorklist,
@@ -798,7 +832,10 @@ impl<'a> Builder<'a> {
         if !env.nodes.is_empty() {
             self.module_proving_started(target.clone());
 
-            let mut processor = Processor::with_token(self.cancellation_token.clone());
+            let mut processor = match &self.prover_config {
+                ProverConfig::Saturation => Processor::with_token(self.cancellation_token.clone()),
+                ProverConfig::Generative(config) => Processor::new_generative(config.clone()),
+            };
             for fact in self.project.imported_facts(env.module_id, None) {
                 processor.add_fact(fact.clone())?;
             }
