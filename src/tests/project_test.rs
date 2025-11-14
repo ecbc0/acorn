@@ -1402,6 +1402,53 @@ fn test_deep_lib() {
 }
 
 #[test]
+fn test_complex_attribute_reference() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/base.ac",
+        r#"
+        structure Set[T] {
+            contains: T -> Bool
+        }
+
+        inductive Real {
+            zero
+            one
+        }
+
+        attributes Real {
+            define lte(self, other: Real) -> Bool {
+                self != Real.one or other != Real.zero
+            }
+        }
+
+
+        "#,
+    );
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        from base import Set, Real
+
+        attributes Set[Real] {
+            define is_upper_bound(self, b: Real) -> Bool {
+                forall(x: Real) {
+                    self.contains(x) implies x <= b
+                }        
+            }
+
+            define has_upper_bound(self) -> Bool {
+                exists(b: Real) {
+                    self.is_upper_bound(b)
+                }
+            }
+        }
+        "#,
+    );
+    p.expect_ok("main");
+}
+
+#[test]
 fn test_hover_method_call() {
     let mut p = Project::new_mock();
     p.mock(
