@@ -453,8 +453,8 @@ impl BindingMap {
                 attr_name,
             );
             if self.constant_defs.contains_key(&specific_name) {
-                // Specific attributes are always defined in the datatype's module
-                return Ok((datatype.module_id, specific_name));
+                // Specific attributes are defined in the current module
+                return Ok((self.module_id, specific_name));
             }
         }
 
