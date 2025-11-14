@@ -492,3 +492,53 @@ fn test_proving_with_typeclass_constrained_attributes() {
     "#;
     verify_succeeds(text);
 }
+
+#[test]
+fn test_proving_with_complex_attributes() {
+    // Test that we can define attributes with typeclass constraints (Foo[T: Bar] syntax)
+    // and prove a simple theorem using them
+    let text = r#"
+    inductive Color {
+        red
+        blue
+    }
+
+    structure Set[K] {
+        contains: K -> Bool
+    }
+
+    attributes Set[Color] {
+        define has_red(self) -> Bool {
+            exists(a: Color) {
+                self.contains(Color.red)
+            }
+        }
+
+        define has_non(self, c: Color) -> Bool {
+            exists(a: Color) {
+                self.contains(a) and a != c
+            }
+        }
+
+        define red_splits(self) -> Bool {
+            self.has_red and self.has_non(Color.red)
+        }
+    }
+
+    define true_fn(c: Color) -> Bool {
+        true
+    }
+
+    let universal = Set.new(true_fn)
+
+    theorem goal {
+        universal.red_splits
+    } by {
+        let b = Color.blue
+        universal.contains(b) and b != Color.red
+        universal.has_non(Color.red)
+        universal.has_red
+    }
+    "#;
+    verify_succeeds(text);
+}
