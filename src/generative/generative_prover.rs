@@ -73,6 +73,12 @@ pub struct GenerativeProver {
     /// Overall statistics across all rollouts
     total_successful_lines: usize,
     total_failed_attempts: usize,
+
+    /// The goal name (used for certificate generation)
+    goal_name: Option<String>,
+
+    /// The certificate found during search (if a successful proof was found)
+    certificate: Option<Certificate>,
 }
 
 impl GenerativeProver {
@@ -91,6 +97,8 @@ impl GenerativeProver {
             failed_attempts: 0,
             total_successful_lines: 0,
             total_failed_attempts: 0,
+            goal_name: None,
+            certificate: None,
         }
     }
 
@@ -143,7 +151,7 @@ impl GenerativeProver {
     }
 
     /// Attempt to generate and check a single line
-    /// Returns true if the line checked successfully, false if it failed to check
+    /// Returns Some(line) if the line checked successfully, None if it failed to check
     ///
     /// On success: the cache is updated with the new line, so future generations build on it
     /// On failure: the cache is unchanged, so the failed line doesn't pollute context
@@ -153,7 +161,7 @@ impl GenerativeProver {
         project: &Project,
         bindings: &mut Cow<BindingMap>,
         normalizer: &mut Cow<Normalizer>,
-    ) -> bool {
+    ) -> Option<String> {
         // Get the cache (must be initialized via set_goal_context)
         let base_cache = self
             .context_cache
@@ -190,42 +198,48 @@ impl GenerativeProver {
                 // Keep the updated cache (which now includes the generated line tokens)
                 self.context_cache = Some(working_cache);
                 self.successful_lines += 1;
-                true
+                Some(generated_line)
             }
             Err(_) => {
                 // Failed to check - checker state unchanged
                 // Discard the working_cache, keep the original
                 self.failed_attempts += 1;
-                false
+                None
             }
         }
     }
 
     /// Run a single rollout: generate up to num_steps_per_rollout lines
     /// Stops early if we find a contradiction
+    /// Returns Some(accepted_lines) if a contradiction was found, None otherwise
     pub fn rollout(
         &mut self,
         checker: &mut Checker,
         project: &Project,
         bindings: &mut Cow<BindingMap>,
         normalizer: &mut Cow<Normalizer>,
-    ) -> Outcome {
+    ) -> Option<Vec<String>> {
+        let mut accepted_lines = Vec::new();
+
         for _ in 0..self.config.num_steps_per_rollout {
             // Check if we've already found a contradiction
             if checker.has_contradiction() {
-                return Outcome::Success;
+                return Some(accepted_lines);
             }
 
             // Try to generate and check a line
-            // Returns true if successful, false if failed to check (both are fine, we continue)
-            let _ = self.generate_and_check_line(checker, project, bindings, normalizer);
+            // Returns Some(line) if successful, None if failed to check
+            if let Some(line) = self.generate_and_check_line(checker, project, bindings, normalizer)
+            {
+                accepted_lines.push(line);
+            }
         }
 
         // Exhausted our step budget for this rollout
         if checker.has_contradiction() {
-            Outcome::Success
+            Some(accepted_lines)
         } else {
-            Outcome::Constrained
+            None
         }
     }
 
@@ -254,18 +268,21 @@ impl GenerativeProver {
             let mut rollout_checker = checker.clone();
 
             // Run a single rollout
-            let outcome = self.rollout(
+            if let Some(accepted_lines) = self.rollout(
                 &mut rollout_checker,
                 project,
                 &mut bindings,
                 &mut normalizer,
-            );
-
-            if outcome == Outcome::Success {
-                return outcome;
+            ) {
+                // Success! We found a contradiction
+                // Create and save the certificate
+                if let Some(ref goal_name) = self.goal_name {
+                    self.certificate = Some(Certificate::new(goal_name.clone(), accepted_lines));
+                }
+                return Outcome::Success;
             }
 
-            // For any other outcome, just continue trying
+            // Rollout didn't find a contradiction, continue trying
             self.reset_for_new_rollout();
             continue;
         }
@@ -300,6 +317,9 @@ impl Prover for GenerativeProver {
         project: &Project,
         original_goal: &Goal,
     ) {
+        // Save the goal name for certificate generation
+        self.goal_name = Some(original_goal.name.clone());
+
         // Create a goal context from the original goal
         let goal_context = GoalContext::from_project_and_goal(project, original_goal)
             .expect("Failed to create goal context from goal");
@@ -322,16 +342,29 @@ impl Prover for GenerativeProver {
     }
 
     /// Generate a certificate for the proof
-    /// The generative prover doesn't produce certificates yet
+    /// Returns the certificate if a successful proof was found, otherwise returns an error
     fn make_cert(
         &self,
         _project: &Project,
         _bindings: &BindingMap,
         _normalizer: &Normalizer,
-        _print: bool,
+        print: bool,
     ) -> Result<Certificate, CodeGenError> {
-        Err(CodeGenError::GeneratedBadCode(
-            "GenerativeProver does not yet support certificate generation".to_string(),
-        ))
+        let cert = self
+            .certificate
+            .as_ref()
+            .ok_or_else(|| CodeGenError::GeneratedBadCode("No proof found".to_string()))?;
+
+        if print {
+            println!("concrete proof:");
+            if let Some(proof) = &cert.proof {
+                for line in proof {
+                    println!("  {}", line);
+                }
+            } else {
+                println!("  <no proof>");
+            }
+        }
+        Ok(cert.clone())
     }
 }

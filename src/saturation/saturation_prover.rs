@@ -276,19 +276,9 @@ impl SaturationProver {
             .name
             .clone();
 
-        let proof = match self.get_proof(&normalizer, false) {
-            Some(proof) => proof,
-            None => {
-                // No proof found, create a placeholder certificate
-                if print {
-                    println!(
-                        "No proof found, creating placeholder certificate for goal: {}",
-                        goal_name
-                    );
-                }
-                return Ok(Certificate::placeholder(goal_name));
-            }
-        };
+        let proof = self
+            .get_proof(&normalizer, false)
+            .ok_or_else(|| Error::internal("No proof found"))?;
 
         if print {
             self.print_proof(&proof, project, bindings, normalizer);
