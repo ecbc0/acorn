@@ -111,7 +111,17 @@ impl GenerativeProver {
         let prompt = String::from_utf8(prompt)?;
 
         // Tokenize the prompt
-        let tokens = self.generative_model.encode(&prompt);
+        let mut tokens = self.generative_model.encode(&prompt);
+
+        let context_length = self.generative_model.context_length();
+
+        // Truncate if the prompt is too long
+        // We need to leave room for generated tokens, so use a conservative limit
+        let max_prompt_tokens = context_length.saturating_sub(self.config.max_tokens_per_line);
+        if tokens.len() > max_prompt_tokens {
+            // Truncate from the start, keeping the most recent context
+            tokens = tokens[tokens.len() - max_prompt_tokens..].to_vec();
+        }
 
         // Initialize a cache and warm it up with the prompt tokens
         let mut cache = GenerationCache::new(
@@ -174,14 +184,23 @@ impl GenerativeProver {
         let mut working_cache = base_cache.clone();
 
         // Generate a line using the cloned cache
-        let generated_line = self
-            .generative_model
-            .generate_line_with_cache(
-                &mut working_cache,
-                self.config.max_tokens_per_line,
-                self.config.temperature,
-            )
-            .expect("Failed to generate line");
+        let generated_line = match self.generative_model.generate_line_with_cache(
+            &mut working_cache,
+            self.config.max_tokens_per_line,
+            self.config.temperature,
+        ) {
+            Ok(line) => line,
+            Err(_) => {
+                self.failed_attempts += 1;
+                return None;
+            }
+        };
+
+        // Skip empty or whitespace-only lines
+        if generated_line.trim().is_empty() {
+            self.failed_attempts += 1;
+            return None;
+        }
 
         // Try to check the generated line
         let mut certificate_steps = Vec::new();
