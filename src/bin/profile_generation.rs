@@ -29,16 +29,16 @@ fn main() {
         eprintln!("Usage: {} <model_path>", args[0]);
         eprintln!();
         eprintln!("Example:");
-        eprintln!("  {} ~/models/tactics_model", args[0]);
+        eprintln!("  {} ~/models/generative_model", args[0]);
         std::process::exit(1);
     }
 
     let model_path = &args[1];
-    println!("Loading tactics model from: {}", model_path);
+    println!("Loading generative model from: {}", model_path);
 
     // Create the config
     let config = GenerativeProverConfig {
-        tactics_model_path: model_path.to_string(),
+        generative_model_path: model_path.to_string(),
         num_steps_per_rollout: 100, // 100 steps per rollout
         max_tokens_per_line: 100,
         temperature: 0.8,

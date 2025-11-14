@@ -12,14 +12,14 @@ use crate::project::Project;
 use crate::proof_step::ProofStep;
 use crate::prover::{Outcome, Prover, ProverMode};
 
+use super::generative_model::{GenerationCache, GenerativeModel};
 use super::goal_context::GoalContext;
-use super::tactics_model::{GenerationCache, TacticsModel};
 
 /// Configuration for the generative prover
 #[derive(Clone, Debug)]
 pub struct GenerativeProverConfig {
     /// Path to the directory containing model.onnx, tokenizer.json, config.json
-    pub tactics_model_path: String,
+    pub generative_model_path: String,
 
     /// Number of generation steps to attempt per rollout
     pub num_steps_per_rollout: usize,
@@ -37,7 +37,7 @@ pub struct GenerativeProverConfig {
 impl Default for GenerativeProverConfig {
     fn default() -> Self {
         Self {
-            tactics_model_path: String::new(),
+            generative_model_path: String::new(),
             num_steps_per_rollout: 10,
             max_tokens_per_line: 100,
             temperature: 0.8,
@@ -50,7 +50,7 @@ impl Default for GenerativeProverConfig {
 #[derive(Clone)]
 pub struct GenerativeProver {
     /// The neural model for generating proof tactics
-    tactics_model: TacticsModel,
+    generative_model: GenerativeModel,
 
     /// Configuration parameters
     config: GenerativeProverConfig,
@@ -84,11 +84,11 @@ pub struct GenerativeProver {
 impl GenerativeProver {
     /// Create a new GenerativeProver from a config
     pub fn new(config: GenerativeProverConfig) -> Self {
-        let tactics_model =
-            TacticsModel::load(&config.tactics_model_path).expect("Failed to load tactics model");
+        let generative_model = GenerativeModel::load(&config.generative_model_path)
+            .expect("Failed to load generative model");
 
         Self {
-            tactics_model,
+            generative_model,
             config,
             goal_context: None,
             context_cache: None,
@@ -111,18 +111,18 @@ impl GenerativeProver {
         let prompt = String::from_utf8(prompt)?;
 
         // Tokenize the prompt
-        let tokens = self.tactics_model.encode(&prompt);
+        let tokens = self.generative_model.encode(&prompt);
 
         // Initialize a cache and warm it up with the prompt tokens
         let mut cache = GenerationCache::new(
-            self.tactics_model.n_layers(),
-            self.tactics_model.n_heads(),
-            self.tactics_model.head_dim(),
+            self.generative_model.n_layers(),
+            self.generative_model.n_heads(),
+            self.generative_model.head_dim(),
         );
 
         // Run inference on each token to populate the cache
         for &token in &tokens {
-            self.tactics_model.infer_with_cache(token, &mut cache)?;
+            self.generative_model.infer_with_cache(token, &mut cache)?;
         }
 
         self.goal_context = Some(goal_context);
@@ -175,7 +175,7 @@ impl GenerativeProver {
 
         // Generate a line using the cloned cache
         let generated_line = self
-            .tactics_model
+            .generative_model
             .generate_line_with_cache(
                 &mut working_cache,
                 self.config.max_tokens_per_line,

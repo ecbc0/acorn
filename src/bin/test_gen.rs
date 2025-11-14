@@ -1,7 +1,7 @@
-// Test binary for the TacticsModel generative model.
+// Test binary for the GenerativeModel generative model.
 // Usage: cargo run --bin test_gen -- <path_to_model_directory>
 
-use acorn::generative::tactics_model::TacticsModel;
+use acorn::generative::generative_model::GenerativeModel;
 use std::env;
 
 fn main() {
@@ -20,7 +20,7 @@ fn main() {
     let model_path = &args[1];
 
     println!("Loading model from: {}", model_path);
-    let model = match TacticsModel::load(model_path) {
+    let model = match GenerativeModel::load(model_path) {
         Ok(m) => m,
         Err(e) => {
             eprintln!("Error loading model: {}", e);

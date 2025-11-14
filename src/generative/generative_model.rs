@@ -11,14 +11,14 @@ use tokenizers::Tokenizer;
 
 use crate::ort_utils::ensure_ort_initialized;
 
-// The TacticsModel uses ONNX Runtime to load a generative model for theorem proving.
+// The GenerativeModel uses ONNX Runtime to load a generative model for theorem proving.
 // This is a BPE-tokenized GPT model that:
 // - Input: token indices with shape (batch_size, context_length)
 // - Output: logits with shape (batch_size, context_length, vocab_size)
 // Unlike ScoringModel, this loads the model from a directory path at runtime.
 // The directory should contain: model.onnx, tokenizer.json, and config.json
 #[derive(Clone)]
-pub struct TacticsModel {
+pub struct GenerativeModel {
     // The ONNX model session.
     session: Arc<Session>,
     // The tokenizer for encoding/decoding text
@@ -35,8 +35,8 @@ pub struct TacticsModel {
     head_dim: usize,
 }
 
-static TACTICS_MODEL: OnceLock<Arc<TacticsModel>> = OnceLock::new();
-static TACTICS_MODEL_PATH: OnceLock<String> = OnceLock::new();
+static GENERATIVE_MODEL: OnceLock<Arc<GenerativeModel>> = OnceLock::new();
+static GENERATIVE_MODEL_PATH: OnceLock<String> = OnceLock::new();
 
 fn make_session(bytes: &[u8]) -> Result<Arc<Session>, Box<dyn Error>> {
     ensure_ort_initialized()?;
@@ -49,7 +49,7 @@ fn make_session(bytes: &[u8]) -> Result<Arc<Session>, Box<dyn Error>> {
     Ok(Arc::new(session))
 }
 
-impl TacticsModel {
+impl GenerativeModel {
     // Loads a model from a directory path at runtime.
     // The directory should contain: model.onnx, tokenizer.json, and config.json
     // This can only be called once - subsequent calls with a different path will panic.
@@ -58,15 +58,15 @@ impl TacticsModel {
         let path_str = dir_path.to_string_lossy().to_string();
 
         // Check if we've already loaded a model
-        if let Some(cached_path) = TACTICS_MODEL_PATH.get() {
+        if let Some(cached_path) = GENERATIVE_MODEL_PATH.get() {
             if cached_path != &path_str {
                 panic!(
-                    "TacticsModel::load called with different path. First: {}, Second: {}",
+                    "GenerativeModel::load called with different path. First: {}, Second: {}",
                     cached_path, path_str
                 );
             }
             // Return a clone of the cached model
-            return Ok((**TACTICS_MODEL.get().unwrap()).clone());
+            return Ok((**GENERATIVE_MODEL.get().unwrap()).clone());
         }
 
         // Load the ONNX model
@@ -100,7 +100,7 @@ impl TacticsModel {
             .as_u64()
             .ok_or("head_dim not found in config.json")? as usize;
 
-        let model = TacticsModel {
+        let model = GenerativeModel {
             session,
             tokenizer: Arc::new(tokenizer),
             context_length,
@@ -111,8 +111,8 @@ impl TacticsModel {
         };
 
         // Cache the path and model
-        TACTICS_MODEL_PATH.set(path_str).ok();
-        let cached = TACTICS_MODEL.get_or_init(|| Arc::new(model.clone()));
+        GENERATIVE_MODEL_PATH.set(path_str).ok();
+        let cached = GENERATIVE_MODEL.get_or_init(|| Arc::new(model.clone()));
         Ok((**cached).clone())
     }
 
@@ -349,7 +349,7 @@ impl GenerationCache {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn test_tactics_model_placeholder() {
+    fn test_generative_model_placeholder() {
         // This is a placeholder test. Actual tests will depend on having a model file.
         // For now, we just ensure the module compiles.
         assert!(true);
