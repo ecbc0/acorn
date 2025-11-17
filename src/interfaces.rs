@@ -94,6 +94,19 @@ pub struct Step {
     pub location: Option<Location>,
 }
 
+// Information about a single goal.
+#[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalInfo {
+    pub goal_name: String,
+
+    // Whether there is a cached proof that verifies for this goal
+    pub has_cached_proof: bool,
+
+    // The steps from the cached proof, if the goal has a proof
+    pub steps: Option<Vec<Step>>,
+}
+
 // The SelectionResponse is sent from language server -> extension with information about what
 // is at the selected line, without starting a proof search.
 #[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
@@ -114,15 +127,11 @@ pub struct SelectionResponse {
     // When building is true, it means that a build is currently in progress.
     pub building: bool,
 
-    // Information about the goal at this location, if any
-    pub goal_name: Option<String>,
+    // The range of the goal(s) at this location. This is the same for all goals.
     pub goal_range: Option<Range>,
 
-    // Whether there is a cached proof that verifies for this goal
-    pub has_cached_proof: bool,
-
-    // The steps from the cached proof, if the goal has a proof
-    pub steps: Option<Vec<Step>>,
+    // Information about all goals at this location
+    pub goals: Vec<GoalInfo>,
 
     // The id for the selection, provided by the extension
     pub id: u32,
@@ -136,10 +145,8 @@ impl SelectionResponse {
             failure: None,
             loading: false,
             building: false,
-            goal_name: None,
             goal_range: None,
-            has_cached_proof: false,
-            steps: None,
+            goals: vec![],
             id: params.id,
         }
     }

@@ -368,12 +368,13 @@ async fn test_selection_after_fresh_build() {
     let response = fx.server.handle_selection_request(params).await.unwrap();
 
     // Verify the goal was found
-    assert_eq!(response.goal_name, Some("simple_theorem".to_string()));
+    assert_eq!(response.goals.len(), 1);
+    assert_eq!(response.goals[0].goal_name, "simple_theorem".to_string());
     assert!(response.goal_range.is_some());
 
     // Even for trivial proofs, we should get Some([]) rather than None
     assert!(
-        response.steps.is_some(),
+        response.goals[0].steps.is_some(),
         "Expected steps to be returned from cached proof (got None)."
     );
 }
@@ -419,8 +420,12 @@ async fn test_selection_inside_partially_complete_proof() {
 
     // We should get the proof steps for "a = a" statement inside proof block
     assert!(
-        response.steps.is_some(),
+        !response.goals.is_empty(),
+        "Expected at least one goal for 'a = a' statement inside proof block"
+    );
+    assert!(
+        response.goals[0].steps.is_some(),
         "Expected steps to be returned for 'a = a' statement inside proof block (got None). Goal name: {:?}",
-        response.goal_name
+        response.goals[0].goal_name
     );
 }

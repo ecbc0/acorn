@@ -42,16 +42,20 @@ interface Step {
   location: Location | null;
 }
 
+interface GoalInfo {
+  goalName: string;
+  hasCachedProof: boolean;
+  steps: Array<Step> | null;
+}
+
 interface SelectionResponse {
   uri: string;
   version: number;
   failure: string | null;
   loading: boolean;
   building: boolean;
-  goalName: string | null;
   goalRange: Range | null;
-  hasCachedProof: boolean;
-  steps: Array<Step> | null;
+  goals: Array<GoalInfo>;
   id: number;
 }
 

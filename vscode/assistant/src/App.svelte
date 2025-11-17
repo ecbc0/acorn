@@ -11,7 +11,7 @@
   let help: Help | null = null;
 
   function handleSelectionResponse(response: SelectionResponse) {
-    if (response.failure || response.goalName === null) {
+    if (response.failure || response.goals.length === 0) {
       // Failure responses should not reach this point.
       console.error("unexpected upstream failure:", response.failure);
       return;
@@ -40,7 +40,7 @@
 </script>
 
 <main>
-  {#if selectionResponse !== null && selectionResponse.goalName !== null}
+  {#if selectionResponse !== null && selectionResponse.goals.length > 0}
     <Selection {selectionResponse} {showLocation} />
   {:else}
     {#if help !== null && help.noSelection}

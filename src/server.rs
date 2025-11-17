@@ -18,7 +18,8 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 use crate::interfaces::{
-    DocumentProgress, ProgressParams, ProgressResponse, SelectionParams, SelectionResponse,
+    DocumentProgress, GoalInfo, ProgressParams, ProgressResponse, SelectionParams,
+    SelectionResponse,
 };
 use crate::project::{Project, ProjectConfig};
 
@@ -480,10 +481,16 @@ impl AcornLanguageServer {
                     params.selected_line,
                     params.version
                 ));
-                response.goal_name = goal_name;
+                if let Some(name) = goal_name {
+                    let has_cached_proof = steps.is_some();
+                    let goal_info = GoalInfo {
+                        goal_name: name,
+                        has_cached_proof,
+                        steps,
+                    };
+                    response.goals.push(goal_info);
+                }
                 response.goal_range = goal_range;
-                response.has_cached_proof = steps.is_some();
-                response.steps = steps;
             }
             Err(e) => {
                 // This happens a lot when you click somewhere that doesn't match a goal.
