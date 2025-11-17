@@ -1,7 +1,6 @@
 import {
   commands,
   Disposable,
-  Position,
   Range,
   TextEditor,
   TextEditorRevealType,
@@ -206,17 +205,6 @@ export class Assistant implements Disposable {
   // Handles messages from the webview.
   async handleWebviewMessage(message: any) {
     try {
-      if (message.command === "insertProof") {
-        await this.insertProof(
-          message.uri,
-          message.version,
-          message.line,
-          message.insertBlock,
-          message.code
-        );
-        return;
-      }
-
       if (message.command === "showLocation") {
         await this.showLocation(message.uri, message.range);
         return;
@@ -252,127 +240,6 @@ export class Assistant implements Disposable {
       viewColumn: this.requestViewColumn,
       preview: true,
     });
-  }
-
-  async insertAtLineStart(editor: TextEditor, line: number, text: string) {
-    let success = await editor.edit((edit) => {
-      // Insert the new code itself.
-      let insertPos = new Position(line, 0);
-      edit.insert(insertPos, text);
-
-      // If the line before our insertion is empty, we want to delete it, so that
-      // the net effect is inserting this code at the empty line.
-      if (
-        line > 0 &&
-        editor.document.lineAt(line - 1).text.trim().length === 0
-      ) {
-        let prevPos = new Position(line - 1, 0);
-        edit.delete(new Range(prevPos, insertPos));
-      }
-    });
-
-    if (!success) {
-      window.showErrorMessage("failed to insert proof");
-      return;
-    }
-
-    // If the line before our insertion is empty, we want to delete it.
-    if (line > 0 && editor.document.lineAt(line - 1).text.trim().length === 0) {
-      let start = new Position(line - 1, 0);
-      let end = new Position(line, 0);
-      let success = await editor.edit((edit) => {
-        edit.delete(new Range(start, end));
-      });
-      if (!success) {
-        window.showErrorMessage("failed to delete empty line");
-        return;
-      }
-    }
-  }
-
-  async insertAtLineEnd(editor: TextEditor, line: number, text: string) {
-    let success = await editor.edit((edit) => {
-      let insertPos = new Position(
-        line,
-        editor.document.lineAt(line).text.length
-      );
-      edit.insert(insertPos, text);
-    });
-
-    if (!success) {
-      window.showErrorMessage("failed to insert proof");
-      return;
-    }
-  }
-
-  // Inserts a proof at the given line.
-  // If insertBlock is true, the inserted code will be wrapped in a "by" block and inserted at
-  // the end of the line.
-  // If insertBlock is false, the inserted code will be inserted at the start of the line.
-  // Either way, any code after the insertion will be shifted down, so that it follows
-  // the inserted code.
-  async insertProof(
-    uri: string,
-    version: number,
-    line: number,
-    insertBlock: boolean,
-    code: string[]
-  ) {
-    let parts = uri.split("/");
-    let filename = parts[parts.length - 1];
-
-    let editor = await this.focusEditor(uri);
-    if (!editor) {
-      window.showWarningMessage(`${filename} has been closed`);
-      return;
-    }
-
-    if (editor.document.version != version) {
-      window.showWarningMessage(`${filename} has pending changes`);
-      return;
-    }
-
-    if (line < 0 || line > editor.document.lineCount) {
-      window.showErrorMessage(`invalid line number: ${line}`);
-      return;
-    }
-
-    let config = workspace.getConfiguration("editor", editor.document.uri);
-    let tabSize = config.get("tabSize", 4);
-    let tab = " ".repeat(tabSize);
-    let lineText = editor.document.lineAt(line).text;
-
-    // Figure out how much to indent at the base level of the inserted code.
-    let indentBase = "";
-    for (let i = 0; i < lineText.length; i++) {
-      if (lineText[i] === " ") {
-        indentBase += " ";
-        continue;
-      }
-      if (lineText[i] === "\t") {
-        indentBase += tab;
-        continue;
-      }
-      if (lineText[i] === "}" && !insertBlock) {
-        // We're inserting into a block that this line closes.
-        // So we want the inserted code to be more indented than this line is.
-        indentBase += tab;
-      }
-      break;
-    }
-
-    let formatted = [];
-    let indentEachLine = insertBlock ? indentBase + tab : indentBase;
-    for (let c of code) {
-      formatted.push(indentEachLine + c.replace(/\t/g, tab) + "\n");
-    }
-
-    if (insertBlock) {
-      let text = " by {\n" + formatted.join("") + indentBase + "}";
-      await this.insertAtLineEnd(editor, line, text);
-    } else {
-      await this.insertAtLineStart(editor, line, formatted.join(""));
-    }
   }
 
   // Show a particular location in the codebase.
