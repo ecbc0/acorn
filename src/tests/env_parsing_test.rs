@@ -84,6 +84,39 @@ fn test_no_russell_paradox() {
 }
 
 #[test]
+fn test_inductive_negative_occurrence() {
+    let mut env = Environment::test();
+    env.bad(
+        r#"
+        inductive Bad {
+            base
+            rec(Bad -> Bool)
+        }
+        "#,
+    );
+}
+
+#[test]
+fn test_inductive_negative_occurrence_in_generic() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        structure Set[T] {
+            contains: T -> Bool
+        }
+        "#,
+    );
+    env.bad(
+        r#"
+        inductive Bad {
+            base
+            rec(Set[Bad])
+        }
+        "#,
+    );
+}
+
+#[test]
 fn test_template_typechecking() {
     let mut env = Environment::test();
     env.add("type Nat: axiom");
