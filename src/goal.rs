@@ -14,9 +14,6 @@ pub struct Goal {
     // The proposition to be proved.
     pub proposition: Proposition,
 
-    // Whether we need to insert a block, if we do insert a proof.
-    pub insert_block: bool,
-
     // Whether it's okay if we discover an inconsistency in the provided facts.
     // If it's not okay, we warn the user.
     pub inconsistency_okay: bool,
@@ -49,7 +46,6 @@ impl Goal {
             module_id: env.module_id,
             name,
             proposition: prop.clone(),
-            insert_block: env.implicit,
             inconsistency_okay: env.includes_explicit_false,
             first_line,
             last_line,
