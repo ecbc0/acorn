@@ -14,10 +14,6 @@ pub struct Goal {
     // The proposition to be proved.
     pub proposition: Proposition,
 
-    // The zero-based line where we would insert a proof for this goal.
-    // This is either the last line, for a goal with a block, or the first line.
-    pub proof_insertion_line: u32,
-
     // Whether we need to insert a block, if we do insert a proof.
     pub insert_block: bool,
 
@@ -35,7 +31,6 @@ impl Goal {
     fn new(
         env: &Environment,
         prop: &Proposition,
-        proof_insertion_line: u32,
         first_line: u32,
         last_line: u32,
     ) -> Result<Goal, String> {
@@ -54,7 +49,6 @@ impl Goal {
             module_id: env.module_id,
             name,
             proposition: prop.clone(),
-            proof_insertion_line,
             insert_block: env.implicit,
             inconsistency_okay: env.includes_explicit_false,
             first_line,
@@ -66,13 +60,13 @@ impl Goal {
     pub fn block(env: &Environment, prop: &Proposition) -> Result<Goal, String> {
         let first_line = env.first_line;
         let last_line = env.last_line();
-        Self::new(env, prop, last_line, first_line, last_line)
+        Self::new(env, prop, first_line, last_line)
     }
 
     /// Creates a Goal for a proposition that is inside a block (or standalone).
     pub fn interior(env: &Environment, prop: &Proposition) -> Result<Goal, String> {
         let first_line = prop.source.range.start.line;
         let last_line = prop.source.range.end.line;
-        Self::new(env, prop, first_line, first_line, last_line)
+        Self::new(env, prop, first_line, last_line)
     }
 }
