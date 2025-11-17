@@ -22,8 +22,8 @@ const showLocationDecoration = window.createTextEditorDecorationType({
 
 export class Assistant implements Disposable {
   client: LanguageClient;
-  currentParams: SearchParams;
-  currentSearchId: number;
+  currentParams: SelectionParams;
+  currentSelectionId: number;
   disposables: Disposable[];
   distPath: string;
   listener: Disposable;
@@ -34,7 +34,7 @@ export class Assistant implements Disposable {
   constructor(client: LanguageClient, distPath: string) {
     this.client = client;
     this.distPath = distPath;
-    this.currentSearchId = 0;
+    this.currentSelectionId = 0;
     this.wasShown = false;
     this.disposables = [
       commands.registerTextEditorCommand(
@@ -52,12 +52,12 @@ export class Assistant implements Disposable {
           e.kind === TextEditorSelectionChangeKind.Keyboard
         ) {
           // We only want to trigger on explicit user actions.
-          await this.searchOnSelection(true);
+          await this.handleSelection(true);
         }
       }),
       workspace.onDidSaveTextDocument(async () => {
         this.chooseHelp();
-        await this.searchOnSelection(false);
+        await this.handleSelection(false);
       }),
       window.onDidChangeActiveTextEditor(async () => {
         this.chooseHelp();
@@ -96,7 +96,7 @@ export class Assistant implements Disposable {
         !trim.startsWith("from") &&
         !trim.startsWith("import")
       ) {
-        // There may actually be a selection. But the assistant knows to use the search result
+        // There may actually be a selection. But the assistant knows to use the selection result
         // if there is one. So, send the help message for there not being a selection.
         this.sendHelp({ noSelection: true });
         return;
@@ -107,9 +107,9 @@ export class Assistant implements Disposable {
     this.sendHelp({ newDocument: true });
   }
 
-  // Runs a new search based on the current selection.
+  // Handles the current selection by sending it to the language server.
   // If 'onSelect' is passed, just the selection changed.
-  async searchOnSelection(onSelect: boolean) {
+  async handleSelection(onSelect: boolean) {
     try {
       let editor = window.activeTextEditor;
       if (
@@ -139,25 +139,25 @@ export class Assistant implements Disposable {
         return;
       }
 
-      let id = this.currentSearchId + 1;
-      let params: SearchParams = { uri, selectedLine, version, id };
+      let id = this.currentSelectionId + 1;
+      let params: SelectionParams = { uri, selectedLine, version, id };
 
       // This view column is probably the one the user is actively writing in.
       // When in doubt, we can use this view column to do code-writing operations.
       this.requestViewColumn = editor.viewColumn;
 
-      await this.sendSearchRequest(params);
+      await this.sendSelectionRequest(params);
     } catch (e) {
       console.error("error during update:", e);
     }
   }
 
   // Sends a selection request to the language server, passing the response on to the webview.
-  async sendSearchRequest(params: SearchParams) {
+  async sendSelectionRequest(params: SelectionParams) {
     console.log(
       `selection request ${params.id}: ${params.uri} v${params.version} line ${params.selectedLine}`
     );
-    this.currentSearchId = params.id;
+    this.currentSelectionId = params.id;
     this.currentParams = params;
 
     while (true) {
@@ -166,7 +166,7 @@ export class Assistant implements Disposable {
         params
       );
 
-      if (!this.panel || params.id != this.currentSearchId) {
+      if (!this.panel || params.id != this.currentSelectionId) {
         // The request is no longer relevant
         return;
       }
@@ -179,7 +179,7 @@ export class Assistant implements Disposable {
       if (response.loading) {
         let ms = 50;
         await new Promise((resolve) => setTimeout(resolve, ms));
-        if (!this.panel || params.id != this.currentSearchId) {
+        if (!this.panel || params.id != this.currentSelectionId) {
           return;
         }
         continue;
@@ -192,7 +192,7 @@ export class Assistant implements Disposable {
       if (response.building) {
         let ms = 1000;
         await new Promise((resolve) => setTimeout(resolve, ms));
-        if (!this.panel || params.id != this.currentSearchId) {
+        if (!this.panel || params.id != this.currentSelectionId) {
           return;
         }
         continue;
@@ -445,10 +445,10 @@ export class Assistant implements Disposable {
     );
     this.panel.webview.html = injected;
 
-    // Always reissue the search request on panel open.
+    // Always reissue the selection request on panel open.
     this.chooseHelp();
     this.currentParams = null;
-    this.searchOnSelection(false);
+    this.handleSelection(false);
   }
 
   toggle(editor: TextEditor) {

@@ -14,13 +14,6 @@ interface ProgressResponse {
   docs: { [url: string]: DocumentProgress };
 }
 
-interface SearchParams {
-  uri: string;
-  version: number;
-  selectedLine: number;
-  id: number;
-}
-
 interface Position {
   line: number;
   character: number;
@@ -66,7 +59,7 @@ interface SelectionResponse {
 // There's no Rust equivalent for these interfaces.
 
 // Sent from the extension to the assistant to indicate that the user might need help.
-// Any search response will override these.
+// Any selection response will override these.
 interface Help {
   // The user has just created a new document, so they might need to know how to get started.
   newDocument?: boolean;
