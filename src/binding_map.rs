@@ -3,7 +3,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, Range};
 
-use crate::acorn_type::{AcornType, Datatype, PotentialType, TypeParam, Typeclass, UnresolvedType};
+use crate::acorn_type::{
+    AcornType, Datatype, PotentialType, TypeParam, Typeclass, UnresolvedType, Variance,
+};
 use crate::acorn_value::AcornValue;
 use crate::code_generator::CodeGenerator;
 use crate::compilation::{self, ErrorSource};
@@ -1198,6 +1200,21 @@ impl BindingMap {
             .and_then(|info| info.range.as_ref())
     }
 
+    /// Get the variance information for a datatype's type parameters.
+    pub fn get_datatype_variances(&self, datatype: &Datatype) -> Option<&Vec<Variance>> {
+        self.datatype_defs
+            .get(datatype)
+            .and_then(|info| info.variances.as_ref())
+    }
+
+    /// Set the variance information for a datatype's type parameters.
+    /// This is used to update variance after computing it for inductive types.
+    pub fn set_datatype_variances(&mut self, datatype: &Datatype, variances: Vec<Variance>) {
+        if let Some(info) = self.datatype_defs.get_mut(datatype) {
+            info.variances = Some(variances);
+        }
+    }
+
     /// Get the doc comment for a typeclass.
     pub fn get_typeclass_doc_comments(&self, typeclass: &Typeclass) -> Option<&Vec<String>> {
         self.typeclass_defs.get(typeclass).and_then(|info| {
@@ -2063,6 +2080,11 @@ struct DatatypeDefinition {
 
     /// The stringified form of the statement that defined this datatype.
     definition_string: Option<String>,
+
+    /// Variance information for each type parameter.
+    /// None means variance hasn't been computed yet (for inductive types being defined).
+    /// Some(vec) means variance has been computed, with one entry per type parameter.
+    variances: Option<Vec<Variance>>,
 }
 
 impl DatatypeDefinition {
@@ -2074,6 +2096,7 @@ impl DatatypeDefinition {
             doc_comments: Vec::new(),
             range: None,
             definition_string: None,
+            variances: None,
         }
     }
 

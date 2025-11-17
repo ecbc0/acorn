@@ -1,6 +1,6 @@
 use tower_lsp::lsp_types::Range;
 
-use crate::acorn_type::{AcornType, Datatype, TypeParam, Typeclass};
+use crate::acorn_type::{AcornType, Datatype, TypeParam, Typeclass, Variance};
 use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::AtomId;
 use crate::binding_map::ConstructorInfo;
@@ -792,6 +792,18 @@ impl Environment {
             field_doc_comments.push(doc_comments.clone());
         }
 
+        // Compute variance for each type parameter
+        let variances = type_params
+            .iter()
+            .map(|param| {
+                let mut combined = Variance::None;
+                for field_type in &field_types {
+                    combined = combined.merge(field_type.compute_variance(param, true));
+                }
+                combined
+            })
+            .collect::<Vec<_>>();
+
         // If there's a constraint, add a block to prove it can be satisfied.
         // The stack for the unbound constraint is the fields of the structure.
         // This happens before adding any names of methods, so that the block
@@ -841,6 +853,8 @@ impl Environment {
             Some(ss.name_token.range()),
             definition_string,
         );
+        // Store the computed variances
+        self.bindings.set_datatype_variances(&datatype, variances);
         let struct_type = potential_type.resolve(arbitrary_params, &ss.name_token)?;
         let mut member_fns = vec![];
         for ((member_fn_name, field_type), doc_comments) in member_fn_names
@@ -1066,6 +1080,46 @@ impl Environment {
         }
         if !has_base {
             return Err(statement.error("inductive type must have a base case"));
+        }
+
+        // Compute variance for each type parameter from constructor argument types
+        let variances = type_params
+            .iter()
+            .map(|param| {
+                let mut combined = Variance::None;
+                for (_, type_list, _) in &constructors {
+                    for arg_type in type_list {
+                        combined = combined.merge(arg_type.compute_variance(param, true));
+                    }
+                }
+                combined
+            })
+            .collect::<Vec<_>>();
+
+        // Store the computed variances for this datatype
+        let datatype_for_variance = Datatype {
+            module_id: self.module_id,
+            name: is.name_token.text().to_string(),
+        };
+        self.bindings
+            .set_datatype_variances(&datatype_for_variance, variances);
+
+        // Check strict positivity: ensure the inductive type doesn't appear in negative positions
+        for (constructor_name, type_list, _) in &constructors {
+            for arg_type in type_list {
+                self.check_strict_positivity(
+                    arg_type,
+                    &arb_inductive_type,
+                    &arbitrary_params,
+                    &is.name_token,
+                )
+                .map_err(|e| {
+                    statement.error(&format!(
+                        "constructor {} has invalid type: {}",
+                        constructor_name, e
+                    ))
+                })?;
+            }
         }
 
         // Define the constructors.
@@ -1323,6 +1377,115 @@ impl Environment {
             self.bindings.remove_type(type_param.name.text());
         }
         Ok(())
+    }
+
+    /// Check that an inductive type appears only in strictly positive positions.
+    /// This prevents paradoxes like Russell's paradox.
+    fn check_strict_positivity(
+        &self,
+        arg_type: &AcornType,
+        inductive_type: &AcornType,
+        inductive_params: &[AcornType],
+        source: &dyn ErrorSource,
+    ) -> compilation::Result<()> {
+        match arg_type {
+            AcornType::Data(datatype, type_args) => {
+                // Check if any type argument contains the inductive type
+                for (i, arg) in type_args.iter().enumerate() {
+                    if self.contains_inductive_type(arg, inductive_type, inductive_params) {
+                        // The inductive type appears in this type argument
+                        // Look up the variance of parameter i in datatype
+                        if let Some(variances) = self.bindings.get_datatype_variances(datatype) {
+                            if i < variances.len() {
+                                match &variances[i] {
+                                    Variance::Negative | Variance::Both => {
+                                        return Err(source.error(&format!(
+                                            "inductive type appears in negative position (via type {})",
+                                            datatype.name
+                                        )));
+                                    }
+                                    Variance::Positive | Variance::None => {
+                                        // OK, recurse into this argument
+                                        self.check_strict_positivity(
+                                            arg,
+                                            inductive_type,
+                                            inductive_params,
+                                            source,
+                                        )?;
+                                    }
+                                }
+                            }
+                        }
+                        // If variance not available, recurse anyway (for the inductive type itself)
+                        else {
+                            self.check_strict_positivity(
+                                arg,
+                                inductive_type,
+                                inductive_params,
+                                source,
+                            )?;
+                        }
+                    }
+                }
+                Ok(())
+            }
+            AcornType::Function(ftype) => {
+                // Check if inductive appears in argument types (NEGATIVE position)
+                for arg in &ftype.arg_types {
+                    if self.contains_inductive_type(arg, inductive_type, inductive_params) {
+                        return Err(source.error(
+                            "inductive type appears in negative position (function argument)",
+                        ));
+                    }
+                }
+                // Return type is OK (positive position), recurse into it
+                self.check_strict_positivity(
+                    &ftype.return_type,
+                    inductive_type,
+                    inductive_params,
+                    source,
+                )
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Helper to check if a type contains the inductive type being defined.
+    /// This checks for exact match or with different type parameters applied.
+    fn contains_inductive_type(
+        &self,
+        arg_type: &AcornType,
+        inductive_type: &AcornType,
+        inductive_params: &[AcornType],
+    ) -> bool {
+        // Direct match
+        if arg_type == inductive_type {
+            return true;
+        }
+        // Check if it's the same datatype with different parameters
+        if let (AcornType::Data(dt1, _), AcornType::Data(dt2, _)) = (arg_type, inductive_type) {
+            if dt1 == dt2 {
+                return true;
+            }
+        }
+        // Recursively check substructure
+        match arg_type {
+            AcornType::Data(_, type_args) => type_args
+                .iter()
+                .any(|t| self.contains_inductive_type(t, inductive_type, inductive_params)),
+            AcornType::Function(ftype) => {
+                ftype
+                    .arg_types
+                    .iter()
+                    .any(|t| self.contains_inductive_type(t, inductive_type, inductive_params))
+                    || self.contains_inductive_type(
+                        &ftype.return_type,
+                        inductive_type,
+                        inductive_params,
+                    )
+            }
+            _ => false,
+        }
     }
 
     fn add_attributes_statement(

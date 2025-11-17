@@ -3,6 +3,34 @@ use std::{collections::HashMap, fmt};
 use crate::compilation::{self, ErrorSource, Result};
 use crate::module::ModuleId;
 
+/// Variance of a type parameter indicates how it appears in a type definition.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Variance {
+    /// Type parameter appears only in positive positions (covariant)
+    Positive,
+    /// Type parameter appears only in negative positions (contravariant)
+    Negative,
+    /// Type parameter appears in both positive and negative positions (invariant)
+    Both,
+    /// Type parameter doesn't appear at all
+    None,
+}
+
+impl Variance {
+    /// Merge two variance occurrences
+    pub fn merge(self, other: Variance) -> Variance {
+        match (self, other) {
+            (Variance::None, v) | (v, Variance::None) => v,
+            (Variance::Positive, Variance::Positive) => Variance::Positive,
+            (Variance::Negative, Variance::Negative) => Variance::Negative,
+            (Variance::Both, _) | (_, Variance::Both) => Variance::Both,
+            (Variance::Positive, Variance::Negative) | (Variance::Negative, Variance::Positive) => {
+                Variance::Both
+            }
+        }
+    }
+}
+
 /// Datatypes are represented by the module they were defined in, and their name.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub struct Datatype {
@@ -599,6 +627,44 @@ impl AcornType {
                     || ftype.return_type.contains_type_var(param)
             }
             _ => false,
+        }
+    }
+
+    /// Computes the variance of a type parameter in this type.
+    /// The `positive` parameter tracks whether we're in a positive or negative position.
+    /// This does NOT recurse into other datatypes - it only checks immediate structure.
+    pub fn compute_variance(&self, param: &TypeParam, positive: bool) -> Variance {
+        match self {
+            AcornType::Variable(p) | AcornType::Arbitrary(p) => {
+                if p == param {
+                    if positive {
+                        Variance::Positive
+                    } else {
+                        Variance::Negative
+                    }
+                } else {
+                    Variance::None
+                }
+            }
+            AcornType::Data(_, type_args) => {
+                // Check if param appears in type arguments (staying in same polarity)
+                // We don't recurse into the datatype definition, just check the arguments
+                let mut combined = Variance::None;
+                for arg in type_args {
+                    combined = combined.merge(arg.compute_variance(param, positive));
+                }
+                combined
+            }
+            AcornType::Function(ftype) => {
+                // Function arguments are in NEGATIVE position, return is in POSITIVE position
+                let mut combined = Variance::None;
+                for arg_type in &ftype.arg_types {
+                    combined = combined.merge(arg_type.compute_variance(param, !positive));
+                }
+                combined = combined.merge(ftype.return_type.compute_variance(param, positive));
+                combined
+            }
+            AcornType::Bool | AcornType::Empty => Variance::None,
         }
     }
 
