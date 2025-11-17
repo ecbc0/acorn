@@ -84,7 +84,7 @@ fn test_no_russell_paradox() {
 }
 
 #[test]
-fn test_inductive_negative_occurrence() {
+fn test_inductive_negative_occurrence_basic() {
     let mut env = Environment::test();
     env.bad(
         r#"
@@ -111,6 +111,26 @@ fn test_inductive_negative_occurrence_in_generic() {
         inductive Bad {
             base
             rec(Set[Bad])
+        }
+        "#,
+    );
+}
+
+#[test]
+fn test_inductive_negative_occurrence_through_wrapper() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        structure Box[T] {
+            item: T
+        }
+        "#,
+    );
+    env.bad(
+        r#"
+        inductive Bad {
+            base
+            rec(Box[Bad -> Bool])
         }
         "#,
     );
