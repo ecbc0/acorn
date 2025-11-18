@@ -350,6 +350,37 @@ fn test_nested_ifs() {
     verify_succeeds(text);
 }
 
+#[test]
+fn test_conjunction_goal() {
+    let text = r#"
+    type Color: axiom
+    let a: Color = axiom
+    let b: Color = axiom
+    let c: Color = axiom
+    let d: Color = axiom
+    let e: Color = axiom
+
+    let f: (Color, Color) -> Bool = axiom
+
+    axiom a1(x: Color) {
+        f(a, x) implies f(b, x)
+    }
+
+    axiom a2(x: Color) {
+        f(a, x) implies f(c, x)
+    }
+
+    axiom a3(x: Color) {
+        f(a, x) implies f(d, x)
+    }
+
+    theorem goal {
+        f(a, e) implies (f(b, e) and f(c, e) and f(d, e))
+    }
+    "#;
+    verify_succeeds(text);
+}
+
 // Unfortunately we normalize this in such a way that it is not obvious.
 // The normalized task is to derive a contradiction from:
 //
