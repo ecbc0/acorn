@@ -1,11 +1,14 @@
 #[cfg(test)]
-mod env_misc_test;
+mod env_syntax_test;
+
+#[cfg(test)]
+mod env_types_test;
+
+#[cfg(test)]
+mod env_functions_test;
 
 #[cfg(test)]
 mod env_attributes_test;
-
-#[cfg(test)]
-mod env_parsing_test;
 
 #[cfg(test)]
 mod env_typeclass_test;

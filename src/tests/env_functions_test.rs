@@ -1,4 +1,7 @@
-use crate::environment::{Environment, LineType};
+// Tests for function definitions, application, and equality.
+// These tests check recursive functions, termination, partial application, and code generation.
+
+use crate::environment::Environment;
 use crate::project::Project;
 
 #[test]
@@ -57,6 +60,50 @@ fn test_inline_function_value() {
     env.expect_def(
         "ander",
         "function(x0: Bool) { function(x1: Bool) { (x0 and x1) } }",
+    );
+}
+
+#[test]
+fn test_nat_ac_together() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+// The axioms of Peano arithmetic.
+
+type Nat: axiom
+
+let zero: Nat = axiom
+
+let suc: Nat -> Nat = axiom
+let one: Nat = suc(zero)
+
+axiom suc_injective(x: Nat, y: Nat) { suc(x) = suc(y) implies x = y }
+
+axiom suc_neq_zero(x: Nat) { suc(x) != zero }
+
+axiom induction(f: Nat -> Bool) { f(zero) and forall(k: Nat) { f(k) implies f(suc(k)) } implies forall(n: Nat) { f(n) } }
+
+// The old version. In the modern codebase these are parametric.
+define recursion(f: Nat -> Nat, a: Nat, n: Nat) -> Nat { axiom }
+axiom recursion_base(f: Nat -> Nat, a: Nat) { recursion(f, a, zero) = a }
+axiom recursion_step(f: Nat -> Nat, a: Nat, n: Nat) { recursion(f, a, suc(n)) = f(recursion(f, a, n)) }
+
+define add(a: Nat, b: Nat) -> Nat { recursion(suc, a, b) }
+
+// Now let's have some theorems.
+
+theorem add_zero_right(a: Nat) { add(a, zero) = a }
+
+theorem add_zero_left(a: Nat) { add(zero, a) = a }
+
+theorem add_suc_right(a: Nat, b: Nat) { add(a, suc(b)) = suc(add(a, b)) }
+
+theorem add_suc_left(a: Nat, b: Nat) { add(suc(a), b) = suc(add(a, b)) }
+
+theorem add_comm(a: Nat, b: Nat) { add(a, b) = add(b, a) }
+
+theorem add_assoc(a: Nat, b: Nat, c: Nat) { add(add(a, b), c) = add(a, add(b, c)) }
+"#,
     );
 }
 
@@ -176,13 +223,6 @@ fn test_forall_block_ending_with_exists() {
     for node in env.iter_goals() {
         node.goal().unwrap();
     }
-}
-
-#[test]
-fn test_type_params_cleaned_up() {
-    let mut env = Environment::test();
-    env.add("define foo[T](a: T) -> Bool { axiom }");
-    assert!(env.bindings.get_type_for_typename("T").is_none());
 }
 
 #[test]
@@ -310,41 +350,233 @@ fn test_non_default_numeric_literals() {
 }
 
 #[test]
-fn test_structure_with_good_constraint() {
+fn test_no_templated_define_inside_proof() {
+    // This doesn't work correctly right now, so let's forbid it.
     let mut env = Environment::test();
     env.add(
         r#"
-            structure Thing {
-                foo: Bool
-                baz: Bool
-                bar: Bool
-            } constraint {
-                foo or baz or bar
+            theorem bar {
+                true
+            } by {
+                define foo(x: Bool) -> Bool {
+                    true
+                }
             }
-        "#,
+            "#,
     );
-    for (i, line_type) in env.line_types.iter().enumerate() {
-        println!("{}: {:?}", i, line_type);
-    }
-    assert!(matches!(env.get_line_type(6), Some(LineType::Node(_))));
-    assert!(matches!(env.get_line_type(7), Some(LineType::Node(_))));
+
+    env.bad(
+        r#"
+            theorem baz[T] {
+                forall(x: T) {
+                    true
+                }
+            } by {
+                define qux[U](x: U) -> Bool {
+                    true
+                }
+            }
+            "#,
+    );
 }
 
 #[test]
-fn test_structure_with_constraint_and_by_block() {
+fn test_match_based_definition() {
     let mut env = Environment::test();
     env.add(
         r#"
-            structure Thing {
-                foo: Bool
-                baz: Bool
-                bar: Bool
-            } constraint {
-                foo or baz or bar
-            } by {
-                true or true or true
+            inductive Foo {
+                bar(Bool)
+                baz(Bool)
+            }
+
+            define foo(f: Foo) -> Bool {
+                match f {
+                    Foo.bar(b) {
+                        b
+                    }
+                    Foo.baz(b) {
+                        not b
+                    }
+                }
             }
         "#,
     );
-    assert_eq!(env.iter_goals().count(), 2);
+}
+
+#[test]
+fn test_left_recursive_definition() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+            inductive Nat {
+                zero
+                suc(Nat)
+            }
+            define add(a: Nat, b: Nat) -> Nat {
+                match a {
+                    Nat.zero {
+                        b
+                    }
+                    Nat.suc(pred) {
+                        add(pred, b).suc
+                    }
+                }
+            }
+            "#,
+    );
+}
+
+#[test]
+fn test_right_recursive_definition() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+            inductive Nat {
+                zero
+                suc(Nat)
+            }
+            define add(a: Nat, b: Nat) -> Nat {
+                match b {
+                    Nat.zero {
+                        a
+                    }
+                    Nat.suc(pred) {
+                        add(a, pred).suc
+                    }
+                }
+            }
+            "#,
+    );
+}
+
+#[test]
+fn test_no_recursive_simple_infinite_loops() {
+    let mut env = Environment::test();
+    env.bad(
+        r#"
+            define loop(a: Bool) -> Bool {
+                not loop(a)
+            }
+            "#,
+    );
+}
+
+#[test]
+fn test_no_recursive_complicated_infinite_loops() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+            inductive Nat {
+                zero
+                suc(Nat)
+            }
+            "#,
+    );
+
+    // This would infinite loop because it hits a different branch each time.
+    env.bad(
+        r#"
+            define loop(a: Nat, b: Nat, c: Bool) -> Bool {
+                if c {
+                    match a {
+                        Nat.zero {
+                            false
+                        }
+                        Nat.suc(pred) {
+                            not loop(pred, b.suc, false)
+                        }
+                    }
+                } else {
+                    match b {
+                        Nat.zero {
+                            false
+                        }
+                        Nat.suc(pred) {
+                            loop(a.suc, pred, true)
+                        }
+                    }
+                }
+            }
+            "#,
+    );
+}
+
+#[test]
+fn test_templated_recursive_function() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+            inductive Nat {
+                zero
+                suc(Nat)
+            }
+            define repeat[T](n: Nat, f: T -> T, a: T) -> T {
+                match n {
+                    Nat.zero {
+                        a
+                    }
+                    Nat.suc(pred) {
+                        repeat(pred, f, f(a))
+                    }
+                }
+            }
+            "#,
+    );
+}
+
+#[test]
+fn test_termination_checker_catches_functional_cheating() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+            inductive Nat {
+                zero
+                suc(Nat)
+            }
+            define apply(f: Nat -> Bool, n: Nat) -> Bool {
+                f(n)
+            }
+            "#,
+    );
+    env.bad(
+        r#"
+            define cheat(n: Nat) -> Bool {
+                not apply(cheat, n)
+            }
+            "#,
+    );
+}
+
+#[test]
+fn test_inline_function_in_forall_block() {
+    let mut env = Environment::test();
+    env.add("type Nat: axiom");
+    env.add("let zero: Nat = axiom");
+    env.add("let suc: Nat -> Nat = axiom");
+    env.add(
+            r#"
+            axiom induction(f: Nat -> Bool) {
+                f(zero) and forall(k: Nat) { f(k) implies f(suc(k)) } implies forall(n: Nat) { f(n) }
+            }
+            "#,
+        );
+    env.add(
+        r#"
+            forall(f: (Nat, Bool) -> Bool) {
+                induction(function(x: Nat) { f(x, true) })
+            }
+        "#,
+    );
+}
+
+#[test]
+fn test_partial_application() {
+    let mut env = Environment::test();
+    env.add("type Nat: axiom");
+    env.add("let zero: Nat = axiom");
+    env.add("define add3(a: Nat, b: Nat, c: Nat) -> Nat { axiom }");
+    env.add("let add0: (Nat, Nat) -> Nat = add3(zero)");
+    env.add("let add00: Nat -> Nat = add3(zero, zero)");
+    env.add("let add00_alt: Nat -> Nat = add0(zero)");
 }
