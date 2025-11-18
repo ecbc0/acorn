@@ -8,63 +8,66 @@
     let word = n === 1 ? noun : noun + "s";
     return `${n} ${word}`;
   }
-
-  // For now, just display the first goal
-  $: goalInfo = selectionResponse.goals.length > 0 ? selectionResponse.goals[0] : null;
 </script>
 
-{#if goalInfo !== null}
-  <Goal
-    goalName={goalInfo.goalName}
-    goalRange={selectionResponse.goalRange}
-    uri={selectionResponse.uri}
-    {showLocation}
-  />
-  <hr />
-  <br />
-  {#if goalInfo.steps === null}
-    {#if selectionResponse.building}
-      Building...
+{#if selectionResponse.goals.length > 0}
+  {#each selectionResponse.goals as goalInfo, index}
+    <Goal
+      goalName={goalInfo.goalName}
+      goalRange={selectionResponse.goalRange}
+      uri={selectionResponse.uri}
+      {showLocation}
+    />
+    <hr />
+    <br />
+    {#if goalInfo.steps === null}
+      {#if selectionResponse.building}
+        Building...
+      {:else}
+        We don't have a proof for this goal yet.
+      {/if}
+      <br />
+    {:else if goalInfo.steps.length === 0}
+      Trivial.
+      <br />
     {:else}
-      We don't have a proof for this goal yet.
-    {/if}
-    <br />
-  {:else if goalInfo.steps.length === 0}
-    Trivial.
-    <br />
-  {:else}
-    <div class="block">
-      <br />
-      The detailed proof has {pluralize(goalInfo.steps.length, "step")}:
-      <br /><br />
-      <table>
-        <tr>
-          <th>Statement</th>
-          <th>Reason</th>
-        </tr>
-        {#each goalInfo.steps as step}
+      <div class="block">
+        <br />
+        The detailed proof has {pluralize(goalInfo.steps.length, "step")}:
+        <br /><br />
+        <table>
           <tr>
-            <td>{step.statement}</td>
-            <td>
-              {#if step.location !== null}
-                <span
-                  class="preview-link"
-                  on:click={() => {
-                    if (step.location !== null) {
-                      showLocation(step.location.uri, step.location.range);
-                    }
-                  }}>{step.reason}</span
-                >
-              {:else}
-                <span>{step.reason}</span>
-              {/if}
-            </td>
+            <th>Statement</th>
+            <th>Reason</th>
           </tr>
-        {/each}
-      </table>
+          {#each goalInfo.steps as step}
+            <tr>
+              <td>{step.statement}</td>
+              <td>
+                {#if step.location !== null}
+                  <span
+                    class="preview-link"
+                    on:click={() => {
+                      if (step.location !== null) {
+                        showLocation(step.location.uri, step.location.range);
+                      }
+                    }}>{step.reason}</span
+                  >
+                {:else}
+                  <span>{step.reason}</span>
+                {/if}
+              </td>
+            </tr>
+          {/each}
+        </table>
+        <br />
+      </div>
+    {/if}
+    {#if index < selectionResponse.goals.length - 1}
       <br />
-    </div>
-  {/if}
+      <hr />
+    {/if}
+  {/each}
   <br />
   <hr />
 {/if}

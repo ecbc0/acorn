@@ -373,46 +373,64 @@ async fn main() {
             };
 
             match project.handle_selection(&path, line) {
-                Ok((goal_name, _range, steps)) => {
-                    if let Some(name) = goal_name {
-                        println!("{}", name);
-                        println!();
-                    }
+                Ok((goal_infos, _range)) => {
+                    if goal_infos.is_empty() {
+                        println!("No goals found at this location.");
+                    } else {
+                        for (i, goal_info) in goal_infos.iter().enumerate() {
+                            if goal_infos.len() > 1 {
+                                println!("Goal {}: {}", i + 1, goal_info.goal_name);
+                            } else {
+                                println!("{}", goal_info.goal_name);
+                            }
+                            println!();
 
-                    if let Some(steps) = steps {
-                        if steps.is_empty() {
-                            println!("Trivial.");
-                        } else {
-                            let step_word = if steps.len() == 1 { "step" } else { "steps" };
-                            println!("The detailed proof has {} {}:\n", steps.len(), step_word);
+                            if let Some(ref steps) = goal_info.steps {
+                                if steps.is_empty() {
+                                    println!("Trivial.");
+                                } else {
+                                    let step_word = if steps.len() == 1 { "step" } else { "steps" };
+                                    println!(
+                                        "The detailed proof has {} {}:\n",
+                                        steps.len(),
+                                        step_word
+                                    );
 
-                            // Find the maximum width for statement column
-                            let max_statement_width = steps
-                                .iter()
-                                .map(|s| s.statement.len())
-                                .max()
-                                .unwrap_or(20)
-                                .max(20); // Minimum width of 20
+                                    // Find the maximum width for statement column
+                                    let max_statement_width = steps
+                                        .iter()
+                                        .map(|s| s.statement.len())
+                                        .max()
+                                        .unwrap_or(20)
+                                        .max(20); // Minimum width of 20
 
-                            // Print header
-                            println!(
-                                "{:<width$}    Reason",
-                                "Statement",
-                                width = max_statement_width
-                            );
+                                    // Print header
+                                    println!(
+                                        "{:<width$}    Reason",
+                                        "Statement",
+                                        width = max_statement_width
+                                    );
 
-                            // Print each step
-                            for step in steps {
-                                println!(
-                                    "{:<width$}    {}",
-                                    step.statement,
-                                    step.reason,
-                                    width = max_statement_width
-                                );
+                                    // Print each step
+                                    for step in steps {
+                                        println!(
+                                            "{:<width$}    {}",
+                                            step.statement,
+                                            step.reason,
+                                            width = max_statement_width
+                                        );
+                                    }
+                                }
+                            } else {
+                                println!("No proof available.");
+                            }
+
+                            if i < goal_infos.len() - 1 {
+                                println!();
+                                println!("---");
+                                println!();
                             }
                         }
-                    } else {
-                        println!("No proof available.");
                     }
                 }
                 Err(e) => {

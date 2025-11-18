@@ -1736,20 +1736,27 @@ fn test_handle_selection_typeclass_attribute() {
     let result = p.handle_selection(&test_file, 18);
 
     assert!(result.is_ok(), "handle_selection should succeed");
-    let (goal_name, goal_range, steps) = result.unwrap();
+    let (goal_infos, goal_range) = result.unwrap();
+
+    // Verify we got exactly one goal
+    assert_eq!(goal_infos.len(), 1, "Expected exactly one goal");
+    let goal_info = &goal_infos[0];
 
     // Verify we got the right goal
-    assert_eq!(goal_name, Some("foo_specific".to_string()));
+    assert_eq!(goal_info.goal_name, "foo_specific".to_string());
     assert!(goal_range.is_some());
 
     // Verify we got steps
-    assert!(steps.is_some(), "Expected proof steps to be returned");
-    let steps = steps.unwrap();
+    assert!(
+        goal_info.steps.is_some(),
+        "Expected proof steps to be returned"
+    );
+    let steps = goal_info.steps.as_ref().unwrap();
 
     // Find the step with the proof
     assert!(!steps.is_empty(), "Expected at least one step");
 
-    for step in &steps {
+    for step in steps {
         println!("Step: {}, Reason: {}", step.statement, step.reason);
     }
 

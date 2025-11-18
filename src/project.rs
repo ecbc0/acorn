@@ -13,18 +13,16 @@ use crate::acorn_value::AcornValue;
 use crate::binding_map::BindingMap;
 use crate::build_cache::BuildCache;
 use crate::certificate::Certificate;
-use crate::checker::StepReason;
 use crate::code_generator::{self, CodeGenerator};
 use crate::compilation;
 use crate::environment::Environment;
 use crate::fact::Fact;
 use crate::goal::Goal;
-use crate::interfaces::{Location, Step};
+use crate::interfaces::Location;
 use crate::module::{LoadState, Module, ModuleDescriptor, ModuleId};
 use crate::named_entity::NamedEntity;
 use crate::names::ConstantName;
 use crate::processor::Processor;
-use crate::statement::Statement;
 use crate::token::Token;
 use crate::token_map::TokenInfo;
 
@@ -1257,9 +1255,8 @@ impl Project {
         selected_line: u32,
     ) -> Result<
         (
-            Option<String>,
+            Vec<crate::interfaces::GoalInfo>,
             Option<tower_lsp::lsp_types::Range>,
-            Option<Vec<crate::interfaces::Step>>,
         ),
         String,
     > {
@@ -1276,62 +1273,99 @@ impl Project {
             .path_for_line(selected_line)
             .map_err(|e| format!("path_for_line failed: {}", e))?;
 
-        let mut cursor = crate::node::NodeCursor::from_path(env, &node_path);
+        let cursor = crate::node::NodeCursor::from_path(env, &node_path);
 
         // Try to get the goal directly from this node (if it's a Claim node)
-        // or find block-level goal nodes if this is a Block node
-        let goal = if let Ok(g) = cursor.goal() {
-            g
-        } else if let Some(block) = cursor.node().get_block() {
-            // This is a Block node - look for block-level goal children
-            let goal_node_index = block.env.nodes.iter().enumerate().find_map(|(i, node)| {
-                if node.is_block_level_goal() {
-                    Some(i)
-                } else {
-                    None
-                }
-            });
+        // or find all block-level goal nodes if this is a Block node
+        let mut goal_infos = vec![];
+        let mut goal_range = None;
 
-            if let Some(goal_index) = goal_node_index {
-                // Descend into the block to the goal node
-                cursor.descend(goal_index);
-                cursor
-                    .goal()
-                    .map_err(|e| format!("failed to get goal from goal node: {}", e))?
-            } else {
+        if let Ok(goal) = cursor.goal() {
+            // Single goal node
+            goal_range = Some(goal.proposition.source.range);
+            let goal_env = cursor
+                .goal_env()
+                .map_err(|e| format!("goal_env failed: {}", e))?;
+            let goal_info = self.create_goal_info(&goal, goal_env, &cursor);
+            goal_infos.push(goal_info);
+        } else if let Some(block) = cursor.node().get_block() {
+            // This is a Block node - collect ALL block-level goal children
+            let goal_indices: Vec<usize> = block
+                .env
+                .nodes
+                .iter()
+                .enumerate()
+                .filter_map(|(i, node)| {
+                    if node.is_block_level_goal() {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            if goal_indices.is_empty() {
                 return Err("no goal at this location".to_string());
+            }
+
+            // Process each goal
+            for goal_index in goal_indices {
+                // Create a new cursor for each goal
+                let mut goal_cursor = crate::node::NodeCursor::from_path(env, &node_path);
+                goal_cursor.descend(goal_index);
+
+                let goal = goal_cursor
+                    .goal()
+                    .map_err(|e| format!("failed to get goal from goal node: {}", e))?;
+
+                // Use the first goal's range for the overall goal_range
+                if goal_range.is_none() {
+                    goal_range = Some(goal.proposition.source.range);
+                }
+
+                let goal_env = goal_cursor
+                    .goal_env()
+                    .map_err(|e| format!("goal_env failed: {}", e))?;
+
+                let goal_info = self.create_goal_info(&goal, goal_env, &goal_cursor);
+                goal_infos.push(goal_info);
             }
         } else {
             return Err("no goal at this location".to_string());
-        };
+        }
 
-        let goal_name = Some(goal.name.clone());
-        let goal_range = Some(goal.proposition.source.range);
+        Ok((goal_infos, goal_range))
+    }
 
-        // Get the environment for this specific goal
-        let goal_env = cursor
-            .goal_env()
-            .map_err(|e| format!("goal_env failed: {}", e))?;
+    // Helper function to create a GoalInfo from a goal, its environment, and cursor
+    fn create_goal_info(
+        &self,
+        goal: &crate::goal::Goal,
+        goal_env: &crate::environment::Environment,
+        cursor: &crate::node::NodeCursor,
+    ) -> crate::interfaces::GoalInfo {
+        use crate::checker::StepReason;
+        use crate::interfaces::{GoalInfo, Location, Step};
+        use crate::statement::Statement;
+
+        let goal_name = goal.name.clone();
 
         // Check if there's a verified certificate for this goal
-        if let Some((_cert, certificate_steps)) = self.find_cert(&goal, goal_env, &cursor) {
+        let (has_cached_proof, steps) = if let Some((_cert, certificate_steps)) =
+            self.find_cert(goal, goal_env, cursor)
+        {
             // Convert CertificateSteps to interface::Step objects
             let steps: Vec<Step> = certificate_steps
                 .into_iter()
                 .map(|cert_step| {
                     let location = match &cert_step.reason {
-                        StepReason::Assumption(source) | StepReason::Skolemization(source) => {
-                            let location = self
-                                .path_from_module_id(source.module_id)
-                                .and_then(|path| {
-                                    tower_lsp::lsp_types::Url::from_file_path(path).ok()
-                                })
-                                .map(|uri| Location {
-                                    uri,
-                                    range: source.range,
-                                });
-                            location
-                        }
+                        StepReason::Assumption(source) | StepReason::Skolemization(source) => self
+                            .path_from_module_id(source.module_id)
+                            .and_then(|path| tower_lsp::lsp_types::Url::from_file_path(path).ok())
+                            .map(|uri| Location {
+                                uri,
+                                range: source.range,
+                            }),
                         _ => None,
                     };
                     let reason = cert_step.reason.description();
@@ -1349,9 +1383,15 @@ impl Project {
                 })
                 .collect();
 
-            Ok((goal_name, goal_range, Some(steps)))
+            (true, Some(steps))
         } else {
-            Ok((goal_name, goal_range, None))
+            (false, None)
+        };
+
+        GoalInfo {
+            goal_name,
+            has_cached_proof,
+            steps,
         }
     }
 

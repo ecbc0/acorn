@@ -18,8 +18,7 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 use crate::interfaces::{
-    DocumentProgress, GoalInfo, ProgressParams, ProgressResponse, SelectionParams,
-    SelectionResponse,
+    DocumentProgress, ProgressParams, ProgressResponse, SelectionParams, SelectionResponse,
 };
 use crate::project::{Project, ProjectConfig};
 
@@ -474,22 +473,15 @@ impl AcornLanguageServer {
         }
 
         match project.handle_selection(&path, params.selected_line) {
-            Ok((goal_name, goal_range, steps)) => {
+            Ok((goal_infos, goal_range)) => {
                 log(&format!(
-                    "selection: {} at line {}, version {}",
+                    "selection: {} at line {}, version {}, found {} goal(s)",
                     path.file_name().unwrap().to_string_lossy(),
                     params.selected_line,
-                    params.version
+                    params.version,
+                    goal_infos.len()
                 ));
-                if let Some(name) = goal_name {
-                    let has_cached_proof = steps.is_some();
-                    let goal_info = GoalInfo {
-                        goal_name: name,
-                        has_cached_proof,
-                        steps,
-                    };
-                    response.goals.push(goal_info);
-                }
+                response.goals = goal_infos;
                 response.goal_range = goal_range;
             }
             Err(e) => {
