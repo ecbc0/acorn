@@ -78,10 +78,11 @@ pub enum BlockParams<'a> {
     /// A block that is required by the type system.
     /// This can either be proving that a constrained type is inhabited, or proving
     /// that a type obeys a typeclass relationship.
-    /// Either way, there is some value that needs to be proved, that's synthetic in the sense
-    /// that nothing like it explicitly appears in the code.
+    /// The values are constraints that need to be proved, synthetic in the sense
+    /// that nothing like them explicitly appears in the code.
+    /// When there are multiple values, each becomes a separate goal in the block.
     /// The range tells us what to squiggle if this block fails.
-    TypeRequirement(AcornValue, Range),
+    TypeRequirement(Vec<AcornValue>, Range),
 
     /// No special params needed
     ForAll,
@@ -135,13 +136,13 @@ impl Block {
         }
 
         let goal_prop = match params {
-            BlockParams::Conditional(condition, range) => {
+            BlockParams::Conditional(ref condition, range) => {
                 let source = Source::premise(env.module_id, range, subenv.depth);
-                let prop = Proposition::monomorphic(condition.clone(), source);
+                let prop = Proposition::monomorphic((*condition).clone(), source);
                 subenv.add_node(Node::structural(project, &subenv, prop));
                 None
             }
-            BlockParams::Theorem(theorem_name, theorem_range, premise, unbound_goal) => {
+            BlockParams::Theorem(theorem_name, theorem_range, ref premise, ref unbound_goal) => {
                 if let Some(name) = theorem_name {
                     // Within the theorem block, the theorem is treated like a function,
                     // with propositions to define its identity.
@@ -152,13 +153,14 @@ impl Block {
                 if let Some((unbound_premise, premise_range)) = premise {
                     // Add the premise to the environment, when proving the theorem.
                     // The premise is unbound, so we need to bind the block's arg values.
-                    let bound = unbound_premise.bind_values(0, 0, &internal_args);
-                    let source = Source::premise(env.module_id, premise_range, subenv.depth);
+                    let bound = unbound_premise.clone().bind_values(0, 0, &internal_args);
+                    let source = Source::premise(env.module_id, *premise_range, subenv.depth);
                     let prop = Proposition::monomorphic(bound, source);
                     subenv.add_node(Node::structural(project, &subenv, prop));
                 }
 
                 let bound_goal = unbound_goal
+                    .clone()
                     .bind_values(0, 0, &internal_args)
                     .to_arbitrary();
                 // This is the goal we need to prove, therefore, it is not importable.
@@ -172,18 +174,18 @@ impl Block {
                 );
                 Some(Proposition::monomorphic(bound_goal, source))
             }
-            BlockParams::FunctionSatisfy(unbound_goal, return_type, range) => {
+            BlockParams::FunctionSatisfy(ref unbound_goal, ref return_type, range) => {
                 // In the block, we need to prove this goal in bound form, so bind args to it.
                 // The partial goal has variables 0..args.len() bound to the block's args,
                 // but there is one last variable that needs to be existentially quantified.
-                let partial_goal = unbound_goal.bind_values(0, 0, &internal_args);
-                let bound_goal = AcornValue::exists(vec![return_type], partial_goal);
+                let partial_goal = unbound_goal.clone().bind_values(0, 0, &internal_args);
+                let bound_goal = AcornValue::exists(vec![return_type.clone()], partial_goal);
                 assert!(!bound_goal.has_generic());
                 let source = Source::block_goal(env.module_id, range, env.depth);
                 let prop = Proposition::monomorphic(bound_goal, source);
                 Some(prop)
             }
-            BlockParams::MatchCase(scrutinee, constructor, pattern_args, range) => {
+            BlockParams::MatchCase(ref scrutinee, ref constructor, ref pattern_args, range) => {
                 // Inside the block, the pattern arguments are constants.
                 let mut arg_values = vec![];
                 for (arg_name, arg_type) in pattern_args {
@@ -191,7 +193,7 @@ impl Block {
                     let potential = subenv.bindings.add_unqualified_constant(
                         &arg_name,
                         vec![],
-                        arg_type,
+                        arg_type.clone(),
                         None,
                         None,
                         vec![],
@@ -201,17 +203,23 @@ impl Block {
                     arg_values.push(potential.force_value());
                 }
                 // Inside the block, we can assume the pattern matches.
-                let applied = AcornValue::apply(constructor, arg_values);
-                let equality = AcornValue::equals(scrutinee, applied);
+                let applied = AcornValue::apply(constructor.clone(), arg_values);
+                let equality = AcornValue::equals(scrutinee.clone(), applied);
                 let source = Source::premise(env.module_id, range, subenv.depth);
                 let prop = Proposition::monomorphic(equality, source);
                 subenv.add_node(Node::structural(project, &subenv, prop));
                 None
             }
-            BlockParams::TypeRequirement(constraint, range) => {
-                // We don't add any other given theorems.
-                let source = Source::block_goal(env.module_id, range, env.depth);
-                Some(Proposition::monomorphic(constraint, source))
+            BlockParams::TypeRequirement(ref constraints, range) => {
+                // For backward compatibility, if there's exactly one constraint,
+                // return it as goal_prop for the old single-goal path.
+                // Multiple constraints will be handled separately below.
+                if constraints.len() == 1 {
+                    let source = Source::block_goal(env.module_id, range, env.depth);
+                    Some(Proposition::monomorphic(constraints[0].clone(), source))
+                } else {
+                    None
+                }
             }
             BlockParams::ForAll => None,
         };
@@ -250,6 +258,19 @@ impl Block {
             // Map the goal node to the appropriate source lines
             let goal_range = &prop.source.range;
             subenv.add_node_lines(goal_index, goal_range);
+        }
+
+        // Handle multiple type requirements by adding each as a separate goal node
+        if let BlockParams::TypeRequirement(constraints, range) = params {
+            if constraints.len() > 1 {
+                for constraint in constraints {
+                    let source = Source::block_goal(env.module_id, range, env.depth);
+                    let prop = Proposition::monomorphic(constraint, source);
+                    let goal_node = Node::Claim(Arc::new(prop.clone()));
+                    let goal_index = subenv.add_node(goal_node);
+                    subenv.add_node_lines(goal_index, &range);
+                }
+            }
         }
 
         // Create the source range from first_token to last_token

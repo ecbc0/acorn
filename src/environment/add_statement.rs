@@ -820,7 +820,8 @@ impl Environment {
                 Some(&AcornType::Bool),
             )?;
             let inhabited = AcornValue::Exists(field_types.clone(), Box::new(unbound.clone()));
-            let block_params = BlockParams::TypeRequirement(inhabited, constraint.range());
+            let block_params = BlockParams::TypeRequirement(vec![inhabited], constraint.range());
+
             let block = Block::new(
                 project,
                 &self,
@@ -2079,7 +2080,7 @@ impl Environment {
             Node::Structural(instance_fact)
         } else {
             // We must prove in a block that all the conditions hold for this instance.
-            let conditions_claim = AcornValue::reduce(BinaryOp::And, conditions);
+            // Instead of combining conditions with And, we pass them as separate goals.
             let range = Range {
                 start: statement.first_token.start_pos(),
                 end: if let Some(definitions) = &is.definitions {
@@ -2088,7 +2089,7 @@ impl Environment {
                     statement.last_token.end_pos()
                 },
             };
-            let block_params = BlockParams::TypeRequirement(conditions_claim, range);
+            let block_params = BlockParams::TypeRequirement(conditions, range);
             let block = Block::new(
                 project,
                 &self,
