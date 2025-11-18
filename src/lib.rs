@@ -32,6 +32,7 @@ pub mod module;
 pub mod monomorphizer;
 pub mod named_entity;
 pub mod names;
+pub mod node;
 pub mod normalization_map;
 pub mod normalizer;
 pub mod ort_utils;

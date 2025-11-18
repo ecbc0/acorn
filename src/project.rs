@@ -1223,7 +1223,7 @@ impl Project {
         &self,
         goal: &Goal,
         env: &Environment,
-        cursor: &crate::block::NodeCursor,
+        cursor: &crate::node::NodeCursor,
     ) -> Option<(&Certificate, Vec<crate::checker::CertificateStep>)> {
         let descriptor = self.get_module_descriptor(goal.module_id)?;
         let cert_store = self.build_cache.get_certificates(descriptor)?;
@@ -1276,7 +1276,7 @@ impl Project {
             .path_for_line(selected_line)
             .map_err(|e| format!("path_for_line failed: {}", e))?;
 
-        let mut cursor = crate::block::NodeCursor::from_path(env, &node_path);
+        let mut cursor = crate::node::NodeCursor::from_path(env, &node_path);
 
         // Try to get the goal directly from this node (if it's a Claim node)
         // or find block-level goal nodes if this is a Block node

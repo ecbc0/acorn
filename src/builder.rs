@@ -6,7 +6,6 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Range};
 
-use crate::block::NodeCursor;
 use crate::build_cache::BuildCache;
 use crate::certificate::{Certificate, CertificateStore, CertificateWorklist};
 use crate::compilation::CompilationError;
@@ -16,6 +15,7 @@ use crate::generative::goal_context::GoalContext;
 use crate::generative::training_data_writer::TrainingDataWriter;
 use crate::goal::Goal;
 use crate::module::{LoadState, ModuleDescriptor, ModuleId};
+use crate::node::NodeCursor;
 use crate::processor::Processor;
 use crate::project::Project;
 use crate::prover::{Outcome, ProverMode};
@@ -800,8 +800,8 @@ impl<'a> Builder<'a> {
     ) -> Result<(), BuildError> {
         // In strict mode, reject any use of the axiom keyword
         if self.strict {
-            use crate::block::Node;
             use crate::fact::Fact;
+            use crate::node::Node;
             use crate::source::SourceType;
 
             for node in &env.nodes {
