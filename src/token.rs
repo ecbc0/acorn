@@ -179,6 +179,13 @@ impl TokenType {
         }
     }
 
+    pub fn is_postfix(&self) -> bool {
+        match self {
+            TokenType::QuestionMark => true,
+            _ => false,
+        }
+    }
+
     pub fn is_binary(&self) -> bool {
         match self {
             TokenType::Plus => true,
@@ -275,6 +282,14 @@ impl TokenType {
         match self {
             TokenType::Not => 6,
             TokenType::Minus => 13,
+            _ => 0,
+        }
+    }
+
+    // The precedence of a postfix operator.
+    pub fn postfix_precedence(&self) -> i8 {
+        match self {
+            TokenType::QuestionMark => 13,
             _ => 0,
         }
     }
@@ -549,6 +564,10 @@ impl Token {
 
     pub fn unary_precedence(&self) -> i8 {
         self.token_type.unary_precedence()
+    }
+
+    pub fn postfix_precedence(&self) -> i8 {
+        self.token_type.postfix_precedence()
     }
 
     pub fn identifierish(ch: char) -> bool {

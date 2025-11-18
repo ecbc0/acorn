@@ -351,7 +351,13 @@ impl Expression {
     pub fn last_token(&self) -> &Token {
         match self {
             Expression::Singleton(token) => token,
-            Expression::Unary(_, subexpression) => subexpression.last_token(),
+            Expression::Unary(token, subexpression) => {
+                if token.token_type.is_postfix() {
+                    token
+                } else {
+                    subexpression.last_token()
+                }
+            }
             Expression::Binary(_, _, right) => right.last_token(),
             Expression::Concatenation(_, right) => right.last_token(),
             Expression::Grouping(_, _, right_paren) => right_paren,
@@ -751,6 +757,8 @@ enum PartialExpression {
     // Tokens that are only part of an expression
     Unary(Token),
 
+    Postfix(Token),
+
     Binary(Token),
 
     // An implicit binary expression, like "f(x)" or "List[Bool]".
@@ -762,7 +770,9 @@ impl fmt::Display for PartialExpression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             PartialExpression::Expression(e) => write!(f, "{}", e),
-            PartialExpression::Unary(token) | PartialExpression::Binary(token) => {
+            PartialExpression::Unary(token)
+            | PartialExpression::Postfix(token)
+            | PartialExpression::Binary(token) => {
                 write!(f, "{}", token)
             }
             PartialExpression::Implicit(_) => write!(f, "<implicit>"),
@@ -775,6 +785,7 @@ impl ErrorSource for PartialExpression {
         match &self {
             PartialExpression::Expression(e) => e.error(message),
             PartialExpression::Unary(t)
+            | PartialExpression::Postfix(t)
             | PartialExpression::Binary(t)
             | PartialExpression::Implicit(t) => t.error(message),
         }
@@ -861,6 +872,7 @@ fn parse_partial_expressions(
                         false
                     }
                     Some(PartialExpression::Unary(_))
+                    | Some(PartialExpression::Postfix(_))
                     | Some(PartialExpression::Implicit(_))
                     | Some(PartialExpression::Binary(_))
                     | None => {
@@ -892,6 +904,10 @@ fn parse_partial_expressions(
         }
         if token.token_type.is_unary() {
             partials.push_back(PartialExpression::Unary(token));
+            continue;
+        }
+        if token.token_type.is_postfix() {
+            partials.push_back(PartialExpression::Postfix(token));
             continue;
         }
         match token.token_type {
@@ -1020,12 +1036,21 @@ fn parse_partial_expressions(
 // Find the index of the operator that should operate last. (Ie, the root of the tree.)
 // If there are no operators, return None.
 fn find_last_operator(partials: &VecDeque<PartialExpression>) -> Result<Option<usize>> {
+    let len = partials.len();
     let operators = partials.iter().enumerate().filter_map(|(i, partial)| {
         match partial {
             PartialExpression::Unary(token) => {
                 // Only a unary operator at the beginning of the expression can operate last
                 if i == 0 {
                     Some((-token.unary_precedence(), i as isize))
+                } else {
+                    None
+                }
+            }
+            PartialExpression::Postfix(token) => {
+                // Only a postfix operator at the end of the expression can operate last
+                if i == len - 1 {
+                    Some((-token.postfix_precedence(), i as isize))
                 } else {
                     None
                 }
@@ -1223,6 +1248,21 @@ fn combine_partial_expressions(
             return Err(partial.error("expected unary operator"));
         }
 
+        if index == partials.len() - 1 {
+            let partial = partials.pop_back().unwrap();
+            if let PartialExpression::Postfix(token) = partial {
+                return Ok(Expression::Unary(
+                    token,
+                    Box::new(combine_partial_expressions(
+                        partials,
+                        expected_type,
+                        source,
+                    )?),
+                ));
+            }
+            return Err(partial.error("expected postfix operator"));
+        }
+
         let mut right_partials = partials.split_off(index);
         let partial = right_partials.pop_front().unwrap();
 
@@ -1297,11 +1337,18 @@ impl Expression {
         match self {
             Expression::Singleton(token) => allocator.text(token.text()),
             Expression::Unary(token, subexpression) => {
-                if token.token_type == TokenType::Minus {
+                if token.token_type.is_postfix() {
+                    // Postfix operators go after the expression
+                    subexpression
+                        .pretty_ref(allocator, flat)
+                        .append(allocator.text(token.text()))
+                } else if token.token_type == TokenType::Minus {
+                    // Prefix minus has no space
                     allocator
                         .text(token.text())
                         .append(subexpression.pretty_ref(allocator, flat))
                 } else {
+                    // Other prefix operators have a space
                     allocator
                         .text(token.text())
                         .append(allocator.space())
@@ -1731,5 +1778,11 @@ mod tests {
     #[test]
     fn test_nested_generics_with_method() {
         check_value("List[Pair[T1, T2]].new(nil)");
+    }
+
+    #[test]
+    fn test_expr_question_mark() {
+        check_value("a? + b?");
+        check_value("foo?.bar");
     }
 }
