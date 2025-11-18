@@ -5,9 +5,10 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 
-/// The current version of the manifest format.
-/// Increment this when making breaking changes to the manifest structure.
-const MANIFEST_VERSION: u32 = 1;
+/// The current version of the build format.
+/// Increment this when making breaking changes to the manifest structure, or to the structure
+/// of other components of the cached build.
+const MANIFEST_VERSION: u32 = 2;
 
 /// A newtype wrapper for module names, created by joining parts with "."
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -125,13 +126,17 @@ impl Manifest {
         let manifest: Manifest = serde_json::from_str(&contents)?;
 
         // Check version compatibility
-        if manifest.version != MANIFEST_VERSION {
+        if manifest.version > MANIFEST_VERSION {
             return Err(format!(
-                "found manifest version {}. current version is {}",
+                "The library manifest is using build format {}, but this version of Acorn only supports up to build format {}.\n\
+                 Please update your version of Acorn.",
                 manifest.version, MANIFEST_VERSION
             )
             .into());
         }
+
+        // If the manifest version is older, we can still work with it
+        // (backward compatibility - newer code can read older manifests)
 
         Ok(manifest)
     }
