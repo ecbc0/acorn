@@ -349,3 +349,33 @@ fn test_nested_ifs() {
     "#;
     verify_succeeds(text);
 }
+
+// Unfortunately we normalize this in such a way that it is not obvious.
+// The normalized task is to derive a contradiction from:
+//
+// axiom:
+//   (a or c) and (b or c) and (a or d) and (b or d)
+//
+// negated goal:
+//   (not a or not b) and (not c or not d)
+//
+// It seems like some sort of monotonic-complexity-reducing reasoning might do it.
+//
+// #[test]
+// fn test_complex_boolean() {
+//     let text = r#"
+//     let a: Bool = axiom
+//     let b: Bool = axiom
+//     let c: Bool = axiom
+//     let d: Bool = axiom
+
+//     axiom ax {
+//         (a and b) or (c and d)
+//     }
+
+//     theorem goal {
+//         (a and b) or (c and d)
+//     }
+//     "#;
+//     verify_succeeds(text);
+// }
