@@ -31,16 +31,10 @@ pub struct Block {
     /// Externally, these arguments are variables.
     args: Vec<(String, AcornType)>,
 
-    /// Sometimes the user specifies a goal for a block, that must be proven.
-    /// The goal for a block is relative to its internal environment.
-    /// In particular, the goal should not be generic. It should use arbitrary fixed types instead.
-    ///
-    /// Everything in the block can be used to achieve this goal.
-    /// If there is no goal for the block, we can still use its conclusion externally,
-    /// but we let the conclusion be determined by the code in the block.
-    pub goal: Option<Goal>,
-
     /// The environment created inside the block.
+    /// Goals for this block are now represented as child nodes at the end of env.nodes,
+    /// rather than in a separate field. This allows blocks to have multiple goals and
+    /// ensures proper fact dependencies between goals.
     pub env: Environment,
 
     /// The source range for this block, if it came from source code.
@@ -188,7 +182,7 @@ impl Block {
                 let partial_goal = unbound_goal.bind_values(0, 0, &internal_args);
                 let bound_goal = AcornValue::exists(vec![return_type], partial_goal);
                 assert!(!bound_goal.has_generic());
-                let source = Source::anonymous(env.module_id, range, env.depth);
+                let source = Source::block_goal(env.module_id, range, env.depth);
                 let prop = Proposition::monomorphic(bound_goal, source);
                 Some(prop)
             }
@@ -219,7 +213,7 @@ impl Block {
             }
             BlockParams::TypeRequirement(constraint, range) => {
                 // We don't add any other given theorems.
-                let source = Source::anonymous(env.module_id, range, env.depth);
+                let source = Source::block_goal(env.module_id, range, env.depth);
                 Some(Proposition::monomorphic(constraint, source))
             }
             BlockParams::ForAll => None,
@@ -251,10 +245,15 @@ impl Block {
             }
         };
 
-        let goal = goal_prop
-            .map(|prop| Goal::block(&subenv, &prop))
-            .transpose()
-            .map_err(|e| first_token.error(&e))?;
+        // If there is a goal proposition, add it as a child node at the end of the environment.
+        // This allows the goal to use all facts from the block's internal nodes.
+        if let Some(prop) = goal_prop {
+            let goal_node = Node::Claim(Arc::new(prop.clone()));
+            let goal_index = subenv.add_node(goal_node);
+            // Map the goal node to the appropriate source lines
+            let goal_range = &prop.source.range;
+            subenv.add_node_lines(goal_index, goal_range);
+        }
 
         // Create the source range from first_token to last_token
         let source_range = Some(Range {
@@ -265,7 +264,6 @@ impl Block {
         Ok(Block {
             args,
             env: subenv,
-            goal,
             source_range,
         })
     }
@@ -455,11 +453,25 @@ impl Node {
     }
 
     /// Whether this node corresponds to a goal that needs to be proved.
+    /// Block nodes no longer have goals directly - their goals are child nodes.
     pub fn has_goal(&self) -> bool {
         match self {
             Node::Structural(_) => false,
             Node::Claim(_) => true,
-            Node::Block(block, _) => block.goal.is_some(),
+            Node::Block(_, _) => false,
+        }
+    }
+
+    /// Whether this node is a block-level goal (as opposed to an internal claim in a proof).
+    /// Block-level goals include theorem goals and constraint block goals.
+    pub fn is_block_level_goal(&self) -> bool {
+        if let Some(prop) = self.proposition() {
+            matches!(
+                prop.source.source_type,
+                crate::source::SourceType::BlockGoal | crate::source::SourceType::Theorem(_)
+            )
+        } else {
+            false
         }
     }
 
@@ -567,11 +579,6 @@ impl fmt::Debug for NodeCursor<'_> {
             write!(f, ", has_goal: true")?;
             match node {
                 Node::Claim(prop) => write!(f, ", claim: {}", prop)?,
-                Node::Block(block, _) => {
-                    if let Some(goal) = &block.goal {
-                        write!(f, ", block_goal: {:?}", goal)?;
-                    }
-                }
                 _ => {}
             }
         }
@@ -699,6 +706,8 @@ impl<'a> NodeCursor<'a> {
     }
 
     /// Get a goal context for the current node.
+    /// Block nodes no longer have goals - their goals are child nodes.
+    /// This method works for Claim nodes.
     pub fn goal(&self) -> Result<Goal, String> {
         let node = self.node();
         if let Node::Structural(_) = node {
@@ -708,12 +717,13 @@ impl<'a> NodeCursor<'a> {
             ));
         }
 
-        if let Some(block) = &node.get_block() {
-            match &block.goal {
-                Some(goal_context) => Ok(goal_context.clone()),
-                None => Err(format!("block at {} has no goal", self)),
-            }
+        if let Some(_) = &node.get_block() {
+            return Err(format!(
+                "block at {} does not have a goal directly - goals are child nodes",
+                self
+            ));
         } else {
+            // This is a Claim node
             let prop = node.proposition().unwrap();
             Goal::interior(self.env(), &prop)
         }

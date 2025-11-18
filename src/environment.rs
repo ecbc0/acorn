@@ -455,7 +455,13 @@ impl Environment {
                 }
                 Some(LineType::Opening) | Some(LineType::Closing) => match block {
                     Some(block) => {
-                        if block.goal.is_none() {
+                        // Check if the block has any block-level goal nodes
+                        let has_block_goals = block
+                            .env
+                            .nodes
+                            .iter()
+                            .any(|node| node.is_block_level_goal());
+                        if !has_block_goals {
                             return Err(format!("no claim for block at line {}", line + 1));
                         }
                         return Ok(path);
@@ -493,7 +499,13 @@ impl Environment {
                                 // Sliding into the end of our block is okay
                                 match block {
                                     Some(block) => {
-                                        if block.goal.is_none() {
+                                        // Check if the block has any block-level goal nodes
+                                        let has_block_goals = block
+                                            .env
+                                            .nodes
+                                            .iter()
+                                            .any(|node| node.is_block_level_goal());
+                                        if !has_block_goals {
                                             return Err("slide to end but no claim".to_string());
                                         }
                                         return Ok(path);
@@ -650,8 +662,9 @@ impl Environment {
 
     /// Get the bindings for the theorem block with the given name.
     pub fn get_bindings(&self, theorem_name: &str) -> &BindingMap {
-        let mut cursor = self.get_node_by_goal_name(theorem_name);
-        cursor.descend(0);
+        let cursor = self.get_node_by_goal_name(theorem_name);
+        // The cursor is now pointing to a goal node. The bindings we want are from
+        // the environment that contains this goal node.
         &cursor.env().bindings
     }
 }

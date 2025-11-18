@@ -1276,10 +1276,34 @@ impl Project {
             .path_for_line(selected_line)
             .map_err(|e| format!("path_for_line failed: {}", e))?;
 
-        let cursor = crate::block::NodeCursor::from_path(env, &node_path);
-        let goal = cursor
-            .goal()
-            .map_err(|_| "no goal at this location".to_string())?;
+        let mut cursor = crate::block::NodeCursor::from_path(env, &node_path);
+
+        // Try to get the goal directly from this node (if it's a Claim node)
+        // or find block-level goal nodes if this is a Block node
+        let goal = if let Ok(g) = cursor.goal() {
+            g
+        } else if let Some(block) = cursor.node().get_block() {
+            // This is a Block node - look for block-level goal children
+            let goal_node_index = block.env.nodes.iter().enumerate().find_map(|(i, node)| {
+                if node.is_block_level_goal() {
+                    Some(i)
+                } else {
+                    None
+                }
+            });
+
+            if let Some(goal_index) = goal_node_index {
+                // Descend into the block to the goal node
+                cursor.descend(goal_index);
+                cursor
+                    .goal()
+                    .map_err(|e| format!("failed to get goal from goal node: {}", e))?
+            } else {
+                return Err("no goal at this location".to_string());
+            }
+        } else {
+            return Err("no goal at this location".to_string());
+        };
 
         let goal_name = Some(goal.name.clone());
         let goal_range = Some(goal.proposition.source.range);
