@@ -147,6 +147,10 @@ enum Command {
         /// Line number to select
         #[clap(value_name = "LINE")]
         line: u32,
+
+        /// Which goal to select (1-indexed) when multiple goals exist on the line
+        #[clap(long, value_name = "N")]
+        goal: Option<usize>,
     },
 
     /// Remove redundant claims from a module or entire project
@@ -341,7 +345,7 @@ async fn main() {
             }
         }
 
-        Some(Command::Select { module, line }) => {
+        Some(Command::Select { module, line, goal }) => {
             let mut project = Project::new_local(&current_dir, ProjectConfig::default())
                 .unwrap_or_else(|e| {
                     println!("Error loading project: {}", e);
@@ -376,60 +380,79 @@ async fn main() {
                 Ok((goal_infos, _range)) => {
                     if goal_infos.is_empty() {
                         println!("No goals found at this location.");
-                    } else {
+                        std::process::exit(1);
+                    }
+
+                    // Check if goal selection is needed
+                    if goal_infos.len() > 1 && goal.is_none() {
+                        println!("Error: Multiple goals found at line {}.", line);
+                        println!("Please specify which goal to display using --goal=N");
+                        println!("\nAvailable goals:");
                         for (i, goal_info) in goal_infos.iter().enumerate() {
-                            if goal_infos.len() > 1 {
-                                println!("Goal {}: {}", i + 1, goal_info.goal_name);
+                            println!("  {}: {}", i + 1, goal_info.goal_name);
+                        }
+                        std::process::exit(1);
+                    }
+
+                    // Determine which goals to display
+                    let goals_to_display: Vec<(usize, &_)> = if let Some(goal_num) = goal {
+                        // Validate goal number
+                        if goal_num == 0 || goal_num > goal_infos.len() {
+                            println!(
+                                "Error: Invalid goal number {}. Must be between 1 and {}.",
+                                goal_num,
+                                goal_infos.len()
+                            );
+                            std::process::exit(1);
+                        }
+                        vec![(goal_num - 1, &goal_infos[goal_num - 1])]
+                    } else {
+                        // Single goal or all goals
+                        goal_infos.iter().enumerate().collect()
+                    };
+
+                    for (i, goal_info) in goals_to_display {
+                        if goal_infos.len() > 1 {
+                            println!("Goal {}: {}", i + 1, goal_info.goal_name);
+                        } else {
+                            println!("{}", goal_info.goal_name);
+                        }
+                        println!();
+
+                        if let Some(ref steps) = goal_info.steps {
+                            if steps.is_empty() {
+                                println!("Trivial.");
                             } else {
-                                println!("{}", goal_info.goal_name);
-                            }
-                            println!();
+                                let step_word = if steps.len() == 1 { "step" } else { "steps" };
+                                println!("The detailed proof has {} {}:\n", steps.len(), step_word);
 
-                            if let Some(ref steps) = goal_info.steps {
-                                if steps.is_empty() {
-                                    println!("Trivial.");
-                                } else {
-                                    let step_word = if steps.len() == 1 { "step" } else { "steps" };
+                                // Find the maximum width for statement column
+                                let max_statement_width = steps
+                                    .iter()
+                                    .map(|s| s.statement.len())
+                                    .max()
+                                    .unwrap_or(20)
+                                    .max(20); // Minimum width of 20
+
+                                // Print header
+                                println!(
+                                    "{:<width$}    Reason",
+                                    "Statement",
+                                    width = max_statement_width
+                                );
+
+                                // Print each step
+                                for step in steps {
                                     println!(
-                                        "The detailed proof has {} {}:\n",
-                                        steps.len(),
-                                        step_word
-                                    );
-
-                                    // Find the maximum width for statement column
-                                    let max_statement_width = steps
-                                        .iter()
-                                        .map(|s| s.statement.len())
-                                        .max()
-                                        .unwrap_or(20)
-                                        .max(20); // Minimum width of 20
-
-                                    // Print header
-                                    println!(
-                                        "{:<width$}    Reason",
-                                        "Statement",
+                                        "{:<width$}    {}",
+                                        step.statement,
+                                        step.reason,
                                         width = max_statement_width
                                     );
-
-                                    // Print each step
-                                    for step in steps {
-                                        println!(
-                                            "{:<width$}    {}",
-                                            step.statement,
-                                            step.reason,
-                                            width = max_statement_width
-                                        );
-                                    }
                                 }
-                            } else {
-                                println!("No proof available.");
                             }
-
-                            if i < goal_infos.len() - 1 {
-                                println!();
-                                println!("---");
-                                println!();
-                            }
+                        } else {
+                            println!("No proof available.");
                         }
                     }
                 }
