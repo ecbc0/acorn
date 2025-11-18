@@ -927,6 +927,11 @@ impl<'a> Evaluator<'a> {
                         self.evaluate_value_with_stack(stack, expr, Some(&AcornType::Bool))?;
                     AcornValue::Not(Box::new(value))
                 }
+                TokenType::QuestionMark => {
+                    // For now, Try just wraps the inner value with the same type
+                    let value = self.evaluate_value_with_stack(stack, expr, expected_type)?;
+                    AcornValue::Try(Box::new(value))
+                }
                 token_type => match token_type.to_prefix_magic_method_name() {
                     Some(name) => {
                         let subvalue = self.evaluate_value_with_stack(stack, expr, None)?;

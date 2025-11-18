@@ -720,6 +720,10 @@ impl CodeGenerator<'_> {
                 let x = self.value_to_expr(x, false)?;
                 Ok(Expression::generate_unary(TokenType::Not, x))
             }
+            AcornValue::Try(x) => {
+                let x = self.value_to_expr(x, false)?;
+                Ok(Expression::generate_unary(TokenType::QuestionMark, x))
+            }
             AcornValue::ForAll(quants, value) => {
                 self.generate_quantifier_expr(TokenType::ForAll, quants, value, true)
             }

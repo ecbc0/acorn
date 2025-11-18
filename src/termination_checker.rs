@@ -53,7 +53,7 @@ impl TerminationChecker {
                 self.traverse(value);
                 self.substructure_map.truncate(stack_size);
             }
-            AcornValue::Not(value) => {
+            AcornValue::Not(value) | AcornValue::Try(value) => {
                 self.traverse(value);
             }
             AcornValue::Binary(_, left, right) => {

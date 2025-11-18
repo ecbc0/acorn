@@ -1956,7 +1956,9 @@ impl BindingMap {
             }
             AcornValue::Lambda(_, value)
             | AcornValue::ForAll(_, value)
-            | AcornValue::Exists(_, value) => {
+            | AcornValue::Exists(_, value)
+            | AcornValue::Not(value)
+            | AcornValue::Try(value) => {
                 self.find_unknown_local_constants(value, answer);
             }
             AcornValue::Binary(_, left, right) => {
@@ -1974,9 +1976,6 @@ impl BindingMap {
                     self.find_unknown_local_constants(pattern, answer);
                     self.find_unknown_local_constants(result, answer);
                 }
-            }
-            AcornValue::Not(value) => {
-                self.find_unknown_local_constants(value, answer);
             }
         }
     }

@@ -271,6 +271,9 @@ pub enum AcornValue {
 
     Not(Box<AcornValue>),
 
+    /// The try operator (postfix ?)
+    Try(Box<AcornValue>),
+
     /// Quantifiers that introduce variables onto the stack.
     ForAll(Vec<AcornType>, Box<AcornValue>),
     Exists(Vec<AcornType>, Box<AcornValue>),
@@ -322,6 +325,9 @@ impl fmt::Display for Subvalue<'_> {
             }
             AcornValue::Not(a) => {
                 write!(f, "not {}", Subvalue::new(a, self.stack_size))
+            }
+            AcornValue::Try(a) => {
+                write!(f, "{}?", Subvalue::new(a, self.stack_size))
             }
             AcornValue::ForAll(args, body) => fmt_binder(f, "forall", args, body, self.stack_size),
             AcornValue::Exists(args, body) => fmt_binder(f, "exists", args, body, self.stack_size),
@@ -405,6 +411,7 @@ impl AcornValue {
             }
             AcornValue::Binary(_, _, _) => AcornType::Bool,
             AcornValue::Not(_) => AcornType::Bool,
+            AcornValue::Try(inner) => inner.get_type(),
             AcornValue::ForAll(_, _) => AcornType::Bool,
             AcornValue::Exists(_, _) => AcornType::Bool,
             AcornValue::Constant(c) => c.instance_type.clone(),
@@ -433,6 +440,7 @@ impl AcornValue {
             }
             AcornValue::Binary(_, _, _) => *t == AcornType::Bool,
             AcornValue::Not(_) => *t == AcornType::Bool,
+            AcornValue::Try(inner) => inner.is_type(t),
             AcornValue::ForAll(_, _) => *t == AcornType::Bool,
             AcornValue::Exists(_, _) => *t == AcornType::Bool,
             AcornValue::Constant(c) => c.instance_type == *t,
@@ -572,6 +580,7 @@ impl AcornValue {
             AcornValue::Lambda(_, _) => false,
             AcornValue::Binary(_, _, _) => false,
             AcornValue::Not(_) => false,
+            AcornValue::Try(inner) => inner.is_term(),
             AcornValue::ForAll(_, _) => false,
             AcornValue::Exists(_, _) => false,
             AcornValue::Constant(_) => true,
@@ -690,6 +699,11 @@ impl AcornValue {
                 stack_size,
                 values,
             ))),
+            AcornValue::Try(x) => AcornValue::Try(Box::new(x.bind_values(
+                first_binding_index,
+                stack_size,
+                values,
+            ))),
             AcornValue::ForAll(quants, value) => {
                 let value_stack_size = stack_size + quants.len() as AtomId;
                 AcornValue::ForAll(
@@ -763,6 +777,7 @@ impl AcornValue {
                 Box::new(right.insert_stack(index, increment)),
             ),
             AcornValue::Not(x) => AcornValue::Not(Box::new(x.insert_stack(index, increment))),
+            AcornValue::Try(x) => AcornValue::Try(Box::new(x.insert_stack(index, increment))),
             AcornValue::ForAll(quants, value) => {
                 AcornValue::ForAll(quants, Box::new(value.insert_stack(index, increment)))
             }
@@ -824,6 +839,7 @@ impl AcornValue {
                 Box::new(right.expand_lambdas(stack_size)),
             ),
             AcornValue::Not(x) => AcornValue::Not(Box::new(x.expand_lambdas(stack_size))),
+            AcornValue::Try(x) => AcornValue::Try(Box::new(x.expand_lambdas(stack_size))),
             AcornValue::ForAll(quants, value) => {
                 let new_stack_size = stack_size + quants.len() as AtomId;
                 AcornValue::ForAll(
@@ -923,6 +939,9 @@ impl AcornValue {
             }
             AcornValue::Not(x) => {
                 AcornValue::Not(Box::new(x.replace_constants(stack_size, replacer)))
+            }
+            AcornValue::Try(x) => {
+                AcornValue::Try(Box::new(x.replace_constants(stack_size, replacer)))
             }
             AcornValue::ForAll(quants, value) => {
                 let new_value =
@@ -1033,6 +1052,7 @@ impl AcornValue {
                 Ok(())
             }
             AcornValue::Not(x) => x.validate_against_stack(stack),
+            AcornValue::Try(x) => x.validate_against_stack(stack),
             AcornValue::Constant(ci) => {
                 if ci.params.is_empty() && ci.has_generic() {
                     Err(format!("'{}' has generic type but no params", ci))
@@ -1145,6 +1165,7 @@ impl AcornValue {
                 AcornValue::Match(Box::new(new_scrutinee), new_cases)
             }
             AcornValue::Not(x) => AcornValue::Not(Box::new(x.instantiate(params))),
+            AcornValue::Try(x) => AcornValue::Try(Box::new(x.instantiate(params))),
             AcornValue::Constant(c) => AcornValue::Constant(c.instantiate(&params)),
             AcornValue::Bool(_) => self.clone(),
         }
@@ -1167,6 +1188,7 @@ impl AcornValue {
                 cond.has_generic() || if_value.has_generic() || else_value.has_generic()
             }
             AcornValue::Not(x) => x.has_generic(),
+            AcornValue::Try(x) => x.has_generic(),
             AcornValue::Constant(c) => c.has_generic(),
             AcornValue::Bool(_) => false,
             AcornValue::Match(scrutinee, cases) => {
@@ -1193,6 +1215,7 @@ impl AcornValue {
                 cond.has_arbitrary() || if_value.has_arbitrary() || else_value.has_arbitrary()
             }
             AcornValue::Not(x) => x.has_arbitrary(),
+            AcornValue::Try(x) => x.has_arbitrary(),
             AcornValue::Constant(c) => c.has_arbitrary(),
             AcornValue::Bool(_) => false,
             AcornValue::Match(scrutinee, cases) => {
@@ -1234,6 +1257,7 @@ impl AcornValue {
                 }
             }
             AcornValue::Not(x) => x.for_each_constant(f),
+            AcornValue::Try(x) => x.for_each_constant(f),
             AcornValue::Constant(c) => f(c),
         }
     }
@@ -1289,6 +1313,7 @@ impl AcornValue {
                 }
             }
             AcornValue::Not(x) => x.for_each_type(f),
+            AcornValue::Try(x) => x.for_each_type(f),
             AcornValue::Constant(c) => f(&c.instance_type),
             AcornValue::Bool(_) => {}
         }
@@ -1365,6 +1390,7 @@ impl AcornValue {
                 AcornValue::Match(Box::new(new_scrutinee), new_cases)
             }
             AcornValue::Not(x) => AcornValue::Not(Box::new(x.to_arbitrary())),
+            AcornValue::Try(x) => AcornValue::Try(Box::new(x.to_arbitrary())),
             AcornValue::Constant(c) => AcornValue::Constant(c.to_arbitrary()),
             AcornValue::Bool(_) => self.clone(),
         }
@@ -1417,6 +1443,7 @@ impl AcornValue {
                 AcornValue::Match(Box::new(new_scrutinee), new_cases)
             }
             AcornValue::Not(x) => AcornValue::Not(Box::new(x.genericize(params))),
+            AcornValue::Try(x) => AcornValue::Try(Box::new(x.genericize(params))),
             AcornValue::Constant(c) => AcornValue::Constant(c.genericize(params)),
             AcornValue::Bool(_) => self.clone(),
         }
@@ -1474,6 +1501,7 @@ impl AcornValue {
                 AcornValue::Match(Box::new(new_scrutinee), new_cases)
             }
             AcornValue::Not(x) => AcornValue::Not(Box::new(x.set_params(name, params))),
+            AcornValue::Try(x) => AcornValue::Try(Box::new(x.set_params(name, params))),
         }
     }
 
@@ -1659,7 +1687,7 @@ impl AcornValue {
                 left.find_type_vars(vars, source)?;
                 right.find_type_vars(vars, source)?;
             }
-            AcornValue::Not(x) => {
+            AcornValue::Not(x) | AcornValue::Try(x) => {
                 x.find_type_vars(vars, source)?;
             }
             AcornValue::Constant(c) => {
