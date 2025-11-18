@@ -78,6 +78,7 @@ pub enum TokenType {
     SupersetEq,
     Subset,
     Superset,
+    QuestionMark,
 }
 
 // Add a new token here if there's an alphabetical name for it.
@@ -436,6 +437,7 @@ impl TokenType {
             TokenType::SupersetEq => "⊇",
             TokenType::Subset => "⊂",
             TokenType::Superset => "⊃",
+            TokenType::QuestionMark => "?",
         }
     }
 
@@ -602,7 +604,8 @@ impl Token {
             | TokenType::SubsetEq
             | TokenType::SupersetEq
             | TokenType::Subset
-            | TokenType::Superset => Some(SemanticTokenType::OPERATOR),
+            | TokenType::Superset
+            | TokenType::QuestionMark => Some(SemanticTokenType::OPERATOR),
 
             TokenType::Let
             | TokenType::Axiom
@@ -719,6 +722,7 @@ impl Token {
                     '⊇' => TokenType::SupersetEq,
                     '⊂' => TokenType::Subset,
                     '⊃' => TokenType::Superset,
+                    '?' => TokenType::QuestionMark,
                     '-' => match char_indices.next_if_eq(&(char_index + 1, '>')) {
                         Some(_) => TokenType::RightArrow,
                         None => TokenType::Minus,
