@@ -342,7 +342,7 @@ impl NormalizerView<'_> {
             AcornValue::Not(subvalue) => {
                 self.value_to_cnf(subvalue, !negate, stack, next_var_id, synth)
             }
-            AcornValue::Try(_) => Err("try operator not yet implemented".to_string()),
+            AcornValue::Try(_, _) => Err("try operator not yet implemented".to_string()),
             AcornValue::Bool(value) => {
                 if *value ^ negate {
                     Ok(CNF::true_value())
@@ -806,7 +806,7 @@ impl NormalizerView<'_> {
                     Some((t, sign)) => Ok(Some((t, !sign))),
                 }
             }
-            AcornValue::Try(_) => Ok(None),
+            AcornValue::Try(_, _) => Ok(None),
             AcornValue::Bool(v) => Ok(Some((Term::new_true(), *v))),
             _ => Ok(None),
         }
@@ -1244,7 +1244,7 @@ impl NormalizerView<'_> {
                 }
             }
             AcornValue::Not(_) => Err("negation in unexpected position".to_string()),
-            AcornValue::Try(_) => Err("try operator not yet implemented".to_string()),
+            AcornValue::Try(_, _) => Err("try operator not yet implemented".to_string()),
             AcornValue::Lambda(arg_types, body) => {
                 // Create variable terms for each lambda argument
                 // Use stack.len() as the variable ID to ensure it matches the AcornValue's stack-position indexing

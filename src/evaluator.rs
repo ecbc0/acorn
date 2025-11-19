@@ -928,9 +928,82 @@ impl<'a> Evaluator<'a> {
                     AcornValue::Not(Box::new(value))
                 }
                 TokenType::QuestionMark => {
-                    // For now, Try just wraps the inner value with the same type
-                    let value = self.evaluate_value_with_stack(stack, expr, expected_type)?;
-                    AcornValue::Try(Box::new(value))
+                    // The try operator '?' requires a '.some' constructor on the type.
+                    // If foo has type MyType[P1, P2, ...], and MyType.some has type T -> MyType[P1, P2, ...],
+                    // then foo? has type T.
+
+                    // First evaluate the inner expression to get its type
+                    let inner_value = self.evaluate_value_with_stack(stack, expr, None)?;
+                    let inner_type = inner_value.get_type();
+
+                    // Extract the datatype and type parameters from the inner type
+                    let (datatype, type_params) = match &inner_type {
+                        AcornType::Data(dt, params) => (dt, params),
+                        _ => {
+                            return Err(token.error(&format!(
+                                "try operator requires a data type with a '.some' constructor, but found type {:?}",
+                                inner_type
+                            )));
+                        }
+                    };
+
+                    // Look up the .some constructor on the datatype
+                    let (module_id, const_name) = self
+                        .bindings
+                        .resolve_datatype_attr_with_params(datatype, type_params, "some")
+                        .map_err(|e| token.error(&e))?;
+
+                    // Get the constructor's value
+                    let bindings = self.get_bindings(module_id);
+                    let defined_name = DefinedName::Constant(const_name);
+                    let some_potential = bindings
+                        .get_constant_value(&defined_name)
+                        .map_err(|e| token.error(&e))?;
+
+                    // Resolve the constructor with the type parameters
+                    let some_value = match some_potential {
+                        PotentialValue::Resolved(v) => v,
+                        PotentialValue::Unresolved(u) => {
+                            // Instantiate the generic constructor with the type parameters
+                            u.resolve(token, type_params.clone())?
+                        }
+                    };
+
+                    // Verify that .some is a function of type T -> inner_type
+                    let some_type = some_value.get_type();
+                    let unwrapped_type = match &some_type {
+                        AcornType::Function(ft) => {
+                            // Verify it takes exactly one argument
+                            if ft.arg_types.len() != 1 {
+                                return Err(token.error(&format!(
+                                    "'.some' must be a function with exactly one argument, but has {} arguments",
+                                    ft.arg_types.len()
+                                )));
+                            }
+
+                            // Verify the return type matches the inner type
+                            if *ft.return_type != inner_type {
+                                return Err(token.error(&format!(
+                                    "'.some' must return the same type as the value being unwrapped, expected {:?}, but returns {:?}",
+                                    inner_type, ft.return_type
+                                )));
+                            }
+
+                            // The unwrapped type is the argument type
+                            ft.arg_types[0].clone()
+                        }
+                        _ => {
+                            return Err(token.error(&format!(
+                                "'.some' must be a function, but has type {:?}",
+                                some_type
+                            )));
+                        }
+                    };
+
+                    // Check that the unwrapped type matches the expected type
+                    unwrapped_type.check_eq(expected_type, token)?;
+
+                    AcornValue::Try(Box::new(inner_value), unwrapped_type)
                 }
                 token_type => match token_type.to_prefix_magic_method_name() {
                     Some(name) => {
