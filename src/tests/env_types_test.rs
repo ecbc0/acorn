@@ -397,13 +397,13 @@ fn test_structure_with_bad_constraint() {
     let mut env = Environment::test();
     env.bad(
         r#"
-            structure Thing {
-                foo: Bool
-                baz: Bool
-                bar: Bool
-            } constraint {
-                foo or qux
-            }
+        structure Thing {
+            foo: Bool
+            baz: Bool
+            bar: Bool
+        } constraint {
+            foo or qux
+        }
         "#,
     );
 }
@@ -413,13 +413,13 @@ fn test_structure_with_good_constraint() {
     let mut env = Environment::test();
     env.add(
         r#"
-            structure Thing {
-                foo: Bool
-                baz: Bool
-                bar: Bool
-            } constraint {
-                foo or baz or bar
-            }
+        structure Thing {
+            foo: Bool
+            baz: Bool
+            bar: Bool
+        } constraint {
+            foo or baz or bar
+        }
         "#,
     );
     for (i, line_type) in env.line_types.iter().enumerate() {
@@ -434,16 +434,32 @@ fn test_structure_with_constraint_and_by_block() {
     let mut env = Environment::test();
     env.add(
         r#"
-            structure Thing {
-                foo: Bool
-                baz: Bool
-                bar: Bool
-            } constraint {
-                foo or baz or bar
-            } by {
-                true or true or true
-            }
+        structure Thing {
+            foo: Bool
+            baz: Bool
+            bar: Bool
+        } constraint {
+            foo or baz or bar
+        } by {
+            true or true or true
+        }
         "#,
     );
     assert_eq!(env.iter_goals().count(), 2);
+}
+
+#[test]
+fn test_typechecking_try_operator() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        inductive Option[T] {
+            none
+            some(T)
+        }
+
+        let foo: Option[Bool] = Option.some(true)
+        let bar: Bool = foo?
+        "#,
+    );
 }
