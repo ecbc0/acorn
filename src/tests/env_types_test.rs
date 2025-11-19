@@ -449,7 +449,7 @@ fn test_structure_with_constraint_and_by_block() {
 }
 
 #[test]
-fn test_typechecking_try_operator() {
+fn test_typechecking_try_option() {
     let mut env = Environment::test();
     env.add(
         r#"
@@ -462,4 +462,10 @@ fn test_typechecking_try_operator() {
         let bar: Bool = foo?
         "#,
     );
+}
+
+#[test]
+fn test_typechecking_try_bool_fails() {
+    let mut env = Environment::test();
+    env.bad("let foo: Bool = true?");
 }
