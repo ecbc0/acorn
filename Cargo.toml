@@ -45,7 +45,7 @@ name = "acorn"
 test = false
 
 [[bin]]
-name = "profile_saturation"
+name = "profile_reprove"
 test = false
 
 [[bin]]
@@ -57,7 +57,7 @@ name = "profile_scorer"
 test = false
 
 [[bin]]
-name = "profile_verifier"
+name = "profile_verify"
 test = false
 
 [[bin]]
