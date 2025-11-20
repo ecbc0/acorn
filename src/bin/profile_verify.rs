@@ -22,7 +22,7 @@ fn main() {
 
         let output = verifier.run().unwrap();
         if !output.status.is_good() {
-            println!("exiting.");
+            println!("unexpected non-good status. exiting.");
             std::process::exit(1);
         }
     }

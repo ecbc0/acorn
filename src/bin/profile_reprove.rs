@@ -12,27 +12,26 @@ use mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
+// The module to test on
+const MODULE: &str = "real.double_sum";
+
 fn main() {
     let current_dir = std::env::current_dir().unwrap();
     for _ in 0..1 {
         let config = ProjectConfig {
             use_filesystem: true,
-            read_cache: false,
+            read_cache: false, // Force us to actually reprove
             write_cache: false,
         };
 
-        let mut verifier = Verifier::new(
-            current_dir.clone(),
-            config,
-            Some("real.double_sum".to_string()),
-        )
-        .expect("Failed to create verifier");
+        let mut verifier = Verifier::new(current_dir.clone(), config, Some(MODULE.to_string()))
+            .expect("Failed to create verifier");
         verifier.builder.reverify = false; // Run search like verify does
         verifier.builder.check_hashes = false; // Don't skip based on hashes
 
         let output = verifier.run().unwrap();
-        if !output.status.is_good() {
-            println!("exiting.");
+        if !output.status.is_error() {
+            println!("unexpected build error. exiting.");
             std::process::exit(1);
         }
     }
