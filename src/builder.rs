@@ -770,24 +770,24 @@ impl<'a> Builder<'a> {
                 }
             }
             cursor.ascend();
+            return Ok(());
         }
 
-        if cursor.node().has_goal() {
-            let goal = cursor.goal().unwrap();
-            if let Some((_, line)) = self.single_goal {
-                if goal.first_line != line {
-                    // This isn't the goal we're looking for.
-                    return Ok(());
-                }
+        assert!(cursor.node().has_goal());
+        let goal = cursor.goal().unwrap();
+        if let Some((_, line)) = self.single_goal {
+            if goal.first_line != line {
+                // This isn't the goal we're looking for.
+                return Ok(());
             }
-            self.verify_goal(
-                processor,
-                &goal,
-                cursor.goal_env().unwrap(),
-                new_certs,
-                worklist,
-            )?;
         }
+        self.verify_goal(
+            processor,
+            &goal,
+            cursor.goal_env().unwrap(),
+            new_certs,
+            worklist,
+        )?;
 
         Ok(())
     }
