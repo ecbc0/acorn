@@ -36,8 +36,11 @@ impl TermComponent {
     }
 
     fn flatten_next(term: &Term, output: &mut Vec<TermComponent>) {
-        if term.args.is_empty() {
-            output.push(TermComponent::Atom(term.term_type, term.head));
+        if term.args().is_empty() {
+            output.push(TermComponent::Atom(
+                term.get_term_type(),
+                *term.get_head_atom(),
+            ));
             return;
         }
 
@@ -45,15 +48,21 @@ impl TermComponent {
 
         // The zeros are a placeholder. We'll fill in the real info later.
         output.push(TermComponent::Composite(0, 0, 0));
-        output.push(TermComponent::Atom(term.head_type, term.head));
-        for arg in &term.args {
+        output.push(TermComponent::Atom(
+            term.get_head_type(),
+            *term.get_head_atom(),
+        ));
+        for arg in term.args() {
             TermComponent::flatten_next(arg, output);
         }
 
         // Now we can fill in the real size
         let real_size = output.len() - initial_size;
-        output[initial_size] =
-            TermComponent::Composite(term.term_type, term.args.len() as u8, real_size as u16);
+        output[initial_size] = TermComponent::Composite(
+            term.get_term_type(),
+            term.args().len() as u8,
+            real_size as u16,
+        );
     }
 
     pub fn flatten_term(term: &Term) -> Vec<TermComponent> {
@@ -63,7 +72,7 @@ impl TermComponent {
     }
 
     fn flatten_pair(term1: &Term, term2: &Term) -> Vec<TermComponent> {
-        assert_eq!(term1.term_type, term2.term_type);
+        assert_eq!(term1.get_term_type(), term2.get_term_type());
         let mut output = Vec::new();
         // The zero is a placeholder. We'll fill in the real info later.
         TermComponent::flatten_next(term1, &mut output);
@@ -407,12 +416,12 @@ impl Edge {
 
 /// Appends the key for this term, but does not add the top-level type
 fn key_from_term_helper(term: &Term, key: &mut Vec<u8>) {
-    if term.args.is_empty() {
-        Edge::Atom(term.head).append_to(key);
+    if term.args().is_empty() {
+        Edge::Atom(*term.get_head_atom()).append_to(key);
     } else {
-        Edge::Head(term.args.len() as u8, term.head_type).append_to(key);
-        Edge::Atom(term.head).append_to(key);
-        for arg in &term.args {
+        Edge::Head(term.args().len() as u8, term.get_head_type()).append_to(key);
+        Edge::Atom(*term.get_head_atom()).append_to(key);
+        for arg in term.args() {
             key_from_term_helper(arg, key);
         }
     }
@@ -426,7 +435,7 @@ pub fn term_key_prefix(type_id: TypeId) -> Vec<u8> {
 
 /// Appends the key for this term, prefixing with the top-level type
 pub fn key_from_term(term: &Term) -> Vec<u8> {
-    let mut key = term_key_prefix(term.term_type);
+    let mut key = term_key_prefix(term.get_term_type());
     key_from_term_helper(term, &mut key);
     key
 }
@@ -438,7 +447,7 @@ fn literal_key_prefix(type_id: TypeId) -> Vec<u8> {
 }
 
 fn key_from_pair(term1: &Term, term2: &Term) -> Vec<u8> {
-    let mut key = literal_key_prefix(term1.term_type);
+    let mut key = literal_key_prefix(term1.get_term_type());
     key_from_term_helper(&term1, &mut key);
     key_from_term_helper(&term2, &mut key);
     key
@@ -449,9 +458,9 @@ fn clause_key_prefix(clause: &Clause) -> Vec<u8> {
     let mut key = Vec::new();
     for literal in &clause.literals {
         if literal.positive {
-            Edge::PositiveLiteral(literal.left.term_type).append_to(&mut key);
+            Edge::PositiveLiteral(literal.left.get_term_type()).append_to(&mut key);
         } else {
-            Edge::NegativeLiteral(literal.left.term_type).append_to(&mut key);
+            Edge::NegativeLiteral(literal.left.get_term_type()).append_to(&mut key);
         }
     }
     key
@@ -670,7 +679,7 @@ impl<T> PatternTree<T> {
 
     fn find_pair<'a>(&'a self, left: &Term, right: &Term) -> Option<&'a T> {
         let flat = TermComponent::flatten_pair(left, right);
-        let mut key = literal_key_prefix(left.term_type);
+        let mut key = literal_key_prefix(left.get_term_type());
         match self.find_one_match(&mut key, &flat) {
             Some((value, _)) => Some(value),
             None => None,

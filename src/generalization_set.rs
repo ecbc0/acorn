@@ -76,7 +76,7 @@ impl ClauseTypeKey {
         let types = clause
             .literals
             .iter()
-            .map(|lit| lit.left.term_type)
+            .map(|lit| lit.left.get_term_type())
             .collect();
         ClauseTypeKey { types }
     }
@@ -113,7 +113,7 @@ pub fn sub_invariant_term_cmp(
     right_neg: bool,
 ) -> Option<Ordering> {
     // Compare the types, because these won't be changed by substitution.
-    let type_cmp = left.term_type.cmp(&right.term_type);
+    let type_cmp = left.get_term_type().cmp(&right.get_term_type());
     if type_cmp != Ordering::Equal {
         return Some(type_cmp);
     }
@@ -125,24 +125,24 @@ pub fn sub_invariant_term_cmp(
     }
 
     // If either term is a variable, we can't compare them in a substitution-invariant way.
-    if left.head.is_variable() || right.head.is_variable() {
+    if left.get_head_atom().is_variable() || right.get_head_atom().is_variable() {
         return None;
     }
 
     // Compare the head types.
-    let head_type_cmp = left.head_type.cmp(&right.head_type);
+    let head_type_cmp = left.get_head_type().cmp(&right.get_head_type());
     if head_type_cmp != Ordering::Equal {
         return Some(head_type_cmp);
     }
 
     // If heads are different atoms, we can compare them
-    if left.head != right.head {
-        return Some(left.head.cmp(&right.head));
+    if left.get_head_atom() != right.get_head_atom() {
+        return Some(left.get_head_atom().cmp(&right.get_head_atom()));
     }
 
     // Heads are the same, so recurse on arguments
-    assert!(left.args.len() == right.args.len());
-    for (l, r) in left.args.iter().zip(right.args.iter()) {
+    assert!(left.args().len() == right.args().len());
+    for (l, r) in left.args().iter().zip(right.args().iter()) {
         match sub_invariant_term_cmp(l, false, r, false) {
             Some(Ordering::Equal) => continue,
             x => return x,

@@ -327,7 +327,7 @@ impl CodeGenerator<'_> {
 
     fn add_arbitrary_for_term(&mut self, term: &Term) {
         if term.is_variable() {
-            let type_id = term.head_type;
+            let type_id = term.get_head_type();
             if !self.arbitrary_names.contains_key(&type_id) {
                 // Generate a name for this arbitrary value
                 let name = self.bindings.next_indexed_var('s', &mut self.next_s);
@@ -335,7 +335,7 @@ impl CodeGenerator<'_> {
                 self.arbitrary_names.insert(type_id, cname);
             }
         }
-        for arg in &term.args {
+        for arg in term.args() {
             self.add_arbitrary_for_term(arg);
         }
     }

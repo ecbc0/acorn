@@ -28,13 +28,13 @@ impl fmt::Display for DisplayTerm<'_> {
             f,
             "{}",
             DisplayAtom {
-                atom: self.term.head,
+                atom: *self.term.get_head_atom(),
                 normalizer: self.normalizer
             }
         )?;
-        if self.term.args.len() > 0 {
+        if self.term.args().len() > 0 {
             write!(f, "(")?;
-            for (i, arg) in self.term.args.iter().enumerate() {
+            for (i, arg) in self.term.args().iter().enumerate() {
                 if i > 0 {
                     write!(f, ", ")?;
                 }

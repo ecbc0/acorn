@@ -413,8 +413,8 @@ impl<'a> Proof<'a> {
                         base_clause.literals.iter().zip(&info.literals).enumerate()
                     {
                         if i == info.index {
-                            let base_left = &base_lit.left.args[info.arg];
-                            let base_right = &base_lit.right.args[info.arg];
+                            let base_left = &base_lit.left.args()[info.arg];
+                            let base_right = &base_lit.right.args()[info.arg];
                             let (left, right) = if info.flipped {
                                 (&info_lit.right, &info_lit.left)
                             } else {

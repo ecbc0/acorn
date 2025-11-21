@@ -311,16 +311,16 @@ impl TermGraph {
     /// Returns None if this term isn't in the graph.
     pub fn get_term_id(&self, term: &Term) -> Option<TermId> {
         // Look up the head
-        let head_key = Decomposition::Atomic(term.head.clone());
+        let head_key = Decomposition::Atomic(term.get_head_atom().clone());
         let head_id = *self.decompositions.get(&head_key)?;
 
-        if term.args.is_empty() {
+        if term.args().is_empty() {
             return Some(head_id);
         }
 
         // Look up the args
         let mut arg_ids = Vec::new();
-        for arg in &term.args {
+        for arg in term.args() {
             arg_ids.push(self.get_term_id(arg)?);
         }
 
@@ -371,7 +371,7 @@ impl TermGraph {
     // If it's already in the graph, return the existing term id.
     // Otherwise, make a new term id and give it a new group.
     fn insert_head(&mut self, term: &Term) -> TermId {
-        let key = Decomposition::Atomic(term.head.clone());
+        let key = Decomposition::Atomic(term.get_head_atom().clone());
         if let Some(&id) = self.decompositions.get(&key) {
             return id;
         }
@@ -380,12 +380,12 @@ impl TermGraph {
         let term_id = TermId(self.terms.len() as u32);
         let group_id = GroupId(self.groups.len() as u32);
 
-        let head = Term {
-            term_type: term.head_type,
-            head_type: term.head_type,
-            head: term.head.clone(),
-            args: vec![],
-        };
+        let head = Term::new(
+            term.get_head_type(),
+            term.get_head_type(),
+            *term.get_head_atom(),
+            vec![],
+        );
         let term_info = TermInfo {
             term: head,
             group: group_id,
@@ -475,14 +475,14 @@ impl TermGraph {
     /// Makes a new term, group, and compound if necessary.
     pub fn insert_term(&mut self, term: &Term) -> TermId {
         let head_term_id = self.insert_head(term);
-        if term.args.is_empty() {
+        if term.args().is_empty() {
             return head_term_id;
         }
         let head_group_id = self.get_group_id(head_term_id);
 
         let mut arg_term_ids = vec![];
         let mut arg_group_ids = vec![];
-        for arg in &term.args {
+        for arg in term.args() {
             let arg_term_id = self.insert_term(arg);
             arg_term_ids.push(arg_term_id);
             let arg_group_id = self.get_group_id(arg_term_id);

@@ -74,18 +74,22 @@ impl VariableMap {
         }
 
         // These checks mean we won't catch higher-order functions whose head types don't match.
-        if general.head_type != special.head_type {
+        if general.get_head_type() != special.get_head_type() {
             return false;
         }
-        if general.args.len() != special.args.len() {
-            return false;
-        }
-
-        if !self.match_atoms(general.head_type, &general.head, &special.head) {
+        if general.args().len() != special.args().len() {
             return false;
         }
 
-        for (g, s) in general.args.iter().zip(special.args.iter()) {
+        if !self.match_atoms(
+            general.get_head_type(),
+            &general.get_head_atom(),
+            &special.get_head_atom(),
+        ) {
+            return false;
+        }
+
+        for (g, s) in general.args().iter().zip(special.args().iter()) {
             if !self.match_terms(g, s) {
                 return false;
             }
@@ -139,25 +143,25 @@ impl VariableMap {
     /// This does not normalize.
     /// Unmapped variables are kept as-is.
     fn specialize_term(&self, term: &Term) -> Term {
-        let (head_type, head, mut args) = match &term.head {
+        let (head_type, head, mut args) = match *term.get_head_atom() {
             Atom::Variable(i) => {
                 // Check if we have a mapping for this variable
-                if let Some(replacement) = self.get_mapping(*i) {
+                if let Some(replacement) = self.get_mapping(i) {
                     (
-                        replacement.head_type,
-                        replacement.head,
-                        replacement.args.clone(),
+                        replacement.get_head_type(),
+                        *replacement.get_head_atom(),
+                        replacement.args().to_vec(),
                     )
                 } else {
                     // Keep the variable as-is if unmapped
-                    (term.head_type, term.head, vec![])
+                    (term.get_head_type(), *term.get_head_atom(), vec![])
                 }
             }
-            head => (term.head_type, *head, vec![]),
+            head => (term.get_head_type(), head, vec![]),
         };
 
         // Recurse on the arguments
-        for arg in &term.args {
+        for arg in term.args() {
             args.push(self.specialize_term(arg));
         }
 

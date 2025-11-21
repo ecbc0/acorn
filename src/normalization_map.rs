@@ -207,12 +207,7 @@ impl NormalizationMap {
     /// The monomorph should already have been added.
     pub fn term_from_monomorph(&self, c: &ConstantInstance) -> Result<Term, String> {
         if let Some((atom, type_id)) = self.monomorph_to_id.get(&c) {
-            Ok(Term {
-                term_type: *type_id,
-                head_type: *type_id,
-                head: *atom,
-                args: vec![],
-            })
+            Ok(Term::new(*type_id, *type_id, *atom, vec![]))
         } else {
             Err(format!(
                 "Monomorphized constant {} not found in normalization map",

@@ -24,16 +24,16 @@ impl FingerprintComponent {
     pub fn new(term: &Term, path: &&[usize]) -> FingerprintComponent {
         let mut current_term = term;
         for &i in *path {
-            if i >= current_term.args.len() {
+            if i >= current_term.args().len() {
                 if current_term.atomic_variable().is_some() {
                     return FingerprintComponent::Below;
                 }
                 return FingerprintComponent::Nothing;
             }
-            current_term = &current_term.args[i];
+            current_term = &current_term.args()[i];
         }
 
-        match &current_term.head {
+        match current_term.get_head_atom() {
             Atom::Variable(_) => {
                 FingerprintComponent::Something(current_term.get_term_type(), Atom::Variable(0))
             }

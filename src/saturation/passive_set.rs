@@ -53,7 +53,7 @@ pub struct PassiveSet {
 // Only tries this direction.
 // Terms do not have to have variables normalized.
 fn pair_specializes(left1: &Term, right1: &Term, left2: &Term, right2: &Term) -> bool {
-    if left1.term_type != left2.term_type {
+    if left1.get_term_type() != left2.get_term_type() {
         return false;
     }
     let mut var_map = VariableMap::new();

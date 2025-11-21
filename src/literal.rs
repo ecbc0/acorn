@@ -263,10 +263,13 @@ impl Literal {
     }
 
     pub fn validate_type(&self) {
-        if self.left.term_type != self.right.term_type {
+        if self.left.get_term_type() != self.right.get_term_type() {
             panic!(
                 "Literal type mismatch: {} has type {} but {} has type {}",
-                self.left, self.left.term_type, self.right, self.right.term_type
+                self.left,
+                self.left.get_term_type(),
+                self.right,
+                self.right.get_term_type()
             );
         }
     }

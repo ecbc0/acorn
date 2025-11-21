@@ -118,7 +118,7 @@ impl RewriteTree {
         let mut answer = vec![];
         let components = TermComponent::flatten_term(input_term);
         self.find_rewrites(
-            input_term.term_type,
+            input_term.get_term_type(),
             &components,
             next_var,
             &mut |pattern_id, forwards, new_components| {

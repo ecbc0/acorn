@@ -776,9 +776,9 @@ impl NormalizerView<'_> {
                     Some(t) => t,
                     None => return Ok(None),
                 };
-                let head = func_term.head;
-                let head_type = func_term.head_type;
-                let mut args = func_term.args;
+                let head = *func_term.get_head_atom();
+                let head_type = func_term.get_head_type();
+                let mut args = func_term.args().to_vec();
                 for arg in &application.args {
                     let arg_term = match self.try_simple_value_to_term(arg, stack)? {
                         Some(t) => t,
@@ -936,7 +936,7 @@ impl NormalizerView<'_> {
     ) -> Result<Term, String> {
         // Create a tentative skolem term with the value's type
         let skolem_term = self.make_skolem_term(value_type, stack, synth)?;
-        let skolem_id = if let Atom::Synthetic(id) = skolem_term.head {
+        let skolem_id = if let Atom::Synthetic(id) = *skolem_term.get_head_atom() {
             id
         } else {
             return Err("internal error: skolem term is not synthetic".to_string());
@@ -965,10 +965,10 @@ impl NormalizerView<'_> {
             let existing_id = existing_def.atoms[0];
             let existing_atom = Atom::Synthetic(existing_id);
             let reused_term = Term::new(
-                skolem_term.term_type,
-                skolem_term.head_type,
+                skolem_term.get_term_type(),
+                skolem_term.get_head_type(),
                 existing_atom,
-                skolem_term.args.clone(),
+                skolem_term.args().to_vec(),
             );
             Ok(reused_term)
         } else {
@@ -1106,7 +1106,7 @@ impl NormalizerView<'_> {
                 use crate::atom::Atom;
 
                 // Determine the type of the result (should be same as then_term and else_term)
-                let result_type_id = then_term.term_type;
+                let result_type_id = then_term.get_term_type();
                 let result_type = self.map().get_type(result_type_id).clone();
 
                 // Create a new synthetic atom with the appropriate function type
@@ -1535,9 +1535,14 @@ impl Normalizer {
         var_types: &mut Option<Vec<AcornType>>,
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
-        let head = self.denormalize_atom(term.head_type, &term.head, var_types, arbitrary_names);
+        let head = self.denormalize_atom(
+            term.get_head_type(),
+            &term.get_head_atom(),
+            var_types,
+            arbitrary_names,
+        );
         let args: Vec<_> = term
-            .args
+            .args()
             .iter()
             .map(|t| self.denormalize_term(t, var_types, arbitrary_names))
             .collect();

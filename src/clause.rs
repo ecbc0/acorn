@@ -592,7 +592,7 @@ impl Clause {
                 // Negative literals come before positive ones so we're done
                 break;
             }
-            if target.left.head != target.right.head {
+            if target.left.get_head_atom() != target.right.get_head_atom() {
                 continue;
             }
             if target.left.num_args() != target.right.num_args() {
@@ -601,8 +601,8 @@ impl Clause {
 
             // We can do function elimination when precisely one of the arguments is different.
             let mut different_index = None;
-            for (j, arg) in target.left.args.iter().enumerate() {
-                if arg != &target.right.args[j] {
+            for (j, arg) in target.left.args().iter().enumerate() {
+                if arg != &target.right.args()[j] {
                     if different_index.is_some() {
                         different_index = None;
                         break;
@@ -616,8 +616,8 @@ impl Clause {
                 let mut literals = self.literals.clone();
                 let (new_literal, flipped) = Literal::new_with_flip(
                     false,
-                    target.left.args[j].clone(),
-                    target.right.args[j].clone(),
+                    target.left.args()[j].clone(),
+                    target.right.args()[j].clone(),
                 );
                 literals[i] = new_literal;
                 results.push((i, j, literals, flipped));
@@ -648,7 +648,7 @@ impl Clause {
 
         for i in 0..self.literals.len() {
             let literal = &self.literals[i];
-            if literal.left.term_type != BOOL {
+            if literal.left.get_term_type() != BOOL {
                 continue;
             }
             if literal.right.is_true() {
@@ -703,39 +703,39 @@ impl Clause {
         }
 
         // Check if this is f(a, b, c, x1, x2, ..., xn) = g(x1, x2, ..., xn)
-        let (longer, shorter) = if literal.left.args.len() >= literal.right.args.len() {
+        let (longer, shorter) = if literal.left.args().len() >= literal.right.args().len() {
             (&literal.left, &literal.right)
         } else {
             (&literal.right, &literal.left)
         };
 
         // Both sides must be function applications
-        if longer.args.is_empty() || shorter.args.is_empty() {
+        if longer.args().is_empty() || shorter.args().is_empty() {
             return None;
         }
 
         // Functions must be different
-        if longer.head == shorter.head {
+        if longer.get_head_atom() == shorter.get_head_atom() {
             return None;
         }
 
         // The extra args on the longer side must have no variables
-        let diff = longer.args.len() - shorter.args.len();
-        if longer.args[0..diff].iter().any(|arg| arg.is_variable()) {
+        let diff = longer.args().len() - shorter.args().len();
+        if longer.args()[0..diff].iter().any(|arg| arg.is_variable()) {
             return None;
         }
 
         // Remaining arguments must be the same
-        if longer.args[diff..] != shorter.args {
+        if longer.args()[diff..] != *shorter.args() {
             return None;
         }
 
         // Check that variables are distinct (0, 1, 2, ... in normalized form)
-        for (i, arg) in shorter.args.iter().enumerate() {
-            let Atom::Variable(id) = arg.head else {
+        for (i, arg) in shorter.args().iter().enumerate() {
+            let Atom::Variable(id) = arg.get_head_atom() else {
                 return None;
             };
-            if id != i as AtomId {
+            if *id != i as AtomId {
                 return None;
             }
         }
@@ -744,10 +744,10 @@ impl Clause {
         // We need to take the type from the head of the shorter term.
         let new_left = shorter.get_head_term();
         let new_right = Term::new(
-            new_left.term_type,
-            longer.head_type,
-            longer.head,
-            longer.args[0..diff].to_vec(),
+            new_left.get_term_type(),
+            longer.get_head_type(),
+            *longer.get_head_atom(),
+            longer.args()[0..diff].to_vec(),
         );
         let new_literal = Literal::new(true, new_left, new_right);
         Some(vec![new_literal])

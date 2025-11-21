@@ -139,17 +139,17 @@ impl Unifier {
             }
         }
 
-        // First apply to the head, flattening its args into this term if it's
-        // a variable that expands into a term with its own arguments.
-        let mut answer = match &term.head {
+        // First figure out what the head expands to, if it's a variable.
+        // We track the head_type, head atom, and any args from the expansion separately.
+        let (head_type, head, mut args) = match term.get_head_atom() {
             Atom::Variable(i) => {
                 if !self.has_mapping(scope, *i) && scope != Scope::OUTPUT {
                     // We need to create a new variable to send this one to.
                     let var_id = self.maps[Scope::OUTPUT.get()].len() as AtomId;
                     self.maps[Scope::OUTPUT.get()].push_none();
                     let new_var = Term::new(
-                        term.head_type,
-                        term.head_type,
+                        term.get_head_type(),
+                        term.get_head_type(),
                         Atom::Variable(var_id),
                         vec![],
                     );
@@ -159,34 +159,26 @@ impl Unifier {
                 match self.get_mapping(scope, *i) {
                     Some(mapped_head) => {
                         // The head of our initial term expands to a full term.
-                        // Its term type isn't correct, though.
-                        let mut head = mapped_head.clone();
-                        head.term_type = term.get_term_type();
-                        head
+                        // Clone its args so we can append more.
+                        (
+                            mapped_head.get_head_type(),
+                            mapped_head.get_head_atom().clone(),
+                            mapped_head.args().to_vec(),
+                        )
                     }
                     None => {
                         // The head is an output variable with no mapping.
                         // Just leave it as it is.
                         assert!(scope == Scope::OUTPUT);
-                        Term {
-                            term_type: term.term_type,
-                            head_type: term.head_type,
-                            head: term.head.clone(),
-                            args: vec![],
-                        }
+                        (term.get_head_type(), term.get_head_atom().clone(), vec![])
                     }
                 }
             }
-            head => Term {
-                term_type: term.term_type,
-                head_type: term.head_type,
-                head: head.clone(),
-                args: vec![],
-            },
+            head => (term.get_head_type(), head.clone(), vec![]),
         };
 
-        // Recurse on the arguments
-        for (i, arg) in term.args.iter().enumerate() {
+        // Recurse on the arguments and append them
+        for (i, arg) in term.iter_args().enumerate() {
             // Figure out what replacement to pass recursively
             let new_replacement = if let Some(ref replacement) = replacement {
                 if replacement.path[0] == i {
@@ -202,12 +194,11 @@ impl Unifier {
             } else {
                 None
             };
-            answer
-                .args
-                .push(self.apply_replace(scope, arg, new_replacement))
+            args.push(self.apply_replace(scope, arg, new_replacement))
         }
 
-        answer
+        // Now construct the final term with correct types
+        Term::new(term.get_term_type(), head_type, head, args)
     }
 
     pub fn apply(&mut self, scope: Scope, term: &Term) -> Term {
@@ -228,9 +219,9 @@ impl Unifier {
     fn remap(&mut self, id: AtomId, term: &Term) -> bool {
         if let Some(other_id) = term.atomic_variable() {
             if other_id > id {
-                // Let's keep this id and remap the other one instead
-                let mut new_term = term.clone();
-                new_term.head = Atom::Variable(id);
+                // Let's keep this id and remap the other one instead.
+                // Since term is an atomic variable, create a new variable term with the lower id.
+                let new_term = Term::new_variable(term.get_term_type(), id);
                 return self.unify_variable(Scope::OUTPUT, other_id, Scope::OUTPUT, &new_term);
             }
         }
@@ -320,9 +311,9 @@ impl Unifier {
         full_scope: Scope,
     ) -> Option<bool> {
         // Check if var_term has a variable head with arguments
-        if let Atom::Variable(var_id) = var_term.head {
-            let var_args_len = var_term.args.len();
-            let full_args_len = full_term.args.len();
+        if let Atom::Variable(var_id) = *var_term.get_head_atom() {
+            let var_args_len = var_term.args().len();
+            let full_args_len = full_term.args().len();
 
             if var_args_len >= 1 && full_args_len > var_args_len {
                 // We want to unify x0(arg1, ..., argN) with f(a1, ..., aM) where M > N
@@ -331,16 +322,16 @@ impl Unifier {
 
                 // Build the partial application: first (M-N) args of full_term
                 let num_partial_args = full_args_len - var_args_len;
-                let partial_args = full_term.args[0..num_partial_args].to_vec();
+                let partial_args = full_term.args()[0..num_partial_args].to_vec();
 
                 // Create the partial application term
                 // Use the head_type of var_term (the variable's type) as the term_type
-                let partial = Term {
-                    term_type: var_term.head_type,
-                    head_type: full_term.head_type,
-                    head: full_term.head,
-                    args: partial_args,
-                };
+                let partial = Term::new(
+                    var_term.get_head_type(),
+                    full_term.get_head_type(),
+                    *full_term.get_head_atom(),
+                    partial_args,
+                );
 
                 // Unify the variable with the partial application
                 if !self.unify_variable(var_scope, var_id, full_scope, &partial) {
@@ -351,9 +342,9 @@ impl Unifier {
                 for i in 0..var_args_len {
                     if !self.unify_internal(
                         var_scope,
-                        &var_term.args[i],
+                        &var_term.args()[i],
                         full_scope,
-                        &full_term.args[num_partial_args + i],
+                        &full_term.args()[num_partial_args + i],
                     ) {
                         return Some(false);
                     }
@@ -377,7 +368,7 @@ impl Unifier {
 
     // Internal unification implementation
     fn unify_internal(&mut self, scope1: Scope, term1: &Term, scope2: Scope, term2: &Term) -> bool {
-        if term1.term_type != term2.term_type {
+        if term1.get_term_type() != term2.get_term_type() {
             return false;
         }
 
@@ -400,18 +391,24 @@ impl Unifier {
         }
 
         // These checks mean we won't unify higher-order functions whose head types don't match.
-        if term1.head_type != term2.head_type {
+        if term1.get_head_type() != term2.get_head_type() {
             return false;
         }
-        if term1.args.len() != term2.args.len() {
-            return false;
-        }
-
-        if !self.unify_atoms(term1.head_type, scope1, &term1.head, scope2, &term2.head) {
+        if term1.args().len() != term2.args().len() {
             return false;
         }
 
-        for (a1, a2) in term1.args.iter().zip(term2.args.iter()) {
+        if !self.unify_atoms(
+            term1.get_head_type(),
+            scope1,
+            &term1.get_head_atom(),
+            scope2,
+            &term2.get_head_atom(),
+        ) {
+            return false;
+        }
+
+        for (a1, a2) in term1.args().iter().zip(term2.args().iter()) {
             if !self.unify_internal(scope1, a1, scope2, a2) {
                 return false;
             }
@@ -607,12 +604,7 @@ mod tests {
     use super::*;
 
     fn bool_fn(head: Atom, args: Vec<Term>) -> Term {
-        Term {
-            term_type: BOOL,
-            head_type: 0,
-            head,
-            args,
-        }
+        Term::new(BOOL, 0, head, args)
     }
 
     #[test]
@@ -711,43 +703,28 @@ mod tests {
         let x1_var = Term::atom(2, Atom::Variable(1));
 
         // s5 is a skolem function that takes two arguments
-        let s5_left = Term {
-            term_type: 4,
-            head_type: 14,
-            head: Atom::Synthetic(5),
-            args: vec![x0_var.clone(), x1_var.clone()],
-        };
+        let s5_left = Term::new(
+            4,
+            14,
+            Atom::Synthetic(5),
+            vec![x0_var.clone(), x1_var.clone()],
+        );
 
         // Left side: x0(s5(x0, x1))
-        let left_term = Term {
-            term_type: 4,
-            head_type: 11,
-            head: Atom::Variable(0),
-            args: vec![s5_left],
-        };
+        let left_term = Term::new(4, 11, Atom::Variable(0), vec![s5_left]);
 
         // Right side: m2(c0, s5(m2(c0), x0))
         let c0 = Term::atom(2, Atom::LocalConstant(0));
-        let m2_c0 = Term {
-            term_type: 11,
-            head_type: 10,
-            head: Atom::Monomorph(2),
-            args: vec![c0.clone()],
-        };
+        let m2_c0 = Term::new(11, 10, Atom::Monomorph(2), vec![c0.clone()]);
 
-        let s5_right = Term {
-            term_type: 4,
-            head_type: 14,
-            head: Atom::Synthetic(5),
-            args: vec![m2_c0.clone(), Term::atom(2, Atom::Variable(0))],
-        };
+        let s5_right = Term::new(
+            4,
+            14,
+            Atom::Synthetic(5),
+            vec![m2_c0.clone(), Term::atom(2, Atom::Variable(0))],
+        );
 
-        let right_term = Term {
-            term_type: 4,
-            head_type: 10,
-            head: Atom::Monomorph(2),
-            args: vec![c0.clone(), s5_right],
-        };
+        let right_term = Term::new(4, 10, Atom::Monomorph(2), vec![c0.clone(), s5_right]);
 
         // Try to unify these terms
         let mut u = Unifier::new(3);

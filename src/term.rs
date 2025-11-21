@@ -14,14 +14,14 @@ pub const BOOL: TypeId = 1;
 pub struct Term {
     /// The term type is the type of the entire term.
     /// For example "2 < 3" has type "Bool".
-    pub term_type: TypeId,
+    term_type: TypeId,
 
     /// The head type is the type of just the head atom.
     /// For example the head type of "2 < 3" is "(int, int) -> bool".
-    pub head_type: TypeId,
+    head_type: TypeId,
 
-    pub head: Atom,
-    pub args: Vec<Term>,
+    head: Atom,
+    args: Vec<Term>,
 }
 
 impl fmt::Display for Term {
@@ -148,6 +148,14 @@ impl Term {
 
     pub fn iter_args(&self) -> impl Iterator<Item = &Term> {
         self.args.iter()
+    }
+
+    pub fn get_arg(&self, index: usize) -> &Term {
+        &self.args[index]
+    }
+
+    pub fn args(&self) -> &[Term] {
+        &self.args
     }
 
     /// Iterates over all atoms in the term (head first, then recursively through arguments)
