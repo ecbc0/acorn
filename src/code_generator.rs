@@ -274,6 +274,11 @@ impl CodeGenerator<'_> {
         codes: &mut Vec<String>,
     ) -> Result<()> {
         let clause = var_map.specialize_clause(&generic);
+
+        // This is the only place where we use the feature of "denormalize" that we can
+        // pass the arbitrary names like this.
+        // It might make more sense to do this in value space, so that we don't have to make
+        // the normalizer even more complicated.
         self.add_arbitrary_for_clause(&clause);
         let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names));
 
