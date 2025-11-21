@@ -27,7 +27,6 @@ pub mod goal;
 pub mod interfaces;
 pub mod literal;
 pub mod manifest;
-pub mod maybe_owned;
 pub mod module;
 pub mod monomorphizer;
 pub mod named_entity;
