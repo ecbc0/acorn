@@ -139,33 +139,29 @@ impl VariableMap {
     /// This does not normalize.
     /// Unmapped variables are kept as-is.
     fn specialize_term(&self, term: &Term) -> Term {
-        // First apply to the head
-        let mut answer = match &term.head {
+        let (head_type, head, mut args) = match &term.head {
             Atom::Variable(i) => {
                 // Check if we have a mapping for this variable
                 if let Some(replacement) = self.get_mapping(*i) {
-                    // Expand the head to a full term.
-                    // Its term type isn't correct, though.
-                    Term::new(
-                        term.get_term_type(),
+                    (
                         replacement.head_type,
                         replacement.head,
                         replacement.args.clone(),
                     )
                 } else {
                     // Keep the variable as-is if unmapped
-                    Term::new(term.get_term_type(), term.head_type, term.head, Vec::new())
+                    (term.head_type, term.head, vec![])
                 }
             }
-            head => Term::new(term.get_term_type(), term.head_type, *head, Vec::new()),
+            head => (term.head_type, *head, vec![]),
         };
 
         // Recurse on the arguments
         for arg in &term.args {
-            answer.push_arg(self.specialize_term(arg));
+            args.push(self.specialize_term(arg));
         }
 
-        answer
+        Term::new(term.get_term_type(), head_type, head, args)
     }
 
     /// This does not normalize.

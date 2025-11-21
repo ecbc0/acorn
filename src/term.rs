@@ -35,9 +35,9 @@ impl fmt::Display for Term {
 }
 
 /// Formatting terms with slight changes.
-pub struct TermFormatter<'a> {
-    pub term: &'a Term,
-    pub var: char,
+struct TermFormatter<'a> {
+    term: &'a Term,
+    var: char,
 }
 
 impl fmt::Display for TermFormatter<'_> {
@@ -170,12 +170,6 @@ impl Term {
                 .into_iter()
                 .chain(self.args.iter().flat_map(|arg| arg.iter_vars())),
         )
-    }
-
-    /// This doesn't change the term type, so the caller is responsible for making sure
-    /// the type is correct.
-    pub fn push_arg(&mut self, arg: Term) {
-        self.args.push(arg);
     }
 
     pub fn num_args(&self) -> usize {
@@ -769,22 +763,6 @@ impl Term {
                 .map(|arg| arg.remap_variables(var_map))
                 .collect(),
         }
-    }
-
-    fn inorder_helper(&self, answer: &mut Vec<(TypeId, TypeId, Atom, Vec<TypeId>)>) {
-        let arg_types = self.args.iter().map(|arg| arg.term_type).collect();
-        answer.push((self.term_type, self.head_type, self.head, arg_types));
-        for arg in &self.args {
-            arg.inorder_helper(answer);
-        }
-    }
-
-    /// An inorder traversal of each subterm. Returns a vector of:
-    /// (term type, head type, head, arg types).
-    pub fn inorder(&self) -> Vec<(TypeId, TypeId, Atom, Vec<TypeId>)> {
-        let mut answer = vec![];
-        self.inorder_helper(&mut answer);
-        answer
     }
 
     /// var_ids tracks the order each input variable is seen.
