@@ -21,6 +21,7 @@ pub mod evaluator;
 pub mod expression;
 pub mod extended_term;
 pub mod fact;
+pub mod flat;
 pub mod generalization_set;
 pub mod generative;
 pub mod goal;
