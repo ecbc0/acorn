@@ -366,7 +366,7 @@ impl BindingMap {
         &self
             .get_bindings(typeclass.module_id, project)
             .typeclass_defs
-            .get(&typeclass)
+            .get(typeclass)
             .unwrap()
             .attributes
     }
@@ -485,17 +485,16 @@ impl BindingMap {
                 // This is a local name, so it was defined in this module.
                 Some((*module_id, name.clone()))
             }
-            ConstantName::DatatypeAttribute(datatype, attr) => self
-                .resolve_datatype_attr(datatype, attr)
-                .ok()
-                .map(|(module_id, name)| (module_id, name)),
+            ConstantName::DatatypeAttribute(datatype, attr) => {
+                self.resolve_datatype_attr(datatype, attr).ok()
+            }
             ConstantName::SpecificDatatypeAttribute(datatype, _types, _attr) => {
                 // Specific attributes are always defined locally
                 Some((datatype.module_id, name.clone()))
             }
-            ConstantName::TypeclassAttribute(typeclass, attr) => self
-                .resolve_typeclass_attr(typeclass, attr)
-                .map(|(module_id, name)| (module_id, name)),
+            ConstantName::TypeclassAttribute(typeclass, attr) => {
+                self.resolve_typeclass_attr(typeclass, attr)
+            }
             ConstantName::Synthetic(_) => None,
         }
     }
@@ -638,7 +637,7 @@ impl BindingMap {
         definition_string: Option<String>,
     ) -> PotentialType {
         let name = name_token.text();
-        if params.len() == 0 {
+        if params.is_empty() {
             return PotentialType::Resolved(self.add_data_type(
                 name,
                 doc_comments,
@@ -757,7 +756,7 @@ impl BindingMap {
                 );
             }
         }
-        self.add_typeclass_name(&name, typeclass, source)?;
+        self.add_typeclass_name(name, typeclass, source)?;
         Ok(())
     }
 
@@ -799,7 +798,7 @@ impl BindingMap {
         // Get the relevant properties of the typeclass.
         let typeclass_attr_name = DefinedName::typeclass_attr(typeclass, attr_name);
         let typeclass_attr = self
-            .get_bindings(typeclass.module_id, &project)
+            .get_bindings(typeclass.module_id, project)
             .get_constant_value(&typeclass_attr_name)
             .map_err(|e| source.error(&e))?;
         let uc = typeclass_attr.to_unresolved(source)?;
@@ -1332,7 +1331,7 @@ impl BindingMap {
                 entry.doc_comments = imported_info.doc_comments.clone();
             }
             if entry.range.is_none() {
-                entry.range = imported_info.range.clone();
+                entry.range = imported_info.range;
             }
             // Merge extends and required sets
             for extends_tc in &imported_info.extends {
@@ -1419,7 +1418,7 @@ impl BindingMap {
             .typeclass_defs
             .get(typeclass)
         {
-            for key in keys_with_prefix(&info.attributes, &prefix) {
+            for key in keys_with_prefix(&info.attributes, prefix) {
                 let completion = CompletionItem {
                     label: key.clone(),
                     kind: Some(CompletionItemKind::FIELD),
@@ -1581,11 +1580,7 @@ impl BindingMap {
 
         let bindings = match project.get_bindings(module) {
             Some(b) => b,
-            None => {
-                return Err(
-                    name_token.error(&format!("could not load bindings for imported module"))
-                )
-            }
+            None => return Err(name_token.error("could not load bindings for imported module")),
         };
         let entity = Evaluator::new(project, bindings, None).evaluate_name(
             name_token,
@@ -1607,12 +1602,12 @@ impl BindingMap {
                     Ok(entity)
                 } else {
                     // I don't see how this branch can be reached.
-                    return Err(name_token.error("cannot import non-constant values"));
+                    Err(name_token.error("cannot import non-constant values"))
                 }
             }
             NamedEntity::Type(acorn_type) => {
                 self.add_type_alias(
-                    &name,
+                    name,
                     PotentialType::Resolved(acorn_type.clone()),
                     name_token,
                 )?;
@@ -1620,7 +1615,7 @@ impl BindingMap {
             }
             NamedEntity::Module(_) => Err(name_token.error("cannot import modules indirectly")),
             NamedEntity::Typeclass(tc) => {
-                self.add_typeclass_name(&name, tc.clone(), name_token)?;
+                self.add_typeclass_name(name, tc.clone(), name_token)?;
                 Ok(entity)
             }
 
@@ -1636,7 +1631,7 @@ impl BindingMap {
             }
 
             NamedEntity::UnresolvedType(u) => {
-                self.add_type_alias(&name, PotentialType::Unresolved(u.clone()), name_token)?;
+                self.add_type_alias(name, PotentialType::Unresolved(u.clone()), name_token)?;
                 Ok(entity)
             }
         }
@@ -1802,7 +1797,7 @@ impl BindingMap {
     )> {
         // Bind all the type parameters and arguments
         let mut evaluator = Evaluator::new(project, self, token_map.as_deref_mut());
-        let type_params = evaluator.evaluate_type_params(&type_param_exprs)?;
+        let type_params = evaluator.evaluate_type_params(type_param_exprs)?;
         for param in &type_params {
             self.add_arbitrary_type(param.clone());
         }
@@ -2236,7 +2231,7 @@ fn keys_with_prefix<'a, T>(
 impl TypeclassRegistry for BindingMap {
     fn is_instance_of(&self, dt: &Datatype, typeclass: &Typeclass) -> bool {
         self.datatype_defs
-            .get(&dt)
+            .get(dt)
             .map_or(false, |info| info.typeclasses.contains_key(typeclass))
     }
 

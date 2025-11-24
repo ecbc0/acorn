@@ -369,10 +369,7 @@ impl Term {
 
     /// A higher order term is one that has a variable as its head.
     pub fn is_higher_order(&self) -> bool {
-        match self.head {
-            Atom::Variable(_) => true,
-            _ => false,
-        }
+        matches!(self.head, Atom::Variable(_))
     }
 
     /// Recursively checks if any term has a variable as its head with arguments applied to it.

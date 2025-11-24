@@ -91,17 +91,11 @@ impl ConstantName {
     }
 
     pub fn is_typeclass_attr(&self) -> bool {
-        match self {
-            ConstantName::TypeclassAttribute(..) => true,
-            _ => false,
-        }
+        matches!(self, ConstantName::TypeclassAttribute(..))
     }
 
     pub fn is_synthetic(&self) -> bool {
-        match self {
-            ConstantName::Synthetic(_) => true,
-            _ => false,
-        }
+        matches!(self, ConstantName::Synthetic(_))
     }
 
     pub fn synthetic_id(&self) -> Option<AtomId> {
@@ -218,10 +212,7 @@ impl DefinedName {
     }
 
     pub fn is_instance(&self) -> bool {
-        match self {
-            DefinedName::Instance(..) => true,
-            _ => false,
-        }
+        matches!(self, DefinedName::Instance(..))
     }
 
     pub fn as_attribute(&self) -> Option<(&str, &str)> {

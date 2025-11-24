@@ -226,7 +226,7 @@ impl fmt::Debug for NodeCursor<'_> {
 
 impl<'a> NodeCursor<'a> {
     pub fn from_path(env: &'a Environment, path: &[usize]) -> Self {
-        assert!(path.len() > 0);
+        assert!(!path.is_empty());
         let mut iter = NodeCursor::new(env, path[0]);
         for &i in &path[1..] {
             iter.descend(i);

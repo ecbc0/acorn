@@ -180,10 +180,7 @@ impl TokenType {
     }
 
     pub fn is_postfix(&self) -> bool {
-        match self {
-            TokenType::QuestionMark => true,
-            _ => false,
-        }
+        matches!(self, TokenType::QuestionMark)
     }
 
     pub fn is_binary(&self) -> bool {
@@ -224,10 +221,7 @@ impl TokenType {
 
     // Associative operators don't have to be parenthesized in a sequence because it doesn't matter.
     pub fn always_associative(&self) -> bool {
-        match self {
-            TokenType::Comma => true,
-            _ => false,
-        }
+        matches!(self, TokenType::Comma)
     }
 
     // The precedence of a binary operator.

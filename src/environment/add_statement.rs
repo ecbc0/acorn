@@ -386,16 +386,15 @@ impl Environment {
                 return Err(ds.args[0].token().error("self must be the datatype type"));
             }
 
-            if ds.name_token.text() == "read" {
-                if arg_types.len() != 2
+            if ds.name_token.text() == "read"
+                && (arg_types.len() != 2
                     || &arg_types[1] != datatype_type
-                    || &value_type != datatype_type
-                {
-                    return Err(ds.name_token.error(&format!(
-                        "{}.read should be type ({}, {}) -> {}",
-                        datatype_type, datatype_type, datatype_type, datatype_type
-                    )));
-                }
+                    || &value_type != datatype_type)
+            {
+                return Err(ds.name_token.error(&format!(
+                    "{}.read should be type ({}, {}) -> {}",
+                    datatype_type, datatype_type, datatype_type, datatype_type
+                )));
             }
         }
 

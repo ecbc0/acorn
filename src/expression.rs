@@ -375,10 +375,7 @@ impl Expression {
     }
 
     fn is_grouping(&self) -> bool {
-        match self {
-            Expression::Grouping(..) => true,
-            _ => false,
-        }
+        matches!(self, Expression::Grouping(..))
     }
 
     pub fn print_one_level(&self) {

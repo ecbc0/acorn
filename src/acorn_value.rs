@@ -219,7 +219,7 @@ impl ConstantInstance {
             return None;
         }
         if let Some((_, receiver, attribute)) = self.name.as_attribute() {
-            if receiver == &typeclass.name && self.params.len() == 1 {
+            if receiver == typeclass.name && self.params.len() == 1 {
                 if let AcornType::Data(param_datatype, _) = &self.params[0] {
                     if param_datatype == datatype {
                         return Some(DefinedName::Instance(InstanceName {
@@ -371,7 +371,7 @@ impl Subvalue<'_> {
     }
 }
 
-fn fmt_values(v: &Vec<AcornValue>, f: &mut fmt::Formatter, stack_size: usize) -> fmt::Result {
+fn fmt_values(v: &[AcornValue], f: &mut fmt::Formatter, stack_size: usize) -> fmt::Result {
     for (i, item) in v.iter().enumerate() {
         if i > 0 {
             write!(f, ", ")?;
@@ -384,7 +384,7 @@ fn fmt_values(v: &Vec<AcornValue>, f: &mut fmt::Formatter, stack_size: usize) ->
 fn fmt_binder(
     f: &mut fmt::Formatter,
     name: &str,
-    decs: &Vec<AcornType>,
+    decs: &[AcornType],
     body: &AcornValue,
     stack_size: usize,
 ) -> fmt::Result {
@@ -565,10 +565,7 @@ impl AcornValue {
 
     /// Checks if this value is a lambda function
     pub fn is_lambda(&self) -> bool {
-        match self {
-            AcornValue::Lambda(_, _) => true,
-            _ => false,
-        }
+        matches!(self, AcornValue::Lambda(_, _))
     }
 
     /// Whether this value can be converted to a term, rather than requiring a literal or clause.
@@ -959,7 +956,7 @@ impl AcornValue {
                     value.replace_constants(stack_size + quants.len() as AtomId, replacer);
                 AcornValue::Exists(quants.clone(), Box::new(new_value))
             }
-            AcornValue::Constant(c) => replacer(&c).unwrap_or_else(|| self.clone()),
+            AcornValue::Constant(c) => replacer(c).unwrap_or_else(|| self.clone()),
             AcornValue::IfThenElse(cond, if_value, else_value) => AcornValue::IfThenElse(
                 Box::new(cond.replace_constants(stack_size, replacer)),
                 Box::new(if_value.replace_constants(stack_size, replacer)),
@@ -968,7 +965,7 @@ impl AcornValue {
             AcornValue::Match(scrutinee, cases) => {
                 let new_scrutinee = scrutinee.replace_constants(stack_size, replacer);
                 let new_cases = cases
-                    .into_iter()
+                    .iter()
                     .map(|(new_vars, pattern, result)| {
                         let new_stack_size = stack_size + new_vars.len() as AtomId;
                         (
@@ -989,11 +986,9 @@ impl AcornValue {
         map: &HashMap<AtomId, String>,
     ) -> AcornValue {
         self.replace_constants(0, &|old_ci| {
-            if let Some(new_ci) = old_ci.replace_synthetic(module_id, &map) {
-                Some(AcornValue::Constant(new_ci))
-            } else {
-                None
-            }
+            old_ci
+                .replace_synthetic(module_id, map)
+                .map(AcornValue::Constant)
         })
     }
 
@@ -1174,7 +1169,7 @@ impl AcornValue {
             AcornValue::Try(x, t) => {
                 AcornValue::Try(Box::new(x.instantiate(params)), t.instantiate(params))
             }
-            AcornValue::Constant(c) => AcornValue::Constant(c.instantiate(&params)),
+            AcornValue::Constant(c) => AcornValue::Constant(c.instantiate(params)),
             AcornValue::Bool(_) => self.clone(),
         }
     }
@@ -1664,7 +1659,7 @@ impl AcornValue {
     /// A display version for when this value is a subvalue.
     pub fn display_as_subvalue(&self, stack_size: usize) -> String {
         let subvalue = Subvalue {
-            value: &self,
+            value: self,
             stack_size,
         };
         subvalue.to_string()

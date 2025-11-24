@@ -236,10 +236,7 @@ impl Source {
     }
 
     pub fn is_axiom(&self) -> bool {
-        match self.source_type {
-            SourceType::Axiom(_) => true,
-            _ => false,
-        }
+        matches!(self.source_type, SourceType::Axiom(_))
     }
 
     /// The name is an identifier for this source that is somewhat resilient to common edits.

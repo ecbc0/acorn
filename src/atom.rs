@@ -77,17 +77,11 @@ impl Atom {
     }
 
     pub fn is_local_constant(&self) -> bool {
-        match self {
-            Atom::LocalConstant(_) => true,
-            _ => false,
-        }
+        matches!(self, Atom::LocalConstant(_))
     }
 
     pub fn is_variable(&self) -> bool {
-        match self {
-            Atom::Variable(_) => true,
-            _ => false,
-        }
+        matches!(self, Atom::Variable(_))
     }
 
     // Orders two atoms, but considers all references the same, so that the ordering
@@ -126,7 +120,7 @@ impl Atom {
     }
 
     // Replaces x_i with x_{var_map[i]}.
-    pub fn remap_variables(&self, var_map: &Vec<AtomId>) -> Atom {
+    pub fn remap_variables(&self, var_map: &[AtomId]) -> Atom {
         match self {
             Atom::Variable(i) => Atom::Variable(var_map[*i as usize]),
             a => *a,

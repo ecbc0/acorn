@@ -241,13 +241,10 @@ impl fmt::Display for FunctionType {
 impl FunctionType {
     /// Creates a new function type by normalizing arguments and return type.
     fn new(arg_types: Vec<AcornType>, return_type: AcornType) -> FunctionType {
-        assert!(arg_types.len() > 0);
+        assert!(!arg_types.is_empty());
         if let AcornType::Function(ftype) = return_type {
             // Normalize function types by un-currying.
-            let combined_args = arg_types
-                .into_iter()
-                .chain(ftype.arg_types.into_iter())
-                .collect();
+            let combined_args = arg_types.into_iter().chain(ftype.arg_types).collect();
             FunctionType {
                 arg_types: combined_args,
                 return_type: ftype.return_type,
@@ -491,7 +488,7 @@ impl AcornType {
     }
 
     /// Converts a list of declaration types to a string representation.
-    pub fn decs_to_str(dec_types: &Vec<AcornType>, stack_size: usize) -> String {
+    pub fn decs_to_str(dec_types: &[AcornType], stack_size: usize) -> String {
         let mut result = String::new();
         for (i, dec_type) in dec_types.iter().enumerate() {
             if i > 0 {
@@ -670,10 +667,7 @@ impl AcornType {
 
     /// Returns whether this type is a function type.
     pub fn is_functional(&self) -> bool {
-        match self {
-            AcornType::Function(_) => true,
-            _ => false,
-        }
+        matches!(self, AcornType::Function(_))
     }
 
     /// Returns the typeclass if this type is an abstract representative of a typeclass.

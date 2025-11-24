@@ -23,18 +23,13 @@ use crate::prover::{Outcome, ProverMode};
 static NEXT_BUILD_ID: AtomicU32 = AtomicU32::new(1);
 
 /// Configuration for which prover to use during verification
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum ProverConfig {
     /// Use the saturation-based prover (default)
+    #[default]
     Saturation,
     /// Use the generative prover
     Generative(GenerativeProverConfig),
-}
-
-impl Default for ProverConfig {
-    fn default() -> Self {
-        ProverConfig::Saturation
-    }
 }
 
 /// The Builder contains all the mutable state for a single build.
@@ -291,17 +286,11 @@ impl BuildStatus {
     }
 
     pub fn is_error(&self) -> bool {
-        match self {
-            BuildStatus::Error => true,
-            _ => false,
-        }
+        matches!(self, BuildStatus::Error)
     }
 
     pub fn is_good(&self) -> bool {
-        match self {
-            BuildStatus::Good => true,
-            _ => false,
-        }
+        matches!(self, BuildStatus::Good)
     }
 }
 
@@ -655,7 +644,7 @@ impl<'a> Builder<'a> {
                     Err(e) => {
                         return Err(BuildError::goal(
                             goal,
-                            &format!("failed to clean certificate: {}", e),
+                            format!("failed to clean certificate: {}", e),
                         ))
                     }
                 }
@@ -695,7 +684,7 @@ impl<'a> Builder<'a> {
                     // In reverify mode, a bad cert is an error
                     return Err(BuildError::goal(
                         goal,
-                        &format!("certificate failed to verify: {}", e),
+                        format!("certificate failed to verify: {}", e),
                     ));
                 }
                 Err(_) => {
@@ -729,8 +718,8 @@ impl<'a> Builder<'a> {
                 }
                 Err(e) => {
                     return Err(BuildError::goal(
-                        &goal,
-                        &format!("full prover failed to create certificate: {}", e),
+                        goal,
+                        format!("full prover failed to create certificate: {}", e),
                     ));
                 }
             }
@@ -805,22 +794,20 @@ impl<'a> Builder<'a> {
             use crate::source::SourceType;
 
             for node in &env.nodes {
-                if let Node::Structural(fact) = node {
-                    if let Fact::Proposition(prop) = fact {
-                        if matches!(prop.source.source_type, SourceType::Axiom(_)) {
-                            let range = prop.source.range;
-                            let event = self.make_event(
-                                range,
-                                "axiom keyword is not allowed in strict mode",
-                                Some(tower_lsp::lsp_types::DiagnosticSeverity::ERROR),
-                            );
-                            (self.event_handler)(event);
-                            self.status = BuildStatus::Error;
-                            return Err(BuildError::new(
-                                range,
-                                "axiom keyword is not allowed in strict mode",
-                            ));
-                        }
+                if let Node::Structural(Fact::Proposition(prop)) = node {
+                    if matches!(prop.source.source_type, SourceType::Axiom(_)) {
+                        let range = prop.source.range;
+                        let event = self.make_event(
+                            range,
+                            "axiom keyword is not allowed in strict mode",
+                            Some(tower_lsp::lsp_types::DiagnosticSeverity::ERROR),
+                        );
+                        (self.event_handler)(event);
+                        self.status = BuildStatus::Error;
+                        return Err(BuildError::new(
+                            range,
+                            "axiom keyword is not allowed in strict mode",
+                        ));
                     }
                 }
             }
@@ -840,7 +827,7 @@ impl<'a> Builder<'a> {
                 processor.add_fact(fact.clone())?;
             }
             let mut processor = Rc::new(processor);
-            let mut cursor = NodeCursor::new(&env, 0);
+            let mut cursor = NodeCursor::new(env, 0);
 
             // Loop over all the nodes that are right below the top level.
             loop {

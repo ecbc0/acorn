@@ -321,17 +321,11 @@ impl Rule {
     }
 
     pub fn is_rewrite(&self) -> bool {
-        match self {
-            Rule::Rewrite(_) => true,
-            _ => false,
-        }
+        matches!(self, Rule::Rewrite(_))
     }
 
     pub fn is_assumption(&self) -> bool {
-        match self {
-            Rule::Assumption(_) => true,
-            _ => false,
-        }
+        matches!(self, Rule::Assumption(_))
     }
 
     pub fn is_negated_goal(&self) -> bool {

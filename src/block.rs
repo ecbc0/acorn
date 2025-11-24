@@ -136,9 +136,9 @@ impl Block {
         }
 
         let goal_prop = match params {
-            BlockParams::Conditional(ref condition, range) => {
+            BlockParams::Conditional(condition, range) => {
                 let source = Source::premise(env.module_id, range, subenv.depth);
-                let prop = Proposition::monomorphic((*condition).clone(), source);
+                let prop = Proposition::monomorphic(condition.clone(), source);
                 subenv.add_node(Node::structural(project, &subenv, prop));
                 None
             }
@@ -191,7 +191,7 @@ impl Block {
                 for (arg_name, arg_type) in pattern_args {
                     let def_str = format!("{}: {}", arg_name, arg_type);
                     let potential = subenv.bindings.add_unqualified_constant(
-                        &arg_name,
+                        arg_name,
                         vec![],
                         arg_type.clone(),
                         None,
@@ -229,15 +229,15 @@ impl Block {
                 subenv.add_line_types(
                     LineType::Opening,
                     first_token.line_number,
-                    body.left_brace.line_number as u32,
+                    body.left_brace.line_number,
                 );
                 for s in &body.statements {
                     subenv.add_statement(project, s)?;
                 }
                 subenv.add_line_types(
                     LineType::Closing,
-                    body.right_brace.line_number as u32,
-                    body.right_brace.line_number as u32,
+                    body.right_brace.line_number,
+                    body.right_brace.line_number,
                 );
             }
             None => {
