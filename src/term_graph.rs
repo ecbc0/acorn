@@ -6,7 +6,7 @@ use crate::atom::Atom;
 use crate::clause::Clause;
 use crate::clause_set::{ClauseId, ClauseSet, GroupId, LiteralId, Normalization, TermId};
 use crate::literal::Literal;
-use crate::term::Term;
+use crate::term::SimpleTerm;
 
 /// Every time we set two terms equal or not equal, that action is tagged with a StepId.
 /// The term graph uses it to provide a history of the reasoning that led to a conclusion.
@@ -50,17 +50,17 @@ pub struct RewriteStep {
     pub source: RewriteSource,
 
     /// The term that existed before the rewrite.
-    pub input_term: Term,
+    pub input_term: SimpleTerm,
 
     /// The term that the input term was rewritten info.
-    pub output_term: Term,
+    pub output_term: SimpleTerm,
 
     /// A forwards rewrite is the "left -> right" direction.
     pub forwards: bool,
 }
 
 impl RewriteStep {
-    pub fn left_term(&self) -> &Term {
+    pub fn left_term(&self) -> &SimpleTerm {
         if self.forwards {
             &self.input_term
         } else {
@@ -68,7 +68,7 @@ impl RewriteStep {
         }
     }
 
-    pub fn right_term(&self) -> &Term {
+    pub fn right_term(&self) -> &SimpleTerm {
         if self.forwards {
             &self.output_term
         } else {
@@ -107,7 +107,7 @@ enum Decomposition {
 
 #[derive(Clone)]
 struct TermInfo {
-    term: Term,
+    term: SimpleTerm,
     group: GroupId,
     decomp: Decomposition,
 
@@ -309,7 +309,7 @@ impl TermGraph {
     }
 
     /// Returns None if this term isn't in the graph.
-    pub fn get_term_id(&self, term: &Term) -> Option<TermId> {
+    pub fn get_term_id(&self, term: &SimpleTerm) -> Option<TermId> {
         // Look up the head
         let head_key = Decomposition::Atomic(term.get_head_atom().clone());
         let head_id = *self.decompositions.get(&head_key)?;
@@ -328,7 +328,7 @@ impl TermGraph {
         self.decompositions.get(&compound_key).copied()
     }
 
-    pub fn get_term(&self, term_id: TermId) -> &Term {
+    pub fn get_term(&self, term_id: TermId) -> &SimpleTerm {
         &self.terms[term_id.get() as usize].term
     }
 
@@ -370,7 +370,7 @@ impl TermGraph {
     // Inserts the head of the provided term as an atom.
     // If it's already in the graph, return the existing term id.
     // Otherwise, make a new term id and give it a new group.
-    fn insert_head(&mut self, term: &Term) -> TermId {
+    fn insert_head(&mut self, term: &SimpleTerm) -> TermId {
         let key = Decomposition::Atomic(term.get_head_atom().clone());
         if let Some(&id) = self.decompositions.get(&key) {
             return id;
@@ -380,7 +380,7 @@ impl TermGraph {
         let term_id = TermId(self.terms.len() as u32);
         let group_id = GroupId(self.groups.len() as u32);
 
-        let head = Term::new(
+        let head = SimpleTerm::new(
             term.get_head_type(),
             term.get_head_type(),
             *term.get_head_atom(),
@@ -406,7 +406,7 @@ impl TermGraph {
     // Inserts a term composition relationship.
     // If it's already in the graph, return the existing term id.
     // Otherwise, make a new term and group.
-    fn insert_term_compound(&mut self, term: &Term, head: TermId, args: Vec<TermId>) -> TermId {
+    fn insert_term_compound(&mut self, term: &SimpleTerm, head: TermId, args: Vec<TermId>) -> TermId {
         let key = Decomposition::Compound(head, args);
         if let Some(&id) = self.decompositions.get(&key) {
             return id;
@@ -473,7 +473,7 @@ impl TermGraph {
 
     /// Inserts a term.
     /// Makes a new term, group, and compound if necessary.
-    pub fn insert_term(&mut self, term: &Term) -> TermId {
+    pub fn insert_term(&mut self, term: &SimpleTerm) -> TermId {
         let head_term_id = self.insert_head(term);
         if term.args().is_empty() {
             return head_term_id;
@@ -1358,7 +1358,7 @@ impl TermGraph {
 impl TermGraph {
     #[cfg(test)]
     fn insert_term_str(&mut self, s: &str) -> TermId {
-        let id = self.insert_term(&Term::parse(s));
+        let id = self.insert_term(&SimpleTerm::parse(s));
         self.validate();
         id
     }
@@ -1398,7 +1398,7 @@ impl TermGraph {
 
     #[cfg(test)]
     fn get_str(&self, s: &str) -> TermId {
-        self.get_term_id(&Term::parse(s)).unwrap()
+        self.get_term_id(&SimpleTerm::parse(s)).unwrap()
     }
 
     #[cfg(test)]

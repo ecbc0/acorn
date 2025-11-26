@@ -6,7 +6,7 @@ use crate::clause::{Clause, ClauseTrace, LiteralTrace};
 use crate::literal::Literal;
 use crate::proposition::MonomorphicProposition;
 use crate::source::{Source, SourceType};
-use crate::term::Term;
+use crate::term::SimpleTerm;
 
 /// The different sorts of proof steps.
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
@@ -563,7 +563,7 @@ impl ProofStep {
         target_left: bool,
         path: &[usize],
         forwards: bool,
-        new_subterm: &Term,
+        new_subterm: &SimpleTerm,
     ) -> ProofStep {
         assert_eq!(target_step.clause.literals.len(), 1);
 

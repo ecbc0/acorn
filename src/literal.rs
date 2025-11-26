@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::atom::{Atom, AtomId};
-use crate::term::{Term, TypeId};
+use crate::term::{SimpleTerm, TypeId};
 
 // Literals are always boolean-valued.
 // In normalized form, left is the "larger" term.
@@ -12,8 +12,8 @@ use crate::term::{Term, TypeId};
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Literal {
     pub positive: bool,
-    pub left: Term,
-    pub right: Term,
+    pub left: SimpleTerm,
+    pub right: SimpleTerm,
 }
 
 impl fmt::Display for Literal {
@@ -32,14 +32,14 @@ impl fmt::Display for Literal {
     }
 }
 
-fn needs_to_flip(left: &Term, right: &Term) -> bool {
+fn needs_to_flip(left: &SimpleTerm, right: &SimpleTerm) -> bool {
     left.extended_kbo_cmp(right) == Ordering::Less
 }
 
 impl Literal {
     // Normalizes the direction.
     // The larger term should be on the left of the literal.
-    pub fn new(positive: bool, left: Term, right: Term) -> Literal {
+    pub fn new(positive: bool, left: SimpleTerm, right: SimpleTerm) -> Literal {
         let (lit, _) = Literal::new_with_flip(positive, left, right);
         lit
     }
@@ -47,7 +47,7 @@ impl Literal {
     // Normalizes the direction.
     // The larger term should be on the left of the literal.
     // Returns the literal and whether it was flipped.
-    pub fn new_with_flip(positive: bool, left: Term, right: Term) -> (Literal, bool) {
+    pub fn new_with_flip(positive: bool, left: SimpleTerm, right: SimpleTerm) -> (Literal, bool) {
         if needs_to_flip(&left, &right) {
             (
                 Literal {
@@ -73,32 +73,32 @@ impl Literal {
         !needs_to_flip(&self.left, &self.right)
     }
 
-    pub fn from_signed_term(term: Term, positive: bool) -> Literal {
-        Literal::new(positive, term, Term::new_true())
+    pub fn from_signed_term(term: SimpleTerm, positive: bool) -> Literal {
+        Literal::new(positive, term, SimpleTerm::new_true())
     }
 
-    pub fn positive(term: Term) -> Literal {
-        Literal::new(true, term, Term::new_true())
+    pub fn positive(term: SimpleTerm) -> Literal {
+        Literal::new(true, term, SimpleTerm::new_true())
     }
 
-    pub fn negative(term: Term) -> Literal {
-        Literal::new(false, term, Term::new_true())
+    pub fn negative(term: SimpleTerm) -> Literal {
+        Literal::new(false, term, SimpleTerm::new_true())
     }
 
-    pub fn equals(left: Term, right: Term) -> Literal {
+    pub fn equals(left: SimpleTerm, right: SimpleTerm) -> Literal {
         Literal::new(true, left, right)
     }
 
-    pub fn not_equals(left: Term, right: Term) -> Literal {
+    pub fn not_equals(left: SimpleTerm, right: SimpleTerm) -> Literal {
         Literal::new(false, left, right)
     }
 
     pub fn true_value() -> Literal {
-        Literal::new(true, Term::new_true(), Term::new_true())
+        Literal::new(true, SimpleTerm::new_true(), SimpleTerm::new_true())
     }
 
     pub fn false_value() -> Literal {
-        Literal::new(false, Term::new_true(), Term::new_true())
+        Literal::new(false, SimpleTerm::new_true(), SimpleTerm::new_true())
     }
 
     pub fn is_true_value(&self) -> bool {
@@ -136,19 +136,19 @@ impl Literal {
     pub fn parse(s: &str) -> Literal {
         if s.contains(" != ") {
             let mut parts = s.split(" != ");
-            let left = Term::parse(parts.next().unwrap());
-            let right = Term::parse(parts.next().unwrap());
+            let left = SimpleTerm::parse(parts.next().unwrap());
+            let right = SimpleTerm::parse(parts.next().unwrap());
             Literal::not_equals(left, right)
         } else if s.contains(" = ") {
             let mut parts = s.split(" = ");
-            let left = Term::parse(parts.next().unwrap());
-            let right = Term::parse(parts.next().unwrap());
+            let left = SimpleTerm::parse(parts.next().unwrap());
+            let right = SimpleTerm::parse(parts.next().unwrap());
             Literal::equals(left, right)
         } else if s.starts_with("not ") {
-            let term = Term::parse(&s[4..]);
+            let term = SimpleTerm::parse(&s[4..]);
             Literal::negative(term)
         } else {
-            let term = Term::parse(s);
+            let term = SimpleTerm::parse(s);
             Literal::positive(term)
         }
     }
@@ -185,7 +185,7 @@ impl Literal {
         answer
     }
 
-    pub fn map(&self, f: &mut impl FnMut(&Term) -> Term) -> Literal {
+    pub fn map(&self, f: &mut impl FnMut(&SimpleTerm) -> SimpleTerm) -> Literal {
         Literal::new(self.positive, f(&self.left), f(&self.right))
     }
 
@@ -222,7 +222,7 @@ impl Literal {
     // For a literal s = t, get a vector with:
     // (true, s, t)
     // (false, t, s)
-    pub fn both_term_pairs(&self) -> Vec<(bool, &Term, &Term)> {
+    pub fn both_term_pairs(&self) -> Vec<(bool, &SimpleTerm, &SimpleTerm)> {
         vec![
             (true, &self.left, &self.right),
             (false, &self.right, &self.left),
@@ -235,7 +235,7 @@ impl Literal {
     }
 
     // Returns (right, left) with normalized var ids.
-    pub fn normalized_reversed(&self) -> (Term, Term) {
+    pub fn normalized_reversed(&self) -> (SimpleTerm, SimpleTerm) {
         let mut var_ids = vec![];
         let mut right = self.right.clone();
         right.normalize_var_ids(&mut var_ids);
@@ -303,7 +303,7 @@ impl Literal {
         &self,
         left: bool,
         path: &[usize],
-        new_subterm: Term,
+        new_subterm: SimpleTerm,
     ) -> (Literal, bool) {
         let (u, v, flip1) = if left {
             (&self.left, &self.right, false)
@@ -315,7 +315,7 @@ impl Literal {
         (new_literal, flip1 ^ flip2)
     }
 
-    pub fn get_term_at_path(&self, left: bool, path: &[usize]) -> Option<&Term> {
+    pub fn get_term_at_path(&self, left: bool, path: &[usize]) -> Option<&SimpleTerm> {
         if left {
             self.left.get_term_at_path(path)
         } else {

@@ -1,7 +1,7 @@
 use crate::atom::{Atom, AtomId};
 use crate::clause::Clause;
 use crate::literal::Literal;
-use crate::term::{Term, TypeId};
+use crate::term::{SimpleTerm, TypeId};
 use crate::variable_map::VariableMap;
 use std::fmt;
 
@@ -37,7 +37,7 @@ pub struct Unifier {
 struct Replacement<'a> {
     path: &'a [usize],
     scope: Scope,
-    term: &'a Term,
+    term: &'a SimpleTerm,
 }
 
 impl Unifier {
@@ -93,11 +93,11 @@ impl Unifier {
         self.map(scope).has_mapping(i)
     }
 
-    fn set_mapping(&mut self, scope: Scope, i: AtomId, term: Term) {
+    fn set_mapping(&mut self, scope: Scope, i: AtomId, term: SimpleTerm) {
         self.mut_map(scope).set(i, term);
     }
 
-    fn get_mapping(&self, scope: Scope, i: AtomId) -> Option<&Term> {
+    fn get_mapping(&self, scope: Scope, i: AtomId) -> Option<&SimpleTerm> {
         self.map(scope).get_mapping(i)
     }
 
@@ -130,9 +130,9 @@ impl Unifier {
     fn apply_replace(
         &mut self,
         scope: Scope,
-        term: &Term,
+        term: &SimpleTerm,
         replacement: Option<Replacement>,
-    ) -> Term {
+    ) -> SimpleTerm {
         if let Some(ref replacement) = replacement {
             if replacement.path.is_empty() {
                 return self.apply(replacement.scope, replacement.term);
@@ -147,7 +147,7 @@ impl Unifier {
                     // We need to create a new variable to send this one to.
                     let var_id = self.maps[Scope::OUTPUT.get()].len() as AtomId;
                     self.maps[Scope::OUTPUT.get()].push_none();
-                    let new_var = Term::new(
+                    let new_var = SimpleTerm::new(
                         term.get_head_type(),
                         term.get_head_type(),
                         Atom::Variable(var_id),
@@ -198,10 +198,10 @@ impl Unifier {
         }
 
         // Now construct the final term with correct types
-        Term::new(term.get_term_type(), head_type, head, args)
+        SimpleTerm::new(term.get_term_type(), head_type, head, args)
     }
 
-    pub fn apply(&mut self, scope: Scope, term: &Term) -> Term {
+    pub fn apply(&mut self, scope: Scope, term: &SimpleTerm) -> SimpleTerm {
         self.apply_replace(scope, term, None)
     }
 
@@ -216,12 +216,12 @@ impl Unifier {
     // If they're both variables, keep the one with the lower id.
     // Returns whether this succeeded.
     // It fails if this would require making a variable self-nesting.
-    fn remap(&mut self, id: AtomId, term: &Term) -> bool {
+    fn remap(&mut self, id: AtomId, term: &SimpleTerm) -> bool {
         if let Some(other_id) = term.atomic_variable() {
             if other_id > id {
                 // Let's keep this id and remap the other one instead.
                 // Since term is an atomic variable, create a new variable term with the lower id.
-                let new_term = Term::new_variable(term.get_term_type(), id);
+                let new_term = SimpleTerm::new_variable(term.get_term_type(), id);
                 return self.unify_variable(Scope::OUTPUT, other_id, Scope::OUTPUT, &new_term);
             }
         }
@@ -245,7 +245,7 @@ impl Unifier {
         var_scope: Scope,
         var_id: AtomId,
         term_scope: Scope,
-        term: &Term,
+        term: &SimpleTerm,
     ) -> bool {
         if term_scope != Scope::OUTPUT {
             // Convert our term to the output scope and then unify.
@@ -290,10 +290,10 @@ impl Unifier {
         atom2: &Atom,
     ) -> bool {
         if let Atom::Variable(i) = atom1 {
-            return self.unify_variable(scope1, *i, scope2, &Term::atom(atom_type, *atom2));
+            return self.unify_variable(scope1, *i, scope2, &SimpleTerm::atom(atom_type, *atom2));
         }
         if let Atom::Variable(i) = atom2 {
-            return self.unify_variable(scope2, *i, scope1, &Term::atom(atom_type, *atom1));
+            return self.unify_variable(scope2, *i, scope1, &SimpleTerm::atom(atom_type, *atom1));
         }
         if atom1 == atom2 {
             return true;
@@ -305,9 +305,9 @@ impl Unifier {
     // Returns true if successful, false otherwise
     fn try_unify_partial_application(
         &mut self,
-        var_term: &Term,
+        var_term: &SimpleTerm,
         var_scope: Scope,
-        full_term: &Term,
+        full_term: &SimpleTerm,
         full_scope: Scope,
     ) -> Option<bool> {
         // Check if var_term has a variable head with arguments
@@ -326,7 +326,7 @@ impl Unifier {
 
                 // Create the partial application term
                 // Use the head_type of var_term (the variable's type) as the term_type
-                let partial = Term::new(
+                let partial = SimpleTerm::new(
                     var_term.get_head_type(),
                     full_term.get_head_type(),
                     *full_term.get_head_atom(),
@@ -359,7 +359,7 @@ impl Unifier {
     // Public interface for unification
     // Does not allow unification with the output scope - callers should not directly
     // provide terms in the output scope as the unifier manages output variables internally
-    pub fn unify(&mut self, scope1: Scope, term1: &Term, scope2: Scope, term2: &Term) -> bool {
+    pub fn unify(&mut self, scope1: Scope, term1: &SimpleTerm, scope2: Scope, term2: &SimpleTerm) -> bool {
         if scope1 == Scope::OUTPUT || scope2 == Scope::OUTPUT {
             panic!("Cannot call unify with output scope - the unifier manages output variables internally");
         }
@@ -367,7 +367,7 @@ impl Unifier {
     }
 
     // Internal unification implementation
-    fn unify_internal(&mut self, scope1: Scope, term1: &Term, scope2: Scope, term2: &Term) -> bool {
+    fn unify_internal(&mut self, scope1: Scope, term1: &SimpleTerm, scope2: Scope, term2: &SimpleTerm) -> bool {
         if term1.get_term_type() != term2.get_term_type() {
             return false;
         }
@@ -452,7 +452,7 @@ impl Unifier {
         true
     }
 
-    pub fn assert_unify(&mut self, scope1: Scope, term1: &Term, scope2: Scope, term2: &Term) {
+    pub fn assert_unify(&mut self, scope1: Scope, term1: &SimpleTerm, scope2: Scope, term2: &SimpleTerm) {
         assert!(
             self.unify(scope1, term1, scope2, term2),
             "Failed to unify {} and {}",
@@ -472,8 +472,8 @@ impl Unifier {
     // Helper method for testing unification
     #[cfg(test)]
     fn unify_str(&mut self, scope1: Scope, str1: &str, scope2: Scope, str2: &str, expected: bool) {
-        let term1 = Term::parse(str1);
-        let term2 = Term::parse(str2);
+        let term1 = SimpleTerm::parse(str1);
+        let term2 = SimpleTerm::parse(str2);
         let result = self.unify(scope1, &term1, scope2, &term2);
         assert_eq!(
             result, expected,
@@ -505,7 +505,7 @@ impl Unifier {
     /// Refer to page 3 of "E: A Brainiac Theorem Prover" for more detail.
     pub fn superpose_literals(
         &mut self,
-        t: &Term,
+        t: &SimpleTerm,
         path: &[usize],
         res_literal: &Literal,
         res_forwards: bool,
@@ -543,7 +543,7 @@ impl Unifier {
     // Refer to page 3 of "E: A Brainiac Theorem Prover" for more detail.
     pub fn superpose_clauses(
         &mut self,
-        t: &Term,
+        t: &SimpleTerm,
         pm_clause: &Clause,
         pm_literal_index: usize,
         path: &[usize],
@@ -603,15 +603,15 @@ mod tests {
 
     use super::*;
 
-    fn bool_fn(head: Atom, args: Vec<Term>) -> Term {
-        Term::new(BOOL, 0, head, args)
+    fn bool_fn(head: Atom, args: Vec<SimpleTerm>) -> SimpleTerm {
+        SimpleTerm::new(BOOL, 0, head, args)
     }
 
     #[test]
     fn test_unifying_variables() {
-        let bool0 = Term::atom(BOOL, Atom::Variable(0));
-        let bool1 = Term::atom(BOOL, Atom::Variable(1));
-        let bool2 = Term::atom(BOOL, Atom::Variable(2));
+        let bool0 = SimpleTerm::atom(BOOL, Atom::Variable(0));
+        let bool1 = SimpleTerm::atom(BOOL, Atom::Variable(1));
+        let bool2 = SimpleTerm::atom(BOOL, Atom::Variable(2));
         let fterm = bool_fn(Atom::GlobalConstant(0), vec![bool0.clone(), bool1.clone()]);
         let mut u = Unifier::new(3);
 
@@ -624,9 +624,9 @@ mod tests {
 
     #[test]
     fn test_same_scope() {
-        let bool0 = Term::atom(BOOL, Atom::Variable(0));
-        let bool1 = Term::atom(BOOL, Atom::Variable(1));
-        let bool2 = Term::atom(BOOL, Atom::Variable(2));
+        let bool0 = SimpleTerm::atom(BOOL, Atom::Variable(0));
+        let bool1 = SimpleTerm::atom(BOOL, Atom::Variable(1));
+        let bool2 = SimpleTerm::atom(BOOL, Atom::Variable(2));
         let term1 = bool_fn(Atom::GlobalConstant(0), vec![bool0.clone(), bool1.clone()]);
         let term2 = bool_fn(Atom::GlobalConstant(0), vec![bool1.clone(), bool2.clone()]);
         let mut u = Unifier::new(3);
@@ -640,9 +640,9 @@ mod tests {
 
     #[test]
     fn test_different_scope() {
-        let bool0 = Term::atom(BOOL, Atom::Variable(0));
-        let bool1 = Term::atom(BOOL, Atom::Variable(1));
-        let bool2 = Term::atom(BOOL, Atom::Variable(2));
+        let bool0 = SimpleTerm::atom(BOOL, Atom::Variable(0));
+        let bool1 = SimpleTerm::atom(BOOL, Atom::Variable(1));
+        let bool2 = SimpleTerm::atom(BOOL, Atom::Variable(2));
         let term1 = bool_fn(Atom::GlobalConstant(0), vec![bool0.clone(), bool1.clone()]);
         let term2 = bool_fn(Atom::GlobalConstant(0), vec![bool1.clone(), bool2.clone()]);
         let mut u = Unifier::new(3);
@@ -656,7 +656,7 @@ mod tests {
 
     #[test]
     fn test_unifying_functional_variable() {
-        let bool0 = Term::atom(BOOL, Atom::Variable(0));
+        let bool0 = SimpleTerm::atom(BOOL, Atom::Variable(0));
         let const_f_term = bool_fn(Atom::GlobalConstant(0), vec![bool0.clone()]);
         let var_f_term = bool_fn(Atom::Variable(1), vec![bool0.clone()]);
 
@@ -666,8 +666,8 @@ mod tests {
 
     #[test]
     fn test_nested_functional_unify() {
-        let left_term = Term::parse("x0(x0(c0))");
-        let right_term = Term::parse("c1(x0(x1))");
+        let left_term = SimpleTerm::parse("x0(x0(c0))");
+        let right_term = SimpleTerm::parse("c1(x0(x1))");
         let mut u = Unifier::new(3);
         u.assert_unify(Scope::LEFT, &left_term, Scope::RIGHT, &right_term);
         u.print();
@@ -678,9 +678,9 @@ mod tests {
 
     #[test]
     fn test_nested_functional_superpose() {
-        let s = Term::parse("x0(x0(x1))");
-        let u_subterm = Term::parse("c1(x0(x1))");
-        let t = Term::parse("c2(x0, x1, c1(c1(c0)))");
+        let s = SimpleTerm::parse("x0(x0(x1))");
+        let u_subterm = SimpleTerm::parse("c1(x0(x1))");
+        let t = SimpleTerm::parse("c2(x0, x1, c1(c1(c0)))");
         let pm_clause = Clause::parse("c2(x0, x1, c1(c1(c0))) = x0(x0(x1))");
         let target_path = &[0];
         let resolution_clause =
@@ -699,11 +699,11 @@ mod tests {
 
         // Create terms with proper types
         // For simplicity, let's use type 11 for functions and type 4 for the result
-        let x0_var = Term::atom(11, Atom::Variable(0));
-        let x1_var = Term::atom(2, Atom::Variable(1));
+        let x0_var = SimpleTerm::atom(11, Atom::Variable(0));
+        let x1_var = SimpleTerm::atom(2, Atom::Variable(1));
 
         // s5 is a skolem function that takes two arguments
-        let s5_left = Term::new(
+        let s5_left = SimpleTerm::new(
             4,
             14,
             Atom::Synthetic(5),
@@ -711,20 +711,20 @@ mod tests {
         );
 
         // Left side: x0(s5(x0, x1))
-        let left_term = Term::new(4, 11, Atom::Variable(0), vec![s5_left]);
+        let left_term = SimpleTerm::new(4, 11, Atom::Variable(0), vec![s5_left]);
 
         // Right side: m2(c0, s5(m2(c0), x0))
-        let c0 = Term::atom(2, Atom::LocalConstant(0));
-        let m2_c0 = Term::new(11, 10, Atom::Monomorph(2), vec![c0.clone()]);
+        let c0 = SimpleTerm::atom(2, Atom::LocalConstant(0));
+        let m2_c0 = SimpleTerm::new(11, 10, Atom::Monomorph(2), vec![c0.clone()]);
 
-        let s5_right = Term::new(
+        let s5_right = SimpleTerm::new(
             4,
             14,
             Atom::Synthetic(5),
-            vec![m2_c0.clone(), Term::atom(2, Atom::Variable(0))],
+            vec![m2_c0.clone(), SimpleTerm::atom(2, Atom::Variable(0))],
         );
 
-        let right_term = Term::new(4, 10, Atom::Monomorph(2), vec![c0.clone(), s5_right]);
+        let right_term = SimpleTerm::new(4, 10, Atom::Monomorph(2), vec![c0.clone(), s5_right]);
 
         // Try to unify these terms
         let mut u = Unifier::new(3);
@@ -748,9 +748,9 @@ mod tests {
 
     #[test]
     fn test_original_superpose() {
-        let s = Term::parse("x0(x0(x1))");
-        let u_subterm = Term::parse("c1(x0(x1))");
-        let t = Term::parse("c2(x0, x1, c1(c1(c0)))");
+        let s = SimpleTerm::parse("x0(x0(x1))");
+        let u_subterm = SimpleTerm::parse("c1(x0(x1))");
+        let t = SimpleTerm::parse("c2(x0, x1, c1(c1(c0)))");
         let pm_clause = Clause::parse("c2(x0, x1, c1(c1(c0))) = x0(x0(x1))");
         let target_path = &[0];
         let resolution_clause =
@@ -806,7 +806,7 @@ mod tests {
     #[test]
     fn test_initializing_with_variables_in_map() {
         let mut initial_map = VariableMap::new();
-        initial_map.set(0, Term::parse("s0(x0, x1, s4)"));
+        initial_map.set(0, SimpleTerm::parse("s0(x0, x1, s4)"));
         let (mut unifier, scope1) = Unifier::with_map(initial_map);
         let scope2 = unifier.add_scope();
         let scope3 = unifier.add_scope();

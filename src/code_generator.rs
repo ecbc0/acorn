@@ -13,7 +13,7 @@ use crate::module::ModuleId;
 use crate::names::{ConstantName, DefinedName};
 use crate::normalizer::Normalizer;
 use crate::saturation::proof::ConcreteStep;
-use crate::term::{Term, TypeId};
+use crate::term::{SimpleTerm, TypeId};
 use crate::token::TokenType;
 use crate::type_unifier::TypeclassRegistry;
 use crate::variable_map::VariableMap;
@@ -325,7 +325,7 @@ impl CodeGenerator<'_> {
         Ok(expr.to_string())
     }
 
-    fn add_arbitrary_for_term(&mut self, term: &Term) {
+    fn add_arbitrary_for_term(&mut self, term: &SimpleTerm) {
         if term.is_variable() {
             let type_id = term.get_head_type();
             if !self.arbitrary_names.contains_key(&type_id) {

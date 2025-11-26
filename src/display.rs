@@ -4,7 +4,7 @@ use crate::atom::Atom;
 use crate::clause::Clause;
 use crate::literal::Literal;
 use crate::normalizer::Normalizer;
-use crate::term::Term;
+use crate::term::SimpleTerm;
 
 struct DisplayAtom<'a> {
     atom: Atom,
@@ -18,7 +18,7 @@ impl fmt::Display for DisplayAtom<'_> {
 }
 
 pub struct DisplayTerm<'a> {
-    pub term: &'a Term,
+    pub term: &'a SimpleTerm,
     pub normalizer: &'a Normalizer,
 }
 
@@ -59,7 +59,7 @@ struct DisplayLiteral<'a> {
 }
 
 impl DisplayLiteral<'_> {
-    fn term<'a>(&'a self, term: &'a Term) -> DisplayTerm<'a> {
+    fn term<'a>(&'a self, term: &'a SimpleTerm) -> DisplayTerm<'a> {
         DisplayTerm {
             term,
             normalizer: self.normalizer,

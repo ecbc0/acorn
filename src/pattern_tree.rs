@@ -3,7 +3,7 @@ use qp_trie::{Entry, SubTrie, Trie};
 use crate::atom::{Atom, AtomId};
 use crate::clause::Clause;
 use crate::literal::Literal;
-use crate::term::{Term, TypeId};
+use crate::term::{SimpleTerm, TypeId};
 
 /// The TermComponent is designed so that a &[TermComponent] represents a preorder
 /// traversal of the term, and each subterm is represented by a subslice.
@@ -35,7 +35,7 @@ impl TermComponent {
         }
     }
 
-    fn flatten_next(term: &Term, output: &mut Vec<TermComponent>) {
+    fn flatten_next(term: &SimpleTerm, output: &mut Vec<TermComponent>) {
         if term.args().is_empty() {
             output.push(TermComponent::Atom(
                 term.get_term_type(),
@@ -65,13 +65,13 @@ impl TermComponent {
         );
     }
 
-    pub fn flatten_term(term: &Term) -> Vec<TermComponent> {
+    pub fn flatten_term(term: &SimpleTerm) -> Vec<TermComponent> {
         let mut output = Vec::new();
         TermComponent::flatten_next(term, &mut output);
         output
     }
 
-    fn flatten_pair(term1: &Term, term2: &Term) -> Vec<TermComponent> {
+    fn flatten_pair(term1: &SimpleTerm, term2: &SimpleTerm) -> Vec<TermComponent> {
         assert_eq!(term1.get_term_type(), term2.get_term_type());
         let mut output = Vec::new();
         // The zero is a placeholder. We'll fill in the real info later.
@@ -91,7 +91,7 @@ impl TermComponent {
 
     /// Constructs a term, starting at components[i].
     /// Returns the next unused index and the term.
-    fn unflatten_next(components: &[TermComponent], i: usize) -> (usize, Term) {
+    fn unflatten_next(components: &[TermComponent], i: usize) -> (usize, SimpleTerm) {
         match components[i] {
             TermComponent::Composite(term_type, num_args, size) => {
                 let size = size as usize;
@@ -113,13 +113,13 @@ impl TermComponent {
                 if args.len() != num_args as usize {
                     panic!("Composite term has wrong number of args");
                 }
-                (j, Term::new(term_type, head_type, head, args))
+                (j, SimpleTerm::new(term_type, head_type, head, args))
             }
-            TermComponent::Atom(term_type, atom) => (i + 1, Term::atom(term_type, atom)),
+            TermComponent::Atom(term_type, atom) => (i + 1, SimpleTerm::atom(term_type, atom)),
         }
     }
 
-    pub fn unflatten_term(components: &[TermComponent]) -> Term {
+    pub fn unflatten_term(components: &[TermComponent]) -> SimpleTerm {
         let (size, term) = TermComponent::unflatten_next(components, 0);
         if size != components.len() {
             panic!("Term has wrong size");
@@ -127,7 +127,7 @@ impl TermComponent {
         term
     }
 
-    pub fn unflatten_pair(components: &[TermComponent]) -> (Term, Term) {
+    pub fn unflatten_pair(components: &[TermComponent]) -> (SimpleTerm, SimpleTerm) {
         let (size1, term1) = TermComponent::unflatten_next(components, 0);
         let (size2, term2) = TermComponent::unflatten_next(components, size1);
         if size2 != components.len() {
@@ -415,7 +415,7 @@ impl Edge {
 }
 
 /// Appends the key for this term, but does not add the top-level type
-fn key_from_term_helper(term: &Term, key: &mut Vec<u8>) {
+fn key_from_term_helper(term: &SimpleTerm, key: &mut Vec<u8>) {
     if term.args().is_empty() {
         Edge::Atom(*term.get_head_atom()).append_to(key);
     } else {
@@ -434,7 +434,7 @@ pub fn term_key_prefix(type_id: TypeId) -> Vec<u8> {
 }
 
 /// Appends the key for this term, prefixing with the top-level type
-pub fn key_from_term(term: &Term) -> Vec<u8> {
+pub fn key_from_term(term: &SimpleTerm) -> Vec<u8> {
     let mut key = term_key_prefix(term.get_term_type());
     key_from_term_helper(term, &mut key);
     key
@@ -446,7 +446,7 @@ fn literal_key_prefix(type_id: TypeId) -> Vec<u8> {
     key
 }
 
-fn key_from_pair(term1: &Term, term2: &Term) -> Vec<u8> {
+fn key_from_pair(term1: &SimpleTerm, term2: &SimpleTerm) -> Vec<u8> {
     let mut key = literal_key_prefix(term1.get_term_type());
     key_from_term_helper(&term1, &mut key);
     key_from_term_helper(&term2, &mut key);
@@ -622,7 +622,7 @@ impl<T> PatternTree<T> {
         }
     }
 
-    pub fn insert_term(&mut self, term: &Term, value: T) {
+    pub fn insert_term(&mut self, term: &SimpleTerm, value: T) {
         let path = key_from_term(term);
         let value_id = self.values.len();
         self.values.push(value);
@@ -630,7 +630,7 @@ impl<T> PatternTree<T> {
     }
 
     /// The pair needs to have normalized variable numbering, with term1's variables preceding term2's.
-    pub fn insert_pair(&mut self, term1: &Term, term2: &Term, value: T) {
+    pub fn insert_pair(&mut self, term1: &SimpleTerm, term2: &SimpleTerm, value: T) {
         let key = key_from_pair(term1, term2);
         let value_id = self.values.len();
         self.values.push(value);
@@ -677,7 +677,7 @@ impl<T> PatternTree<T> {
         }
     }
 
-    fn find_pair<'a>(&'a self, left: &Term, right: &Term) -> Option<&'a T> {
+    fn find_pair<'a>(&'a self, left: &SimpleTerm, right: &SimpleTerm) -> Option<&'a T> {
         let flat = TermComponent::flatten_pair(left, right);
         let mut key = literal_key_prefix(left.get_term_type());
         match self.find_one_match(&mut key, &flat) {
@@ -698,7 +698,7 @@ impl<T> PatternTree<T> {
 
 impl PatternTree<()> {
     /// Appends to the existing value if possible. Otherwises, inserts a vec![U].
-    pub fn insert_or_append<U>(pt: &mut PatternTree<Vec<U>>, term: &Term, value: U) {
+    pub fn insert_or_append<U>(pt: &mut PatternTree<Vec<U>>, term: &SimpleTerm, value: U) {
         let key = key_from_term(term);
         match pt.trie.entry(key) {
             Entry::Occupied(entry) => {
@@ -764,7 +764,7 @@ mod tests {
     use super::*;
 
     fn check_term(s: &str) {
-        let input_term = Term::parse(s);
+        let input_term = SimpleTerm::parse(s);
         let flat = TermComponent::flatten_term(&input_term);
         TermComponent::validate_slice(&flat);
         let output_term = TermComponent::unflatten_term(&flat);
@@ -780,8 +780,8 @@ mod tests {
     }
 
     fn check_pair(s1: &str, s2: &str) {
-        let input_term1 = Term::parse(s1);
-        let input_term2 = Term::parse(s2);
+        let input_term1 = SimpleTerm::parse(s1);
+        let input_term2 = SimpleTerm::parse(s2);
         let flat = TermComponent::flatten_pair(&input_term1, &input_term2);
         let (output_term1, output_term2) = TermComponent::unflatten_pair(&flat);
         assert_eq!(input_term1, output_term1);
