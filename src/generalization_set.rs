@@ -5,7 +5,7 @@ use std::vec;
 use crate::clause::Clause;
 use crate::literal::Literal;
 use crate::pattern_tree::PatternTree;
-use crate::term::{SimpleTerm, TypeId};
+use crate::simple_term::{SimpleTerm, TypeId};
 use crate::unifier::Unifier;
 
 /// The GeneralizationSet stores general clauses in a way that allows us to quickly check whether

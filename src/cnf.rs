@@ -3,7 +3,7 @@ use std::vec;
 
 use crate::clause::Clause;
 use crate::literal::Literal;
-use crate::term::SimpleTerm;
+use crate::simple_term::SimpleTerm;
 
 /// A CNF (Conjunctive Normal Form) formula represented as a vector of clauses,
 /// where each clause is a vector of literals.
@@ -258,7 +258,7 @@ impl fmt::Display for CNF {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::term::SimpleTerm;
+    use crate::simple_term::SimpleTerm;
 
     #[test]
     fn test_cnf_negate() {

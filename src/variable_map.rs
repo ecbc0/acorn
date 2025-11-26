@@ -1,7 +1,7 @@
 use crate::atom::{Atom, AtomId};
 use crate::clause::Clause;
 use crate::literal::Literal;
-use crate::term::{SimpleTerm, TypeId};
+use crate::simple_term::{SimpleTerm, TypeId};
 use std::fmt;
 
 // A VariableMap maintains a mapping from variables to terms, allowing us to turn a more general term

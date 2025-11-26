@@ -5,7 +5,7 @@ use super::scorer::{default_scorer, Scorer};
 use crate::clause::{Clause, ClauseTrace, LiteralTrace};
 use crate::literal::Literal;
 use crate::proof_step::ProofStep;
-use crate::term::SimpleTerm;
+use crate::simple_term::SimpleTerm;
 use crate::variable_map::VariableMap;
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap};
@@ -52,7 +52,12 @@ pub struct PassiveSet {
 // Whether (left1, right1) can be mapped to (left2, right2) through variable substitution.
 // Only tries this direction.
 // Terms do not have to have variables normalized.
-fn pair_specializes(left1: &SimpleTerm, right1: &SimpleTerm, left2: &SimpleTerm, right2: &SimpleTerm) -> bool {
+fn pair_specializes(
+    left1: &SimpleTerm,
+    right1: &SimpleTerm,
+    left2: &SimpleTerm,
+    right2: &SimpleTerm,
+) -> bool {
     if left1.get_term_type() != left2.get_term_type() {
         return false;
     }

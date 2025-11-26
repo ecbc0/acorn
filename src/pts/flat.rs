@@ -1,4 +1,4 @@
-use crate::term::TypeId;
+use crate::simple_term::TypeId;
 
 /// A flattened representation of a term that can include full type information.
 /// In general, "size" in a region header tells you how much to increment to get to the next region.

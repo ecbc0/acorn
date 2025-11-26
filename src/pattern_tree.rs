@@ -3,7 +3,7 @@ use qp_trie::{Entry, SubTrie, Trie};
 use crate::atom::{Atom, AtomId};
 use crate::clause::Clause;
 use crate::literal::Literal;
-use crate::term::{SimpleTerm, TypeId};
+use crate::simple_term::{SimpleTerm, TypeId};
 
 /// The TermComponent is designed so that a &[TermComponent] represents a preorder
 /// traversal of the term, and each subterm is represented by a subslice.

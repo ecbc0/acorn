@@ -1,7 +1,7 @@
 use crate::atom::{Atom, AtomId};
 use crate::clause::Clause;
 use crate::literal::Literal;
-use crate::term::{SimpleTerm, TypeId};
+use crate::simple_term::{SimpleTerm, TypeId};
 use crate::variable_map::VariableMap;
 use std::fmt;
 
@@ -359,7 +359,13 @@ impl Unifier {
     // Public interface for unification
     // Does not allow unification with the output scope - callers should not directly
     // provide terms in the output scope as the unifier manages output variables internally
-    pub fn unify(&mut self, scope1: Scope, term1: &SimpleTerm, scope2: Scope, term2: &SimpleTerm) -> bool {
+    pub fn unify(
+        &mut self,
+        scope1: Scope,
+        term1: &SimpleTerm,
+        scope2: Scope,
+        term2: &SimpleTerm,
+    ) -> bool {
         if scope1 == Scope::OUTPUT || scope2 == Scope::OUTPUT {
             panic!("Cannot call unify with output scope - the unifier manages output variables internally");
         }
@@ -367,7 +373,13 @@ impl Unifier {
     }
 
     // Internal unification implementation
-    fn unify_internal(&mut self, scope1: Scope, term1: &SimpleTerm, scope2: Scope, term2: &SimpleTerm) -> bool {
+    fn unify_internal(
+        &mut self,
+        scope1: Scope,
+        term1: &SimpleTerm,
+        scope2: Scope,
+        term2: &SimpleTerm,
+    ) -> bool {
         if term1.get_term_type() != term2.get_term_type() {
             return false;
         }
@@ -452,7 +464,13 @@ impl Unifier {
         true
     }
 
-    pub fn assert_unify(&mut self, scope1: Scope, term1: &SimpleTerm, scope2: Scope, term2: &SimpleTerm) {
+    pub fn assert_unify(
+        &mut self,
+        scope1: Scope,
+        term1: &SimpleTerm,
+        scope2: Scope,
+        term2: &SimpleTerm,
+    ) {
         assert!(
             self.unify(scope1, term1, scope2, term2),
             "Failed to unify {} and {}",
@@ -599,7 +617,7 @@ impl fmt::Display for Unifier {
 
 #[cfg(test)]
 mod tests {
-    use crate::term::BOOL;
+    use crate::simple_term::BOOL;
 
     use super::*;
 

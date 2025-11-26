@@ -4,7 +4,7 @@ use std::fmt;
 use crate::atom::{Atom, AtomId};
 use crate::literal::Literal;
 use crate::proof_step::{EFLiteralTrace, EFTermTrace};
-use crate::term::{SimpleTerm, BOOL};
+use crate::simple_term::{SimpleTerm, BOOL};
 use crate::unifier::{Scope, Unifier};
 use crate::variable_map::VariableMap;
 

@@ -15,8 +15,8 @@ use crate::monomorphizer::Monomorphizer;
 use crate::names::ConstantName;
 use crate::normalization_map::{NewConstantType, NormalizationMap};
 use crate::proof_step::{ProofStep, Truthiness};
+use crate::simple_term::{SimpleTerm, TypeId, BOOL};
 use crate::source::{Source, SourceType};
-use crate::term::{SimpleTerm, TypeId, BOOL};
 
 /// Information about the definition of a set of synthetic atoms.
 pub struct SyntheticDefinition {

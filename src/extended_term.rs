@@ -1,7 +1,7 @@
 use crate::atom::AtomId;
 use crate::cnf::CNF;
 use crate::literal::Literal;
-use crate::term::{SimpleTerm, TypeId};
+use crate::simple_term::{SimpleTerm, TypeId};
 
 // An ExtendedTerm is like a term in the sense that a comparison between two of them can be converted
 // into a CNF formula.

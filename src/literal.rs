@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::atom::{Atom, AtomId};
-use crate::term::{SimpleTerm, TypeId};
+use crate::simple_term::{SimpleTerm, TypeId};
 
 // Literals are always boolean-valued.
 // In normalized form, left is the "larger" term.

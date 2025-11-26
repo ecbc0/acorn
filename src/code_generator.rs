@@ -13,7 +13,7 @@ use crate::module::ModuleId;
 use crate::names::{ConstantName, DefinedName};
 use crate::normalizer::Normalizer;
 use crate::saturation::proof::ConcreteStep;
-use crate::term::{SimpleTerm, TypeId};
+use crate::simple_term::{SimpleTerm, TypeId};
 use crate::token::TokenType;
 use crate::type_unifier::TypeclassRegistry;
 use crate::variable_map::VariableMap;

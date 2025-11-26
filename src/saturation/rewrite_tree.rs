@@ -4,7 +4,7 @@
 use crate::atom::AtomId;
 use crate::literal::Literal;
 use crate::pattern_tree::{term_key_prefix, PatternTree, TermComponent};
-use crate::term::{SimpleTerm, TypeId};
+use crate::simple_term::{SimpleTerm, TypeId};
 
 // Each term can correspond with multiple RewriteValues.
 // This is the internal representation of the pattern, before it has been applied to a term.
@@ -152,7 +152,12 @@ mod tests {
     #[test]
     fn test_rewrite_tree_functions() {
         let mut tree = RewriteTree::new();
-        tree.insert_terms(0, &SimpleTerm::parse("c1(x0)"), &SimpleTerm::parse("c0(x0)"), true);
+        tree.insert_terms(
+            0,
+            &SimpleTerm::parse("c1(x0)"),
+            &SimpleTerm::parse("c0(x0)"),
+            true,
+        );
         let rewrites = tree.get_rewrites(&SimpleTerm::parse("c1(c2)"), 0);
         assert_eq!(rewrites.len(), 1);
         assert_eq!(rewrites[0].term, SimpleTerm::parse("c0(c2)"));
@@ -161,8 +166,18 @@ mod tests {
     #[test]
     fn test_rewrite_tree_multiple_rewrites() {
         let mut tree = RewriteTree::new();
-        tree.insert_terms(0, &SimpleTerm::parse("c1(x0, c2)"), &SimpleTerm::parse("c3(x0)"), true);
-        tree.insert_terms(1, &SimpleTerm::parse("c1(c2, x0)"), &SimpleTerm::parse("c4(x0)"), true);
+        tree.insert_terms(
+            0,
+            &SimpleTerm::parse("c1(x0, c2)"),
+            &SimpleTerm::parse("c3(x0)"),
+            true,
+        );
+        tree.insert_terms(
+            1,
+            &SimpleTerm::parse("c1(c2, x0)"),
+            &SimpleTerm::parse("c4(x0)"),
+            true,
+        );
         let rewrites = tree.get_rewrites(&SimpleTerm::parse("c1(c2, c2)"), 0);
         assert_eq!(rewrites.len(), 2);
         assert_eq!(rewrites[0].term, SimpleTerm::parse("c3(c2)"));

@@ -4,7 +4,7 @@ use crate::atom::Atom;
 use crate::clause::Clause;
 use crate::literal::Literal;
 use crate::normalizer::Normalizer;
-use crate::term::SimpleTerm;
+use crate::simple_term::SimpleTerm;
 
 struct DisplayAtom<'a> {
     atom: Atom,

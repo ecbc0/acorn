@@ -10,7 +10,7 @@ use crate::proof_step::{
     BooleanReductionInfo, EqualityFactoringInfo, EqualityResolutionInfo, ExtensionalityInfo,
     InjectivityInfo, ProofStep, Rule, Truthiness,
 };
-use crate::term::SimpleTerm;
+use crate::simple_term::SimpleTerm;
 use crate::term_graph::{StepId, TermGraph};
 use crate::unifier::{Scope, Unifier};
 

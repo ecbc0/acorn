@@ -6,7 +6,7 @@ use crate::atom::Atom;
 use crate::clause::Clause;
 use crate::clause_set::{ClauseId, ClauseSet, GroupId, LiteralId, Normalization, TermId};
 use crate::literal::Literal;
-use crate::term::SimpleTerm;
+use crate::simple_term::SimpleTerm;
 
 /// Every time we set two terms equal or not equal, that action is tagged with a StepId.
 /// The term graph uses it to provide a history of the reasoning that led to a conclusion.
@@ -406,7 +406,12 @@ impl TermGraph {
     // Inserts a term composition relationship.
     // If it's already in the graph, return the existing term id.
     // Otherwise, make a new term and group.
-    fn insert_term_compound(&mut self, term: &SimpleTerm, head: TermId, args: Vec<TermId>) -> TermId {
+    fn insert_term_compound(
+        &mut self,
+        term: &SimpleTerm,
+        head: TermId,
+        args: Vec<TermId>,
+    ) -> TermId {
         let key = Decomposition::Compound(head, args);
         if let Some(&id) = self.decompositions.get(&key) {
             return id;

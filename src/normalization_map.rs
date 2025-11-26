@@ -4,7 +4,7 @@ use crate::acorn_type::AcornType;
 use crate::acorn_value::{AcornValue, ConstantInstance};
 use crate::atom::{Atom, AtomId};
 use crate::names::ConstantName;
-use crate::term::{SimpleTerm, TypeId};
+use crate::simple_term::{SimpleTerm, TypeId};
 
 #[derive(Clone, Copy, Debug)]
 pub enum NewConstantType {
@@ -223,7 +223,7 @@ impl NormalizationMap {
 
 #[cfg(test)]
 mod tests {
-    use crate::term::{BOOL, EMPTY};
+    use crate::simple_term::{BOOL, EMPTY};
 
     use super::*;
 
