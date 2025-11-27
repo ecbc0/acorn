@@ -50,3 +50,16 @@ pub enum FlatComponent {
     /// TODO: do we want a way to skip the whole term rooted here?
     Application { num_args: u8 },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_flat_component_size() {
+        // This test ensures we don't accidentally grow FlatComponent.
+        // If you need to increase this, make sure it's intentional.
+        // Currently: ConstantId is 6 bytes, discriminant is 1 byte, padded to 8.
+        assert_eq!(std::mem::size_of::<FlatComponent>(), 8);
+    }
+}
