@@ -47,7 +47,7 @@ impl TermComponent {
         let initial_size = output.len();
 
         // The zeros are a placeholder. We'll fill in the real info later.
-        output.push(TermComponent::Composite(0, 0, 0));
+        output.push(TermComponent::Composite(TypeId::default(), 0, 0));
         output.push(TermComponent::Atom(
             term.get_head_type(),
             *term.get_head_atom(),
@@ -359,7 +359,7 @@ impl Edge {
     fn append_to(&self, v: &mut Vec<u8>) {
         v.push(self.first_byte());
         let id: u16 = match self {
-            Edge::Head(_, t) => *t,
+            Edge::Head(_, t) => t.as_u16(),
             Edge::Atom(a) => match a {
                 Atom::True => 0,
                 Atom::GlobalConstant(c) => *c,
@@ -368,10 +368,10 @@ impl Edge {
                 Atom::Variable(i) => *i,
                 Atom::Synthetic(s) => *s,
             },
-            Edge::TermCategory(t) => *t,
-            Edge::TermPairCategory(t) => *t,
-            Edge::PositiveLiteral(t) => *t,
-            Edge::NegativeLiteral(t) => *t,
+            Edge::TermCategory(t) => t.as_u16(),
+            Edge::TermPairCategory(t) => t.as_u16(),
+            Edge::PositiveLiteral(t) => t.as_u16(),
+            Edge::NegativeLiteral(t) => t.as_u16(),
         };
         v.extend_from_slice(&id.to_ne_bytes());
     }
@@ -385,14 +385,14 @@ impl Edge {
             MONOMORPH => Edge::Atom(Atom::Monomorph(id)),
             VARIABLE => Edge::Atom(Atom::Variable(id)),
             SYNTHETIC => Edge::Atom(Atom::Synthetic(id)),
-            TERM_PAIR => Edge::TermPairCategory(id),
-            POSITIVE_LITERAL => Edge::PositiveLiteral(id),
-            NEGATIVE_LITERAL => Edge::NegativeLiteral(id),
+            TERM_PAIR => Edge::TermPairCategory(TypeId::new(id)),
+            POSITIVE_LITERAL => Edge::PositiveLiteral(TypeId::new(id)),
+            NEGATIVE_LITERAL => Edge::NegativeLiteral(TypeId::new(id)),
             num_args => {
                 if num_args > MAX_ARGS {
                     panic!("invalid discriminant byte");
                 }
-                Edge::Head(num_args, id)
+                Edge::Head(num_args, TypeId::new(id))
             }
         }
     }

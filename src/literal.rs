@@ -172,7 +172,7 @@ impl Literal {
         self.left.is_higher_order() || self.right.is_higher_order()
     }
 
-    pub fn var_type(&self, i: AtomId) -> Option<AtomId> {
+    pub fn var_type(&self, i: AtomId) -> Option<TypeId> {
         self.left.var_type(i).or_else(|| self.right.var_type(i))
     }
 

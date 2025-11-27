@@ -622,7 +622,7 @@ mod tests {
     use super::*;
 
     fn bool_fn(head: Atom, args: Vec<SimpleTerm>) -> SimpleTerm {
-        SimpleTerm::new(BOOL, 0, head, args)
+        SimpleTerm::new(BOOL, TypeId::new(0), head, args)
     }
 
     #[test]
@@ -717,32 +717,50 @@ mod tests {
 
         // Create terms with proper types
         // For simplicity, let's use type 11 for functions and type 4 for the result
-        let x0_var = SimpleTerm::atom(11, Atom::Variable(0));
-        let x1_var = SimpleTerm::atom(2, Atom::Variable(1));
+        let x0_var = SimpleTerm::atom(TypeId::new(11), Atom::Variable(0));
+        let x1_var = SimpleTerm::atom(TypeId::new(2), Atom::Variable(1));
 
         // s5 is a skolem function that takes two arguments
         let s5_left = SimpleTerm::new(
-            4,
-            14,
+            TypeId::new(4),
+            TypeId::new(14),
             Atom::Synthetic(5),
             vec![x0_var.clone(), x1_var.clone()],
         );
 
         // Left side: x0(s5(x0, x1))
-        let left_term = SimpleTerm::new(4, 11, Atom::Variable(0), vec![s5_left]);
-
-        // Right side: m2(c0, s5(m2(c0), x0))
-        let c0 = SimpleTerm::atom(2, Atom::LocalConstant(0));
-        let m2_c0 = SimpleTerm::new(11, 10, Atom::Monomorph(2), vec![c0.clone()]);
-
-        let s5_right = SimpleTerm::new(
-            4,
-            14,
-            Atom::Synthetic(5),
-            vec![m2_c0.clone(), SimpleTerm::atom(2, Atom::Variable(0))],
+        let left_term = SimpleTerm::new(
+            TypeId::new(4),
+            TypeId::new(11),
+            Atom::Variable(0),
+            vec![s5_left],
         );
 
-        let right_term = SimpleTerm::new(4, 10, Atom::Monomorph(2), vec![c0.clone(), s5_right]);
+        // Right side: m2(c0, s5(m2(c0), x0))
+        let c0 = SimpleTerm::atom(TypeId::new(2), Atom::LocalConstant(0));
+        let m2_c0 = SimpleTerm::new(
+            TypeId::new(11),
+            TypeId::new(10),
+            Atom::Monomorph(2),
+            vec![c0.clone()],
+        );
+
+        let s5_right = SimpleTerm::new(
+            TypeId::new(4),
+            TypeId::new(14),
+            Atom::Synthetic(5),
+            vec![
+                m2_c0.clone(),
+                SimpleTerm::atom(TypeId::new(2), Atom::Variable(0)),
+            ],
+        );
+
+        let right_term = SimpleTerm::new(
+            TypeId::new(4),
+            TypeId::new(10),
+            Atom::Monomorph(2),
+            vec![c0.clone(), s5_right],
+        );
 
         // Try to unify these terms
         let mut u = Unifier::new(3);

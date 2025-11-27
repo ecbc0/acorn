@@ -159,13 +159,13 @@ impl NormalizationMap {
 
         // Now add the type itself
         self.type_id_to_type.push(acorn_type.clone());
-        let id = (self.type_id_to_type.len() - 1) as TypeId;
+        let id = TypeId::new((self.type_id_to_type.len() - 1) as u16);
         self.type_to_type_id.insert(acorn_type.clone(), id);
         id
     }
 
     pub fn get_type(&self, type_id: TypeId) -> &AcornType {
-        &self.type_id_to_type[type_id as usize]
+        &self.type_id_to_type[type_id.as_u16() as usize]
     }
 
     /// Make this monomorphized constant an alias for the given name.

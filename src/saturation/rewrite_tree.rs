@@ -205,16 +205,16 @@ mod tests {
         let mut tree = RewriteTree::new();
 
         // Make a rule for type 2 variables
-        let var2 = SimpleTerm::atom(2, Atom::Variable(0));
+        let var2 = SimpleTerm::atom(TypeId::new(2), Atom::Variable(0));
         tree.insert_terms(0, &var2, &var2, true);
 
         // A type 2 constant should match it
-        let const2 = SimpleTerm::atom(2, Atom::GlobalConstant(2));
+        let const2 = SimpleTerm::atom(TypeId::new(2), Atom::GlobalConstant(2));
         let rewrites = tree.get_rewrites(&const2, 0);
         assert_eq!(rewrites.len(), 1);
 
         // A type 3 constant should not match it
-        let const3 = SimpleTerm::atom(3, Atom::GlobalConstant(3));
+        let const3 = SimpleTerm::atom(TypeId::new(3), Atom::GlobalConstant(3));
         let rewrites = tree.get_rewrites(&const3, 0);
         assert_eq!(rewrites.len(), 0);
     }

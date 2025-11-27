@@ -4,10 +4,30 @@ use std::fmt;
 
 use crate::atom::{Atom, AtomId};
 
-pub type TypeId = u16;
+/// A type identifier that uniquely identifies a type in the type system.
+#[derive(
+    Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Default,
+)]
+pub struct TypeId(u16);
 
-pub const EMPTY: TypeId = 0;
-pub const BOOL: TypeId = 1;
+impl TypeId {
+    pub const fn new(id: u16) -> TypeId {
+        TypeId(id)
+    }
+
+    pub fn as_u16(self) -> u16 {
+        self.0
+    }
+}
+
+impl fmt::Display for TypeId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+pub const EMPTY: TypeId = TypeId(0);
+pub const BOOL: TypeId = TypeId(1);
 
 /// A SimpleTerm can be formed by atoms plus the application of functions.
 /// A term with no args is a plain atom.
@@ -238,8 +258,8 @@ impl SimpleTerm {
         }
 
         SimpleTerm {
-            term_type: 0,
-            head_type: 0,
+            term_type: EMPTY,
+            head_type: EMPTY,
             head: Atom::new(head),
             args,
         }
