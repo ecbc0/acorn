@@ -1,4 +1,20 @@
+use crate::module::ModuleId;
 use crate::simple_term::TypeId;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ConstantId {
+    /// A constant defined locally, like within a single proof.
+    /// Cannot be imported from other modules.
+    Local { index: u16 },
+
+    /// A constant explicitly defined in a model.
+    /// (module_id, index) uniquely identifies the symbol.
+    Module { module_id: ModuleId, index: u16 },
+
+    /// A symbol created during elaboration or normalization.
+    /// Can be used in certificates but not in explicit code.
+    Synthetic { module_id: ModuleId, index: u16 },
+}
 
 /// A flattened representation of a term that can include full type information.
 /// In general, "size" in a region header tells you how much to increment to get to the next region.
