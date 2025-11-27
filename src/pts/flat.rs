@@ -16,22 +16,37 @@ pub enum ConstantId {
     Synthetic { module_id: ModuleId, index: u16 },
 }
 
-/// A flattened representation of a term that can include full type information.
-/// In general, "size" in a region header tells you how much to increment to get to the next region.
+/// Acorn doesn't support a hierarchy of universes yet. Just three levels.
+pub enum Sort {
+    /// The Acorn language itself doesn't expose props to the user, but internally we can represent them.
+    Prop,
+
+    /// Your typical "Acorn Type" that is defined with "structure" or "inductive".
+    Type,
+
+    /// Typeclasses that are defined with the "typeclass" keyword.
+    Typeclass,
+}
+
 pub enum FlatComponent {
-    /// A TypedTerm indicates that the following regions of the buffer make up a term.
-    /// The layout is:
-    /// ... TypedTerm [type components] [value components] ...
-    TypedTerm { size: u16 },
+    /// index is a de Bruijn index.
+    /// Specifically, this means that the innermost is zero, and the number increments outwards.
+    Variable { index: u32 },
 
-    /// A DataType is a single FlatComponent that represents a type.
-    DataType(TypeId),
+    /// Note that a constant can represent either a type or a value.
+    /// TODO: how are types represented, with the ConstantId?
+    Constant { constant_id: ConstantId },
 
-    /// The function type layout is:
-    /// ... FunctionType [arg1] [arg2] ... [argn] [return-type]
-    FunctionType { size: u16 },
+    /// A "sort" is like a type but one step more generalized.
+    Sort { sort: Sort },
 
-    /// The generic type layout is:
-    /// ... GenericType [param1] .. [paramn]
-    GenericType { size: u16 },
+    /// A lambda is a binder for one variable.
+    Lambda { type_id: TypeId },
+
+    /// TODO: describe what a "pi" is, in a way that I find coherent.
+    /// A universally quantified binder? Eh?
+    Pi { type_id: TypeId },
+
+    /// TODO: do we want a way to skip the whole term rooted here?
+    Application { num_args: u8 },
 }
