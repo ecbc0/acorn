@@ -14,6 +14,10 @@ pub enum ConstantId {
     /// A symbol created during elaboration or normalization.
     /// Can be used in certificates but not in explicit code.
     Synthetic { module_id: ModuleId, index: u16 },
+
+    /// Specific types are represented as Constants when they appear explicitly in the term.
+    /// For example, these can be arguments to a typeclass.
+    Type { type_id: TypeId },
 }
 
 /// Acorn doesn't support a hierarchy of universes yet. Just three levels.
@@ -34,7 +38,6 @@ pub enum FlatComponent {
     Variable { index: u32 },
 
     /// Note that a constant can represent either a type or a value.
-    /// TODO: how are types represented, with the ConstantId?
     Constant { constant_id: ConstantId },
 
     /// A "sort" is like a type but one step more generalized.
