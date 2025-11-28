@@ -1,23 +1,60 @@
 use crate::module::ModuleId;
 use crate::simple_term::TypeId;
 
+/// Values, types, and typeclasses in Acorn can all be represented as terms in a "pure type system".
+/// See:
+///   https://en.wikipedia.org/wiki/Pure_type_system
+///
+/// A term is logically a tree. For efficiency, we use a flattened representation,
+/// so that a term can be a &[FlatComponent].
+///
+/// Variable, Constant, and Sort are leaves in the tree.
+/// Lambda, Pi,
+pub enum FlatComponent {
+    /// Note that a constant can represent any sort of thing: a value, a type, or a typeclass.
+    Constant { constant_id: ConstantId },
+
+    /// index is a de Bruijn index.
+    /// Specifically, this means that the innermost is zero, and the number increments outwards.
+    Variable { index: u32 },
+
+    /// A "sort" is like a type but one step more generalized.
+    Sort { sort: Sort },
+
+    /// TODO: do we want a way to skip the whole term rooted here?
+    Application { num_args: u8 },
+
+    /// A lambda is a binder for one variable.
+    Lambda { type_id: TypeId },
+
+    /// TODO: describe what a "pi" is, in a way that I find coherent.
+    /// A universally quantified binder? Eh?
+    Pi { type_id: TypeId },
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ConstantId {
-    /// A constant defined locally, like within a single proof.
+    /// A value defined locally, like within a single proof.
     /// Cannot be imported from other modules.
     Local { index: u16 },
 
-    /// A constant explicitly defined in a model.
+    /// A value explicitly defined in a module.
     /// (module_id, index) uniquely identifies the symbol.
-    Module { module_id: ModuleId, index: u16 },
+    Global { index: u16 },
 
-    /// A symbol created during elaboration or normalization.
+    /// A value created during elaboration or normalization.
     /// Can be used in certificates but not in explicit code.
-    Synthetic { module_id: ModuleId, index: u16 },
+    Synthetic { index: u16 },
 
     /// Specific types are represented as Constants when they appear explicitly in the term.
     /// For example, these can be arguments to a typeclass.
     Type { type_id: TypeId },
+
+    /// Typeclasses have the module in which they were originally defined.
+    Typeclass {
+        module_id: ModuleId,
+        typeclass_id: u16,
+    },
 }
 
 /// Acorn doesn't support a hierarchy of universes yet. Just three levels.
@@ -30,28 +67,6 @@ pub enum Sort {
 
     /// Typeclasses that are defined with the "typeclass" keyword.
     Typeclass,
-}
-
-pub enum FlatComponent {
-    /// index is a de Bruijn index.
-    /// Specifically, this means that the innermost is zero, and the number increments outwards.
-    Variable { index: u32 },
-
-    /// Note that a constant can represent either a type or a value.
-    Constant { constant_id: ConstantId },
-
-    /// A "sort" is like a type but one step more generalized.
-    Sort { sort: Sort },
-
-    /// A lambda is a binder for one variable.
-    Lambda { type_id: TypeId },
-
-    /// TODO: describe what a "pi" is, in a way that I find coherent.
-    /// A universally quantified binder? Eh?
-    Pi { type_id: TypeId },
-
-    /// TODO: do we want a way to skip the whole term rooted here?
-    Application { num_args: u8 },
 }
 
 #[cfg(test)]
