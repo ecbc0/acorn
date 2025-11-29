@@ -469,3 +469,21 @@ fn test_typechecking_try_bool_fails() {
     let mut env = Environment::test();
     env.bad("let foo: Bool = true?");
 }
+
+#[test]
+fn test_functional_type_inference() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        define compose[T, U, V](f: U -> V, g: T -> U) -> T -> V {
+            function(t: T) {
+                f(g(t))
+            }
+        }
+
+        theorem goal[T, V](f: (T -> V) -> V, g: T -> (T -> V)) {
+            compose[T, T -> V, V](f, g) = compose[T, T -> V, V](f, g)
+        }
+        "#,
+    );
+}
