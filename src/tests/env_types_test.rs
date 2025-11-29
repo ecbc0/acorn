@@ -472,6 +472,7 @@ fn test_typechecking_try_bool_fails() {
 
 #[test]
 fn test_functional_type_inference() {
+    // TODO: this should work without explicitly providing the types for `compose``
     let mut env = Environment::test();
     env.add(
         r#"
