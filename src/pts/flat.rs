@@ -9,27 +9,50 @@ use crate::simple_term::TypeId;
 /// so that a term can be a &[FlatComponent].
 ///
 /// Variable, Constant, and Sort are leaves in the tree.
-/// Lambda, Pi,
+/// Application, Lambda, and Pi are internal nodes in the tree.
+///
+/// In the flat representation, nodes are immediately followed by their children.
 pub enum FlatComponent {
     /// Note that a constant can represent any sort of thing: a value, a type, or a typeclass.
     Constant { constant_id: ConstantId },
 
     /// index is a de Bruijn index.
     /// Specifically, this means that the innermost is zero, and the number increments outwards.
-    Variable { index: u32 },
+    Variable { index: u16 },
 
     /// A "sort" is like a type but one step more generalized.
     Sort { sort: Sort },
 
-    /// TODO: do we want a way to skip the whole term rooted here?
-    Application { num_args: u8 },
+    /// The first child of an Application node is the function that's being applied.
+    Application {
+        /// How many arguments there are. Must be positive.
+        num_args: u16,
+
+        /// How many components are in the tree rooted here.
+        num_components: u16,
+    },
 
     /// A lambda is a binder for one variable.
-    Lambda { type_id: TypeId },
+    /// It has two children. The first is the type, the second is the body.
+    Lambda {
+        /// index is the de Bruijn index for the variable bound here.
+        /// This isn't strictly necessary but it seems simpler to include it.
+        index: u16,
 
-    /// TODO: describe what a "pi" is, in a way that I find coherent.
-    /// A universally quantified binder? Eh?
-    Pi { type_id: TypeId },
+        /// How many components are in the tree rooted here.
+        num_components: u16,
+    },
+
+    /// A pi is a binder for one variable.
+    /// It has two children. The first is the parameter type, the second is the result type.
+    Pi {
+        /// index is the de Bruijn index for the variable bound here.
+        /// This isn't strictly necessary but it seems simpler to include it.
+        index: u16,
+
+        /// How many components are in the tree rooted here.
+        num_components: u16,
+    },
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -46,8 +69,7 @@ pub enum ConstantId {
     /// Can be used in certificates but not in explicit code.
     Synthetic { index: u16 },
 
-    /// Specific types are represented as Constants when they appear explicitly in the term.
-    /// For example, these can be arguments to a typeclass.
+    /// Ground types are represented as Constants when they appear explicitly in the term.
     Type { type_id: TypeId },
 
     /// Typeclasses have the module in which they were originally defined.
@@ -77,7 +99,8 @@ mod tests {
     fn test_flat_component_size() {
         // This test ensures we don't accidentally grow FlatComponent.
         // If you need to increase this, make sure it's intentional.
-        // Currently: ConstantId is 6 bytes, discriminant is 1 byte, padded to 8.
-        assert_eq!(std::mem::size_of::<FlatComponent>(), 8);
+        // ConstantId is 6 bytes. Rust uses niche optimization to fit
+        // FlatComponent's discriminant into unused ConstantId discriminant values.
+        assert_eq!(std::mem::size_of::<FlatComponent>(), 6);
     }
 }
