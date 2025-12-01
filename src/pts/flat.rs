@@ -11,6 +11,9 @@ use crate::simple_term::TypeId;
 /// Variable, Constant, and Sort are leaves in the tree.
 /// Application, Lambda, and Pi are internal nodes in the tree.
 ///
+/// Or, Equals, and NotEquals are extensions that theoretically could be Application,
+/// but are stored separately because we very often handle them differently.
+///
 /// In the flat representation, nodes are immediately followed by their children.
 pub enum FlatComponent {
     /// Note that a constant can represent any sort of thing: a value, a type, or a typeclass.
@@ -53,6 +56,25 @@ pub enum FlatComponent {
         /// How many components are in the tree rooted here.
         num_components: u16,
     },
+
+    /// An 'Or' node combines literals in a clause.
+    Or {
+        /// How many arguments there are.
+        num_args: u16,
+
+        /// How many components are in the tree rooted here.
+        num_components: u16,
+    },
+
+    /// An 'Equals' node combines simple terms in a literal.
+    Equals {
+        /// A positive literal is "foo = bar".
+        /// A negative literal is "foo != bar".
+        positive: bool,
+
+        /// How many components are in the tree rooted here.
+        num_components: u16,
+    },
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -79,11 +101,8 @@ pub enum ConstantId {
     },
 }
 
-/// Acorn doesn't support a hierarchy of universes yet. Just three levels.
+/// Acorn doesn't support a hierarchy of universes yet.
 pub enum Sort {
-    /// The Acorn language itself doesn't expose props to the user, but internally we can represent them.
-    Prop,
-
     /// Your typical "Acorn Type" that is defined with "structure" or "inductive".
     Type,
 

@@ -13,7 +13,7 @@ use crate::goal::Goal;
 use crate::literal::Literal;
 use crate::monomorphizer::Monomorphizer;
 use crate::names::ConstantName;
-use crate::normalization_map::{NewConstantType, NormalizationMap};
+use crate::normalization_map::{NewConstantType, NormalizationMap, TypeStore};
 use crate::proof_step::{ProofStep, Truthiness};
 use crate::simple_term::{SimpleTerm, TypeId, BOOL};
 use crate::source::{Source, SourceType};
@@ -89,6 +89,9 @@ pub struct Normalizer {
     synthetic_map: HashMap<SyntheticKey, Arc<SyntheticDefinition>>,
 
     normalization_map: NormalizationMap,
+
+    /// Manages the bidirectional mapping between AcornTypes and TypeIds.
+    type_store: TypeStore,
 }
 
 impl Normalizer {
@@ -99,6 +102,7 @@ impl Normalizer {
             synthetic_definitions: HashMap::new(),
             synthetic_map: HashMap::new(),
             normalization_map: NormalizationMap::new(),
+            type_store: TypeStore::new(),
         }
     }
 
@@ -143,7 +147,7 @@ impl Normalizer {
             return Err(format!("ran out of synthetic ids (used {})", id));
         }
         // Add the synthetic atom type to the normalization map
-        self.normalization_map.add_type(&atom_type);
+        self.type_store.add_type(&atom_type);
         self.synthetic_types.push(atom_type);
         Ok(id)
     }
@@ -229,6 +233,14 @@ impl NormalizerView<'_> {
 
     fn map(&self) -> &NormalizationMap {
         &self.as_ref().normalization_map
+    }
+
+    fn type_store(&self) -> &TypeStore {
+        &self.as_ref().type_store
+    }
+
+    fn type_store_mut(&mut self) -> Result<&mut TypeStore, String> {
+        Ok(&mut self.as_mut()?.type_store)
     }
 
     /// Wrapper around value_to_cnf.
@@ -425,7 +437,7 @@ impl NormalizerView<'_> {
         synthesized: &mut Vec<AtomId>,
     ) -> Result<CNF, String> {
         for quant in quants {
-            let type_id = self.map().get_type_id(quant)?;
+            let type_id = self.type_store().get_type_id(quant)?;
             let var = SimpleTerm::new_variable(type_id, *next_var_id);
             *next_var_id += 1;
             stack.push(TermBinding::Free(var));
@@ -455,7 +467,7 @@ impl NormalizerView<'_> {
                 if seen_vars.insert(var_id) {
                     let var_term = SimpleTerm::new_variable(type_id, var_id);
                     args.push(var_term);
-                    arg_types.push(self.map().get_type(type_id).clone());
+                    arg_types.push(self.type_store().get_type(type_id).clone());
                 }
             }
         }
@@ -466,8 +478,8 @@ impl NormalizerView<'_> {
             // The skolem term is that atom applied to the free variables on the stack.
             // Note that the skolem atom may be a type we have not used before.
             let skolem_atom_type = AcornType::functional(arg_types.clone(), t.clone());
-            let skolem_atom_type_id = self.as_mut()?.normalization_map.add_type(&skolem_atom_type);
-            let skolem_term_type_id = self.map().get_type_id(t)?;
+            let skolem_atom_type_id = self.type_store_mut()?.add_type(&skolem_atom_type);
+            let skolem_term_type_id = self.type_store().get_type_id(t)?;
             let skolem_id = self.as_mut()?.declare_synthetic_atom(skolem_atom_type)?;
             synthesized.push(skolem_id);
             let skolem_atom = Atom::Synthetic(skolem_id);
@@ -589,9 +601,9 @@ impl NormalizerView<'_> {
             let arg_types: Vec<TypeId> = app
                 .arg_types
                 .iter()
-                .map(|t| self.map().get_type_id(t))
+                .map(|t| self.type_store().get_type_id(t))
                 .collect::<Result<Vec<_>, _>>()?;
-            let result_type = self.map().get_type_id(&app.return_type)?;
+            let result_type = self.type_store().get_type_id(&app.return_type)?;
 
             if result_type == BOOL {
                 // Boolean functional comparison.
@@ -771,7 +783,7 @@ impl NormalizerView<'_> {
             }
             AcornValue::Application(application) => {
                 let application_type = application.get_type();
-                let term_type = self.map().get_type_id(&application_type)?;
+                let term_type = self.type_store().get_type_id(&application_type)?;
                 let func_term = match self.try_simple_value_to_term(&application.function, stack)? {
                     Some(t) => t,
                     None => return Ok(None),
@@ -793,7 +805,7 @@ impl NormalizerView<'_> {
             }
             AcornValue::Constant(c) => {
                 if c.params.is_empty() {
-                    let type_id = self.map().get_type_id(&c.instance_type)?;
+                    let type_id = self.type_store().get_type_id(&c.instance_type)?;
 
                     let Some(atom) = self.map().get_atom(&c.name) else {
                         return Err(format!("constant {} not found in normalization map", c));
@@ -899,13 +911,13 @@ impl NormalizerView<'_> {
                 }
                 let remaining_args = fapp.arg_types.len() - args_len;
                 if remaining_args == 0 {
-                    self.map().get_type_id(&fapp.return_type)?
+                    self.type_store().get_type_id(&fapp.return_type)?
                 } else {
                     let remaining_type = AcornType::functional(
                         fapp.arg_types[args_len..].to_vec(),
                         (*fapp.return_type).clone(),
                     );
-                    self.map().get_type_id(&remaining_type)?
+                    self.type_store().get_type_id(&remaining_type)?
                 }
             } else {
                 return Err("cannot apply non-function".to_string());
@@ -1035,7 +1047,7 @@ impl NormalizerView<'_> {
                 if seen_vars.insert(var_id) {
                     let var_term = SimpleTerm::new_variable(type_id, var_id);
                     args.push(var_term);
-                    arg_types.push(self.map().get_type(type_id).clone());
+                    arg_types.push(self.type_store().get_type(type_id).clone());
                 }
             }
         }
@@ -1052,8 +1064,8 @@ impl NormalizerView<'_> {
         synth.push(atom_id);
 
         // Now we can safely get type IDs
-        let bool_type_id = self.map().get_type_id(&bool_type)?;
-        let atom_type_id = self.map().get_type_id(&atom_type)?;
+        let bool_type_id = self.type_store().get_type_id(&bool_type)?;
+        let atom_type_id = self.type_store().get_type_id(&atom_type)?;
 
         let atom = Atom::Synthetic(atom_id);
         let synth_term = SimpleTerm::new(bool_type_id, atom_type_id, atom, args);
@@ -1113,7 +1125,7 @@ impl NormalizerView<'_> {
 
                 // Determine the type of the result (should be same as then_term and else_term)
                 let result_type_id = then_term.get_term_type();
-                let result_type = self.map().get_type(result_type_id).clone();
+                let result_type = self.type_store().get_type(result_type_id).clone();
 
                 // Create a new synthetic atom with the appropriate function type
                 // based on free variables in the if-expression
@@ -1126,14 +1138,14 @@ impl NormalizerView<'_> {
                     if seen_vars.insert(var_id) {
                         let var_term = SimpleTerm::new_variable(type_id, var_id);
                         args.push(var_term);
-                        arg_types.push(self.map().get_type(type_id).clone());
+                        arg_types.push(self.type_store().get_type(type_id).clone());
                     }
                 }
                 for (var_id, type_id) in cond_lit.right.iter_vars() {
                     if seen_vars.insert(var_id) {
                         let var_term = SimpleTerm::new_variable(type_id, var_id);
                         args.push(var_term);
-                        arg_types.push(self.map().get_type(type_id).clone());
+                        arg_types.push(self.type_store().get_type(type_id).clone());
                     }
                 }
 
@@ -1142,7 +1154,7 @@ impl NormalizerView<'_> {
                     if seen_vars.insert(var_id) {
                         let var_term = SimpleTerm::new_variable(type_id, var_id);
                         args.push(var_term);
-                        arg_types.push(self.map().get_type(type_id).clone());
+                        arg_types.push(self.type_store().get_type(type_id).clone());
                     }
                 }
 
@@ -1151,7 +1163,7 @@ impl NormalizerView<'_> {
                     if seen_vars.insert(var_id) {
                         let var_term = SimpleTerm::new_variable(type_id, var_id);
                         args.push(var_term);
-                        arg_types.push(self.map().get_type(type_id).clone());
+                        arg_types.push(self.type_store().get_type(type_id).clone());
                     }
                 }
 
@@ -1166,7 +1178,7 @@ impl NormalizerView<'_> {
                 synth.push(atom_id);
 
                 // Now we can safely get type IDs
-                let atom_type_id = self.map().get_type_id(&atom_type)?;
+                let atom_type_id = self.type_store().get_type_id(&atom_type)?;
 
                 let atom = Atom::Synthetic(atom_id);
                 let synth_term = SimpleTerm::new(result_type_id, atom_type_id, atom, args);
@@ -1234,7 +1246,7 @@ impl NormalizerView<'_> {
             }
             AcornValue::Constant(c) => {
                 if c.params.is_empty() {
-                    let type_id = self.map().get_type_id(&c.instance_type)?;
+                    let type_id = self.type_store().get_type_id(&c.instance_type)?;
 
                     let Some(atom) = self.map().get_atom(&c.name) else {
                         return Err(format!("constant {} not found in normalization map", c));
@@ -1256,7 +1268,7 @@ impl NormalizerView<'_> {
                 // Use stack.len() as the variable ID to ensure it matches the AcornValue's stack-position indexing
                 let mut args = vec![];
                 for arg_type in arg_types {
-                    let type_id = self.map().get_type_id(arg_type)?;
+                    let type_id = self.type_store().get_type_id(arg_type)?;
                     let var_id = stack.len() as AtomId;
                     let var = SimpleTerm::new_variable(type_id, var_id);
                     args.push((var_id, type_id));
@@ -1306,7 +1318,8 @@ impl Normalizer {
         ctype: NewConstantType,
         source: &Source,
     ) -> Result<Vec<Clause>, String> {
-        self.normalization_map.add_from(&value, ctype);
+        self.normalization_map
+            .add_from(&value, ctype, &mut self.type_store);
 
         // TODO: can we remove this? Expanding them doesn't really seem right.
         // Maybe we can inline lambdas instead of expanding them.
@@ -1401,8 +1414,13 @@ impl Normalizer {
         // Check if this looks like an aliasing.
         if let Some((ci, name, constant_type)) = fact.as_instance_alias() {
             let local = fact.source().truthiness() != Truthiness::Factual;
-            self.normalization_map
-                .alias_monomorph(ci, name, &constant_type, local);
+            self.normalization_map.alias_monomorph(
+                ci,
+                name,
+                &constant_type,
+                local,
+                &mut self.type_store,
+            );
             return Ok(steps);
         }
 
@@ -1492,7 +1510,7 @@ impl Normalizer {
         var_types: &mut Option<Vec<AcornType>>,
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
-        let acorn_type = self.normalization_map.get_type(atom_type).clone();
+        let acorn_type = self.type_store.get_type(atom_type).clone();
         match atom {
             Atom::True => AcornValue::Bool(true),
             Atom::GlobalConstant(i) => {
@@ -1608,7 +1626,7 @@ impl Normalizer {
     }
 
     pub fn denormalize_type(&self, type_id: TypeId) -> AcornType {
-        self.normalization_map.get_type(type_id).clone()
+        self.type_store.get_type(type_id).clone()
     }
 
     /// Given a list of atom ids for synthetic atoms that we need to define, find a set
