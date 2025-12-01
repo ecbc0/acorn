@@ -1,10 +1,10 @@
 use std::fmt;
 
 use crate::atom::Atom;
-use crate::clause::Clause;
-use crate::literal::Literal;
+use crate::kernel::clause::Clause;
+use crate::kernel::literal::Literal;
+use crate::kernel::term::Term;
 use crate::normalizer::Normalizer;
-use crate::term::Term;
 
 struct DisplayAtom<'a> {
     atom: Atom,

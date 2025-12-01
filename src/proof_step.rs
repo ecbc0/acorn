@@ -2,11 +2,11 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::atom::Atom;
-use crate::clause::{Clause, ClauseTrace, LiteralTrace};
-use crate::literal::Literal;
+use crate::kernel::clause::{Clause, ClauseTrace, LiteralTrace};
+use crate::kernel::literal::Literal;
+use crate::kernel::term::Term;
 use crate::proposition::MonomorphicProposition;
 use crate::source::{Source, SourceType};
-use crate::term::Term;
 
 /// The different sorts of proof steps.
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]

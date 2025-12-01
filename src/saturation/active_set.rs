@@ -2,15 +2,15 @@ use std::collections::{HashMap, HashSet};
 
 use super::fingerprint::FingerprintUnifier;
 use super::rewrite_tree::{Rewrite, RewriteTree};
-use crate::clause::{Clause, ClauseTrace, LiteralTrace};
 use crate::clause_set::TermId;
-use crate::literal::Literal;
+use crate::kernel::clause::{Clause, ClauseTrace, LiteralTrace};
+use crate::kernel::literal::Literal;
+use crate::kernel::term::Term;
 use crate::pattern_tree::LiteralSet;
 use crate::proof_step::{
     BooleanReductionInfo, EqualityFactoringInfo, EqualityResolutionInfo, ExtensionalityInfo,
     InjectivityInfo, ProofStep, Rule, Truthiness,
 };
-use crate::term::Term;
 use crate::term_graph::{StepId, TermGraph};
 use crate::unifier::{Scope, Unifier};
 

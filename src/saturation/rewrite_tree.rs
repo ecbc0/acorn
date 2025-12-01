@@ -2,9 +2,9 @@
 // A given pattern can be rewritten to multiple different output terms.
 
 use crate::atom::AtomId;
-use crate::literal::Literal;
+use crate::kernel::literal::Literal;
+use crate::kernel::term::{Term, TypeId};
 use crate::pattern_tree::{term_key_prefix, PatternTree, TermComponent};
-use crate::term::{Term, TypeId};
 
 // Each term can correspond with multiple RewriteValues.
 // This is the internal representation of the pattern, before it has been applied to a term.

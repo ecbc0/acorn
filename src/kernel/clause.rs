@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::atom::{Atom, AtomId};
-use crate::literal::Literal;
+use crate::kernel::literal::Literal;
+use crate::kernel::term::{Term, BOOL};
 use crate::proof_step::{EFLiteralTrace, EFTermTrace};
-use crate::term::{Term, BOOL};
 use crate::unifier::{Scope, Unifier};
 use crate::variable_map::VariableMap;
 

@@ -3,10 +3,10 @@ use std::fmt;
 use std::hash::Hash;
 
 use crate::atom::Atom;
-use crate::clause::Clause;
 use crate::clause_set::{ClauseId, ClauseSet, GroupId, LiteralId, Normalization, TermId};
-use crate::literal::Literal;
-use crate::term::Term;
+use crate::kernel::clause::Clause;
+use crate::kernel::literal::Literal;
+use crate::kernel::term::Term;
 
 /// Every time we set two terms equal or not equal, that action is tagged with a StepId.
 /// The term graph uses it to provide a history of the reasoning that led to a conclusion.

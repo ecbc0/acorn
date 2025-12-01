@@ -1,7 +1,7 @@
 use crate::atom::{Atom, AtomId};
-use crate::clause::Clause;
-use crate::literal::Literal;
-use crate::term::{Term, TypeId};
+use crate::kernel::clause::Clause;
+use crate::kernel::literal::Literal;
+use crate::kernel::term::{Term, TypeId};
 use crate::variable_map::VariableMap;
 use std::fmt;
 
@@ -599,7 +599,7 @@ impl fmt::Display for Unifier {
 
 #[cfg(test)]
 mod tests {
-    use crate::term::BOOL;
+    use crate::kernel::term::BOOL;
 
     use super::*;
 

@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use crate::acorn_type::AcornType;
 use crate::acorn_value::{AcornValue, ConstantInstance};
 use crate::atom::{Atom, AtomId};
+use crate::kernel::term::{Term, TypeId};
 use crate::kernel::type_store::TypeStore;
 use crate::names::ConstantName;
-use crate::term::{Term, TypeId};
 
 #[derive(Clone, Copy, Debug)]
 pub enum NewConstantType {

@@ -2,10 +2,10 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::vec;
 
-use crate::clause::Clause;
-use crate::literal::Literal;
+use crate::kernel::clause::Clause;
+use crate::kernel::literal::Literal;
+use crate::kernel::term::{Term, TypeId};
 use crate::pattern_tree::PatternTree;
-use crate::term::{Term, TypeId};
 use crate::unifier::Unifier;
 
 /// The GeneralizationSet stores general clauses in a way that allows us to quickly check whether

@@ -5,19 +5,19 @@ use crate::acorn_type::AcornType;
 use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
 use crate::builder::BuildError;
-use crate::clause::Clause;
 use crate::cnf::CNF;
 use crate::extended_term::ExtendedTerm;
 use crate::fact::Fact;
 use crate::goal::Goal;
+use crate::kernel::clause::Clause;
+use crate::kernel::literal::Literal;
+use crate::kernel::term::{Term, TypeId, BOOL};
 use crate::kernel::type_store::TypeStore;
-use crate::literal::Literal;
 use crate::monomorphizer::Monomorphizer;
 use crate::names::ConstantName;
 use crate::normalization_map::{NewConstantType, NormalizationMap};
 use crate::proof_step::{ProofStep, Truthiness};
 use crate::source::{Source, SourceType};
-use crate::term::{Term, TypeId, BOOL};
 
 /// Information about the definition of a set of synthetic atoms.
 pub struct SyntheticDefinition {
