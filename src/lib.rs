@@ -25,6 +25,7 @@ pub mod generalization_set;
 pub mod generative;
 pub mod goal;
 pub mod interfaces;
+pub mod kernel;
 pub mod literal;
 pub mod manifest;
 pub mod module;
