@@ -10,7 +10,7 @@ use crate::proof_step::{
     BooleanReductionInfo, EqualityFactoringInfo, EqualityResolutionInfo, ExtensionalityInfo,
     InjectivityInfo, ProofStep, Rule, Truthiness,
 };
-use crate::simple_term::SimpleTerm;
+use crate::term::Term;
 use crate::term_graph::{StepId, TermGraph};
 use crate::unifier::{Scope, Unifier};
 
@@ -43,7 +43,7 @@ pub struct ActiveSet {
     subterms: Vec<SubtermInfo>,
 
     // An index to find the id of a subterm for an exact match.
-    subterm_map: HashMap<SimpleTerm, usize>,
+    subterm_map: HashMap<Term, usize>,
 
     // An index to find the id of subterms for a pattern match.
     subterm_unifier: FingerprintUnifier<usize>,
@@ -70,7 +70,7 @@ struct ResolutionTarget {
 #[derive(Clone)]
 struct SubtermInfo {
     // The subterm itself
-    term: SimpleTerm,
+    term: Term,
 
     // Where the subterm occurs, in activated concrete literals.
     locations: Vec<SubtermLocation>,
@@ -935,8 +935,8 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         let expected = Clause::new(vec![Literal::equals(
-            SimpleTerm::parse("c0(c1)"),
-            SimpleTerm::parse("c2"),
+            Term::parse("c0(c1)"),
+            Term::parse("c2"),
         )]);
         assert_eq!(result[0].clause, expected);
     }
@@ -959,8 +959,8 @@ mod tests {
     #[test]
     fn test_equality_resolution() {
         let old_clause = Clause::new(vec![
-            Literal::not_equals(SimpleTerm::parse("x0"), SimpleTerm::parse("c0")),
-            Literal::equals(SimpleTerm::parse("x0"), SimpleTerm::parse("c1")),
+            Literal::not_equals(Term::parse("x0"), Term::parse("c0")),
+            Literal::equals(Term::parse("x0"), Term::parse("c1")),
         ]);
         let mock_step = ProofStep::mock_from_clause(old_clause);
         let proof_steps = ActiveSet::equality_resolution(0, &mock_step);
@@ -980,8 +980,8 @@ mod tests {
     #[test]
     fn test_equality_factoring_basic() {
         let old_clause = Clause::new(vec![
-            Literal::equals(SimpleTerm::parse("x0"), SimpleTerm::parse("c0")),
-            Literal::equals(SimpleTerm::parse("x1"), SimpleTerm::parse("c0")),
+            Literal::equals(Term::parse("x0"), Term::parse("c0")),
+            Literal::equals(Term::parse("x1"), Term::parse("c0")),
         ]);
         let mock_step = ProofStep::mock_from_clause(old_clause);
         let proof_steps = ActiveSet::equality_factoring(0, &mock_step);

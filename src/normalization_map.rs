@@ -5,7 +5,7 @@ use crate::acorn_value::{AcornValue, ConstantInstance};
 use crate::atom::{Atom, AtomId};
 use crate::kernel::type_store::TypeStore;
 use crate::names::ConstantName;
-use crate::simple_term::{SimpleTerm, TypeId};
+use crate::term::{Term, TypeId};
 
 #[derive(Clone, Copy, Debug)]
 pub enum NewConstantType {
@@ -157,9 +157,9 @@ impl NormalizationMap {
     }
 
     /// The monomorph should already have been added.
-    pub fn term_from_monomorph(&self, c: &ConstantInstance) -> Result<SimpleTerm, String> {
+    pub fn term_from_monomorph(&self, c: &ConstantInstance) -> Result<Term, String> {
         if let Some((atom, type_id)) = self.monomorph_to_id.get(&c) {
-            Ok(SimpleTerm::new(*type_id, *type_id, *atom, vec![]))
+            Ok(Term::new(*type_id, *type_id, *atom, vec![]))
         } else {
             Err(format!(
                 "Monomorphized constant {} not found in normalization map",

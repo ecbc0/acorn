@@ -4,7 +4,7 @@ use std::fmt;
 use crate::atom::{Atom, AtomId};
 use crate::literal::Literal;
 use crate::proof_step::{EFLiteralTrace, EFTermTrace};
-use crate::simple_term::{SimpleTerm, BOOL};
+use crate::term::{Term, BOOL};
 use crate::unifier::{Scope, Unifier};
 use crate::variable_map::VariableMap;
 
@@ -743,7 +743,7 @@ impl Clause {
         // Create the new literal.
         // We need to take the type from the head of the shorter term.
         let new_left = shorter.get_head_term();
-        let new_right = SimpleTerm::new(
+        let new_right = Term::new(
             new_left.get_term_type(),
             longer.get_head_type(),
             *longer.get_head_atom(),

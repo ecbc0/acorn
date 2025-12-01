@@ -16,8 +16,8 @@ use crate::monomorphizer::Monomorphizer;
 use crate::names::ConstantName;
 use crate::normalization_map::{NewConstantType, NormalizationMap};
 use crate::proof_step::{ProofStep, Truthiness};
-use crate::simple_term::{SimpleTerm, TypeId, BOOL};
 use crate::source::{Source, SourceType};
+use crate::term::{Term, TypeId, BOOL};
 
 /// Information about the definition of a set of synthetic atoms.
 pub struct SyntheticDefinition {
@@ -197,13 +197,13 @@ impl Normalizer {
 
 // Represents a binding for a variable on the stack during normalization.
 enum TermBinding {
-    Bound(SimpleTerm),
-    Free(SimpleTerm),
+    Bound(Term),
+    Free(Term),
 }
 
 impl TermBinding {
     /// Get the underlying term regardless of binding type
-    fn term(&self) -> &SimpleTerm {
+    fn term(&self) -> &Term {
         match self {
             TermBinding::Bound(t) | TermBinding::Free(t) => t,
         }
@@ -439,7 +439,7 @@ impl NormalizerView<'_> {
     ) -> Result<CNF, String> {
         for quant in quants {
             let type_id = self.type_store().get_type_id(quant)?;
-            let var = SimpleTerm::new_variable(type_id, *next_var_id);
+            let var = Term::new_variable(type_id, *next_var_id);
             *next_var_id += 1;
             stack.push(TermBinding::Free(var));
         }
@@ -458,7 +458,7 @@ impl NormalizerView<'_> {
         skolem_types: &[AcornType],
         stack: &Vec<TermBinding>,
         synthesized: &mut Vec<AtomId>,
-    ) -> Result<Vec<SimpleTerm>, String> {
+    ) -> Result<Vec<Term>, String> {
         let mut args = vec![];
         let mut arg_types = vec![];
         let mut seen_vars = std::collections::HashSet::new();
@@ -466,7 +466,7 @@ impl NormalizerView<'_> {
         for binding in stack.iter() {
             for (var_id, type_id) in binding.term().iter_vars() {
                 if seen_vars.insert(var_id) {
-                    let var_term = SimpleTerm::new_variable(type_id, var_id);
+                    let var_term = Term::new_variable(type_id, var_id);
                     args.push(var_term);
                     arg_types.push(self.type_store().get_type(type_id).clone());
                 }
@@ -484,7 +484,7 @@ impl NormalizerView<'_> {
             let skolem_id = self.as_mut()?.declare_synthetic_atom(skolem_atom_type)?;
             synthesized.push(skolem_id);
             let skolem_atom = Atom::Synthetic(skolem_id);
-            let skolem_term = SimpleTerm::new(
+            let skolem_term = Term::new(
                 skolem_term_type_id,
                 skolem_atom_type_id,
                 skolem_atom,
@@ -500,7 +500,7 @@ impl NormalizerView<'_> {
         skolem_type: &AcornType,
         stack: &Vec<TermBinding>,
         synthesized: &mut Vec<AtomId>,
-    ) -> Result<SimpleTerm, String> {
+    ) -> Result<Term, String> {
         let mut terms =
             self.make_skolem_terms(std::slice::from_ref(skolem_type), stack, synthesized)?;
         Ok(terms.pop().unwrap())
@@ -642,7 +642,7 @@ impl NormalizerView<'_> {
                 // Create new free variables for each argument
                 let mut args = vec![];
                 for arg_type in &arg_types {
-                    let var = SimpleTerm::new_variable(*arg_type, *next_var_id);
+                    let var = Term::new_variable(*arg_type, *next_var_id);
                     *next_var_id += 1;
                     args.push(ExtendedTerm::Term(var));
                 }
@@ -685,7 +685,7 @@ impl NormalizerView<'_> {
             // Create new free variables for each argument
             let mut args = vec![];
             for arg_type in &arg_types {
-                let var = SimpleTerm::new_variable(*arg_type, *next_var_id);
+                let var = Term::new_variable(*arg_type, *next_var_id);
                 *next_var_id += 1;
                 args.push(var);
             }
@@ -739,7 +739,7 @@ impl NormalizerView<'_> {
         &self,
         value: &AcornValue,
         stack: &Vec<TermBinding>,
-    ) -> Result<Option<SimpleTerm>, String> {
+    ) -> Result<Option<Term>, String> {
         match self.try_simple_value_to_signed_term(value, stack)? {
             None => Ok(None),
             Some((t, sign)) => {
@@ -757,7 +757,7 @@ impl NormalizerView<'_> {
         &self,
         value: &AcornValue,
         stack: &Vec<TermBinding>,
-    ) -> Result<SimpleTerm, String> {
+    ) -> Result<Term, String> {
         match self.try_simple_value_to_term(value, stack)? {
             Some(t) => Ok(t),
             None => Err(format!("expected simple term but got '{}'", value)),
@@ -773,7 +773,7 @@ impl NormalizerView<'_> {
         &self,
         value: &AcornValue,
         stack: &Vec<TermBinding>,
-    ) -> Result<Option<(SimpleTerm, bool)>, String> {
+    ) -> Result<Option<(Term, bool)>, String> {
         match value {
             AcornValue::Variable(i, _) => {
                 if (*i as usize) < stack.len() {
@@ -799,10 +799,7 @@ impl NormalizerView<'_> {
                     };
                     args.push(arg_term);
                 }
-                Ok(Some((
-                    SimpleTerm::new(term_type, head_type, head, args),
-                    true,
-                )))
+                Ok(Some((Term::new(term_type, head_type, head, args), true)))
             }
             AcornValue::Constant(c) => {
                 if c.params.is_empty() {
@@ -811,10 +808,7 @@ impl NormalizerView<'_> {
                     let Some(atom) = self.map().get_atom(&c.name) else {
                         return Err(format!("constant {} not found in normalization map", c));
                     };
-                    Ok(Some((
-                        SimpleTerm::new(type_id, type_id, atom, vec![]),
-                        true,
-                    )))
+                    Ok(Some((Term::new(type_id, type_id, atom, vec![]), true)))
                 } else {
                     Ok(Some((self.map().term_from_monomorph(&c)?, true)))
                 }
@@ -826,7 +820,7 @@ impl NormalizerView<'_> {
                 }
             }
             AcornValue::Try(_, _) => Ok(None),
-            AcornValue::Bool(v) => Ok(Some((SimpleTerm::new_true(), *v))),
+            AcornValue::Bool(v) => Ok(Some((Term::new_true(), *v))),
             _ => Ok(None),
         }
     }
@@ -928,13 +922,13 @@ impl NormalizerView<'_> {
         match cond {
             Some(cond) => {
                 assert_eq!(spine1.len(), spine2.len());
-                let then_term = SimpleTerm::from_spine(spine1, result_type);
-                let else_term = SimpleTerm::from_spine(spine2, result_type);
+                let then_term = Term::from_spine(spine1, result_type);
+                let else_term = Term::from_spine(spine2, result_type);
                 Ok(ExtendedTerm::If(cond, then_term, else_term))
             }
             None => {
                 assert!(spine2.is_empty());
-                let term = SimpleTerm::from_spine(spine1, result_type);
+                let term = Term::from_spine(spine1, result_type);
                 Ok(ExtendedTerm::Term(term))
             }
         }
@@ -952,7 +946,7 @@ impl NormalizerView<'_> {
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
-    ) -> Result<SimpleTerm, String> {
+    ) -> Result<Term, String> {
         // Create a tentative skolem term with the value's type
         let skolem_term = self.make_skolem_term(value_type, stack, synth)?;
         let skolem_id = if let Atom::Synthetic(id) = *skolem_term.get_head_atom() {
@@ -983,7 +977,7 @@ impl NormalizerView<'_> {
             // Reuse the existing synthetic atom
             let existing_id = existing_def.atoms[0];
             let existing_atom = Atom::Synthetic(existing_id);
-            let reused_term = SimpleTerm::new(
+            let reused_term = Term::new(
                 skolem_term.get_term_type(),
                 skolem_term.get_head_type(),
                 existing_atom,
@@ -1046,7 +1040,7 @@ impl NormalizerView<'_> {
         for binding in stack.iter() {
             for (var_id, type_id) in binding.term().iter_vars() {
                 if seen_vars.insert(var_id) {
-                    let var_term = SimpleTerm::new_variable(type_id, var_id);
+                    let var_term = Term::new_variable(type_id, var_id);
                     args.push(var_term);
                     arg_types.push(self.type_store().get_type(type_id).clone());
                 }
@@ -1069,7 +1063,7 @@ impl NormalizerView<'_> {
         let atom_type_id = self.type_store().get_type_id(&atom_type)?;
 
         let atom = Atom::Synthetic(atom_id);
-        let synth_term = SimpleTerm::new(bool_type_id, atom_type_id, atom, args);
+        let synth_term = Term::new(bool_type_id, atom_type_id, atom, args);
         let synth_lit = Literal::from_signed_term(synth_term.clone(), true);
 
         // Create defining clauses for: s <-> C
@@ -1107,7 +1101,7 @@ impl NormalizerView<'_> {
         &mut self,
         ext_term: ExtendedTerm,
         synth: &mut Vec<AtomId>,
-    ) -> Result<SimpleTerm, String> {
+    ) -> Result<Term, String> {
         match ext_term {
             ExtendedTerm::Term(t) => Ok(t),
             ExtendedTerm::If(cond_lit, then_term, else_term) => {
@@ -1137,14 +1131,14 @@ impl NormalizerView<'_> {
                 // Collect free variables from the condition literal
                 for (var_id, type_id) in cond_lit.left.iter_vars() {
                     if seen_vars.insert(var_id) {
-                        let var_term = SimpleTerm::new_variable(type_id, var_id);
+                        let var_term = Term::new_variable(type_id, var_id);
                         args.push(var_term);
                         arg_types.push(self.type_store().get_type(type_id).clone());
                     }
                 }
                 for (var_id, type_id) in cond_lit.right.iter_vars() {
                     if seen_vars.insert(var_id) {
-                        let var_term = SimpleTerm::new_variable(type_id, var_id);
+                        let var_term = Term::new_variable(type_id, var_id);
                         args.push(var_term);
                         arg_types.push(self.type_store().get_type(type_id).clone());
                     }
@@ -1153,7 +1147,7 @@ impl NormalizerView<'_> {
                 // Collect free variables from the then branch
                 for (var_id, type_id) in then_term.iter_vars() {
                     if seen_vars.insert(var_id) {
-                        let var_term = SimpleTerm::new_variable(type_id, var_id);
+                        let var_term = Term::new_variable(type_id, var_id);
                         args.push(var_term);
                         arg_types.push(self.type_store().get_type(type_id).clone());
                     }
@@ -1162,7 +1156,7 @@ impl NormalizerView<'_> {
                 // Collect free variables from the else branch
                 for (var_id, type_id) in else_term.iter_vars() {
                     if seen_vars.insert(var_id) {
-                        let var_term = SimpleTerm::new_variable(type_id, var_id);
+                        let var_term = Term::new_variable(type_id, var_id);
                         args.push(var_term);
                         arg_types.push(self.type_store().get_type(type_id).clone());
                     }
@@ -1182,7 +1176,7 @@ impl NormalizerView<'_> {
                 let atom_type_id = self.type_store().get_type_id(&atom_type)?;
 
                 let atom = Atom::Synthetic(atom_id);
-                let synth_term = SimpleTerm::new(result_type_id, atom_type_id, atom, args);
+                let synth_term = Term::new(result_type_id, atom_type_id, atom, args);
 
                 // Create defining clauses for the if-expression
                 // (not cond or synth_term = then_term) and (cond or synth_term = else_term)
@@ -1252,7 +1246,7 @@ impl NormalizerView<'_> {
                     let Some(atom) = self.map().get_atom(&c.name) else {
                         return Err(format!("constant {} not found in normalization map", c));
                     };
-                    Ok(ExtendedTerm::Term(SimpleTerm::new(
+                    Ok(ExtendedTerm::Term(Term::new(
                         type_id,
                         type_id,
                         atom,
@@ -1271,7 +1265,7 @@ impl NormalizerView<'_> {
                 for arg_type in arg_types {
                     let type_id = self.type_store().get_type_id(arg_type)?;
                     let var_id = stack.len() as AtomId;
-                    let var = SimpleTerm::new_variable(type_id, var_id);
+                    let var = Term::new_variable(type_id, var_id);
                     args.push((var_id, type_id));
                     stack.push(TermBinding::Free(var));
                     // Update next_var_id to be at least one past this variable
@@ -1294,7 +1288,7 @@ impl NormalizerView<'_> {
             }
             AcornValue::Bool(b) => {
                 if *b {
-                    Ok(ExtendedTerm::Term(SimpleTerm::new_true()))
+                    Ok(ExtendedTerm::Term(Term::new_true()))
                 } else {
                     Err("false literal in unexpected position".to_string())
                 }
@@ -1556,7 +1550,7 @@ impl Normalizer {
     /// Any other free variables are left unbound. Their types are accumulated.
     fn denormalize_term(
         &self,
-        term: &SimpleTerm,
+        term: &Term,
         var_types: &mut Option<Vec<AcornType>>,
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {

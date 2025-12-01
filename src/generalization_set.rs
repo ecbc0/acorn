@@ -5,7 +5,7 @@ use std::vec;
 use crate::clause::Clause;
 use crate::literal::Literal;
 use crate::pattern_tree::PatternTree;
-use crate::simple_term::{SimpleTerm, TypeId};
+use crate::term::{Term, TypeId};
 use crate::unifier::Unifier;
 
 /// The GeneralizationSet stores general clauses in a way that allows us to quickly check whether
@@ -107,9 +107,9 @@ fn sub_invariant_literal_cmp(lit1: &Literal, lit2: &Literal) -> Option<Ordering>
 ///
 /// Concrete terms should always be orderable.
 pub fn sub_invariant_term_cmp(
-    left: &SimpleTerm,
+    left: &Term,
     left_neg: bool,
-    right: &SimpleTerm,
+    right: &Term,
     right_neg: bool,
 ) -> Option<Ordering> {
     // Compare the types, because these won't be changed by substitution.

@@ -1,20 +1,20 @@
 use crate::atom::AtomId;
 use crate::cnf::CNF;
 use crate::literal::Literal;
-use crate::simple_term::{SimpleTerm, TypeId};
+use crate::term::{Term, TypeId};
 
 // An ExtendedTerm is like a term in the sense that a comparison between two of them can be converted
 // into a CNF formula.
 // They can be Boolean or have non-Boolean types.
 #[derive(Clone, Debug)]
 pub enum ExtendedTerm {
-    Term(SimpleTerm),
+    Term(Term),
 
     // (condition, then branch, else branch)
-    If(Literal, SimpleTerm, SimpleTerm),
+    If(Literal, Term, Term),
 
     // Lambda(args, body) represents the value f such that f(args) = body.
-    Lambda(Vec<(AtomId, TypeId)>, SimpleTerm),
+    Lambda(Vec<(AtomId, TypeId)>, Term),
 }
 
 impl std::fmt::Display for ExtendedTerm {
@@ -44,7 +44,7 @@ impl std::fmt::Display for ExtendedTerm {
 
 impl ExtendedTerm {
     /// Convert ExtendedTerm to a plain Term, erroring if it's not ::Term variant
-    pub fn to_term(self) -> Result<SimpleTerm, String> {
+    pub fn to_term(self) -> Result<Term, String> {
         match self {
             ExtendedTerm::Term(t) => Ok(t),
             other => Err(format!("expected plain term but got {}", other)),
@@ -52,7 +52,7 @@ impl ExtendedTerm {
     }
 
     /// Apply arguments to an ExtendedTerm, similar to Term::apply.
-    pub fn apply(&self, args: &[SimpleTerm], result_type: TypeId) -> ExtendedTerm {
+    pub fn apply(&self, args: &[Term], result_type: TypeId) -> ExtendedTerm {
         match self {
             ExtendedTerm::Term(term) => ExtendedTerm::Term(term.apply(args, result_type)),
             ExtendedTerm::If(cond, then_term, else_term) => {
@@ -88,7 +88,7 @@ impl ExtendedTerm {
     }
 
     /// Convert an equality comparison between this ExtendedTerm and a Term into CNF.
-    fn eq_term_to_cnf(self, term: SimpleTerm, negate: bool) -> Result<CNF, String> {
+    fn eq_term_to_cnf(self, term: Term, negate: bool) -> Result<CNF, String> {
         match self {
             ExtendedTerm::Term(left) => {
                 let literal = Literal::new(!negate, left, term);
