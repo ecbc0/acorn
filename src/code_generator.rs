@@ -7,14 +7,14 @@ use crate::acorn_type::{AcornType, Datatype, PotentialType, Typeclass};
 use crate::acorn_value::{AcornValue, BinaryOp, ConstantInstance};
 use crate::atom::AtomId;
 use crate::binding_map::BindingMap;
-use crate::expression::{Declaration, Expression};
 use crate::kernel::clause::Clause;
 use crate::kernel::term::{Term, TypeId};
 use crate::module::ModuleId;
 use crate::names::{ConstantName, DefinedName};
 use crate::normalizer::Normalizer;
 use crate::saturation::proof::ConcreteStep;
-use crate::token::TokenType;
+use crate::syntax::expression::{Declaration, Expression};
+use crate::syntax::token::TokenType;
 use crate::type_unifier::TypeclassRegistry;
 use crate::variable_map::VariableMap;
 

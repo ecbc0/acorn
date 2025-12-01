@@ -7,7 +7,6 @@ use crate::binding_map::ConstructorInfo;
 use crate::block::{Block, BlockParams};
 use crate::compilation::{self, CompilationError, ErrorSource};
 use crate::evaluator::{AttributesTypeArgs, Evaluator};
-use crate::expression::{Declaration, Expression};
 use crate::fact::Fact;
 use crate::named_entity::NamedEntity;
 use crate::names::{ConstantName, DefinedName};
@@ -17,13 +16,14 @@ use crate::project::{ImportError, Project};
 use crate::proposition::Proposition;
 use crate::source::{Source, SourceType};
 use crate::stack::Stack;
-use crate::statement::{
+use crate::syntax::expression::{Declaration, Expression};
+use crate::syntax::statement::{
     AttributesStatement, ClaimStatement, DefineStatement, DestructuringStatement, ForAllStatement,
     FunctionSatisfyStatement, IfStatement, ImportStatement, InductiveStatement, InstanceStatement,
     LetStatement, MatchStatement, NumeralsStatement, Statement, StatementInfo, StructureStatement,
     TheoremStatement, TypeStatement, TypeclassStatement, VariableSatisfyStatement,
 };
-use crate::token::{Token, TokenIter, TokenType};
+use crate::syntax::token::{Token, TokenIter, TokenType};
 use crate::type_unifier::TypeclassRegistry;
 
 use super::{Environment, LineType};

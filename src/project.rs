@@ -23,7 +23,7 @@ use crate::module::{LoadState, Module, ModuleDescriptor, ModuleId};
 use crate::named_entity::NamedEntity;
 use crate::names::ConstantName;
 use crate::processor::Processor;
-use crate::token::Token;
+use crate::syntax::token::Token;
 use crate::token_map::TokenInfo;
 
 // The Project is responsible for importing different files and assigning them module ids.
@@ -1346,7 +1346,7 @@ impl Project {
     ) -> crate::interfaces::GoalInfo {
         use crate::checker::StepReason;
         use crate::interfaces::{GoalInfo, Location, Step};
-        use crate::statement::Statement;
+        use crate::syntax::statement::Statement;
 
         let goal_name = goal.name.clone();
 
@@ -1495,7 +1495,9 @@ impl Project {
     // Checks that the given expression can be parsed and turned back into code.
     #[cfg(test)]
     pub fn check_code_into(&mut self, module_name: &str, input: &str, expected: &str) {
-        use crate::{code_generator::CodeGenerator, evaluator::Evaluator, expression::Expression};
+        use crate::{
+            code_generator::CodeGenerator, evaluator::Evaluator, syntax::expression::Expression,
+        };
 
         let module_id = self.expect_ok(module_name);
         let expression = Expression::expect_value(input);

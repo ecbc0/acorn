@@ -6,7 +6,7 @@ use crate::atom::AtomId;
 use crate::compilation::{self, ErrorSource};
 use crate::module::ModuleId;
 use crate::names::{ConstantName, DefinedName, InstanceName};
-use crate::token::TokenType;
+use crate::syntax::token::TokenType;
 
 /// Represents a function application with a function and its arguments.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]

@@ -3,7 +3,7 @@ use std::fmt;
 use tower_lsp::lsp_types::Range;
 
 use crate::module::ModuleId;
-use crate::token::Token;
+use crate::syntax::token::Token;
 
 // Errors that happen during compilation.
 // We will want to report these along with a location in the source code.

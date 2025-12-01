@@ -2,14 +2,14 @@ use crate::acorn_type::{AcornType, Datatype, PotentialType, TypeParam, Typeclass
 use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::binding_map::BindingMap;
 use crate::compilation::{self, ErrorSource};
-use crate::expression::{Declaration, Expression, TypeParamExpr};
 use crate::module::ModuleId;
 use crate::named_entity::NamedEntity;
 use crate::names::DefinedName;
 use crate::potential_value::PotentialValue;
 use crate::project::Project;
 use crate::stack::Stack;
-use crate::token::{Token, TokenType};
+use crate::syntax::expression::{Declaration, Expression, TypeParamExpr};
+use crate::syntax::token::{Token, TokenType};
 use crate::token_map::TokenMap;
 use crate::type_unifier::TypeUnifier;
 
@@ -1405,8 +1405,8 @@ impl<'a> Evaluator<'a> {
 #[cfg(test)]
 mod tests {
     use crate::code_generator::CodeGenerator;
-    use crate::expression::Terminator;
-    use crate::token::TokenIter;
+    use crate::syntax::expression::Terminator;
+    use crate::syntax::token::TokenIter;
 
     use super::*;
 

@@ -17,8 +17,8 @@ use crate::node::{Node, NodeCursor};
 use crate::project::Project;
 use crate::proposition::Proposition;
 use crate::source::Source;
-use crate::statement::{Body, Statement};
-use crate::token::{Token, TokenIter};
+use crate::syntax::statement::{Body, Statement};
+use crate::syntax::token::{Token, TokenIter};
 use crate::token_map::{TokenInfo, TokenKey, TokenMap};
 
 /// The Environment takes Statements as input and processes them.
@@ -275,10 +275,10 @@ impl Environment {
     pub fn check_no_conflicting_attributes(
         &self,
         datatype: &Datatype,
-        body: &crate::statement::Body,
+        body: &crate::syntax::statement::Body,
         _name_token: &Token,
     ) -> compilation::Result<()> {
-        use crate::statement::StatementInfo;
+        use crate::syntax::statement::StatementInfo;
 
         // Check if any of the new specific attributes conflict with existing generic ones
         for stmt in &body.statements {

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use tower_lsp::lsp_types::{Position, Range};
 
 use crate::named_entity::NamedEntity;
-use crate::token::Token;
+use crate::syntax::token::Token;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct TokenKey {

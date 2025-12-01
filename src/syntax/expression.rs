@@ -4,7 +4,7 @@ use pretty::{DocAllocator, DocBuilder, Pretty};
 use tower_lsp::lsp_types::Range;
 
 use crate::compilation::{CompilationError, ErrorSource, Result};
-use crate::token::{Token, TokenIter, TokenType};
+use crate::syntax::token::{Token, TokenIter, TokenType};
 
 /// There are two main sorts of expressions.
 /// Value expressions, like:

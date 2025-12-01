@@ -1846,8 +1846,8 @@ fn test_strict_mode_allows_inductive_types() {
 
 #[test]
 fn test_strict_mode_rejects_axiomatic_types() {
-    use crate::statement::Statement;
-    use crate::token::{Token, TokenIter};
+    use crate::syntax::statement::Statement;
+    use crate::syntax::token::{Token, TokenIter};
 
     let input = "type Nat: axiom\n";
     let tokens = Token::scan(input);
@@ -1867,8 +1867,8 @@ fn test_strict_mode_rejects_axiomatic_types() {
 
 #[test]
 fn test_strict_mode_rejects_axiomatic_constants() {
-    use crate::statement::Statement;
-    use crate::token::{Token, TokenIter};
+    use crate::syntax::statement::Statement;
+    use crate::syntax::token::{Token, TokenIter};
 
     let input = "let zero: Nat = axiom\n";
     let tokens = Token::scan(input);

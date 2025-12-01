@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::statement::*;
+    use crate::syntax::statement::*;
     use indoc::indoc;
 
     fn should_parse(input: &str) -> Statement {

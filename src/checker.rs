@@ -8,7 +8,6 @@ use crate::binding_map::BindingMap;
 use crate::certificate::Certificate;
 use crate::code_generator::Error;
 use crate::evaluator::Evaluator;
-use crate::expression::Declaration;
 use crate::generalization_set::GeneralizationSet;
 use crate::kernel::clause::Clause;
 use crate::names::ConstantName;
@@ -17,7 +16,8 @@ use crate::potential_value::PotentialValue;
 use crate::project::Project;
 use crate::source::Source;
 use crate::stack::Stack;
-use crate::statement::{Statement, StatementInfo};
+use crate::syntax::expression::Declaration;
+use crate::syntax::statement::{Statement, StatementInfo};
 use crate::term_graph::{StepId, TermGraph};
 
 /// The reason why a certificate step was accepted.

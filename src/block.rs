@@ -13,8 +13,8 @@ use crate::node::Node;
 use crate::project::Project;
 use crate::proposition::Proposition;
 use crate::source::Source;
-use crate::statement::Body;
-use crate::token::Token;
+use crate::syntax::statement::Body;
+use crate::syntax::token::Token;
 
 /// Proofs are structured into blocks.
 /// The environment specific to this block can have a bunch of propositions that need to be

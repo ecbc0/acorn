@@ -8,7 +8,7 @@ use crate::environment::Environment;
 use crate::module::{ModuleDescriptor, ModuleId};
 use crate::names::ConstantName;
 use crate::project::Project;
-use crate::token::Token;
+use crate::syntax::token::Token;
 
 #[derive(Debug)]
 pub enum DocError {

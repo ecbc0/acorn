@@ -1,8 +1,8 @@
 use tower_lsp::lsp_types::Range;
 
 use crate::compilation::{CompilationError, ErrorSource, Result};
-use crate::expression::{Declaration, Expression, Terminator, TypeParamExpr};
-use crate::token::{Token, TokenIter, TokenType};
+use crate::syntax::expression::{Declaration, Expression, Terminator, TypeParamExpr};
+use crate::syntax::token::{Token, TokenIter, TokenType};
 
 use pretty::{DocAllocator, DocBuilder, Pretty};
 use std::fmt;
