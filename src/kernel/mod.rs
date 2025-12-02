@@ -1,11 +1,14 @@
 pub mod atom;
 pub mod clause;
 pub mod cnf;
+pub mod context;
 pub mod extended_term;
 pub mod literal;
 pub mod symbol;
 pub mod symbol_table;
 pub mod term;
+pub mod thin_clause;
+pub mod thin_literal;
 pub mod thin_term;
 pub mod type_store;
 pub mod unifier;
