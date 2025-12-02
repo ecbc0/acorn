@@ -149,4 +149,12 @@ mod tests {
             Ordering::Equal
         );
     }
+
+    #[test]
+    fn test_atom_size() {
+        // Atom should be small since it's used extensively in the prover.
+        // AtomId is u16 (2 bytes), plus 1 byte for the enum discriminant = 4 bytes total
+        // (with alignment padding).
+        assert_eq!(std::mem::size_of::<Atom>(), 4);
+    }
 }
