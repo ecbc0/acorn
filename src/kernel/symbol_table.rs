@@ -28,14 +28,14 @@ pub struct SymbolTable {
     local_constants: Vec<Option<ConstantName>>,
 
     /// Inverse map of constants that can be referenced with a single name.
-    /// The ConstantName -> Atom lookup direction.
-    name_to_atom: HashMap<ConstantName, Atom>,
+    /// The ConstantName -> Symbol lookup direction.
+    name_to_symbol: HashMap<ConstantName, Symbol>,
 
     /// One entry for each monomorphization.
-    /// Maps the rich constant to the Atom and TypeId that represent the monomorph.
-    /// It might not be a monomorph-type atom, if it's an alias to another constant.
+    /// Maps the rich constant to the Symbol and TypeId that represent the monomorph.
+    /// It might not be a monomorph-type symbol, if it's an alias to another constant.
     /// So it isn't quite parallel to id_to_monomorph.
-    monomorph_to_id: HashMap<ConstantInstance, (Atom, TypeId)>,
+    monomorph_to_id: HashMap<ConstantInstance, (Symbol, TypeId)>,
 
     /// Indexed by the AtomId of the monomorph.
     /// For each id, store the rich constant corresponding to it.
@@ -47,42 +47,42 @@ impl SymbolTable {
         SymbolTable {
             global_constants: vec![],
             local_constants: vec![],
-            name_to_atom: HashMap::new(),
+            name_to_symbol: HashMap::new(),
             id_to_monomorph: vec![],
             monomorph_to_id: HashMap::new(),
         }
     }
 
-    pub fn get_atom(&self, name: &ConstantName) -> Option<Atom> {
+    pub fn get_symbol(&self, name: &ConstantName) -> Option<Symbol> {
         if let ConstantName::Synthetic(i) = name {
-            return Some(Atom::Symbol(Symbol::Synthetic(*i)));
+            return Some(Symbol::Synthetic(*i));
         };
-        self.name_to_atom.get(name).cloned()
+        self.name_to_symbol.get(name).cloned()
     }
 
     /// Assigns an id to this (module, name) pair if it doesn't already have one.
-    /// local determines whether the constant will be represented as a local or global atom.
-    pub fn add_constant(&mut self, name: ConstantName, ctype: NewConstantType) -> Atom {
+    /// local determines whether the constant will be represented as a local or global symbol.
+    pub fn add_constant(&mut self, name: ConstantName, ctype: NewConstantType) -> Symbol {
         if name.is_synthetic() {
             panic!("synthetic atoms should not be stored in the ConstantMap");
         }
-        if let Some(&atom) = self.name_to_atom.get(&name) {
-            return atom;
+        if let Some(&symbol) = self.name_to_symbol.get(&name) {
+            return symbol;
         }
-        let atom = match ctype {
+        let symbol = match ctype {
             NewConstantType::Local => {
                 let atom_id = self.local_constants.len() as AtomId;
                 self.local_constants.push(Some(name.clone()));
-                Atom::Symbol(Symbol::LocalConstant(atom_id))
+                Symbol::LocalConstant(atom_id)
             }
             NewConstantType::Global => {
                 let atom_id = self.global_constants.len() as AtomId;
                 self.global_constants.push(Some(name.clone()));
-                Atom::Symbol(Symbol::GlobalConstant(atom_id))
+                Symbol::GlobalConstant(atom_id)
             }
         };
-        self.name_to_atom.insert(name, atom);
-        atom
+        self.name_to_symbol.insert(name, symbol);
+        symbol
     }
 
     /// Add all constant names, monomorphs, and types from a value to the symbol table.
@@ -95,7 +95,7 @@ impl SymbolTable {
     ) {
         // Add all constants
         value.for_each_constant(&mut |c| {
-            if self.get_atom(&c.name).is_none() {
+            if self.get_symbol(&c.name).is_none() {
                 self.add_constant(c.name.clone(), ctype);
             }
             if !c.params.is_empty() {
@@ -136,8 +136,8 @@ impl SymbolTable {
         } else {
             NewConstantType::Global
         };
-        let atom = self.add_constant(name.clone(), ctype);
-        self.monomorph_to_id.insert(c, (atom, type_id));
+        let symbol = self.add_constant(name.clone(), ctype);
+        self.monomorph_to_id.insert(c, (symbol, type_id));
     }
 
     /// Should only be called when c has params.
@@ -148,18 +148,18 @@ impl SymbolTable {
             return;
         }
 
-        // Construct an atom and appropriate entries for this monomorph
+        // Construct a symbol and appropriate entries for this monomorph
         let type_id = type_store.add_type(&c.instance_type);
         let monomorph_id = self.id_to_monomorph.len() as AtomId;
-        let atom = Atom::Symbol(Symbol::Monomorph(monomorph_id));
+        let symbol = Symbol::Monomorph(monomorph_id);
         self.id_to_monomorph.push(c.clone());
-        self.monomorph_to_id.insert(c.clone(), (atom, type_id));
+        self.monomorph_to_id.insert(c.clone(), (symbol, type_id));
     }
 
     /// The monomorph should already have been added.
     pub fn term_from_monomorph(&self, c: &ConstantInstance) -> Result<Term, String> {
-        if let Some((atom, type_id)) = self.monomorph_to_id.get(&c) {
-            Ok(Term::new(*type_id, *type_id, *atom, vec![]))
+        if let Some((symbol, type_id)) = self.monomorph_to_id.get(&c) {
+            Ok(Term::new(*type_id, *type_id, Atom::Symbol(*symbol), vec![]))
         } else {
             Err(format!(
                 "Monomorphized constant {} not found in symbol table",

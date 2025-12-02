@@ -190,8 +190,10 @@ impl Normalizer {
     }
 
     pub fn add_local_constant(&mut self, cname: ConstantName) -> Atom {
-        self.symbol_table
-            .add_constant(cname, NewConstantType::Local)
+        Atom::Symbol(
+            self.symbol_table
+                .add_constant(cname, NewConstantType::Local),
+        )
     }
 }
 
@@ -805,10 +807,13 @@ impl NormalizerView<'_> {
                 if c.params.is_empty() {
                     let type_id = self.type_store().get_type_id(&c.instance_type)?;
 
-                    let Some(atom) = self.symbol_table().get_atom(&c.name) else {
+                    let Some(symbol) = self.symbol_table().get_symbol(&c.name) else {
                         return Err(format!("constant {} not found in symbol table", c));
                     };
-                    Ok(Some((Term::new(type_id, type_id, atom, vec![]), true)))
+                    Ok(Some((
+                        Term::new(type_id, type_id, Atom::Symbol(symbol), vec![]),
+                        true,
+                    )))
                 } else {
                     Ok(Some((self.symbol_table().term_from_monomorph(&c)?, true)))
                 }
@@ -1243,13 +1248,13 @@ impl NormalizerView<'_> {
                 if c.params.is_empty() {
                     let type_id = self.type_store().get_type_id(&c.instance_type)?;
 
-                    let Some(atom) = self.symbol_table().get_atom(&c.name) else {
+                    let Some(symbol) = self.symbol_table().get_symbol(&c.name) else {
                         return Err(format!("constant {} not found in symbol table", c));
                     };
                     Ok(ExtendedTerm::Term(Term::new(
                         type_id,
                         type_id,
-                        atom,
+                        Atom::Symbol(symbol),
                         vec![],
                     )))
                 } else {
