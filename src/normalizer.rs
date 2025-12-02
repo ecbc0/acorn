@@ -79,9 +79,6 @@ impl std::fmt::Display for SyntheticKey {
 pub struct Normalizer {
     monomorphizer: Monomorphizer,
 
-    /// Types of the synthetic atoms that we synthesized
-    synthetic_types: Vec<AcornType>,
-
     /// The definition for each synthetic atom, indexed by AtomId.
     synthetic_definitions: HashMap<AtomId, Arc<SyntheticDefinition>>,
 
@@ -89,6 +86,8 @@ pub struct Normalizer {
     /// This is used to avoid defining the same thing multiple times.
     synthetic_map: HashMap<SyntheticKey, Arc<SyntheticDefinition>>,
 
+    /// Maps symbols (constants, monomorphs, synthetics) to their names and types.
+    /// Use with type_store to get the full AcornType for a symbol.
     symbol_table: SymbolTable,
 
     /// Manages the bidirectional mapping between AcornTypes and TypeIds.
@@ -99,7 +98,6 @@ impl Normalizer {
     pub fn new() -> Normalizer {
         Normalizer {
             monomorphizer: Monomorphizer::new(),
-            synthetic_types: vec![],
             synthetic_definitions: HashMap::new(),
             synthetic_map: HashMap::new(),
             symbol_table: SymbolTable::new(),
@@ -108,7 +106,9 @@ impl Normalizer {
     }
 
     pub fn get_synthetic_type(&self, id: AtomId) -> &AcornType {
-        &self.synthetic_types[id as usize]
+        let symbol = Symbol::Synthetic(id);
+        let type_id = self.symbol_table.get_type(symbol);
+        self.type_store.get_type(type_id)
     }
 
     /// Gets a synthetic definition for a value, if one exists.
@@ -143,13 +143,15 @@ impl Normalizer {
     // This weird two-step is necessary since we need to do some constructions
     // before we actually have the definition.
     fn declare_synthetic_atom(&mut self, atom_type: AcornType) -> Result<AtomId, String> {
-        let id = self.synthetic_types.len() as AtomId;
+        let type_id = self.type_store.add_type(&atom_type);
+        let symbol = self.symbol_table.declare_synthetic(type_id);
+        let id = match symbol {
+            Symbol::Synthetic(id) => id,
+            _ => panic!("declare_synthetic should return a Synthetic symbol"),
+        };
         if id >= INVALID_SYNTHETIC_ID {
             return Err(format!("ran out of synthetic ids (used {})", id));
         }
-        let type_id = self.type_store.add_type(&atom_type);
-        self.synthetic_types.push(atom_type);
-        self.symbol_table.declare_synthetic(type_id);
         Ok(id)
     }
 
@@ -1546,7 +1548,9 @@ impl Normalizer {
                 AcornValue::Variable(*i, acorn_type)
             }
             Atom::Symbol(Symbol::Synthetic(i)) => {
-                let acorn_type = self.synthetic_types[*i as usize].clone();
+                let symbol = Symbol::Synthetic(*i);
+                let type_id = self.symbol_table.get_type(symbol);
+                let acorn_type = self.type_store.get_type(type_id).clone();
                 let name = ConstantName::Synthetic(*i);
                 AcornValue::constant(name, vec![], acorn_type)
             }
