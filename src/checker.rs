@@ -376,14 +376,14 @@ impl Checker {
                         bindings.to_mut().add_unqualified_constant(
                             &name,
                             vec![],
-                            acorn_type,
+                            acorn_type.clone(),
                             None,
                             None,
                             vec![],
                             None,
                             String::new(),
                         );
-                        normalizer.to_mut().add_local_constant(cname);
+                        normalizer.to_mut().add_local_constant(cname, &acorn_type);
                     }
                 }
 

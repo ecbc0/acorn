@@ -147,9 +147,9 @@ impl Normalizer {
         if id >= INVALID_SYNTHETIC_ID {
             return Err(format!("ran out of synthetic ids (used {})", id));
         }
-        // Add the synthetic atom type to the symbol table
-        self.type_store.add_type(&atom_type);
+        let type_id = self.type_store.add_type(&atom_type);
         self.synthetic_types.push(atom_type);
+        self.symbol_table.declare_synthetic(type_id);
         Ok(id)
     }
 
@@ -189,10 +189,11 @@ impl Normalizer {
         Ok(())
     }
 
-    pub fn add_local_constant(&mut self, cname: ConstantName) -> Atom {
+    pub fn add_local_constant(&mut self, cname: ConstantName, acorn_type: &AcornType) -> Atom {
+        let type_id = self.type_store.add_type(acorn_type);
         Atom::Symbol(
             self.symbol_table
-                .add_constant(cname, NewConstantType::Local),
+                .add_constant(cname, NewConstantType::Local, type_id),
         )
     }
 }
