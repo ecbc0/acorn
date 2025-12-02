@@ -6,8 +6,8 @@ use tower_lsp::lsp_types::{Location, Position, Range, Url};
 
 use crate::builder::{BuildEvent, BuildStatus, Builder};
 use crate::elaborator::environment::LineType;
+use crate::elaborator::names::ConstantName;
 use crate::module::ModuleDescriptor;
-use crate::names::ConstantName;
 use crate::project::{localize_mock_filename, Project, ProjectConfig};
 use indoc::indoc;
 

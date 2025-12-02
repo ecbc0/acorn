@@ -1,6 +1,6 @@
 use crate::elaborator::acorn_value::AcornValue;
+use crate::elaborator::names::ConstantName;
 use crate::kernel::atom::AtomId;
-use crate::names::ConstantName;
 
 // The TerminationChecker determines whether recursive functions will always terminate,
 // because they always get called on a substructure of the input.

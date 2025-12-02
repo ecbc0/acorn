@@ -17,8 +17,6 @@ pub mod kernel;
 pub mod manifest;
 pub mod module;
 pub mod monomorphizer;
-pub mod named_entity;
-pub mod names;
 pub mod normalization_map;
 pub mod normalizer;
 pub mod ort_utils;
@@ -29,11 +27,8 @@ pub mod proof_step;
 pub mod prover;
 pub mod saturation;
 pub mod server;
-pub mod source;
-pub mod stack;
 pub mod syntax;
 pub mod term_graph;
-pub mod termination_checker;
 pub mod verifier;
 
 #[cfg(test)]

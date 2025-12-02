@@ -10,19 +10,19 @@ use crate::elaborator::acorn_type::{
 };
 use crate::elaborator::acorn_value::AcornValue;
 use crate::elaborator::evaluator::Evaluator;
+use crate::elaborator::named_entity::NamedEntity;
+use crate::elaborator::names::{ConstantName, DefinedName, InstanceName};
 use crate::elaborator::potential_value::PotentialValue;
 use crate::elaborator::proposition::Proposition;
+use crate::elaborator::stack::Stack;
+use crate::elaborator::termination_checker::TerminationChecker;
 use crate::elaborator::type_unifier::{TypeUnifier, TypeclassRegistry};
 use crate::elaborator::unresolved_constant::UnresolvedConstant;
 use crate::module::ModuleId;
-use crate::named_entity::NamedEntity;
-use crate::names::{ConstantName, DefinedName, InstanceName};
 use crate::project::Project;
-use crate::stack::Stack;
 use crate::syntax::expression::{Declaration, Expression, TypeParamExpr};
 use crate::syntax::token::{self, Token, TokenType};
 use crate::syntax::token_map::TokenMap;
-use crate::termination_checker::TerminationChecker;
 
 /// The BindingMap contains all of the mappings needed to figure out what a string refers to
 /// in a particular environment.

@@ -5,10 +5,10 @@ use std::sync::Arc;
 use crate::elaborator::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::elaborator::acorn_value::{AcornValue, ConstantInstance};
 use crate::elaborator::fact::Fact;
+use crate::elaborator::names::ConstantName;
 use crate::elaborator::potential_value::PotentialValue;
 use crate::elaborator::proposition::{MonomorphicProposition, Proposition};
 use crate::elaborator::type_unifier::{self, TypeUnifier, TypeclassRegistry};
-use crate::names::ConstantName;
 use crate::proof_step::Truthiness;
 
 /// Maximum number of steps from non-global facts for monomorphization.

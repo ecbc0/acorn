@@ -7,16 +7,16 @@ use crate::elaborator::binding_map::ConstructorInfo;
 use crate::elaborator::block::{Block, BlockParams};
 use crate::elaborator::evaluator::{AttributesTypeArgs, Evaluator};
 use crate::elaborator::fact::Fact;
+use crate::elaborator::named_entity::NamedEntity;
+use crate::elaborator::names::{ConstantName, DefinedName};
 use crate::elaborator::node::Node;
 use crate::elaborator::potential_value::PotentialValue;
 use crate::elaborator::proposition::Proposition;
+use crate::elaborator::source::{Source, SourceType};
+use crate::elaborator::stack::Stack;
 use crate::elaborator::type_unifier::TypeclassRegistry;
 use crate::kernel::atom::AtomId;
-use crate::named_entity::NamedEntity;
-use crate::names::{ConstantName, DefinedName};
 use crate::project::{ImportError, Project};
-use crate::source::{Source, SourceType};
-use crate::stack::Stack;
 use crate::syntax::expression::{Declaration, Expression};
 use crate::syntax::statement::{
     AttributesStatement, ClaimStatement, DefineStatement, DestructuringStatement, ForAllStatement,

@@ -791,7 +791,7 @@ impl<'a> Builder<'a> {
         if self.strict {
             use crate::elaborator::fact::Fact;
             use crate::elaborator::node::Node;
-            use crate::source::SourceType;
+            use crate::elaborator::source::SourceType;
 
             for node in &env.nodes {
                 if let Node::Structural(Fact::Proposition(prop)) = node {

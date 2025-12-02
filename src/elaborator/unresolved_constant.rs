@@ -3,7 +3,7 @@ use std::fmt;
 use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, TypeParam};
 use crate::elaborator::acorn_value::AcornValue;
-use crate::names::ConstantName;
+use crate::elaborator::names::ConstantName;
 
 /// A generic constant that we don't know the type of yet.
 /// It's more of a "constant with unresolved type" than an "unresolved constant".

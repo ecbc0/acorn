@@ -8,8 +8,8 @@ use crate::elaborator::fact::Fact;
 use crate::elaborator::goal::Goal;
 use crate::elaborator::potential_value::PotentialValue;
 use crate::elaborator::proposition::Proposition;
+use crate::elaborator::source::Source;
 use crate::project::Project;
-use crate::source::Source;
 
 /// Environments are structured into a tree of nodes. Environment nodes have access to everything
 /// in their parent environment, plus whatever facts are before them in the same environment.
@@ -105,7 +105,8 @@ impl Node {
         if let Some(prop) = self.proposition() {
             matches!(
                 prop.source.source_type,
-                crate::source::SourceType::BlockGoal | crate::source::SourceType::Theorem(_)
+                crate::elaborator::source::SourceType::BlockGoal
+                    | crate::elaborator::source::SourceType::Theorem(_)
             )
         } else {
             false

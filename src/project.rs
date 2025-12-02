@@ -18,10 +18,10 @@ use crate::elaborator::binding_map::BindingMap;
 use crate::elaborator::environment::Environment;
 use crate::elaborator::fact::Fact;
 use crate::elaborator::goal::Goal;
+use crate::elaborator::named_entity::NamedEntity;
+use crate::elaborator::names::ConstantName;
 use crate::interfaces::Location;
 use crate::module::{LoadState, Module, ModuleDescriptor, ModuleId};
-use crate::named_entity::NamedEntity;
-use crate::names::ConstantName;
 use crate::processor::Processor;
 use crate::syntax::token::Token;
 use crate::syntax::token_map::TokenInfo;
@@ -741,7 +741,7 @@ impl Project {
                         self.get_env_by_id(module_id)?
                     };
                     let range = module_env.bindings.get_definition_range(
-                        &crate::names::DefinedName::Constant(constant_name.clone()),
+                        &crate::elaborator::names::DefinedName::Constant(constant_name.clone()),
                     )?;
                     (constant_name.to_string(), range, module_id)
                 } else {
@@ -756,7 +756,7 @@ impl Project {
                     self.get_env_by_id(module_id)?
                 };
                 let range = module_env.bindings.get_definition_range(
-                    &crate::names::DefinedName::Constant(unresolved.name.clone()),
+                    &crate::elaborator::names::DefinedName::Constant(unresolved.name.clone()),
                 )?;
                 (unresolved.name.to_string(), range, module_id)
             }
@@ -1311,7 +1311,8 @@ impl Project {
             // Process each goal
             for goal_index in goal_indices {
                 // Create a new cursor for each goal
-                let mut goal_cursor = crate::elaborator::node::NodeCursor::from_path(env, &node_path);
+                let mut goal_cursor =
+                    crate::elaborator::node::NodeCursor::from_path(env, &node_path);
                 goal_cursor.descend(goal_index);
 
                 let goal = goal_cursor

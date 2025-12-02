@@ -4,7 +4,7 @@ use std::fmt;
 use crate::compilation::{ErrorSource, Result};
 use crate::elaborator::acorn_type::{AcornType, TypeParam};
 use crate::elaborator::acorn_value::AcornValue;
-use crate::source::{Source, SourceType};
+use crate::elaborator::source::{Source, SourceType};
 
 /// A value along with information on where to find it in the source.
 #[derive(Debug, Clone)]

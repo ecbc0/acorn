@@ -5,8 +5,8 @@ use std::path::Path;
 
 use crate::elaborator::acorn_type::{Datatype, Typeclass};
 use crate::elaborator::environment::Environment;
+use crate::elaborator::names::ConstantName;
 use crate::module::{ModuleDescriptor, ModuleId};
-use crate::names::ConstantName;
 use crate::project::Project;
 use crate::syntax::token::Token;
 

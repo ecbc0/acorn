@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use tower_lsp::lsp_types::{Position, Range};
 
-use crate::named_entity::NamedEntity;
+use crate::elaborator::named_entity::NamedEntity;
 use crate::syntax::token::Token;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -132,7 +132,7 @@ impl Default for TokenMap {
 mod tests {
     use super::*;
     use crate::elaborator::acorn_value::AcornValue;
-    use crate::named_entity::NamedEntity;
+    use crate::elaborator::named_entity::NamedEntity;
 
     fn test_token_info(text: &str) -> TokenInfo {
         TokenInfo {

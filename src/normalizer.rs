@@ -6,6 +6,8 @@ use crate::elaborator::acorn_type::AcornType;
 use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
 use crate::elaborator::fact::Fact;
 use crate::elaborator::goal::Goal;
+use crate::elaborator::names::ConstantName;
+use crate::elaborator::source::{Source, SourceType};
 use crate::kernel::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
 use crate::kernel::clause::Clause;
 use crate::kernel::cnf::CNF;
@@ -14,10 +16,8 @@ use crate::kernel::literal::Literal;
 use crate::kernel::term::{Term, TypeId, BOOL};
 use crate::kernel::type_store::TypeStore;
 use crate::monomorphizer::Monomorphizer;
-use crate::names::ConstantName;
 use crate::normalization_map::{NewConstantType, NormalizationMap};
 use crate::proof_step::{ProofStep, Truthiness};
-use crate::source::{Source, SourceType};
 
 /// Information about the definition of a set of synthetic atoms.
 pub struct SyntheticDefinition {

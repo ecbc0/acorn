@@ -3,9 +3,9 @@ use std::fmt;
 
 use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, Datatype, TypeParam, Typeclass};
+use crate::elaborator::names::{ConstantName, DefinedName, InstanceName};
 use crate::kernel::atom::AtomId;
 use crate::module::ModuleId;
-use crate::names::{ConstantName, DefinedName, InstanceName};
 use crate::syntax::token::TokenType;
 
 /// Represents a function application with a function and its arguments.
