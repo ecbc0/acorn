@@ -1,4 +1,4 @@
-use crate::environment::Environment;
+use crate::elaborator::environment::Environment;
 
 #[test]
 fn test_env_with_typeclass() {

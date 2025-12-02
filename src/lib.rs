@@ -1,7 +1,4 @@
-pub mod acorn_type;
-pub mod acorn_value;
 pub mod atom;
-pub mod binding_map;
 pub mod block;
 pub mod build_cache;
 pub mod builder;
@@ -15,8 +12,7 @@ pub mod common;
 pub mod compilation;
 pub mod display;
 pub mod doc_generator;
-pub mod environment;
-pub mod evaluator;
+pub mod elaborator;
 pub mod extended_term;
 pub mod fact;
 pub mod generalization_set;

@@ -1,5 +1,5 @@
 use crate::code_generator::CodeGenerator;
-use crate::environment::Environment;
+use crate::elaborator::environment::Environment;
 use crate::module::ModuleId;
 use crate::proposition::Proposition;
 

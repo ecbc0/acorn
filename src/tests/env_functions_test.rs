@@ -1,7 +1,7 @@
 // Tests for function definitions, application, and equality.
 // These tests check recursive functions, termination, partial application, and code generation.
 
-use crate::environment::Environment;
+use crate::elaborator::environment::Environment;
 use crate::project::Project;
 
 #[test]

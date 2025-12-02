@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::acorn_type::{AcornType, TypeParam};
-use crate::acorn_value::AcornValue;
 use crate::compilation::{ErrorSource, Result};
+use crate::elaborator::acorn_type::{AcornType, TypeParam};
+use crate::elaborator::acorn_value::AcornValue;
 use crate::source::{Source, SourceType};
 
 /// A value along with information on where to find it in the source.

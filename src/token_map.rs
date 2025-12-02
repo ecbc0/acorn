@@ -131,7 +131,7 @@ impl Default for TokenMap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::acorn_value::AcornValue;
+    use crate::elaborator::acorn_value::AcornValue;
     use crate::named_entity::NamedEntity;
 
     fn test_token_info(text: &str) -> TokenInfo {

@@ -2,7 +2,7 @@
 // These tests check parsing and typechecking of attributes blocks, member functions,
 // and related features like self parameters and magic methods.
 
-use crate::environment::Environment;
+use crate::elaborator::environment::Environment;
 
 #[test]
 fn test_undefined_class_name() {

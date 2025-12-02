@@ -3,13 +3,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, Range};
 
-use crate::acorn_type::{
-    AcornType, Datatype, PotentialType, TypeParam, Typeclass, UnresolvedType, Variance,
-};
-use crate::acorn_value::AcornValue;
 use crate::code_generator::CodeGenerator;
 use crate::compilation::{self, ErrorSource};
-use crate::evaluator::Evaluator;
+use crate::elaborator::acorn_type::{
+    AcornType, Datatype, PotentialType, TypeParam, Typeclass, UnresolvedType, Variance,
+};
+use crate::elaborator::acorn_value::AcornValue;
+use crate::elaborator::evaluator::Evaluator;
 use crate::module::ModuleId;
 use crate::named_entity::NamedEntity;
 use crate::names::{ConstantName, DefinedName, InstanceName};

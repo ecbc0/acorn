@@ -5,7 +5,7 @@ use tokio_util::sync::CancellationToken;
 use tower_lsp::lsp_types::{Location, Position, Range, Url};
 
 use crate::builder::{BuildEvent, BuildStatus, Builder};
-use crate::environment::LineType;
+use crate::elaborator::environment::LineType;
 use crate::module::ModuleDescriptor;
 use crate::names::ConstantName;
 use crate::project::{localize_mock_filename, Project, ProjectConfig};

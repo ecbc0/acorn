@@ -1,7 +1,7 @@
 /// A description of where propositions or facts come from in the source code.
 /// Not just the ability to find it in the text, but also useful metadata and descriptive
 /// information for human consumption.
-use crate::acorn_value::AcornValue;
+use crate::elaborator::acorn_value::AcornValue;
 use crate::module::ModuleId;
 use crate::proof_step::Truthiness;
 use tower_lsp::lsp_types::Range;

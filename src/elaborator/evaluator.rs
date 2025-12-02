@@ -1,7 +1,7 @@
-use crate::acorn_type::{AcornType, Datatype, PotentialType, TypeParam, Typeclass};
-use crate::acorn_value::{AcornValue, BinaryOp};
-use crate::binding_map::BindingMap;
 use crate::compilation::{self, ErrorSource};
+use crate::elaborator::acorn_type::{AcornType, Datatype, PotentialType, TypeParam, Typeclass};
+use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
+use crate::elaborator::binding_map::BindingMap;
 use crate::module::ModuleId;
 use crate::named_entity::NamedEntity;
 use crate::names::DefinedName;

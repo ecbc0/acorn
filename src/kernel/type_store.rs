@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::acorn_type::AcornType;
+use crate::elaborator::acorn_type::AcornType;
 use crate::kernel::term::TypeId;
 
 /// Manages the bidirectional mapping between AcornTypes and TypeIds.

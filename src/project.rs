@@ -8,14 +8,14 @@ use regex::Regex;
 use tower_lsp::lsp_types::{self, CompletionItem, Hover, HoverContents, MarkedString, Url};
 use walkdir::WalkDir;
 
-use crate::acorn_type::{AcornType, Datatype, Typeclass};
-use crate::acorn_value::AcornValue;
-use crate::binding_map::BindingMap;
 use crate::build_cache::BuildCache;
 use crate::certificate::Certificate;
 use crate::code_generator::{self, CodeGenerator};
 use crate::compilation;
-use crate::environment::Environment;
+use crate::elaborator::acorn_type::{AcornType, Datatype, Typeclass};
+use crate::elaborator::acorn_value::AcornValue;
+use crate::elaborator::binding_map::BindingMap;
+use crate::elaborator::environment::Environment;
 use crate::fact::Fact;
 use crate::goal::Goal;
 use crate::interfaces::Location;
@@ -1341,7 +1341,7 @@ impl Project {
     fn create_goal_info(
         &self,
         goal: &crate::goal::Goal,
-        goal_env: &crate::environment::Environment,
+        goal_env: &crate::elaborator::environment::Environment,
         cursor: &crate::node::NodeCursor,
     ) -> crate::interfaces::GoalInfo {
         use crate::checker::StepReason;
@@ -1496,7 +1496,8 @@ impl Project {
     #[cfg(test)]
     pub fn check_code_into(&mut self, module_name: &str, input: &str, expected: &str) {
         use crate::{
-            code_generator::CodeGenerator, evaluator::Evaluator, syntax::expression::Expression,
+            code_generator::CodeGenerator, elaborator::evaluator::Evaluator,
+            syntax::expression::Expression,
         };
 
         let module_id = self.expect_ok(module_name);

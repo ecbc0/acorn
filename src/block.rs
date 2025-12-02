@@ -3,11 +3,13 @@ use std::sync::Arc;
 
 use tower_lsp::lsp_types::Range;
 
-use crate::acorn_type::{AcornType, TypeParam};
-use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::AtomId;
 use crate::compilation::{self, ErrorSource};
-use crate::environment::{Environment, LineType};
+use crate::elaborator::acorn_type::{AcornType, TypeParam};
+use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
+#[allow(unused_imports)]
+use crate::elaborator::add_statement; // Brings Environment::add_statement into scope
+use crate::elaborator::environment::{Environment, LineType};
 use crate::names::DefinedName;
 use crate::node::Node;
 use crate::project::Project;

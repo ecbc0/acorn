@@ -1,7 +1,7 @@
 use std::{fmt, path::PathBuf};
 
 use crate::compilation;
-use crate::environment::Environment;
+use crate::elaborator::environment::Environment;
 
 // The code in one file is exposed to other Acorn code as a "module".
 // You could have two different types both named "MyStruct" but defined in different places.

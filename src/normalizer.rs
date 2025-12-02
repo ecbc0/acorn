@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::acorn_type::AcornType;
-use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
 use crate::builder::BuildError;
 use crate::cnf::CNF;
+use crate::elaborator::acorn_type::AcornType;
+use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
 use crate::extended_term::ExtendedTerm;
 use crate::fact::Fact;
 use crate::goal::Goal;
@@ -1028,8 +1028,8 @@ impl NormalizerView<'_> {
         stack: &Vec<TermBinding>,
         synth: &mut Vec<AtomId>,
     ) -> Result<Literal, String> {
-        use crate::acorn_type::AcornType;
         use crate::atom::Atom;
+        use crate::elaborator::acorn_type::AcornType;
 
         // Create a new synthetic boolean atom with the appropriate function type
         // based on free variables in the stack
@@ -1115,8 +1115,8 @@ impl NormalizerView<'_> {
                 // (cond -> s = then_term) and (not cond -> s = else_term)
                 // Which is (not cond or s = then_term) and (cond or s = else_term)
 
-                use crate::acorn_type::AcornType;
                 use crate::atom::Atom;
+                use crate::elaborator::acorn_type::AcornType;
 
                 // Determine the type of the result (should be same as then_term and else_term)
                 let result_type_id = then_term.get_term_type();
@@ -1726,7 +1726,7 @@ impl Normalizer {
 
     /// Checks a theorem. Just for testing purposes.
     #[cfg(test)]
-    pub fn check(&mut self, env: &crate::environment::Environment, name: &str, expected: &[&str]) {
+    pub fn check(&mut self, env: &crate::elaborator::environment::Environment, name: &str, expected: &[&str]) {
         for node in &env.nodes {
             if let Some((theorem_name, value)) = node.as_theorem() {
                 if theorem_name == name {

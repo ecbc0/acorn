@@ -1,7 +1,7 @@
 // Tests for syntax parsing and basic language constructs.
 // These tests check parsing rules, control flow, operators, and syntactic features.
 
-use crate::environment::Environment;
+use crate::elaborator::environment::Environment;
 
 #[test]
 fn test_arg_binding() {

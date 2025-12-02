@@ -1,7 +1,7 @@
 use std::fmt;
 
-use crate::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::atom::AtomId;
+use crate::elaborator::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::module::ModuleId;
 
 /// An instance name is something like Ring.add<Int>.

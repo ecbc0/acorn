@@ -3,10 +3,10 @@ use std::fmt;
 
 use tower_lsp::lsp_types::{LanguageString, MarkedString};
 
-use crate::acorn_type::{AcornType, Datatype, PotentialType, Typeclass};
-use crate::acorn_value::{AcornValue, BinaryOp, ConstantInstance};
 use crate::atom::AtomId;
-use crate::binding_map::BindingMap;
+use crate::elaborator::acorn_type::{AcornType, Datatype, PotentialType, Typeclass};
+use crate::elaborator::acorn_value::{AcornValue, BinaryOp, ConstantInstance};
+use crate::elaborator::binding_map::BindingMap;
 use crate::kernel::clause::Clause;
 use crate::kernel::term::{Term, TypeId};
 use crate::module::ModuleId;

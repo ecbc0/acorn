@@ -1,8 +1,8 @@
 use std::fmt;
 
-use crate::acorn_type::{AcornType, TypeParam};
-use crate::acorn_value::AcornValue;
 use crate::compilation::{self, ErrorSource};
+use crate::elaborator::acorn_type::{AcornType, TypeParam};
+use crate::elaborator::acorn_value::AcornValue;
 use crate::names::ConstantName;
 
 /// A generic constant that we don't know the type of yet.

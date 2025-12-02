@@ -1,7 +1,7 @@
 // Tests for type system features.
 // These tests check structures, inductives, generics, type parameters, and type constraints.
 
-use crate::environment::{Environment, LineType};
+use crate::elaborator::environment::{Environment, LineType};
 
 #[test]
 fn test_structure_cant_contain_itself() {

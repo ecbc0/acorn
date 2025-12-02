@@ -9,7 +9,7 @@ use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Range};
 use crate::build_cache::BuildCache;
 use crate::certificate::{Certificate, CertificateStore, CertificateWorklist};
 use crate::compilation::CompilationError;
-use crate::environment::Environment;
+use crate::elaborator::environment::Environment;
 use crate::generative::generative_prover::GenerativeProverConfig;
 use crate::generative::goal_context::GoalContext;
 use crate::generative::training_data_writer::TrainingDataWriter;

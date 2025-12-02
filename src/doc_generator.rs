@@ -3,8 +3,8 @@ use std::fmt;
 use std::io::Write;
 use std::path::Path;
 
-use crate::acorn_type::{Datatype, Typeclass};
-use crate::environment::Environment;
+use crate::elaborator::acorn_type::{Datatype, Typeclass};
+use crate::elaborator::environment::Environment;
 use crate::module::{ModuleDescriptor, ModuleId};
 use crate::names::ConstantName;
 use crate::project::Project;

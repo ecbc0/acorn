@@ -1,4 +1,4 @@
-use crate::environment::Environment;
+use crate::elaborator::environment::Environment;
 use crate::normalizer::Normalizer;
 
 #[test]

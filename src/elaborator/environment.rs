@@ -1,15 +1,17 @@
-pub mod add_statement;
-
 use std::collections::HashSet;
 
 use tower_lsp::lsp_types::Range;
 
-use crate::acorn_type::{AcornType, Datatype, TypeParam};
-use crate::acorn_value::{AcornValue, BinaryOp};
-use crate::binding_map::BindingMap;
+// Import the add_statement module to bring the impl into scope
+#[allow(unused_imports)]
+use crate::elaborator::add_statement;
+
 use crate::block::{Block, BlockParams};
 use crate::compilation::{self, ErrorSource};
-use crate::evaluator::Evaluator;
+use crate::elaborator::acorn_type::{AcornType, Datatype, TypeParam};
+use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
+use crate::elaborator::binding_map::BindingMap;
+use crate::elaborator::evaluator::Evaluator;
 use crate::fact::Fact;
 use crate::module::ModuleId;
 use crate::names::DefinedName;

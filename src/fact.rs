@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::fmt;
 use std::sync::Arc;
 
-use crate::acorn_type::{AcornType, Datatype, Typeclass};
-use crate::acorn_value::{AcornValue, ConstantInstance};
+use crate::elaborator::acorn_type::{AcornType, Datatype, Typeclass};
+use crate::elaborator::acorn_value::{AcornValue, ConstantInstance};
 use crate::names::ConstantName;
 use crate::potential_value::PotentialValue;
 use crate::proposition::Proposition;

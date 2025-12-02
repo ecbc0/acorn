@@ -1,12 +1,12 @@
 use tower_lsp::lsp_types::Range;
 
-use crate::acorn_type::{AcornType, Datatype, TypeParam, Typeclass, Variance};
-use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::AtomId;
-use crate::binding_map::ConstructorInfo;
 use crate::block::{Block, BlockParams};
 use crate::compilation::{self, CompilationError, ErrorSource};
-use crate::evaluator::{AttributesTypeArgs, Evaluator};
+use crate::elaborator::acorn_type::{AcornType, Datatype, TypeParam, Typeclass, Variance};
+use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
+use crate::elaborator::binding_map::ConstructorInfo;
+use crate::elaborator::evaluator::{AttributesTypeArgs, Evaluator};
 use crate::fact::Fact;
 use crate::named_entity::NamedEntity;
 use crate::names::{ConstantName, DefinedName};
@@ -26,7 +26,7 @@ use crate::syntax::statement::{
 use crate::syntax::token::{Token, TokenIter, TokenType};
 use crate::type_unifier::TypeclassRegistry;
 
-use super::{Environment, LineType};
+use super::environment::{Environment, LineType};
 
 // This file generally contains the logic for creating an environment.
 // It would be nice for the separation to be cleaner.
@@ -1515,7 +1515,7 @@ impl Environment {
         &mut self,
         project: &mut Project,
         ats: &AttributesStatement,
-        potential: crate::acorn_type::PotentialType,
+        potential: crate::elaborator::acorn_type::PotentialType,
     ) -> compilation::Result<()> {
         let type_args = self
             .evaluator(project)
@@ -1628,7 +1628,7 @@ impl Environment {
         &mut self,
         project: &mut Project,
         ats: &AttributesStatement,
-        typeclass: crate::acorn_type::Typeclass,
+        typeclass: crate::elaborator::acorn_type::Typeclass,
     ) -> compilation::Result<()> {
         // Typeclasses don't support type parameters yet
         if !ats.type_params.is_empty() {
@@ -1646,7 +1646,7 @@ impl Environment {
 
         // Bind the instance type as a type parameter with the typeclass constraint
         let instance_name = instance_name_token.text();
-        let type_param = crate::acorn_type::TypeParam {
+        let type_param = crate::elaborator::acorn_type::TypeParam {
             name: instance_name.to_string(),
             typeclass: Some(typeclass.clone()),
         };

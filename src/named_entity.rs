@@ -1,8 +1,8 @@
 use std::fmt;
 
-use crate::acorn_type::{AcornType, PotentialType, Typeclass, UnresolvedType};
-use crate::acorn_value::AcornValue;
 use crate::compilation::{self, ErrorSource};
+use crate::elaborator::acorn_type::{AcornType, PotentialType, Typeclass, UnresolvedType};
+use crate::elaborator::acorn_value::AcornValue;
 use crate::module::ModuleId;
 use crate::potential_value::PotentialValue;
 use crate::unresolved_constant::UnresolvedConstant;

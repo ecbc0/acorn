@@ -1,9 +1,9 @@
 use std::fmt;
 use std::sync::Arc;
 
-use crate::acorn_value::AcornValue;
 use crate::block::Block;
-use crate::environment::Environment;
+use crate::elaborator::acorn_value::AcornValue;
+use crate::elaborator::environment::Environment;
 use crate::fact::Fact;
 use crate::goal::Goal;
 use crate::potential_value::PotentialValue;

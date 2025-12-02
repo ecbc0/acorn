@@ -2,12 +2,12 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::acorn_type::AcornType;
-use crate::acorn_value::AcornValue;
-use crate::binding_map::BindingMap;
 use crate::certificate::Certificate;
 use crate::code_generator::Error;
-use crate::evaluator::Evaluator;
+use crate::elaborator::acorn_type::AcornType;
+use crate::elaborator::acorn_value::AcornValue;
+use crate::elaborator::binding_map::BindingMap;
+use crate::elaborator::evaluator::Evaluator;
 use crate::generalization_set::GeneralizationSet;
 use crate::kernel::clause::Clause;
 use crate::names::ConstantName;

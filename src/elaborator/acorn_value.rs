@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::acorn_type::{AcornType, Datatype, TypeParam, Typeclass};
 use crate::atom::AtomId;
 use crate::compilation::{self, ErrorSource};
+use crate::elaborator::acorn_type::{AcornType, Datatype, TypeParam, Typeclass};
 use crate::module::ModuleId;
 use crate::names::{ConstantName, DefinedName, InstanceName};
 use crate::syntax::token::TokenType;
@@ -1072,7 +1072,7 @@ impl AcornValue {
     /// which can happen when UnresolvedConstant is incorrectly constructed during type inference.
     pub fn validate_constants(
         &self,
-        bindings: &crate::binding_map::BindingMap,
+        bindings: &crate::elaborator::binding_map::BindingMap,
     ) -> Result<(), String> {
         let mut error = None;
         self.for_each_constant(&mut |ci| {

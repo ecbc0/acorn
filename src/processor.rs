@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 
-use crate::binding_map::BindingMap;
 use crate::builder::BuildError;
 use crate::certificate::Certificate;
 use crate::checker::{CertificateStep, Checker, StepReason};
 use crate::code_generator::Error;
+use crate::elaborator::binding_map::BindingMap;
 use crate::fact::Fact;
 use crate::generative::generative_prover::{GenerativeProver, GenerativeProverConfig};
 use crate::goal::Goal;

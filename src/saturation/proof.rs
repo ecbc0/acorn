@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::acorn_value::AcornValue;
-use crate::binding_map::BindingMap;
 use crate::certificate::Certificate;
 use crate::code_generator::{CodeGenerator, Error};
+use crate::elaborator::acorn_value::AcornValue;
+use crate::elaborator::binding_map::BindingMap;
 use crate::kernel::clause::{Clause, LiteralTrace};
 use crate::kernel::literal::Literal;
 use crate::normalizer::Normalizer;
