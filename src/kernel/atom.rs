@@ -10,12 +10,14 @@ pub type AtomId = u16;
 /// Bit of a hack.
 pub const INVALID_SYNTHETIC_ID: AtomId = 65000;
 
-/// An atomic value does not have any internal structure.
-/// The Atom is a lower-level representation.
-/// It is used in the prover, but not in the AcornValue / Environment.
+/// A Symbol represents named constants and functions in the environment.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-pub enum Atom {
-    True,
+pub enum Symbol {
+    // Synthetic atoms are created by the normalizer to handle expressions that cannot be converted
+    // to CNF directly.
+    // These don't have a name in the environment, so you need to create a definition before
+    // generating code with them.
+    Synthetic(AtomId),
 
     // Constant values that are accessible anywhere in the code.
     // This includes concepts like addition, zero, and the axioms.
@@ -27,6 +29,14 @@ pub enum Atom {
     // Monomorphizations of polymorphic functions.
     // A monomorphization is when every parametric type has been replaced with a concrete type.
     Monomorph(AtomId),
+}
+
+/// An atomic value does not have any internal structure.
+/// The Atom is a lower-level representation.
+/// It is used in the prover, but not in the AcornValue / Environment.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub enum Atom {
+    True,
 
     // A Variable can be a reference to a variable on the stack, or its meaning can be implicit,
     // depending on the context.
@@ -34,22 +44,27 @@ pub enum Atom {
     // This does mean that you must be careful when moving values between different environments.
     Variable(AtomId),
 
-    // Synthetic atoms are created by the normalizer to handle expressions that cannot be converted
-    // to CNF directly.
-    // These don't have a name in the environment, so you need to create a definition before
-    // generating code with them.
-    Synthetic(AtomId),
+    // A symbol representing a constant or function.
+    Symbol(Symbol),
+}
+
+impl fmt::Display for Symbol {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Symbol::Synthetic(i) => write!(f, "s{}", i),
+            Symbol::GlobalConstant(i) => write!(f, "g{}", i),
+            Symbol::LocalConstant(i) => write!(f, "c{}", i),
+            Symbol::Monomorph(i) => write!(f, "m{}", i),
+        }
+    }
 }
 
 impl fmt::Display for Atom {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Atom::True => write!(f, "true"),
-            Atom::GlobalConstant(i) => write!(f, "g{}", i),
-            Atom::LocalConstant(i) => write!(f, "c{}", i),
-            Atom::Monomorph(i) => write!(f, "m{}", i),
             Atom::Variable(i) => write!(f, "x{}", i),
-            Atom::Synthetic(i) => write!(f, "s{}", i),
+            Atom::Symbol(s) => write!(f, "{}", s),
         }
     }
 }
@@ -67,17 +82,17 @@ impl Atom {
         let first = chars.next()?;
         let rest = chars.as_str();
         match first {
-            'g' => Some(Atom::GlobalConstant(rest.parse().ok()?)),
-            'c' => Some(Atom::LocalConstant(rest.parse().ok()?)),
+            'g' => Some(Atom::Symbol(Symbol::GlobalConstant(rest.parse().ok()?))),
+            'c' => Some(Atom::Symbol(Symbol::LocalConstant(rest.parse().ok()?))),
             'x' => Some(Atom::Variable(rest.parse().ok()?)),
-            'm' => Some(Atom::Monomorph(rest.parse().ok()?)),
-            's' => Some(Atom::Synthetic(rest.parse().ok()?)),
+            'm' => Some(Atom::Symbol(Symbol::Monomorph(rest.parse().ok()?))),
+            's' => Some(Atom::Symbol(Symbol::Synthetic(rest.parse().ok()?))),
             _ => None,
         }
     }
 
     pub fn is_local_constant(&self) -> bool {
-        matches!(self, Atom::LocalConstant(_))
+        matches!(self, Atom::Symbol(Symbol::LocalConstant(_)))
     }
 
     pub fn is_variable(&self) -> bool {
@@ -96,8 +111,10 @@ impl Atom {
     /// Renumbers synthetic atoms from the provided list into the invalid range.
     pub fn invalidate_synthetics(&self, from: &[AtomId]) -> Atom {
         match self {
-            Atom::Synthetic(i) => match from.iter().position(|x| x == i) {
-                Some(j) => Atom::Synthetic((INVALID_SYNTHETIC_ID as usize + j) as AtomId),
+            Atom::Symbol(Symbol::Synthetic(i)) => match from.iter().position(|x| x == i) {
+                Some(j) => Atom::Symbol(Symbol::Synthetic(
+                    (INVALID_SYNTHETIC_ID as usize + j) as AtomId,
+                )),
                 None => *self,
             },
             a => *a,
@@ -110,7 +127,9 @@ impl Atom {
         match self {
             Atom::Variable(i) => {
                 if (*i as usize) < num_to_replace {
-                    Atom::Synthetic((INVALID_SYNTHETIC_ID as usize + *i as usize) as AtomId)
+                    Atom::Symbol(Symbol::Synthetic(
+                        (INVALID_SYNTHETIC_ID as usize + *i as usize) as AtomId,
+                    ))
                 } else {
                     Atom::Variable(*i - num_to_replace as AtomId)
                 }
@@ -134,14 +153,15 @@ mod tests {
 
     #[test]
     fn test_atom_ordering() {
-        assert!(Atom::True < Atom::GlobalConstant(0));
-        assert!(Atom::GlobalConstant(0) < Atom::GlobalConstant(1));
+        assert!(Atom::True < Atom::Symbol(Symbol::GlobalConstant(0)));
+        assert!(Atom::Symbol(Symbol::GlobalConstant(0)) < Atom::Symbol(Symbol::GlobalConstant(1)));
     }
 
     #[test]
     fn test_atom_stable_partial_ordering() {
         assert_eq!(
-            Atom::GlobalConstant(0).stable_partial_order(&Atom::GlobalConstant(1)),
+            Atom::Symbol(Symbol::GlobalConstant(0))
+                .stable_partial_order(&Atom::Symbol(Symbol::GlobalConstant(1))),
             Ordering::Less
         );
         assert_eq!(

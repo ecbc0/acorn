@@ -8,7 +8,7 @@ use crate::elaborator::fact::Fact;
 use crate::elaborator::goal::Goal;
 use crate::elaborator::names::ConstantName;
 use crate::elaborator::source::{Source, SourceType};
-use crate::kernel::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
+use crate::kernel::atom::{Atom, AtomId, Symbol, INVALID_SYNTHETIC_ID};
 use crate::kernel::clause::Clause;
 use crate::kernel::cnf::CNF;
 use crate::kernel::extended_term::ExtendedTerm;
@@ -483,7 +483,7 @@ impl NormalizerView<'_> {
             let skolem_term_type_id = self.type_store().get_type_id(t)?;
             let skolem_id = self.as_mut()?.declare_synthetic_atom(skolem_atom_type)?;
             synthesized.push(skolem_id);
-            let skolem_atom = Atom::Synthetic(skolem_id);
+            let skolem_atom = Atom::Symbol(Symbol::Synthetic(skolem_id));
             let skolem_term = Term::new(
                 skolem_term_type_id,
                 skolem_atom_type_id,
@@ -949,7 +949,7 @@ impl NormalizerView<'_> {
     ) -> Result<Term, String> {
         // Create a tentative skolem term with the value's type
         let skolem_term = self.make_skolem_term(value_type, stack, synth)?;
-        let skolem_id = if let Atom::Synthetic(id) = *skolem_term.get_head_atom() {
+        let skolem_id = if let Atom::Symbol(Symbol::Synthetic(id)) = *skolem_term.get_head_atom() {
             id
         } else {
             return Err("internal error: skolem term is not synthetic".to_string());
@@ -976,7 +976,7 @@ impl NormalizerView<'_> {
         if let Some(existing_def) = self.as_ref().synthetic_map.get(&key) {
             // Reuse the existing synthetic atom
             let existing_id = existing_def.atoms[0];
-            let existing_atom = Atom::Synthetic(existing_id);
+            let existing_atom = Atom::Symbol(Symbol::Synthetic(existing_id));
             let reused_term = Term::new(
                 skolem_term.get_term_type(),
                 skolem_term.get_head_type(),
@@ -1062,7 +1062,7 @@ impl NormalizerView<'_> {
         let bool_type_id = self.type_store().get_type_id(&bool_type)?;
         let atom_type_id = self.type_store().get_type_id(&atom_type)?;
 
-        let atom = Atom::Synthetic(atom_id);
+        let atom = Atom::Symbol(Symbol::Synthetic(atom_id));
         let synth_term = Term::new(bool_type_id, atom_type_id, atom, args);
         let synth_lit = Literal::from_signed_term(synth_term.clone(), true);
 
@@ -1175,7 +1175,7 @@ impl NormalizerView<'_> {
                 // Now we can safely get type IDs
                 let atom_type_id = self.type_store().get_type_id(&atom_type)?;
 
-                let atom = Atom::Synthetic(atom_id);
+                let atom = Atom::Symbol(Symbol::Synthetic(atom_id));
                 let synth_term = Term::new(result_type_id, atom_type_id, atom, args);
 
                 // Create defining clauses for the if-expression
@@ -1508,15 +1508,15 @@ impl Normalizer {
         let acorn_type = self.type_store.get_type(atom_type).clone();
         match atom {
             Atom::True => AcornValue::Bool(true),
-            Atom::GlobalConstant(i) => {
+            Atom::Symbol(Symbol::GlobalConstant(i)) => {
                 let name = self.normalization_map.name_for_global_id(*i).clone();
                 AcornValue::constant(name, vec![], acorn_type)
             }
-            Atom::LocalConstant(i) => {
+            Atom::Symbol(Symbol::LocalConstant(i)) => {
                 let name = self.normalization_map.name_for_local_id(*i).clone();
                 AcornValue::constant(name, vec![], acorn_type)
             }
-            Atom::Monomorph(i) => {
+            Atom::Symbol(Symbol::Monomorph(i)) => {
                 AcornValue::Constant(self.normalization_map.get_monomorph(*i).clone())
             }
             Atom::Variable(i) => {
@@ -1537,7 +1537,7 @@ impl Normalizer {
                 }
                 AcornValue::Variable(*i, acorn_type)
             }
-            Atom::Synthetic(i) => {
+            Atom::Symbol(Symbol::Synthetic(i)) => {
                 let acorn_type = self.synthetic_types[*i as usize].clone();
                 let name = ConstantName::Synthetic(*i);
                 AcornValue::constant(name, vec![], acorn_type)
@@ -1647,13 +1647,17 @@ impl Normalizer {
     pub fn atom_str(&self, atom: &Atom) -> String {
         match atom {
             Atom::True => "true".to_string(),
-            Atom::GlobalConstant(i) => self.normalization_map.name_for_global_id(*i).to_string(),
-            Atom::LocalConstant(i) => self.normalization_map.name_for_local_id(*i).to_string(),
-            Atom::Monomorph(i) => {
+            Atom::Symbol(Symbol::GlobalConstant(i)) => {
+                self.normalization_map.name_for_global_id(*i).to_string()
+            }
+            Atom::Symbol(Symbol::LocalConstant(i)) => {
+                self.normalization_map.name_for_local_id(*i).to_string()
+            }
+            Atom::Symbol(Symbol::Monomorph(i)) => {
                 format!("{}", self.normalization_map.get_monomorph(*i))
             }
             Atom::Variable(i) => format!("x{}", i),
-            Atom::Synthetic(i) => format!("s{}", i),
+            Atom::Symbol(Symbol::Synthetic(i)) => format!("s{}", i),
         }
     }
 

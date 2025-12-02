@@ -1,6 +1,6 @@
 use qp_trie::{Entry, SubTrie, Trie};
 
-use crate::kernel::atom::{Atom, AtomId};
+use crate::kernel::atom::{Atom, AtomId, Symbol};
 use crate::kernel::clause::Clause;
 use crate::kernel::literal::Literal;
 use crate::kernel::term::{Term, TypeId};
@@ -343,11 +343,11 @@ impl Edge {
             Edge::Head(num_args, _) => *num_args,
             Edge::Atom(a) => match a {
                 Atom::True => TRUE,
-                Atom::GlobalConstant(_) => GLOBAL_CONSTANT,
-                Atom::LocalConstant(_) => LOCAL_CONSTANT,
-                Atom::Monomorph(_) => MONOMORPH,
+                Atom::Symbol(Symbol::GlobalConstant(_)) => GLOBAL_CONSTANT,
+                Atom::Symbol(Symbol::LocalConstant(_)) => LOCAL_CONSTANT,
+                Atom::Symbol(Symbol::Monomorph(_)) => MONOMORPH,
                 Atom::Variable(_) => VARIABLE,
-                Atom::Synthetic(_) => SYNTHETIC,
+                Atom::Symbol(Symbol::Synthetic(_)) => SYNTHETIC,
             },
             Edge::TermCategory(..) => TERM,
             Edge::TermPairCategory(..) => TERM_PAIR,
@@ -362,11 +362,11 @@ impl Edge {
             Edge::Head(_, t) => t.as_u16(),
             Edge::Atom(a) => match a {
                 Atom::True => 0,
-                Atom::GlobalConstant(c) => *c,
-                Atom::LocalConstant(c) => *c,
-                Atom::Monomorph(m) => *m,
+                Atom::Symbol(Symbol::GlobalConstant(c)) => *c,
+                Atom::Symbol(Symbol::LocalConstant(c)) => *c,
+                Atom::Symbol(Symbol::Monomorph(m)) => *m,
                 Atom::Variable(i) => *i,
-                Atom::Synthetic(s) => *s,
+                Atom::Symbol(Symbol::Synthetic(s)) => *s,
             },
             Edge::TermCategory(t) => t.as_u16(),
             Edge::TermPairCategory(t) => t.as_u16(),
@@ -380,11 +380,11 @@ impl Edge {
         let id = u16::from_ne_bytes([byte2, byte3]);
         match byte1 {
             TRUE => Edge::Atom(Atom::True),
-            GLOBAL_CONSTANT => Edge::Atom(Atom::GlobalConstant(id)),
-            LOCAL_CONSTANT => Edge::Atom(Atom::LocalConstant(id)),
-            MONOMORPH => Edge::Atom(Atom::Monomorph(id)),
+            GLOBAL_CONSTANT => Edge::Atom(Atom::Symbol(Symbol::GlobalConstant(id))),
+            LOCAL_CONSTANT => Edge::Atom(Atom::Symbol(Symbol::LocalConstant(id))),
+            MONOMORPH => Edge::Atom(Atom::Symbol(Symbol::Monomorph(id))),
             VARIABLE => Edge::Atom(Atom::Variable(id)),
-            SYNTHETIC => Edge::Atom(Atom::Synthetic(id)),
+            SYNTHETIC => Edge::Atom(Atom::Symbol(Symbol::Synthetic(id))),
             TERM_PAIR => Edge::TermPairCategory(TypeId::new(id)),
             POSITIVE_LITERAL => Edge::PositiveLiteral(TypeId::new(id)),
             NEGATIVE_LITERAL => Edge::NegativeLiteral(TypeId::new(id)),

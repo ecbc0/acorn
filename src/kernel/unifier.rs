@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::kernel::atom::Symbol;
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::clause::Clause;
 use crate::kernel::literal::Literal;
@@ -612,7 +614,10 @@ mod tests {
         let bool0 = Term::atom(BOOL, Atom::Variable(0));
         let bool1 = Term::atom(BOOL, Atom::Variable(1));
         let bool2 = Term::atom(BOOL, Atom::Variable(2));
-        let fterm = bool_fn(Atom::GlobalConstant(0), vec![bool0.clone(), bool1.clone()]);
+        let fterm = bool_fn(
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![bool0.clone(), bool1.clone()],
+        );
         let mut u = Unifier::new(3);
 
         // Replace x0 with x1 and x1 with x2.
@@ -627,8 +632,14 @@ mod tests {
         let bool0 = Term::atom(BOOL, Atom::Variable(0));
         let bool1 = Term::atom(BOOL, Atom::Variable(1));
         let bool2 = Term::atom(BOOL, Atom::Variable(2));
-        let term1 = bool_fn(Atom::GlobalConstant(0), vec![bool0.clone(), bool1.clone()]);
-        let term2 = bool_fn(Atom::GlobalConstant(0), vec![bool1.clone(), bool2.clone()]);
+        let term1 = bool_fn(
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![bool0.clone(), bool1.clone()],
+        );
+        let term2 = bool_fn(
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![bool1.clone(), bool2.clone()],
+        );
         let mut u = Unifier::new(3);
 
         u.assert_unify(Scope::LEFT, &term1, Scope::LEFT, &term2);
@@ -643,8 +654,14 @@ mod tests {
         let bool0 = Term::atom(BOOL, Atom::Variable(0));
         let bool1 = Term::atom(BOOL, Atom::Variable(1));
         let bool2 = Term::atom(BOOL, Atom::Variable(2));
-        let term1 = bool_fn(Atom::GlobalConstant(0), vec![bool0.clone(), bool1.clone()]);
-        let term2 = bool_fn(Atom::GlobalConstant(0), vec![bool1.clone(), bool2.clone()]);
+        let term1 = bool_fn(
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![bool0.clone(), bool1.clone()],
+        );
+        let term2 = bool_fn(
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![bool1.clone(), bool2.clone()],
+        );
         let mut u = Unifier::new(3);
 
         u.assert_unify(Scope::LEFT, &term1, Scope::RIGHT, &term2);
@@ -657,7 +674,7 @@ mod tests {
     #[test]
     fn test_unifying_functional_variable() {
         let bool0 = Term::atom(BOOL, Atom::Variable(0));
-        let const_f_term = bool_fn(Atom::GlobalConstant(0), vec![bool0.clone()]);
+        let const_f_term = bool_fn(Atom::Symbol(Symbol::GlobalConstant(0)), vec![bool0.clone()]);
         let var_f_term = bool_fn(Atom::Variable(1), vec![bool0.clone()]);
 
         let mut u = Unifier::new(3);
@@ -706,7 +723,7 @@ mod tests {
         let s5_left = Term::new(
             TypeId::new(4),
             TypeId::new(14),
-            Atom::Synthetic(5),
+            Atom::Symbol(Symbol::Synthetic(5)),
             vec![x0_var.clone(), x1_var.clone()],
         );
 
@@ -719,25 +736,25 @@ mod tests {
         );
 
         // Right side: m2(c0, s5(m2(c0), x0))
-        let c0 = Term::atom(TypeId::new(2), Atom::LocalConstant(0));
+        let c0 = Term::atom(TypeId::new(2), Atom::Symbol(Symbol::LocalConstant(0)));
         let m2_c0 = Term::new(
             TypeId::new(11),
             TypeId::new(10),
-            Atom::Monomorph(2),
+            Atom::Symbol(Symbol::Monomorph(2)),
             vec![c0.clone()],
         );
 
         let s5_right = Term::new(
             TypeId::new(4),
             TypeId::new(14),
-            Atom::Synthetic(5),
+            Atom::Symbol(Symbol::Synthetic(5)),
             vec![m2_c0.clone(), Term::atom(TypeId::new(2), Atom::Variable(0))],
         );
 
         let right_term = Term::new(
             TypeId::new(4),
             TypeId::new(10),
-            Atom::Monomorph(2),
+            Atom::Symbol(Symbol::Monomorph(2)),
             vec![c0.clone(), s5_right],
         );
 

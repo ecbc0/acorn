@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
 
-use crate::kernel::atom::{Atom, AtomId};
+use crate::kernel::atom::{Atom, AtomId, Symbol};
 
 /// A type identifier that uniquely identifies a type in the type system.
 #[derive(
@@ -339,7 +339,7 @@ impl Term {
     }
 
     pub fn has_synthetic(&self) -> bool {
-        if matches!(self.head, Atom::Synthetic(_)) {
+        if matches!(self.head, Atom::Symbol(Symbol::Synthetic(_))) {
             return true;
         }
         for arg in &self.args {
@@ -589,19 +589,19 @@ impl Term {
                 }
                 refcounts[i as usize] += 1;
             }
-            Atom::GlobalConstant(i) => {
+            Atom::Symbol(Symbol::GlobalConstant(i)) => {
                 weight1 += 1;
                 weight2 += 4 * i as u32;
             }
-            Atom::LocalConstant(i) => {
+            Atom::Symbol(Symbol::LocalConstant(i)) => {
                 weight1 += 1;
                 weight2 += 1 + 4 * i as u32;
             }
-            Atom::Monomorph(i) => {
+            Atom::Symbol(Symbol::Monomorph(i)) => {
                 weight1 += 1;
                 weight2 += 2 + 4 * i as u32;
             }
-            Atom::Synthetic(i) => {
+            Atom::Symbol(Symbol::Synthetic(i)) => {
                 weight1 += 1;
                 weight2 += 3 + 4 * i as u32;
             }

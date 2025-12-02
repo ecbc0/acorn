@@ -503,10 +503,10 @@ mod tests {
     fn test_clause_set_literal_with_indeterminate_ordering() {
         // Taken from a failing example.
         let mut clause_set = GeneralizationSet::new();
-        let general_json = r#"{"literals":[{"positive":true,"left":{"term_type":2,"head_type":6,"head":{"GlobalConstant":12},"args":[{"term_type":2,"head_type":2,"head":{"GlobalConstant":1},"args":[]},{"term_type":2,"head_type":2,"head":{"Variable":0},"args":[]}]},"right":{"term_type":2,"head_type":2,"head":{"Variable":0},"args":[]}}]}"#;
+        let general_json = r#"{"literals":[{"positive":true,"left":{"term_type":2,"head_type":6,"head":{"Symbol":{"GlobalConstant":12}},"args":[{"term_type":2,"head_type":2,"head":{"Symbol":{"GlobalConstant":1}},"args":[]},{"term_type":2,"head_type":2,"head":{"Variable":0},"args":[]}]},"right":{"term_type":2,"head_type":2,"head":{"Variable":0},"args":[]}}]}"#;
         let general = serde_json::from_str::<Clause>(general_json).unwrap();
         clause_set.insert(general, 1);
-        let special_json = r#"{"literals":[{"positive":true,"left":{"term_type":2,"head_type":6,"head":{"GlobalConstant":12},"args":[{"term_type":2,"head_type":2,"head":{"GlobalConstant":1},"args":[]},{"term_type":2,"head_type":6,"head":{"GlobalConstant":12},"args":[{"term_type":2,"head_type":2,"head":{"LocalConstant":2},"args":[]},{"term_type":2,"head_type":2,"head":{"LocalConstant":3},"args":[]}]}]},"right":{"term_type":2,"head_type":6,"head":{"GlobalConstant":12},"args":[{"term_type":2,"head_type":2,"head":{"LocalConstant":2},"args":[]},{"term_type":2,"head_type":2,"head":{"LocalConstant":3},"args":[]}]}}]}"#;
+        let special_json = r#"{"literals":[{"positive":true,"left":{"term_type":2,"head_type":6,"head":{"Symbol":{"GlobalConstant":12}},"args":[{"term_type":2,"head_type":2,"head":{"Symbol":{"GlobalConstant":1}},"args":[]},{"term_type":2,"head_type":6,"head":{"Symbol":{"GlobalConstant":12}},"args":[{"term_type":2,"head_type":2,"head":{"Symbol":{"LocalConstant":2}},"args":[]},{"term_type":2,"head_type":2,"head":{"Symbol":{"LocalConstant":3}},"args":[]}]}]},"right":{"term_type":2,"head_type":6,"head":{"Symbol":{"GlobalConstant":12}},"args":[{"term_type":2,"head_type":2,"head":{"Symbol":{"LocalConstant":2}},"args":[]},{"term_type":2,"head_type":2,"head":{"Symbol":{"LocalConstant":3}},"args":[]}]}}]}"#;
         let special = serde_json::from_str::<Clause>(special_json).unwrap();
         assert_eq!(clause_set.find_generalization(special), Some(1));
     }

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::elaborator::acorn_type::AcornType;
 use crate::elaborator::acorn_value::{AcornValue, ConstantInstance};
 use crate::elaborator::names::ConstantName;
-use crate::kernel::atom::{Atom, AtomId};
+use crate::kernel::atom::{Atom, AtomId, Symbol};
 use crate::kernel::term::{Term, TypeId};
 use crate::kernel::type_store::TypeStore;
 
@@ -55,7 +55,7 @@ impl NormalizationMap {
 
     pub fn get_atom(&self, name: &ConstantName) -> Option<Atom> {
         if let ConstantName::Synthetic(i) = name {
-            return Some(Atom::Synthetic(*i));
+            return Some(Atom::Symbol(Symbol::Synthetic(*i)));
         };
         self.name_to_atom.get(name).cloned()
     }
@@ -73,12 +73,12 @@ impl NormalizationMap {
             NewConstantType::Local => {
                 let atom_id = self.local_constants.len() as AtomId;
                 self.local_constants.push(Some(name.clone()));
-                Atom::LocalConstant(atom_id)
+                Atom::Symbol(Symbol::LocalConstant(atom_id))
             }
             NewConstantType::Global => {
                 let atom_id = self.global_constants.len() as AtomId;
                 self.global_constants.push(Some(name.clone()));
-                Atom::GlobalConstant(atom_id)
+                Atom::Symbol(Symbol::GlobalConstant(atom_id))
             }
         };
         self.name_to_atom.insert(name, atom);
@@ -151,7 +151,7 @@ impl NormalizationMap {
         // Construct an atom and appropriate entries for this monomorph
         let type_id = type_store.add_type(&c.instance_type);
         let monomorph_id = self.id_to_monomorph.len() as AtomId;
-        let atom = Atom::Monomorph(monomorph_id);
+        let atom = Atom::Symbol(Symbol::Monomorph(monomorph_id));
         self.id_to_monomorph.push(c.clone());
         self.monomorph_to_id.insert(c.clone(), (atom, type_id));
     }

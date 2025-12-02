@@ -2,6 +2,8 @@
 // A given pattern can be rewritten to multiple different output terms.
 
 use crate::kernel::atom::AtomId;
+#[cfg(test)]
+use crate::kernel::atom::Symbol;
 use crate::kernel::literal::Literal;
 use crate::kernel::term::{Term, TypeId};
 use crate::pattern_tree::{term_key_prefix, PatternTree, TermComponent};
@@ -194,12 +196,12 @@ mod tests {
         tree.insert_terms(0, &var2, &var2, true);
 
         // A type 2 constant should match it
-        let const2 = Term::atom(TypeId::new(2), Atom::GlobalConstant(2));
+        let const2 = Term::atom(TypeId::new(2), Atom::Symbol(Symbol::GlobalConstant(2)));
         let rewrites = tree.get_rewrites(&const2, 0);
         assert_eq!(rewrites.len(), 1);
 
         // A type 3 constant should not match it
-        let const3 = Term::atom(TypeId::new(3), Atom::GlobalConstant(3));
+        let const3 = Term::atom(TypeId::new(3), Atom::Symbol(Symbol::GlobalConstant(3)));
         let rewrites = tree.get_rewrites(&const3, 0);
         assert_eq!(rewrites.len(), 0);
     }
