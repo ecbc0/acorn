@@ -4,8 +4,8 @@ use crate::certificate::Certificate;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::elaborator::acorn_value::AcornValue;
 use crate::elaborator::binding_map::BindingMap;
-use crate::kernel::clause::{Clause, LiteralTrace};
-use crate::kernel::literal::Literal;
+use crate::kernel::fat_clause::{FatClause, LiteralTrace};
+use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::unifier::{Scope, Unifier};
 use crate::kernel::variable_map::VariableMap;
 use crate::normalizer::Normalizer;
@@ -47,7 +47,7 @@ impl<'a> Proof<'a> {
         self.steps.push((id, step));
     }
 
-    fn get_clause(&self, id: ProofStepId) -> Result<&Clause, Error> {
+    fn get_clause(&self, id: ProofStepId) -> Result<&FatClause, Error> {
         let step = self.step_map.get(&id).ok_or_else(|| {
             Error::internal(format!(
                 "no node found for proof step {:?} in proof graph",
@@ -80,14 +80,14 @@ fn concrete_ids_for(ps_id: ProofStepId) -> [ConcreteStepId; 2] {
 // A concrete version of the proof step that has been reconstructed from the proof.
 pub struct ConcreteStep {
     // The generic clause for this proof step.
-    pub generic: Clause,
+    pub generic: FatClause,
 
     // All of the ways to map the generic variables to concrete ones.
     pub var_maps: HashSet<VariableMap>,
 }
 
 impl ConcreteStep {
-    fn new(generic: Clause, var_map: VariableMap) -> Self {
+    fn new(generic: FatClause, var_map: VariableMap) -> Self {
         ConcreteStep {
             generic,
             var_maps: HashSet::from([var_map]),
@@ -247,7 +247,7 @@ impl<'a> Proof<'a> {
                             concrete_step.var_maps.insert(var_map);
                         }
                         std::collections::hash_map::Entry::Vacant(entry) => {
-                            let generic = Clause::new(info.literals.clone());
+                            let generic = FatClause::new(info.literals.clone());
                             let concrete_step = ConcreteStep::new(generic, var_map);
                             entry.insert(concrete_step);
                         }
@@ -541,9 +541,9 @@ impl<'a> Proof<'a> {
     // If the step cannot be reconstructed, we return an error.
     fn reconstruct_trace(
         &self,
-        base_literals: &[Literal],
+        base_literals: &[FatLiteral],
         traces: &[LiteralTrace],
-        conclusion: &Clause,
+        conclusion: &FatClause,
         conc_map: VariableMap,
         simp_maps: &mut HashMap<ConcreteStepId, ConcreteStep>,
     ) -> Result<HashSet<VariableMap>, Error> {

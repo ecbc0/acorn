@@ -3,9 +3,9 @@ use std::collections::{HashMap, HashSet};
 use super::fingerprint::FingerprintUnifier;
 use super::rewrite_tree::{Rewrite, RewriteTree};
 use crate::clause_set::TermId;
-use crate::kernel::clause::{Clause, ClauseTrace, LiteralTrace};
-use crate::kernel::literal::Literal;
-use crate::kernel::term::Term;
+use crate::kernel::fat_clause::{FatClause, ClauseTrace, LiteralTrace};
+use crate::kernel::fat_literal::FatLiteral;
+use crate::kernel::fat_term::FatTerm;
 use crate::kernel::unifier::{Scope, Unifier};
 use crate::pattern_tree::LiteralSet;
 use crate::proof_step::{
@@ -24,7 +24,7 @@ pub struct ActiveSet {
     steps: Vec<ProofStep>,
 
     // The long clauses (ie more than one literal) that we have proven.
-    long_clauses: HashSet<Clause>,
+    long_clauses: HashSet<FatClause>,
 
     // The short clauses (ie just one literal) that we have proven.
     literal_set: LiteralSet,
@@ -43,7 +43,7 @@ pub struct ActiveSet {
     subterms: Vec<SubtermInfo>,
 
     // An index to find the id of a subterm for an exact match.
-    subterm_map: HashMap<Term, usize>,
+    subterm_map: HashMap<FatTerm, usize>,
 
     // An index to find the id of subterms for a pattern match.
     subterm_unifier: FingerprintUnifier<usize>,
@@ -70,7 +70,7 @@ struct ResolutionTarget {
 #[derive(Clone)]
 struct SubtermInfo {
     // The subterm itself
-    term: Term,
+    term: FatTerm,
 
     // Where the subterm occurs, in activated concrete literals.
     locations: Vec<SubtermLocation>,
@@ -121,7 +121,7 @@ impl ActiveSet {
         self.steps.len()
     }
 
-    fn is_known_long_clause(&self, clause: &Clause) -> bool {
+    fn is_known_long_clause(&self, clause: &FatClause) -> bool {
         clause.literals.len() > 1 && self.long_clauses.contains(clause)
     }
 
@@ -287,7 +287,7 @@ impl ActiveSet {
             let index = literals.len();
             let left = unifier.apply(Scope::RIGHT, &literal.left);
             let right = unifier.apply(Scope::RIGHT, &literal.right);
-            let (new_literal, new_flip) = Literal::new_with_flip(literal.positive, left, right);
+            let (new_literal, new_flip) = FatLiteral::new_with_flip(literal.positive, left, right);
             literals.push(new_literal);
             incremental_trace.push(LiteralTrace::Output {
                 index,
@@ -296,7 +296,7 @@ impl ActiveSet {
         }
 
         // Gather the output data
-        let (clause, trace) = Clause::new_with_trace(literals, ClauseTrace::new(incremental_trace));
+        let (clause, trace) = FatClause::new_with_trace(literals, ClauseTrace::new(incremental_trace));
         let mut step = ProofStep::resolution(long_id, long_step, short_id, short_step, clause);
         step.trace = Some(trace);
         Some(step)
@@ -487,7 +487,7 @@ impl ActiveSet {
         // Use the new method to find all possible equality resolutions
         for (index, new_literals, flipped) in clause.find_equality_resolutions() {
             let literals = new_literals.clone();
-            let (new_clause, traces) = Clause::normalize_with_trace(new_literals);
+            let (new_clause, traces) = FatClause::normalize_with_trace(new_literals);
 
             // Check if normalization resulted in a tautology
             if !new_clause.is_tautology() {
@@ -527,7 +527,7 @@ impl ActiveSet {
                 literals: literals.clone(),
                 flipped,
             };
-            let (clause, traces) = Clause::normalize_with_trace(literals);
+            let (clause, traces) = FatClause::normalize_with_trace(literals);
             let step = ProofStep::direct(
                 activated_id,
                 activated_step,
@@ -552,7 +552,7 @@ impl ActiveSet {
                 index,
                 literals: literals.clone(),
             };
-            let (clause, traces) = Clause::normalize_with_trace(literals);
+            let (clause, traces) = FatClause::normalize_with_trace(literals);
             let step = ProofStep::direct(
                 activated_id,
                 activated_step,
@@ -577,7 +577,7 @@ impl ActiveSet {
                 id: activated_id,
                 literals: literals.clone(),
             };
-            let (clause, traces) = Clause::normalize_with_trace(literals);
+            let (clause, traces) = FatClause::normalize_with_trace(literals);
             let step = ProofStep::direct(
                 activated_id,
                 activated_step,
@@ -613,7 +613,7 @@ impl ActiveSet {
             let literals_before_normalization = literals.clone();
 
             // Create the new clause with trace
-            let (new_clause, normalization_traces) = Clause::normalize_with_trace(literals);
+            let (new_clause, normalization_traces) = FatClause::normalize_with_trace(literals);
 
             let step = ProofStep::direct(
                 activated_id,
@@ -632,7 +632,7 @@ impl ActiveSet {
         answer
     }
 
-    pub fn get_clause(&self, index: usize) -> &Clause {
+    pub fn get_clause(&self, index: usize) -> &FatClause {
         &self.steps[index].clause
     }
 
@@ -660,7 +660,7 @@ impl ActiveSet {
     /// Returns (value, trace) when this literal's value is known due to some existing clause.
     /// The trace is either Eliminated, if the literal matched an existing one, or Impossible,
     /// if the literal is self-evident.
-    fn evaluate_literal(&self, literal: &Literal) -> Option<(bool, LiteralTrace)> {
+    fn evaluate_literal(&self, literal: &FatLiteral) -> Option<(bool, LiteralTrace)> {
         literal.validate_type();
         if literal.left == literal.right {
             return Some((literal.positive, LiteralTrace::Impossible));
@@ -724,7 +724,7 @@ impl ActiveSet {
             return Some(step);
         }
 
-        let (clause, trace) = Clause::new_composing_traces(
+        let (clause, trace) = FatClause::new_composing_traces(
             output_literals,
             step.trace.clone(),
             &ClauseTrace::new(incremental_trace),
@@ -742,7 +742,7 @@ impl ActiveSet {
         &mut self,
         step_index: usize,
         literal_index: usize,
-        literal: &Literal,
+        literal: &FatLiteral,
     ) {
         let tree = if literal.positive {
             &mut self.positive_res_targets
@@ -888,7 +888,7 @@ impl ActiveSet {
         (activated_id, output)
     }
 
-    pub fn iter_clauses(&self) -> impl Iterator<Item = &Clause> {
+    pub fn iter_clauses(&self) -> impl Iterator<Item = &FatClause> {
         self.steps.iter().map(|step| &step.clause)
     }
 
@@ -934,9 +934,9 @@ mod tests {
         set.activate_rewrite_pattern(1, &pattern_step, &mut result);
 
         assert_eq!(result.len(), 1);
-        let expected = Clause::new(vec![Literal::equals(
-            Term::parse("c0(c1)"),
-            Term::parse("c2"),
+        let expected = FatClause::new(vec![FatLiteral::equals(
+            FatTerm::parse("c0(c1)"),
+            FatTerm::parse("c2"),
         )]);
         assert_eq!(result[0].clause, expected);
     }
@@ -958,9 +958,9 @@ mod tests {
 
     #[test]
     fn test_equality_resolution() {
-        let old_clause = Clause::new(vec![
-            Literal::not_equals(Term::parse("x0"), Term::parse("c0")),
-            Literal::equals(Term::parse("x0"), Term::parse("c1")),
+        let old_clause = FatClause::new(vec![
+            FatLiteral::not_equals(FatTerm::parse("x0"), FatTerm::parse("c0")),
+            FatLiteral::equals(FatTerm::parse("x0"), FatTerm::parse("c1")),
         ]);
         let mock_step = ProofStep::mock_from_clause(old_clause);
         let proof_steps = ActiveSet::equality_resolution(0, &mock_step);
@@ -972,20 +972,20 @@ mod tests {
     #[test]
     fn test_mutually_recursive_equality_resolution() {
         // This is a bug we ran into. It shouldn't work
-        let clause = Clause::parse("c0(x0, c0(x1, c1(x2))) != c0(c0(x2, x1), x0)");
+        let clause = FatClause::parse("c0(x0, c0(x1, c1(x2))) != c0(c0(x2, x1), x0)");
         let mock_step = ProofStep::mock_from_clause(clause);
         assert!(ActiveSet::equality_resolution(0, &mock_step).is_empty());
     }
 
     #[test]
     fn test_equality_factoring_basic() {
-        let old_clause = Clause::new(vec![
-            Literal::equals(Term::parse("x0"), Term::parse("c0")),
-            Literal::equals(Term::parse("x1"), Term::parse("c0")),
+        let old_clause = FatClause::new(vec![
+            FatLiteral::equals(FatTerm::parse("x0"), FatTerm::parse("c0")),
+            FatLiteral::equals(FatTerm::parse("x1"), FatTerm::parse("c0")),
         ]);
         let mock_step = ProofStep::mock_from_clause(old_clause);
         let proof_steps = ActiveSet::equality_factoring(0, &mock_step);
-        let expected = Clause::parse("c0 = x0");
+        let expected = FatClause::parse("c0 = x0");
         for ps in &proof_steps {
             if ps.clause == expected {
                 return;
@@ -1020,7 +1020,7 @@ mod tests {
         set.activate(step);
 
         // Trichotomy
-        let clause = Clause::parse("c1(x0, x1) or c1(x1, x0) or x0 = x1");
+        let clause = FatClause::parse("c1(x0, x1) or c1(x1, x0) or x0 = x1");
         let mock_step = ProofStep::mock_from_clause(clause);
         let output = ActiveSet::equality_factoring(0, &mock_step);
         assert_eq!(output[0].clause.to_string(), "c1(x0, x0) or x0 = x0");

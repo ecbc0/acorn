@@ -1,9 +1,9 @@
 use std::fmt;
 use std::vec;
 
-use crate::kernel::clause::Clause;
-use crate::kernel::literal::Literal;
-use crate::kernel::term::Term;
+use crate::kernel::fat_clause::FatClause;
+use crate::kernel::fat_literal::FatLiteral;
+use crate::kernel::fat_term::FatTerm;
 
 /// A CNF (Conjunctive Normal Form) formula represented as a vector of clauses,
 /// where each clause is a vector of literals.
@@ -14,11 +14,11 @@ use crate::kernel::term::Term;
 /// Note that these clauses are different from the "Clause" object because they are not
 /// individually normalized. Variable ids have the same meaning across all clauses.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CNF(Vec<Vec<Literal>>);
+pub struct CNF(Vec<Vec<FatLiteral>>);
 
 impl CNF {
     /// Creates a new CNF from a vector of clauses.
-    fn new(clauses: Vec<Vec<Literal>>) -> Self {
+    fn new(clauses: Vec<Vec<FatLiteral>>) -> Self {
         CNF(clauses)
     }
 
@@ -51,7 +51,7 @@ impl CNF {
     }
 
     /// Creates a CNF from a single literal.
-    pub fn from_literal(literal: Literal) -> Self {
+    pub fn from_literal(literal: FatLiteral) -> Self {
         if literal.is_true_value() {
             Self::true_value()
         } else if literal.is_false_value() {
@@ -109,15 +109,15 @@ impl CNF {
         )
     }
 
-    pub fn into_iter(self) -> impl Iterator<Item = Vec<Literal>> {
+    pub fn into_iter(self) -> impl Iterator<Item = Vec<FatLiteral>> {
         self.0.into_iter()
     }
 
-    pub fn into_clauses(self) -> Vec<Clause> {
+    pub fn into_clauses(self) -> Vec<FatClause> {
         self.0
             .into_iter()
             .filter(|literals| !literals.iter().any(|l| l.is_tautology()))
-            .map(Clause::new)
+            .map(FatClause::new)
             .collect()
     }
 
@@ -126,7 +126,7 @@ impl CNF {
         self.0.len() == 1 && self.0[0].len() == 1
     }
 
-    fn into_single_literal(self) -> Literal {
+    fn into_single_literal(self) -> FatLiteral {
         assert!(self.is_single_literal());
         self.0
             .into_iter()
@@ -141,7 +141,7 @@ impl CNF {
         self.is_true_value() || self.is_false_value() || self.is_single_literal()
     }
 
-    pub fn as_literal(&self) -> Option<&Literal> {
+    pub fn as_literal(&self) -> Option<&FatLiteral> {
         if self.is_single_literal() {
             Some(&self.0[0][0])
         } else {
@@ -151,7 +151,7 @@ impl CNF {
 
     // If these CNFs each represent a single signed term, and they are negations of each other,
     // return this term's signed term form.
-    pub fn match_negated(&self, other: &CNF) -> Option<(&Term, bool)> {
+    pub fn match_negated(&self, other: &CNF) -> Option<(&FatTerm, bool)> {
         let (self_term, self_sign) = self.as_signed_term()?;
         let (other_term, other_sign) = other.as_signed_term()?;
         if self_term == other_term && self_sign != other_sign {
@@ -161,11 +161,11 @@ impl CNF {
         }
     }
 
-    pub fn to_literal(self) -> Option<Literal> {
+    pub fn to_literal(self) -> Option<FatLiteral> {
         if self.is_true_value() {
-            Some(Literal::true_value())
+            Some(FatLiteral::true_value())
         } else if self.is_false_value() {
-            Some(Literal::false_value())
+            Some(FatLiteral::false_value())
         } else if self.is_single_literal() {
             Some(self.into_single_literal())
         } else {
@@ -186,7 +186,7 @@ impl CNF {
     /// Returns Some((term, positive)) if this CNF can be converted into a single signed term.
     /// Returns None otherwise.
     /// A boolean literal "foo" or "not foo" can be converted to (foo, true) or (foo, false).
-    pub fn as_signed_term(&self) -> Option<(&Term, bool)> {
+    pub fn as_signed_term(&self) -> Option<(&FatTerm, bool)> {
         if !self.is_single_literal() {
             return None;
         }
@@ -199,7 +199,11 @@ impl CNF {
     }
 
     /// Convert an if-then-else structure among literals into CNF.
-    pub fn literal_if(condition: Literal, consequence: Literal, alternative: Literal) -> Self {
+    pub fn literal_if(
+        condition: FatLiteral,
+        consequence: FatLiteral,
+        alternative: FatLiteral,
+    ) -> Self {
         CNF::new(vec![
             vec![condition.negate(), consequence],
             vec![condition, alternative],
@@ -207,7 +211,7 @@ impl CNF {
     }
 
     /// Convert an if a { b } else { c } structure among CNF formulas into CNF.
-    pub fn cnf_if(a: Literal, b: CNF, c: CNF) -> Self {
+    pub fn cnf_if(a: FatLiteral, b: CNF, c: CNF) -> Self {
         let not_a_lit = CNF::from_literal(a.negate());
         let a_lit = CNF::from_literal(a);
         let not_a_imp_c = a_lit.or(c);
@@ -219,12 +223,12 @@ impl CNF {
     /// The string should be in the format "clause1 and clause2 and ..."
     /// where each clause is "literal1 or literal2 or ...".
     pub fn parse(s: &str) -> Self {
-        let clauses: Vec<Vec<Literal>> = s
+        let clauses: Vec<Vec<FatLiteral>> = s
             .split(" and ")
             .map(|clause_str| {
                 clause_str
                     .split(" or ")
-                    .map(|lit_str| Literal::parse(lit_str))
+                    .map(|lit_str| FatLiteral::parse(lit_str))
                     .collect()
             })
             .collect();
@@ -258,7 +262,7 @@ impl fmt::Display for CNF {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::term::Term;
+    use crate::kernel::fat_term::FatTerm;
 
     #[test]
     fn test_cnf_negate() {
@@ -282,13 +286,13 @@ mod tests {
         // Positive boolean literal
         let cnf = CNF::parse("x0");
         let (term, positive) = cnf.as_signed_term().unwrap();
-        assert_eq!(term, &Term::parse("x0"));
+        assert_eq!(term, &FatTerm::parse("x0"));
         assert_eq!(positive, true);
 
         // Negative boolean literal
         let cnf = CNF::parse("not x0");
         let (term, positive) = cnf.as_signed_term().unwrap();
-        assert_eq!(term, &Term::parse("x0"));
+        assert_eq!(term, &FatTerm::parse("x0"));
         assert_eq!(positive, false);
 
         // Equality - should return None

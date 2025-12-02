@@ -13,7 +13,7 @@ use crate::elaborator::potential_value::PotentialValue;
 use crate::elaborator::source::Source;
 use crate::elaborator::stack::Stack;
 use crate::generalization_set::GeneralizationSet;
-use crate::kernel::clause::Clause;
+use crate::kernel::fat_clause::FatClause;
 use crate::normalizer::{Normalizer, NormalizerView};
 use crate::project::Project;
 use crate::syntax::expression::Declaration;
@@ -94,7 +94,7 @@ impl StepReason {
 }
 
 /// Converts a clause to readable code using the environment's names.
-fn clause_to_code(clause: &Clause, normalizer: &Normalizer, bindings: &Cow<BindingMap>) -> String {
+fn clause_to_code(clause: &FatClause, normalizer: &Normalizer, bindings: &Cow<BindingMap>) -> String {
     let value = normalizer.denormalize(clause, None);
     let mut code_gen = crate::code_generator::CodeGenerator::new(bindings);
     code_gen
@@ -133,17 +133,17 @@ pub struct Checker {
 
     /// A hack, but we need to break out of loops, since equality factoring and boolean
     /// reduction can create cycles.
-    past_boolean_reductions: HashSet<Clause>,
+    past_boolean_reductions: HashSet<FatClause>,
 
     /// The reason for each step. The step_id is the index in this vector.
     reasons: Vec<StepReason>,
 
     /// The clause for each step. Only tracked in verbose mode.
-    clauses: Option<Vec<Clause>>,
+    clauses: Option<Vec<FatClause>>,
 }
 
 impl Checker {
-    fn new(clauses: Option<Vec<Clause>>) -> Checker {
+    fn new(clauses: Option<Vec<FatClause>>) -> Checker {
         Checker {
             term_graph: TermGraph::new(),
             generalization_set: Arc::new(GeneralizationSet::new()),
@@ -163,7 +163,7 @@ impl Checker {
     }
 
     /// Adds a true clause to the checker with a specific reason.
-    pub fn insert_clause(&mut self, clause: &Clause, reason: StepReason) {
+    pub fn insert_clause(&mut self, clause: &FatClause, reason: StepReason) {
         if clause.is_impossible() {
             self.direct_contradiction = true;
             return;
@@ -187,7 +187,7 @@ impl Checker {
             }
 
             if let Some(extensionality) = clause.find_extensionality() {
-                let clause = Clause::new(extensionality);
+                let clause = FatClause::new(extensionality);
                 self.insert_clause(&clause, StepReason::Extensionality(step_id));
             }
         } else {
@@ -216,7 +216,7 @@ impl Checker {
 
     /// Checks if a clause is known to be true, and returns the reason if so.
     /// Returns None if the clause cannot be proven.
-    pub fn check_clause(&mut self, clause: &Clause) -> Option<StepReason> {
+    pub fn check_clause(&mut self, clause: &FatClause) -> Option<StepReason> {
         if self.has_contradiction() {
             return Some(StepReason::Contradiction);
         }
@@ -581,7 +581,7 @@ impl Checker {
     pub fn with_clauses(clauses: &[&str]) -> Checker {
         let mut checker = Checker::new_fast();
         for clause_str in clauses {
-            let clause = Clause::parse(clause_str);
+            let clause = FatClause::parse(clause_str);
             checker.insert_clause(&clause, StepReason::Testing);
         }
         checker
@@ -589,7 +589,7 @@ impl Checker {
 
     #[cfg(test)]
     pub fn check_clause_str(&mut self, s: &str) {
-        let clause = Clause::parse(s);
+        let clause = FatClause::parse(s);
         if !self.check_clause(&clause).is_some() {
             panic!("check_clause_str(\"{}\") failed", s);
         }

@@ -9,8 +9,8 @@ use crate::elaborator::binding_map::BindingMap;
 use crate::elaborator::names::{ConstantName, DefinedName};
 use crate::elaborator::type_unifier::TypeclassRegistry;
 use crate::kernel::atom::AtomId;
-use crate::kernel::clause::Clause;
-use crate::kernel::term::{Term, TypeId};
+use crate::kernel::fat_clause::FatClause;
+use crate::kernel::fat_term::{FatTerm, TypeId};
 use crate::kernel::variable_map::VariableMap;
 use crate::module::ModuleId;
 use crate::normalizer::Normalizer;
@@ -267,7 +267,7 @@ impl CodeGenerator<'_> {
     /// and appends the actual clause content to codes.
     fn specialization_to_code(
         &mut self,
-        generic: &Clause,
+        generic: &FatClause,
         var_map: &VariableMap,
         normalizer: &Normalizer,
         definitions: &mut Vec<String>,
@@ -325,7 +325,7 @@ impl CodeGenerator<'_> {
         Ok(expr.to_string())
     }
 
-    fn add_arbitrary_for_term(&mut self, term: &Term) {
+    fn add_arbitrary_for_term(&mut self, term: &FatTerm) {
         if term.is_variable() {
             let type_id = term.get_head_type();
             if !self.arbitrary_names.contains_key(&type_id) {
@@ -341,7 +341,7 @@ impl CodeGenerator<'_> {
     }
 
     /// For any variables in this clause, add an arbitrary variable.
-    fn add_arbitrary_for_clause(&mut self, clause: &Clause) {
+    fn add_arbitrary_for_clause(&mut self, clause: &FatClause) {
         for literal in &clause.literals {
             for term in [&literal.left, &literal.right] {
                 self.add_arbitrary_for_term(term);

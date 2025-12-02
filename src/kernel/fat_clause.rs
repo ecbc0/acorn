@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::literal::Literal;
-use crate::kernel::term::{Term, BOOL};
+use crate::kernel::fat_literal::FatLiteral;
+use crate::kernel::fat_term::{FatTerm, BOOL};
 use crate::kernel::unifier::{Scope, Unifier};
 use crate::kernel::variable_map::VariableMap;
 use crate::proof_step::{EFLiteralTrace, EFTermTrace};
@@ -90,7 +90,7 @@ impl ClauseTrace {
     }
 
     /// Validate that this trace, when applied to the given literals, produces the given clause.
-    pub fn validate(&self, literals: &Vec<Literal>, clause: &Clause) {
+    pub fn validate(&self, literals: &Vec<FatLiteral>, clause: &FatClause) {
         let mut covered = vec![false; clause.len()];
         assert_eq!(self.len(), literals.len());
         let mut var_map = VariableMap::new();
@@ -119,11 +119,11 @@ impl ClauseTrace {
 /// We include the types of the universal variables it is quantified over.
 /// It cannot contain existential quantifiers.
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Ord, PartialOrd, Serialize, Deserialize)]
-pub struct Clause {
-    pub literals: Vec<Literal>,
+pub struct FatClause {
+    pub literals: Vec<FatLiteral>,
 }
 
-impl fmt::Display for Clause {
+impl fmt::Display for FatClause {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.literals.is_empty() {
             return write!(f, "<empty>");
@@ -138,10 +138,10 @@ impl fmt::Display for Clause {
     }
 }
 
-impl Clause {
+impl FatClause {
     /// Creates a new normalized clause.
-    pub fn new(literals: Vec<Literal>) -> Clause {
-        let mut c = Clause { literals };
+    pub fn new(literals: Vec<FatLiteral>) -> FatClause {
+        let mut c = FatClause { literals };
         c.normalize();
         c
     }
@@ -159,11 +159,11 @@ impl Clause {
     /// Normalizes literals into a clause, creating a trace of where each one is sent.
     /// Note that this doesn't flip any literals. It only creates the "Output" and "Impossible"
     /// type traces.
-    pub fn normalize_with_trace(literals: Vec<Literal>) -> (Clause, ClauseTrace) {
+    pub fn normalize_with_trace(literals: Vec<FatLiteral>) -> (FatClause, ClauseTrace) {
         let mut trace = vec![LiteralTrace::Impossible; literals.len()];
 
         // Pair each literal with its initial index.
-        let mut indexed_literals: Vec<(Literal, usize)> = literals
+        let mut indexed_literals: Vec<(FatLiteral, usize)> = literals
             .into_iter()
             .enumerate()
             .filter_map(|(i, lit)| {
@@ -209,7 +209,7 @@ impl Clause {
                 }
             }
         }
-        let c = Clause {
+        let c = FatClause {
             literals: output_literals,
         };
         (c, ClauseTrace::new(trace))
@@ -251,8 +251,11 @@ impl Clause {
 
     /// Creates a new clause and a new trace, given a list of literals and a
     /// trace of how they were created.
-    pub fn new_with_trace(literals: Vec<Literal>, mut trace: ClauseTrace) -> (Clause, ClauseTrace) {
-        let (c, incremental_trace) = Clause::normalize_with_trace(literals);
+    pub fn new_with_trace(
+        literals: Vec<FatLiteral>,
+        mut trace: ClauseTrace,
+    ) -> (FatClause, ClauseTrace) {
+        let (c, incremental_trace) = FatClause::normalize_with_trace(literals);
         trace.compose(&incremental_trace);
         (c, trace)
     }
@@ -260,20 +263,20 @@ impl Clause {
     /// Creates a new clause. If a trace is provided, we compose the traces.
     /// The base_trace should be applicable to the provided literals.
     pub fn new_composing_traces(
-        literals: Vec<Literal>,
+        literals: Vec<FatLiteral>,
         base_trace: Option<ClauseTrace>,
         incremental_trace: &ClauseTrace,
-    ) -> (Clause, Option<ClauseTrace>) {
+    ) -> (FatClause, Option<ClauseTrace>) {
         let Some(mut base_trace) = base_trace else {
-            return (Clause::new(literals), None);
+            return (FatClause::new(literals), None);
         };
         base_trace.compose(incremental_trace);
-        let (c, trace) = Clause::new_with_trace(literals, base_trace);
+        let (c, trace) = FatClause::new_with_trace(literals, base_trace);
         (c, Some(trace))
     }
 
-    pub fn from_literal(literal: Literal, flipped: bool) -> (Clause, ClauseTrace) {
-        Clause::new_with_trace(
+    pub fn from_literal(literal: FatLiteral, flipped: bool) -> (FatClause, ClauseTrace) {
+        FatClause::new_with_trace(
             vec![literal],
             ClauseTrace::new(vec![LiteralTrace::Output { index: 0, flipped }]),
         )
@@ -301,14 +304,14 @@ impl Clause {
     }
 
     /// An unsatisfiable clause. Like a lone "false".
-    pub fn impossible() -> Clause {
-        Clause::new(vec![])
+    pub fn impossible() -> FatClause {
+        FatClause::new(vec![])
     }
 
-    pub fn parse(s: &str) -> Clause {
-        Clause::new(
+    pub fn parse(s: &str) -> FatClause {
+        FatClause::new(
             s.split(" or ")
-                .map(|x| Literal::parse(x))
+                .map(|x| FatLiteral::parse(x))
                 .collect::<Vec<_>>(),
         )
     }
@@ -381,7 +384,7 @@ impl Clause {
     }
 
     /// Whether every literal in this clause is exactly contained by the other clause.
-    pub fn contains(&self, other: &Clause) -> bool {
+    pub fn contains(&self, other: &FatClause) -> bool {
         for literal in &other.literals {
             if !self.literals.iter().any(|x| x == literal) {
                 return false;
@@ -408,24 +411,24 @@ impl Clause {
 
     /// Renumbers synthetic atoms from the provided list into the invalid range.
     /// This does renormalize, so it could reorder literals and renumber variables.
-    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> Clause {
-        let new_literals: Vec<Literal> = self
+    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> FatClause {
+        let new_literals: Vec<FatLiteral> = self
             .literals
             .iter()
             .map(|lit| lit.invalidate_synthetics(from))
             .collect();
-        Clause::new(new_literals)
+        FatClause::new(new_literals)
     }
 
     /// Replace the first `num_to_replace` variables with invalid synthetic atoms, adjusting
     /// the subsequent variable ids accordingly.
-    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> Clause {
-        let new_literals: Vec<Literal> = self
+    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> FatClause {
+        let new_literals: Vec<FatLiteral> = self
             .literals
             .iter()
             .map(|lit| lit.instantiate_invalid_synthetics(num_to_replace))
             .collect();
-        Clause::new(new_literals)
+        FatClause::new(new_literals)
     }
 
     /// Finds all possible equality resolutions for this clause.
@@ -433,7 +436,7 @@ impl Clause {
     /// - The index of the literal that was resolved
     /// - The resulting literals after applying the unifier
     /// - The flipped flags for each literal
-    pub fn find_equality_resolutions(&self) -> Vec<(usize, Vec<Literal>, Vec<bool>)> {
+    pub fn find_equality_resolutions(&self) -> Vec<(usize, Vec<FatLiteral>, Vec<bool>)> {
         let mut results = vec![];
 
         for i in 0..self.literals.len() {
@@ -470,10 +473,10 @@ impl Clause {
 
     /// Generates all clauses that can be derived from this clause using equality resolution.
     /// This is a convenience method that returns just the normalized clauses.
-    pub fn equality_resolutions(&self) -> Vec<Clause> {
+    pub fn equality_resolutions(&self) -> Vec<FatClause> {
         self.find_equality_resolutions()
             .into_iter()
-            .map(|(_, literals, _)| Clause::new(literals))
+            .map(|(_, literals, _)| FatClause::new(literals))
             .filter(|clause| !clause.is_tautology())
             .collect()
     }
@@ -482,7 +485,7 @@ impl Clause {
     /// Returns a vector of (literals, ef_trace) pairs.
     /// The literals are the result of factoring before normalization.
     /// The ef_trace tracks how the literals were transformed.
-    pub fn find_equality_factorings(&self) -> Vec<(Vec<Literal>, Vec<EFLiteralTrace>)> {
+    pub fn find_equality_factorings(&self) -> Vec<(Vec<FatLiteral>, Vec<EFLiteralTrace>)> {
         let mut results = vec![];
 
         // The first literal must be positive for equality factoring
@@ -508,12 +511,12 @@ impl Clause {
                     // Create the factored terms.
                     let mut literals = vec![];
                     let mut ef_trace = vec![];
-                    let (tv_lit, tv_flip) = Literal::new_with_flip(
+                    let (tv_lit, tv_flip) = FatLiteral::new_with_flip(
                         false,
                         unifier.apply(Scope::LEFT, t),
                         unifier.apply(Scope::LEFT, v),
                     );
-                    let (uv_out, uv_out_flip) = Literal::new_with_flip(
+                    let (uv_out, uv_out_flip) = FatLiteral::new_with_flip(
                         true,
                         unifier.apply(Scope::LEFT, u),
                         unifier.apply(Scope::LEFT, v),
@@ -569,10 +572,10 @@ impl Clause {
 
     /// Generates all clauses that can be derived from this clause using equality factoring.
     /// This is a convenience method that returns just the normalized clauses.
-    pub fn equality_factorings(&self) -> Vec<Clause> {
+    pub fn equality_factorings(&self) -> Vec<FatClause> {
         self.find_equality_factorings()
             .into_iter()
-            .map(|(literals, _)| Clause::new(literals))
+            .map(|(literals, _)| FatClause::new(literals))
             .filter(|clause| !clause.is_tautology())
             .collect()
     }
@@ -583,7 +586,7 @@ impl Clause {
     /// - arg_index: which argument position differs
     /// - literals: the resulting literals after applying injectivity
     /// - flipped: whether the resulting literal was flipped
-    pub fn find_injectivities(&self) -> Vec<(usize, usize, Vec<Literal>, bool)> {
+    pub fn find_injectivities(&self) -> Vec<(usize, usize, Vec<FatLiteral>, bool)> {
         let mut results = vec![];
 
         for (i, target) in self.literals.iter().enumerate() {
@@ -614,7 +617,7 @@ impl Clause {
             if let Some(j) = different_index {
                 // Looks like we can eliminate the functions from this literal
                 let mut literals = self.literals.clone();
-                let (new_literal, flipped) = Literal::new_with_flip(
+                let (new_literal, flipped) = FatLiteral::new_with_flip(
                     false,
                     target.left.args()[j].clone(),
                     target.right.args()[j].clone(),
@@ -629,10 +632,10 @@ impl Clause {
 
     /// Generates all clauses that can be derived from this clause using injectivity.
     /// This is a convenience method that returns just the normalized clauses.
-    pub fn injectivities(&self) -> Vec<Clause> {
+    pub fn injectivities(&self) -> Vec<FatClause> {
         self.find_injectivities()
             .into_iter()
-            .map(|(_, _, literals, _)| Clause::new(literals))
+            .map(|(_, _, literals, _)| FatClause::new(literals))
             .filter(|clause| !clause.is_tautology())
             .collect()
     }
@@ -643,7 +646,7 @@ impl Clause {
     /// Returns a vector of (index, resulting_literals) pairs.
     /// The index describes the index of a literal that got replaced by two literals.
     /// We always replace a (left ~ right) at position i with ~left at i and ~right at i+1.
-    pub fn find_boolean_reductions(&self) -> Vec<(usize, Vec<Literal>)> {
+    pub fn find_boolean_reductions(&self) -> Vec<(usize, Vec<FatLiteral>)> {
         let mut answer = vec![];
 
         for i in 0..self.literals.len() {
@@ -658,15 +661,15 @@ impl Clause {
             let mut first = self.literals[..i].to_vec();
             let mut second = self.literals[..i].to_vec();
             if literal.positive {
-                first.push(Literal::positive(literal.left.clone()));
-                first.push(Literal::negative(literal.right.clone()));
-                second.push(Literal::negative(literal.left.clone()));
-                second.push(Literal::positive(literal.right.clone()));
+                first.push(FatLiteral::positive(literal.left.clone()));
+                first.push(FatLiteral::negative(literal.right.clone()));
+                second.push(FatLiteral::negative(literal.left.clone()));
+                second.push(FatLiteral::positive(literal.right.clone()));
             } else {
-                first.push(Literal::negative(literal.left.clone()));
-                first.push(Literal::negative(literal.right.clone()));
-                second.push(Literal::positive(literal.left.clone()));
-                second.push(Literal::positive(literal.right.clone()));
+                first.push(FatLiteral::negative(literal.left.clone()));
+                first.push(FatLiteral::negative(literal.right.clone()));
+                second.push(FatLiteral::positive(literal.left.clone()));
+                second.push(FatLiteral::positive(literal.right.clone()));
             }
             first.extend_from_slice(&self.literals[i + 1..]);
             second.extend_from_slice(&self.literals[i + 1..]);
@@ -678,10 +681,10 @@ impl Clause {
 
     /// Generates all clauses that can be derived from this clause using boolean reduction.
     /// This is a convenience method that returns just the normalized clauses.
-    pub fn boolean_reductions(&self) -> Vec<Clause> {
+    pub fn boolean_reductions(&self) -> Vec<FatClause> {
         let mut answer = vec![];
         for (_, literals) in self.find_boolean_reductions() {
-            let clause = Clause::new(literals);
+            let clause = FatClause::new(literals);
             answer.push(clause);
         }
         answer
@@ -690,7 +693,7 @@ impl Clause {
     /// Finds if extensionality can be applied to this clause.
     /// Returns the resulting literals if extensionality applies.
     /// Only works on single-literal clauses.
-    pub fn find_extensionality(&self) -> Option<Vec<Literal>> {
+    pub fn find_extensionality(&self) -> Option<Vec<FatLiteral>> {
         // Extensionality only works on single-literal clauses
         if self.literals.len() != 1 {
             return None;
@@ -743,20 +746,20 @@ impl Clause {
         // Create the new literal.
         // We need to take the type from the head of the shorter term.
         let new_left = shorter.get_head_term();
-        let new_right = Term::new(
+        let new_right = FatTerm::new(
             new_left.get_term_type(),
             longer.get_head_type(),
             *longer.get_head_atom(),
             longer.args()[0..diff].to_vec(),
         );
-        let new_literal = Literal::new(true, new_left, new_right);
+        let new_literal = FatLiteral::new(true, new_left, new_right);
         Some(vec![new_literal])
     }
 
     /// Extracts the polarity of each literal and returns a new clause with sorted positive literals
     /// along with a vector of polarities that correspond to each literal in the sorted order.
-    pub fn extract_polarity(&self) -> (Clause, Vec<bool>) {
-        let mut literal_polarity_pairs: Vec<(Literal, bool)> = self
+    pub fn extract_polarity(&self) -> (FatClause, Vec<bool>) {
+        let mut literal_polarity_pairs: Vec<(FatLiteral, bool)> = self
             .literals
             .iter()
             .map(|lit| lit.extract_polarity())
@@ -765,21 +768,21 @@ impl Clause {
         // Sort the pairs by the positive literal
         literal_polarity_pairs.sort_by(|a, b| a.0.cmp(&b.0));
 
-        let (literals, polarities): (Vec<Literal>, Vec<bool>) =
+        let (literals, polarities): (Vec<FatLiteral>, Vec<bool>) =
             literal_polarity_pairs.into_iter().unzip();
 
-        (Clause { literals }, polarities)
+        (FatClause { literals }, polarities)
     }
 }
 
 #[cfg(test)]
 fn check(s: &str) {
-    let literals: Vec<Literal> = s
+    let literals: Vec<FatLiteral> = s
         .split(" or ")
-        .map(|x| Literal::parse(x))
+        .map(|x| FatLiteral::parse(x))
         .collect::<Vec<_>>();
-    let clause = Clause::new(literals.clone());
-    let (alt_clause, trace) = Clause::normalize_with_trace(literals.clone());
+    let clause = FatClause::new(literals.clone());
+    let (alt_clause, trace) = FatClause::normalize_with_trace(literals.clone());
     assert_eq!(clause, alt_clause);
 
     clause.validate();

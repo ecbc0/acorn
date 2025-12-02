@@ -1,14 +1,14 @@
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::clause::Clause;
-use crate::kernel::literal::Literal;
-use crate::kernel::term::{Term, TypeId};
+use crate::kernel::fat_clause::FatClause;
+use crate::kernel::fat_literal::FatLiteral;
+use crate::kernel::fat_term::{FatTerm, TypeId};
 use std::fmt;
 
 // A VariableMap maintains a mapping from variables to terms, allowing us to turn a more general term
 // into a more specific one by substituting variables.
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct VariableMap {
-    map: Vec<Option<Term>>,
+    map: Vec<Option<FatTerm>>,
 }
 
 impl VariableMap {
@@ -32,7 +32,7 @@ impl VariableMap {
         max
     }
 
-    pub fn get_mapping(&self, i: AtomId) -> Option<&Term> {
+    pub fn get_mapping(&self, i: AtomId) -> Option<&FatTerm> {
         let i = i as usize;
         if i >= self.map.len() {
             None
@@ -41,7 +41,7 @@ impl VariableMap {
         }
     }
 
-    pub fn match_var(&mut self, var_id: AtomId, special_term: &Term) -> bool {
+    pub fn match_var(&mut self, var_id: AtomId, special_term: &FatTerm) -> bool {
         let var_id = var_id as usize;
         if var_id >= self.map.len() {
             self.map.resize(var_id + 1, None);
@@ -57,13 +57,13 @@ impl VariableMap {
 
     fn match_atoms(&mut self, atom_type: TypeId, general: &Atom, special: &Atom) -> bool {
         if let Atom::Variable(i) = general {
-            self.match_var(*i, &Term::atom(atom_type, *special))
+            self.match_var(*i, &FatTerm::atom(atom_type, *special))
         } else {
             general == special
         }
     }
 
-    pub fn match_terms(&mut self, general: &Term, special: &Term) -> bool {
+    pub fn match_terms(&mut self, general: &FatTerm, special: &FatTerm) -> bool {
         if general.get_term_type() != special.get_term_type() {
             return false;
         }
@@ -101,11 +101,11 @@ impl VariableMap {
         self.map.len()
     }
 
-    pub fn get(&self, i: usize) -> Option<&Term> {
+    pub fn get(&self, i: usize) -> Option<&FatTerm> {
         self.map.get(i).and_then(|opt| opt.as_ref())
     }
 
-    pub fn set(&mut self, i: AtomId, term: Term) {
+    pub fn set(&mut self, i: AtomId, term: FatTerm) {
         let i = i as usize;
         if i >= self.map.len() {
             self.map.resize(i + 1, None);
@@ -118,7 +118,7 @@ impl VariableMap {
         i < self.map.len() && self.map[i].is_some()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (usize, &Term)> {
+    pub fn iter(&self) -> impl Iterator<Item = (usize, &FatTerm)> {
         self.map
             .iter()
             .enumerate()
@@ -127,7 +127,7 @@ impl VariableMap {
 
     pub fn apply_to_all<F>(&mut self, mut f: F)
     where
-        F: FnMut(&Term) -> Term,
+        F: FnMut(&FatTerm) -> FatTerm,
     {
         for opt in &mut self.map {
             if let Some(term) = opt {
@@ -142,7 +142,7 @@ impl VariableMap {
 
     /// This does not normalize.
     /// Unmapped variables are kept as-is.
-    fn specialize_term(&self, term: &Term) -> Term {
+    fn specialize_term(&self, term: &FatTerm) -> FatTerm {
         let (head_type, head, mut args) = match *term.get_head_atom() {
             Atom::Variable(i) => {
                 // Check if we have a mapping for this variable
@@ -165,13 +165,13 @@ impl VariableMap {
             args.push(self.specialize_term(arg));
         }
 
-        Term::new(term.get_term_type(), head_type, head, args)
+        FatTerm::new(term.get_term_type(), head_type, head, args)
     }
 
     /// This does not normalize.
     /// Unmapped variables are kept as-is.
-    fn specialize_literal(&self, literal: &Literal) -> Literal {
-        Literal::new(
+    fn specialize_literal(&self, literal: &FatLiteral) -> FatLiteral {
+        FatLiteral::new(
             literal.positive,
             self.specialize_term(&literal.left),
             self.specialize_term(&literal.right),
@@ -180,13 +180,13 @@ impl VariableMap {
 
     /// This does not normalize.
     /// Unmapped variables are kept as-is.
-    pub fn specialize_clause(&self, clause: &Clause) -> Clause {
+    pub fn specialize_clause(&self, clause: &FatClause) -> FatClause {
         let literals = clause
             .literals
             .iter()
             .map(|lit| self.specialize_literal(lit))
             .collect();
-        Clause { literals }
+        FatClause { literals }
     }
 
     pub fn output_has_any_variable(&self) -> bool {

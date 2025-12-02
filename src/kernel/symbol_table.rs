@@ -5,7 +5,7 @@ use crate::elaborator::acorn_value::{AcornValue, ConstantInstance};
 use crate::elaborator::names::ConstantName;
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::symbol::Symbol;
-use crate::kernel::term::{Term, TypeId};
+use crate::kernel::fat_term::{FatTerm, TypeId};
 use crate::kernel::type_store::TypeStore;
 
 #[derive(Clone, Copy, Debug)]
@@ -198,10 +198,10 @@ impl SymbolTable {
     }
 
     /// The monomorph should already have been added.
-    pub fn term_from_monomorph(&self, c: &ConstantInstance) -> Result<Term, String> {
+    pub fn term_from_monomorph(&self, c: &ConstantInstance) -> Result<FatTerm, String> {
         if let Some(&symbol) = self.monomorph_to_symbol.get(&c) {
             let type_id = self.get_type(symbol);
-            Ok(Term::new(type_id, type_id, Atom::Symbol(symbol), vec![]))
+            Ok(FatTerm::new(type_id, type_id, Atom::Symbol(symbol), vec![]))
         } else {
             Err(format!(
                 "Monomorphized constant {} not found in symbol table",

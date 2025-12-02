@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::kernel::term::TypeId;
+use crate::kernel::fat_term::TypeId;
 
 /// A context stores type information for variables.
 /// This is used with thin terms/literals/clauses to track variable types

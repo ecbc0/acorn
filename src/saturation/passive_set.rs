@@ -2,9 +2,9 @@ use super::features::Features;
 use super::fingerprint::FingerprintSpecializer;
 use super::score::Score;
 use super::scorer::{default_scorer, Scorer};
-use crate::kernel::clause::{Clause, ClauseTrace, LiteralTrace};
-use crate::kernel::literal::Literal;
-use crate::kernel::term::Term;
+use crate::kernel::fat_clause::{FatClause, ClauseTrace, LiteralTrace};
+use crate::kernel::fat_literal::FatLiteral;
+use crate::kernel::fat_term::FatTerm;
 use crate::kernel::variable_map::VariableMap;
 use crate::proof_step::ProofStep;
 use std::collections::hash_map::Entry;
@@ -34,7 +34,7 @@ pub struct PassiveSet {
     // Stores every clause in clauses that is just a single literal, along with its index.
     // The format is
     // (left, right) -> (positive, index into clauses)
-    singles: HashMap<(Term, Term), (bool, usize)>,
+    singles: HashMap<(FatTerm, FatTerm), (bool, usize)>,
 
     // Set if we ever discover a contradiction between two members of the passive set.
     contradiction: Option<(usize, usize)>,
@@ -52,7 +52,7 @@ pub struct PassiveSet {
 // Whether (left1, right1) can be mapped to (left2, right2) through variable substitution.
 // Only tries this direction.
 // Terms do not have to have variables normalized.
-fn pair_specializes(left1: &Term, right1: &Term, left2: &Term, right2: &Term) -> bool {
+fn pair_specializes(left1: &FatTerm, right1: &FatTerm, left2: &FatTerm, right2: &FatTerm) -> bool {
     if left1.get_term_type() != left2.get_term_type() {
         return false;
     }
@@ -67,14 +67,14 @@ fn pair_specializes(left1: &Term, right1: &Term, left2: &Term, right2: &Term) ->
 // Returns None if the clause is tautologically implied by the literal we are simplifying with.
 fn make_simplified(
     activated_id: usize,
-    left: &Term,
-    right: &Term,
+    left: &FatTerm,
+    right: &FatTerm,
     positive: bool,
     flipped: bool,
     index: usize,
-    literals: Vec<Literal>,
+    literals: Vec<FatLiteral>,
     trace: Option<ClauseTrace>,
-) -> Option<(Clause, Option<ClauseTrace>)> {
+) -> Option<(FatClause, Option<ClauseTrace>)> {
     if literals[index].positive == positive {
         return None;
     }
@@ -114,7 +114,7 @@ fn make_simplified(
             new_literals.push(literal);
         }
     }
-    Some(Clause::new_composing_traces(
+    Some(FatClause::new_composing_traces(
         new_literals,
         trace,
         &ClauseTrace::new(incremental_trace),
@@ -210,8 +210,8 @@ impl PassiveSet {
         &mut self,
         activated_id: usize,
         activated_step: &ProofStep,
-        left: &Term,
-        right: &Term,
+        left: &FatTerm,
+        right: &FatTerm,
         positive: bool,
         flipped: bool,
     ) {

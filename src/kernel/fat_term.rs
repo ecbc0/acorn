@@ -33,7 +33,7 @@ pub const BOOL: TypeId = TypeId(1);
 /// A Term can be formed by atoms plus the application of functions.
 /// A term with no args is a plain atom.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct Term {
+pub struct FatTerm {
     /// The term type is the type of the entire term.
     /// For example "2 < 3" has type "Bool".
     term_type: TypeId,
@@ -43,10 +43,10 @@ pub struct Term {
     head_type: TypeId,
 
     head: Atom,
-    args: Vec<Term>,
+    args: Vec<FatTerm>,
 }
 
-impl fmt::Display for Term {
+impl fmt::Display for FatTerm {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let tf = TermFormatter {
             term: self,
@@ -58,7 +58,7 @@ impl fmt::Display for Term {
 
 /// Formatting terms with slight changes.
 struct TermFormatter<'a> {
-    term: &'a Term,
+    term: &'a FatTerm,
     var: char,
 }
 
@@ -103,9 +103,9 @@ fn dominates(a: &Vec<u8>, b: &Vec<u8>) -> bool {
     true
 }
 
-impl Term {
-    pub fn new(term_type: TypeId, head_type: TypeId, head: Atom, args: Vec<Term>) -> Term {
-        Term {
+impl FatTerm {
+    pub fn new(term_type: TypeId, head_type: TypeId, head: Atom, args: Vec<FatTerm>) -> FatTerm {
+        FatTerm {
             term_type,
             head_type,
             head,
@@ -113,8 +113,8 @@ impl Term {
         }
     }
 
-    pub fn new_variable(term_type: TypeId, index: AtomId) -> Term {
-        Term {
+    pub fn new_variable(term_type: TypeId, index: AtomId) -> FatTerm {
+        FatTerm {
             term_type,
             head_type: term_type,
             head: Atom::Variable(index),
@@ -124,7 +124,7 @@ impl Term {
 
     /// Constructs a Term from a spine of terms where the first element is the function
     /// and the rest are arguments. The term_type is the final type after all applications.
-    pub fn from_spine(mut spine: Vec<Term>, term_type: TypeId) -> Term {
+    pub fn from_spine(mut spine: Vec<FatTerm>, term_type: TypeId) -> FatTerm {
         if spine.is_empty() {
             panic!("from_spine called with empty spine");
         }
@@ -141,7 +141,7 @@ impl Term {
             all_args.extend(spine);
 
             // Build the final term with all arguments
-            Term::new(term_type, func.head_type, func.head, all_args)
+            FatTerm::new(term_type, func.head_type, func.head, all_args)
         }
     }
 
@@ -159,8 +159,8 @@ impl Term {
 
     /// Returns the head of this term as a Term with no arguments.
     /// The term_type becomes the head_type since we're removing all arguments.
-    pub fn get_head_term(&self) -> Term {
-        Term {
+    pub fn get_head_term(&self) -> FatTerm {
+        FatTerm {
             term_type: self.head_type,
             head_type: self.head_type,
             head: self.head.clone(),
@@ -168,15 +168,15 @@ impl Term {
         }
     }
 
-    pub fn iter_args(&self) -> impl Iterator<Item = &Term> {
+    pub fn iter_args(&self) -> impl Iterator<Item = &FatTerm> {
         self.args.iter()
     }
 
-    pub fn get_arg(&self, index: usize) -> &Term {
+    pub fn get_arg(&self, index: usize) -> &FatTerm {
         &self.args[index]
     }
 
-    pub fn args(&self) -> &[Term] {
+    pub fn args(&self) -> &[FatTerm] {
         &self.args
     }
 
@@ -210,14 +210,14 @@ impl Term {
     /// For example, this parses
     ///   c0(c1, c2(x0, x1))
     /// into a term with head c0 and args [c1, c2(x0, x1)].
-    pub fn parse(s: &str) -> Term {
+    pub fn parse(s: &str) -> FatTerm {
         if s == "true" {
-            return Term::atom(BOOL, Atom::True);
+            return FatTerm::atom(BOOL, Atom::True);
         }
 
         let first_paren = match s.find('(') {
             Some(i) => i,
-            None => return Term::atom(EMPTY, Atom::new(s)),
+            None => return FatTerm::atom(EMPTY, Atom::new(s)),
         };
 
         // Figure out which commas are inside precisely one level of parentheses.
@@ -250,10 +250,10 @@ impl Term {
             } else {
                 terminator_indices[i - 1] + 1
             };
-            args.push(Term::parse(&s[start..*comma_index]));
+            args.push(FatTerm::parse(&s[start..*comma_index]));
         }
 
-        Term {
+        FatTerm {
             term_type: EMPTY,
             head_type: EMPTY,
             head: Atom::new(head),
@@ -261,8 +261,8 @@ impl Term {
         }
     }
 
-    pub fn atom(type_id: TypeId, atom: Atom) -> Term {
-        Term {
+    pub fn atom(type_id: TypeId, atom: Atom) -> FatTerm {
+        FatTerm {
             term_type: type_id,
             head_type: type_id,
             head: atom,
@@ -279,8 +279,8 @@ impl Term {
         self.head == Atom::True
     }
 
-    pub fn new_true() -> Term {
-        Term::atom(BOOL, Atom::True)
+    pub fn new_true() -> FatTerm {
+        FatTerm::atom(BOOL, Atom::True)
     }
 
     /// Whether this term contains a variable with this index, anywhere in its body, recursively.
@@ -378,10 +378,10 @@ impl Term {
         None
     }
 
-    pub fn apply(&self, args: &[Term], result_type: TypeId) -> Term {
+    pub fn apply(&self, args: &[FatTerm], result_type: TypeId) -> FatTerm {
         let mut new_args = self.args.clone();
         new_args.extend_from_slice(args);
-        Term {
+        FatTerm {
             term_type: result_type,
             head_type: self.head_type,
             head: self.head,
@@ -432,17 +432,17 @@ impl Term {
     }
 
     /// value should have no instances of this variable.
-    pub fn replace_variable(&self, id: AtomId, value: &Term) -> Term {
+    pub fn replace_variable(&self, id: AtomId, value: &FatTerm) -> FatTerm {
         // Start with just the head (but keep the type_id correct for the answer)
         let mut answer = if self.head == Atom::Variable(id) {
-            Term {
+            FatTerm {
                 term_type: self.term_type,
                 head_type: value.head_type,
                 head: value.head.clone(),
                 args: value.args.clone(),
             }
         } else {
-            Term {
+            FatTerm {
                 term_type: self.term_type,
                 head_type: self.head_type,
                 head: self.head,
@@ -458,9 +458,9 @@ impl Term {
     }
 
     /// Replace multiple variables at once.
-    pub fn replace_variables(&self, var_ids: &[AtomId], replacement_terms: &[&Term]) -> Term {
+    pub fn replace_variables(&self, var_ids: &[AtomId], replacement_terms: &[&FatTerm]) -> FatTerm {
         if var_ids.is_empty() {
-            return Term {
+            return FatTerm {
                 term_type: self.term_type,
                 head_type: self.head_type,
                 head: self.head,
@@ -472,7 +472,7 @@ impl Term {
         let mut answer = None;
         for (id, term) in var_ids.iter().zip(replacement_terms.iter()) {
             if self.head == Atom::Variable(*id) {
-                answer = Some(Term {
+                answer = Some(FatTerm {
                     term_type: self.term_type,
                     head_type: term.head_type,
                     head: term.head.clone(),
@@ -482,7 +482,7 @@ impl Term {
             }
         }
 
-        let mut answer = answer.unwrap_or_else(|| Term {
+        let mut answer = answer.unwrap_or_else(|| FatTerm {
             term_type: self.term_type,
             head_type: self.head_type,
             head: self.head,
@@ -498,7 +498,7 @@ impl Term {
         answer
     }
 
-    pub fn replace_atom(&self, atom: &Atom, new_atom: &Atom) -> Term {
+    pub fn replace_atom(&self, atom: &Atom, new_atom: &Atom) -> FatTerm {
         let new_head = if self.head == *atom {
             new_atom.clone()
         } else {
@@ -511,7 +511,7 @@ impl Term {
             .map(|arg| arg.replace_atom(atom, new_atom))
             .collect();
 
-        Term {
+        FatTerm {
             term_type: self.term_type,
             head_type: self.head_type,
             head: new_head,
@@ -520,14 +520,14 @@ impl Term {
     }
 
     /// Renumbers synthetic atoms from the provided list into the invalid range.
-    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> Term {
+    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> FatTerm {
         let new_head = self.head.invalidate_synthetics(from);
         let new_args = self
             .args
             .iter()
             .map(|arg| arg.invalidate_synthetics(from))
             .collect();
-        Term {
+        FatTerm {
             term_type: self.term_type,
             head_type: self.head_type,
             head: new_head,
@@ -537,14 +537,14 @@ impl Term {
 
     /// Replace the first `num_to_replace` variables with invalid synthetic atoms, adjusting
     /// the subsequent variable ids accordingly.
-    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> Term {
+    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> FatTerm {
         let new_head = self.head.instantiate_invalid_synthetics(num_to_replace);
         let new_args = self
             .args
             .iter()
             .map(|arg| arg.instantiate_invalid_synthetics(num_to_replace))
             .collect();
-        Term {
+        FatTerm {
             term_type: self.term_type,
             head_type: self.head_type,
             head: new_head,
@@ -552,8 +552,8 @@ impl Term {
         }
     }
 
-    pub fn replace_args(&self, new_args: Vec<Term>) -> Term {
-        Term {
+    pub fn replace_args(&self, new_args: Vec<FatTerm>) -> FatTerm {
+        FatTerm {
             term_type: self.term_type,
             head_type: self.head_type,
             head: self.head,
@@ -625,7 +625,7 @@ impl Term {
     }
 
     /// Lets you extend the KBO ordering to skip the domination check.
-    fn kbo_helper(&self, other: &Term, check_domination: bool) -> Ordering {
+    fn kbo_helper(&self, other: &FatTerm, check_domination: bool) -> Ordering {
         let mut self_refcounts = vec![];
         let (self_weight1, self_weight2) = self.multi_weight(&mut self_refcounts);
 
@@ -658,13 +658,13 @@ impl Term {
     /// Returns Greater if self > other.
     /// Returns Less if other > self.
     /// Returns Equal if they cannot be ordered. (This is not "Equal" in the usual sense.)
-    pub fn kbo_cmp(&self, other: &Term) -> Ordering {
+    pub fn kbo_cmp(&self, other: &FatTerm) -> Ordering {
         self.kbo_helper(other, true)
     }
 
     /// Extends the kbo comparison to be a total ordering, so that the only equal things
     /// are identical terms.
-    pub fn extended_kbo_cmp(&self, other: &Term) -> Ordering {
+    pub fn extended_kbo_cmp(&self, other: &FatTerm) -> Ordering {
         let kbo_cmp = self.kbo_helper(other, false);
         if kbo_cmp != Ordering::Equal {
             return kbo_cmp;
@@ -680,7 +680,7 @@ impl Term {
 
     /// Does a partial ordering that is stable under variable renaming.
     /// This is less good than using a weight, so just use it as a tiebreak.
-    fn partial_tiebreak(&self, other: &Term) -> Ordering {
+    fn partial_tiebreak(&self, other: &FatTerm) -> Ordering {
         let head_cmp = self.head.stable_partial_order(&other.head);
         if head_cmp != Ordering::Equal {
             return head_cmp;
@@ -705,7 +705,7 @@ impl Term {
 
     /// Does a total ordering, not stable under variable renaming.
     /// Only run this after the partial tiebreak.
-    fn total_tiebreak(&self, other: &Term) -> Ordering {
+    fn total_tiebreak(&self, other: &FatTerm) -> Ordering {
         let head_cmp = other.head.cmp(&self.head);
         if head_cmp != Ordering::Equal {
             return head_cmp;
@@ -724,7 +724,7 @@ impl Term {
         Ordering::Equal
     }
 
-    pub fn get_term_at_path(&self, path: &[usize]) -> Option<&Term> {
+    pub fn get_term_at_path(&self, path: &[usize]) -> Option<&FatTerm> {
         let mut current_term = self;
         for &i in path {
             if i >= current_term.args.len() {
@@ -735,13 +735,13 @@ impl Term {
         Some(current_term)
     }
 
-    pub fn replace_at_path(&self, path: &[usize], replacement: Term) -> Term {
+    pub fn replace_at_path(&self, path: &[usize], replacement: FatTerm) -> FatTerm {
         if path.is_empty() {
             return replacement;
         }
         let mut new_args = self.args.clone();
         new_args[path[0]] = self.args[path[0]].replace_at_path(&path[1..], replacement);
-        Term {
+        FatTerm {
             term_type: self.term_type,
             head_type: self.head_type,
             head: self.head.clone(),
@@ -755,7 +755,7 @@ impl Term {
     fn push_rewritable_subterms<'a>(
         &'a self,
         prefix: &mut Vec<usize>,
-        answer: &mut Vec<(Vec<usize>, &'a Term)>,
+        answer: &mut Vec<(Vec<usize>, &'a FatTerm)>,
     ) {
         if self.is_true() {
             return;
@@ -771,7 +771,7 @@ impl Term {
         answer.push((prefix.clone(), self));
     }
 
-    pub fn rewritable_subterms(&self) -> Vec<(Vec<usize>, &Term)> {
+    pub fn rewritable_subterms(&self) -> Vec<(Vec<usize>, &FatTerm)> {
         let mut answer = vec![];
         let mut prefix = vec![];
         self.push_rewritable_subterms(&mut prefix, &mut answer);
@@ -779,8 +779,8 @@ impl Term {
     }
 
     /// Replaces x_i with x_{var_map[i]}.
-    pub fn remap_variables(&self, var_map: &Vec<AtomId>) -> Term {
-        Term {
+    pub fn remap_variables(&self, var_map: &Vec<AtomId>) -> FatTerm {
+        FatTerm {
             head_type: self.head_type,
             term_type: self.term_type,
             head: self.head.remap_variables(var_map),
@@ -818,59 +818,59 @@ mod tests {
     #[test]
     fn test_term_kbo_cmp() {
         assert_eq!(
-            Term::parse("c0").extended_kbo_cmp(&Term::parse("c1")),
+            FatTerm::parse("c0").extended_kbo_cmp(&FatTerm::parse("c1")),
             Ordering::Less
         );
         assert_eq!(
-            Term::parse("c2").extended_kbo_cmp(&Term::parse("c0(c1)")),
+            FatTerm::parse("c2").extended_kbo_cmp(&FatTerm::parse("c0(c1)")),
             Ordering::Less
         );
         assert_eq!(
-            Term::parse("x0(x1)").extended_kbo_cmp(&Term::parse("x0(c0(x0))")),
+            FatTerm::parse("x0(x1)").extended_kbo_cmp(&FatTerm::parse("x0(c0(x0))")),
             Ordering::Less
         );
     }
 
     #[test]
     fn test_remap_variables() {
-        let old_term = Term::parse("c2(x0, x1)");
+        let old_term = FatTerm::parse("c2(x0, x1)");
         let var_map = vec![3, 2];
         let new_term = old_term.remap_variables(&var_map);
-        assert_eq!(new_term, Term::parse("c2(x3, x2)"));
+        assert_eq!(new_term, FatTerm::parse("c2(x3, x2)"));
     }
 
     #[test]
     fn test_replace_at_path() {
-        let old_term = Term::parse("c2(x0, x1)");
-        let new_term = Term::parse("c0(x0)");
+        let old_term = FatTerm::parse("c2(x0, x1)");
+        let new_term = FatTerm::parse("c0(x0)");
         let replaced = old_term.replace_at_path(&[1], new_term);
-        assert_eq!(replaced, Term::parse("c2(x0, c0(x0))"));
+        assert_eq!(replaced, FatTerm::parse("c2(x0, c0(x0))"));
     }
 
     #[test]
     fn test_has_any_applied_variable() {
         // Plain variable should NOT be considered an applied variable
-        let plain_var = Term::parse("x0");
+        let plain_var = FatTerm::parse("x0");
         assert!(!plain_var.has_any_applied_variable());
 
         // Variable applied to arguments SHOULD be considered an applied variable
-        let applied_var = Term::parse("x0(c1, c2)");
+        let applied_var = FatTerm::parse("x0(c1, c2)");
         assert!(applied_var.has_any_applied_variable());
 
         // Nested applied variable should be detected
-        let nested = Term::parse("c0(x1(c2))");
+        let nested = FatTerm::parse("c0(x1(c2))");
         assert!(nested.has_any_applied_variable());
 
         // Constants with arguments should NOT be considered applied variables
-        let constant_with_args = Term::parse("c0(c1, c2)");
+        let constant_with_args = FatTerm::parse("c0(c1, c2)");
         assert!(!constant_with_args.has_any_applied_variable());
 
         // Mix of plain variable and constant should NOT be considered applied variable
-        let mix = Term::parse("c0(x1, c2)");
+        let mix = FatTerm::parse("c0(x1, c2)");
         assert!(!mix.has_any_applied_variable());
 
         // Deeply nested applied variable should be detected
-        let deeply_nested = Term::parse("c0(c1(c2(x3(c4))))");
+        let deeply_nested = FatTerm::parse("c0(c1(c2(x3(c4))))");
         assert!(deeply_nested.has_any_applied_variable());
     }
 }

@@ -9,13 +9,13 @@ use crate::elaborator::goal::Goal;
 use crate::elaborator::names::ConstantName;
 use crate::elaborator::source::{Source, SourceType};
 use crate::kernel::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
-use crate::kernel::clause::Clause;
+use crate::kernel::fat_clause::FatClause;
 use crate::kernel::cnf::CNF;
 use crate::kernel::extended_term::ExtendedTerm;
-use crate::kernel::literal::Literal;
+use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::symbol_table::{NewConstantType, SymbolTable};
-use crate::kernel::term::{Term, TypeId, BOOL};
+use crate::kernel::fat_term::{FatTerm, TypeId, BOOL};
 use crate::kernel::type_store::TypeStore;
 use crate::monomorphizer::Monomorphizer;
 use crate::proof_step::{ProofStep, Truthiness};
@@ -30,7 +30,7 @@ pub struct SyntheticDefinition {
     /// We do need a definition to be a bunch of clauses instead of just one, even
     /// for "let x = ___" type definitions, because it might be a value that expands
     /// to multiple clauses.
-    pub clauses: Vec<Clause>,
+    pub clauses: Vec<FatClause>,
 
     /// The source location where this synthetic definition originated.
     pub source: Option<Source>,
@@ -60,7 +60,7 @@ struct SyntheticKey {
     /// CNF form of the proposition that we defines these synthetic atoms.
     /// Here, the synthetic atoms have been remapped to the invalid range,
     /// in order to normalize away the specific choice of synthetic ids.
-    clauses: Vec<Clause>,
+    clauses: Vec<FatClause>,
 }
 
 impl std::fmt::Display for SyntheticKey {
@@ -160,7 +160,7 @@ impl Normalizer {
     fn define_synthetic_atoms(
         &mut self,
         atoms: Vec<AtomId>,
-        clauses: Vec<Clause>,
+        clauses: Vec<FatClause>,
         source: Option<Source>,
     ) -> Result<(), String> {
         // Check if any atoms are already defined
@@ -203,13 +203,13 @@ impl Normalizer {
 
 // Represents a binding for a variable on the stack during normalization.
 enum TermBinding {
-    Bound(Term),
-    Free(Term),
+    Bound(FatTerm),
+    Free(FatTerm),
 }
 
 impl TermBinding {
     /// Get the underlying term regardless of binding type
-    fn term(&self) -> &Term {
+    fn term(&self) -> &FatTerm {
         match self {
             TermBinding::Bound(t) | TermBinding::Free(t) => t,
         }
@@ -256,7 +256,7 @@ impl NormalizerView<'_> {
         &mut self,
         value: &AcornValue,
         synthesized: &mut Vec<AtomId>,
-    ) -> Result<Vec<Clause>, String> {
+    ) -> Result<Vec<FatClause>, String> {
         match value {
             AcornValue::Binary(BinaryOp::And, left, right) => {
                 let mut left_clauses = self.nice_value_to_clauses(left, synthesized)?;
@@ -281,12 +281,12 @@ impl NormalizerView<'_> {
     pub fn value_to_denormalized_clauses(
         &mut self,
         value: &AcornValue,
-    ) -> Result<Vec<Clause>, String> {
+    ) -> Result<Vec<FatClause>, String> {
         let mut output = vec![];
         let cnf = self.value_to_cnf(&value, false, &mut vec![], &mut 0, &mut vec![])?;
         for mut literals in cnf.into_iter() {
             literals.sort();
-            output.push(Clause { literals });
+            output.push(FatClause { literals });
         }
         Ok(output)
     }
@@ -389,7 +389,7 @@ impl NormalizerView<'_> {
                 let term = self
                     .value_to_extended_term(value, stack, next_var_id, synth)?
                     .to_term()?;
-                let literal = Literal::from_signed_term(term, !negate);
+                let literal = FatLiteral::from_signed_term(term, !negate);
                 Ok(CNF::from_literal(literal))
             }
             AcornValue::Match(..) => Err("match in unexpected position".to_string()),
@@ -425,7 +425,7 @@ impl NormalizerView<'_> {
             self.apply_to_extended_term(function, args, stack, next_var_id, synthesized)?;
         match extended {
             ExtendedTerm::Term(term) => {
-                let literal = Literal::from_signed_term(term, !negate);
+                let literal = FatLiteral::from_signed_term(term, !negate);
                 Ok(CNF::from_literal(literal))
             }
             _ => Err("unhandled case: non-term application".to_string()),
@@ -445,7 +445,7 @@ impl NormalizerView<'_> {
     ) -> Result<CNF, String> {
         for quant in quants {
             let type_id = self.type_store().get_type_id(quant)?;
-            let var = Term::new_variable(type_id, *next_var_id);
+            let var = FatTerm::new_variable(type_id, *next_var_id);
             *next_var_id += 1;
             stack.push(TermBinding::Free(var));
         }
@@ -464,7 +464,7 @@ impl NormalizerView<'_> {
         skolem_types: &[AcornType],
         stack: &Vec<TermBinding>,
         synthesized: &mut Vec<AtomId>,
-    ) -> Result<Vec<Term>, String> {
+    ) -> Result<Vec<FatTerm>, String> {
         let mut args = vec![];
         let mut arg_types = vec![];
         let mut seen_vars = std::collections::HashSet::new();
@@ -472,7 +472,7 @@ impl NormalizerView<'_> {
         for binding in stack.iter() {
             for (var_id, type_id) in binding.term().iter_vars() {
                 if seen_vars.insert(var_id) {
-                    let var_term = Term::new_variable(type_id, var_id);
+                    let var_term = FatTerm::new_variable(type_id, var_id);
                     args.push(var_term);
                     arg_types.push(self.type_store().get_type(type_id).clone());
                 }
@@ -490,7 +490,7 @@ impl NormalizerView<'_> {
             let skolem_id = self.as_mut()?.declare_synthetic_atom(skolem_atom_type)?;
             synthesized.push(skolem_id);
             let skolem_atom = Atom::Symbol(Symbol::Synthetic(skolem_id));
-            let skolem_term = Term::new(
+            let skolem_term = FatTerm::new(
                 skolem_term_type_id,
                 skolem_atom_type_id,
                 skolem_atom,
@@ -506,7 +506,7 @@ impl NormalizerView<'_> {
         skolem_type: &AcornType,
         stack: &Vec<TermBinding>,
         synthesized: &mut Vec<AtomId>,
-    ) -> Result<Term, String> {
+    ) -> Result<FatTerm, String> {
         let mut terms =
             self.make_skolem_terms(std::slice::from_ref(skolem_type), stack, synthesized)?;
         Ok(terms.pop().unwrap())
@@ -634,7 +634,7 @@ impl NormalizerView<'_> {
                             // Both sides are simple, so we can return a single literal.
                             let positive = left_sign != right_sign;
                             let literal =
-                                Literal::new(positive, left_term.clone(), right_term.clone());
+                                FatLiteral::new(positive, left_term.clone(), right_term.clone());
                             return Ok(CNF::from_literal(literal));
                         }
                     }
@@ -648,7 +648,7 @@ impl NormalizerView<'_> {
                 // Create new free variables for each argument
                 let mut args = vec![];
                 for arg_type in &arg_types {
-                    let var = Term::new_variable(*arg_type, *next_var_id);
+                    let var = FatTerm::new_variable(*arg_type, *next_var_id);
                     *next_var_id += 1;
                     args.push(ExtendedTerm::Term(var));
                 }
@@ -664,7 +664,8 @@ impl NormalizerView<'_> {
                     if let Some((right_term, right_sign)) = right_pos.match_negated(&right_neg) {
                         // Both sides are simple, so we can return a single literal.
                         let positive = left_sign == right_sign;
-                        let literal = Literal::new(positive, left_term.clone(), right_term.clone());
+                        let literal =
+                            FatLiteral::new(positive, left_term.clone(), right_term.clone());
                         return Ok(CNF::from_literal(literal));
                     }
                 }
@@ -691,7 +692,7 @@ impl NormalizerView<'_> {
             // Create new free variables for each argument
             let mut args = vec![];
             for arg_type in &arg_types {
-                let var = Term::new_variable(*arg_type, *next_var_id);
+                let var = FatTerm::new_variable(*arg_type, *next_var_id);
                 *next_var_id += 1;
                 args.push(var);
             }
@@ -710,7 +711,7 @@ impl NormalizerView<'_> {
                 {
                     // Both sides are terms, so we can do a simple equality or inequality
                     let positive = (left_sign == right_sign) ^ negate;
-                    let literal = Literal::new(positive, left_term, right_term);
+                    let literal = FatLiteral::new(positive, left_term, right_term);
                     return Ok(CNF::from_literal(literal));
                 }
             }
@@ -745,7 +746,7 @@ impl NormalizerView<'_> {
         &self,
         value: &AcornValue,
         stack: &Vec<TermBinding>,
-    ) -> Result<Option<Term>, String> {
+    ) -> Result<Option<FatTerm>, String> {
         match self.try_simple_value_to_signed_term(value, stack)? {
             None => Ok(None),
             Some((t, sign)) => {
@@ -763,7 +764,7 @@ impl NormalizerView<'_> {
         &self,
         value: &AcornValue,
         stack: &Vec<TermBinding>,
-    ) -> Result<Term, String> {
+    ) -> Result<FatTerm, String> {
         match self.try_simple_value_to_term(value, stack)? {
             Some(t) => Ok(t),
             None => Err(format!("expected simple term but got '{}'", value)),
@@ -779,7 +780,7 @@ impl NormalizerView<'_> {
         &self,
         value: &AcornValue,
         stack: &Vec<TermBinding>,
-    ) -> Result<Option<(Term, bool)>, String> {
+    ) -> Result<Option<(FatTerm, bool)>, String> {
         match value {
             AcornValue::Variable(i, _) => {
                 if (*i as usize) < stack.len() {
@@ -805,7 +806,7 @@ impl NormalizerView<'_> {
                     };
                     args.push(arg_term);
                 }
-                Ok(Some((Term::new(term_type, head_type, head, args), true)))
+                Ok(Some((FatTerm::new(term_type, head_type, head, args), true)))
             }
             AcornValue::Constant(c) => {
                 if c.params.is_empty() {
@@ -815,7 +816,7 @@ impl NormalizerView<'_> {
                         return Err(format!("constant {} not found in symbol table", c));
                     };
                     Ok(Some((
-                        Term::new(type_id, type_id, Atom::Symbol(symbol), vec![]),
+                        FatTerm::new(type_id, type_id, Atom::Symbol(symbol), vec![]),
                         true,
                     )))
                 } else {
@@ -829,7 +830,7 @@ impl NormalizerView<'_> {
                 }
             }
             AcornValue::Try(_, _) => Ok(None),
-            AcornValue::Bool(v) => Ok(Some((Term::new_true(), *v))),
+            AcornValue::Bool(v) => Ok(Some((FatTerm::new_true(), *v))),
             _ => Ok(None),
         }
     }
@@ -861,7 +862,7 @@ impl NormalizerView<'_> {
         // We convert f(if a then b else c, d) into if a then f(b, d) else f(c, d).
         // The "spine" logic makes branching work for f as well.
         // If we discover a branching subterm, then we set cond and spine2.
-        let mut cond: Option<Literal> = None;
+        let mut cond: Option<FatLiteral> = None;
         let mut spine1 = vec![];
         let mut spine2 = vec![];
 
@@ -931,13 +932,13 @@ impl NormalizerView<'_> {
         match cond {
             Some(cond) => {
                 assert_eq!(spine1.len(), spine2.len());
-                let then_term = Term::from_spine(spine1, result_type);
-                let else_term = Term::from_spine(spine2, result_type);
+                let then_term = FatTerm::from_spine(spine1, result_type);
+                let else_term = FatTerm::from_spine(spine2, result_type);
                 Ok(ExtendedTerm::If(cond, then_term, else_term))
             }
             None => {
                 assert!(spine2.is_empty());
-                let term = Term::from_spine(spine1, result_type);
+                let term = FatTerm::from_spine(spine1, result_type);
                 Ok(ExtendedTerm::Term(term))
             }
         }
@@ -955,7 +956,7 @@ impl NormalizerView<'_> {
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
-    ) -> Result<Term, String> {
+    ) -> Result<FatTerm, String> {
         // Create a tentative skolem term with the value's type
         let skolem_term = self.make_skolem_term(value_type, stack, synth)?;
         let skolem_id = if let Atom::Symbol(Symbol::Synthetic(id)) = *skolem_term.get_head_atom() {
@@ -986,7 +987,7 @@ impl NormalizerView<'_> {
             // Reuse the existing synthetic atom
             let existing_id = existing_def.atoms[0];
             let existing_atom = Atom::Symbol(Symbol::Synthetic(existing_id));
-            let reused_term = Term::new(
+            let reused_term = FatTerm::new(
                 skolem_term.get_term_type(),
                 skolem_term.get_head_type(),
                 existing_atom,
@@ -1036,7 +1037,7 @@ impl NormalizerView<'_> {
         cnf: CNF,
         stack: &Vec<TermBinding>,
         synth: &mut Vec<AtomId>,
-    ) -> Result<Literal, String> {
+    ) -> Result<FatLiteral, String> {
         use crate::elaborator::acorn_type::AcornType;
         use crate::kernel::atom::Atom;
 
@@ -1049,7 +1050,7 @@ impl NormalizerView<'_> {
         for binding in stack.iter() {
             for (var_id, type_id) in binding.term().iter_vars() {
                 if seen_vars.insert(var_id) {
-                    let var_term = Term::new_variable(type_id, var_id);
+                    let var_term = FatTerm::new_variable(type_id, var_id);
                     args.push(var_term);
                     arg_types.push(self.type_store().get_type(type_id).clone());
                 }
@@ -1072,8 +1073,8 @@ impl NormalizerView<'_> {
         let atom_type_id = self.type_store().get_type_id(&atom_type)?;
 
         let atom = Atom::Symbol(Symbol::Synthetic(atom_id));
-        let synth_term = Term::new(bool_type_id, atom_type_id, atom, args);
-        let synth_lit = Literal::from_signed_term(synth_term.clone(), true);
+        let synth_term = FatTerm::new(bool_type_id, atom_type_id, atom, args);
+        let synth_lit = FatLiteral::from_signed_term(synth_term.clone(), true);
 
         // Create defining clauses for: s <-> C
         // This is (s -> C) and (C -> s)
@@ -1085,7 +1086,7 @@ impl NormalizerView<'_> {
         for clause_lits in cnf.clone().into_iter() {
             let mut new_clause_lits = vec![synth_lit.negate()];
             new_clause_lits.extend(clause_lits);
-            defining_clauses.push(Clause::new(new_clause_lits));
+            defining_clauses.push(FatClause::new(new_clause_lits));
         }
 
         // For (not C or s):
@@ -1094,7 +1095,7 @@ impl NormalizerView<'_> {
         for clause_lits in neg_cnf.into_iter() {
             let mut new_clause_lits = clause_lits;
             new_clause_lits.push(synth_lit.clone());
-            defining_clauses.push(Clause::new(new_clause_lits));
+            defining_clauses.push(FatClause::new(new_clause_lits));
         }
 
         // Add the definition
@@ -1110,7 +1111,7 @@ impl NormalizerView<'_> {
         &mut self,
         ext_term: ExtendedTerm,
         synth: &mut Vec<AtomId>,
-    ) -> Result<Term, String> {
+    ) -> Result<FatTerm, String> {
         match ext_term {
             ExtendedTerm::Term(t) => Ok(t),
             ExtendedTerm::If(cond_lit, then_term, else_term) => {
@@ -1140,14 +1141,14 @@ impl NormalizerView<'_> {
                 // Collect free variables from the condition literal
                 for (var_id, type_id) in cond_lit.left.iter_vars() {
                     if seen_vars.insert(var_id) {
-                        let var_term = Term::new_variable(type_id, var_id);
+                        let var_term = FatTerm::new_variable(type_id, var_id);
                         args.push(var_term);
                         arg_types.push(self.type_store().get_type(type_id).clone());
                     }
                 }
                 for (var_id, type_id) in cond_lit.right.iter_vars() {
                     if seen_vars.insert(var_id) {
-                        let var_term = Term::new_variable(type_id, var_id);
+                        let var_term = FatTerm::new_variable(type_id, var_id);
                         args.push(var_term);
                         arg_types.push(self.type_store().get_type(type_id).clone());
                     }
@@ -1156,7 +1157,7 @@ impl NormalizerView<'_> {
                 // Collect free variables from the then branch
                 for (var_id, type_id) in then_term.iter_vars() {
                     if seen_vars.insert(var_id) {
-                        let var_term = Term::new_variable(type_id, var_id);
+                        let var_term = FatTerm::new_variable(type_id, var_id);
                         args.push(var_term);
                         arg_types.push(self.type_store().get_type(type_id).clone());
                     }
@@ -1165,7 +1166,7 @@ impl NormalizerView<'_> {
                 // Collect free variables from the else branch
                 for (var_id, type_id) in else_term.iter_vars() {
                     if seen_vars.insert(var_id) {
-                        let var_term = Term::new_variable(type_id, var_id);
+                        let var_term = FatTerm::new_variable(type_id, var_id);
                         args.push(var_term);
                         arg_types.push(self.type_store().get_type(type_id).clone());
                     }
@@ -1185,19 +1186,19 @@ impl NormalizerView<'_> {
                 let atom_type_id = self.type_store().get_type_id(&atom_type)?;
 
                 let atom = Atom::Symbol(Symbol::Synthetic(atom_id));
-                let synth_term = Term::new(result_type_id, atom_type_id, atom, args);
+                let synth_term = FatTerm::new(result_type_id, atom_type_id, atom, args);
 
                 // Create defining clauses for the if-expression
                 // (not cond or synth_term = then_term) and (cond or synth_term = else_term)
                 let mut defining_clauses = vec![];
 
                 // First clause: not cond or synth_term = then_term
-                let then_eq = Literal::new(true, synth_term.clone(), then_term);
-                defining_clauses.push(Clause::new(vec![cond_lit.negate(), then_eq]));
+                let then_eq = FatLiteral::new(true, synth_term.clone(), then_term);
+                defining_clauses.push(FatClause::new(vec![cond_lit.negate(), then_eq]));
 
                 // Second clause: cond or synth_term = else_term
-                let else_eq = Literal::new(true, synth_term.clone(), else_term);
-                defining_clauses.push(Clause::new(vec![cond_lit.clone(), else_eq]));
+                let else_eq = FatLiteral::new(true, synth_term.clone(), else_term);
+                defining_clauses.push(FatClause::new(vec![cond_lit.clone(), else_eq]));
 
                 // Add the definition
                 self.as_mut()?
@@ -1255,7 +1256,7 @@ impl NormalizerView<'_> {
                     let Some(symbol) = self.symbol_table().get_symbol(&c.name) else {
                         return Err(format!("constant {} not found in symbol table", c));
                     };
-                    Ok(ExtendedTerm::Term(Term::new(
+                    Ok(ExtendedTerm::Term(FatTerm::new(
                         type_id,
                         type_id,
                         Atom::Symbol(symbol),
@@ -1276,7 +1277,7 @@ impl NormalizerView<'_> {
                 for arg_type in arg_types {
                     let type_id = self.type_store().get_type_id(arg_type)?;
                     let var_id = stack.len() as AtomId;
-                    let var = Term::new_variable(type_id, var_id);
+                    let var = FatTerm::new_variable(type_id, var_id);
                     args.push((var_id, type_id));
                     stack.push(TermBinding::Free(var));
                     // Update next_var_id to be at least one past this variable
@@ -1299,7 +1300,7 @@ impl NormalizerView<'_> {
             }
             AcornValue::Bool(b) => {
                 if *b {
-                    Ok(ExtendedTerm::Term(Term::new_true()))
+                    Ok(ExtendedTerm::Term(FatTerm::new_true()))
                 } else {
                     Err("false literal in unexpected position".to_string())
                 }
@@ -1323,7 +1324,7 @@ impl Normalizer {
         value: &AcornValue,
         ctype: NewConstantType,
         source: &Source,
-    ) -> Result<Vec<Clause>, String> {
+    ) -> Result<Vec<FatClause>, String> {
         self.symbol_table
             .add_from(&value, ctype, &mut self.type_store);
 
@@ -1371,7 +1372,7 @@ impl Normalizer {
         value: &AcornValue,
         ctype: NewConstantType,
         source: &Source,
-    ) -> Result<Vec<Clause>, String> {
+    ) -> Result<Vec<FatClause>, String> {
         if let Err(e) = value.validate() {
             return Err(format!(
                 "validation error: {} while normalizing: {}",
@@ -1403,8 +1404,8 @@ impl Normalizer {
                 let view = NormalizerView::Ref(self);
                 let left_term = view.force_simple_value_to_term(left, &vec![])?;
                 let right_term = view.force_simple_value_to_term(right, &vec![])?;
-                let literal = Literal::new(true, left_term, right_term);
-                let clause = Clause::new(vec![literal]);
+                let literal = FatLiteral::new(true, left_term, right_term);
+                let clause = FatClause::new(vec![literal]);
                 clauses.push(clause);
             }
         }
@@ -1563,7 +1564,7 @@ impl Normalizer {
     /// Any other free variables are left unbound. Their types are accumulated.
     fn denormalize_term(
         &self,
-        term: &Term,
+        term: &FatTerm,
         var_types: &mut Option<Vec<AcornType>>,
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
@@ -1587,7 +1588,7 @@ impl Normalizer {
     /// Any other free variables are left unbound. Their types are accumulated.
     fn denormalize_literal(
         &self,
-        literal: &Literal,
+        literal: &FatLiteral,
         var_types: &mut Option<Vec<AcornType>>,
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
@@ -1614,7 +1615,7 @@ impl Normalizer {
     /// Any remaining free variables are enclosed in a "forall" quantifier.
     pub fn denormalize(
         &self,
-        clause: &Clause,
+        clause: &FatClause,
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
         if clause.literals.is_empty() {
@@ -1676,7 +1677,7 @@ impl Normalizer {
 
     /// When you denormalize and renormalize a clause, you should get the same thing.
     #[cfg(test)]
-    fn check_denormalize_renormalize(&mut self, clause: &Clause) {
+    fn check_denormalize_renormalize(&mut self, clause: &FatClause) {
         let denormalized = self.denormalize(clause, None);
         denormalized
             .validate()

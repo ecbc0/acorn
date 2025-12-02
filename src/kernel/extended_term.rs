@@ -1,20 +1,20 @@
 use crate::kernel::atom::AtomId;
 use crate::kernel::cnf::CNF;
-use crate::kernel::literal::Literal;
-use crate::kernel::term::{Term, TypeId};
+use crate::kernel::fat_literal::FatLiteral;
+use crate::kernel::fat_term::{FatTerm, TypeId};
 
 // An ExtendedTerm is like a term in the sense that a comparison between two of them can be converted
 // into a CNF formula.
 // They can be Boolean or have non-Boolean types.
 #[derive(Clone, Debug)]
 pub enum ExtendedTerm {
-    Term(Term),
+    Term(FatTerm),
 
     // (condition, then branch, else branch)
-    If(Literal, Term, Term),
+    If(FatLiteral, FatTerm, FatTerm),
 
     // Lambda(args, body) represents the value f such that f(args) = body.
-    Lambda(Vec<(AtomId, TypeId)>, Term),
+    Lambda(Vec<(AtomId, TypeId)>, FatTerm),
 }
 
 impl std::fmt::Display for ExtendedTerm {
@@ -44,7 +44,7 @@ impl std::fmt::Display for ExtendedTerm {
 
 impl ExtendedTerm {
     /// Convert ExtendedTerm to a plain Term, erroring if it's not ::Term variant
-    pub fn to_term(self) -> Result<Term, String> {
+    pub fn to_term(self) -> Result<FatTerm, String> {
         match self {
             ExtendedTerm::Term(t) => Ok(t),
             other => Err(format!("expected plain term but got {}", other)),
@@ -52,7 +52,7 @@ impl ExtendedTerm {
     }
 
     /// Apply arguments to an ExtendedTerm, similar to Term::apply.
-    pub fn apply(&self, args: &[Term], result_type: TypeId) -> ExtendedTerm {
+    pub fn apply(&self, args: &[FatTerm], result_type: TypeId) -> ExtendedTerm {
         match self {
             ExtendedTerm::Term(term) => ExtendedTerm::Term(term.apply(args, result_type)),
             ExtendedTerm::If(cond, then_term, else_term) => {
@@ -88,15 +88,15 @@ impl ExtendedTerm {
     }
 
     /// Convert an equality comparison between this ExtendedTerm and a Term into CNF.
-    fn eq_term_to_cnf(self, term: Term, negate: bool) -> Result<CNF, String> {
+    fn eq_term_to_cnf(self, term: FatTerm, negate: bool) -> Result<CNF, String> {
         match self {
             ExtendedTerm::Term(left) => {
-                let literal = Literal::new(!negate, left, term);
+                let literal = FatLiteral::new(!negate, left, term);
                 Ok(CNF::from_literal(literal))
             }
             ExtendedTerm::If(cond, then_t, else_t) => {
-                let then_lit = Literal::new(!negate, then_t, term.clone());
-                let else_lit = Literal::new(!negate, else_t, term);
+                let then_lit = FatLiteral::new(!negate, then_t, term.clone());
+                let else_lit = FatLiteral::new(!negate, else_t, term);
                 Ok(CNF::literal_if(cond, then_lit, else_lit))
             }
             ExtendedTerm::Lambda(_, t) => Err(format!(

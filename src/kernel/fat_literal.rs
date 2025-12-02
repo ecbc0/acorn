@@ -3,20 +3,20 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::term::{Term, TypeId};
+use crate::kernel::fat_term::{FatTerm, TypeId};
 
 // Literals are always boolean-valued.
 // In normalized form, left is the "larger" term.
 // Literals like "foo(a, b, c)" are treated as equalities having both
 // a left and a right side, by making a right side equal to the special constant "true".
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct Literal {
+pub struct FatLiteral {
     pub positive: bool,
-    pub left: Term,
-    pub right: Term,
+    pub left: FatTerm,
+    pub right: FatTerm,
 }
 
-impl fmt::Display for Literal {
+impl fmt::Display for FatLiteral {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.positive {
             if self.is_signed_term() {
@@ -32,25 +32,25 @@ impl fmt::Display for Literal {
     }
 }
 
-fn needs_to_flip(left: &Term, right: &Term) -> bool {
+fn needs_to_flip(left: &FatTerm, right: &FatTerm) -> bool {
     left.extended_kbo_cmp(right) == Ordering::Less
 }
 
-impl Literal {
+impl FatLiteral {
     // Normalizes the direction.
     // The larger term should be on the left of the literal.
-    pub fn new(positive: bool, left: Term, right: Term) -> Literal {
-        let (lit, _) = Literal::new_with_flip(positive, left, right);
+    pub fn new(positive: bool, left: FatTerm, right: FatTerm) -> FatLiteral {
+        let (lit, _) = FatLiteral::new_with_flip(positive, left, right);
         lit
     }
 
     // Normalizes the direction.
     // The larger term should be on the left of the literal.
     // Returns the literal and whether it was flipped.
-    pub fn new_with_flip(positive: bool, left: Term, right: Term) -> (Literal, bool) {
+    pub fn new_with_flip(positive: bool, left: FatTerm, right: FatTerm) -> (FatLiteral, bool) {
         if needs_to_flip(&left, &right) {
             (
-                Literal {
+                FatLiteral {
                     positive,
                     left: right,
                     right: left,
@@ -59,7 +59,7 @@ impl Literal {
             )
         } else {
             (
-                Literal {
+                FatLiteral {
                     positive,
                     left,
                     right,
@@ -73,32 +73,32 @@ impl Literal {
         !needs_to_flip(&self.left, &self.right)
     }
 
-    pub fn from_signed_term(term: Term, positive: bool) -> Literal {
-        Literal::new(positive, term, Term::new_true())
+    pub fn from_signed_term(term: FatTerm, positive: bool) -> FatLiteral {
+        FatLiteral::new(positive, term, FatTerm::new_true())
     }
 
-    pub fn positive(term: Term) -> Literal {
-        Literal::new(true, term, Term::new_true())
+    pub fn positive(term: FatTerm) -> FatLiteral {
+        FatLiteral::new(true, term, FatTerm::new_true())
     }
 
-    pub fn negative(term: Term) -> Literal {
-        Literal::new(false, term, Term::new_true())
+    pub fn negative(term: FatTerm) -> FatLiteral {
+        FatLiteral::new(false, term, FatTerm::new_true())
     }
 
-    pub fn equals(left: Term, right: Term) -> Literal {
-        Literal::new(true, left, right)
+    pub fn equals(left: FatTerm, right: FatTerm) -> FatLiteral {
+        FatLiteral::new(true, left, right)
     }
 
-    pub fn not_equals(left: Term, right: Term) -> Literal {
-        Literal::new(false, left, right)
+    pub fn not_equals(left: FatTerm, right: FatTerm) -> FatLiteral {
+        FatLiteral::new(false, left, right)
     }
 
-    pub fn true_value() -> Literal {
-        Literal::new(true, Term::new_true(), Term::new_true())
+    pub fn true_value() -> FatLiteral {
+        FatLiteral::new(true, FatTerm::new_true(), FatTerm::new_true())
     }
 
-    pub fn false_value() -> Literal {
-        Literal::new(false, Term::new_true(), Term::new_true())
+    pub fn false_value() -> FatLiteral {
+        FatLiteral::new(false, FatTerm::new_true(), FatTerm::new_true())
     }
 
     pub fn is_true_value(&self) -> bool {
@@ -109,8 +109,8 @@ impl Literal {
         !self.positive && self.left.is_true() && self.right.is_true()
     }
 
-    pub fn negate(&self) -> Literal {
-        Literal {
+    pub fn negate(&self) -> FatLiteral {
+        FatLiteral {
             positive: !self.positive,
             left: self.left.clone(),
             right: self.right.clone(),
@@ -118,14 +118,14 @@ impl Literal {
     }
 
     /// Whether these two literals are the same thing, but one is the negation of the other.
-    pub fn equals_negated(&self, other: &Literal) -> bool {
+    pub fn equals_negated(&self, other: &FatLiteral) -> bool {
         self.positive != other.positive && self.left == other.left && self.right == other.right
     }
 
     /// Extracts the polarity from this literal, returning a positive version and the original polarity.
     /// If the literal is already positive, returns (self, true).
     /// If the literal is negative, returns (positive version, false).
-    pub fn extract_polarity(&self) -> (Literal, bool) {
+    pub fn extract_polarity(&self) -> (FatLiteral, bool) {
         if self.positive {
             (self.clone(), true)
         } else {
@@ -133,23 +133,23 @@ impl Literal {
         }
     }
 
-    pub fn parse(s: &str) -> Literal {
+    pub fn parse(s: &str) -> FatLiteral {
         if s.contains(" != ") {
             let mut parts = s.split(" != ");
-            let left = Term::parse(parts.next().unwrap());
-            let right = Term::parse(parts.next().unwrap());
-            Literal::not_equals(left, right)
+            let left = FatTerm::parse(parts.next().unwrap());
+            let right = FatTerm::parse(parts.next().unwrap());
+            FatLiteral::not_equals(left, right)
         } else if s.contains(" = ") {
             let mut parts = s.split(" = ");
-            let left = Term::parse(parts.next().unwrap());
-            let right = Term::parse(parts.next().unwrap());
-            Literal::equals(left, right)
+            let left = FatTerm::parse(parts.next().unwrap());
+            let right = FatTerm::parse(parts.next().unwrap());
+            FatLiteral::equals(left, right)
         } else if s.starts_with("not ") {
-            let term = Term::parse(&s[4..]);
-            Literal::negative(term)
+            let term = FatTerm::parse(&s[4..]);
+            FatLiteral::negative(term)
         } else {
-            let term = Term::parse(s);
-            Literal::positive(term)
+            let term = FatTerm::parse(s);
+            FatLiteral::positive(term)
         }
     }
 
@@ -185,11 +185,11 @@ impl Literal {
         answer
     }
 
-    pub fn map(&self, f: &mut impl FnMut(&Term) -> Term) -> Literal {
-        Literal::new(self.positive, f(&self.left), f(&self.right))
+    pub fn map(&self, f: &mut impl FnMut(&FatTerm) -> FatTerm) -> FatLiteral {
+        FatLiteral::new(self.positive, f(&self.left), f(&self.right))
     }
 
-    pub fn replace_atom(&self, atom: &Atom, replacement: &Atom) -> Literal {
+    pub fn replace_atom(&self, atom: &Atom, replacement: &Atom) -> FatLiteral {
         self.map(&mut |term| term.replace_atom(atom, replacement))
     }
 
@@ -222,7 +222,7 @@ impl Literal {
     // For a literal s = t, get a vector with:
     // (true, s, t)
     // (false, t, s)
-    pub fn both_term_pairs(&self) -> Vec<(bool, &Term, &Term)> {
+    pub fn both_term_pairs(&self) -> Vec<(bool, &FatTerm, &FatTerm)> {
         vec![
             (true, &self.left, &self.right),
             (false, &self.right, &self.left),
@@ -235,7 +235,7 @@ impl Literal {
     }
 
     // Returns (right, left) with normalized var ids.
-    pub fn normalized_reversed(&self) -> (Term, Term) {
+    pub fn normalized_reversed(&self) -> (FatTerm, FatTerm) {
         let mut var_ids = vec![];
         let mut right = self.right.clone();
         right.normalize_var_ids(&mut var_ids);
@@ -276,7 +276,7 @@ impl Literal {
 
     // An extension of the kbo ordering on literals.
     // Ignores sign.
-    pub fn extended_kbo_cmp(&self, other: &Literal) -> Ordering {
+    pub fn extended_kbo_cmp(&self, other: &FatLiteral) -> Ordering {
         let left_cmp = self.left.extended_kbo_cmp(&other.left);
         if left_cmp != Ordering::Equal {
             return left_cmp;
@@ -303,19 +303,19 @@ impl Literal {
         &self,
         left: bool,
         path: &[usize],
-        new_subterm: Term,
-    ) -> (Literal, bool) {
+        new_subterm: FatTerm,
+    ) -> (FatLiteral, bool) {
         let (u, v, flip1) = if left {
             (&self.left, &self.right, false)
         } else {
             (&self.right, &self.left, true)
         };
         let new_u = u.replace_at_path(path, new_subterm);
-        let (new_literal, flip2) = Literal::new_with_flip(self.positive, new_u, v.clone());
+        let (new_literal, flip2) = FatLiteral::new_with_flip(self.positive, new_u, v.clone());
         (new_literal, flip1 ^ flip2)
     }
 
-    pub fn get_term_at_path(&self, left: bool, path: &[usize]) -> Option<&Term> {
+    pub fn get_term_at_path(&self, left: bool, path: &[usize]) -> Option<&FatTerm> {
         if left {
             self.left.get_term_at_path(path)
         } else {
@@ -330,7 +330,7 @@ impl Literal {
 // Negative literals come first. We depend on that in miscellaneous places.
 // Then, we order backwards by term ordering for the left term.
 // Then, backwards (I guess?) for the right term.
-impl PartialOrd for Literal {
+impl PartialOrd for FatLiteral {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         let positive_cmp = self.positive.cmp(&other.positive);
         if positive_cmp != Ordering::Equal {
@@ -346,26 +346,26 @@ impl PartialOrd for Literal {
     }
 }
 
-impl Ord for Literal {
+impl Ord for FatLiteral {
     fn cmp(&self, other: &Self) -> Ordering {
         self.partial_cmp(other).unwrap()
     }
 }
 
-impl Literal {
+impl FatLiteral {
     /// Renumbers synthetic atoms from the provided list into the invalid range.
     /// This does renormalize, so it could be swapping the order.
-    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> Literal {
+    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> FatLiteral {
         let new_left = self.left.invalidate_synthetics(from);
         let new_right = self.right.invalidate_synthetics(from);
-        Literal::new(self.positive, new_left, new_right)
+        FatLiteral::new(self.positive, new_left, new_right)
     }
 
     /// Replace the first `num_to_replace` variables with invalid synthetic atoms, adjusting
     /// the subsequent variable ids accordingly.
-    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> Literal {
+    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> FatLiteral {
         let new_left = self.left.instantiate_invalid_synthetics(num_to_replace);
         let new_right = self.right.instantiate_invalid_synthetics(num_to_replace);
-        Literal::new(self.positive, new_left, new_right)
+        FatLiteral::new(self.positive, new_left, new_right)
     }
 }

@@ -4,9 +4,9 @@ use std::hash::Hash;
 
 use crate::clause_set::{ClauseId, ClauseSet, GroupId, LiteralId, Normalization, TermId};
 use crate::kernel::atom::Atom;
-use crate::kernel::clause::Clause;
-use crate::kernel::literal::Literal;
-use crate::kernel::term::Term;
+use crate::kernel::fat_clause::FatClause;
+use crate::kernel::fat_literal::FatLiteral;
+use crate::kernel::fat_term::FatTerm;
 
 /// Every time we set two terms equal or not equal, that action is tagged with a StepId.
 /// The term graph uses it to provide a history of the reasoning that led to a conclusion.
@@ -50,17 +50,17 @@ pub struct RewriteStep {
     pub source: RewriteSource,
 
     /// The term that existed before the rewrite.
-    pub input_term: Term,
+    pub input_term: FatTerm,
 
     /// The term that the input term was rewritten info.
-    pub output_term: Term,
+    pub output_term: FatTerm,
 
     /// A forwards rewrite is the "left -> right" direction.
     pub forwards: bool,
 }
 
 impl RewriteStep {
-    pub fn left_term(&self) -> &Term {
+    pub fn left_term(&self) -> &FatTerm {
         if self.forwards {
             &self.input_term
         } else {
@@ -68,7 +68,7 @@ impl RewriteStep {
         }
     }
 
-    pub fn right_term(&self) -> &Term {
+    pub fn right_term(&self) -> &FatTerm {
         if self.forwards {
             &self.output_term
         } else {
@@ -107,7 +107,7 @@ enum Decomposition {
 
 #[derive(Clone)]
 struct TermInfo {
-    term: Term,
+    term: FatTerm,
     group: GroupId,
     decomp: Decomposition,
 
@@ -309,7 +309,7 @@ impl TermGraph {
     }
 
     /// Returns None if this term isn't in the graph.
-    pub fn get_term_id(&self, term: &Term) -> Option<TermId> {
+    pub fn get_term_id(&self, term: &FatTerm) -> Option<TermId> {
         // Look up the head
         let head_key = Decomposition::Atomic(term.get_head_atom().clone());
         let head_id = *self.decompositions.get(&head_key)?;
@@ -328,7 +328,7 @@ impl TermGraph {
         self.decompositions.get(&compound_key).copied()
     }
 
-    pub fn get_term(&self, term_id: TermId) -> &Term {
+    pub fn get_term(&self, term_id: TermId) -> &FatTerm {
         &self.terms[term_id.get() as usize].term
     }
 
@@ -370,7 +370,7 @@ impl TermGraph {
     // Inserts the head of the provided term as an atom.
     // If it's already in the graph, return the existing term id.
     // Otherwise, make a new term id and give it a new group.
-    fn insert_head(&mut self, term: &Term) -> TermId {
+    fn insert_head(&mut self, term: &FatTerm) -> TermId {
         let key = Decomposition::Atomic(term.get_head_atom().clone());
         if let Some(&id) = self.decompositions.get(&key) {
             return id;
@@ -380,7 +380,7 @@ impl TermGraph {
         let term_id = TermId(self.terms.len() as u32);
         let group_id = GroupId(self.groups.len() as u32);
 
-        let head = Term::new(
+        let head = FatTerm::new(
             term.get_head_type(),
             term.get_head_type(),
             *term.get_head_atom(),
@@ -406,7 +406,7 @@ impl TermGraph {
     // Inserts a term composition relationship.
     // If it's already in the graph, return the existing term id.
     // Otherwise, make a new term and group.
-    fn insert_term_compound(&mut self, term: &Term, head: TermId, args: Vec<TermId>) -> TermId {
+    fn insert_term_compound(&mut self, term: &FatTerm, head: TermId, args: Vec<TermId>) -> TermId {
         let key = Decomposition::Compound(head, args);
         if let Some(&id) = self.decompositions.get(&key) {
             return id;
@@ -473,7 +473,7 @@ impl TermGraph {
 
     /// Inserts a term.
     /// Makes a new term, group, and compound if necessary.
-    pub fn insert_term(&mut self, term: &Term) -> TermId {
+    pub fn insert_term(&mut self, term: &FatTerm) -> TermId {
         let head_term_id = self.insert_head(term);
         if term.args().is_empty() {
             return head_term_id;
@@ -499,7 +499,7 @@ impl TermGraph {
     /// All terms in the clause are inserted if not already present.
     /// The clause is indexed by all groups that appear in its literals.
     /// Don't insert clauses with no literals.
-    pub fn insert_clause(&mut self, clause: &Clause, step: StepId) {
+    pub fn insert_clause(&mut self, clause: &FatClause, step: StepId) {
         // First, insert all terms and collect literal IDs
         let mut literal_ids = Vec::new();
         for literal in &clause.literals {
@@ -1031,7 +1031,7 @@ impl TermGraph {
     }
 
     /// Returns the truth value of this literal, or None if it cannot be evaluated.
-    pub fn evaluate_literal(&mut self, literal: &Literal) -> Option<bool> {
+    pub fn evaluate_literal(&mut self, literal: &FatLiteral) -> Option<bool> {
         // If the literal is positive, we check if the terms are equal.
         // If the literal is negative, we check if the terms are not equal.
         let left_id = self.insert_term(&literal.left);
@@ -1054,7 +1054,7 @@ impl TermGraph {
 
     /// Returns true if the clause is known to be true.
     /// If we have found any contradiction, we can degenerately conclude the clause is true.
-    pub fn check_clause(&mut self, clause: &Clause) -> bool {
+    pub fn check_clause(&mut self, clause: &FatClause) -> bool {
         if self.has_contradiction() {
             return true;
         }
@@ -1075,7 +1075,7 @@ impl TermGraph {
 
     /// Checks if a clause with the same literals exists in the term graph.
     /// This compares clauses based on their group-normalized form.
-    fn clause_exists(&mut self, clause: &Clause) -> bool {
+    fn clause_exists(&mut self, clause: &FatClause) -> bool {
         if clause.literals.is_empty() {
             return false;
         }
@@ -1358,14 +1358,14 @@ impl TermGraph {
 impl TermGraph {
     #[cfg(test)]
     fn insert_term_str(&mut self, s: &str) -> TermId {
-        let id = self.insert_term(&Term::parse(s));
+        let id = self.insert_term(&FatTerm::parse(s));
         self.validate();
         id
     }
 
     #[cfg(test)]
     fn insert_clause_str(&mut self, s: &str, step: StepId) {
-        let clause = Clause::parse(s);
+        let clause = FatClause::parse(s);
         self.insert_clause(&clause, step);
         self.validate();
     }
@@ -1398,12 +1398,12 @@ impl TermGraph {
 
     #[cfg(test)]
     fn get_str(&self, s: &str) -> TermId {
-        self.get_term_id(&Term::parse(s)).unwrap()
+        self.get_term_id(&FatTerm::parse(s)).unwrap()
     }
 
     #[cfg(test)]
     fn check_clause_str(&mut self, s: &str) {
-        let clause = Clause::parse(s);
+        let clause = FatClause::parse(s);
         if !self.check_clause(&clause) {
             panic!("check_clause_str(\"{}\") failed", s);
         }
