@@ -26,7 +26,7 @@ use crate::syntax::statement::{
 use crate::syntax::token::{Token, TokenIter, TokenType};
 use crate::type_unifier::TypeclassRegistry;
 
-use super::environment::{Environment, LineType};
+use super::{Environment, LineType};
 
 // This file generally contains the logic for creating an environment.
 // It would be nice for the separation to be cleaner.

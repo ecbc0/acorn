@@ -1726,7 +1726,12 @@ impl Normalizer {
 
     /// Checks a theorem. Just for testing purposes.
     #[cfg(test)]
-    pub fn check(&mut self, env: &crate::elaborator::environment::Environment, name: &str, expected: &[&str]) {
+    pub fn check(
+        &mut self,
+        env: &crate::elaborator::environment::Environment,
+        name: &str,
+        expected: &[&str],
+    ) {
         for node in &env.nodes {
             if let Some((theorem_name, value)) = node.as_theorem() {
                 if theorem_name == name {

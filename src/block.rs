@@ -7,8 +7,6 @@ use crate::atom::AtomId;
 use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, TypeParam};
 use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
-#[allow(unused_imports)]
-use crate::elaborator::add_statement; // Brings Environment::add_statement into scope
 use crate::elaborator::environment::{Environment, LineType};
 use crate::names::DefinedName;
 use crate::node::Node;

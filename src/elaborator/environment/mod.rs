@@ -1,10 +1,8 @@
+mod add_statement;
+
 use std::collections::HashSet;
 
 use tower_lsp::lsp_types::Range;
-
-// Import the add_statement module to bring the impl into scope
-#[allow(unused_imports)]
-use crate::elaborator::add_statement;
 
 use crate::block::{Block, BlockParams};
 use crate::compilation::{self, ErrorSource};
