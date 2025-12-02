@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use crate::atom::{Atom, AtomId};
 use crate::elaborator::acorn_type::AcornType;
 use crate::elaborator::acorn_value::{AcornValue, ConstantInstance};
+use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::term::{Term, TypeId};
 use crate::kernel::type_store::TypeStore;
 use crate::names::ConstantName;

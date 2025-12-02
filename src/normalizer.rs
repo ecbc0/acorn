@@ -1,15 +1,15 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
 use crate::builder::BuildError;
-use crate::cnf::CNF;
 use crate::elaborator::acorn_type::AcornType;
 use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
-use crate::extended_term::ExtendedTerm;
-use crate::fact::Fact;
-use crate::goal::Goal;
+use crate::elaborator::fact::Fact;
+use crate::elaborator::goal::Goal;
+use crate::kernel::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
 use crate::kernel::clause::Clause;
+use crate::kernel::cnf::CNF;
+use crate::kernel::extended_term::ExtendedTerm;
 use crate::kernel::literal::Literal;
 use crate::kernel::term::{Term, TypeId, BOOL};
 use crate::kernel::type_store::TypeStore;
@@ -1028,8 +1028,8 @@ impl NormalizerView<'_> {
         stack: &Vec<TermBinding>,
         synth: &mut Vec<AtomId>,
     ) -> Result<Literal, String> {
-        use crate::atom::Atom;
         use crate::elaborator::acorn_type::AcornType;
+        use crate::kernel::atom::Atom;
 
         // Create a new synthetic boolean atom with the appropriate function type
         // based on free variables in the stack
@@ -1115,8 +1115,8 @@ impl NormalizerView<'_> {
                 // (cond -> s = then_term) and (not cond -> s = else_term)
                 // Which is (not cond or s = then_term) and (cond or s = else_term)
 
-                use crate::atom::Atom;
                 use crate::elaborator::acorn_type::AcornType;
+                use crate::kernel::atom::Atom;
 
                 // Determine the type of the result (should be same as then_term and else_term)
                 let result_type_id = then_term.get_term_type();

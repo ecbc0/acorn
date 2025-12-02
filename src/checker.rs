@@ -8,11 +8,11 @@ use crate::elaborator::acorn_type::AcornType;
 use crate::elaborator::acorn_value::AcornValue;
 use crate::elaborator::binding_map::BindingMap;
 use crate::elaborator::evaluator::Evaluator;
+use crate::elaborator::potential_value::PotentialValue;
 use crate::generalization_set::GeneralizationSet;
 use crate::kernel::clause::Clause;
 use crate::names::ConstantName;
 use crate::normalizer::{Normalizer, NormalizerView};
-use crate::potential_value::PotentialValue;
 use crate::project::Project;
 use crate::source::Source;
 use crate::stack::Stack;
@@ -472,7 +472,7 @@ impl Checker {
     /// Normalizes the goal and inserts all resulting clauses as assumptions.
     pub fn insert_goal(
         &mut self,
-        goal: &crate::goal::Goal,
+        goal: &crate::elaborator::goal::Goal,
         normalizer: &mut crate::normalizer::Normalizer,
     ) -> Result<(), Error> {
         use crate::proof_step::Rule;

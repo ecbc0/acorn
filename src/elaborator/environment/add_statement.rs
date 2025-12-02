@@ -1,19 +1,20 @@
 use tower_lsp::lsp_types::Range;
 
-use crate::atom::AtomId;
-use crate::block::{Block, BlockParams};
 use crate::compilation::{self, CompilationError, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, Datatype, TypeParam, Typeclass, Variance};
 use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
 use crate::elaborator::binding_map::ConstructorInfo;
+use crate::elaborator::block::{Block, BlockParams};
 use crate::elaborator::evaluator::{AttributesTypeArgs, Evaluator};
-use crate::fact::Fact;
+use crate::elaborator::fact::Fact;
+use crate::elaborator::node::Node;
+use crate::elaborator::potential_value::PotentialValue;
+use crate::elaborator::proposition::Proposition;
+use crate::elaborator::type_unifier::TypeclassRegistry;
+use crate::kernel::atom::AtomId;
 use crate::named_entity::NamedEntity;
 use crate::names::{ConstantName, DefinedName};
-use crate::node::Node;
-use crate::potential_value::PotentialValue;
 use crate::project::{ImportError, Project};
-use crate::proposition::Proposition;
 use crate::source::{Source, SourceType};
 use crate::stack::Stack;
 use crate::syntax::expression::{Declaration, Expression};
@@ -24,7 +25,6 @@ use crate::syntax::statement::{
     TheoremStatement, TypeStatement, TypeclassStatement, VariableSatisfyStatement,
 };
 use crate::syntax::token::{Token, TokenIter, TokenType};
-use crate::type_unifier::TypeclassRegistry;
 
 use super::{Environment, LineType};
 

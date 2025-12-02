@@ -1,14 +1,14 @@
 use std::fmt;
 use std::sync::Arc;
 
-use crate::block::Block;
 use crate::elaborator::acorn_value::AcornValue;
+use crate::elaborator::block::Block;
 use crate::elaborator::environment::Environment;
-use crate::fact::Fact;
-use crate::goal::Goal;
-use crate::potential_value::PotentialValue;
+use crate::elaborator::fact::Fact;
+use crate::elaborator::goal::Goal;
+use crate::elaborator::potential_value::PotentialValue;
+use crate::elaborator::proposition::Proposition;
 use crate::project::Project;
-use crate::proposition::Proposition;
 use crate::source::Source;
 
 /// Environments are structured into a tree of nodes. Environment nodes have access to everything

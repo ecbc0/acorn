@@ -1,7 +1,7 @@
 use crate::code_generator::CodeGenerator;
 use crate::elaborator::environment::Environment;
+use crate::elaborator::proposition::Proposition;
 use crate::module::ModuleId;
-use crate::proposition::Proposition;
 
 // A goal along with some information related to it.
 #[derive(Clone, Debug)]

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use crate::atom::Atom;
+use crate::kernel::atom::Atom;
 use crate::kernel::literal::Literal;
 use crate::kernel::term::{Term, TypeId};
 

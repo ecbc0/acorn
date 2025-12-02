@@ -6,10 +6,10 @@ use crate::elaborator::acorn_value::AcornValue;
 use crate::elaborator::binding_map::BindingMap;
 use crate::kernel::clause::{Clause, LiteralTrace};
 use crate::kernel::literal::Literal;
+use crate::kernel::unifier::{Scope, Unifier};
+use crate::kernel::variable_map::VariableMap;
 use crate::normalizer::Normalizer;
 use crate::proof_step::{ProofStep, ProofStepId, Rule};
-use crate::unifier::{Scope, Unifier};
-use crate::variable_map::VariableMap;
 
 /// A proof that was successfully found by the prover.
 ///

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::atom::Atom;
+use crate::kernel::atom::Atom;
 use crate::kernel::clause::Clause;
 use crate::kernel::literal::Literal;
 use crate::kernel::term::Term;

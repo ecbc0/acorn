@@ -3,20 +3,20 @@ use std::fmt;
 
 use tower_lsp::lsp_types::{LanguageString, MarkedString};
 
-use crate::atom::AtomId;
 use crate::elaborator::acorn_type::{AcornType, Datatype, PotentialType, Typeclass};
 use crate::elaborator::acorn_value::{AcornValue, BinaryOp, ConstantInstance};
 use crate::elaborator::binding_map::BindingMap;
+use crate::elaborator::type_unifier::TypeclassRegistry;
+use crate::kernel::atom::AtomId;
 use crate::kernel::clause::Clause;
 use crate::kernel::term::{Term, TypeId};
+use crate::kernel::variable_map::VariableMap;
 use crate::module::ModuleId;
 use crate::names::{ConstantName, DefinedName};
 use crate::normalizer::Normalizer;
 use crate::saturation::proof::ConcreteStep;
 use crate::syntax::expression::{Declaration, Expression};
 use crate::syntax::token::TokenType;
-use crate::type_unifier::TypeclassRegistry;
-use crate::variable_map::VariableMap;
 
 pub type Result<T> = std::result::Result<T, Error>;
 

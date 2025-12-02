@@ -1,5 +1,5 @@
-use crate::atom::AtomId;
-use crate::cnf::CNF;
+use crate::kernel::atom::AtomId;
+use crate::kernel::cnf::CNF;
 use crate::kernel::literal::Literal;
 use crate::kernel::term::{Term, TypeId};
 

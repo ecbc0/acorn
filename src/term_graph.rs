@@ -2,8 +2,8 @@ use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 use std::hash::Hash;
 
-use crate::atom::Atom;
 use crate::clause_set::{ClauseId, ClauseSet, GroupId, LiteralId, Normalization, TermId};
+use crate::kernel::atom::Atom;
 use crate::kernel::clause::Clause;
 use crate::kernel::literal::Literal;
 use crate::kernel::term::Term;

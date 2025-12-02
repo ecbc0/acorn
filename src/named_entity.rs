@@ -3,9 +3,9 @@ use std::fmt;
 use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, PotentialType, Typeclass, UnresolvedType};
 use crate::elaborator::acorn_value::AcornValue;
+use crate::elaborator::potential_value::PotentialValue;
+use crate::elaborator::unresolved_constant::UnresolvedConstant;
 use crate::module::ModuleId;
-use crate::potential_value::PotentialValue;
-use crate::unresolved_constant::UnresolvedConstant;
 
 // A name can refer to any of these things.
 #[derive(Debug, Clone, PartialEq)]

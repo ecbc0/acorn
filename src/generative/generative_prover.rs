@@ -6,7 +6,7 @@ use crate::certificate::Certificate;
 use crate::checker::Checker;
 use crate::code_generator::Error as CodeGenError;
 use crate::elaborator::binding_map::BindingMap;
-use crate::goal::Goal;
+use crate::elaborator::goal::Goal;
 use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::project::Project;
 use crate::proof_step::ProofStep;

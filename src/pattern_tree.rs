@@ -1,6 +1,6 @@
 use qp_trie::{Entry, SubTrie, Trie};
 
-use crate::atom::{Atom, AtomId};
+use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::clause::Clause;
 use crate::kernel::literal::Literal;
 use crate::kernel::term::{Term, TypeId};

@@ -1,11 +1,11 @@
 use std::cmp::Ordering;
 use std::fmt;
 
-use crate::atom::Atom;
+use crate::elaborator::proposition::MonomorphicProposition;
+use crate::kernel::atom::Atom;
 use crate::kernel::clause::{Clause, ClauseTrace, LiteralTrace};
 use crate::kernel::literal::Literal;
 use crate::kernel::term::Term;
-use crate::proposition::MonomorphicProposition;
 use crate::source::{Source, SourceType};
 
 /// The different sorts of proof steps.

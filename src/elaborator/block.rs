@@ -3,15 +3,15 @@ use std::sync::Arc;
 
 use tower_lsp::lsp_types::Range;
 
-use crate::atom::AtomId;
 use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, TypeParam};
 use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
 use crate::elaborator::environment::{Environment, LineType};
+use crate::elaborator::node::Node;
+use crate::elaborator::proposition::Proposition;
+use crate::kernel::atom::AtomId;
 use crate::names::DefinedName;
-use crate::node::Node;
 use crate::project::Project;
-use crate::proposition::Proposition;
 use crate::source::Source;
 use crate::syntax::statement::Body;
 use crate::syntax::token::Token;

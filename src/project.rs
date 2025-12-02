@@ -16,15 +16,15 @@ use crate::elaborator::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::elaborator::acorn_value::AcornValue;
 use crate::elaborator::binding_map::BindingMap;
 use crate::elaborator::environment::Environment;
-use crate::fact::Fact;
-use crate::goal::Goal;
+use crate::elaborator::fact::Fact;
+use crate::elaborator::goal::Goal;
 use crate::interfaces::Location;
 use crate::module::{LoadState, Module, ModuleDescriptor, ModuleId};
 use crate::named_entity::NamedEntity;
 use crate::names::ConstantName;
 use crate::processor::Processor;
 use crate::syntax::token::Token;
-use crate::token_map::TokenInfo;
+use crate::syntax::token_map::TokenInfo;
 
 // The Project is responsible for importing different files and assigning them module ids.
 pub struct Project {
@@ -1221,7 +1221,7 @@ impl Project {
         &self,
         goal: &Goal,
         env: &Environment,
-        cursor: &crate::node::NodeCursor,
+        cursor: &crate::elaborator::node::NodeCursor,
     ) -> Option<(&Certificate, Vec<crate::checker::CertificateStep>)> {
         let descriptor = self.get_module_descriptor(goal.module_id)?;
         let cert_store = self.build_cache.get_certificates(descriptor)?;
@@ -1273,7 +1273,7 @@ impl Project {
             .path_for_line(selected_line)
             .map_err(|e| format!("path_for_line failed: {}", e))?;
 
-        let cursor = crate::node::NodeCursor::from_path(env, &node_path);
+        let cursor = crate::elaborator::node::NodeCursor::from_path(env, &node_path);
 
         // Try to get the goal directly from this node (if it's a Claim node)
         // or find all block-level goal nodes if this is a Block node
@@ -1311,7 +1311,7 @@ impl Project {
             // Process each goal
             for goal_index in goal_indices {
                 // Create a new cursor for each goal
-                let mut goal_cursor = crate::node::NodeCursor::from_path(env, &node_path);
+                let mut goal_cursor = crate::elaborator::node::NodeCursor::from_path(env, &node_path);
                 goal_cursor.descend(goal_index);
 
                 let goal = goal_cursor
@@ -1340,9 +1340,9 @@ impl Project {
     // Helper function to create a GoalInfo from a goal, its environment, and cursor
     fn create_goal_info(
         &self,
-        goal: &crate::goal::Goal,
+        goal: &crate::elaborator::goal::Goal,
         goal_env: &crate::elaborator::environment::Environment,
-        cursor: &crate::node::NodeCursor,
+        cursor: &crate::elaborator::node::NodeCursor,
     ) -> crate::interfaces::GoalInfo {
         use crate::checker::StepReason;
         use crate::interfaces::{GoalInfo, Location, Step};

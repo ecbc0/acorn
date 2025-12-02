@@ -2,16 +2,16 @@ use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, Datatype, PotentialType, TypeParam, Typeclass};
 use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
 use crate::elaborator::binding_map::BindingMap;
+use crate::elaborator::potential_value::PotentialValue;
+use crate::elaborator::type_unifier::TypeUnifier;
 use crate::module::ModuleId;
 use crate::named_entity::NamedEntity;
 use crate::names::DefinedName;
-use crate::potential_value::PotentialValue;
 use crate::project::Project;
 use crate::stack::Stack;
 use crate::syntax::expression::{Declaration, Expression, TypeParamExpr};
 use crate::syntax::token::{Token, TokenType};
-use crate::token_map::TokenMap;
-use crate::type_unifier::TypeUnifier;
+use crate::syntax::token_map::TokenMap;
 
 /// Represents the type arguments in an attributes statement.
 /// Either generic type parameters (e.g., K, T) or concrete types (e.g., Color, Nat).

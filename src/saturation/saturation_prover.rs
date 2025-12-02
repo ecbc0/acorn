@@ -8,7 +8,7 @@ use crate::certificate::Certificate;
 use crate::checker::Checker;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::elaborator::binding_map::BindingMap;
-use crate::goal::Goal;
+use crate::elaborator::goal::Goal;
 use crate::kernel::clause::Clause;
 use crate::kernel::literal::Literal;
 use crate::normalizer::{NormalizedGoal, Normalizer};

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
 
-use crate::atom::{Atom, AtomId};
+use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::term::{Term, TypeId};
 
 // Literals are always boolean-valued.

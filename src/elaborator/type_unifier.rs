@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::elaborator::acorn_value::AcornValue;
+use crate::elaborator::potential_value::PotentialValue;
+use crate::elaborator::unresolved_constant::UnresolvedConstant;
 use crate::module::ModuleId;
-use crate::potential_value::PotentialValue;
-use crate::unresolved_constant::UnresolvedConstant;
 
 /// Utility for matching types during unification.
 pub struct TypeUnifier<'a> {

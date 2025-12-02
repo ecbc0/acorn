@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use crate::elaborator::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::elaborator::acorn_value::{AcornValue, ConstantInstance};
+use crate::elaborator::potential_value::PotentialValue;
+use crate::elaborator::proposition::Proposition;
 use crate::names::ConstantName;
-use crate::potential_value::PotentialValue;
-use crate::proposition::Proposition;
 use crate::source::Source;
 
 /// A fact is a statement that we are assuming to be true in a particular context.

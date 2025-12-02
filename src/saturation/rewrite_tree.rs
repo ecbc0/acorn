@@ -1,7 +1,7 @@
 // The RewriteTree stores a set of potential rewrites.
 // A given pattern can be rewritten to multiple different output terms.
 
-use crate::atom::AtomId;
+use crate::kernel::atom::AtomId;
 use crate::kernel::literal::Literal;
 use crate::kernel::term::{Term, TypeId};
 use crate::pattern_tree::{term_key_prefix, PatternTree, TermComponent};
@@ -136,7 +136,7 @@ impl RewriteTree {
 
 #[cfg(test)]
 mod tests {
-    use crate::atom::Atom;
+    use crate::kernel::atom::Atom;
 
     use super::*;
 

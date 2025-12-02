@@ -6,13 +6,13 @@ use crate::clause_set::TermId;
 use crate::kernel::clause::{Clause, ClauseTrace, LiteralTrace};
 use crate::kernel::literal::Literal;
 use crate::kernel::term::Term;
+use crate::kernel::unifier::{Scope, Unifier};
 use crate::pattern_tree::LiteralSet;
 use crate::proof_step::{
     BooleanReductionInfo, EqualityFactoringInfo, EqualityResolutionInfo, ExtensionalityInfo,
     InjectivityInfo, ProofStep, Rule, Truthiness,
 };
 use crate::term_graph::{StepId, TermGraph};
-use crate::unifier::{Scope, Unifier};
 
 /// The ActiveSet stores a bunch of clauses that are indexed for various efficient lookups.
 /// The goal is that, given a new clause, it is efficient to determine what can be concluded

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::atom::AtomId;
 use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, Datatype, TypeParam, Typeclass};
+use crate::kernel::atom::AtomId;
 use crate::module::ModuleId;
 use crate::names::{ConstantName, DefinedName, InstanceName};
 use crate::syntax::token::TokenType;

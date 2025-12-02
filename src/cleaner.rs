@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use tower_lsp::lsp_types::Range;
 
 use crate::elaborator::environment::Environment;
+use crate::elaborator::node::Node;
 use crate::module::{LoadState, ModuleDescriptor};
-use crate::node::Node;
 use crate::project::{ImportError, Project, ProjectConfig, ProjectError};
 use crate::verifier::Verifier;
 

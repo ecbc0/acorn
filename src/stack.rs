@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::atom::AtomId;
 use crate::elaborator::acorn_type::AcornType;
+use crate::kernel::atom::AtomId;
 
 /// A representation of the variables on the stack.
 pub struct Stack {

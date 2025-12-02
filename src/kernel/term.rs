@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
 
-use crate::atom::{Atom, AtomId};
+use crate::kernel::atom::{Atom, AtomId};
 
 /// A type identifier that uniquely identifies a type in the type system.
 #[derive(

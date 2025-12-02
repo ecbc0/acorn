@@ -3,7 +3,7 @@ use std::fmt;
 use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, TypeParam};
 use crate::elaborator::acorn_value::AcornValue;
-use crate::unresolved_constant::UnresolvedConstant;
+use crate::elaborator::unresolved_constant::UnresolvedConstant;
 
 pub static EMPTY_TYPE_PARAMS: [TypeParam; 0] = [];
 

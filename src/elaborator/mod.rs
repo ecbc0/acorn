@@ -1,5 +1,13 @@
 pub mod acorn_type;
 pub mod acorn_value;
 pub mod binding_map;
+pub mod block;
 pub mod environment;
 pub mod evaluator;
+pub mod fact;
+pub mod goal;
+pub mod node;
+pub mod potential_value;
+pub mod proposition;
+pub mod type_unifier;
+pub mod unresolved_constant;

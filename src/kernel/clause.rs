@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use crate::atom::{Atom, AtomId};
+use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::literal::Literal;
 use crate::kernel::term::{Term, BOOL};
+use crate::kernel::unifier::{Scope, Unifier};
+use crate::kernel::variable_map::VariableMap;
 use crate::proof_step::{EFLiteralTrace, EFTermTrace};
-use crate::unifier::{Scope, Unifier};
-use crate::variable_map::VariableMap;
 
 /// A record of what happened to a literal during a transformation.
 #[derive(Debug, Eq, PartialEq, Clone)]

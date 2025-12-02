@@ -4,22 +4,22 @@ use std::collections::HashSet;
 
 use tower_lsp::lsp_types::Range;
 
-use crate::block::{Block, BlockParams};
 use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, Datatype, TypeParam};
 use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
 use crate::elaborator::binding_map::BindingMap;
+use crate::elaborator::block::{Block, BlockParams};
 use crate::elaborator::evaluator::Evaluator;
-use crate::fact::Fact;
+use crate::elaborator::fact::Fact;
+use crate::elaborator::node::{Node, NodeCursor};
+use crate::elaborator::proposition::Proposition;
 use crate::module::ModuleId;
 use crate::names::DefinedName;
-use crate::node::{Node, NodeCursor};
 use crate::project::Project;
-use crate::proposition::Proposition;
 use crate::source::Source;
 use crate::syntax::statement::{Body, Statement};
 use crate::syntax::token::{Token, TokenIter};
-use crate::token_map::{TokenInfo, TokenKey, TokenMap};
+use crate::syntax::token_map::{TokenInfo, TokenKey, TokenMap};
 
 /// The Environment takes Statements as input and processes them.
 /// It does not prove anything directly, but it is responsible for determining which

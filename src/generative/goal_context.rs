@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 
 use crate::code_generator::CodeGenerator;
-use crate::goal::Goal;
+use crate::elaborator::goal::Goal;
 use crate::project::Project;
 
 /// Context information for an AI to help with theorem proving.
