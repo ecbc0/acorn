@@ -13,10 +13,10 @@ use crate::kernel::clause::Clause;
 use crate::kernel::cnf::CNF;
 use crate::kernel::extended_term::ExtendedTerm;
 use crate::kernel::literal::Literal;
+use crate::kernel::symbol_table::{NewConstantType, SymbolTable};
 use crate::kernel::term::{Term, TypeId, BOOL};
 use crate::kernel::type_store::TypeStore;
 use crate::monomorphizer::Monomorphizer;
-use crate::normalization_map::{NewConstantType, NormalizationMap};
 use crate::proof_step::{ProofStep, Truthiness};
 
 /// Information about the definition of a set of synthetic atoms.
@@ -89,7 +89,7 @@ pub struct Normalizer {
     /// This is used to avoid defining the same thing multiple times.
     synthetic_map: HashMap<SyntheticKey, Arc<SyntheticDefinition>>,
 
-    normalization_map: NormalizationMap,
+    symbol_table: SymbolTable,
 
     /// Manages the bidirectional mapping between AcornTypes and TypeIds.
     type_store: TypeStore,
@@ -102,7 +102,7 @@ impl Normalizer {
             synthetic_types: vec![],
             synthetic_definitions: HashMap::new(),
             synthetic_map: HashMap::new(),
-            normalization_map: NormalizationMap::new(),
+            symbol_table: SymbolTable::new(),
             type_store: TypeStore::new(),
         }
     }
@@ -147,7 +147,7 @@ impl Normalizer {
         if id >= INVALID_SYNTHETIC_ID {
             return Err(format!("ran out of synthetic ids (used {})", id));
         }
-        // Add the synthetic atom type to the normalization map
+        // Add the synthetic atom type to the symbol table
         self.type_store.add_type(&atom_type);
         self.synthetic_types.push(atom_type);
         Ok(id)
@@ -190,7 +190,7 @@ impl Normalizer {
     }
 
     pub fn add_local_constant(&mut self, cname: ConstantName) -> Atom {
-        self.normalization_map
+        self.symbol_table
             .add_constant(cname, NewConstantType::Local)
     }
 }
@@ -232,8 +232,8 @@ impl NormalizerView<'_> {
         }
     }
 
-    fn map(&self) -> &NormalizationMap {
-        &self.as_ref().normalization_map
+    fn symbol_table(&self) -> &SymbolTable {
+        &self.as_ref().symbol_table
     }
 
     fn type_store(&self) -> &TypeStore {
@@ -805,12 +805,12 @@ impl NormalizerView<'_> {
                 if c.params.is_empty() {
                     let type_id = self.type_store().get_type_id(&c.instance_type)?;
 
-                    let Some(atom) = self.map().get_atom(&c.name) else {
-                        return Err(format!("constant {} not found in normalization map", c));
+                    let Some(atom) = self.symbol_table().get_atom(&c.name) else {
+                        return Err(format!("constant {} not found in symbol table", c));
                     };
                     Ok(Some((Term::new(type_id, type_id, atom, vec![]), true)))
                 } else {
-                    Ok(Some((self.map().term_from_monomorph(&c)?, true)))
+                    Ok(Some((self.symbol_table().term_from_monomorph(&c)?, true)))
                 }
             }
             AcornValue::Not(subvalue) => {
@@ -1054,7 +1054,7 @@ impl NormalizerView<'_> {
             AcornType::functional(arg_types, bool_type.clone())
         };
 
-        // Add the atom type to the normalization map and declare the synthetic atom
+        // Add the atom type to the symbol table and declare the synthetic atom
         let atom_id = self.as_mut()?.declare_synthetic_atom(atom_type.clone())?;
         synth.push(atom_id);
 
@@ -1168,7 +1168,7 @@ impl NormalizerView<'_> {
                     AcornType::functional(arg_types, result_type.clone())
                 };
 
-                // Add the atom type to the normalization map and declare the synthetic atom
+                // Add the atom type to the symbol table and declare the synthetic atom
                 let atom_id = self.as_mut()?.declare_synthetic_atom(atom_type.clone())?;
                 synth.push(atom_id);
 
@@ -1243,8 +1243,8 @@ impl NormalizerView<'_> {
                 if c.params.is_empty() {
                     let type_id = self.type_store().get_type_id(&c.instance_type)?;
 
-                    let Some(atom) = self.map().get_atom(&c.name) else {
-                        return Err(format!("constant {} not found in normalization map", c));
+                    let Some(atom) = self.symbol_table().get_atom(&c.name) else {
+                        return Err(format!("constant {} not found in symbol table", c));
                     };
                     Ok(ExtendedTerm::Term(Term::new(
                         type_id,
@@ -1253,7 +1253,9 @@ impl NormalizerView<'_> {
                         vec![],
                     )))
                 } else {
-                    Ok(ExtendedTerm::Term(self.map().term_from_monomorph(&c)?))
+                    Ok(ExtendedTerm::Term(
+                        self.symbol_table().term_from_monomorph(&c)?,
+                    ))
                 }
             }
             AcornValue::Not(_) => Err("negation in unexpected position".to_string()),
@@ -1313,7 +1315,7 @@ impl Normalizer {
         ctype: NewConstantType,
         source: &Source,
     ) -> Result<Vec<Clause>, String> {
-        self.normalization_map
+        self.symbol_table
             .add_from(&value, ctype, &mut self.type_store);
 
         // TODO: can we remove this? Expanding them doesn't really seem right.
@@ -1409,7 +1411,7 @@ impl Normalizer {
         // Check if this looks like an aliasing.
         if let Some((ci, name, constant_type)) = fact.as_instance_alias() {
             let local = fact.source().truthiness() != Truthiness::Factual;
-            self.normalization_map.alias_monomorph(
+            self.symbol_table.alias_monomorph(
                 ci,
                 name,
                 &constant_type,
@@ -1509,15 +1511,15 @@ impl Normalizer {
         match atom {
             Atom::True => AcornValue::Bool(true),
             Atom::Symbol(Symbol::GlobalConstant(i)) => {
-                let name = self.normalization_map.name_for_global_id(*i).clone();
+                let name = self.symbol_table.name_for_global_id(*i).clone();
                 AcornValue::constant(name, vec![], acorn_type)
             }
             Atom::Symbol(Symbol::LocalConstant(i)) => {
-                let name = self.normalization_map.name_for_local_id(*i).clone();
+                let name = self.symbol_table.name_for_local_id(*i).clone();
                 AcornValue::constant(name, vec![], acorn_type)
             }
             Atom::Symbol(Symbol::Monomorph(i)) => {
-                AcornValue::Constant(self.normalization_map.get_monomorph(*i).clone())
+                AcornValue::Constant(self.symbol_table.get_monomorph(*i).clone())
             }
             Atom::Variable(i) => {
                 if let Some(map) = arbitrary_names {
@@ -1648,13 +1650,13 @@ impl Normalizer {
         match atom {
             Atom::True => "true".to_string(),
             Atom::Symbol(Symbol::GlobalConstant(i)) => {
-                self.normalization_map.name_for_global_id(*i).to_string()
+                self.symbol_table.name_for_global_id(*i).to_string()
             }
             Atom::Symbol(Symbol::LocalConstant(i)) => {
-                self.normalization_map.name_for_local_id(*i).to_string()
+                self.symbol_table.name_for_local_id(*i).to_string()
             }
             Atom::Symbol(Symbol::Monomorph(i)) => {
-                format!("{}", self.normalization_map.get_monomorph(*i))
+                format!("{}", self.symbol_table.get_monomorph(*i))
             }
             Atom::Variable(i) => format!("x{}", i),
             Atom::Symbol(Symbol::Synthetic(i)) => format!("s{}", i),

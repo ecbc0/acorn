@@ -29,7 +29,7 @@ impl TypeStore {
         self.type_to_type_id
             .get(acorn_type)
             .copied()
-            .ok_or_else(|| format!("Type {} not registered in normalization map", acorn_type))
+            .ok_or_else(|| format!("Type {} not registered in type store", acorn_type))
     }
 
     /// Returns the id for the new type.

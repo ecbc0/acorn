@@ -16,9 +16,9 @@ pub enum NewConstantType {
 /// In the Acorn language, constants and types have names, scoped by modules. They can be rich values
 /// with internal structure, like polymorphic parameters or complex types.
 /// The prover, on the other hand, operates in simply typed higher order logic.
-/// The NormalizationMap is a mapping between the two (excluding types, which are handled by TypeStore).
+/// The SymbolTable is a mapping between the two (excluding types, which are handled by TypeStore).
 #[derive(Clone)]
-pub struct NormalizationMap {
+pub struct SymbolTable {
     /// For global constant i in the prover, global_constants[i] is the corresponding ConstantName.
     /// Part of the Atom -> ConstantName lookup direction.
     global_constants: Vec<Option<ConstantName>>,
@@ -42,9 +42,9 @@ pub struct NormalizationMap {
     id_to_monomorph: Vec<ConstantInstance>,
 }
 
-impl NormalizationMap {
-    pub fn new() -> NormalizationMap {
-        NormalizationMap {
+impl SymbolTable {
+    pub fn new() -> SymbolTable {
+        SymbolTable {
             global_constants: vec![],
             local_constants: vec![],
             name_to_atom: HashMap::new(),
@@ -85,7 +85,7 @@ impl NormalizationMap {
         atom
     }
 
-    /// Add all constant names, monomorphs, and types from a value to the normalization map.
+    /// Add all constant names, monomorphs, and types from a value to the symbol table.
     /// This ensures that all constants and types in the value are registered.
     pub fn add_from(
         &mut self,
@@ -162,7 +162,7 @@ impl NormalizationMap {
             Ok(Term::new(*type_id, *type_id, *atom, vec![]))
         } else {
             Err(format!(
-                "Monomorphized constant {} not found in normalization map",
+                "Monomorphized constant {} not found in symbol table",
                 c
             ))
         }

@@ -3,6 +3,7 @@ pub mod clause;
 pub mod cnf;
 pub mod extended_term;
 pub mod literal;
+pub mod symbol_table;
 pub mod term;
 pub mod type_store;
 pub mod unifier;

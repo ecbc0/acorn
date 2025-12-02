@@ -17,7 +17,6 @@ pub mod kernel;
 pub mod manifest;
 pub mod module;
 pub mod monomorphizer;
-pub mod normalization_map;
 pub mod normalizer;
 pub mod ort_utils;
 pub mod pattern_tree;
