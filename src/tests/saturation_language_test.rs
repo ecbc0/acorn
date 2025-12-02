@@ -1154,3 +1154,75 @@ fn test_proving_can_fail_with_destructuring() {
     "#;
     verify_fails(text);
 }
+
+#[test]
+fn test_prover_can_use_instance_forwards() {
+    // One of two paired tests.
+    // This direction should work - we can use instance relationship in subsequent proofs.
+    let text = r#"
+    typeclass F: Foo {
+        property: Bool
+    }
+
+    typeclass B: Bar extends Foo {
+        vacuous_condition(b: B) {
+            b = b
+        }
+    }
+
+    type MyType: axiom
+
+    let b: Bool = axiom
+
+    instance MyType: Foo {
+        let property: Bool = b
+    }
+
+    axiom ax[B: Bar] {
+        B.property
+    }
+
+    instance MyType: Bar
+
+    theorem goal {
+        MyType.property
+    }
+    "#;
+    verify_succeeds(text);
+}
+
+#[test]
+fn test_prover_cannot_use_instance_backwards() {
+    // One of two paired tests.
+    // This direction should not work - we cannot use an instance relationship before it is proven.
+    let text = r#"
+    typeclass F: Foo {
+        property: Bool
+    }
+
+    typeclass B: Bar extends Foo {
+        vacuous_condition(b: B) {
+            b = b
+        }
+    }
+
+    type MyType: axiom
+
+    let b: Bool = axiom
+
+    instance MyType: Foo {
+        let property: Bool = b
+    }
+
+    axiom ax[B: Bar] {
+        B.property
+    }
+
+    theorem goal {
+        MyType.property
+    }
+
+    instance MyType: Bar
+    "#;
+    verify_fails(text);
+}
