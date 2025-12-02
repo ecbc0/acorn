@@ -10,6 +10,7 @@ pub mod symbol_table;
 pub mod thin_clause;
 pub mod thin_literal;
 pub mod thin_term;
+pub mod trace;
 pub mod type_store;
 pub mod unifier;
 pub mod variable_map;

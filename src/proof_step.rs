@@ -4,7 +4,8 @@ use std::fmt;
 use crate::elaborator::proposition::MonomorphicProposition;
 use crate::elaborator::source::{Source, SourceType};
 use crate::kernel::atom::Atom;
-use crate::kernel::fat_clause::{FatClause, ClauseTrace, LiteralTrace};
+use crate::kernel::fat_clause::FatClause;
+use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::FatTerm;
 
