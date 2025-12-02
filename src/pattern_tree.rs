@@ -1,8 +1,9 @@
 use qp_trie::{Entry, SubTrie, Trie};
 
-use crate::kernel::atom::{Atom, AtomId, Symbol};
+use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::clause::Clause;
 use crate::kernel::literal::Literal;
+use crate::kernel::symbol::Symbol;
 use crate::kernel::term::{Term, TypeId};
 
 /// The TermComponent is designed so that a &[TermComponent] represents a preorder

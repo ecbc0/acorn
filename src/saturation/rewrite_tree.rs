@@ -2,9 +2,9 @@
 // A given pattern can be rewritten to multiple different output terms.
 
 use crate::kernel::atom::AtomId;
-#[cfg(test)]
-use crate::kernel::atom::Symbol;
 use crate::kernel::literal::Literal;
+#[cfg(test)]
+use crate::kernel::symbol::Symbol;
 use crate::kernel::term::{Term, TypeId};
 use crate::pattern_tree::{term_key_prefix, PatternTree, TermComponent};
 

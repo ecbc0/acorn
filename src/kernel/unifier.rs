@@ -1,8 +1,8 @@
-#[cfg(test)]
-use crate::kernel::atom::Symbol;
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::clause::Clause;
 use crate::kernel::literal::Literal;
+#[cfg(test)]
+use crate::kernel::symbol::Symbol;
 use crate::kernel::term::{Term, TypeId};
 use crate::kernel::variable_map::VariableMap;
 use std::fmt;
