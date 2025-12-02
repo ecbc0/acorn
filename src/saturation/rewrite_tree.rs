@@ -3,9 +3,9 @@
 
 use crate::kernel::atom::AtomId;
 use crate::kernel::fat_literal::FatLiteral;
+use crate::kernel::fat_term::{FatTerm, TypeId};
 #[cfg(test)]
 use crate::kernel::symbol::Symbol;
-use crate::kernel::fat_term::{FatTerm, TypeId};
 use crate::pattern_tree::{term_key_prefix, PatternTree, TermComponent};
 
 // Each term can correspond with multiple RewriteValues.
@@ -154,7 +154,12 @@ mod tests {
     #[test]
     fn test_rewrite_tree_functions() {
         let mut tree = RewriteTree::new();
-        tree.insert_terms(0, &FatTerm::parse("c1(x0)"), &FatTerm::parse("c0(x0)"), true);
+        tree.insert_terms(
+            0,
+            &FatTerm::parse("c1(x0)"),
+            &FatTerm::parse("c0(x0)"),
+            true,
+        );
         let rewrites = tree.get_rewrites(&FatTerm::parse("c1(c2)"), 0);
         assert_eq!(rewrites.len(), 1);
         assert_eq!(rewrites[0].term, FatTerm::parse("c0(c2)"));
@@ -163,8 +168,18 @@ mod tests {
     #[test]
     fn test_rewrite_tree_multiple_rewrites() {
         let mut tree = RewriteTree::new();
-        tree.insert_terms(0, &FatTerm::parse("c1(x0, c2)"), &FatTerm::parse("c3(x0)"), true);
-        tree.insert_terms(1, &FatTerm::parse("c1(c2, x0)"), &FatTerm::parse("c4(x0)"), true);
+        tree.insert_terms(
+            0,
+            &FatTerm::parse("c1(x0, c2)"),
+            &FatTerm::parse("c3(x0)"),
+            true,
+        );
+        tree.insert_terms(
+            1,
+            &FatTerm::parse("c1(c2, x0)"),
+            &FatTerm::parse("c4(x0)"),
+            true,
+        );
         let rewrites = tree.get_rewrites(&FatTerm::parse("c1(c2, c2)"), 0);
         assert_eq!(rewrites.len(), 2);
         assert_eq!(rewrites[0].term, FatTerm::parse("c3(c2)"));

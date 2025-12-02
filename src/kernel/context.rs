@@ -18,9 +18,7 @@ impl Context {
     }
 
     pub fn empty() -> Context {
-        Context {
-            var_types: vec![],
-        }
+        Context { var_types: vec![] }
     }
 
     /// Get the type of a variable by its id.

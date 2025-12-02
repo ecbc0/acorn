@@ -3,8 +3,8 @@ use qp_trie::{Entry, SubTrie, Trie};
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
-use crate::kernel::symbol::Symbol;
 use crate::kernel::fat_term::{FatTerm, TypeId};
+use crate::kernel::symbol::Symbol;
 
 /// The TermComponent is designed so that a &[TermComponent] represents a preorder
 /// traversal of the term, and each subterm is represented by a subslice.

@@ -1,9 +1,9 @@
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
+use crate::kernel::fat_term::{FatTerm, TypeId};
 #[cfg(test)]
 use crate::kernel::symbol::Symbol;
-use crate::kernel::fat_term::{FatTerm, TypeId};
 use crate::kernel::variable_map::VariableMap;
 use std::fmt;
 

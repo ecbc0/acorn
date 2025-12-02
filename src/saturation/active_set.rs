@@ -4,9 +4,9 @@ use super::fingerprint::FingerprintUnifier;
 use super::rewrite_tree::{Rewrite, RewriteTree};
 use crate::clause_set::TermId;
 use crate::kernel::fat_clause::FatClause;
-use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::FatTerm;
+use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::unifier::{Scope, Unifier};
 use crate::pattern_tree::LiteralSet;
 use crate::proof_step::{
@@ -297,7 +297,8 @@ impl ActiveSet {
         }
 
         // Gather the output data
-        let (clause, trace) = FatClause::new_with_trace(literals, ClauseTrace::new(incremental_trace));
+        let (clause, trace) =
+            FatClause::new_with_trace(literals, ClauseTrace::new(incremental_trace));
         let mut step = ProofStep::resolution(long_id, long_step, short_id, short_step, clause);
         step.trace = Some(trace);
         Some(step)

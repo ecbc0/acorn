@@ -325,8 +325,11 @@ impl SaturationProver {
 
             // Create a new proof step, without activating it, to express the
             // specific equality used by this rewrite.
-            let (literal, flipped) =
-                FatLiteral::new_with_flip(true, step.left_term().clone(), step.right_term().clone());
+            let (literal, flipped) = FatLiteral::new_with_flip(
+                true,
+                step.left_term().clone(),
+                step.right_term().clone(),
+            );
             let (clause, traces) = FatClause::from_literal(literal, flipped);
             if new_clauses.contains(&clause) {
                 // We already created a step for this equality

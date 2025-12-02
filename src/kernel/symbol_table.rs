@@ -4,8 +4,8 @@ use crate::elaborator::acorn_type::AcornType;
 use crate::elaborator::acorn_value::{AcornValue, ConstantInstance};
 use crate::elaborator::names::ConstantName;
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::symbol::Symbol;
 use crate::kernel::fat_term::{FatTerm, TypeId};
+use crate::kernel::symbol::Symbol;
 use crate::kernel::type_store::TypeStore;
 
 #[derive(Clone, Copy, Debug)]
