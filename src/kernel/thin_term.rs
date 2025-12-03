@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::context::LocalContext;
 use crate::kernel::fat_term::{TypeId, BOOL, EMPTY};
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol_table::SymbolTable;
 use crate::kernel::type_store::TypeStore;
 

@@ -3,8 +3,8 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::context::LocalContext;
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 
 /// A type identifier that uniquely identifies a type in the type system.

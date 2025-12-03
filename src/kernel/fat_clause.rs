@@ -3,10 +3,10 @@ use std::fmt;
 use std::sync::LazyLock;
 
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::context::LocalContext;
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::{FatTerm, BOOL};
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::local_context::LocalContext;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::unifier::{Scope, Unifier};
 use crate::proof_step::{EFLiteralTrace, EFTermTrace};

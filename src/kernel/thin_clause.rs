@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::context::LocalContext;
+use crate::kernel::local_context::LocalContext;
 use crate::kernel::thin_literal::ThinLiteral;
 
 /// A thin clause stores the structure of a clause without type information.

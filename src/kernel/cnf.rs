@@ -2,8 +2,8 @@ use std::fmt;
 use std::vec;
 
 use crate::kernel::aliases::{Clause, Literal, Term};
-use crate::kernel::context::LocalContext;
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::local_context::LocalContext;
 
 /// A CNF (Conjunctive Normal Form) formula represented as a vector of clauses,
 /// where each clause is a vector of literals.

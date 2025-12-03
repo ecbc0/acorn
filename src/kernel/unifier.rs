@@ -1,9 +1,9 @@
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::context::LocalContext;
 use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::{FatTerm, TypeId};
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::local_context::LocalContext;
 #[cfg(test)]
 use crate::kernel::symbol::Symbol;
 use crate::kernel::variable_map::VariableMap;

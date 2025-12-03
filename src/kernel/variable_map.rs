@@ -1,8 +1,8 @@
 use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::context::LocalContext;
 use crate::kernel::fat_term::TypeId;
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::local_context::LocalContext;
 use std::fmt;
 
 // A VariableMap maintains a mapping from variables to terms, allowing us to turn a more general term

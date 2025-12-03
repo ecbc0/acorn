@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::context::LocalContext;
 use crate::kernel::fat_term::{TypeId, BOOL};
+use crate::kernel::local_context::LocalContext;
 use crate::kernel::thin_term::ThinTerm;
 
 /// A thin literal stores the structure of a literal without type information.

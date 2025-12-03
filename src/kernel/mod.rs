@@ -1,12 +1,12 @@
 pub mod aliases;
 pub mod atom;
 pub mod cnf;
-pub mod context;
 pub mod extended_term;
 pub mod fat_clause;
 pub mod fat_literal;
 pub mod fat_term;
 pub mod kernel_context;
+pub mod local_context;
 pub mod symbol;
 pub mod symbol_table;
 pub mod thin_clause;
