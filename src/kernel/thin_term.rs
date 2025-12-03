@@ -203,6 +203,33 @@ impl ThinTerm {
         arg_count
     }
 
+    /// Get the arguments of this term as a vector of ThinTerms.
+    /// If this is an atomic term (just a head), returns an empty vector.
+    pub fn args(&self) -> Vec<ThinTerm> {
+        if self.components.len() <= 1 {
+            return vec![];
+        }
+
+        let mut args = vec![];
+        let mut i = 1; // Skip the head
+        while i < self.components.len() {
+            if let ThinTermComponent::Composite { span } = self.components[i] {
+                // Extract the composite term
+                let arg_components = self.components[i..i + span as usize].to_vec();
+                args.push(ThinTerm::new(arg_components));
+                i += span as usize;
+            } else {
+                // Simple atomic argument
+                args.push(ThinTerm::atom(match self.components[i] {
+                    ThinTermComponent::Atom(atom) => atom,
+                    _ => unreachable!(),
+                }));
+                i += 1;
+            }
+        }
+        args
+    }
+
     /// Iterate over all atoms in the term.
     pub fn iter_atoms(&self) -> impl Iterator<Item = &Atom> + '_ {
         self.components.iter().filter_map(|component| {
@@ -286,4 +313,171 @@ impl ThinTerm {
             .collect();
         ThinTerm::new(new_components)
     }
+
+    /// Calculate multi-weight for KBO ordering.
+    /// Returns (weight1, weight2) and populates refcounts with variable usage.
+    fn multi_weight(&self, refcounts: &mut Vec<u8>) -> (u32, u32) {
+        use crate::kernel::symbol::Symbol;
+
+        let mut weight1 = 0;
+        let mut weight2 = 0;
+
+        for component in &self.components {
+            match component {
+                ThinTermComponent::Composite { .. } => {
+                    // Composite markers don't contribute to weight
+                }
+                ThinTermComponent::Atom(Atom::True) => {
+                    // True doesn't contribute to weight
+                }
+                ThinTermComponent::Atom(Atom::Variable(i)) => {
+                    while refcounts.len() <= *i as usize {
+                        refcounts.push(0);
+                    }
+                    refcounts[*i as usize] += 1;
+                }
+                ThinTermComponent::Atom(Atom::Symbol(Symbol::GlobalConstant(i))) => {
+                    weight1 += 1;
+                    weight2 += 4 * (*i) as u32;
+                }
+                ThinTermComponent::Atom(Atom::Symbol(Symbol::ScopedConstant(i))) => {
+                    weight1 += 1;
+                    weight2 += 1 + 4 * (*i) as u32;
+                }
+                ThinTermComponent::Atom(Atom::Symbol(Symbol::Monomorph(i))) => {
+                    weight1 += 1;
+                    weight2 += 2 + 4 * (*i) as u32;
+                }
+                ThinTermComponent::Atom(Atom::Symbol(Symbol::Synthetic(i))) => {
+                    weight1 += 1;
+                    weight2 += 3 + 4 * (*i) as u32;
+                }
+            }
+        }
+
+        (weight1, weight2)
+    }
+
+    /// KBO helper that can skip the domination check.
+    fn kbo_helper(&self, other: &ThinTerm, check_domination: bool) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+
+        let mut self_refcounts = vec![];
+        let (self_weight1, self_weight2) = self.multi_weight(&mut self_refcounts);
+
+        let mut other_refcounts = vec![];
+        let (other_weight1, other_weight2) = other.multi_weight(&mut other_refcounts);
+
+        if self_weight1 > other_weight1
+            || self_weight1 == other_weight1 && self_weight2 > other_weight2
+        {
+            if !check_domination || dominates(&self_refcounts, &other_refcounts) {
+                return Ordering::Greater;
+            }
+            return Ordering::Equal;
+        }
+
+        if self_weight1 < other_weight1
+            || self_weight1 == other_weight1 && self_weight2 < other_weight2
+        {
+            if !check_domination || dominates(&other_refcounts, &self_refcounts) {
+                return Ordering::Less;
+            }
+            return Ordering::Equal;
+        }
+
+        Ordering::Equal
+    }
+
+    /// Partial tiebreak for KBO - stable under variable renaming.
+    fn partial_tiebreak(&self, other: &ThinTerm) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+
+        let head_cmp = self
+            .get_head_atom()
+            .stable_partial_order(other.get_head_atom());
+        if head_cmp != Ordering::Equal {
+            return head_cmp;
+        }
+
+        // More arguments means simpler (less nested)
+        let len_cmp = other.num_args().cmp(&self.num_args());
+        if len_cmp != Ordering::Equal {
+            return len_cmp;
+        }
+
+        // Compare arguments lexicographically
+        let self_args = self.args();
+        let other_args = other.args();
+        for (arg1, arg2) in self_args.iter().zip(other_args.iter()) {
+            let arg_cmp = arg1.partial_tiebreak(arg2);
+            if arg_cmp != Ordering::Equal {
+                return arg_cmp;
+            }
+        }
+
+        Ordering::Equal
+    }
+
+    /// Total tiebreak for KBO - not stable under variable renaming.
+    fn total_tiebreak(&self, other: &ThinTerm) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+
+        let head_cmp = other.get_head_atom().cmp(self.get_head_atom());
+        if head_cmp != Ordering::Equal {
+            return head_cmp;
+        }
+
+        // The partial tiebreak should have caught this
+        debug_assert!(self.num_args() == other.num_args());
+
+        // Compare arguments lexicographically
+        let self_args = self.args();
+        let other_args = other.args();
+        for (arg1, arg2) in self_args.iter().zip(other_args.iter()) {
+            let arg_cmp = arg1.extended_kbo_cmp(arg2);
+            if arg_cmp != Ordering::Equal {
+                return arg_cmp;
+            }
+        }
+
+        Ordering::Equal
+    }
+
+    /// Knuth-Bendix partial reduction ordering.
+    /// Returns Greater if self > other, Less if other > self.
+    /// Returns Equal if they cannot be ordered (not equality in the usual sense).
+    pub fn kbo_cmp(&self, other: &ThinTerm) -> std::cmp::Ordering {
+        self.kbo_helper(other, true)
+    }
+
+    /// Extended KBO comparison - total ordering where only identical terms are equal.
+    pub fn extended_kbo_cmp(&self, other: &ThinTerm) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+
+        let kbo_cmp = self.kbo_helper(other, false);
+        if kbo_cmp != Ordering::Equal {
+            return kbo_cmp;
+        }
+
+        let tiebreak = self.partial_tiebreak(other);
+        if tiebreak != Ordering::Equal {
+            return tiebreak;
+        }
+
+        self.total_tiebreak(other)
+    }
+}
+
+/// Helper function for KBO domination check.
+fn dominates(a: &Vec<u8>, b: &Vec<u8>) -> bool {
+    if b.len() > a.len() {
+        return false;
+    }
+    for i in 0..b.len() {
+        if a[i] < b[i] {
+            return false;
+        }
+    }
+    true
 }

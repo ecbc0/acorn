@@ -161,4 +161,18 @@ impl ThinLiteral {
             (false, &self.right, &self.left),
         ]
     }
+
+    /// Check if this literal is normalized.
+    /// A literal is normalized if it doesn't need to flip its terms.
+    /// The larger term (by KBO ordering) should be on the left.
+    pub fn is_normalized(&self) -> bool {
+        !needs_to_flip(&self.left, &self.right)
+    }
+}
+
+/// Helper function to check if a literal needs to flip its terms.
+/// Returns true if left < right in extended KBO ordering.
+fn needs_to_flip(left: &ThinTerm, right: &ThinTerm) -> bool {
+    use std::cmp::Ordering;
+    left.extended_kbo_cmp(right) == Ordering::Less
 }

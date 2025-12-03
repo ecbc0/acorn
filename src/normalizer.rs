@@ -10,6 +10,7 @@ use crate::elaborator::names::ConstantName;
 use crate::elaborator::source::{Source, SourceType};
 use crate::kernel::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
 use crate::kernel::cnf::CNF;
+use crate::kernel::context::LocalContext;
 use crate::kernel::extended_term::ExtendedTerm;
 use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
@@ -265,7 +266,9 @@ impl NormalizerView<'_> {
                 let mut next_var_id = 0;
                 let cnf =
                     self.value_to_cnf(&value, false, &mut stack, &mut next_var_id, synthesized)?;
-                Ok(cnf.into_clauses())
+                // TODO: value_to_cnf should return (CNF, LocalContext)
+                let local_context = LocalContext::empty(); // Temporary placeholder
+                Ok(cnf.into_clauses(local_context))
             }
         }
     }
@@ -967,7 +970,9 @@ impl NormalizerView<'_> {
             .denormalize_term(&skolem_term, &mut None, None);
         let definition_cnf =
             self.eq_to_cnf(&skolem_value, value, false, stack, next_var_id, synth)?;
-        let clauses = definition_cnf.clone().into_clauses();
+        // TODO: value_to_cnf should return (CNF, LocalContext)
+        let local_context = LocalContext::empty(); // Temporary placeholder
+        let clauses = definition_cnf.clone().into_clauses(local_context);
 
         // Check if an equivalent definition already exists
         let synthetic_key_form: Vec<_> = clauses

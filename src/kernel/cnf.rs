@@ -1,6 +1,9 @@
 use std::fmt;
 use std::vec;
 
+use crate::kernel::context::LocalContext;
+use crate::kernel::kernel_context::KernelContext;
+
 #[cfg(not(feature = "thin"))]
 use crate::kernel::fat_clause::FatClause as Clause;
 #[cfg(not(feature = "thin"))]
@@ -50,20 +53,17 @@ impl CNF {
         self.0.len() == 1 && self.0[0].is_empty()
     }
 
-    #[cfg(not(feature = "thin"))]
-    pub fn validate(&self) {
+    pub fn validate(&self, _kernel_context: &KernelContext) {
         for lits in &self.0 {
             for lit in lits {
                 if !lit.is_normalized() {
+                    #[cfg(not(feature = "thin"))]
                     panic!("CNF contains non-normalized literal: {}", lit);
+                    #[cfg(feature = "thin")]
+                    panic!("CNF contains non-normalized literal");
                 }
             }
         }
-    }
-
-    #[cfg(feature = "thin")]
-    pub fn validate(&self) {
-        todo!("ThinLiteral::is_normalized() requires TypeStore/SymbolTable parameters");
     }
 
     /// Creates a CNF from a single literal.
@@ -130,7 +130,7 @@ impl CNF {
     }
 
     #[cfg(not(feature = "thin"))]
-    pub fn into_clauses(self) -> Vec<Clause> {
+    pub fn into_clauses(self, _local_context: LocalContext) -> Vec<Clause> {
         self.0
             .into_iter()
             .filter(|literals| !literals.iter().any(|l| l.is_tautology()))
@@ -139,8 +139,12 @@ impl CNF {
     }
 
     #[cfg(feature = "thin")]
-    pub fn into_clauses(self) -> Vec<Clause> {
-        todo!("ThinClause::new() requires Context parameter - API asymmetry with FatClause::new()");
+    pub fn into_clauses(self, local_context: LocalContext) -> Vec<Clause> {
+        self.0
+            .into_iter()
+            .filter(|literals| !literals.iter().any(|l| l.is_tautology()))
+            .map(|literals| Clause::new(literals, local_context.clone()))
+            .collect()
     }
 
     // Plain "true" or "false" are zero literals, not a single literal.
