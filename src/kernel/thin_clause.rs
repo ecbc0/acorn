@@ -15,6 +15,12 @@ pub struct ThinClause {
 }
 
 impl ThinClause {
+    /// Get the local context for this clause.
+    /// This returns the context that stores variable types for this clause.
+    pub fn get_local_context(&self) -> &LocalContext {
+        &self.context
+    }
+
     /// Creates a new normalized clause.
     pub fn new(literals: Vec<ThinLiteral>, context: &LocalContext) -> ThinClause {
         let mut c = ThinClause {

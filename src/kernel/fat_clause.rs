@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::sync::LazyLock;
 
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::context::LocalContext;
@@ -8,6 +9,10 @@ use crate::kernel::fat_term::{FatTerm, BOOL};
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::unifier::{Scope, Unifier};
 use crate::proof_step::{EFLiteralTrace, EFTermTrace};
+
+/// A fake LocalContext for FatClause. Since FatTerm has types embedded,
+/// the context is never actually read - this just provides API compatibility with ThinClause.
+static FAKE_LOCAL_CONTEXT: LazyLock<LocalContext> = LazyLock::new(LocalContext::empty);
 
 /// A clause is a disjunction (an "or") of literals, universally quantified over some variables.
 /// We include the types of the universal variables it is quantified over.
@@ -33,6 +38,13 @@ impl fmt::Display for FatClause {
 }
 
 impl FatClause {
+    /// Get the local context for this clause.
+    /// For FatClause, this returns a fake empty context since types are embedded in terms.
+    /// This provides API compatibility with ThinClause which stores a real context.
+    pub fn get_local_context(&self) -> &LocalContext {
+        &FAKE_LOCAL_CONTEXT
+    }
+
     /// Creates a new normalized clause.
     /// The context parameter is ignored for FatClause but accepted for API compatibility with ThinClause.
     pub fn new(literals: Vec<FatLiteral>, _context: &LocalContext) -> FatClause {
