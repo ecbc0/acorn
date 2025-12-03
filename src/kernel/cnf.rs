@@ -1,22 +1,9 @@
 use std::fmt;
 use std::vec;
 
+use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::context::LocalContext;
 use crate::kernel::kernel_context::KernelContext;
-
-#[cfg(not(feature = "thin"))]
-use crate::kernel::fat_clause::FatClause as Clause;
-#[cfg(not(feature = "thin"))]
-use crate::kernel::fat_literal::FatLiteral as Literal;
-#[cfg(not(feature = "thin"))]
-use crate::kernel::fat_term::FatTerm as Term;
-
-#[cfg(feature = "thin")]
-use crate::kernel::thin_clause::ThinClause as Clause;
-#[cfg(feature = "thin")]
-use crate::kernel::thin_literal::ThinLiteral as Literal;
-#[cfg(feature = "thin")]
-use crate::kernel::thin_term::ThinTerm as Term;
 
 /// A CNF (Conjunctive Normal Form) formula represented as a vector of clauses,
 /// where each clause is a vector of literals.
