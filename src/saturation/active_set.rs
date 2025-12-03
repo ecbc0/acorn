@@ -53,6 +53,9 @@ pub struct ActiveSet {
 
     // A data structure to do the mechanical rewriting of subterms.
     rewrite_tree: RewriteTree,
+
+    // The kernel context for type lookups during validation.
+    kernel_context: KernelContext,
 }
 
 /// A ResolutionTarget represents a literal that we could do resolution with.
@@ -105,7 +108,7 @@ struct SubtermLocation {
 }
 
 impl ActiveSet {
-    pub fn new() -> ActiveSet {
+    pub fn new(kernel_context: KernelContext) -> ActiveSet {
         ActiveSet {
             steps: vec![],
             long_clauses: HashSet::new(),
@@ -117,6 +120,7 @@ impl ActiveSet {
             subterm_map: HashMap::new(),
             subterm_unifier: FingerprintUnifier::new(),
             rewrite_tree: RewriteTree::new(),
+            kernel_context,
         }
     }
 
@@ -252,7 +256,7 @@ impl ActiveSet {
         }
 
         // Heuristics done. Let's unify.
-        let mut unifier = Unifier::new(3, KernelContext::fake());
+        let mut unifier = Unifier::new(3, &self.kernel_context);
         unifier.set_input_context(Scope::LEFT, short_clause.get_local_context());
         unifier.set_input_context(Scope::RIGHT, long_clause.get_local_context());
 
@@ -330,11 +334,12 @@ impl ActiveSet {
                 } else {
                     // We've never seen this subterm before.
                     // We need to find all the possible rewrites for it.
+                    // Note: concrete terms (no variables), so empty local context is safe.
                     let rewrites = self.rewrite_tree.get_rewrites(
                         u_subterm,
                         0,
                         LocalContext::empty_ref(),
-                        KernelContext::fake(),
+                        &self.kernel_context,
                     );
 
                     // Add these rewrites to the term graph
@@ -432,9 +437,9 @@ impl ActiveSet {
                 let subterm_info = &self.subterms[subterm_id];
                 let subterm = &subterm_info.term;
 
-                let mut unifier = Unifier::new(3, KernelContext::fake());
+                let mut unifier = Unifier::new(3, &self.kernel_context);
                 unifier.set_input_context(Scope::LEFT, pattern_step.clause.get_local_context());
-                // Subterms are stored as FatTerms with embedded types, so empty context is fine
+                // Subterms are concrete (no variables), so empty local context is fine
                 unifier.set_input_context(Scope::RIGHT, LocalContext::empty_ref());
                 if !unifier.unify(Scope::LEFT, s, Scope::RIGHT, subterm) {
                     continue;
@@ -556,11 +561,15 @@ impl ActiveSet {
     }
 
     /// Apply boolean reduction to derive new clauses.
-    pub fn boolean_reduction(activated_id: usize, activated_step: &ProofStep) -> Vec<ProofStep> {
+    pub fn boolean_reduction(
+        &self,
+        activated_id: usize,
+        activated_step: &ProofStep,
+    ) -> Vec<ProofStep> {
         let clause = &activated_step.clause;
         let mut answer = vec![];
 
-        for (index, literals) in clause.find_boolean_reductions(KernelContext::fake()) {
+        for (index, literals) in clause.find_boolean_reductions(&self.kernel_context) {
             let info = BooleanReductionInfo {
                 id: activated_id,
                 index,
@@ -582,11 +591,15 @@ impl ActiveSet {
 
     /// Apply extensionality to derive function equality from pointwise equality.
     /// When f(x1, x2, ...) = g(x1, x2, ...) for all arguments, that implies f = g.
-    pub fn extensionality(activated_id: usize, activated_step: &ProofStep) -> Vec<ProofStep> {
+    pub fn extensionality(
+        &self,
+        activated_id: usize,
+        activated_step: &ProofStep,
+    ) -> Vec<ProofStep> {
         let clause = &activated_step.clause;
         let mut answer = vec![];
 
-        if let Some(literals) = clause.find_extensionality(KernelContext::fake()) {
+        if let Some(literals) = clause.find_extensionality(&self.kernel_context) {
             let info = ExtensionalityInfo {
                 id: activated_id,
                 literals: literals.clone(),
@@ -674,12 +687,19 @@ impl ActiveSet {
     /// Returns (value, trace) when this literal's value is known due to some existing clause.
     /// The trace is either Eliminated, if the literal matched an existing one, or Impossible,
     /// if the literal is self-evident.
-    fn evaluate_literal(&self, literal: &FatLiteral) -> Option<(bool, LiteralTrace)> {
-        literal.validate_type(LocalContext::empty_ref(), KernelContext::fake());
+    fn evaluate_literal(
+        &self,
+        literal: &FatLiteral,
+        local_context: &LocalContext,
+    ) -> Option<(bool, LiteralTrace)> {
+        literal.validate_type(local_context, &self.kernel_context);
         if literal.left == literal.right {
             return Some((literal.positive, LiteralTrace::Impossible));
         }
-        match self.literal_set.find_generalization(&literal) {
+        match self
+            .literal_set
+            .find_generalization(&literal, local_context, &self.kernel_context)
+        {
             Some((positive, step, flipped)) => {
                 Some((positive, LiteralTrace::Eliminated { step, flipped }))
             }
@@ -705,8 +725,9 @@ impl ActiveSet {
         let initial_num_literals = step.clause.literals.len();
         let mut output_literals = vec![];
         let mut incremental_trace = vec![];
+        let local_context = step.clause.get_local_context().clone();
         for literal in std::mem::take(&mut step.clause.literals) {
-            match self.evaluate_literal(&literal) {
+            match self.evaluate_literal(&literal, &local_context) {
                 Some((true, _)) => {
                     // This literal is already known to be true.
                     // Thus, the whole clause is a tautology.
@@ -858,7 +879,12 @@ impl ActiveSet {
             self.rewrite_tree.insert_literal(activated_id, literal);
         }
 
-        self.literal_set.insert(&literal, activated_id);
+        self.literal_set.insert(
+            &literal,
+            activated_id,
+            activated_step.clause.get_local_context(),
+            &self.kernel_context,
+        );
     }
 
     /// Generate all the inferences that can be made from a given clause, plus some existing clause.
@@ -884,11 +910,11 @@ impl ActiveSet {
             output.push(proof_step);
         }
 
-        for proof_step in ActiveSet::boolean_reduction(activated_id, &activated_step) {
+        for proof_step in self.boolean_reduction(activated_id, &activated_step) {
             output.push(proof_step);
         }
 
-        for proof_step in ActiveSet::extensionality(activated_id, &activated_step) {
+        for proof_step in self.extensionality(activated_id, &activated_step) {
             output.push(proof_step);
         }
 
@@ -934,10 +960,14 @@ impl ActiveSet {
 mod tests {
     use super::*;
 
+    fn test_active_set() -> ActiveSet {
+        ActiveSet::new(KernelContext::test_with_scoped_constants(10))
+    }
+
     #[test]
     fn test_activate_rewrite_pattern() {
         // Create an active set that knows c0(c3) = c2
-        let mut set = ActiveSet::new();
+        let mut set = test_active_set();
         let mut step = ProofStep::mock("c0(c3) = c2");
         step.truthiness = Truthiness::Hypothetical;
         set.activate(step);
@@ -958,7 +988,7 @@ mod tests {
     #[test]
     fn test_activate_rewrite_target() {
         // Create an active set that knows c1 = c3
-        let mut set = ActiveSet::new();
+        let mut set = test_active_set();
         let step = ProofStep::mock("c1 = c3");
         set.activate(step);
 
@@ -1010,7 +1040,7 @@ mod tests {
 
     #[test]
     fn test_matching_entire_literal() {
-        let mut set = ActiveSet::new();
+        let mut set = test_active_set();
         let mut step = ProofStep::mock("not c2(c0(c0(x0))) or c1(x0) != x0");
         step.truthiness = Truthiness::Factual;
         set.activate(step);
@@ -1027,7 +1057,7 @@ mod tests {
     #[test]
     fn test_equality_factoring_variable_numbering() {
         // This is a bug we ran into
-        let mut set = ActiveSet::new();
+        let mut set = test_active_set();
 
         // Nonreflexive rule of less-than
         let step = ProofStep::mock("not c1(x0, x0)");
@@ -1043,7 +1073,7 @@ mod tests {
     #[test]
     fn test_self_referential_resolution() {
         // This is a bug we ran into. These things should not unify
-        let mut set = ActiveSet::new();
+        let mut set = test_active_set();
         set.activate(ProofStep::mock("g2(x0, x0) = g0"));
         let mut step = ProofStep::mock("g2(g2(g1(c0, x0), x0), g2(x1, x1)) != g0");
         step.truthiness = Truthiness::Counterfactual;

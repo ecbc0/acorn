@@ -43,17 +43,24 @@ impl Clone for Processor {
 
 impl Processor {
     pub fn new() -> Processor {
+        let normalizer = Normalizer::new();
+        let kernel_context = normalizer.kernel_context().clone();
         Processor {
-            prover: Box::new(SaturationProver::new(vec![])),
-            normalizer: Normalizer::new(),
+            prover: Box::new(SaturationProver::new(vec![], kernel_context)),
+            normalizer,
             checker: Checker::new_fast(),
         }
     }
 
     pub fn with_token(cancellation_token: CancellationToken) -> Processor {
+        let normalizer = Normalizer::new();
+        let kernel_context = normalizer.kernel_context().clone();
         Processor {
-            prover: Box::new(SaturationProver::new(vec![cancellation_token])),
-            normalizer: Normalizer::new(),
+            prover: Box::new(SaturationProver::new(
+                vec![cancellation_token],
+                kernel_context,
+            )),
+            normalizer,
             checker: Checker::new_fast(),
         }
     }

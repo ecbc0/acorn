@@ -11,6 +11,7 @@ use crate::elaborator::binding_map::BindingMap;
 use crate::elaborator::goal::Goal;
 use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
+use crate::kernel::kernel_context::KernelContext;
 use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::project::Project;
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
@@ -57,9 +58,9 @@ pub struct SaturationProver {
 impl SaturationProver {
     /// Creates a new SaturationProver instance.
     /// The prover must stop when any of its cancellation tokens are canceled.
-    pub fn new(tokens: Vec<CancellationToken>) -> SaturationProver {
+    pub fn new(tokens: Vec<CancellationToken>, kernel_context: KernelContext) -> SaturationProver {
         SaturationProver {
-            active_set: ActiveSet::new(),
+            active_set: ActiveSet::new(kernel_context),
             passive_set: PassiveSet::new(),
             final_step: None,
             cancellation_tokens: tokens,

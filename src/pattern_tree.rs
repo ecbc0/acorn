@@ -815,9 +815,13 @@ impl LiteralSet {
     /// Otherwise, we do insert the right->left direction.
     ///
     /// Overwrites if the negation already exists.
-    pub fn insert(&mut self, literal: &FatLiteral, id: usize) {
-        let local_context = LocalContext::empty_ref();
-        let kernel_context = KernelContext::fake();
+    pub fn insert(
+        &mut self,
+        literal: &FatLiteral,
+        id: usize,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) {
         self.tree.insert_pair(
             &literal.left,
             &literal.right,
@@ -842,9 +846,12 @@ impl LiteralSet {
     ///   1. whether the sign of the generalization matches the literal
     ///   2. the id of the generalization
     ///   3. whether this is a flip-match, meaning we swapped left and right
-    pub fn find_generalization(&self, literal: &FatLiteral) -> Option<(bool, usize, bool)> {
-        let local_context = LocalContext::empty_ref();
-        let kernel_context = KernelContext::fake();
+    pub fn find_generalization(
+        &self,
+        literal: &FatLiteral,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> Option<(bool, usize, bool)> {
         match self
             .tree
             .find_pair(&literal.left, &literal.right, local_context, kernel_context)
@@ -909,38 +916,85 @@ mod tests {
 
     #[test]
     fn test_literal_set() {
+        let local_context = test_local_context(10);
+        let kernel_context = KernelContext::test_with_scoped_constants(10);
+
         let mut set = LiteralSet::new();
-        set.insert(&FatLiteral::parse("c0(x0, c1) = x0"), 7);
+        set.insert(
+            &FatLiteral::parse("c0(x0, c1) = x0"),
+            7,
+            &local_context,
+            &kernel_context,
+        );
 
         let lit = FatLiteral::parse("c0(x0, c1) = x0");
-        assert!(set.find_generalization(&lit).unwrap().0);
+        assert!(
+            set.find_generalization(&lit, &local_context, &kernel_context)
+                .unwrap()
+                .0
+        );
 
         let lit = FatLiteral::parse("c0(c2, c1) = c2");
-        assert!(set.find_generalization(&lit).unwrap().0);
+        assert!(
+            set.find_generalization(&lit, &local_context, &kernel_context)
+                .unwrap()
+                .0
+        );
 
         let lit = FatLiteral::parse("c0(x0, x1) = x0");
-        assert!(set.find_generalization(&lit).is_none());
+        assert!(set
+            .find_generalization(&lit, &local_context, &kernel_context)
+            .is_none());
 
         let lit = FatLiteral::parse("c0(x0, c1) != x0");
-        assert!(!set.find_generalization(&lit).unwrap().0);
+        assert!(
+            !set.find_generalization(&lit, &local_context, &kernel_context)
+                .unwrap()
+                .0
+        );
 
-        set.insert(&FatLiteral::parse("x0 = x0"), 8);
+        set.insert(
+            &FatLiteral::parse("x0 = x0"),
+            8,
+            &local_context,
+            &kernel_context,
+        );
 
         let lit = FatLiteral::parse("x0 = c0");
-        assert!(set.find_generalization(&lit).is_none());
+        assert!(set
+            .find_generalization(&lit, &local_context, &kernel_context)
+            .is_none());
 
         let lit = FatLiteral::parse("c0 = x0");
-        assert!(set.find_generalization(&lit).is_none());
+        assert!(set
+            .find_generalization(&lit, &local_context, &kernel_context)
+            .is_none());
 
         let lit = FatLiteral::parse("c0 = c0");
-        assert!(set.find_generalization(&lit).unwrap().0);
+        assert!(
+            set.find_generalization(&lit, &local_context, &kernel_context)
+                .unwrap()
+                .0
+        );
     }
 
     #[test]
     fn test_literal_set_literal_reversing() {
+        let local_context = test_local_context(10);
+        let kernel_context = KernelContext::test_with_scoped_constants(10);
+
         let mut set = LiteralSet::new();
-        set.insert(&FatLiteral::parse("c0(x0, x0, x1) = c0(x1, x0, x0)"), 7);
+        set.insert(
+            &FatLiteral::parse("c0(x0, x0, x1) = c0(x1, x0, x0)"),
+            7,
+            &local_context,
+            &kernel_context,
+        );
         let lit = FatLiteral::parse("c0(c2, c1, c1) = c0(c1, c1, c2)");
-        assert!(set.find_generalization(&lit).unwrap().0);
+        assert!(
+            set.find_generalization(&lit, &local_context, &kernel_context)
+                .unwrap()
+                .0
+        );
     }
 }
