@@ -195,9 +195,7 @@ fn all_generalized_orders(base_clause: &FatClause, output: &mut Vec<FatClause>) 
     ) {
         // Base case: we've built a complete permutation
         if current.len() == literals.len() {
-            let mut clause = FatClause {
-                literals: current.clone(),
-            };
+            let mut clause = FatClause::from_literals_unnormalized(current.clone());
             clause.normalize_var_ids_no_flip();
             output.push(clause);
             return;

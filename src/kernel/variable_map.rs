@@ -221,7 +221,7 @@ impl VariableMap {
             .iter()
             .map(|lit| self.specialize_literal(lit, local_context, kernel_context))
             .collect();
-        Clause { literals }
+        Clause::from_literals_unnormalized(literals)
     }
 
     pub fn output_has_any_variable(&self) -> bool {

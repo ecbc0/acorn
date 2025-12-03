@@ -289,7 +289,7 @@ impl NormalizerView<'_> {
         let cnf = self.value_to_cnf(&value, false, &mut vec![], &mut 0, &mut vec![])?;
         for mut literals in cnf.into_iter() {
             literals.sort();
-            output.push(FatClause { literals });
+            output.push(FatClause::from_literals_unnormalized(literals));
         }
         Ok(output)
     }

@@ -4,9 +4,10 @@ use crate::certificate::Certificate;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::elaborator::acorn_value::AcornValue;
 use crate::elaborator::binding_map::BindingMap;
-use crate::kernel::fat_clause::{fake_local_context, FatClause};
+use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::local_context::LocalContext;
 use crate::kernel::trace::LiteralTrace;
 use crate::kernel::unifier::{Scope, Unifier};
 use crate::kernel::variable_map::VariableMap;
@@ -295,9 +296,9 @@ impl<'a> Proof<'a> {
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
                         Unifier::with_map(conc_map, KernelContext::fake());
-                    unifier.set_input_context(conc_scope, fake_local_context());
+                    unifier.set_input_context(conc_scope, LocalContext::empty_ref());
                     let pattern_scope = unifier.add_scope();
-                    unifier.set_input_context(pattern_scope, fake_local_context());
+                    unifier.set_input_context(pattern_scope, LocalContext::empty_ref());
                     assert!(unifier.unify(pattern_scope, from_pat, conc_scope, target_subterm));
                     assert!(unifier.unify(pattern_scope, to_pat, conc_scope, rewritten_subterm));
 
@@ -328,7 +329,7 @@ impl<'a> Proof<'a> {
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
                         Unifier::with_map(conc_map, KernelContext::fake());
-                    unifier.set_input_context(conc_scope, fake_local_context());
+                    unifier.set_input_context(conc_scope, LocalContext::empty_ref());
                     let base_scope = unifier.add_scope();
                     unifier.set_input_context(base_scope, base_clause.get_local_context());
 
@@ -370,7 +371,7 @@ impl<'a> Proof<'a> {
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
                         Unifier::with_map(conc_map, KernelContext::fake());
-                    unifier.set_input_context(conc_scope, fake_local_context());
+                    unifier.set_input_context(conc_scope, LocalContext::empty_ref());
                     let base_scope = unifier.add_scope();
                     unifier.set_input_context(base_scope, base_clause.get_local_context());
                     let mut j = 0;
@@ -419,7 +420,7 @@ impl<'a> Proof<'a> {
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
                         Unifier::with_map(conc_map, KernelContext::fake());
-                    unifier.set_input_context(conc_scope, fake_local_context());
+                    unifier.set_input_context(conc_scope, LocalContext::empty_ref());
                     let base_scope = unifier.add_scope();
                     unifier.set_input_context(base_scope, base_clause.get_local_context());
 
@@ -475,7 +476,7 @@ impl<'a> Proof<'a> {
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
                         Unifier::with_map(conc_map, KernelContext::fake());
-                    unifier.set_input_context(conc_scope, fake_local_context());
+                    unifier.set_input_context(conc_scope, LocalContext::empty_ref());
                     let base_scope = unifier.add_scope();
                     unifier.set_input_context(base_scope, base_clause.get_local_context());
 
@@ -569,7 +570,7 @@ impl<'a> Proof<'a> {
         let (mut unifier, conc_scope) = Unifier::with_map(conc_map, KernelContext::fake());
         unifier.set_input_context(conc_scope, conclusion.get_local_context());
         let base_scope = unifier.add_scope();
-        unifier.set_input_context(base_scope, fake_local_context());
+        unifier.set_input_context(base_scope, LocalContext::empty_ref());
 
         // Each simplification gets its own scope.
         // A proof step gets multiple scopes if it is used for multiple simplifications.

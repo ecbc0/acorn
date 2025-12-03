@@ -711,13 +711,13 @@ mod tests {
         FatTerm::new(BOOL, TypeId::new(0), head, args)
     }
 
-    /// Creates a test unifier with LEFT and RIGHT contexts set to the fake context.
+    /// Creates a test unifier with LEFT and RIGHT contexts set to an empty context.
     fn test_unifier<'a>(kernel_context: &'a KernelContext) -> Unifier<'a> {
-        use crate::kernel::fat_clause::fake_local_context;
+        use crate::kernel::local_context::LocalContext;
         let mut u = Unifier::new(3, kernel_context);
-        // For FatTerm tests, we use the fake local context
-        u.set_input_context(Scope::LEFT, fake_local_context());
-        u.set_input_context(Scope::RIGHT, fake_local_context());
+        // For FatTerm tests, we use an empty local context
+        u.set_input_context(Scope::LEFT, LocalContext::empty_ref());
+        u.set_input_context(Scope::RIGHT, LocalContext::empty_ref());
         u
     }
 
@@ -952,16 +952,16 @@ mod tests {
 
     #[test]
     fn test_initializing_with_variables_in_map() {
-        use crate::kernel::fat_clause::fake_local_context;
+        use crate::kernel::local_context::LocalContext;
         let mut initial_map = VariableMap::new();
         initial_map.set(0, FatTerm::parse("s0(x0, x1, s4)"));
         let (mut unifier, scope1) = Unifier::with_map(initial_map, KernelContext::fake());
         // Set contexts for all scopes
-        unifier.set_input_context(scope1, fake_local_context());
+        unifier.set_input_context(scope1, LocalContext::empty_ref());
         let scope2 = unifier.add_scope();
-        unifier.set_input_context(scope2, fake_local_context());
+        unifier.set_input_context(scope2, LocalContext::empty_ref());
         let scope3 = unifier.add_scope();
-        unifier.set_input_context(scope3, fake_local_context());
+        unifier.set_input_context(scope3, LocalContext::empty_ref());
 
         unifier.unify_str(scope2, "g6(x0, x1)", scope3, "g6(c1, x0)", true);
         unifier.unify_str(scope2, "g0(x2, x1)", scope1, "g0(s4, x0)", true);

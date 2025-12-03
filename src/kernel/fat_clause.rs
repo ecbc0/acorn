@@ -1,32 +1,72 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::sync::LazyLock;
 
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::fat_literal::FatLiteral;
-use crate::kernel::fat_term::{FatTerm, BOOL};
+use crate::kernel::fat_term::{FatTerm, TypeId, BOOL};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::unifier::{Scope, Unifier};
 use crate::proof_step::{EFLiteralTrace, EFTermTrace};
 
-/// A fake LocalContext for FatClause. Since FatTerm has types embedded,
-/// the context is never actually read - this just provides API compatibility with ThinClause.
-static FAKE_LOCAL_CONTEXT: LazyLock<LocalContext> = LazyLock::new(LocalContext::empty);
-
-/// Returns a reference to the fake local context used by FatClause.
-/// This is useful for tests and other code that needs a LocalContext but is working with FatTerms.
-pub fn fake_local_context() -> &'static LocalContext {
-    &FAKE_LOCAL_CONTEXT
+/// Builds a LocalContext from a slice of literals by extracting variable types.
+pub fn build_context_from_literals(literals: &[FatLiteral]) -> LocalContext {
+    let mut var_types: Vec<Option<TypeId>> = vec![];
+    for literal in literals {
+        for (var_id, type_id) in literal.left.iter_vars().chain(literal.right.iter_vars()) {
+            let idx = var_id as usize;
+            if idx >= var_types.len() {
+                var_types.resize(idx + 1, None);
+            }
+            var_types[idx] = Some(type_id);
+        }
+    }
+    LocalContext::new(
+        var_types
+            .into_iter()
+            .map(|t| t.unwrap_or_default())
+            .collect(),
+    )
 }
 
 /// A clause is a disjunction (an "or") of literals, universally quantified over some variables.
 /// We include the types of the universal variables it is quantified over.
 /// It cannot contain existential quantifiers.
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Ord, PartialOrd, Serialize, Deserialize)]
+///
+/// Note: The context field is excluded from equality/hash/ordering comparisons.
+/// Two clauses with the same literals are considered equal regardless of their contexts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FatClause {
     pub literals: Vec<FatLiteral>,
+    #[serde(default = "LocalContext::empty")]
+    context: LocalContext,
+}
+
+impl PartialEq for FatClause {
+    fn eq(&self, other: &Self) -> bool {
+        self.literals == other.literals
+    }
+}
+
+impl Eq for FatClause {}
+
+impl std::hash::Hash for FatClause {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.literals.hash(state);
+    }
+}
+
+impl Ord for FatClause {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.literals.cmp(&other.literals)
+    }
+}
+
+impl PartialOrd for FatClause {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl fmt::Display for FatClause {
@@ -46,10 +86,9 @@ impl fmt::Display for FatClause {
 
 impl FatClause {
     /// Get the local context for this clause.
-    /// For FatClause, this returns a fake empty context since types are embedded in terms.
-    /// This provides API compatibility with ThinClause which stores a real context.
+    /// Returns the context that stores variable types for this clause.
     pub fn get_local_context(&self) -> &LocalContext {
-        &FAKE_LOCAL_CONTEXT
+        &self.context
     }
 
     /// Creates a new normalized clause.
@@ -61,9 +100,21 @@ impl FatClause {
     /// Creates a new normalized clause without requiring a context.
     /// This is the original FatClause::new - use this when you don't have a LocalContext.
     pub fn new_without_context(literals: Vec<FatLiteral>) -> FatClause {
-        let mut c = FatClause { literals };
+        let mut c = FatClause {
+            literals,
+            context: LocalContext::empty(),
+        };
         c.normalize();
+        c.context = build_context_from_literals(&c.literals);
         c
+    }
+
+    /// Creates a clause from literals without normalizing.
+    /// The context is built from the literals.
+    /// Use this when you need to skip normalization (e.g., for permutation generation).
+    pub fn from_literals_unnormalized(literals: Vec<FatLiteral>) -> FatClause {
+        let context = build_context_from_literals(&literals);
+        FatClause { literals, context }
     }
 
     /// Sorts literals.
@@ -129,8 +180,10 @@ impl FatClause {
                 }
             }
         }
+        let context = build_context_from_literals(&output_literals);
         let c = FatClause {
             literals: output_literals,
+            context,
         };
         (c, ClauseTrace::new(trace))
     }
@@ -210,6 +263,7 @@ impl FatClause {
             // Note: this doesn't update the trace.
             literal.normalize_var_ids(&mut var_ids);
         }
+        self.context = build_context_from_literals(&self.literals);
     }
 
     /// Normalizes the variable IDs in the literals so that they are ascending,
@@ -221,6 +275,7 @@ impl FatClause {
             literal.left.normalize_var_ids(&mut var_ids);
             literal.right.normalize_var_ids(&mut var_ids);
         }
+        self.context = build_context_from_literals(&self.literals);
     }
 
     /// An unsatisfiable clause. Like a lone "false".
@@ -682,7 +737,8 @@ impl FatClause {
         let (literals, polarities): (Vec<FatLiteral>, Vec<bool>) =
             literal_polarity_pairs.into_iter().unzip();
 
-        (FatClause { literals }, polarities)
+        let context = build_context_from_literals(&literals);
+        (FatClause { literals, context }, polarities)
     }
 }
 
