@@ -364,8 +364,7 @@ impl SaturationProver {
 
     fn report_passive_contradiction(&mut self, passive_steps: Vec<ProofStep>) {
         assert!(self.useful_passive.is_empty());
-        for mut passive_step in passive_steps {
-            passive_step.printable = false;
+        for passive_step in passive_steps {
             self.useful_passive.push(passive_step);
         }
         self.final_step = Some(ProofStep::passive_contradiction(&self.useful_passive));

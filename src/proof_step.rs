@@ -370,7 +370,6 @@ pub struct ProofStep {
     /// A printable proof step is one that we are willing to turn into a line of code in a proof.
     /// Unprintable proof steps are things like halfway resolved theorems, or expressions
     /// that use anonymous synthetic atoms.
-    pub printable: bool,
 
     /// Information about this step that will let us reconstruct the variable mappings.
     pub trace: Option<ClauseTrace>,
@@ -418,7 +417,6 @@ impl ProofStep {
             simplification_rules: vec![],
             proof_size: 0,
             depth: 0,
-            printable: false,
             trace,
         }
     }
@@ -434,7 +432,6 @@ impl ProofStep {
     ) -> ProofStep {
         // Direct implication does not add to depth.
         let depth = activated_step.depth;
-        let printable = clause.is_printable();
 
         ProofStep {
             clause,
@@ -443,7 +440,6 @@ impl ProofStep {
             simplification_rules: vec![],
             proof_size: activated_step.proof_size + 1,
             depth,
-            printable,
             trace: Some(trace),
         }
     }
@@ -467,7 +463,6 @@ impl ProofStep {
             simplification_rules: vec![],
             proof_size: pattern_step.proof_size + 1,
             depth: pattern_step.depth,
-            printable: true,
             trace: Some(trace),
         }
     }
@@ -500,8 +495,6 @@ impl ProofStep {
             long_step.depth
         };
 
-        let printable = clause.is_printable();
-
         ProofStep {
             clause,
             truthiness,
@@ -509,7 +502,6 @@ impl ProofStep {
             simplification_rules: vec![],
             proof_size,
             depth,
-            printable,
             trace: None,
         }
     }
@@ -533,8 +525,6 @@ impl ProofStep {
             depth = u32::max(depth, short_step.depth);
         }
 
-        let printable = clause.is_printable();
-
         ProofStep {
             clause,
             truthiness,
@@ -542,7 +532,6 @@ impl ProofStep {
             simplification_rules,
             proof_size,
             depth,
-            printable,
             trace,
         }
     }
@@ -597,8 +586,6 @@ impl ProofStep {
             dependency_depth + 1
         };
 
-        let printable = clause.is_printable();
-
         ProofStep {
             clause,
             truthiness,
@@ -606,7 +593,6 @@ impl ProofStep {
             simplification_rules: vec![],
             proof_size,
             depth,
-            printable,
             trace: Some(trace),
         }
     }
@@ -633,7 +619,6 @@ impl ProofStep {
             simplification_rules: vec![],
             proof_size: 0,
             depth,
-            printable: true,
             trace: None,
         }
     }
@@ -657,7 +642,6 @@ impl ProofStep {
             simplification_rules: vec![],
             proof_size,
             depth,
-            printable: true,
             trace: None,
         }
     }
@@ -683,7 +667,6 @@ impl ProofStep {
             simplification_rules: vec![],
             proof_size: 0,
             depth: 0,
-            printable: true,
             trace: None,
         }
     }

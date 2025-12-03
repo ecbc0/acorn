@@ -66,6 +66,11 @@ impl ThinClause {
         self.literals.iter().any(|x| x.has_local_constant())
     }
 
+    /// Check if this clause contains any synthetic atoms.
+    pub fn has_synthetic(&self) -> bool {
+        self.literals.iter().any(|x| x.has_synthetic())
+    }
+
     /// Count the total number of atoms across all literals.
     pub fn atom_count(&self) -> u32 {
         self.literals.iter().map(|x| x.atom_count()).sum()
@@ -110,17 +115,5 @@ impl ThinClause {
             }
         }
         false
-    }
-
-    /// Whether we are willing to turn this clause into a line of code in a proof.
-    ///
-    /// WARNING: This differs from FatClause::is_printable which also checks has_synthetic().
-    /// ThinClause cannot check for synthetic atoms without a SymbolTable parameter.
-    /// TODO: Add has_synthetic() that takes &SymbolTable, or add SymbolTable parameter here.
-    pub fn is_printable(&self) -> bool {
-        if self.len() > 1 {
-            return false;
-        }
-        todo!("ThinClause::is_printable needs has_synthetic check - requires SymbolTable parameter")
     }
 }

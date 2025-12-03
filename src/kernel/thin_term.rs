@@ -159,6 +159,17 @@ impl ThinTerm {
         false
     }
 
+    /// Check if this term contains any synthetic atoms.
+    pub fn has_synthetic(&self) -> bool {
+        use crate::kernel::symbol::Symbol;
+        for component in &self.components {
+            if let ThinTermComponent::Atom(Atom::Symbol(Symbol::Synthetic(_))) = component {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Count the number of atom components (excluding Composite markers).
     pub fn atom_count(&self) -> u32 {
         let mut count = 0;

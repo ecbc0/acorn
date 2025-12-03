@@ -291,17 +291,6 @@ impl FatClause {
         self.literals.iter().any(|x| x.has_head(atom))
     }
 
-    /// Whether we are willing to turn this clause into a line of code in a proof.
-    pub fn is_printable(&self) -> bool {
-        if self.len() > 1 {
-            return false;
-        }
-        if self.has_synthetic() {
-            return false;
-        }
-        true
-    }
-
     /// Renumbers synthetic atoms from the provided list into the invalid range.
     /// This does renormalize, so it could reorder literals and renumber variables.
     pub fn invalidate_synthetics(&self, from: &[AtomId]) -> FatClause {

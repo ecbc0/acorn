@@ -44,6 +44,20 @@ impl ThinLiteral {
         ThinLiteral::new(false, left, right)
     }
 
+    /// Create a literal representing the value "true" (true = true).
+    pub fn true_value() -> ThinLiteral {
+        ThinLiteral::new(true, ThinTerm::atom(Atom::True), ThinTerm::atom(Atom::True))
+    }
+
+    /// Create a literal representing the value "false" (true != true).
+    pub fn false_value() -> ThinLiteral {
+        ThinLiteral::new(
+            false,
+            ThinTerm::atom(Atom::True),
+            ThinTerm::atom(Atom::True),
+        )
+    }
+
     /// Negate this literal (flip positive/negative).
     pub fn negate(&self) -> ThinLiteral {
         ThinLiteral {
@@ -68,6 +82,16 @@ impl ThinLiteral {
         self.right.is_true()
     }
 
+    /// Check if this literal represents the value "true" (true = true).
+    pub fn is_true_value(&self) -> bool {
+        self.positive && self.left.is_true() && self.right.is_true()
+    }
+
+    /// Check if this literal represents the value "false" (true != true).
+    pub fn is_false_value(&self) -> bool {
+        !self.positive && self.left.is_true() && self.right.is_true()
+    }
+
     /// Check if this literal contains any variables.
     pub fn has_any_variable(&self) -> bool {
         self.left.has_any_variable() || self.right.has_any_variable()
@@ -76,6 +100,11 @@ impl ThinLiteral {
     /// Check if this literal contains any local constants.
     pub fn has_local_constant(&self) -> bool {
         self.left.has_local_constant() || self.right.has_local_constant()
+    }
+
+    /// Check if this literal contains any synthetic atoms.
+    pub fn has_synthetic(&self) -> bool {
+        self.left.has_synthetic() || self.right.has_synthetic()
     }
 
     /// Count the total number of atoms in both terms.
