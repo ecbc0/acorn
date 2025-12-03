@@ -7,6 +7,8 @@ use crate::kernel::atom::Atom;
 use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::FatTerm;
+use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::local_context::LocalContext;
 
 /// Every time we set two terms equal or not equal, that action is tagged with a StepId.
 /// The term graph uses it to provide a history of the reasoning that led to a conclusion.
@@ -380,9 +382,12 @@ impl TermGraph {
         let term_id = TermId(self.terms.len() as u32);
         let group_id = GroupId(self.groups.len() as u32);
 
+        // Term graph only has concrete terms (no variables), so empty context is safe
+        let local_context = LocalContext::empty_ref();
+        let kernel_context = KernelContext::fake();
         let head = FatTerm::new(
-            term.get_head_type(),
-            term.get_head_type(),
+            term.get_head_type_with_context(local_context, kernel_context),
+            term.get_head_type_with_context(local_context, kernel_context),
             *term.get_head_atom(),
             vec![],
         );

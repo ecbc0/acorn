@@ -612,12 +612,19 @@ impl FatClause {
     /// Returns a vector of (index, resulting_literals) pairs.
     /// The index describes the index of a literal that got replaced by two literals.
     /// We always replace a (left ~ right) at position i with ~left at i and ~right at i+1.
-    pub fn find_boolean_reductions(&self) -> Vec<(usize, Vec<FatLiteral>)> {
+    pub fn find_boolean_reductions(
+        &self,
+        kernel_context: &KernelContext,
+    ) -> Vec<(usize, Vec<FatLiteral>)> {
         let mut answer = vec![];
 
         for i in 0..self.literals.len() {
             let literal = &self.literals[i];
-            if literal.left.get_term_type() != BOOL {
+            if literal
+                .left
+                .get_term_type_with_context(&self.context, kernel_context)
+                != BOOL
+            {
                 continue;
             }
             if literal.right.is_true() {
@@ -647,9 +654,9 @@ impl FatClause {
 
     /// Generates all clauses that can be derived from this clause using boolean reduction.
     /// This is a convenience method that returns just the normalized clauses.
-    pub fn boolean_reductions(&self) -> Vec<FatClause> {
+    pub fn boolean_reductions(&self, kernel_context: &KernelContext) -> Vec<FatClause> {
         let mut answer = vec![];
-        for (_, literals) in self.find_boolean_reductions() {
+        for (_, literals) in self.find_boolean_reductions(kernel_context) {
             let clause = FatClause::new_without_context(literals);
             answer.push(clause);
         }
@@ -659,7 +666,7 @@ impl FatClause {
     /// Finds if extensionality can be applied to this clause.
     /// Returns the resulting literals if extensionality applies.
     /// Only works on single-literal clauses.
-    pub fn find_extensionality(&self) -> Option<Vec<FatLiteral>> {
+    pub fn find_extensionality(&self, kernel_context: &KernelContext) -> Option<Vec<FatLiteral>> {
         // Extensionality only works on single-literal clauses
         if self.literals.len() != 1 {
             return None;
@@ -713,8 +720,8 @@ impl FatClause {
         // We need to take the type from the head of the shorter term.
         let new_left = shorter.get_head_term();
         let new_right = FatTerm::new(
-            new_left.get_term_type(),
-            longer.get_head_type(),
+            new_left.get_term_type_with_context(&self.context, kernel_context),
+            longer.get_head_type_with_context(&self.context, kernel_context),
             *longer.get_head_atom(),
             longer.args()[0..diff].to_vec(),
         );

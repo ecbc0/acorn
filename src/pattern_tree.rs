@@ -4,6 +4,8 @@ use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::{FatTerm, TypeId};
+use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 
 /// The TermComponent is designed so that a &[TermComponent] represents a preorder
@@ -36,10 +38,15 @@ impl TermComponent {
         }
     }
 
-    fn flatten_next(term: &FatTerm, output: &mut Vec<TermComponent>) {
+    fn flatten_next(
+        term: &FatTerm,
+        output: &mut Vec<TermComponent>,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) {
         if term.args().is_empty() {
             output.push(TermComponent::Atom(
-                term.get_term_type(),
+                term.get_term_type_with_context(local_context, kernel_context),
                 *term.get_head_atom(),
             ));
             return;
@@ -50,42 +57,55 @@ impl TermComponent {
         // The zeros are a placeholder. We'll fill in the real info later.
         output.push(TermComponent::Composite(TypeId::default(), 0, 0));
         output.push(TermComponent::Atom(
-            term.get_head_type(),
+            term.get_head_type_with_context(local_context, kernel_context),
             *term.get_head_atom(),
         ));
         for arg in term.args() {
-            TermComponent::flatten_next(arg, output);
+            TermComponent::flatten_next(arg, output, local_context, kernel_context);
         }
 
         // Now we can fill in the real size
         let real_size = output.len() - initial_size;
         output[initial_size] = TermComponent::Composite(
-            term.get_term_type(),
+            term.get_term_type_with_context(local_context, kernel_context),
             term.args().len() as u8,
             real_size as u16,
         );
     }
 
-    pub fn flatten_term(term: &FatTerm) -> Vec<TermComponent> {
+    pub fn flatten_term(
+        term: &FatTerm,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> Vec<TermComponent> {
         let mut output = Vec::new();
-        TermComponent::flatten_next(term, &mut output);
+        TermComponent::flatten_next(term, &mut output, local_context, kernel_context);
         output
     }
 
-    fn flatten_pair(term1: &FatTerm, term2: &FatTerm) -> Vec<TermComponent> {
-        assert_eq!(term1.get_term_type(), term2.get_term_type());
+    fn flatten_pair(
+        term1: &FatTerm,
+        term2: &FatTerm,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> Vec<TermComponent> {
+        assert_eq!(
+            term1.get_term_type_with_context(local_context, kernel_context),
+            term2.get_term_type_with_context(local_context, kernel_context)
+        );
         let mut output = Vec::new();
         // The zero is a placeholder. We'll fill in the real info later.
-        TermComponent::flatten_next(term1, &mut output);
-        TermComponent::flatten_next(term2, &mut output);
+        TermComponent::flatten_next(term1, &mut output, local_context, kernel_context);
+        TermComponent::flatten_next(term2, &mut output, local_context, kernel_context);
         output
     }
 
-    fn flatten_clause(clause: &FatClause) -> Vec<TermComponent> {
+    fn flatten_clause(clause: &FatClause, kernel_context: &KernelContext) -> Vec<TermComponent> {
+        let local_context = clause.get_local_context();
         let mut output = Vec::new();
         for literal in &clause.literals {
-            TermComponent::flatten_next(&literal.left, &mut output);
-            TermComponent::flatten_next(&literal.right, &mut output);
+            TermComponent::flatten_next(&literal.left, &mut output, local_context, kernel_context);
+            TermComponent::flatten_next(&literal.right, &mut output, local_context, kernel_context);
         }
         output
     }
@@ -416,14 +436,23 @@ impl Edge {
 }
 
 /// Appends the key for this term, but does not add the top-level type
-fn key_from_term_helper(term: &FatTerm, key: &mut Vec<u8>) {
+fn key_from_term_helper(
+    term: &FatTerm,
+    key: &mut Vec<u8>,
+    local_context: &LocalContext,
+    kernel_context: &KernelContext,
+) {
     if term.args().is_empty() {
         Edge::Atom(*term.get_head_atom()).append_to(key);
     } else {
-        Edge::Head(term.args().len() as u8, term.get_head_type()).append_to(key);
+        Edge::Head(
+            term.args().len() as u8,
+            term.get_head_type_with_context(local_context, kernel_context),
+        )
+        .append_to(key);
         Edge::Atom(*term.get_head_atom()).append_to(key);
         for arg in term.args() {
-            key_from_term_helper(arg, key);
+            key_from_term_helper(arg, key, local_context, kernel_context);
         }
     }
 }
@@ -435,9 +464,13 @@ pub fn term_key_prefix(type_id: TypeId) -> Vec<u8> {
 }
 
 /// Appends the key for this term, prefixing with the top-level type
-pub fn key_from_term(term: &FatTerm) -> Vec<u8> {
-    let mut key = term_key_prefix(term.get_term_type());
-    key_from_term_helper(term, &mut key);
+pub fn key_from_term(
+    term: &FatTerm,
+    local_context: &LocalContext,
+    kernel_context: &KernelContext,
+) -> Vec<u8> {
+    let mut key = term_key_prefix(term.get_term_type_with_context(local_context, kernel_context));
+    key_from_term_helper(term, &mut key, local_context, kernel_context);
     key
 }
 
@@ -447,32 +480,50 @@ fn literal_key_prefix(type_id: TypeId) -> Vec<u8> {
     key
 }
 
-fn key_from_pair(term1: &FatTerm, term2: &FatTerm) -> Vec<u8> {
-    let mut key = literal_key_prefix(term1.get_term_type());
-    key_from_term_helper(&term1, &mut key);
-    key_from_term_helper(&term2, &mut key);
+fn key_from_pair(
+    term1: &FatTerm,
+    term2: &FatTerm,
+    local_context: &LocalContext,
+    kernel_context: &KernelContext,
+) -> Vec<u8> {
+    let mut key =
+        literal_key_prefix(term1.get_term_type_with_context(local_context, kernel_context));
+    key_from_term_helper(&term1, &mut key, local_context, kernel_context);
+    key_from_term_helper(&term2, &mut key, local_context, kernel_context);
     key
 }
 
 /// Just creates the category prefix for a clause key.
-fn clause_key_prefix(clause: &FatClause) -> Vec<u8> {
+fn clause_key_prefix(clause: &FatClause, kernel_context: &KernelContext) -> Vec<u8> {
+    let local_context = clause.get_local_context();
     let mut key = Vec::new();
     for literal in &clause.literals {
         if literal.positive {
-            Edge::PositiveLiteral(literal.left.get_term_type()).append_to(&mut key);
+            Edge::PositiveLiteral(
+                literal
+                    .left
+                    .get_term_type_with_context(local_context, kernel_context),
+            )
+            .append_to(&mut key);
         } else {
-            Edge::NegativeLiteral(literal.left.get_term_type()).append_to(&mut key);
+            Edge::NegativeLiteral(
+                literal
+                    .left
+                    .get_term_type_with_context(local_context, kernel_context),
+            )
+            .append_to(&mut key);
         }
     }
     key
 }
 
 /// Generates a key for a clause, starting with the category edges, then the term edges.
-fn key_from_clause(clause: &FatClause) -> Vec<u8> {
-    let mut key = clause_key_prefix(clause);
+fn key_from_clause(clause: &FatClause, kernel_context: &KernelContext) -> Vec<u8> {
+    let local_context = clause.get_local_context();
+    let mut key = clause_key_prefix(clause, kernel_context);
     for literal in &clause.literals {
-        key_from_term_helper(&literal.left, &mut key);
-        key_from_term_helper(&literal.right, &mut key);
+        key_from_term_helper(&literal.left, &mut key, local_context, kernel_context);
+        key_from_term_helper(&literal.right, &mut key, local_context, kernel_context);
     }
     key
 }
@@ -623,23 +674,36 @@ impl<T> PatternTree<T> {
         }
     }
 
-    pub fn insert_term(&mut self, term: &FatTerm, value: T) {
-        let path = key_from_term(term);
+    pub fn insert_term(
+        &mut self,
+        term: &FatTerm,
+        value: T,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) {
+        let path = key_from_term(term, local_context, kernel_context);
         let value_id = self.values.len();
         self.values.push(value);
         self.trie.insert(path, value_id);
     }
 
     /// The pair needs to have normalized variable numbering, with term1's variables preceding term2's.
-    pub fn insert_pair(&mut self, term1: &FatTerm, term2: &FatTerm, value: T) {
-        let key = key_from_pair(term1, term2);
+    pub fn insert_pair(
+        &mut self,
+        term1: &FatTerm,
+        term2: &FatTerm,
+        value: T,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) {
+        let key = key_from_pair(term1, term2, local_context, kernel_context);
         let value_id = self.values.len();
         self.values.push(value);
         self.trie.insert(key, value_id);
     }
 
     pub fn insert_clause(&mut self, clause: &FatClause, value: T) {
-        let key = key_from_clause(clause);
+        let key = key_from_clause(clause, KernelContext::fake());
         let value_id = self.values.len();
         self.values.push(value);
         self.trie.insert(key, value_id);
@@ -678,9 +742,16 @@ impl<T> PatternTree<T> {
         }
     }
 
-    fn find_pair<'a>(&'a self, left: &FatTerm, right: &FatTerm) -> Option<&'a T> {
-        let flat = TermComponent::flatten_pair(left, right);
-        let mut key = literal_key_prefix(left.get_term_type());
+    fn find_pair<'a>(
+        &'a self,
+        left: &FatTerm,
+        right: &FatTerm,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> Option<&'a T> {
+        let flat = TermComponent::flatten_pair(left, right, local_context, kernel_context);
+        let mut key =
+            literal_key_prefix(left.get_term_type_with_context(local_context, kernel_context));
         match self.find_one_match(&mut key, &flat) {
             Some((value, _)) => Some(value),
             None => None,
@@ -688,8 +759,9 @@ impl<T> PatternTree<T> {
     }
 
     pub fn find_clause<'a>(&'a self, clause: &FatClause) -> Option<&'a T> {
-        let flat = TermComponent::flatten_clause(clause);
-        let mut key = clause_key_prefix(clause); // Use prefix, not complete key!
+        let kernel_context = KernelContext::fake();
+        let flat = TermComponent::flatten_clause(clause, kernel_context);
+        let mut key = clause_key_prefix(clause, kernel_context); // Use prefix, not complete key!
         match self.find_one_match(&mut key, &flat) {
             Some((value, _)) => Some(value),
             None => None,
@@ -699,8 +771,14 @@ impl<T> PatternTree<T> {
 
 impl PatternTree<()> {
     /// Appends to the existing value if possible. Otherwises, inserts a vec![U].
-    pub fn insert_or_append<U>(pt: &mut PatternTree<Vec<U>>, term: &FatTerm, value: U) {
-        let key = key_from_term(term);
+    pub fn insert_or_append<U>(
+        pt: &mut PatternTree<Vec<U>>,
+        term: &FatTerm,
+        value: U,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) {
+        let key = key_from_term(term, local_context, kernel_context);
         match pt.trie.entry(key) {
             Entry::Occupied(entry) => {
                 let value_id = entry.get();
@@ -738,12 +816,24 @@ impl LiteralSet {
     ///
     /// Overwrites if the negation already exists.
     pub fn insert(&mut self, literal: &FatLiteral, id: usize) {
-        self.tree
-            .insert_pair(&literal.left, &literal.right, (literal.positive, id, false));
+        let local_context = LocalContext::empty_ref();
+        let kernel_context = KernelContext::fake();
+        self.tree.insert_pair(
+            &literal.left,
+            &literal.right,
+            (literal.positive, id, false),
+            local_context,
+            kernel_context,
+        );
         if !literal.strict_kbo() {
             let (right, left) = literal.normalized_reversed();
-            self.tree
-                .insert_pair(&right, &left, (literal.positive, id, true));
+            self.tree.insert_pair(
+                &right,
+                &left,
+                (literal.positive, id, true),
+                local_context,
+                kernel_context,
+            );
         }
     }
 
@@ -753,7 +843,12 @@ impl LiteralSet {
     ///   2. the id of the generalization
     ///   3. whether this is a flip-match, meaning we swapped left and right
     pub fn find_generalization(&self, literal: &FatLiteral) -> Option<(bool, usize, bool)> {
-        match self.tree.find_pair(&literal.left, &literal.right) {
+        let local_context = LocalContext::empty_ref();
+        let kernel_context = KernelContext::fake();
+        match self
+            .tree
+            .find_pair(&literal.left, &literal.right, local_context, kernel_context)
+        {
             Some(&(sign, id, flipped)) => Some((sign == literal.positive, id, flipped)),
             None => None,
         }
@@ -766,7 +861,11 @@ mod tests {
 
     fn check_term(s: &str) {
         let input_term = FatTerm::parse(s);
-        let flat = TermComponent::flatten_term(&input_term);
+        let flat = TermComponent::flatten_term(
+            &input_term,
+            LocalContext::empty_ref(),
+            KernelContext::fake(),
+        );
         TermComponent::validate_slice(&flat);
         let output_term = TermComponent::unflatten_term(&flat);
         assert_eq!(input_term, output_term);
@@ -783,7 +882,12 @@ mod tests {
     fn check_pair(s1: &str, s2: &str) {
         let input_term1 = FatTerm::parse(s1);
         let input_term2 = FatTerm::parse(s2);
-        let flat = TermComponent::flatten_pair(&input_term1, &input_term2);
+        let flat = TermComponent::flatten_pair(
+            &input_term1,
+            &input_term2,
+            LocalContext::empty_ref(),
+            KernelContext::fake(),
+        );
         let (output_term1, output_term2) = TermComponent::unflatten_pair(&flat);
         assert_eq!(input_term1, output_term1);
         assert_eq!(input_term2, output_term2);

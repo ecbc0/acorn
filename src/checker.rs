@@ -14,6 +14,7 @@ use crate::elaborator::source::Source;
 use crate::elaborator::stack::Stack;
 use crate::generalization_set::GeneralizationSet;
 use crate::kernel::fat_clause::FatClause;
+use crate::kernel::kernel_context::KernelContext;
 use crate::normalizer::{Normalizer, NormalizerView};
 use crate::project::Project;
 use crate::syntax::expression::Declaration;
@@ -190,7 +191,7 @@ impl Checker {
                 self.insert_clause(&resolution, StepReason::EqualityResolution(step_id));
             }
 
-            if let Some(extensionality) = clause.find_extensionality() {
+            if let Some(extensionality) = clause.find_extensionality(KernelContext::fake()) {
                 let clause = FatClause::new_without_context(extensionality);
                 self.insert_clause(&clause, StepReason::Extensionality(step_id));
             }
@@ -207,7 +208,7 @@ impl Checker {
             self.insert_clause(&injectivity, StepReason::Injectivity(step_id));
         }
 
-        for boolean_reduction in clause.boolean_reductions() {
+        for boolean_reduction in clause.boolean_reductions(KernelContext::fake()) {
             // Guard against infinite loops
             if self.past_boolean_reductions.contains(&boolean_reduction) {
                 continue;

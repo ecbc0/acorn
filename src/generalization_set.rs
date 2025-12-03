@@ -5,6 +5,8 @@ use std::vec;
 use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::{FatTerm, TypeId};
+use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::local_context::LocalContext;
 use crate::kernel::unifier::Unifier;
 use crate::pattern_tree::PatternTree;
 
@@ -37,7 +39,7 @@ impl GeneralizationSet {
             self.tree.insert_clause(&c, id);
 
             if has_av {
-                let key = ClauseTypeKey::new(&c);
+                let key = ClauseTypeKey::new(&c, KernelContext::fake());
                 self.with_applied_variables
                     .entry(key)
                     .or_default()
@@ -53,7 +55,7 @@ impl GeneralizationSet {
         }
 
         // Fall back to checking with_applied_variables
-        let key = ClauseTypeKey::new(&special);
+        let key = ClauseTypeKey::new(&special, KernelContext::fake());
         if let Some(candidates) = self.with_applied_variables.get(&key) {
             for (general, id) in candidates {
                 if Unifier::unify_clauses(general, &special) {
@@ -72,11 +74,15 @@ struct ClauseTypeKey {
 }
 
 impl ClauseTypeKey {
-    pub fn new(clause: &FatClause) -> ClauseTypeKey {
+    pub fn new(clause: &FatClause, kernel_context: &KernelContext) -> ClauseTypeKey {
+        let local_context = clause.get_local_context();
         let types = clause
             .literals
             .iter()
-            .map(|lit| lit.left.get_term_type())
+            .map(|lit| {
+                lit.left
+                    .get_term_type_with_context(local_context, kernel_context)
+            })
             .collect();
         ClauseTypeKey { types }
     }
@@ -84,13 +90,32 @@ impl ClauseTypeKey {
 
 /// Compare two literals in a substitution-invariant way.
 /// First compares left terms, then right terms if left terms are equal.
-fn sub_invariant_literal_cmp(lit1: &FatLiteral, lit2: &FatLiteral) -> Option<Ordering> {
+fn sub_invariant_literal_cmp(
+    lit1: &FatLiteral,
+    lit2: &FatLiteral,
+    local_context: &LocalContext,
+    kernel_context: &KernelContext,
+) -> Option<Ordering> {
     // First compare the left terms
-    let left_cmp = sub_invariant_term_cmp(&lit1.left, !lit1.positive, &lit2.left, !lit2.positive);
+    let left_cmp = sub_invariant_term_cmp(
+        &lit1.left,
+        !lit1.positive,
+        &lit2.left,
+        !lit2.positive,
+        local_context,
+        kernel_context,
+    );
     match left_cmp {
         Some(Ordering::Equal) => {
             // If left terms are equal, compare right terms
-            sub_invariant_term_cmp(&lit1.right, !lit1.positive, &lit2.right, !lit2.positive)
+            sub_invariant_term_cmp(
+                &lit1.right,
+                !lit1.positive,
+                &lit2.right,
+                !lit2.positive,
+                local_context,
+                kernel_context,
+            )
         }
         other => other,
     }
@@ -111,9 +136,13 @@ pub fn sub_invariant_term_cmp(
     left_neg: bool,
     right: &FatTerm,
     right_neg: bool,
+    local_context: &LocalContext,
+    kernel_context: &KernelContext,
 ) -> Option<Ordering> {
     // Compare the types, because these won't be changed by substitution.
-    let type_cmp = left.get_term_type().cmp(&right.get_term_type());
+    let type_cmp = left
+        .get_term_type_with_context(local_context, kernel_context)
+        .cmp(&right.get_term_type_with_context(local_context, kernel_context));
     if type_cmp != Ordering::Equal {
         return Some(type_cmp);
     }
@@ -130,7 +159,9 @@ pub fn sub_invariant_term_cmp(
     }
 
     // Compare the head types.
-    let head_type_cmp = left.get_head_type().cmp(&right.get_head_type());
+    let head_type_cmp = left
+        .get_head_type_with_context(local_context, kernel_context)
+        .cmp(&right.get_head_type_with_context(local_context, kernel_context));
     if head_type_cmp != Ordering::Equal {
         return Some(head_type_cmp);
     }
@@ -143,7 +174,7 @@ pub fn sub_invariant_term_cmp(
     // Heads are the same, so recurse on arguments
     assert!(left.args().len() == right.args().len());
     for (l, r) in left.args().iter().zip(right.args().iter()) {
-        match sub_invariant_term_cmp(l, false, r, false) {
+        match sub_invariant_term_cmp(l, false, r, false, local_context, kernel_context) {
             Some(Ordering::Equal) => continue,
             x => return x,
         };
@@ -170,8 +201,17 @@ fn all_generalized_forms(
         return;
     }
     let literal = &base_clause.literals[start_index];
+    let local_context = base_clause.get_local_context();
+    let kernel_context = KernelContext::fake();
     // Ignore literal sign in this stage
-    let cmp = sub_invariant_term_cmp(&literal.left, true, &literal.right, true);
+    let cmp = sub_invariant_term_cmp(
+        &literal.left,
+        true,
+        &literal.right,
+        true,
+        local_context,
+        kernel_context,
+    );
     if cmp != Some(Ordering::Less) {
         // The pre-existing direction is okay.
         all_generalized_forms(base_clause, start_index + 1, output);
@@ -186,12 +226,17 @@ fn all_generalized_forms(
 
 /// Generate all orders of the provided clause that are a valid generalized form.
 fn all_generalized_orders(base_clause: &FatClause, output: &mut Vec<FatClause>) {
+    let local_context = base_clause.get_local_context();
+    let kernel_context = KernelContext::fake();
+
     // Helper function to generate all permutations recursively
     fn generate_permutations(
         literals: &[FatLiteral],
         current: &mut Vec<FatLiteral>,
         used: &mut Vec<bool>,
         output: &mut Vec<FatClause>,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
     ) {
         // Base case: we've built a complete permutation
         if current.len() == literals.len() {
@@ -209,7 +254,8 @@ fn all_generalized_orders(base_clause: &FatClause, output: &mut Vec<FatClause>) 
 
             // Check if this literal can be the next one in a non-increasing order
             if let Some(last) = current.last() {
-                let cmp = sub_invariant_literal_cmp(last, &literals[i]);
+                let cmp =
+                    sub_invariant_literal_cmp(last, &literals[i], local_context, kernel_context);
                 if cmp == Some(Ordering::Less) {
                     continue;
                 }
@@ -220,7 +266,14 @@ fn all_generalized_orders(base_clause: &FatClause, output: &mut Vec<FatClause>) 
             current.push(literals[i].clone());
 
             // Recurse
-            generate_permutations(literals, current, used, output);
+            generate_permutations(
+                literals,
+                current,
+                used,
+                output,
+                local_context,
+                kernel_context,
+            );
 
             // Backtrack
             current.pop();
@@ -230,16 +283,33 @@ fn all_generalized_orders(base_clause: &FatClause, output: &mut Vec<FatClause>) 
 
     let mut current = Vec::new();
     let mut used = vec![false; base_clause.literals.len()];
-    generate_permutations(&base_clause.literals, &mut current, &mut used, output);
+    generate_permutations(
+        &base_clause.literals,
+        &mut current,
+        &mut used,
+        output,
+        local_context,
+        kernel_context,
+    );
 }
 
 /// Put this clause into the "specialized" form.
 /// This should only be called on concrete clauses.
 fn specialized_form(mut clause: FatClause) -> FatClause {
+    let local_context = clause.get_local_context().clone();
+    let kernel_context = KernelContext::fake();
+
     // First, ensure each literal has the larger term on the left
     for literal in &mut clause.literals {
-        let cmp = sub_invariant_term_cmp(&literal.left, true, &literal.right, true)
-            .expect("Concrete terms should always be comparable");
+        let cmp = sub_invariant_term_cmp(
+            &literal.left,
+            true,
+            &literal.right,
+            true,
+            &local_context,
+            kernel_context,
+        )
+        .expect("Concrete terms should always be comparable");
         if cmp == Ordering::Less {
             // The right term is larger, so swap
             literal.flip();
@@ -249,7 +319,7 @@ fn specialized_form(mut clause: FatClause) -> FatClause {
     // Then, sort the literals using our comparison function
     // Since this is for concrete clauses, we can unwrap the comparison
     clause.literals.sort_by(|a, b| {
-        sub_invariant_literal_cmp(a, b)
+        sub_invariant_literal_cmp(a, b, &local_context, kernel_context)
             .expect("Concrete literals should always be comparable")
             .reverse() // Reverse to get non-increasing order
     });

@@ -800,7 +800,8 @@ impl NormalizerView<'_> {
                     None => return Ok(None),
                 };
                 let head = *func_term.get_head_atom();
-                let head_type = func_term.get_head_type();
+                let head_type = func_term
+                    .get_head_type_with_context(LocalContext::empty_ref(), KernelContext::fake());
                 let mut args = func_term.args().to_vec();
                 for arg in &application.args {
                     let arg_term = match self.try_simple_value_to_term(arg, stack)? {
@@ -993,8 +994,10 @@ impl NormalizerView<'_> {
             let existing_id = existing_def.atoms[0];
             let existing_atom = Atom::Symbol(Symbol::Synthetic(existing_id));
             let reused_term = FatTerm::new(
-                skolem_term.get_term_type(),
-                skolem_term.get_head_type(),
+                skolem_term
+                    .get_term_type_with_context(LocalContext::empty_ref(), KernelContext::fake()),
+                skolem_term
+                    .get_head_type_with_context(LocalContext::empty_ref(), KernelContext::fake()),
                 existing_atom,
                 skolem_term.args().to_vec(),
             );
@@ -1134,7 +1137,8 @@ impl NormalizerView<'_> {
                 use crate::kernel::atom::Atom;
 
                 // Determine the type of the result (should be same as then_term and else_term)
-                let result_type_id = then_term.get_term_type();
+                let result_type_id = then_term
+                    .get_term_type_with_context(LocalContext::empty_ref(), KernelContext::fake());
                 let result_type = self.type_store().get_type(result_type_id).clone();
 
                 // Create a new synthetic atom with the appropriate function type
@@ -1591,7 +1595,7 @@ impl Normalizer {
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
         let head = self.denormalize_atom(
-            term.get_head_type(),
+            term.get_head_type_with_context(LocalContext::empty_ref(), &self.kernel_context),
             &term.get_head_atom(),
             var_types,
             arbitrary_names,

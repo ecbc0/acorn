@@ -330,7 +330,12 @@ impl ActiveSet {
                 } else {
                     // We've never seen this subterm before.
                     // We need to find all the possible rewrites for it.
-                    let rewrites = self.rewrite_tree.get_rewrites(u_subterm, 0);
+                    let rewrites = self.rewrite_tree.get_rewrites(
+                        u_subterm,
+                        0,
+                        LocalContext::empty_ref(),
+                        KernelContext::fake(),
+                    );
 
                     // Add these rewrites to the term graph
                     let id1 = self.graph.insert_term(&u_subterm);
@@ -555,7 +560,7 @@ impl ActiveSet {
         let clause = &activated_step.clause;
         let mut answer = vec![];
 
-        for (index, literals) in clause.find_boolean_reductions() {
+        for (index, literals) in clause.find_boolean_reductions(KernelContext::fake()) {
             let info = BooleanReductionInfo {
                 id: activated_id,
                 index,
@@ -581,7 +586,7 @@ impl ActiveSet {
         let clause = &activated_step.clause;
         let mut answer = vec![];
 
-        if let Some(literals) = clause.find_extensionality() {
+        if let Some(literals) = clause.find_extensionality(KernelContext::fake()) {
             let info = ExtensionalityInfo {
                 id: activated_id,
                 literals: literals.clone(),
@@ -670,7 +675,7 @@ impl ActiveSet {
     /// The trace is either Eliminated, if the literal matched an existing one, or Impossible,
     /// if the literal is self-evident.
     fn evaluate_literal(&self, literal: &FatLiteral) -> Option<(bool, LiteralTrace)> {
-        literal.validate_type();
+        literal.validate_type(LocalContext::empty_ref(), KernelContext::fake());
         if literal.left == literal.right {
             return Some((literal.positive, LiteralTrace::Impossible));
         }

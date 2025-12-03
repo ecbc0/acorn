@@ -3,6 +3,8 @@ use std::collections::{BTreeMap, HashMap};
 use crate::kernel::atom::Atom;
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::{FatTerm, TypeId};
+use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::local_context::LocalContext;
 
 // A fingerprint component describes the head of a term at a particular "path" from this term.
 // The path is the sequence of arg indices to get to that term
@@ -21,7 +23,12 @@ pub enum FingerprintComponent {
 }
 
 impl FingerprintComponent {
-    pub fn new(term: &FatTerm, path: &&[usize]) -> FingerprintComponent {
+    pub fn new(
+        term: &FatTerm,
+        path: &&[usize],
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> FingerprintComponent {
         let mut current_term = term;
         for &i in *path {
             if i >= current_term.args().len() {
@@ -34,10 +41,14 @@ impl FingerprintComponent {
         }
 
         match current_term.get_head_atom() {
-            Atom::Variable(_) => {
-                FingerprintComponent::Something(current_term.get_term_type(), Atom::Variable(0))
-            }
-            a => FingerprintComponent::Something(current_term.get_term_type(), *a),
+            Atom::Variable(_) => FingerprintComponent::Something(
+                current_term.get_term_type_with_context(local_context, kernel_context),
+                Atom::Variable(0),
+            ),
+            a => FingerprintComponent::Something(
+                current_term.get_term_type_with_context(local_context, kernel_context),
+                *a,
+            ),
         }
     }
 
@@ -89,10 +100,14 @@ struct TermFingerprint {
 }
 
 impl TermFingerprint {
-    pub fn new(term: &FatTerm) -> TermFingerprint {
+    pub fn new(
+        term: &FatTerm,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> TermFingerprint {
         let mut components = [FingerprintComponent::Nothing; PATHS.len()];
         for (i, path) in PATHS.iter().enumerate() {
-            components[i] = FingerprintComponent::new(term, path);
+            components[i] = FingerprintComponent::new(term, path, local_context, kernel_context);
         }
         TermFingerprint { components }
     }
@@ -130,13 +145,15 @@ impl<T> FingerprintUnifier<T> {
     }
 
     pub fn insert(&mut self, term: &FatTerm, value: T) {
-        let fingerprint = TermFingerprint::new(term);
+        let fingerprint =
+            TermFingerprint::new(term, LocalContext::empty_ref(), KernelContext::fake());
         self.tree.entry(fingerprint).or_insert(vec![]).push(value);
     }
 
     // Find all T with a fingerprint that this term could unify with.
     pub fn find_unifying(&self, term: &FatTerm) -> Vec<&T> {
-        let fingerprint = TermFingerprint::new(term);
+        let fingerprint =
+            TermFingerprint::new(term, LocalContext::empty_ref(), KernelContext::fake());
         let mut result = vec![];
 
         // TODO: do smart tree things instead of this dumb exhaustive search
@@ -161,9 +178,11 @@ struct LiteralFingerprint {
 
 impl LiteralFingerprint {
     pub fn new(left: &FatTerm, right: &FatTerm) -> LiteralFingerprint {
+        let local_context = LocalContext::empty_ref();
+        let kernel_context = KernelContext::fake();
         LiteralFingerprint {
-            left: TermFingerprint::new(left),
-            right: TermFingerprint::new(right),
+            left: TermFingerprint::new(left, local_context, kernel_context),
+            right: TermFingerprint::new(right, local_context, kernel_context),
         }
     }
 
@@ -190,7 +209,11 @@ impl<T> FingerprintSpecializer<T> {
         let fingerprint = LiteralFingerprint::new(&literal.left, &literal.right);
         let tree = self
             .trees
-            .entry(literal.left.get_term_type())
+            .entry(
+                literal
+                    .left
+                    .get_term_type_with_context(LocalContext::empty_ref(), KernelContext::fake()),
+            )
             .or_insert(BTreeMap::new());
         tree.entry(fingerprint).or_insert(vec![]).push(value);
     }
@@ -201,7 +224,10 @@ impl<T> FingerprintSpecializer<T> {
         let fingerprint = LiteralFingerprint::new(left, right);
         let mut result = vec![];
 
-        let tree = match self.trees.get(&left.get_term_type()) {
+        let tree = match self
+            .trees
+            .get(&left.get_term_type_with_context(LocalContext::empty_ref(), KernelContext::fake()))
+        {
             Some(tree) => tree,
             None => return result,
         };
@@ -222,17 +248,21 @@ impl<T> FingerprintSpecializer<T> {
 mod tests {
     use super::*;
 
+    fn make_fingerprint(term: &FatTerm) -> TermFingerprint {
+        TermFingerprint::new(term, LocalContext::empty_ref(), KernelContext::fake())
+    }
+
     #[test]
     fn test_fingerprint() {
         let term = FatTerm::parse("c0(x0, x1)");
-        TermFingerprint::new(&term);
+        make_fingerprint(&term);
     }
 
     #[test]
     fn test_fingerprint_matching() {
         let term1 = FatTerm::parse("c2(x0, x1, c0)");
         let term2 = FatTerm::parse("c2(c1, c3(x0), c0)");
-        assert!(TermFingerprint::new(&term1).could_unify(&TermFingerprint::new(&term2)));
+        assert!(make_fingerprint(&term1).could_unify(&make_fingerprint(&term2)));
     }
 
     #[test]

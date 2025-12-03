@@ -4,6 +4,8 @@ use std::fmt;
 
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::fat_term::{FatTerm, TypeId};
+use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::local_context::LocalContext;
 
 // Literals are always boolean-valued.
 // In normalized form, left is the "larger" term.
@@ -262,14 +264,17 @@ impl FatLiteral {
             .max(self.right.least_unused_variable())
     }
 
-    pub fn validate_type(&self) {
-        if self.left.get_term_type() != self.right.get_term_type() {
+    pub fn validate_type(&self, local_context: &LocalContext, kernel_context: &KernelContext) {
+        let left_type = self
+            .left
+            .get_term_type_with_context(local_context, kernel_context);
+        let right_type = self
+            .right
+            .get_term_type_with_context(local_context, kernel_context);
+        if left_type != right_type {
             panic!(
                 "Literal type mismatch: {} has type {} but {} has type {}",
-                self.left,
-                self.left.get_term_type(),
-                self.right,
-                self.right.get_term_type()
+                self.left, left_type, self.right, right_type
             );
         }
     }
