@@ -858,14 +858,18 @@ impl LiteralSet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::fat_term::EMPTY;
+
+    fn test_local_context(num_vars: usize) -> LocalContext {
+        LocalContext::new(vec![EMPTY; num_vars])
+    }
 
     fn check_term(s: &str) {
         let input_term = FatTerm::parse(s);
-        let flat = TermComponent::flatten_term(
-            &input_term,
-            LocalContext::empty_ref(),
-            KernelContext::fake(),
-        );
+        // Count max variable id and max constant id used
+        let local_context = test_local_context(10);
+        let kernel_context = KernelContext::test_with_scoped_constants(10);
+        let flat = TermComponent::flatten_term(&input_term, &local_context, &kernel_context);
         TermComponent::validate_slice(&flat);
         let output_term = TermComponent::unflatten_term(&flat);
         assert_eq!(input_term, output_term);
@@ -882,11 +886,13 @@ mod tests {
     fn check_pair(s1: &str, s2: &str) {
         let input_term1 = FatTerm::parse(s1);
         let input_term2 = FatTerm::parse(s2);
+        let local_context = test_local_context(10);
+        let kernel_context = KernelContext::test_with_scoped_constants(10);
         let flat = TermComponent::flatten_pair(
             &input_term1,
             &input_term2,
-            LocalContext::empty_ref(),
-            KernelContext::fake(),
+            &local_context,
+            &kernel_context,
         );
         let (output_term1, output_term2) = TermComponent::unflatten_pair(&flat);
         assert_eq!(input_term1, output_term1);

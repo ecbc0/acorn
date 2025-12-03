@@ -92,6 +92,17 @@ impl SymbolTable {
         Symbol::Synthetic(atom_id)
     }
 
+    /// Add a scoped constant with the given type, without a name.
+    /// Returns the Symbol for the new constant.
+    /// Primarily for testing with parsed terms like "c0", "c1".
+    #[cfg(test)]
+    pub fn add_scoped_constant_with_type(&mut self, type_id: TypeId) -> Symbol {
+        let atom_id = self.scoped_constants.len() as AtomId;
+        self.scoped_constants.push(None);
+        self.scoped_constant_types.push(type_id);
+        Symbol::ScopedConstant(atom_id)
+    }
+
     /// Assigns an id to this (module, name) pair if it doesn't already have one.
     /// local determines whether the constant will be represented as a local or global symbol.
     pub fn add_constant(
