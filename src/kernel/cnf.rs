@@ -245,7 +245,6 @@ impl CNF {
     }
 }
 
-#[cfg(not(feature = "thin"))]
 impl fmt::Display for CNF {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.is_true_value() {
@@ -266,13 +265,6 @@ impl fmt::Display for CNF {
                 .collect();
             write!(f, "{}", clause_strings.join(" and "))
         }
-    }
-}
-
-#[cfg(feature = "thin")]
-impl fmt::Display for CNF {
-    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!("ThinLiteral Display requires TypeStore/SymbolTable parameters");
     }
 }
 
