@@ -11,6 +11,8 @@ use crate::elaborator::type_unifier::TypeclassRegistry;
 use crate::kernel::atom::AtomId;
 use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_term::{FatTerm, TypeId};
+use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::local_context::LocalContext;
 use crate::kernel::variable_map::VariableMap;
 use crate::module::ModuleId;
 use crate::normalizer::Normalizer;
@@ -279,7 +281,7 @@ impl CodeGenerator<'_> {
         // pass the arbitrary names like this.
         // It might make more sense to do this in value space, so that we don't have to make
         // the normalizer even more complicated.
-        self.add_arbitrary_for_clause(&clause);
+        self.add_arbitrary_for_clause(&clause, normalizer.kernel_context());
         let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names));
 
         // Define the arbitrary variables.
@@ -325,12 +327,15 @@ impl CodeGenerator<'_> {
         Ok(expr.to_string())
     }
 
-    fn add_arbitrary_for_term(&mut self, term: &FatTerm) {
+    fn add_arbitrary_for_term(
+        &mut self,
+        term: &FatTerm,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) {
         if term.is_variable() {
             // For a variable term, the head_type is the type of that variable.
-            // We use get_head_type() which skips validation since we already
-            // know this is a well-formed FatTerm.
-            let type_id = term.get_head_type();
+            let type_id = term.get_head_type_with_context(local_context, kernel_context);
             if !self.arbitrary_names.contains_key(&type_id) {
                 // Generate a name for this arbitrary value
                 let name = self.bindings.next_indexed_var('s', &mut self.next_s);
@@ -339,15 +344,16 @@ impl CodeGenerator<'_> {
             }
         }
         for arg in term.args() {
-            self.add_arbitrary_for_term(arg);
+            self.add_arbitrary_for_term(arg, local_context, kernel_context);
         }
     }
 
     /// For any variables in this clause, add an arbitrary variable.
-    fn add_arbitrary_for_clause(&mut self, clause: &FatClause) {
+    fn add_arbitrary_for_clause(&mut self, clause: &FatClause, kernel_context: &KernelContext) {
+        let local_context = clause.get_local_context();
         for literal in &clause.literals {
             for term in [&literal.left, &literal.right] {
-                self.add_arbitrary_for_term(term);
+                self.add_arbitrary_for_term(term, local_context, kernel_context);
             }
         }
     }

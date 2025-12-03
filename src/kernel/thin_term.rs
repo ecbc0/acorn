@@ -5,8 +5,6 @@ use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::fat_term::{TypeId, BOOL, EMPTY};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::symbol_table::SymbolTable;
-use crate::kernel::type_store::TypeStore;
 
 /// A component of a ThinTerm in its flattened representation.
 /// Either a Composite node or an Atom leaf node.
@@ -591,25 +589,7 @@ impl ThinTerm {
         }
     }
 
-    /// Get the type of this term.
-    /// Requires context to look up the type information.
-    pub fn get_term_type(
-        &self,
-        _context: &LocalContext,
-        symbol_table: &SymbolTable,
-        _type_store: &TypeStore,
-    ) -> TypeId {
-        // For a simple atom with no arguments, the term type equals the head type
-        if self.is_atomic() {
-            return self.get_head_type(symbol_table);
-        }
-
-        // For function applications, we need to compute the result type
-        // This is a placeholder - full implementation needs type inference
-        todo!("get_term_type for non-atomic terms requires type inference")
-    }
-
-    /// Get the term type with context (for API compatibility with FatTerm).
+    /// Get the term type with context.
     /// Uses LocalContext for variable types and KernelContext for symbol types.
     pub fn get_term_type_with_context(
         &self,
@@ -626,21 +606,7 @@ impl ThinTerm {
         todo!("get_term_type_with_context for non-atomic terms requires type inference")
     }
 
-    /// Get the type of the head atom (non-variable version).
-    ///
-    /// WARNING: This panics if the head is a variable. For variables, use get_head_type_with_context instead.
-    pub fn get_head_type(&self, symbol_table: &SymbolTable) -> TypeId {
-        let head = self.get_head_atom();
-        match head {
-            Atom::Variable(_) => {
-                panic!("ThinTerm::get_head_type called on variable - use get_head_type_with_context instead")
-            }
-            Atom::Symbol(symbol) => symbol_table.get_type(*symbol),
-            Atom::True => crate::kernel::fat_term::BOOL,
-        }
-    }
-
-    /// Get the head type with context (for API compatibility with FatTerm).
+    /// Get the head type with context.
     /// Uses LocalContext for variable types and KernelContext for symbol types.
     pub fn get_head_type_with_context(
         &self,

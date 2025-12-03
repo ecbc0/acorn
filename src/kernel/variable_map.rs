@@ -33,6 +33,28 @@ impl VariableMap {
         max
     }
 
+    /// Builds a LocalContext from all the variables in the replacement terms.
+    pub fn build_output_context(&self) -> LocalContext {
+        let mut var_types: Vec<Option<TypeId>> = vec![];
+        for opt_term in &self.map {
+            if let Some(term) = opt_term {
+                for (var_id, type_id) in term.iter_vars() {
+                    let idx = var_id as usize;
+                    if idx >= var_types.len() {
+                        var_types.resize(idx + 1, None);
+                    }
+                    var_types[idx] = Some(type_id);
+                }
+            }
+        }
+        LocalContext::new(
+            var_types
+                .into_iter()
+                .map(|t| t.unwrap_or_default())
+                .collect(),
+        )
+    }
+
     pub fn get_mapping(&self, i: AtomId) -> Option<&Term> {
         let i = i as usize;
         if i >= self.map.len() {
@@ -154,37 +176,39 @@ impl VariableMap {
 
     /// This does not normalize.
     /// Unmapped variables are kept as-is.
+    /// input_context is for the input term, output_context is for replacement terms in the map.
     fn specialize_term(
         &self,
         term: &Term,
-        local_context: &LocalContext,
+        input_context: &LocalContext,
+        output_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> Term {
         let (term_type, head_type, head, mut args) = match *term.get_head_atom() {
             Atom::Variable(i) => {
                 // Check if we have a mapping for this variable
                 if let Some(replacement) = self.get_mapping(i) {
-                    // Use the replacement term's embedded types directly since it comes from
+                    // Use output_context for the replacement term since it comes from
                     // a different context (the unifier's output context)
                     (
-                        replacement.get_term_type(),
-                        replacement.get_head_type(),
+                        replacement.get_term_type_with_context(output_context, kernel_context),
+                        replacement.get_head_type_with_context(output_context, kernel_context),
                         *replacement.get_head_atom(),
                         replacement.args().to_vec(),
                     )
                 } else {
                     // Keep the variable as-is if unmapped
                     (
-                        term.get_term_type_with_context(local_context, kernel_context),
-                        term.get_head_type_with_context(local_context, kernel_context),
+                        term.get_term_type_with_context(input_context, kernel_context),
+                        term.get_head_type_with_context(input_context, kernel_context),
                         *term.get_head_atom(),
                         vec![],
                     )
                 }
             }
             head => (
-                term.get_term_type_with_context(local_context, kernel_context),
-                term.get_head_type_with_context(local_context, kernel_context),
+                term.get_term_type_with_context(input_context, kernel_context),
+                term.get_head_type_with_context(input_context, kernel_context),
                 head,
                 vec![],
             ),
@@ -192,7 +216,7 @@ impl VariableMap {
 
         // Recurse on the arguments
         for arg in term.args() {
-            args.push(self.specialize_term(arg, local_context, kernel_context));
+            args.push(self.specialize_term(arg, input_context, output_context, kernel_context));
         }
 
         Term::new(term_type, head_type, head, args)
@@ -200,27 +224,35 @@ impl VariableMap {
 
     /// This does not normalize.
     /// Unmapped variables are kept as-is.
+    /// input_context is for the input literal, output_context is for replacement terms in the map.
     fn specialize_literal(
         &self,
         literal: &Literal,
-        local_context: &LocalContext,
+        input_context: &LocalContext,
+        output_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> Literal {
         Literal::new(
             literal.positive,
-            self.specialize_term(&literal.left, local_context, kernel_context),
-            self.specialize_term(&literal.right, local_context, kernel_context),
+            self.specialize_term(&literal.left, input_context, output_context, kernel_context),
+            self.specialize_term(
+                &literal.right,
+                input_context,
+                output_context,
+                kernel_context,
+            ),
         )
     }
 
     /// This does not normalize.
     /// Unmapped variables are kept as-is.
     pub fn specialize_clause(&self, clause: &Clause, kernel_context: &KernelContext) -> Clause {
-        let local_context = clause.get_local_context();
+        let input_context = clause.get_local_context();
+        let output_context = self.build_output_context();
         let literals = clause
             .literals
             .iter()
-            .map(|lit| self.specialize_literal(lit, local_context, kernel_context))
+            .map(|lit| self.specialize_literal(lit, input_context, &output_context, kernel_context))
             .collect();
         Clause::from_literals_unnormalized(literals)
     }

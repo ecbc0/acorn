@@ -11,7 +11,7 @@ use crate::elaborator::source::{Source, SourceType};
 use crate::kernel::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
 use crate::kernel::cnf::CNF;
 use crate::kernel::extended_term::ExtendedTerm;
-use crate::kernel::fat_clause::FatClause;
+use crate::kernel::fat_clause::{build_context_from_terms, FatClause};
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::{FatTerm, TypeId, BOOL};
 use crate::kernel::kernel_context::KernelContext;
@@ -804,8 +804,9 @@ impl NormalizerView<'_> {
                     None => return Ok(None),
                 };
                 let head = *func_term.get_head_atom();
-                // Use get_head_type() since we're building terms without a variable context
-                let head_type = func_term.get_head_type();
+                let func_context = build_context_from_terms(&[&func_term]);
+                let head_type =
+                    func_term.get_head_type_with_context(&func_context, self.kernel_context());
                 let mut args = func_term.args().to_vec();
                 for arg in &application.args {
                     let arg_term = match self.try_simple_value_to_term(arg, stack)? {
@@ -997,10 +998,10 @@ impl NormalizerView<'_> {
             // Reuse the existing synthetic atom
             let existing_id = existing_def.atoms[0];
             let existing_atom = Atom::Symbol(Symbol::Synthetic(existing_id));
-            // Use get_term_type()/get_head_type() since we're building terms without a variable context
+            let skolem_context = build_context_from_terms(&[&skolem_term]);
             let reused_term = FatTerm::new(
-                skolem_term.get_term_type(),
-                skolem_term.get_head_type(),
+                skolem_term.get_term_type_with_context(&skolem_context, self.kernel_context()),
+                skolem_term.get_head_type_with_context(&skolem_context, self.kernel_context()),
                 existing_atom,
                 skolem_term.args().to_vec(),
             );
@@ -1598,10 +1599,9 @@ impl Normalizer {
         var_types: &mut Option<Vec<AcornType>>,
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
-        // Use get_head_type() since we don't have a LocalContext for standalone terms.
-        // The embedded type in properly-constructed FatTerms is reliable.
+        let term_context = build_context_from_terms(&[term]);
         let head = self.denormalize_atom(
-            term.get_head_type(),
+            term.get_head_type_with_context(&term_context, self.kernel_context()),
             &term.get_head_atom(),
             var_types,
             arbitrary_names,
