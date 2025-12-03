@@ -144,7 +144,11 @@ impl ActiveSet {
                 &self.positive_res_targets
             };
 
-            let targets = target_map.find_unifying(&new_literal.left);
+            let targets = target_map.find_unifying(
+                &new_literal.left,
+                new_step.clause.get_local_context(),
+                kernel_context,
+            );
             for target in targets {
                 let old_step = self.get_step(target.step_index);
                 let flipped = !target.left;
@@ -370,7 +374,9 @@ impl ActiveSet {
                         inspiration_id: target_id,
                     });
                     self.subterm_map.insert(u_subterm.clone(), id);
-                    self.subterm_unifier.insert(u_subterm, id);
+                    // Subterms are concrete (no variables), so empty local context is safe
+                    self.subterm_unifier
+                        .insert(u_subterm, id, LocalContext::empty_ref(), kernel_context);
                     id
                 };
 
@@ -432,9 +438,10 @@ impl ActiveSet {
             }
 
             // Look for existing subterms that match s
+            // Note: s comes from the pattern clause, subterms are concrete
             let subterm_ids: Vec<usize> = self
                 .subterm_unifier
-                .find_unifying(s)
+                .find_unifying(s, pattern_step.clause.get_local_context(), kernel_context)
                 .iter()
                 .map(|&x| *x)
                 .collect();
@@ -799,6 +806,8 @@ impl ActiveSet {
         step_index: usize,
         literal_index: usize,
         literal: &FatLiteral,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
     ) {
         let tree = if literal.positive {
             &mut self.positive_res_targets
@@ -812,6 +821,8 @@ impl ActiveSet {
                 literal_index,
                 left: true,
             },
+            local_context,
+            kernel_context,
         );
         tree.insert(
             &literal.right,
@@ -820,18 +831,21 @@ impl ActiveSet {
                 literal_index,
                 left: false,
             },
+            local_context,
+            kernel_context,
         );
     }
 
     /// Indexes a clause so that it becomes available for future proof step generation.
     /// Return its id.
-    fn insert(&mut self, step: ProofStep) -> usize {
+    fn insert(&mut self, step: ProofStep, kernel_context: &KernelContext) -> usize {
         let step_index = self.next_id();
         let clause = &step.clause;
+        let local_context = clause.get_local_context();
 
         // Add resolution targets for the new clause.
         for (i, literal) in clause.literals.iter().enumerate() {
-            self.add_resolution_targets(step_index, i, literal);
+            self.add_resolution_targets(step_index, i, literal, local_context, kernel_context);
         }
 
         // Store long clauses here. Short clauses will be kept in the literal set.
@@ -963,7 +977,7 @@ impl ActiveSet {
             self.activate_literal(&activated_step, &mut output, kernel_context);
         }
 
-        self.insert(activated_step);
+        self.insert(activated_step, kernel_context);
         (activated_id, output)
     }
 

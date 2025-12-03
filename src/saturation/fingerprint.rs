@@ -144,16 +144,25 @@ impl<T> FingerprintUnifier<T> {
         }
     }
 
-    pub fn insert(&mut self, term: &FatTerm, value: T) {
-        let fingerprint =
-            TermFingerprint::new(term, LocalContext::empty_ref(), KernelContext::fake());
+    pub fn insert(
+        &mut self,
+        term: &FatTerm,
+        value: T,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) {
+        let fingerprint = TermFingerprint::new(term, local_context, kernel_context);
         self.tree.entry(fingerprint).or_insert(vec![]).push(value);
     }
 
     // Find all T with a fingerprint that this term could unify with.
-    pub fn find_unifying(&self, term: &FatTerm) -> Vec<&T> {
-        let fingerprint =
-            TermFingerprint::new(term, LocalContext::empty_ref(), KernelContext::fake());
+    pub fn find_unifying(
+        &self,
+        term: &FatTerm,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> Vec<&T> {
+        let fingerprint = TermFingerprint::new(term, local_context, kernel_context);
         let mut result = vec![];
 
         // TODO: do smart tree things instead of this dumb exhaustive search
@@ -177,9 +186,12 @@ struct LiteralFingerprint {
 }
 
 impl LiteralFingerprint {
-    pub fn new(left: &FatTerm, right: &FatTerm) -> LiteralFingerprint {
-        let local_context = LocalContext::empty_ref();
-        let kernel_context = KernelContext::fake();
+    pub fn new(
+        left: &FatTerm,
+        right: &FatTerm,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> LiteralFingerprint {
         LiteralFingerprint {
             left: TermFingerprint::new(left, local_context, kernel_context),
             right: TermFingerprint::new(right, local_context, kernel_context),
@@ -205,14 +217,21 @@ impl<T> FingerprintSpecializer<T> {
         }
     }
 
-    pub fn insert(&mut self, literal: &FatLiteral, value: T) {
-        let fingerprint = LiteralFingerprint::new(&literal.left, &literal.right);
+    pub fn insert(
+        &mut self,
+        literal: &FatLiteral,
+        value: T,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) {
+        let fingerprint =
+            LiteralFingerprint::new(&literal.left, &literal.right, local_context, kernel_context);
         let tree = self
             .trees
             .entry(
                 literal
                     .left
-                    .get_term_type_with_context(LocalContext::empty_ref(), KernelContext::fake()),
+                    .get_term_type_with_context(local_context, kernel_context),
             )
             .or_insert(BTreeMap::new());
         tree.entry(fingerprint).or_insert(vec![]).push(value);
@@ -220,13 +239,19 @@ impl<T> FingerprintSpecializer<T> {
 
     // Find all ids with a fingerprint that this literal could specialize into.
     // Only does a single left->right direction of lookup.
-    pub fn find_specializing(&self, left: &FatTerm, right: &FatTerm) -> Vec<&T> {
-        let fingerprint = LiteralFingerprint::new(left, right);
+    pub fn find_specializing(
+        &self,
+        left: &FatTerm,
+        right: &FatTerm,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> Vec<&T> {
+        let fingerprint = LiteralFingerprint::new(left, right, local_context, kernel_context);
         let mut result = vec![];
 
         let tree = match self
             .trees
-            .get(&left.get_term_type_with_context(LocalContext::empty_ref(), KernelContext::fake()))
+            .get(&left.get_term_type_with_context(local_context, kernel_context))
         {
             Some(tree) => tree,
             None => return result,
@@ -248,8 +273,14 @@ impl<T> FingerprintSpecializer<T> {
 mod tests {
     use super::*;
 
+    fn test_local_context() -> LocalContext {
+        LocalContext::with_types(vec![TypeId::new(1); 10])
+    }
+
     fn make_fingerprint(term: &FatTerm) -> TermFingerprint {
-        TermFingerprint::new(term, LocalContext::empty_ref(), KernelContext::fake())
+        let lctx = test_local_context();
+        let kctx = KernelContext::test_with_constants(10, 10);
+        TermFingerprint::new(term, &lctx, &kctx)
     }
 
     #[test]
@@ -267,11 +298,13 @@ mod tests {
 
     #[test]
     fn test_fingerprint_tree() {
+        let lctx = test_local_context();
+        let kctx = KernelContext::test_with_constants(10, 10);
         let mut tree = FingerprintUnifier::new();
         let term1 = FatTerm::parse("c2(x0, x1, c0)");
         let term2 = FatTerm::parse("c2(c1, c3(x0), c0)");
-        tree.insert(&term1, 1);
-        assert!(tree.find_unifying(&term1).len() > 0);
-        assert!(tree.find_unifying(&term2).len() > 0);
+        tree.insert(&term1, 1, &lctx, &kctx);
+        assert!(tree.find_unifying(&term1, &lctx, &kctx).len() > 0);
+        assert!(tree.find_unifying(&term2, &lctx, &kctx).len() > 0);
     }
 }

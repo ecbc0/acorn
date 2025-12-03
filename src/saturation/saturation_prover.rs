@@ -445,7 +445,7 @@ impl SaturationProver {
                 new_steps.push(simple_step);
             }
         }
-        self.passive_set.push_batch(new_steps);
+        self.passive_set.push_batch(new_steps, kernel_context);
 
         // Sometimes we find a bunch of contradictions at once.
         // It doesn't really matter what we pick, so we guess which is most likely
@@ -481,8 +481,8 @@ impl crate::prover::Prover for SaturationProver {
 
     /// Add proof steps to the prover.
     /// These can be used as initial facts for starting the proof.
-    fn add_steps(&mut self, steps: Vec<ProofStep>) {
-        self.passive_set.push_batch(steps);
+    fn add_steps(&mut self, steps: Vec<ProofStep>, kernel_context: &KernelContext) {
+        self.passive_set.push_batch(steps, kernel_context);
     }
 
     /// The prover will exit with Outcome::Constrained if it hits a constraint:
@@ -567,9 +567,10 @@ impl crate::prover::Prover for SaturationProver {
         steps: Vec<ProofStep>,
         _project: &Project,
         _original_goal: &Goal,
+        kernel_context: &KernelContext,
     ) {
         assert!(self.goal.is_none());
-        self.add_steps(steps);
+        self.add_steps(steps, kernel_context);
         self.goal = Some(ng);
     }
 

@@ -5,6 +5,7 @@ use crate::checker::Checker;
 use crate::code_generator::Error;
 use crate::elaborator::binding_map::BindingMap;
 use crate::elaborator::goal::Goal;
+use crate::kernel::kernel_context::KernelContext;
 use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::project::Project;
 use crate::proof_step::ProofStep;
@@ -49,7 +50,7 @@ pub trait Prover {
     fn box_clone(&self) -> Box<dyn Prover>;
 
     /// Add proof steps to the prover (facts or axioms)
-    fn add_steps(&mut self, steps: Vec<ProofStep>);
+    fn add_steps(&mut self, steps: Vec<ProofStep>, kernel_context: &KernelContext);
 
     /// Set the goal and add goal-derived steps.
     fn set_goal(
@@ -58,6 +59,7 @@ pub trait Prover {
         steps: Vec<ProofStep>,
         project: &Project,
         original_goal: &Goal,
+        kernel_context: &KernelContext,
     );
 
     /// Run the proof search with the given mode

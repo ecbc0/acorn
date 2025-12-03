@@ -550,11 +550,15 @@ impl<'a> Unifier<'a> {
 
     /// Tries to unify a left clause and a right clause.
     /// Does not reorder anything.
-    pub fn unify_clauses(left: &FatClause, right: &FatClause) -> bool {
+    pub fn unify_clauses(
+        left: &FatClause,
+        right: &FatClause,
+        kernel_context: &KernelContext,
+    ) -> bool {
         if left.literals.len() != right.literals.len() {
             return false;
         }
-        let mut unifier = Unifier::new(3, KernelContext::fake());
+        let mut unifier = Unifier::new(3, kernel_context);
         unifier.set_input_context(Scope::LEFT, left.get_local_context());
         unifier.set_input_context(Scope::RIGHT, right.get_local_context());
         for (lit1, lit2) in left.literals.iter().zip(right.literals.iter()) {

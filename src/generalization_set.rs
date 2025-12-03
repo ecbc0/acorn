@@ -62,7 +62,7 @@ impl GeneralizationSet {
         let key = ClauseTypeKey::new(&special, kernel_context);
         if let Some(candidates) = self.with_applied_variables.get(&key) {
             for (general, id) in candidates {
-                if Unifier::unify_clauses(general, &special) {
+                if Unifier::unify_clauses(general, &special, kernel_context) {
                     return Some(*id);
                 }
             }

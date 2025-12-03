@@ -247,6 +247,10 @@ impl NormalizerView<'_> {
         &self.as_ref().kernel_context.type_store
     }
 
+    fn kernel_context(&self) -> &KernelContext {
+        &self.as_ref().kernel_context
+    }
+
     fn type_store_mut(&mut self) -> Result<&mut crate::kernel::type_store::TypeStore, String> {
         Ok(&mut self.as_mut()?.kernel_context.type_store)
     }
@@ -1136,8 +1140,9 @@ impl NormalizerView<'_> {
                 use crate::kernel::atom::Atom;
 
                 // Determine the type of the result (should be same as then_term and else_term)
+                // Normalized terms have no variables, so empty local context is safe
                 let result_type_id = then_term
-                    .get_term_type_with_context(LocalContext::empty_ref(), KernelContext::fake());
+                    .get_term_type_with_context(LocalContext::empty_ref(), self.kernel_context());
                 let result_type = self.type_store().get_type(result_type_id).clone();
 
                 // Create a new synthetic atom with the appropriate function type

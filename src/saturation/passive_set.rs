@@ -164,23 +164,25 @@ impl PassiveSet {
     }
 
     // Adding many new steps at once.
-    pub fn push_batch(&mut self, steps: Vec<ProofStep>) {
+    pub fn push_batch(&mut self, steps: Vec<ProofStep>, kernel_context: &KernelContext) {
         if steps.is_empty() {
             return;
         }
         let features = steps.iter().map(Features::new).collect::<Vec<_>>();
         let scores = Score::batch(self.scorer.as_ref(), &features);
         for (step, score) in steps.into_iter().zip(scores.into_iter()) {
-            self.push_with_score(step, score);
+            self.push_with_score(step, score, kernel_context);
         }
     }
 
     // Adding a new step when we have already scored it.
-    fn push_with_score(&mut self, step: ProofStep, score: Score) {
+    fn push_with_score(&mut self, step: ProofStep, score: Score, kernel_context: &KernelContext) {
         let id = self.clauses.len();
+        let local_context = step.clause.get_local_context();
 
         for (i, literal) in step.clause.literals.iter().enumerate() {
-            self.literals.insert(literal, (id, i));
+            self.literals
+                .insert(literal, (id, i), local_context, kernel_context);
         }
         if step.clause.literals.len() == 1 {
             let literal = &step.clause.literals[0];
@@ -247,7 +249,10 @@ impl PassiveSet {
         flipped: bool,
     ) {
         let mut new_steps = vec![];
-        for &(clause_id, literal_index) in self.literals.find_specializing(left, right) {
+        for &(clause_id, literal_index) in
+            self.literals
+                .find_specializing(left, right, local_context, kernel_context)
+        {
             let step = match &self.clauses[clause_id] {
                 Some((step, _)) => step,
                 None => {
@@ -305,7 +310,7 @@ impl PassiveSet {
             new_steps.push(ProofStep::simplified(step, short_steps, new_clause, traces));
         }
 
-        self.push_batch(new_steps);
+        self.push_batch(new_steps, kernel_context);
     }
 
     // If we don't have both of the clauses, we just return the ones we have.
@@ -395,7 +400,7 @@ mod tests {
     fn test_passive_set_simplification() {
         let ctx = KernelContext::test_with_constants(10, 10);
         let mut passive_set = PassiveSet::new();
-        passive_set.push_batch(vec![ProofStep::mock("c0(c1) or c0(c2)")]);
+        passive_set.push_batch(vec![ProofStep::mock("c0(c1) or c0(c2)")], &ctx);
         // This should match *both* the literals in our existing clause
         passive_set.simplify(3, &ProofStep::mock("not c0(x0)"), &ctx);
         let step = passive_set.pop().unwrap();

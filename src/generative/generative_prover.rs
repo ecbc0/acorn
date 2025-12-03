@@ -7,6 +7,7 @@ use crate::checker::Checker;
 use crate::code_generator::Error as CodeGenError;
 use crate::elaborator::binding_map::BindingMap;
 use crate::elaborator::goal::Goal;
+use crate::kernel::kernel_context::KernelContext;
 use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::project::Project;
 use crate::proof_step::ProofStep;
@@ -329,7 +330,7 @@ impl Prover for GenerativeProver {
 
     /// Add proof steps to the prover
     /// For the generative prover, we don't use explicit proof steps - the model generates them
-    fn add_steps(&mut self, _steps: Vec<ProofStep>) {
+    fn add_steps(&mut self, _steps: Vec<ProofStep>, _kernel_context: &KernelContext) {
         // The generative prover doesn't use explicit proof steps
         // It gets them indirectly through the Checker
     }
@@ -341,6 +342,7 @@ impl Prover for GenerativeProver {
         _steps: Vec<ProofStep>,
         project: &Project,
         original_goal: &Goal,
+        _kernel_context: &KernelContext,
     ) {
         // Save the goal name for certificate generation
         self.goal_name = Some(original_goal.name.clone());

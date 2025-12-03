@@ -109,7 +109,7 @@ impl Processor {
                 kernel_context,
             );
         }
-        self.prover.add_steps(steps);
+        self.prover.add_steps(steps, kernel_context);
         Ok(())
     }
 
@@ -136,7 +136,7 @@ impl Processor {
                 kernel_context,
             );
         }
-        self.prover.set_goal(ng, steps, project, goal);
+        self.prover.set_goal(ng, steps, project, goal, kernel_context);
         Ok(())
     }
 
