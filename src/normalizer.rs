@@ -14,9 +14,9 @@ use crate::kernel::extended_term::ExtendedTerm;
 use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::{FatTerm, TypeId, BOOL};
+use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::symbol::Symbol;
-use crate::kernel::symbol_table::{NewConstantType, SymbolTable};
-use crate::kernel::type_store::TypeStore;
+use crate::kernel::symbol_table::NewConstantType;
 use crate::monomorphizer::Monomorphizer;
 use crate::proof_step::{ProofStep, Truthiness};
 
@@ -87,12 +87,8 @@ pub struct Normalizer {
     /// This is used to avoid defining the same thing multiple times.
     synthetic_map: HashMap<SyntheticKey, Arc<SyntheticDefinition>>,
 
-    /// Maps symbols (constants, monomorphs, synthetics) to their names and types.
-    /// Use with type_store to get the full AcornType for a symbol.
-    symbol_table: SymbolTable,
-
-    /// Manages the bidirectional mapping between AcornTypes and TypeIds.
-    type_store: TypeStore,
+    /// The kernel context containing TypeStore and SymbolTable.
+    kernel_context: KernelContext,
 }
 
 impl Normalizer {
@@ -101,15 +97,14 @@ impl Normalizer {
             monomorphizer: Monomorphizer::new(),
             synthetic_definitions: HashMap::new(),
             synthetic_map: HashMap::new(),
-            symbol_table: SymbolTable::new(),
-            type_store: TypeStore::new(),
+            kernel_context: KernelContext::new(),
         }
     }
 
     pub fn get_synthetic_type(&self, id: AtomId) -> &AcornType {
         let symbol = Symbol::Synthetic(id);
-        let type_id = self.symbol_table.get_type(symbol);
-        self.type_store.get_type(type_id)
+        let type_id = self.kernel_context.symbol_table.get_type(symbol);
+        self.kernel_context.type_store.get_type(type_id)
     }
 
     /// Gets a synthetic definition for a value, if one exists.
@@ -144,8 +139,8 @@ impl Normalizer {
     // This weird two-step is necessary since we need to do some constructions
     // before we actually have the definition.
     fn declare_synthetic_atom(&mut self, atom_type: AcornType) -> Result<AtomId, String> {
-        let type_id = self.type_store.add_type(&atom_type);
-        let symbol = self.symbol_table.declare_synthetic(type_id);
+        let type_id = self.kernel_context.type_store.add_type(&atom_type);
+        let symbol = self.kernel_context.symbol_table.declare_synthetic(type_id);
         let id = match symbol {
             Symbol::Synthetic(id) => id,
             _ => panic!("declare_synthetic should return a Synthetic symbol"),
@@ -193,11 +188,12 @@ impl Normalizer {
     }
 
     pub fn add_scoped_constant(&mut self, cname: ConstantName, acorn_type: &AcornType) -> Atom {
-        let type_id = self.type_store.add_type(acorn_type);
-        Atom::Symbol(
-            self.symbol_table
-                .add_constant(cname, NewConstantType::Local, type_id),
-        )
+        let type_id = self.kernel_context.type_store.add_type(acorn_type);
+        Atom::Symbol(self.kernel_context.symbol_table.add_constant(
+            cname,
+            NewConstantType::Local,
+            type_id,
+        ))
     }
 }
 
@@ -238,16 +234,16 @@ impl NormalizerView<'_> {
         }
     }
 
-    fn symbol_table(&self) -> &SymbolTable {
-        &self.as_ref().symbol_table
+    fn symbol_table(&self) -> &crate::kernel::symbol_table::SymbolTable {
+        &self.as_ref().kernel_context.symbol_table
     }
 
-    fn type_store(&self) -> &TypeStore {
-        &self.as_ref().type_store
+    fn type_store(&self) -> &crate::kernel::type_store::TypeStore {
+        &self.as_ref().kernel_context.type_store
     }
 
-    fn type_store_mut(&mut self) -> Result<&mut TypeStore, String> {
-        Ok(&mut self.as_mut()?.type_store)
+    fn type_store_mut(&mut self) -> Result<&mut crate::kernel::type_store::TypeStore, String> {
+        Ok(&mut self.as_mut()?.kernel_context.type_store)
     }
 
     /// Wrapper around value_to_cnf.
@@ -1325,8 +1321,11 @@ impl Normalizer {
         ctype: NewConstantType,
         source: &Source,
     ) -> Result<Vec<FatClause>, String> {
-        self.symbol_table
-            .add_from(&value, ctype, &mut self.type_store);
+        self.kernel_context.symbol_table.add_from(
+            &value,
+            ctype,
+            &mut self.kernel_context.type_store,
+        );
 
         // TODO: can we remove this? Expanding them doesn't really seem right.
         // Maybe we can inline lambdas instead of expanding them.
@@ -1421,12 +1420,12 @@ impl Normalizer {
         // Check if this looks like an aliasing.
         if let Some((ci, name, constant_type)) = fact.as_instance_alias() {
             let local = fact.source().truthiness() != Truthiness::Factual;
-            self.symbol_table.alias_monomorph(
+            self.kernel_context.symbol_table.alias_monomorph(
                 ci,
                 name,
                 &constant_type,
                 local,
-                &mut self.type_store,
+                &mut self.kernel_context.type_store,
             );
             return Ok(steps);
         }
@@ -1517,19 +1516,27 @@ impl Normalizer {
         var_types: &mut Option<Vec<AcornType>>,
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
-        let acorn_type = self.type_store.get_type(atom_type).clone();
+        let acorn_type = self.kernel_context.type_store.get_type(atom_type).clone();
         match atom {
             Atom::True => AcornValue::Bool(true),
             Atom::Symbol(Symbol::GlobalConstant(i)) => {
-                let name = self.symbol_table.name_for_global_id(*i).clone();
+                let name = self
+                    .kernel_context
+                    .symbol_table
+                    .name_for_global_id(*i)
+                    .clone();
                 AcornValue::constant(name, vec![], acorn_type)
             }
             Atom::Symbol(Symbol::ScopedConstant(i)) => {
-                let name = self.symbol_table.name_for_local_id(*i).clone();
+                let name = self
+                    .kernel_context
+                    .symbol_table
+                    .name_for_local_id(*i)
+                    .clone();
                 AcornValue::constant(name, vec![], acorn_type)
             }
             Atom::Symbol(Symbol::Monomorph(i)) => {
-                AcornValue::Constant(self.symbol_table.get_monomorph(*i).clone())
+                AcornValue::Constant(self.kernel_context.symbol_table.get_monomorph(*i).clone())
             }
             Atom::Variable(i) => {
                 if let Some(map) = arbitrary_names {
@@ -1551,8 +1558,8 @@ impl Normalizer {
             }
             Atom::Symbol(Symbol::Synthetic(i)) => {
                 let symbol = Symbol::Synthetic(*i);
-                let type_id = self.symbol_table.get_type(symbol);
-                let acorn_type = self.type_store.get_type(type_id).clone();
+                let type_id = self.kernel_context.symbol_table.get_type(symbol);
+                let acorn_type = self.kernel_context.type_store.get_type(type_id).clone();
                 let name = ConstantName::Synthetic(*i);
                 AcornValue::constant(name, vec![], acorn_type)
             }
@@ -1635,7 +1642,7 @@ impl Normalizer {
     }
 
     pub fn denormalize_type(&self, type_id: TypeId) -> AcornType {
-        self.type_store.get_type(type_id).clone()
+        self.kernel_context.type_store.get_type(type_id).clone()
     }
 
     /// Given a list of atom ids for synthetic atoms that we need to define, find a set
@@ -1661,14 +1668,18 @@ impl Normalizer {
     pub fn atom_str(&self, atom: &Atom) -> String {
         match atom {
             Atom::True => "true".to_string(),
-            Atom::Symbol(Symbol::GlobalConstant(i)) => {
-                self.symbol_table.name_for_global_id(*i).to_string()
-            }
-            Atom::Symbol(Symbol::ScopedConstant(i)) => {
-                self.symbol_table.name_for_local_id(*i).to_string()
-            }
+            Atom::Symbol(Symbol::GlobalConstant(i)) => self
+                .kernel_context
+                .symbol_table
+                .name_for_global_id(*i)
+                .to_string(),
+            Atom::Symbol(Symbol::ScopedConstant(i)) => self
+                .kernel_context
+                .symbol_table
+                .name_for_local_id(*i)
+                .to_string(),
             Atom::Symbol(Symbol::Monomorph(i)) => {
-                format!("{}", self.symbol_table.get_monomorph(*i))
+                format!("{}", self.kernel_context.symbol_table.get_monomorph(*i))
             }
             Atom::Variable(i) => format!("x{}", i),
             Atom::Symbol(Symbol::Synthetic(i)) => format!("s{}", i),
