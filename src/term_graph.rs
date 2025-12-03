@@ -1051,6 +1051,11 @@ impl TermGraph {
         literal: &FatLiteral,
         kernel_context: &KernelContext,
     ) -> Option<bool> {
+        // Term graph only works with concrete terms (no variables)
+        if literal.left.has_any_variable() || literal.right.has_any_variable() {
+            return None;
+        }
+
         // If the literal is positive, we check if the terms are equal.
         // If the literal is negative, we check if the terms are not equal.
         let left_id = self.insert_term(&literal.left, kernel_context);
@@ -1097,6 +1102,13 @@ impl TermGraph {
     fn clause_exists(&mut self, clause: &FatClause, kernel_context: &KernelContext) -> bool {
         if clause.literals.is_empty() {
             return false;
+        }
+
+        // Term graph only works with concrete terms (no variables)
+        for literal in &clause.literals {
+            if literal.left.has_any_variable() || literal.right.has_any_variable() {
+                return false;
+            }
         }
 
         // Convert the clause to literal IDs
