@@ -11,8 +11,6 @@ use crate::elaborator::type_unifier::TypeclassRegistry;
 use crate::kernel::atom::AtomId;
 use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_term::{FatTerm, TypeId};
-use crate::kernel::kernel_context::KernelContext;
-use crate::kernel::local_context::LocalContext;
 use crate::kernel::variable_map::VariableMap;
 use crate::module::ModuleId;
 use crate::normalizer::Normalizer;
@@ -329,8 +327,10 @@ impl CodeGenerator<'_> {
 
     fn add_arbitrary_for_term(&mut self, term: &FatTerm) {
         if term.is_variable() {
-            let type_id =
-                term.get_head_type_with_context(LocalContext::empty_ref(), KernelContext::fake());
+            // For a variable term, the head_type is the type of that variable.
+            // We use get_head_type() which skips validation since we already
+            // know this is a well-formed FatTerm.
+            let type_id = term.get_head_type();
             if !self.arbitrary_names.contains_key(&type_id) {
                 // Generate a name for this arbitrary value
                 let name = self.bindings.next_indexed_var('s', &mut self.next_s);

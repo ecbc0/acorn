@@ -58,9 +58,9 @@ pub struct SaturationProver {
 impl SaturationProver {
     /// Creates a new SaturationProver instance.
     /// The prover must stop when any of its cancellation tokens are canceled.
-    pub fn new(tokens: Vec<CancellationToken>, kernel_context: KernelContext) -> SaturationProver {
+    pub fn new(tokens: Vec<CancellationToken>) -> SaturationProver {
         SaturationProver {
-            active_set: ActiveSet::new(kernel_context),
+            active_set: ActiveSet::new(),
             passive_set: PassiveSet::new(),
             final_step: None,
             cancellation_tokens: tokens,
@@ -373,7 +373,7 @@ impl SaturationProver {
 
     /// Activates the next clause from the queue, unless we're already done.
     /// Returns whether the prover finished.
-    fn activate_next(&mut self) -> bool {
+    fn activate_next(&mut self, kernel_context: &KernelContext) -> bool {
         if self.final_step.is_some() {
             return true;
         }
@@ -400,7 +400,7 @@ impl SaturationProver {
             return true;
         }
 
-        self.activate(step)
+        self.activate(step, kernel_context)
     }
 
     /// Generates new passive clauses, simplifying appropriately, and adds them to the passive set.
@@ -413,19 +413,17 @@ impl SaturationProver {
     /// respect to every active clause.
     ///
     /// Returns whether the prover finished.
-    fn activate(&mut self, activated_step: ProofStep) -> bool {
+    fn activate(&mut self, activated_step: ProofStep, kernel_context: &KernelContext) -> bool {
         // Use the step for simplification
         let activated_id = self.active_set.next_id();
         if activated_step.clause.literals.len() == 1 {
-            self.passive_set.simplify(
-                activated_id,
-                &activated_step,
-                self.active_set.kernel_context(),
-            );
+            self.passive_set
+                .simplify(activated_id, &activated_step, kernel_context);
         }
 
         // Generate new clauses
-        let (alt_activated_id, generated_steps) = self.active_set.activate(activated_step);
+        let (alt_activated_id, generated_steps) =
+            self.active_set.activate(activated_step, kernel_context);
         assert_eq!(activated_id, alt_activated_id);
 
         let mut new_steps = vec![];
@@ -439,7 +437,7 @@ impl SaturationProver {
                 continue;
             }
 
-            if let Some(simple_step) = self.active_set.simplify(step) {
+            if let Some(simple_step) = self.active_set.simplify(step, kernel_context) {
                 if simple_step.clause.is_impossible() {
                     self.final_step = Some(simple_step);
                     return true;
@@ -496,9 +494,11 @@ impl crate::prover::Prover for SaturationProver {
         mode: ProverMode,
         _project: &Project,
         _bindings: &BindingMap,
-        _normalizer: &Normalizer,
+        normalizer: &Normalizer,
         _checker: &Checker,
     ) -> Outcome {
+        let kernel_context = normalizer.kernel_context();
+
         // Convert mode to actual parameters
         let (activation_limit, seconds, shallow_only) = match mode {
             ProverMode::Interactive => (2000, 5.0, false),
@@ -528,7 +528,7 @@ impl crate::prover::Prover for SaturationProver {
             if shallow_only && !self.passive_set.all_shallow {
                 return Outcome::Exhausted;
             }
-            if self.activate_next() {
+            if self.activate_next(kernel_context) {
                 // The prover terminated. Determine which outcome that is.
                 if let Some(final_step) = &self.final_step {
                     if final_step.truthiness == Truthiness::Counterfactual {

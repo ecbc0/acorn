@@ -6,7 +6,6 @@ use crate::elaborator::acorn_value::AcornValue;
 use crate::elaborator::binding_map::BindingMap;
 use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
-use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::trace::LiteralTrace;
 use crate::kernel::unifier::{Scope, Unifier};
@@ -295,7 +294,7 @@ impl<'a> Proof<'a> {
                 let rewritten_subterm = rewritten_term.get_term_at_path(&info.path).unwrap();
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
-                        Unifier::with_map(conc_map, KernelContext::fake());
+                        Unifier::with_map(conc_map, self.normalizer.kernel_context());
                     unifier.set_input_context(conc_scope, LocalContext::empty_ref());
                     let pattern_scope = unifier.add_scope();
                     unifier.set_input_context(pattern_scope, LocalContext::empty_ref());
@@ -328,7 +327,7 @@ impl<'a> Proof<'a> {
 
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
-                        Unifier::with_map(conc_map, KernelContext::fake());
+                        Unifier::with_map(conc_map, self.normalizer.kernel_context());
                     unifier.set_input_context(conc_scope, LocalContext::empty_ref());
                     let base_scope = unifier.add_scope();
                     unifier.set_input_context(base_scope, base_clause.get_local_context());
@@ -370,7 +369,7 @@ impl<'a> Proof<'a> {
 
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
-                        Unifier::with_map(conc_map, KernelContext::fake());
+                        Unifier::with_map(conc_map, self.normalizer.kernel_context());
                     unifier.set_input_context(conc_scope, LocalContext::empty_ref());
                     let base_scope = unifier.add_scope();
                     unifier.set_input_context(base_scope, base_clause.get_local_context());
@@ -419,7 +418,7 @@ impl<'a> Proof<'a> {
 
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
-                        Unifier::with_map(conc_map, KernelContext::fake());
+                        Unifier::with_map(conc_map, self.normalizer.kernel_context());
                     unifier.set_input_context(conc_scope, LocalContext::empty_ref());
                     let base_scope = unifier.add_scope();
                     unifier.set_input_context(base_scope, base_clause.get_local_context());
@@ -475,7 +474,7 @@ impl<'a> Proof<'a> {
 
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
-                        Unifier::with_map(conc_map, KernelContext::fake());
+                        Unifier::with_map(conc_map, self.normalizer.kernel_context());
                     unifier.set_input_context(conc_scope, LocalContext::empty_ref());
                     let base_scope = unifier.add_scope();
                     unifier.set_input_context(base_scope, base_clause.get_local_context());
@@ -567,7 +566,8 @@ impl<'a> Proof<'a> {
     ) -> Result<HashSet<VariableMap>, Error> {
         // The unifier will figure out the concrete clauses.
         // The base and conclusion get their own scope.
-        let (mut unifier, conc_scope) = Unifier::with_map(conc_map, KernelContext::fake());
+        let (mut unifier, conc_scope) =
+            Unifier::with_map(conc_map, self.normalizer.kernel_context());
         unifier.set_input_context(conc_scope, conclusion.get_local_context());
         let base_scope = unifier.add_scope();
         unifier.set_input_context(base_scope, LocalContext::empty_ref());

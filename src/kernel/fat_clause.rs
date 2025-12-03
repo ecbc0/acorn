@@ -767,7 +767,7 @@ fn check(s: &str) {
     let (alt_clause, trace) = FatClause::normalize_with_trace(literals.clone());
     assert_eq!(clause, alt_clause);
 
-    let kernel_context = KernelContext::new();
+    let kernel_context = KernelContext::test_with_constants(10, 10);
     clause.validate();
     trace.validate(&literals, &clause, &kernel_context);
 }

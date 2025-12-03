@@ -58,12 +58,12 @@ impl RewriteTree {
         input_term: &FatTerm,
         output_term: &FatTerm,
         forwards: bool,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
     ) {
         if input_term.is_true() {
             panic!("cannot rewrite true to something else");
         }
-        let local_context = LocalContext::empty_ref();
-        let kernel_context = KernelContext::fake();
         let value = RewriteValue {
             pattern_id,
             forwards,
@@ -80,13 +80,33 @@ impl RewriteTree {
 
     // Inserts both directions.
     // NOTE: The input term's variable ids must be normalized.
-    pub fn insert_literal(&mut self, pattern_id: usize, literal: &FatLiteral) {
+    pub fn insert_literal(
+        &mut self,
+        pattern_id: usize,
+        literal: &FatLiteral,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) {
         // Already normalized
-        self.insert_terms(pattern_id, &literal.left, &literal.right, true);
+        self.insert_terms(
+            pattern_id,
+            &literal.left,
+            &literal.right,
+            true,
+            local_context,
+            kernel_context,
+        );
 
         if !literal.right.is_true() {
             let (right, left) = literal.normalized_reversed();
-            self.insert_terms(pattern_id, &right, &left, false);
+            self.insert_terms(
+                pattern_id,
+                &right,
+                &left,
+                false,
+                local_context,
+                kernel_context,
+            );
         }
     }
 
@@ -163,18 +183,32 @@ mod tests {
         input_term: &FatTerm,
         next_var: AtomId,
     ) -> Vec<Rewrite> {
+        let kernel_context = KernelContext::test_with_constants(10, 10);
         tree.get_rewrites(
             input_term,
             next_var,
             LocalContext::empty_ref(),
-            KernelContext::fake(),
+            &kernel_context,
         )
+    }
+
+    fn test_local_context() -> LocalContext {
+        LocalContext::with_types(vec![TypeId::new(1); 10])
     }
 
     #[test]
     fn test_rewrite_tree_atoms() {
+        let ctx = KernelContext::test_with_constants(10, 10);
+        let lctx = test_local_context();
         let mut tree = RewriteTree::new();
-        tree.insert_terms(0, &FatTerm::parse("c1"), &FatTerm::parse("c0"), true);
+        tree.insert_terms(
+            0,
+            &FatTerm::parse("c1"),
+            &FatTerm::parse("c0"),
+            true,
+            &lctx,
+            &ctx,
+        );
         let rewrites = get_test_rewrites(&tree, &FatTerm::parse("c1"), 0);
         assert_eq!(rewrites.len(), 1);
         assert_eq!(rewrites[0].term, FatTerm::parse("c0"));
@@ -182,12 +216,16 @@ mod tests {
 
     #[test]
     fn test_rewrite_tree_functions() {
+        let ctx = KernelContext::test_with_constants(10, 10);
+        let lctx = test_local_context();
         let mut tree = RewriteTree::new();
         tree.insert_terms(
             0,
             &FatTerm::parse("c1(x0)"),
             &FatTerm::parse("c0(x0)"),
             true,
+            &lctx,
+            &ctx,
         );
         let rewrites = get_test_rewrites(&tree, &FatTerm::parse("c1(c2)"), 0);
         assert_eq!(rewrites.len(), 1);
@@ -196,18 +234,24 @@ mod tests {
 
     #[test]
     fn test_rewrite_tree_multiple_rewrites() {
+        let ctx = KernelContext::test_with_constants(10, 10);
+        let lctx = test_local_context();
         let mut tree = RewriteTree::new();
         tree.insert_terms(
             0,
             &FatTerm::parse("c1(x0, c2)"),
             &FatTerm::parse("c3(x0)"),
             true,
+            &lctx,
+            &ctx,
         );
         tree.insert_terms(
             1,
             &FatTerm::parse("c1(c2, x0)"),
             &FatTerm::parse("c4(x0)"),
             true,
+            &lctx,
+            &ctx,
         );
         let rewrites = get_test_rewrites(&tree, &FatTerm::parse("c1(c2, c2)"), 0);
         assert_eq!(rewrites.len(), 2);
@@ -217,15 +261,19 @@ mod tests {
 
     #[test]
     fn test_rewrite_tree_inserting_edge_literals() {
+        let ctx = KernelContext::test_with_constants(10, 10);
+        let lctx = test_local_context();
         let mut tree = RewriteTree::new();
-        tree.insert_literal(0, &FatLiteral::parse("x0 = c0"));
-        tree.insert_literal(1, &FatLiteral::parse("c0"));
+        tree.insert_literal(0, &FatLiteral::parse("x0 = c0"), &lctx, &ctx);
+        tree.insert_literal(1, &FatLiteral::parse("c0"), &lctx, &ctx);
     }
 
     #[test]
     fn test_new_variable_created_during_rewrite() {
+        let ctx = KernelContext::test_with_constants(10, 10);
+        let lctx = test_local_context();
         let mut tree = RewriteTree::new();
-        tree.insert_literal(0, &FatLiteral::parse("c1(x0) = c0"));
+        tree.insert_literal(0, &FatLiteral::parse("c1(x0) = c0"), &lctx, &ctx);
         let rewrites = get_test_rewrites(&tree, &FatTerm::parse("c0"), 1);
         assert_eq!(rewrites.len(), 1);
         assert_eq!(rewrites[0].term, FatTerm::parse("c1(x1)"));
@@ -233,11 +281,13 @@ mod tests {
 
     #[test]
     fn test_rewrite_tree_checks_type() {
+        let ctx = KernelContext::test_with_constants(10, 10);
+        let lctx = test_local_context();
         let mut tree = RewriteTree::new();
 
         // Make a rule for type 2 variables
         let var2 = FatTerm::atom(TypeId::new(2), Atom::Variable(0));
-        tree.insert_terms(0, &var2, &var2, true);
+        tree.insert_terms(0, &var2, &var2, true, &lctx, &ctx);
 
         // A type 2 constant should match it
         let const2 = FatTerm::atom(TypeId::new(2), Atom::Symbol(Symbol::GlobalConstant(2)));
