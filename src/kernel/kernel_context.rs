@@ -48,10 +48,52 @@ impl KernelContext {
         }
         ctx
     }
+
+    /// Creates a test KernelContext with pre-populated scoped constants, global constants,
+    /// and monomorphs. All types will be EMPTY.
+    /// For use in tests that parse terms like "c0", "c1", "g0", "g1", "m0", "m1".
+    #[cfg(test)]
+    pub fn test_with_constants(num_scoped: usize, num_global: usize) -> KernelContext {
+        let mut ctx = KernelContext::new();
+        for _ in 0..num_scoped {
+            ctx.symbol_table.add_scoped_constant_with_type(EMPTY);
+        }
+        for _ in 0..num_global {
+            ctx.symbol_table.add_global_constant_with_type(EMPTY);
+        }
+        // Also add monomorphs for tests that use "m0", "m1", etc.
+        for _ in 0..10 {
+            ctx.symbol_table.add_monomorph_with_type(EMPTY);
+        }
+        ctx
+    }
 }
 
 impl Default for KernelContext {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kernel::symbol::Symbol;
+
+    #[test]
+    fn test_test_with_constants_works() {
+        let ctx = KernelContext::test_with_constants(10, 10);
+        // Verify we can look up the types for scoped constants c0-c9
+        for i in 0..10 {
+            let symbol = Symbol::ScopedConstant(i);
+            let type_id = ctx.symbol_table.get_type(symbol);
+            assert_eq!(type_id, EMPTY);
+        }
+        // Verify we can look up the types for global constants g0-g9
+        for i in 0..10 {
+            let symbol = Symbol::GlobalConstant(i);
+            let type_id = ctx.symbol_table.get_type(symbol);
+            assert_eq!(type_id, EMPTY);
+        }
     }
 }

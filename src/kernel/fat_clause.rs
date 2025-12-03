@@ -450,7 +450,10 @@ impl FatClause {
     /// Returns a vector of (literals, ef_trace) pairs.
     /// The literals are the result of factoring before normalization.
     /// The ef_trace tracks how the literals were transformed.
-    pub fn find_equality_factorings(&self) -> Vec<(Vec<FatLiteral>, Vec<EFLiteralTrace>)> {
+    pub fn find_equality_factorings(
+        &self,
+        kernel_context: &KernelContext,
+    ) -> Vec<(Vec<FatLiteral>, Vec<EFLiteralTrace>)> {
         let mut results = vec![];
 
         // The first literal must be positive for equality factoring
@@ -468,7 +471,7 @@ impl FatClause {
                 }
 
                 for (uv_forwards, u, v) in uv_literal.both_term_pairs() {
-                    let mut unifier = Unifier::new(3, KernelContext::fake());
+                    let mut unifier = Unifier::new(3, kernel_context);
                     unifier.set_input_context(Scope::LEFT, self.get_local_context());
                     if !unifier.unify(Scope::LEFT, s, Scope::LEFT, u) {
                         continue;
@@ -538,8 +541,8 @@ impl FatClause {
 
     /// Generates all clauses that can be derived from this clause using equality factoring.
     /// This is a convenience method that returns just the normalized clauses.
-    pub fn equality_factorings(&self) -> Vec<FatClause> {
-        self.find_equality_factorings()
+    pub fn equality_factorings(&self, kernel_context: &KernelContext) -> Vec<FatClause> {
+        self.find_equality_factorings(kernel_context)
             .into_iter()
             .map(|(literals, _)| FatClause::new_without_context(literals))
             .filter(|clause| !clause.is_tautology())

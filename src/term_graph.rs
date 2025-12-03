@@ -293,10 +293,13 @@ pub struct TermGraph {
     // When set, this indicates that the provided step sets these terms to be unequal.
     // But there is a chain of rewrites that proves that they are equal. This is a contradiction.
     contradiction_info: Option<(TermId, TermId, StepId)>,
+
+    // The kernel context for type lookups during validation.
+    kernel_context: KernelContext,
 }
 
 impl TermGraph {
-    pub fn new() -> TermGraph {
+    pub fn new(kernel_context: KernelContext) -> TermGraph {
         TermGraph {
             terms: Vec::new(),
             groups: Vec::new(),
@@ -307,6 +310,7 @@ impl TermGraph {
             pending: Vec::new(),
             has_contradiction: false,
             contradiction_info: None,
+            kernel_context,
         }
     }
 
@@ -382,12 +386,11 @@ impl TermGraph {
         let term_id = TermId(self.terms.len() as u32);
         let group_id = GroupId(self.groups.len() as u32);
 
-        // Term graph only has concrete terms (no variables), so empty context is safe
+        // Term graph only has concrete terms (no variables), so empty local context is safe
         let local_context = LocalContext::empty_ref();
-        let kernel_context = KernelContext::fake();
         let head = FatTerm::new(
-            term.get_head_type_with_context(local_context, kernel_context),
-            term.get_head_type_with_context(local_context, kernel_context),
+            term.get_head_type_with_context(local_context, &self.kernel_context),
+            term.get_head_type_with_context(local_context, &self.kernel_context),
             *term.get_head_atom(),
             vec![],
         );
@@ -1382,7 +1385,7 @@ impl TermGraph {
 
     #[cfg(test)]
     fn with_clauses(clauses: &[&str]) -> TermGraph {
-        let mut g = TermGraph::new();
+        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
         for (i, s) in clauses.iter().enumerate() {
             g.insert_clause_str(s, StepId(i));
         }
@@ -1421,7 +1424,7 @@ mod tests {
 
     #[test]
     fn test_identifying_atomic_subterms() {
-        let mut g = TermGraph::new();
+        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
         let id1 = g.insert_term_str("c1(c2, c3)");
         let id2 = g.insert_term_str("c1(c4, c3)");
         g.assert_ne(id1, id2);
@@ -1435,7 +1438,7 @@ mod tests {
 
     #[test]
     fn test_multilevel_cascade() {
-        let mut g = TermGraph::new();
+        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
         let term1 = g.insert_term_str("c1(c2(c3, c4), c2(c4, c3))");
         let term2 = g.insert_term_str("c1(c5, c5)");
         g.assert_ne(term1, term2);
@@ -1453,7 +1456,7 @@ mod tests {
 
     #[test]
     fn test_identifying_heads() {
-        let mut g = TermGraph::new();
+        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
         let id1 = g.insert_term_str("c1(c2, c3)");
         let id2 = g.insert_term_str("c4(c2, c3)");
         g.assert_ne(id1, id2);
@@ -1466,7 +1469,7 @@ mod tests {
 
     #[test]
     fn test_skipping_unneeded_steps() {
-        let mut g = TermGraph::new();
+        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
         let c0 = g.insert_term_str("c0");
         let c1 = g.insert_term_str("c1");
         let c2 = g.insert_term_str("c2");
@@ -1484,7 +1487,7 @@ mod tests {
 
     #[test]
     fn test_finding_contradiction() {
-        let mut g = TermGraph::new();
+        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
         let term1 = g.insert_term_str("c1(c2, c3)");
         let term2 = g.insert_term_str("c4(c5, c6)");
         g.set_terms_not_equal(term1, term2, StepId(0));
@@ -1505,7 +1508,7 @@ mod tests {
 
     #[test]
     fn test_clause_reduction_basic() {
-        let mut g = TermGraph::new();
+        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
         g.insert_clause_str("c1 = c2 or c3 != c4 or c5 != c6", StepId(0));
         assert!(!g.has_contradiction);
         g.insert_clause_str("c1 != c2", StepId(1));
@@ -1518,7 +1521,7 @@ mod tests {
 
     #[test]
     fn test_clause_reduction_two_to_zero() {
-        let mut g = TermGraph::new();
+        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
         g.insert_clause_str("c1 = c2 or c1 = c3", StepId(0));
         assert!(!g.has_contradiction);
         g.insert_clause_str("c2 = c4", StepId(1));
@@ -1531,7 +1534,7 @@ mod tests {
 
     #[test]
     fn test_subterm_triggering_clause() {
-        let mut g = TermGraph::new();
+        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
         g.insert_clause_str("c1(c2) != c1(c3) or c4(c2) != c4(c3)", StepId(0));
         assert!(!g.has_contradiction);
         g.insert_clause_str("c2 = c3", StepId(1));
@@ -1637,7 +1640,7 @@ mod tests {
 
     #[test]
     fn test_normalize() {
-        let mut g = TermGraph::new();
+        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
 
         // Create some terms
         let t1 = g.insert_term_str("c1");
@@ -1720,7 +1723,7 @@ mod tests {
 
     #[test]
     fn test_update_group_id() {
-        let mut g = TermGraph::new();
+        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
 
         // Create some terms that will have different groups
         let t1 = g.insert_term_str("c1");

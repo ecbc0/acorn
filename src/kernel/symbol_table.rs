@@ -85,6 +85,12 @@ impl SymbolTable {
         }
     }
 
+    /// Get the count of scoped constants for debugging.
+    #[cfg(test)]
+    pub fn scoped_constant_count(&self) -> usize {
+        self.scoped_constant_types.len()
+    }
+
     /// Declare a new synthetic atom with the given type.
     pub fn declare_synthetic(&mut self, type_id: TypeId) -> Symbol {
         let atom_id = self.synthetic_types.len() as AtomId;
@@ -101,6 +107,27 @@ impl SymbolTable {
         self.scoped_constants.push(None);
         self.scoped_constant_types.push(type_id);
         Symbol::ScopedConstant(atom_id)
+    }
+
+    /// Add a global constant with the given type, without a name.
+    /// Returns the Symbol for the new constant.
+    /// Primarily for testing with parsed terms like "g0", "g1".
+    #[cfg(test)]
+    pub fn add_global_constant_with_type(&mut self, type_id: TypeId) -> Symbol {
+        let atom_id = self.global_constants.len() as AtomId;
+        self.global_constants.push(None);
+        self.global_constant_types.push(type_id);
+        Symbol::GlobalConstant(atom_id)
+    }
+
+    /// Add a monomorph with the given type, without the full ConstantInstance.
+    /// Returns the Symbol for the new monomorph.
+    /// Primarily for testing with parsed terms like "m0", "m1".
+    #[cfg(test)]
+    pub fn add_monomorph_with_type(&mut self, type_id: TypeId) -> Symbol {
+        let atom_id = self.monomorph_types.len() as AtomId;
+        self.monomorph_types.push(type_id);
+        Symbol::Monomorph(atom_id)
     }
 
     /// Assigns an id to this (module, name) pair if it doesn't already have one.

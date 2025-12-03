@@ -145,26 +145,30 @@ pub struct Checker {
 
     /// The clause for each step. Only tracked in verbose mode.
     clauses: Option<Vec<FatClause>>,
+
+    /// The kernel context for type lookups during validation.
+    kernel_context: KernelContext,
 }
 
 impl Checker {
-    fn new(clauses: Option<Vec<FatClause>>) -> Checker {
+    fn new(clauses: Option<Vec<FatClause>>, kernel_context: KernelContext) -> Checker {
         Checker {
-            term_graph: TermGraph::new(),
+            term_graph: TermGraph::new(kernel_context.clone()),
             generalization_set: Arc::new(GeneralizationSet::new()),
             direct_contradiction: false,
             past_boolean_reductions: HashSet::new(),
             reasons: Vec::new(),
             clauses,
+            kernel_context,
         }
     }
 
     pub fn new_fast() -> Checker {
-        Checker::new(None)
+        Checker::new(None, KernelContext::new())
     }
 
     pub fn new_verbose() -> Checker {
-        Checker::new(Some(vec![]))
+        Checker::new(Some(vec![]), KernelContext::new())
     }
 
     /// Adds a true clause to the checker with a specific reason.
@@ -200,7 +204,7 @@ impl Checker {
             self.term_graph.insert_clause(clause, StepId(step_id));
         }
 
-        for factoring in clause.equality_factorings() {
+        for factoring in clause.equality_factorings(&self.kernel_context) {
             self.insert_clause(&factoring, StepReason::EqualityFactoring(step_id));
         }
 
@@ -584,7 +588,8 @@ impl Checker {
 
     #[cfg(test)]
     pub fn with_clauses(clauses: &[&str]) -> Checker {
-        let mut checker = Checker::new_fast();
+        let kernel_context = KernelContext::test_with_constants(10, 10);
+        let mut checker = Checker::new(None, kernel_context);
         for clause_str in clauses {
             let clause = FatClause::parse(clause_str);
             checker.insert_clause(&clause, StepReason::Testing);

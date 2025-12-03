@@ -115,7 +115,7 @@ impl ActiveSet {
             literal_set: LiteralSet::new(),
             positive_res_targets: FingerprintUnifier::new(),
             negative_res_targets: FingerprintUnifier::new(),
-            graph: TermGraph::new(),
+            graph: TermGraph::new(kernel_context.clone()),
             subterms: vec![],
             subterm_map: HashMap::new(),
             subterm_unifier: FingerprintUnifier::new(),
@@ -628,12 +628,16 @@ impl ActiveSet {
     /// "s = t" must be the first clause, but "u = v" can be any of them.
     ///
     /// I find this rule to be unintuitive, extracting an inequality from only equalities.
-    pub fn equality_factoring(activated_id: usize, activated_step: &ProofStep) -> Vec<ProofStep> {
+    pub fn equality_factoring(
+        activated_id: usize,
+        activated_step: &ProofStep,
+        kernel_context: &KernelContext,
+    ) -> Vec<ProofStep> {
         let clause = &activated_step.clause;
         let mut answer = vec![];
 
         // Use the clause's helper method to find all factorings
-        let factorings = clause.find_equality_factorings();
+        let factorings = clause.find_equality_factorings(kernel_context);
 
         for (literals, ef_trace) in factorings {
             // Capture the literals before normalization
@@ -902,7 +906,9 @@ impl ActiveSet {
             output.push(proof_step);
         }
 
-        for proof_step in ActiveSet::equality_factoring(activated_id, &activated_step) {
+        for proof_step in
+            ActiveSet::equality_factoring(activated_id, &activated_step, &self.kernel_context)
+        {
             output.push(proof_step);
         }
 
@@ -1023,12 +1029,13 @@ mod tests {
 
     #[test]
     fn test_equality_factoring_basic() {
+        let kernel_context = KernelContext::test_with_constants(10, 10);
         let old_clause = FatClause::new_without_context(vec![
             FatLiteral::equals(FatTerm::parse("x0"), FatTerm::parse("c0")),
             FatLiteral::equals(FatTerm::parse("x1"), FatTerm::parse("c0")),
         ]);
         let mock_step = ProofStep::mock_from_clause(old_clause);
-        let proof_steps = ActiveSet::equality_factoring(0, &mock_step);
+        let proof_steps = ActiveSet::equality_factoring(0, &mock_step, &kernel_context);
         let expected = FatClause::parse("c0 = x0");
         for ps in &proof_steps {
             if ps.clause == expected {
@@ -1058,6 +1065,7 @@ mod tests {
     fn test_equality_factoring_variable_numbering() {
         // This is a bug we ran into
         let mut set = test_active_set();
+        let kernel_context = KernelContext::test_with_constants(10, 10);
 
         // Nonreflexive rule of less-than
         let step = ProofStep::mock("not c1(x0, x0)");
@@ -1066,7 +1074,7 @@ mod tests {
         // Trichotomy
         let clause = FatClause::parse("c1(x0, x1) or c1(x1, x0) or x0 = x1");
         let mock_step = ProofStep::mock_from_clause(clause);
-        let output = ActiveSet::equality_factoring(0, &mock_step);
+        let output = ActiveSet::equality_factoring(0, &mock_step, &kernel_context);
         assert_eq!(output[0].clause.to_string(), "c1(x0, x0) or x0 = x0");
     }
 
