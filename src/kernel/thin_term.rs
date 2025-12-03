@@ -693,6 +693,25 @@ impl ThinTerm {
     pub fn extended_kbo_cmp(&self, other: &ThinTerm) -> std::cmp::Ordering {
         self.as_ref().extended_kbo_cmp(&other.as_ref())
     }
+
+    /// Normalize variable IDs in place so they appear in order of first occurrence.
+    /// The var_ids vector tracks which original variable IDs have been seen.
+    /// This mutates the term in place.
+    pub fn normalize_var_ids(&mut self, var_ids: &mut Vec<AtomId>) {
+        for component in &mut self.components {
+            if let ThinTermComponent::Atom(Atom::Variable(i)) = component {
+                let pos = var_ids.iter().position(|&x| x == *i);
+                match pos {
+                    Some(j) => *i = j as AtomId,
+                    None => {
+                        let new_id = var_ids.len() as AtomId;
+                        var_ids.push(*i);
+                        *i = new_id;
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl fmt::Display for ThinTerm {

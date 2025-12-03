@@ -169,6 +169,24 @@ impl ThinLiteral {
     pub fn is_normalized(&self) -> bool {
         !needs_to_flip(&self.left, &self.right)
     }
+
+    /// Flip the left and right terms of this literal.
+    pub fn flip(&mut self) {
+        std::mem::swap(&mut self.left, &mut self.right);
+    }
+
+    /// Normalize variable IDs in place so they appear in order of first occurrence.
+    /// Returns true if the literal was flipped during normalization.
+    pub fn normalize_var_ids(&mut self, var_ids: &mut Vec<AtomId>) -> bool {
+        self.left.normalize_var_ids(var_ids);
+        self.right.normalize_var_ids(var_ids);
+        if needs_to_flip(&self.left, &self.right) {
+            self.flip();
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl fmt::Display for ThinLiteral {
@@ -184,6 +202,30 @@ impl fmt::Display for ThinLiteral {
         } else {
             write!(f, "{} != {}", self.left, self.right)
         }
+    }
+}
+
+impl PartialOrd for ThinLiteral {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        use std::cmp::Ordering;
+
+        let positive_cmp = self.positive.cmp(&other.positive);
+        if positive_cmp != Ordering::Equal {
+            return Some(positive_cmp);
+        }
+
+        let left_cmp = other.left.extended_kbo_cmp(&self.left);
+        if left_cmp != Ordering::Equal {
+            return Some(left_cmp);
+        }
+
+        Some(other.right.extended_kbo_cmp(&self.right))
+    }
+}
+
+impl Ord for ThinLiteral {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
     }
 }
 

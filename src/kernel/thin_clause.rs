@@ -15,8 +15,30 @@ pub struct ThinClause {
 }
 
 impl ThinClause {
+    /// Creates a new normalized clause.
     pub fn new(literals: Vec<ThinLiteral>, context: LocalContext) -> ThinClause {
-        ThinClause { literals, context }
+        let mut c = ThinClause { literals, context };
+        c.normalize();
+        c
+    }
+
+    /// Sorts literals.
+    /// Removes any duplicate or impossible literals.
+    /// An empty clause indicates an impossible clause.
+    pub fn normalize(&mut self) {
+        self.literals.retain(|lit| !lit.is_impossible());
+        self.literals.sort();
+        self.literals.dedup();
+        self.normalize_var_ids();
+    }
+
+    /// Normalizes the variable IDs in the literals.
+    /// This may flip literals, so keep in mind it will break any trace.
+    pub fn normalize_var_ids(&mut self) {
+        let mut var_ids = vec![];
+        for literal in &mut self.literals {
+            literal.normalize_var_ids(&mut var_ids);
+        }
     }
 
     /// Create an impossible clause (empty clause, represents false).
