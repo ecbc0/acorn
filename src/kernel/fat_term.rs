@@ -162,6 +162,17 @@ impl FatTerm {
         self.term_type
     }
 
+    /// Get the term type directly without validation.
+    pub fn get_term_type(&self) -> TypeId {
+        self.term_type
+    }
+
+    /// Get the head type directly without validation.
+    /// Use this when you trust the embedded type and don't have a context to validate against.
+    pub fn get_head_type(&self) -> TypeId {
+        self.head_type
+    }
+
     /// Get the head type with context.
     /// When VALIDATE_TYPES_WITH_CONTEXT is true, validates that the embedded type
     /// matches what we'd get from context lookups.

@@ -328,11 +328,14 @@ impl PassiveSet {
     // Called when we activate a new true literal.
     // Simplifies the passive set by removing literals that are now known to be true.
     // Checks both directions.
-    pub fn simplify(&mut self, activated_id: usize, step: &ProofStep) {
+    pub fn simplify(
+        &mut self,
+        activated_id: usize,
+        step: &ProofStep,
+        kernel_context: &KernelContext,
+    ) {
         assert!(step.clause.literals.len() == 1);
         let local_context = step.clause.get_local_context();
-        // TODO: Thread KernelContext through SaturationProver instead of using fake()
-        let kernel_context = KernelContext::fake();
         let literal = &step.clause.literals[0];
         self.simplify_one_direction(
             activated_id,
@@ -390,10 +393,11 @@ mod tests {
 
     #[test]
     fn test_passive_set_simplification() {
+        let ctx = KernelContext::test_with_constants(10, 10);
         let mut passive_set = PassiveSet::new();
         passive_set.push_batch(vec![ProofStep::mock("c0(c1) or c0(c2)")]);
         // This should match *both* the literals in our existing clause
-        passive_set.simplify(3, &ProofStep::mock("not c0(x0)"));
+        passive_set.simplify(3, &ProofStep::mock("not c0(x0)"), &ctx);
         let step = passive_set.pop().unwrap();
         assert_eq!(step.clause.to_string(), "<empty>");
     }

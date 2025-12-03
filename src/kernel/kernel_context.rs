@@ -50,8 +50,8 @@ impl KernelContext {
     }
 
     /// Creates a test KernelContext with pre-populated scoped constants, global constants,
-    /// and monomorphs. All types will be EMPTY.
-    /// For use in tests that parse terms like "c0", "c1", "g0", "g1", "m0", "m1".
+    /// monomorphs, and synthetics. All types will be EMPTY.
+    /// For use in tests that parse terms like "c0", "g0", "m0", "s0".
     #[cfg(test)]
     pub fn test_with_constants(num_scoped: usize, num_global: usize) -> KernelContext {
         let mut ctx = KernelContext::new();
@@ -64,6 +64,53 @@ impl KernelContext {
         // Also add monomorphs for tests that use "m0", "m1", etc.
         for _ in 0..10 {
             ctx.symbol_table.add_monomorph_with_type(EMPTY);
+        }
+        // Also add synthetics for tests that use "s0", "s1", etc.
+        for _ in 0..10 {
+            ctx.symbol_table.declare_synthetic(EMPTY);
+        }
+        ctx
+    }
+
+    /// Creates a test KernelContext with pre-populated scoped and global constants with
+    /// specified types.
+    /// For use in tests that load FatClauses from JSON with specific type requirements.
+    #[cfg(test)]
+    pub fn test_with_constant_types(
+        scoped_types: &[TypeId],
+        global_types: &[TypeId],
+    ) -> KernelContext {
+        let mut ctx = KernelContext::new();
+        for &type_id in scoped_types {
+            ctx.symbol_table.add_scoped_constant_with_type(type_id);
+        }
+        for &type_id in global_types {
+            ctx.symbol_table.add_global_constant_with_type(type_id);
+        }
+        ctx
+    }
+
+    /// Creates a test KernelContext with all symbol types populated with specified types.
+    /// Arrays are indexed by atom id, e.g., monomorph_types[2] gives type for Monomorph(2).
+    #[cfg(test)]
+    pub fn test_with_all_types(
+        scoped_types: &[TypeId],
+        global_types: &[TypeId],
+        monomorph_types: &[TypeId],
+        synthetic_types: &[TypeId],
+    ) -> KernelContext {
+        let mut ctx = KernelContext::new();
+        for &type_id in scoped_types {
+            ctx.symbol_table.add_scoped_constant_with_type(type_id);
+        }
+        for &type_id in global_types {
+            ctx.symbol_table.add_global_constant_with_type(type_id);
+        }
+        for &type_id in monomorph_types {
+            ctx.symbol_table.add_monomorph_with_type(type_id);
+        }
+        for &type_id in synthetic_types {
+            ctx.symbol_table.declare_synthetic(type_id);
         }
         ctx
     }

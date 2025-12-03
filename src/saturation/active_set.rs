@@ -115,7 +115,7 @@ impl ActiveSet {
             literal_set: LiteralSet::new(),
             positive_res_targets: FingerprintUnifier::new(),
             negative_res_targets: FingerprintUnifier::new(),
-            graph: TermGraph::new(kernel_context.clone()),
+            graph: TermGraph::new(),
             subterms: vec![],
             subterm_map: HashMap::new(),
             subterm_unifier: FingerprintUnifier::new(),
@@ -126,6 +126,10 @@ impl ActiveSet {
 
     pub fn len(&self) -> usize {
         self.steps.len()
+    }
+
+    pub fn kernel_context(&self) -> &KernelContext {
+        &self.kernel_context
     }
 
     fn is_known_long_clause(&self, clause: &FatClause) -> bool {
@@ -343,9 +347,9 @@ impl ActiveSet {
                     );
 
                     // Add these rewrites to the term graph
-                    let id1 = self.graph.insert_term(&u_subterm);
+                    let id1 = self.graph.insert_term(&u_subterm, &self.kernel_context);
                     for rewrite in &rewrites {
-                        let id2 = self.graph.insert_term(&rewrite.term);
+                        let id2 = self.graph.insert_term(&rewrite.term, &self.kernel_context);
                         self.add_to_term_graph(
                             rewrite.pattern_id,
                             Some(target_id),
@@ -475,8 +479,8 @@ impl ActiveSet {
                 }
 
                 // Add this rewrite to the term graph.
-                let id1 = self.graph.insert_term(&subterm);
-                let id2 = self.graph.insert_term(&new_subterm);
+                let id1 = self.graph.insert_term(&subterm, &self.kernel_context);
+                let id2 = self.graph.insert_term(&new_subterm, &self.kernel_context);
                 self.add_to_term_graph(
                     pattern_id,
                     Some(subterm_info.inspiration_id),
@@ -499,12 +503,16 @@ impl ActiveSet {
     /// Specifically, when one literal is of the form
     ///   u != v
     /// then if we can unify u and v, we can eliminate this literal from the clause.
-    pub fn equality_resolution(activated_id: usize, activated_step: &ProofStep) -> Vec<ProofStep> {
+    pub fn equality_resolution(
+        activated_id: usize,
+        activated_step: &ProofStep,
+        kernel_context: &KernelContext,
+    ) -> Vec<ProofStep> {
         let clause = &activated_step.clause;
         let mut answer = vec![];
 
         // Use the new method to find all possible equality resolutions
-        for (index, new_literals, flipped) in clause.find_equality_resolutions() {
+        for (index, new_literals, flipped) in clause.find_equality_resolutions(kernel_context) {
             let literals = new_literals.clone();
             let (new_clause, traces) = FatClause::normalize_with_trace(new_literals);
 
@@ -865,8 +873,8 @@ impl ActiveSet {
         // Using the literal as a rewrite target.
         if !literal.has_any_variable() {
             // Add this to the term graph.
-            let left = self.graph.insert_term(&literal.left);
-            let right = self.graph.insert_term(&literal.right);
+            let left = self.graph.insert_term(&literal.left, &self.kernel_context);
+            let right = self.graph.insert_term(&literal.right, &self.kernel_context);
 
             self.add_to_term_graph(activated_id, None, left, right, true, literal.positive);
 
@@ -902,7 +910,9 @@ impl ActiveSet {
 
         // Unification-based inferences don't need to be done on specialization, because
         // they can operate directly on the general form.
-        for proof_step in ActiveSet::equality_resolution(activated_id, &activated_step) {
+        for proof_step in
+            ActiveSet::equality_resolution(activated_id, &activated_step, &self.kernel_context)
+        {
             output.push(proof_step);
         }
 
@@ -1008,12 +1018,13 @@ mod tests {
 
     #[test]
     fn test_equality_resolution() {
+        let ctx = KernelContext::test_with_constants(10, 10);
         let old_clause = FatClause::new_without_context(vec![
             FatLiteral::not_equals(FatTerm::parse("x0"), FatTerm::parse("c0")),
             FatLiteral::equals(FatTerm::parse("x0"), FatTerm::parse("c1")),
         ]);
         let mock_step = ProofStep::mock_from_clause(old_clause);
-        let proof_steps = ActiveSet::equality_resolution(0, &mock_step);
+        let proof_steps = ActiveSet::equality_resolution(0, &mock_step, &ctx);
         assert_eq!(proof_steps.len(), 1);
         assert!(proof_steps[0].clause.len() == 1);
         assert_eq!(format!("{}", proof_steps[0].clause), "c1 = c0".to_string());
@@ -1022,9 +1033,10 @@ mod tests {
     #[test]
     fn test_mutually_recursive_equality_resolution() {
         // This is a bug we ran into. It shouldn't work
+        let ctx = KernelContext::test_with_constants(10, 10);
         let clause = FatClause::parse("c0(x0, c0(x1, c1(x2))) != c0(c0(x2, x1), x0)");
         let mock_step = ProofStep::mock_from_clause(clause);
-        assert!(ActiveSet::equality_resolution(0, &mock_step).is_empty());
+        assert!(ActiveSet::equality_resolution(0, &mock_step, &ctx).is_empty());
     }
 
     #[test]

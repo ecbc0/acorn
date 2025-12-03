@@ -293,13 +293,16 @@ pub struct TermGraph {
     // When set, this indicates that the provided step sets these terms to be unequal.
     // But there is a chain of rewrites that proves that they are equal. This is a contradiction.
     contradiction_info: Option<(TermId, TermId, StepId)>,
+}
 
-    // The kernel context for type lookups during validation.
-    kernel_context: KernelContext,
+impl Default for TermGraph {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TermGraph {
-    pub fn new(kernel_context: KernelContext) -> TermGraph {
+    pub fn new() -> TermGraph {
         TermGraph {
             terms: Vec::new(),
             groups: Vec::new(),
@@ -310,7 +313,6 @@ impl TermGraph {
             pending: Vec::new(),
             has_contradiction: false,
             contradiction_info: None,
-            kernel_context,
         }
     }
 
@@ -376,7 +378,7 @@ impl TermGraph {
     // Inserts the head of the provided term as an atom.
     // If it's already in the graph, return the existing term id.
     // Otherwise, make a new term id and give it a new group.
-    fn insert_head(&mut self, term: &FatTerm) -> TermId {
+    fn insert_head(&mut self, term: &FatTerm, kernel_context: &KernelContext) -> TermId {
         let key = Decomposition::Atomic(term.get_head_atom().clone());
         if let Some(&id) = self.decompositions.get(&key) {
             return id;
@@ -386,11 +388,11 @@ impl TermGraph {
         let term_id = TermId(self.terms.len() as u32);
         let group_id = GroupId(self.groups.len() as u32);
 
-        // Term graph only has concrete terms (no variables), so empty local context is safe
+        // Term graph only has concrete terms (no variables), so we use empty local context.
         let local_context = LocalContext::empty_ref();
         let head = FatTerm::new(
-            term.get_head_type_with_context(local_context, &self.kernel_context),
-            term.get_head_type_with_context(local_context, &self.kernel_context),
+            term.get_head_type_with_context(local_context, kernel_context),
+            term.get_head_type_with_context(local_context, kernel_context),
             *term.get_head_atom(),
             vec![],
         );
@@ -481,8 +483,8 @@ impl TermGraph {
 
     /// Inserts a term.
     /// Makes a new term, group, and compound if necessary.
-    pub fn insert_term(&mut self, term: &FatTerm) -> TermId {
-        let head_term_id = self.insert_head(term);
+    pub fn insert_term(&mut self, term: &FatTerm, kernel_context: &KernelContext) -> TermId {
+        let head_term_id = self.insert_head(term, kernel_context);
         if term.args().is_empty() {
             return head_term_id;
         }
@@ -491,7 +493,7 @@ impl TermGraph {
         let mut arg_term_ids = vec![];
         let mut arg_group_ids = vec![];
         for arg in term.args() {
-            let arg_term_id = self.insert_term(arg);
+            let arg_term_id = self.insert_term(arg, kernel_context);
             arg_term_ids.push(arg_term_id);
             let arg_group_id = self.get_group_id(arg_term_id);
             arg_group_ids.push(arg_group_id);
@@ -507,12 +509,17 @@ impl TermGraph {
     /// All terms in the clause are inserted if not already present.
     /// The clause is indexed by all groups that appear in its literals.
     /// Don't insert clauses with no literals.
-    pub fn insert_clause(&mut self, clause: &FatClause, step: StepId) {
+    pub fn insert_clause(
+        &mut self,
+        clause: &FatClause,
+        step: StepId,
+        kernel_context: &KernelContext,
+    ) {
         // First, insert all terms and collect literal IDs
         let mut literal_ids = Vec::new();
         for literal in &clause.literals {
-            let left_id = self.insert_term(&literal.left);
-            let right_id = self.insert_term(&literal.right);
+            let left_id = self.insert_term(&literal.left, kernel_context);
+            let right_id = self.insert_term(&literal.right, kernel_context);
 
             if clause.literals.len() == 1 {
                 // If this is a single literal, we can just set the terms equal or not equal
@@ -1039,11 +1046,15 @@ impl TermGraph {
     }
 
     /// Returns the truth value of this literal, or None if it cannot be evaluated.
-    pub fn evaluate_literal(&mut self, literal: &FatLiteral) -> Option<bool> {
+    pub fn evaluate_literal(
+        &mut self,
+        literal: &FatLiteral,
+        kernel_context: &KernelContext,
+    ) -> Option<bool> {
         // If the literal is positive, we check if the terms are equal.
         // If the literal is negative, we check if the terms are not equal.
-        let left_id = self.insert_term(&literal.left);
-        let right_id = self.insert_term(&literal.right);
+        let left_id = self.insert_term(&literal.left, kernel_context);
+        let right_id = self.insert_term(&literal.right, kernel_context);
 
         let left_group = self.get_group_id(left_id);
         let right_group = self.get_group_id(right_id);
@@ -1062,19 +1073,19 @@ impl TermGraph {
 
     /// Returns true if the clause is known to be true.
     /// If we have found any contradiction, we can degenerately conclude the clause is true.
-    pub fn check_clause(&mut self, clause: &FatClause) -> bool {
+    pub fn check_clause(&mut self, clause: &FatClause, kernel_context: &KernelContext) -> bool {
         if self.has_contradiction() {
             return true;
         }
 
         for literal in &clause.literals {
-            if self.evaluate_literal(literal) == Some(true) {
+            if self.evaluate_literal(literal, kernel_context) == Some(true) {
                 return true;
             }
         }
 
         // Check if this exact clause (or an equivalent one) exists in our stored clauses
-        if self.clause_exists(clause) {
+        if self.clause_exists(clause, kernel_context) {
             return true;
         }
 
@@ -1083,7 +1094,7 @@ impl TermGraph {
 
     /// Checks if a clause with the same literals exists in the term graph.
     /// This compares clauses based on their group-normalized form.
-    fn clause_exists(&mut self, clause: &FatClause) -> bool {
+    fn clause_exists(&mut self, clause: &FatClause, kernel_context: &KernelContext) -> bool {
         if clause.literals.is_empty() {
             return false;
         }
@@ -1091,8 +1102,8 @@ impl TermGraph {
         // Convert the clause to literal IDs
         let mut literal_ids = Vec::new();
         for literal in &clause.literals {
-            let left_id = self.insert_term(&literal.left);
-            let right_id = self.insert_term(&literal.right);
+            let left_id = self.insert_term(&literal.left, kernel_context);
+            let right_id = self.insert_term(&literal.right, kernel_context);
             let left_group = self.get_group_id(left_id);
             let right_group = self.get_group_id(right_id);
             literal_ids.push(LiteralId::new(left_group, right_group, literal.positive));
@@ -1362,59 +1373,93 @@ impl TermGraph {
     }
 }
 
-// Methods for testing.
-impl TermGraph {
-    #[cfg(test)]
+/// A test wrapper that combines a TermGraph with its KernelContext.
+#[cfg(test)]
+struct TestGraph {
+    graph: TermGraph,
+    context: KernelContext,
+}
+
+#[cfg(test)]
+impl TestGraph {
+    fn new() -> TestGraph {
+        TestGraph {
+            graph: TermGraph::new(),
+            context: KernelContext::test_with_constants(10, 10),
+        }
+    }
+
+    fn with_clauses(clauses: &[&str]) -> TestGraph {
+        let mut tg = TestGraph::new();
+        for (i, s) in clauses.iter().enumerate() {
+            tg.insert_clause_str(s, StepId(i));
+        }
+        tg
+    }
+
     fn insert_term_str(&mut self, s: &str) -> TermId {
-        let id = self.insert_term(&FatTerm::parse(s));
-        self.validate();
+        let id = self.graph.insert_term(&FatTerm::parse(s), &self.context);
+        self.graph.validate();
         id
     }
 
-    #[cfg(test)]
     fn insert_clause_str(&mut self, s: &str, step: StepId) {
         let clause = FatClause::parse(s);
-        self.insert_clause(&clause, step);
-        self.validate();
+        self.graph.insert_clause(&clause, step, &self.context);
+        self.graph.validate();
     }
 
-    #[cfg(test)]
     fn assert_eq(&self, t1: TermId, t2: TermId) {
-        assert_eq!(self.get_group_id(t1), self.get_group_id(t2));
+        assert_eq!(self.graph.get_group_id(t1), self.graph.get_group_id(t2));
     }
 
-    #[cfg(test)]
-    fn with_clauses(clauses: &[&str]) -> TermGraph {
-        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
-        for (i, s) in clauses.iter().enumerate() {
-            g.insert_clause_str(s, StepId(i));
-        }
-        g
+    fn assert_ne(&self, t1: TermId, t2: TermId) {
+        assert_ne!(self.graph.get_group_id(t1), self.graph.get_group_id(t2));
     }
 
-    #[cfg(test)]
     fn set_eq(&mut self, t1: TermId, t2: TermId, pattern_id: StepId) {
-        self.set_terms_equal(t1, t2, pattern_id, None);
-        self.validate();
+        self.graph.set_terms_equal(t1, t2, pattern_id, None);
+        self.graph.validate();
         self.assert_eq(t1, t2);
     }
 
-    #[cfg(test)]
-    fn assert_ne(&self, t1: TermId, t2: TermId) {
-        assert_ne!(self.get_group_id(t1), self.get_group_id(t2));
-    }
-
-    #[cfg(test)]
     fn get_str(&self, s: &str) -> TermId {
-        self.get_term_id(&FatTerm::parse(s)).unwrap()
+        self.graph.get_term_id(&FatTerm::parse(s)).unwrap()
     }
 
-    #[cfg(test)]
     fn check_clause_str(&mut self, s: &str) {
         let clause = FatClause::parse(s);
-        if !self.check_clause(&clause) {
+        if !self.graph.check_clause(&clause, &self.context) {
             panic!("check_clause_str(\"{}\") failed", s);
         }
+    }
+
+    fn get_step_ids(&self, term1: TermId, term2: TermId) -> Vec<usize> {
+        self.graph.get_step_ids(term1, term2)
+    }
+
+    fn set_terms_not_equal(&mut self, term1: TermId, term2: TermId, step: StepId) {
+        self.graph.set_terms_not_equal(term1, term2, step);
+    }
+
+    fn has_contradiction_trace(&self) -> bool {
+        self.graph.has_contradiction_trace()
+    }
+
+    fn has_contradiction(&self) -> bool {
+        self.graph.has_contradiction()
+    }
+
+    fn show_graph(&self) {
+        self.graph.show_graph();
+    }
+
+    fn update_group_id(&mut self, group_id: GroupId) -> GroupId {
+        self.graph.update_group_id(group_id)
+    }
+
+    fn get_group_id(&self, term_id: TermId) -> GroupId {
+        self.graph.get_group_id(term_id)
     }
 }
 
@@ -1424,7 +1469,7 @@ mod tests {
 
     #[test]
     fn test_identifying_atomic_subterms() {
-        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
+        let mut g = TestGraph::new();
         let id1 = g.insert_term_str("c1(c2, c3)");
         let id2 = g.insert_term_str("c1(c4, c3)");
         g.assert_ne(id1, id2);
@@ -1438,7 +1483,7 @@ mod tests {
 
     #[test]
     fn test_multilevel_cascade() {
-        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
+        let mut g = TestGraph::new();
         let term1 = g.insert_term_str("c1(c2(c3, c4), c2(c4, c3))");
         let term2 = g.insert_term_str("c1(c5, c5)");
         g.assert_ne(term1, term2);
@@ -1456,7 +1501,7 @@ mod tests {
 
     #[test]
     fn test_identifying_heads() {
-        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
+        let mut g = TestGraph::new();
         let id1 = g.insert_term_str("c1(c2, c3)");
         let id2 = g.insert_term_str("c4(c2, c3)");
         g.assert_ne(id1, id2);
@@ -1469,7 +1514,7 @@ mod tests {
 
     #[test]
     fn test_skipping_unneeded_steps() {
-        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
+        let mut g = TestGraph::new();
         let c0 = g.insert_term_str("c0");
         let c1 = g.insert_term_str("c1");
         let c2 = g.insert_term_str("c2");
@@ -1487,7 +1532,7 @@ mod tests {
 
     #[test]
     fn test_finding_contradiction() {
-        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
+        let mut g = TestGraph::new();
         let term1 = g.insert_term_str("c1(c2, c3)");
         let term2 = g.insert_term_str("c4(c5, c6)");
         g.set_terms_not_equal(term1, term2, StepId(0));
@@ -1508,70 +1553,70 @@ mod tests {
 
     #[test]
     fn test_clause_reduction_basic() {
-        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
+        let mut g = TestGraph::new();
         g.insert_clause_str("c1 = c2 or c3 != c4 or c5 != c6", StepId(0));
-        assert!(!g.has_contradiction);
+        assert!(!g.has_contradiction());
         g.insert_clause_str("c1 != c2", StepId(1));
-        assert!(!g.has_contradiction);
+        assert!(!g.has_contradiction());
         g.insert_clause_str("c3 = c4", StepId(2));
-        assert!(!g.has_contradiction);
+        assert!(!g.has_contradiction());
         g.insert_clause_str("c5 = c6", StepId(3));
-        assert!(g.has_contradiction);
+        assert!(g.has_contradiction());
     }
 
     #[test]
     fn test_clause_reduction_two_to_zero() {
-        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
+        let mut g = TestGraph::new();
         g.insert_clause_str("c1 = c2 or c1 = c3", StepId(0));
-        assert!(!g.has_contradiction);
+        assert!(!g.has_contradiction());
         g.insert_clause_str("c2 = c4", StepId(1));
-        assert!(!g.has_contradiction);
+        assert!(!g.has_contradiction());
         g.insert_clause_str("c3 = c4", StepId(2));
-        assert!(!g.has_contradiction);
+        assert!(!g.has_contradiction());
         g.insert_clause_str("c1 != c4", StepId(3));
-        assert!(g.has_contradiction);
+        assert!(g.has_contradiction());
     }
 
     #[test]
     fn test_subterm_triggering_clause() {
-        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
+        let mut g = TestGraph::new();
         g.insert_clause_str("c1(c2) != c1(c3) or c4(c2) != c4(c3)", StepId(0));
-        assert!(!g.has_contradiction);
+        assert!(!g.has_contradiction());
         g.insert_clause_str("c2 = c3", StepId(1));
-        assert!(g.has_contradiction);
+        assert!(g.has_contradiction());
     }
 
     #[test]
     fn test_hypotheses_then_imp() {
         let mut g =
-            TermGraph::with_clauses(&["g1(c1)", "g2(c1)", "not g1(c1) or not g2(c1) or g3(c1)"]);
+            TestGraph::with_clauses(&["g1(c1)", "g2(c1)", "not g1(c1) or not g2(c1) or g3(c1)"]);
         g.check_clause_str("g3(c1)");
     }
 
     #[test]
     fn test_imp_then_hypotheses() {
         let mut g =
-            TermGraph::with_clauses(&["not g1(c1) or not g2(c1) or g3(c1)", "g1(c1)", "g2(c1)"]);
+            TestGraph::with_clauses(&["not g1(c1) or not g2(c1) or g3(c1)", "g1(c1)", "g2(c1)"]);
         g.check_clause_str("g3(c1)");
     }
 
     #[test]
     fn test_term_graph_rewriting_equality() {
         let mut g =
-            TermGraph::with_clauses(&["g1(c1, g2(c2, c3)) = c4", "g2(c2, c3) = g2(c3, c2)"]);
+            TestGraph::with_clauses(&["g1(c1, g2(c2, c3)) = c4", "g2(c2, c3) = g2(c3, c2)"]);
         g.check_clause_str("g1(c1, g2(c3, c2)) = c4");
     }
 
     #[test]
     fn test_term_graph_rewriting_inequality() {
         let mut g =
-            TermGraph::with_clauses(&["g1(c1, g2(c2, c3)) != c4", "g2(c2, c3) = g2(c3, c2)"]);
+            TestGraph::with_clauses(&["g1(c1, g2(c2, c3)) != c4", "g2(c2, c3) = g2(c3, c2)"]);
         g.check_clause_str("g1(c1, g2(c3, c2)) != c4");
     }
 
     #[test]
     fn test_term_graph_concluding_opposing_literals() {
-        let mut g = TermGraph::with_clauses(&[
+        let mut g = TestGraph::with_clauses(&[
             "not g4(g6, g5(c1, g0))",
             "g4(g6, g6) or g3(g6, g6)",
             "not g3(g6, g6) or g4(g6, g6)",
@@ -1584,7 +1629,7 @@ mod tests {
 
     #[test]
     fn test_term_graph_checking_long_clause() {
-        let mut g = TermGraph::with_clauses(&["g0 = g1 or g2 = g3"]);
+        let mut g = TestGraph::with_clauses(&["g0 = g1 or g2 = g3"]);
 
         g.check_clause_str("g0 = g1 or g2 = g3");
     }
@@ -1592,7 +1637,7 @@ mod tests {
     #[test]
     fn test_term_graph_shortening_long_clause() {
         let mut g =
-            TermGraph::with_clauses(&["not g0(c2, c3)", "not g1(c2, c3) or g0(c2, c3) or c3 = c2"]);
+            TestGraph::with_clauses(&["not g0(c2, c3)", "not g1(c2, c3) or g0(c2, c3) or c3 = c2"]);
 
         g.check_clause_str("not g1(c2, c3) or c3 = c2");
     }
@@ -1600,7 +1645,7 @@ mod tests {
     #[test]
     fn test_term_graph_checking_reducible_clause() {
         // This failed at some point because we were checking a clause that could be reduced.
-        let mut g = TermGraph::with_clauses(&[
+        let mut g = TestGraph::with_clauses(&[
             // These are necessary to reproduce the bug
             "m4(c4, c5) = c3",
             "c4 != c0",
@@ -1614,18 +1659,18 @@ mod tests {
 
     #[test]
     fn test_term_graph_reducing_clauses() {
-        let g = TermGraph::with_clauses(&[
+        let g = TestGraph::with_clauses(&[
             "not g3(g1) or g3(g0)",
             "not g3(g0) or g3(g2)",
             "g3(g1)",
             "not g3(g2)",
         ]);
-        assert!(g.has_contradiction);
+        assert!(g.has_contradiction());
     }
 
     #[test]
     fn test_term_graph_eight_case_reduction() {
-        let g = TermGraph::with_clauses(&[
+        let g = TestGraph::with_clauses(&[
             "g0 or g1 or g2",
             "g0 or g1 or not g2",
             "g0 or not g1 or g2",
@@ -1635,12 +1680,12 @@ mod tests {
             "g0 or not g1 or not g2",
             "not g0 or not g1 or not g2",
         ]);
-        assert!(g.has_contradiction);
+        assert!(g.has_contradiction());
     }
 
     #[test]
     fn test_normalize() {
-        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
+        let mut g = TestGraph::new();
 
         // Create some terms
         let t1 = g.insert_term_str("c1");
@@ -1662,7 +1707,7 @@ mod tests {
             _ => panic!("Expected a clause"),
         };
 
-        match g.normalize(clause.clone()) {
+        match g.graph.normalize(clause.clone()) {
             Normalization::Clause(normalized) => {
                 assert_eq!(normalized.literals().len(), 2);
             }
@@ -1673,7 +1718,7 @@ mod tests {
         g.set_eq(t1, t2, StepId(0));
 
         // After merging t1 and t2, the literal "g1 = g2" becomes reflexive and should be filtered
-        match g.normalize(clause) {
+        match g.graph.normalize(clause) {
             Normalization::True => {} // The equality becomes reflexive and true, making the whole clause true
             _ => panic!("Expected a tautology after merging"),
         }
@@ -1699,7 +1744,7 @@ mod tests {
         g.set_eq(t6, t7, StepId(1));
 
         // After merging, both literals become "g5 = g6" (or g7), so they should deduplicate
-        match g.normalize(clause2) {
+        match g.graph.normalize(clause2) {
             Normalization::Clause(normalized) => {
                 assert_eq!(
                     normalized.literals().len(),
@@ -1723,7 +1768,7 @@ mod tests {
 
     #[test]
     fn test_update_group_id() {
-        let mut g = TermGraph::new(KernelContext::test_with_constants(10, 10));
+        let mut g = TestGraph::new();
 
         // Create some terms that will have different groups
         let t1 = g.insert_term_str("c1");
@@ -1779,7 +1824,7 @@ mod tests {
 
         // If initial_g1 was remapped, check that the optimization worked
         if initial_g1 != final_group {
-            match &g.groups[initial_g1.get() as usize] {
+            match &g.graph.groups[initial_g1.get() as usize] {
                 PossibleGroupInfo::Remapped(target) => assert_eq!(*target, final_group),
                 PossibleGroupInfo::Info(_) => panic!("initial_g1 should be remapped"),
             }
@@ -1804,7 +1849,7 @@ mod tests {
 
         // Check that g5 now points directly to the final group (optimization happened)
         if g5 != final_567 {
-            match &g.groups[g5.get() as usize] {
+            match &g.graph.groups[g5.get() as usize] {
                 PossibleGroupInfo::Remapped(target) => assert_eq!(*target, final_567),
                 PossibleGroupInfo::Info(_) => panic!("g5 should be remapped"),
             }
@@ -1813,7 +1858,7 @@ mod tests {
 
     #[test]
     fn test_term_graph_missed_resolution() {
-        let mut g = TermGraph::with_clauses(&[
+        let mut g = TestGraph::with_clauses(&[
             "m4(c0, c1) = c1",
             "not m3(m4(c0, c1), c0)",
             "m1(c1, c0) or m1(c0, c1)", // Key clause 1

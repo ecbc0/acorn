@@ -204,6 +204,7 @@ impl GenerativeProver {
 
         // Try to check the generated line
         let mut certificate_steps = Vec::new();
+        let kernel_context = normalizer.kernel_context().clone();
 
         match checker.check_code(
             &generated_line,
@@ -211,6 +212,7 @@ impl GenerativeProver {
             bindings,
             normalizer,
             &mut certificate_steps,
+            &kernel_context,
         ) {
             Ok(()) => {
                 // Success! The checker has been updated

@@ -31,15 +31,15 @@ impl GeneralizationSet {
     }
 
     /// Inserts a clause into the set, reordering it in every way that is KBO-nonincreasing.
-    pub fn insert(&mut self, mut clause: FatClause, id: usize) {
+    pub fn insert(&mut self, mut clause: FatClause, id: usize, kernel_context: &KernelContext) {
         let has_av = clause.has_any_applied_variable();
         let mut generalized = vec![];
-        all_generalized_forms(&mut clause, 0, &mut generalized);
+        all_generalized_forms(&mut clause, 0, &mut generalized, kernel_context);
         for c in generalized {
-            self.tree.insert_clause(&c, id);
+            self.tree.insert_clause(&c, id, kernel_context);
 
             if has_av {
-                let key = ClauseTypeKey::new(&c, KernelContext::fake());
+                let key = ClauseTypeKey::new(&c, kernel_context);
                 self.with_applied_variables
                     .entry(key)
                     .or_default()
@@ -48,14 +48,18 @@ impl GeneralizationSet {
         }
     }
 
-    pub fn find_generalization(&self, clause: FatClause) -> Option<usize> {
-        let special = specialized_form(clause);
-        if let Some(id) = self.tree.find_clause(&special) {
+    pub fn find_generalization(
+        &self,
+        clause: FatClause,
+        kernel_context: &KernelContext,
+    ) -> Option<usize> {
+        let special = specialized_form(clause, kernel_context);
+        if let Some(id) = self.tree.find_clause(&special, kernel_context) {
             return Some(*id);
         }
 
         // Fall back to checking with_applied_variables
-        let key = ClauseTypeKey::new(&special, KernelContext::fake());
+        let key = ClauseTypeKey::new(&special, kernel_context);
         if let Some(candidates) = self.with_applied_variables.get(&key) {
             for (general, id) in candidates {
                 if Unifier::unify_clauses(general, &special) {
@@ -194,15 +198,15 @@ fn all_generalized_forms(
     base_clause: &mut FatClause,
     start_index: usize,
     output: &mut Vec<FatClause>,
+    kernel_context: &KernelContext,
 ) {
     if start_index >= base_clause.literals.len() {
         // We have a complete clause, so we can move on to the reordering stage.
-        all_generalized_orders(base_clause, output);
+        all_generalized_orders(base_clause, output, kernel_context);
         return;
     }
     let literal = &base_clause.literals[start_index];
     let local_context = base_clause.get_local_context();
-    let kernel_context = KernelContext::fake();
     // Ignore literal sign in this stage
     let cmp = sub_invariant_term_cmp(
         &literal.left,
@@ -214,20 +218,23 @@ fn all_generalized_forms(
     );
     if cmp != Some(Ordering::Less) {
         // The pre-existing direction is okay.
-        all_generalized_forms(base_clause, start_index + 1, output);
+        all_generalized_forms(base_clause, start_index + 1, output, kernel_context);
     }
     if cmp == None || cmp == Some(Ordering::Less) {
         // The swapped direction is okay.
         base_clause.literals[start_index].flip();
-        all_generalized_forms(base_clause, start_index + 1, output);
+        all_generalized_forms(base_clause, start_index + 1, output, kernel_context);
         base_clause.literals[start_index].flip();
     }
 }
 
 /// Generate all orders of the provided clause that are a valid generalized form.
-fn all_generalized_orders(base_clause: &FatClause, output: &mut Vec<FatClause>) {
+fn all_generalized_orders(
+    base_clause: &FatClause,
+    output: &mut Vec<FatClause>,
+    kernel_context: &KernelContext,
+) {
     let local_context = base_clause.get_local_context();
-    let kernel_context = KernelContext::fake();
 
     // Helper function to generate all permutations recursively
     fn generate_permutations(
@@ -295,9 +302,8 @@ fn all_generalized_orders(base_clause: &FatClause, output: &mut Vec<FatClause>) 
 
 /// Put this clause into the "specialized" form.
 /// This should only be called on concrete clauses.
-fn specialized_form(mut clause: FatClause) -> FatClause {
+fn specialized_form(mut clause: FatClause, kernel_context: &KernelContext) -> FatClause {
     let local_context = clause.get_local_context().clone();
-    let kernel_context = KernelContext::fake();
 
     // First, ensure each literal has the larger term on the left
     for literal in &mut clause.literals {
@@ -334,252 +340,292 @@ mod tests {
 
     #[test]
     fn test_clause_set_basic_generalization() {
+        let ctx = KernelContext::test_with_constants(10, 10);
         let mut clause_set = GeneralizationSet::new();
 
         // Insert a general clause: "c0(x0, c1) or c2(c3, x0)"
         let general_clause = FatClause::parse("c0(x0, c1) or c2(c3, x0)");
-        clause_set.insert(general_clause, 1);
+        clause_set.insert(general_clause, 1, &ctx);
 
         // Test that a specialized version is recognized
         let special_clause = FatClause::parse("c2(c3, c3) or c0(c3, c1)");
-        let result = clause_set.find_generalization(special_clause);
+        let result = clause_set.find_generalization(special_clause, &ctx);
         assert_eq!(result, Some(1), "Should find the generalization");
     }
 
     #[test]
     fn test_clause_set_reordered_literals() {
+        let ctx = KernelContext::test_with_constants(10, 10);
         let mut clause_set = GeneralizationSet::new();
 
         // Insert a clause with specific order
         let clause = FatClause::parse("c0(x0) or c1(c2, x0) or c3(x0, c4)");
-        clause_set.insert(clause, 2);
+        clause_set.insert(clause, 2, &ctx);
 
         // Test that reordered specializations are recognized
         let special1 = FatClause::parse("c1(c2, c5) or c3(c5, c4) or c0(c5)");
-        assert_eq!(clause_set.find_generalization(special1), Some(2));
+        assert_eq!(clause_set.find_generalization(special1, &ctx), Some(2));
 
         let special2 = FatClause::parse("c3(c6, c4) or c0(c6) or c1(c2, c6)");
-        assert_eq!(clause_set.find_generalization(special2), Some(2));
+        assert_eq!(clause_set.find_generalization(special2, &ctx), Some(2));
     }
 
     #[test]
     fn test_clause_set_flipped_equality() {
+        let ctx = KernelContext::test_with_constants(10, 10);
         let mut clause_set = GeneralizationSet::new();
 
         // Insert an equality clause
         let clause = FatClause::parse("x0 = c0 or c1(x0)");
-        clause_set.insert(clause, 3);
+        clause_set.insert(clause, 3, &ctx);
 
         // Test that flipped equalities are recognized
         let special = FatClause::parse("c2 = c0 or c1(c2)");
-        assert_eq!(clause_set.find_generalization(special), Some(3));
+        assert_eq!(clause_set.find_generalization(special, &ctx), Some(3));
 
         // Also test with the equality already flipped
         let special2 = FatClause::parse("c0 = c3 or c1(c3)");
-        assert_eq!(clause_set.find_generalization(special2), Some(3));
+        assert_eq!(clause_set.find_generalization(special2, &ctx), Some(3));
     }
 
     #[test]
     fn test_clause_set_no_generalization() {
+        let ctx = KernelContext::test_with_constants(10, 10);
         let mut clause_set = GeneralizationSet::new();
 
         // Insert a specific clause
         let clause = FatClause::parse("c0(c1, c2) or c3(c4)");
-        clause_set.insert(clause, 4);
+        clause_set.insert(clause, 4, &ctx);
 
         // Test clauses that should NOT have generalizations
         let no_match1 = FatClause::parse("c0(c1, c4) or c3(c4)");
-        assert_eq!(clause_set.find_generalization(no_match1), None);
+        assert_eq!(clause_set.find_generalization(no_match1, &ctx), None);
 
         let no_match2 = FatClause::parse("c0(c2, c1) or c3(c4)");
-        assert_eq!(clause_set.find_generalization(no_match2), None);
+        assert_eq!(clause_set.find_generalization(no_match2, &ctx), None);
     }
 
     #[test]
     fn test_clause_set_multiple_variables() {
+        let ctx = KernelContext::test_with_constants(10, 10);
         let mut clause_set = GeneralizationSet::new();
 
         // Insert a clause with multiple variables
         let clause = FatClause::parse("c0(x0, x1) or c1(x1, x0)");
-        clause_set.insert(clause, 5);
+        clause_set.insert(clause, 5, &ctx);
 
         // Test various specializations
         let special1 = FatClause::parse("c0(c2, c3) or c1(c3, c2)");
-        assert_eq!(clause_set.find_generalization(special1), Some(5));
+        assert_eq!(clause_set.find_generalization(special1, &ctx), Some(5));
 
         let special2 = FatClause::parse("c1(c4, c5) or c0(c5, c4)");
-        assert_eq!(clause_set.find_generalization(special2), Some(5));
+        assert_eq!(clause_set.find_generalization(special2, &ctx), Some(5));
 
         // This should NOT match because the variable pattern is different
         let no_match = FatClause::parse("c0(c2, c3) or c1(c4, c5)");
-        assert_eq!(clause_set.find_generalization(no_match), None);
+        assert_eq!(clause_set.find_generalization(no_match, &ctx), None);
     }
 
     #[test]
     fn test_clause_set_single_literal() {
+        let ctx = KernelContext::test_with_constants(10, 10);
         let mut clause_set = GeneralizationSet::new();
 
         // Insert single literal clauses
         let clause1 = FatClause::parse("c0(x0, c1)");
-        clause_set.insert(clause1, 6);
+        clause_set.insert(clause1, 6, &ctx);
 
         let clause2 = FatClause::parse("x0 = c1");
-        clause_set.insert(clause2, 7);
+        clause_set.insert(clause2, 7, &ctx);
 
         // Test specializations
         assert_eq!(
-            clause_set.find_generalization(FatClause::parse("c0(c2, c1)")),
+            clause_set.find_generalization(FatClause::parse("c0(c2, c1)"), &ctx),
             Some(6)
         );
         assert_eq!(
-            clause_set.find_generalization(FatClause::parse("c2 = c1")),
+            clause_set.find_generalization(FatClause::parse("c2 = c1"), &ctx),
             Some(7)
         );
         assert_eq!(
-            clause_set.find_generalization(FatClause::parse("c1 = c2")),
+            clause_set.find_generalization(FatClause::parse("c1 = c2"), &ctx),
             Some(7)
         );
     }
 
     #[test]
     fn test_clause_set_negated_literals() {
+        let ctx = KernelContext::test_with_constants(10, 10);
         let mut clause_set = GeneralizationSet::new();
 
         // Insert a clause with negated literals
         let clause = FatClause::parse("c0 = x0 or x1 != c1");
-        clause_set.insert(clause, 1);
+        clause_set.insert(clause, 1, &ctx);
 
         // Test that it matches correct specializations
         let special1 = FatClause::parse("c0 = c2 or c3 != c1");
-        assert_eq!(clause_set.find_generalization(special1), Some(1));
+        assert_eq!(clause_set.find_generalization(special1, &ctx), Some(1));
 
         // Test with reordered literals
         let special2 = FatClause::parse("c4 != c1 or c0 = c4");
-        assert_eq!(clause_set.find_generalization(special2), Some(1));
+        assert_eq!(clause_set.find_generalization(special2, &ctx), Some(1));
 
         // Test with flipped inequality
         let special3 = FatClause::parse("c0 = c5 or c1 != c5");
-        assert_eq!(clause_set.find_generalization(special3), Some(1));
+        assert_eq!(clause_set.find_generalization(special3, &ctx), Some(1));
     }
 
     #[test]
     fn test_clause_set_no_positive_negative_confusion() {
+        let ctx = KernelContext::test_with_constants(10, 10);
         let mut clause_set = GeneralizationSet::new();
 
         // Insert a clause with a positive literal
         let positive_clause = FatClause::parse("x0 = c0");
-        clause_set.insert(positive_clause, 1);
+        clause_set.insert(positive_clause, 1, &ctx);
 
         // Insert a clause with a negative literal
         let negative_clause = FatClause::parse("x0 != c1");
-        clause_set.insert(negative_clause, 2);
+        clause_set.insert(negative_clause, 2, &ctx);
 
         // Test that positive matches positive
         assert_eq!(
-            clause_set.find_generalization(FatClause::parse("c2 = c0")),
+            clause_set.find_generalization(FatClause::parse("c2 = c0"), &ctx),
             Some(1)
         );
 
         // Test that negative matches negative
         assert_eq!(
-            clause_set.find_generalization(FatClause::parse("c3 != c1")),
+            clause_set.find_generalization(FatClause::parse("c3 != c1"), &ctx),
             Some(2)
         );
 
         // Test that positive does NOT match negative
         assert_eq!(
-            clause_set.find_generalization(FatClause::parse("c2 != c0")),
+            clause_set.find_generalization(FatClause::parse("c2 != c0"), &ctx),
             None
         );
 
         // Test that negative does NOT match positive
         assert_eq!(
-            clause_set.find_generalization(FatClause::parse("c3 = c1")),
+            clause_set.find_generalization(FatClause::parse("c3 = c1"), &ctx),
             None
         );
     }
 
     #[test]
     fn test_clause_set_mixed_positive_negative() {
+        let ctx = KernelContext::test_with_constants(10, 10);
         let mut clause_set = GeneralizationSet::new();
 
         // Insert a complex clause with both positive and negative literals
         // Using "not" for boolean literals and "!=" for inequalities
         let clause = FatClause::parse("not c0(x0) or c1(x0, x1) or x1 != c2");
-        clause_set.insert(clause, 1);
+        clause_set.insert(clause, 1, &ctx);
 
         // Test various specializations
         let special1 = FatClause::parse("not c0(c3) or c1(c3, c4) or c4 != c2");
-        assert_eq!(clause_set.find_generalization(special1), Some(1));
+        assert_eq!(clause_set.find_generalization(special1, &ctx), Some(1));
 
         // Test with reordering
         let special2 = FatClause::parse("c1(c5, c6) or c6 != c2 or not c0(c5)");
-        assert_eq!(clause_set.find_generalization(special2), Some(1));
+        assert_eq!(clause_set.find_generalization(special2, &ctx), Some(1));
 
         // Test that wrong signs don't match
         let wrong1 = FatClause::parse("c0(c3) or c1(c3, c4) or c4 != c2"); // First literal should be negative
-        assert_eq!(clause_set.find_generalization(wrong1), None);
+        assert_eq!(clause_set.find_generalization(wrong1, &ctx), None);
 
         let wrong2 = FatClause::parse("not c0(c3) or not c1(c3, c4) or c4 != c2"); // Second literal should be positive
-        assert_eq!(clause_set.find_generalization(wrong2), None);
+        assert_eq!(clause_set.find_generalization(wrong2, &ctx), None);
     }
 
     #[test]
     fn test_clause_set_all_negative() {
+        let ctx = KernelContext::test_with_constants(10, 10);
         let mut clause_set = GeneralizationSet::new();
 
         // Insert a simpler clause with only inequality literals
         let clause = FatClause::parse("x0 != c0 or x1 != c1 or x0 != x1");
-        clause_set.insert(clause, 1);
+        clause_set.insert(clause, 1, &ctx);
 
         // Test that it matches
         let special = FatClause::parse("c2 != c0 or c3 != c1 or c2 != c3");
-        assert_eq!(clause_set.find_generalization(special), Some(1));
+        assert_eq!(clause_set.find_generalization(special, &ctx), Some(1));
 
         // Test with reordering
         let special2 = FatClause::parse("c4 != c5 or c4 != c0 or c5 != c1");
-        assert_eq!(clause_set.find_generalization(special2), Some(1));
+        assert_eq!(clause_set.find_generalization(special2, &ctx), Some(1));
     }
 
     #[test]
     fn test_clause_set_boolean_negation() {
+        let ctx = KernelContext::test_with_constants(10, 10);
         let mut clause_set = GeneralizationSet::new();
 
         // Test with boolean negation (not)
         let clause = FatClause::parse("not c0(x0) or c1(x0)");
-        clause_set.insert(clause, 1);
+        clause_set.insert(clause, 1, &ctx);
 
         // Test that it matches
         let special = FatClause::parse("not c0(c2) or c1(c2)");
-        assert_eq!(clause_set.find_generalization(special), Some(1));
+        assert_eq!(clause_set.find_generalization(special, &ctx), Some(1));
 
         // Test reordering
         let special2 = FatClause::parse("c1(c3) or not c0(c3)");
-        assert_eq!(clause_set.find_generalization(special2), Some(1));
+        assert_eq!(clause_set.find_generalization(special2, &ctx), Some(1));
 
         // Test that signs matter
         let wrong = FatClause::parse("c0(c2) or c1(c2)"); // Missing "not"
-        assert_eq!(clause_set.find_generalization(wrong), None);
+        assert_eq!(clause_set.find_generalization(wrong, &ctx), None);
     }
 
     #[test]
     fn test_clause_set_compound_generalization() {
+        let ctx = KernelContext::test_with_constants(10, 10);
         let mut clause_set = GeneralizationSet::new();
         let general = FatClause::parse("g2(g1, x0) = x0");
-        clause_set.insert(general, 1);
+        clause_set.insert(general, 1, &ctx);
         let special = FatClause::parse("g2(g1, g2(c2, c3)) = g2(c2, c3)");
-        assert_eq!(clause_set.find_generalization(special), Some(1));
+        assert_eq!(clause_set.find_generalization(special, &ctx), Some(1));
     }
 
     #[test]
     fn test_clause_set_literal_with_indeterminate_ordering() {
         // Taken from a failing example.
+        // The JSON clause uses specific types for symbols:
+        // - GlobalConstant(1) has head_type 2
+        // - GlobalConstant(12) has head_type 6
+        // - ScopedConstant(2) has head_type 2
+        // - ScopedConstant(3) has head_type 2
+        // We need to create a context with matching types for these indices.
+        let scoped_types = &[
+            TypeId::new(0),
+            TypeId::new(0),
+            TypeId::new(2),
+            TypeId::new(2),
+        ]; // indices 0-3
+        let global_types = &[
+            TypeId::new(0),
+            TypeId::new(2),
+            TypeId::new(0),
+            TypeId::new(0),
+            TypeId::new(0),
+            TypeId::new(0),
+            TypeId::new(0),
+            TypeId::new(0),
+            TypeId::new(0),
+            TypeId::new(0),
+            TypeId::new(0),
+            TypeId::new(0),
+            TypeId::new(6),
+        ]; // indices 0-12
+        let ctx = KernelContext::test_with_constant_types(scoped_types, global_types);
         let mut clause_set = GeneralizationSet::new();
         let general_json = r#"{"literals":[{"positive":true,"left":{"term_type":2,"head_type":6,"head":{"Symbol":{"GlobalConstant":12}},"args":[{"term_type":2,"head_type":2,"head":{"Symbol":{"GlobalConstant":1}},"args":[]},{"term_type":2,"head_type":2,"head":{"Variable":0},"args":[]}]},"right":{"term_type":2,"head_type":2,"head":{"Variable":0},"args":[]}}]}"#;
         let general = serde_json::from_str::<FatClause>(general_json).unwrap();
-        clause_set.insert(general, 1);
+        clause_set.insert(general, 1, &ctx);
         let special_json = r#"{"literals":[{"positive":true,"left":{"term_type":2,"head_type":6,"head":{"Symbol":{"GlobalConstant":12}},"args":[{"term_type":2,"head_type":2,"head":{"Symbol":{"GlobalConstant":1}},"args":[]},{"term_type":2,"head_type":6,"head":{"Symbol":{"GlobalConstant":12}},"args":[{"term_type":2,"head_type":2,"head":{"Symbol":{"ScopedConstant":2}},"args":[]},{"term_type":2,"head_type":2,"head":{"Symbol":{"ScopedConstant":3}},"args":[]}]}]},"right":{"term_type":2,"head_type":6,"head":{"Symbol":{"GlobalConstant":12}},"args":[{"term_type":2,"head_type":2,"head":{"Symbol":{"ScopedConstant":2}},"args":[]},{"term_type":2,"head_type":2,"head":{"Symbol":{"ScopedConstant":3}},"args":[]}]}}]}"#;
         let special = serde_json::from_str::<FatClause>(special_json).unwrap();
-        assert_eq!(clause_set.find_generalization(special), Some(1));
+        assert_eq!(clause_set.find_generalization(special, &ctx), Some(1));
     }
 }

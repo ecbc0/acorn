@@ -702,8 +702,8 @@ impl<T> PatternTree<T> {
         self.trie.insert(key, value_id);
     }
 
-    pub fn insert_clause(&mut self, clause: &FatClause, value: T) {
-        let key = key_from_clause(clause, KernelContext::fake());
+    pub fn insert_clause(&mut self, clause: &FatClause, value: T, kernel_context: &KernelContext) {
+        let key = key_from_clause(clause, kernel_context);
         let value_id = self.values.len();
         self.values.push(value);
         self.trie.insert(key, value_id);
@@ -758,8 +758,11 @@ impl<T> PatternTree<T> {
         }
     }
 
-    pub fn find_clause<'a>(&'a self, clause: &FatClause) -> Option<&'a T> {
-        let kernel_context = KernelContext::fake();
+    pub fn find_clause<'a>(
+        &'a self,
+        clause: &FatClause,
+        kernel_context: &KernelContext,
+    ) -> Option<&'a T> {
         let flat = TermComponent::flatten_clause(clause, kernel_context);
         let mut key = clause_key_prefix(clause, kernel_context); // Use prefix, not complete key!
         match self.find_one_match(&mut key, &flat) {

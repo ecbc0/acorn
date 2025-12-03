@@ -400,7 +400,10 @@ impl FatClause {
     /// - The index of the literal that was resolved
     /// - The resulting literals after applying the unifier
     /// - The flipped flags for each literal
-    pub fn find_equality_resolutions(&self) -> Vec<(usize, Vec<FatLiteral>, Vec<bool>)> {
+    pub fn find_equality_resolutions(
+        &self,
+        kernel_context: &KernelContext,
+    ) -> Vec<(usize, Vec<FatLiteral>, Vec<bool>)> {
         let mut results = vec![];
 
         for i in 0..self.literals.len() {
@@ -411,7 +414,7 @@ impl FatClause {
             }
 
             // The variables are in the same scope, which we will call "left".
-            let mut unifier = Unifier::new(3, KernelContext::fake());
+            let mut unifier = Unifier::new(3, kernel_context);
             unifier.set_input_context(Scope::LEFT, self.get_local_context());
             if !unifier.unify(Scope::LEFT, &literal.left, Scope::LEFT, &literal.right) {
                 continue;
@@ -438,8 +441,8 @@ impl FatClause {
 
     /// Generates all clauses that can be derived from this clause using equality resolution.
     /// This is a convenience method that returns just the normalized clauses.
-    pub fn equality_resolutions(&self) -> Vec<FatClause> {
-        self.find_equality_resolutions()
+    pub fn equality_resolutions(&self, kernel_context: &KernelContext) -> Vec<FatClause> {
+        self.find_equality_resolutions(kernel_context)
             .into_iter()
             .map(|(_, literals, _)| FatClause::new_without_context(literals))
             .filter(|clause| !clause.is_tautology())

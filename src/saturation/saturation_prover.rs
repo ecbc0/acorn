@@ -417,7 +417,11 @@ impl SaturationProver {
         // Use the step for simplification
         let activated_id = self.active_set.next_id();
         if activated_step.clause.literals.len() == 1 {
-            self.passive_set.simplify(activated_id, &activated_step);
+            self.passive_set.simplify(
+                activated_id,
+                &activated_step,
+                self.active_set.kernel_context(),
+            );
         }
 
         // Generate new clauses

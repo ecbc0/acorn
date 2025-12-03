@@ -800,8 +800,8 @@ impl NormalizerView<'_> {
                     None => return Ok(None),
                 };
                 let head = *func_term.get_head_atom();
-                let head_type = func_term
-                    .get_head_type_with_context(LocalContext::empty_ref(), KernelContext::fake());
+                // Use get_head_type() since we're building terms without a variable context
+                let head_type = func_term.get_head_type();
                 let mut args = func_term.args().to_vec();
                 for arg in &application.args {
                     let arg_term = match self.try_simple_value_to_term(arg, stack)? {
@@ -993,11 +993,10 @@ impl NormalizerView<'_> {
             // Reuse the existing synthetic atom
             let existing_id = existing_def.atoms[0];
             let existing_atom = Atom::Symbol(Symbol::Synthetic(existing_id));
+            // Use get_term_type()/get_head_type() since we're building terms without a variable context
             let reused_term = FatTerm::new(
-                skolem_term
-                    .get_term_type_with_context(LocalContext::empty_ref(), KernelContext::fake()),
-                skolem_term
-                    .get_head_type_with_context(LocalContext::empty_ref(), KernelContext::fake()),
+                skolem_term.get_term_type(),
+                skolem_term.get_head_type(),
                 existing_atom,
                 skolem_term.args().to_vec(),
             );
@@ -1594,8 +1593,10 @@ impl Normalizer {
         var_types: &mut Option<Vec<AcornType>>,
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
+        // Use get_head_type() since we don't have a LocalContext for standalone terms.
+        // The embedded type in properly-constructed FatTerms is reliable.
         let head = self.denormalize_atom(
-            term.get_head_type_with_context(LocalContext::empty_ref(), &self.kernel_context),
+            term.get_head_type(),
             &term.get_head_atom(),
             var_types,
             arbitrary_names,

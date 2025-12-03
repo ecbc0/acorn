@@ -36,4 +36,31 @@ impl LocalContext {
     pub fn get_var_type(&self, var_id: usize) -> Option<TypeId> {
         self.var_types.get(var_id).copied()
     }
+
+    /// Returns a reference to a LocalContext with BOOL types for tests.
+    /// The context has 10 variables, all with type BOOL (TypeId 1).
+    #[cfg(test)]
+    pub fn test_bool_ref() -> &'static LocalContext {
+        use crate::kernel::fat_term::BOOL;
+        static TEST_BOOL_CONTEXT: LazyLock<LocalContext> =
+            LazyLock::new(|| LocalContext::new(vec![BOOL; 10]));
+        &TEST_BOOL_CONTEXT
+    }
+
+    /// Returns a reference to a LocalContext with EMPTY types for tests.
+    /// The context has 10 variables, all with type EMPTY (TypeId 0).
+    /// This matches what FatTerm::parse creates.
+    #[cfg(test)]
+    pub fn test_empty_ref() -> &'static LocalContext {
+        use crate::kernel::fat_term::EMPTY;
+        static TEST_EMPTY_CONTEXT: LazyLock<LocalContext> =
+            LazyLock::new(|| LocalContext::new(vec![EMPTY; 10]));
+        &TEST_EMPTY_CONTEXT
+    }
+
+    /// Creates a LocalContext with custom types for tests.
+    #[cfg(test)]
+    pub fn with_types(types: Vec<TypeId>) -> LocalContext {
+        LocalContext::new(types)
+    }
 }

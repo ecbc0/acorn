@@ -93,6 +93,7 @@ impl Processor {
         if VERBOSE {
             print_steps(&steps, &self.normalizer);
         }
+        let kernel_context = self.normalizer.kernel_context();
         for step in &steps {
             // Extract the source from the step's rule.
             // When monomorphizing, the step contains the source of the general fact being specialized,
@@ -109,8 +110,11 @@ impl Processor {
                     ));
                 }
             };
-            self.checker
-                .insert_clause(&step.clause, StepReason::Assumption(step_source));
+            self.checker.insert_clause(
+                &step.clause,
+                StepReason::Assumption(step_source),
+                kernel_context,
+            );
         }
         self.prover.add_steps(steps);
         Ok(())
@@ -124,6 +128,7 @@ impl Processor {
             println!("\nGoal: {}", goal.proposition.value);
             print_steps(&steps, &self.normalizer);
         }
+        let kernel_context = self.normalizer.kernel_context();
         for step in &steps {
             // Use the step's own source if it's an assumption (which includes negated goals),
             // otherwise use the goal's source
@@ -132,8 +137,11 @@ impl Processor {
             } else {
                 source
             };
-            self.checker
-                .insert_clause(&step.clause, StepReason::Assumption(step_source.clone()));
+            self.checker.insert_clause(
+                &step.clause,
+                StepReason::Assumption(step_source.clone()),
+                kernel_context,
+            );
         }
         self.prover.set_goal(ng, steps, project, goal);
         Ok(())
@@ -176,7 +184,8 @@ impl Processor {
         let mut normalizer = self.normalizer.clone();
 
         if let Some(goal) = goal {
-            checker.insert_goal(goal, &mut normalizer)?;
+            let kernel_context = normalizer.kernel_context().clone();
+            checker.insert_goal(goal, &mut normalizer, &kernel_context)?;
         }
 
         let bindings = Cow::Borrowed(bindings);
@@ -197,7 +206,8 @@ impl Processor {
         let mut normalizer = self.normalizer.clone();
 
         if let Some(goal) = goal {
-            checker.insert_goal(goal, &mut normalizer)?;
+            let kernel_context = normalizer.kernel_context().clone();
+            checker.insert_goal(goal, &mut normalizer, &kernel_context)?;
         }
 
         let bindings = Cow::Borrowed(bindings);

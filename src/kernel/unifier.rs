@@ -95,6 +95,13 @@ impl<'a> Unifier<'a> {
         self.kernel_context
     }
 
+    /// Pre-populates the output context with variable types for testing.
+    /// This allows tests to directly use output variables without going through unification.
+    #[cfg(test)]
+    fn set_output_var_types(&mut self, types: Vec<TypeId>) {
+        self.output_context = LocalContext::new(types);
+    }
+
     /// Returns the LocalContext for a given scope.
     /// For OUTPUT scope, returns the output_context.
     /// For input scopes (LEFT, RIGHT, etc.), returns the stored input context.
@@ -219,6 +226,8 @@ impl<'a> Unifier<'a> {
                     // We need to create a new variable to send this one to.
                     let var_id = self.maps[Scope::OUTPUT.get()].len() as AtomId;
                     self.maps[Scope::OUTPUT.get()].push_none();
+                    // Track the type in output_context
+                    self.output_context.var_types.push(term_head_type);
                     let new_var = FatTerm::new(
                         term_head_type,
                         term_head_type,
@@ -703,21 +712,39 @@ impl fmt::Display for Unifier<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::kernel::fat_term::BOOL;
+    use crate::kernel::fat_term::{BOOL, EMPTY};
 
     use super::*;
 
-    fn bool_fn(head: Atom, args: Vec<FatTerm>) -> FatTerm {
-        FatTerm::new(BOOL, TypeId::new(0), head, args)
+    fn bool_fn(head: Atom, head_type: TypeId, args: Vec<FatTerm>) -> FatTerm {
+        FatTerm::new(BOOL, head_type, head, args)
     }
 
     /// Creates a test unifier with LEFT and RIGHT contexts set to an empty context.
+    /// Creates a test KernelContext suitable for tests using GlobalConstant symbols.
+    fn test_ctx() -> KernelContext {
+        KernelContext::test_with_constants(10, 10)
+    }
+
+    /// Creates a test unifier with EMPTY types for variables.
+    /// Use this for tests that use FatTerm::parse() which creates EMPTY types.
     fn test_unifier<'a>(kernel_context: &'a KernelContext) -> Unifier<'a> {
         use crate::kernel::local_context::LocalContext;
         let mut u = Unifier::new(3, kernel_context);
-        // For FatTerm tests, we use an empty local context
-        u.set_input_context(Scope::LEFT, LocalContext::empty_ref());
-        u.set_input_context(Scope::RIGHT, LocalContext::empty_ref());
+        u.set_input_context(Scope::LEFT, LocalContext::test_empty_ref());
+        u.set_input_context(Scope::RIGHT, LocalContext::test_empty_ref());
+        u.set_output_var_types(vec![EMPTY; 10]);
+        u
+    }
+
+    /// Creates a test unifier with BOOL types for variables.
+    /// Use this for tests that explicitly construct terms with BOOL types.
+    fn test_unifier_bool<'a>(kernel_context: &'a KernelContext) -> Unifier<'a> {
+        use crate::kernel::local_context::LocalContext;
+        let mut u = Unifier::new(3, kernel_context);
+        u.set_input_context(Scope::LEFT, LocalContext::test_bool_ref());
+        u.set_input_context(Scope::RIGHT, LocalContext::test_bool_ref());
+        u.set_output_var_types(vec![BOOL; 10]);
         u
     }
 
@@ -728,9 +755,11 @@ mod tests {
         let bool2 = FatTerm::atom(BOOL, Atom::Variable(2));
         let fterm = bool_fn(
             Atom::Symbol(Symbol::GlobalConstant(0)),
+            EMPTY, // GlobalConstant head type is EMPTY from test_ctx
             vec![bool0.clone(), bool1.clone()],
         );
-        let mut u = test_unifier(KernelContext::fake());
+        let ctx = test_ctx();
+        let mut u = test_unifier_bool(&ctx);
 
         // Replace x0 with x1 and x1 with x2.
         assert!(u.unify_variable(Scope::LEFT, 0, Scope::OUTPUT, &bool1));
@@ -746,13 +775,16 @@ mod tests {
         let bool2 = FatTerm::atom(BOOL, Atom::Variable(2));
         let term1 = bool_fn(
             Atom::Symbol(Symbol::GlobalConstant(0)),
+            EMPTY, // GlobalConstant head type is EMPTY from test_ctx
             vec![bool0.clone(), bool1.clone()],
         );
         let term2 = bool_fn(
             Atom::Symbol(Symbol::GlobalConstant(0)),
+            EMPTY, // GlobalConstant head type is EMPTY from test_ctx
             vec![bool1.clone(), bool2.clone()],
         );
-        let mut u = test_unifier(KernelContext::fake());
+        let ctx = test_ctx();
+        let mut u = test_unifier_bool(&ctx);
 
         u.assert_unify(Scope::LEFT, &term1, Scope::LEFT, &term2);
         let new1 = u.apply(Scope::LEFT, &term1);
@@ -768,13 +800,16 @@ mod tests {
         let bool2 = FatTerm::atom(BOOL, Atom::Variable(2));
         let term1 = bool_fn(
             Atom::Symbol(Symbol::GlobalConstant(0)),
+            EMPTY, // GlobalConstant head type is EMPTY from test_ctx
             vec![bool0.clone(), bool1.clone()],
         );
         let term2 = bool_fn(
             Atom::Symbol(Symbol::GlobalConstant(0)),
+            EMPTY, // GlobalConstant head type is EMPTY from test_ctx
             vec![bool1.clone(), bool2.clone()],
         );
-        let mut u = test_unifier(KernelContext::fake());
+        let ctx = test_ctx();
+        let mut u = test_unifier_bool(&ctx);
 
         u.assert_unify(Scope::LEFT, &term1, Scope::RIGHT, &term2);
         let new1 = u.apply(Scope::LEFT, &term1);
@@ -785,11 +820,24 @@ mod tests {
 
     #[test]
     fn test_unifying_functional_variable() {
-        let bool0 = FatTerm::atom(BOOL, Atom::Variable(0));
-        let const_f_term = bool_fn(Atom::Symbol(Symbol::GlobalConstant(0)), vec![bool0.clone()]);
-        let var_f_term = bool_fn(Atom::Variable(1), vec![bool0.clone()]);
+        // This test checks that a variable can unify with a constant in functional position.
+        // Variable(1) should unify with GlobalConstant(0), both with type EMPTY.
+        let empty0 = FatTerm::atom(EMPTY, Atom::Variable(0));
+        let const_f_term = FatTerm::new(
+            BOOL,
+            EMPTY, // GlobalConstant head type is EMPTY from test_ctx
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![empty0.clone()],
+        );
+        let var_f_term = FatTerm::new(
+            BOOL,
+            EMPTY, // Variable head type - must match GlobalConstant for unification
+            Atom::Variable(1),
+            vec![empty0.clone()],
+        );
 
-        let mut u = test_unifier(KernelContext::fake());
+        let ctx = test_ctx();
+        let mut u = test_unifier(&ctx); // Use EMPTY types for variables
         u.assert_unify(Scope::LEFT, &const_f_term, Scope::RIGHT, &var_f_term);
     }
 
@@ -797,7 +845,8 @@ mod tests {
     fn test_nested_functional_unify() {
         let left_term = FatTerm::parse("x0(x0(c0))");
         let right_term = FatTerm::parse("c1(x0(x1))");
-        let mut u = test_unifier(KernelContext::fake());
+        let ctx = test_ctx();
+        let mut u = test_unifier(&ctx);
         u.assert_unify(Scope::LEFT, &left_term, Scope::RIGHT, &right_term);
         u.print();
         assert!(u.get_mapping(Scope::LEFT, 0).unwrap().to_string() == "c1");
@@ -814,7 +863,8 @@ mod tests {
         let target_path = &[0];
         let resolution_clause =
             FatClause::parse("c1(c1(x0(x1))) != c1(x2(x3)) or c1(x0(x1)) = x2(x3)");
-        let mut u = test_unifier(KernelContext::fake());
+        let ctx = test_ctx();
+        let mut u = test_unifier(&ctx);
         u.assert_unify(Scope::LEFT, &s, Scope::RIGHT, &u_subterm);
         u.print();
         u.superpose_clauses(&t, &pm_clause, 0, target_path, &resolution_clause, 0, true);
@@ -873,8 +923,26 @@ mod tests {
             vec![c0.clone(), s5_right],
         );
 
+        // Create custom kernel context with proper types for:
+        // - ScopedConstant(0): type 2
+        // - Monomorph(2): type 10 (need indices 0, 1, 2)
+        // - Synthetic(5): type 14 (need indices 0-5)
+        let ctx = KernelContext::test_with_all_types(
+            &[TypeId::new(2)],                                     // scoped c0
+            &[],                                                   // no globals
+            &[EMPTY, EMPTY, TypeId::new(10)],                      // monomorphs m0, m1, m2
+            &[EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, TypeId::new(14)], // synthetics s0-s5
+        );
+
         // Try to unify these terms
-        let mut u = test_unifier(KernelContext::fake());
+        // Create custom contexts for LEFT (x0: type 11, x1: type 2) and RIGHT (x0: type 2)
+        let mut u = Unifier::new(3, &ctx);
+        let left_local = LocalContext::with_types(vec![TypeId::new(11), TypeId::new(2)]);
+        let right_local = LocalContext::with_types(vec![TypeId::new(2)]);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(left_local)));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(right_local)));
+        // Don't pre-populate output_context - let the unifier create output variables dynamically
+        // with the correct types from the input terms.
 
         let result = u.unify(Scope::LEFT, &left_term, Scope::RIGHT, &right_term);
 
@@ -902,7 +970,8 @@ mod tests {
         let target_path = &[0];
         let resolution_clause =
             FatClause::parse("c1(c1(x0(x1))) != c1(x2(x3)) or c1(x0(x1)) = x2(x3)");
-        let mut u = test_unifier(KernelContext::fake());
+        let ctx = test_ctx();
+        let mut u = test_unifier(&ctx);
         u.assert_unify(Scope::LEFT, &s, Scope::RIGHT, &u_subterm);
         u.print();
         let literals =
@@ -916,7 +985,8 @@ mod tests {
 
     #[test]
     fn test_mutual_containment_invalid_1() {
-        let mut u = test_unifier(KernelContext::fake());
+        let ctx = test_ctx();
+        let mut u = test_unifier(&ctx);
         u.unify_str(
             Scope::LEFT,
             "c0(x0, c0(x1, c1(x2)))",
@@ -928,7 +998,8 @@ mod tests {
 
     #[test]
     fn test_mutual_containment_invalid_2() {
-        let mut u = test_unifier(KernelContext::fake());
+        let ctx = test_ctx();
+        let mut u = test_unifier(&ctx);
         u.unify_str(
             Scope::LEFT,
             "c0(c0(x0, c1(x1)), x2)",
@@ -940,7 +1011,8 @@ mod tests {
 
     #[test]
     fn test_recursive_reference_in_output() {
-        let mut u = test_unifier(KernelContext::fake());
+        let ctx = test_ctx();
+        let mut u = test_unifier(&ctx);
         u.unify_str(
             Scope::LEFT,
             "g2(x0, x0)",
@@ -953,15 +1025,18 @@ mod tests {
     #[test]
     fn test_initializing_with_variables_in_map() {
         use crate::kernel::local_context::LocalContext;
+        let ctx = test_ctx();
         let mut initial_map = VariableMap::new();
         initial_map.set(0, FatTerm::parse("s0(x0, x1, s4)"));
-        let (mut unifier, scope1) = Unifier::with_map(initial_map, KernelContext::fake());
+        let (mut unifier, scope1) = Unifier::with_map(initial_map, &ctx);
         // Set contexts for all scopes
-        unifier.set_input_context(scope1, LocalContext::empty_ref());
+        unifier.set_input_context(scope1, LocalContext::test_empty_ref());
         let scope2 = unifier.add_scope();
-        unifier.set_input_context(scope2, LocalContext::empty_ref());
+        unifier.set_input_context(scope2, LocalContext::test_empty_ref());
         let scope3 = unifier.add_scope();
-        unifier.set_input_context(scope3, LocalContext::empty_ref());
+        unifier.set_input_context(scope3, LocalContext::test_empty_ref());
+        // Pre-populate output context with enough types for all output variables
+        unifier.set_output_var_types(vec![EMPTY; 10]);
 
         unifier.unify_str(scope2, "g6(x0, x1)", scope3, "g6(c1, x0)", true);
         unifier.unify_str(scope2, "g0(x2, x1)", scope1, "g0(s4, x0)", true);

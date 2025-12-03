@@ -145,34 +145,35 @@ pub struct Checker {
 
     /// The clause for each step. Only tracked in verbose mode.
     clauses: Option<Vec<FatClause>>,
-
-    /// The kernel context for type lookups during validation.
-    kernel_context: KernelContext,
 }
 
 impl Checker {
-    fn new(clauses: Option<Vec<FatClause>>, kernel_context: KernelContext) -> Checker {
+    fn new(clauses: Option<Vec<FatClause>>) -> Checker {
         Checker {
-            term_graph: TermGraph::new(kernel_context.clone()),
+            term_graph: TermGraph::new(),
             generalization_set: Arc::new(GeneralizationSet::new()),
             direct_contradiction: false,
             past_boolean_reductions: HashSet::new(),
             reasons: Vec::new(),
             clauses,
-            kernel_context,
         }
     }
 
     pub fn new_fast() -> Checker {
-        Checker::new(None, KernelContext::new())
+        Checker::new(None)
     }
 
     pub fn new_verbose() -> Checker {
-        Checker::new(Some(vec![]), KernelContext::new())
+        Checker::new(Some(vec![]))
     }
 
     /// Adds a true clause to the checker with a specific reason.
-    pub fn insert_clause(&mut self, clause: &FatClause, reason: StepReason) {
+    pub fn insert_clause(
+        &mut self,
+        clause: &FatClause,
+        reason: StepReason,
+        kernel_context: &KernelContext,
+    ) {
         if clause.is_impossible() {
             self.direct_contradiction = true;
             return;
@@ -187,56 +188,84 @@ impl Checker {
 
         if clause.has_any_variable() {
             // The clause has free variables, so it can be a generalization.
-            Arc::make_mut(&mut self.generalization_set).insert(clause.clone(), step_id);
+            Arc::make_mut(&mut self.generalization_set).insert(
+                clause.clone(),
+                step_id,
+                kernel_context,
+            );
 
             // We only need to do equality resolution for clauses with free variables,
             // because resolvable concrete literals would already have been simplified out.
-            for resolution in clause.equality_resolutions() {
-                self.insert_clause(&resolution, StepReason::EqualityResolution(step_id));
+            for resolution in clause.equality_resolutions(kernel_context) {
+                self.insert_clause(
+                    &resolution,
+                    StepReason::EqualityResolution(step_id),
+                    kernel_context,
+                );
             }
 
-            if let Some(extensionality) = clause.find_extensionality(KernelContext::fake()) {
+            if let Some(extensionality) = clause.find_extensionality(kernel_context) {
                 let clause = FatClause::new_without_context(extensionality);
-                self.insert_clause(&clause, StepReason::Extensionality(step_id));
+                self.insert_clause(&clause, StepReason::Extensionality(step_id), kernel_context);
             }
         } else {
             // The clause is concrete.
-            self.term_graph.insert_clause(clause, StepId(step_id));
+            self.term_graph
+                .insert_clause(clause, StepId(step_id), kernel_context);
         }
 
-        for factoring in clause.equality_factorings(&self.kernel_context) {
-            self.insert_clause(&factoring, StepReason::EqualityFactoring(step_id));
+        for factoring in clause.equality_factorings(kernel_context) {
+            self.insert_clause(
+                &factoring,
+                StepReason::EqualityFactoring(step_id),
+                kernel_context,
+            );
         }
 
         for injectivity in clause.injectivities() {
-            self.insert_clause(&injectivity, StepReason::Injectivity(step_id));
+            self.insert_clause(
+                &injectivity,
+                StepReason::Injectivity(step_id),
+                kernel_context,
+            );
         }
 
-        for boolean_reduction in clause.boolean_reductions(KernelContext::fake()) {
+        for boolean_reduction in clause.boolean_reductions(kernel_context) {
             // Guard against infinite loops
             if self.past_boolean_reductions.contains(&boolean_reduction) {
                 continue;
             }
             self.past_boolean_reductions
                 .insert(boolean_reduction.clone());
-            self.insert_clause(&boolean_reduction, StepReason::BooleanReduction(step_id));
+            self.insert_clause(
+                &boolean_reduction,
+                StepReason::BooleanReduction(step_id),
+                kernel_context,
+            );
         }
     }
 
     /// Checks if a clause is known to be true, and returns the reason if so.
     /// Returns None if the clause cannot be proven.
-    pub fn check_clause(&mut self, clause: &FatClause) -> Option<StepReason> {
+    pub fn check_clause(
+        &mut self,
+        clause: &FatClause,
+        kernel_context: &KernelContext,
+    ) -> Option<StepReason> {
         if self.has_contradiction() {
             return Some(StepReason::Contradiction);
         }
 
         // Check the term graph for concrete evaluation
-        if self.term_graph.check_clause(clause) {
+        if self.term_graph.check_clause(clause, kernel_context) {
             return Some(StepReason::TermGraph);
         }
 
         // If not found in term graph, check if there's a generalization in the clause set
-        if let Some(step_id) = self.generalization_set.find_generalization(clause.clone()) {
+        if let Some(step_id) = self
+            .generalization_set
+            .find_generalization(clause.clone(), kernel_context)
+        {
             return Some(self.reasons[step_id].clone());
         }
 
@@ -296,6 +325,7 @@ impl Checker {
         bindings: &mut Cow<BindingMap>,
         normalizer: &mut Cow<Normalizer>,
         certificate_steps: &mut Vec<CertificateStep>,
+        kernel_context: &KernelContext,
     ) -> Result<(), Error> {
         // Parse as a statement with in_block=true to allow bare expressions
         let statement = Statement::parse_str_with_options(&code, true)?;
@@ -406,7 +436,11 @@ impl Checker {
                     let mut view = NormalizerView::Ref(&normalizer);
                     let clauses = view.nice_value_to_clauses(&value, &mut vec![])?;
                     for clause in clauses {
-                        self.insert_clause(&clause, StepReason::SyntheticDefinition);
+                        self.insert_clause(
+                            &clause,
+                            StepReason::SyntheticDefinition,
+                            kernel_context,
+                        );
                     }
                 }
 
@@ -434,7 +468,7 @@ impl Checker {
                 let mut reason = None;
                 let num_clauses = clauses.len();
                 for mut clause in clauses {
-                    match self.check_clause(&clause) {
+                    match self.check_clause(&clause, kernel_context) {
                         Some(r) => {
                             if reason.is_none() {
                                 reason = Some(r);
@@ -457,7 +491,7 @@ impl Checker {
                         }
                     }
                     clause.normalize();
-                    self.insert_clause(&clause, StepReason::PreviousClaim);
+                    self.insert_clause(&clause, StepReason::PreviousClaim, kernel_context);
                 }
 
                 // Record the certificate step with the reason we found
@@ -483,6 +517,7 @@ impl Checker {
         &mut self,
         goal: &crate::elaborator::goal::Goal,
         normalizer: &mut crate::normalizer::Normalizer,
+        kernel_context: &KernelContext,
     ) -> Result<(), Error> {
         use crate::proof_step::Rule;
 
@@ -496,7 +531,11 @@ impl Checker {
             } else {
                 source
             };
-            self.insert_clause(&step.clause, StepReason::Assumption(step_source.clone()));
+            self.insert_clause(
+                &step.clause,
+                StepReason::Assumption(step_source.clone()),
+                kernel_context,
+            );
         }
         Ok(())
     }
@@ -523,12 +562,14 @@ impl Checker {
             if self.has_contradiction() {
                 return Ok(certificate_steps);
             }
+            let kernel_context = normalizer.kernel_context().clone();
             self.check_code(
                 code,
                 project,
                 &mut bindings,
                 &mut normalizer,
                 &mut certificate_steps,
+                &kernel_context,
             )?;
         }
 
@@ -585,22 +626,30 @@ impl Checker {
             }
         }
     }
+}
 
-    #[cfg(test)]
-    pub fn with_clauses(clauses: &[&str]) -> Checker {
-        let kernel_context = KernelContext::test_with_constants(10, 10);
-        let mut checker = Checker::new(None, kernel_context);
+/// A test wrapper that combines a Checker with a KernelContext.
+#[cfg(test)]
+struct TestChecker {
+    checker: Checker,
+    context: KernelContext,
+}
+
+#[cfg(test)]
+impl TestChecker {
+    fn with_clauses(clauses: &[&str]) -> TestChecker {
+        let context = KernelContext::test_with_constants(10, 10);
+        let mut checker = Checker::new(None);
         for clause_str in clauses {
             let clause = FatClause::parse(clause_str);
-            checker.insert_clause(&clause, StepReason::Testing);
+            checker.insert_clause(&clause, StepReason::Testing, &context);
         }
-        checker
+        TestChecker { checker, context }
     }
 
-    #[cfg(test)]
-    pub fn check_clause_str(&mut self, s: &str) {
+    fn check_clause_str(&mut self, s: &str) {
         let clause = FatClause::parse(s);
-        if !self.check_clause(&clause).is_some() {
+        if !self.checker.check_clause(&clause, &self.context).is_some() {
             panic!("check_clause_str(\"{}\") failed", s);
         }
     }
@@ -613,7 +662,7 @@ mod tests {
     #[test]
     fn test_checker_should_be_monovariant() {
         // This basic case works
-        let mut checker1 = Checker::with_clauses(&[
+        let mut checker1 = TestChecker::with_clauses(&[
             "not m0(m1(c5, c0), c1)",
             "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or m0(m1(c5, c0), c1) or c4 = c1",
         ]);
@@ -623,7 +672,7 @@ mod tests {
         );
 
         // This is the basic case plus extra things. So it should also work.
-        let mut checker2 = Checker::with_clauses(&[
+        let mut checker2 = TestChecker::with_clauses(&[
             // The minimal set of clauses that screw up our result
             "m4(c4, c5) = c3",
             "c4 != c0",
@@ -643,7 +692,7 @@ mod tests {
     fn test_checker_cascades_updates() {
         // "c0 or c1 or c2" should combine with "not c2" to yield "c0 or c1".
         // That should then reduce via truth table logic with "not c0 or c1" to yield "c1".
-        let mut checker = Checker::with_clauses(&["c0 or c1 or c2", "not c0 or c1", "not c2"]);
+        let mut checker = TestChecker::with_clauses(&["c0 or c1 or c2", "not c0 or c1", "not c2"]);
         checker.check_clause_str("c1");
     }
 }
