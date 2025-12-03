@@ -517,12 +517,13 @@ impl Checker {
         &mut self,
         goal: &crate::elaborator::goal::Goal,
         normalizer: &mut crate::normalizer::Normalizer,
-        kernel_context: &KernelContext,
     ) -> Result<(), Error> {
         use crate::proof_step::Rule;
 
         let source = &goal.proposition.source;
         let (_, steps) = normalizer.normalize_goal(goal).map_err(|e| e.message)?;
+        // Get kernel_context after normalizing, since normalize_goal may create new monomorphs
+        let kernel_context = normalizer.kernel_context();
         for step in &steps {
             // Use the step's own source if it's an assumption (which includes negated goals),
             // otherwise use the goal's source

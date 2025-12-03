@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use super::fingerprint::FingerprintUnifier;
 use super::rewrite_tree::{Rewrite, RewriteTree};
 use crate::clause_set::TermId;
-use crate::kernel::fat_clause::FatClause;
+use crate::kernel::fat_clause::{build_context_from_literals, FatClause};
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::FatTerm;
 use crate::kernel::kernel_context::KernelContext;
@@ -351,18 +351,22 @@ impl ActiveSet {
                         kernel_context,
                     );
 
-                    // Add these rewrites to the term graph
+                    // Add these rewrites to the term graph (only if both terms are concrete)
                     let id1 = self.graph.insert_term(&u_subterm, kernel_context);
                     for rewrite in &rewrites {
-                        let id2 = self.graph.insert_term(&rewrite.term, kernel_context);
-                        self.add_to_term_graph(
-                            rewrite.pattern_id,
-                            Some(target_id),
-                            id1,
-                            id2,
-                            rewrite.forwards,
-                            true,
-                        );
+                        // rewrite.term may have variables if the pattern had variables
+                        // that weren't fully matched. Only add to term graph if concrete.
+                        if !rewrite.term.has_any_variable() {
+                            let id2 = self.graph.insert_term(&rewrite.term, kernel_context);
+                            self.add_to_term_graph(
+                                rewrite.pattern_id,
+                                Some(target_id),
+                                id1,
+                                id2,
+                                rewrite.forwards,
+                                true,
+                            );
+                        }
                     }
 
                     // Populate the subterm info.
@@ -375,8 +379,12 @@ impl ActiveSet {
                     });
                     self.subterm_map.insert(u_subterm.clone(), id);
                     // Subterms are concrete (no variables), so empty local context is safe
-                    self.subterm_unifier
-                        .insert(u_subterm, id, LocalContext::empty_ref(), kernel_context);
+                    self.subterm_unifier.insert(
+                        u_subterm,
+                        id,
+                        LocalContext::empty_ref(),
+                        kernel_context,
+                    );
                     id
                 };
 
@@ -488,16 +496,21 @@ impl ActiveSet {
                 }
 
                 // Add this rewrite to the term graph.
-                let id1 = self.graph.insert_term(&subterm, kernel_context);
-                let id2 = self.graph.insert_term(&new_subterm, kernel_context);
-                self.add_to_term_graph(
-                    pattern_id,
-                    Some(subterm_info.inspiration_id),
-                    id1,
-                    id2,
-                    forwards,
-                    true,
-                );
+                // Only add to term graph if both terms are concrete (no variables).
+                // The subterm is always concrete, but new_subterm may have variables
+                // if the pattern had variables that weren't fully unified.
+                if !new_subterm.has_any_variable() {
+                    let id1 = self.graph.insert_term(&subterm, kernel_context);
+                    let id2 = self.graph.insert_term(&new_subterm, kernel_context);
+                    self.add_to_term_graph(
+                        pattern_id,
+                        Some(subterm_info.inspiration_id),
+                        id1,
+                        id2,
+                        forwards,
+                        true,
+                    );
+                }
 
                 self.subterms[subterm_id].rewrites.push(Rewrite {
                     pattern_id,
@@ -527,6 +540,8 @@ impl ActiveSet {
 
             // Check if normalization resulted in a tautology
             if !new_clause.is_tautology() {
+                // Build context from the new literals since they're in the unifier's OUTPUT scope
+                let context = build_context_from_literals(&literals);
                 let step = ProofStep::direct(
                     activated_id,
                     activated_step,
@@ -534,6 +549,7 @@ impl ActiveSet {
                         id: activated_id,
                         index,
                         literals,
+                        context,
                         flipped,
                     }),
                     new_clause,
@@ -561,6 +577,7 @@ impl ActiveSet {
                 index,
                 arg,
                 literals: literals.clone(),
+                context: activated_step.clause.get_local_context().clone(),
                 flipped,
             };
             let (clause, traces) = FatClause::normalize_with_trace(literals);
@@ -592,6 +609,7 @@ impl ActiveSet {
                 id: activated_id,
                 index,
                 literals: literals.clone(),
+                context: activated_step.clause.get_local_context().clone(),
             };
             let (clause, traces) = FatClause::normalize_with_trace(literals);
             let step = ProofStep::direct(
@@ -622,6 +640,7 @@ impl ActiveSet {
             let info = ExtensionalityInfo {
                 id: activated_id,
                 literals: literals.clone(),
+                context: activated_step.clause.get_local_context().clone(),
             };
             let (clause, traces) = FatClause::normalize_with_trace(literals);
             let step = ProofStep::direct(
@@ -671,6 +690,7 @@ impl ActiveSet {
                 Rule::EqualityFactoring(EqualityFactoringInfo {
                     id: activated_id,
                     literals: literals_before_normalization,
+                    context: activated_step.clause.get_local_context().clone(),
                     ef_trace,
                 }),
                 new_clause,

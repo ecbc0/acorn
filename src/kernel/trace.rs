@@ -1,6 +1,7 @@
 use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::local_context::LocalContext;
 use crate::kernel::variable_map::VariableMap;
 
 /// A record of what happened to a literal during a transformation.
@@ -85,13 +86,15 @@ impl ClauseTrace {
     }
 
     /// Validate that this trace, when applied to the given literals, produces the given clause.
+    /// literals_context is the local context for the input literals.
     pub fn validate(
         &self,
         literals: &Vec<FatLiteral>,
+        literals_context: &LocalContext,
         clause: &FatClause,
         kernel_context: &KernelContext,
     ) {
-        let local_context = clause.get_local_context();
+        let clause_context = clause.get_local_context();
         let mut covered = vec![false; clause.len()];
         assert_eq!(self.len(), literals.len());
         let mut var_map = VariableMap::new();
@@ -105,8 +108,20 @@ impl ClauseTrace {
                     };
                     covered[*index] = true;
                     let out = &clause.literals[*index];
-                    assert!(var_map.match_terms(&left, &out.left, local_context, kernel_context));
-                    assert!(var_map.match_terms(&right, &out.right, local_context, kernel_context));
+                    assert!(var_map.match_terms(
+                        &left,
+                        &out.left,
+                        literals_context,
+                        clause_context,
+                        kernel_context
+                    ));
+                    assert!(var_map.match_terms(
+                        &right,
+                        &out.right,
+                        literals_context,
+                        clause_context,
+                        kernel_context
+                    ));
                 }
                 _ => {
                     // The other branches don't leave anything to be validated

@@ -136,7 +136,8 @@ impl Processor {
                 kernel_context,
             );
         }
-        self.prover.set_goal(ng, steps, project, goal, kernel_context);
+        self.prover
+            .set_goal(ng, steps, project, goal, kernel_context);
         Ok(())
     }
 
@@ -177,8 +178,7 @@ impl Processor {
         let mut normalizer = self.normalizer.clone();
 
         if let Some(goal) = goal {
-            let kernel_context = normalizer.kernel_context().clone();
-            checker.insert_goal(goal, &mut normalizer, &kernel_context)?;
+            checker.insert_goal(goal, &mut normalizer)?;
         }
 
         let bindings = Cow::Borrowed(bindings);
@@ -199,8 +199,7 @@ impl Processor {
         let mut normalizer = self.normalizer.clone();
 
         if let Some(goal) = goal {
-            let kernel_context = normalizer.kernel_context().clone();
-            checker.insert_goal(goal, &mut normalizer, &kernel_context)?;
+            checker.insert_goal(goal, &mut normalizer)?;
         }
 
         let bindings = Cow::Borrowed(bindings);

@@ -30,6 +30,26 @@ pub fn build_context_from_literals(literals: &[FatLiteral]) -> LocalContext {
     )
 }
 
+/// Builds a LocalContext from a slice of terms by extracting variable types.
+pub fn build_context_from_terms(terms: &[&FatTerm]) -> LocalContext {
+    let mut var_types: Vec<Option<TypeId>> = vec![];
+    for term in terms {
+        for (var_id, type_id) in term.iter_vars() {
+            let idx = var_id as usize;
+            if idx >= var_types.len() {
+                var_types.resize(idx + 1, None);
+            }
+            var_types[idx] = Some(type_id);
+        }
+    }
+    LocalContext::new(
+        var_types
+            .into_iter()
+            .map(|t| t.unwrap_or_default())
+            .collect(),
+    )
+}
+
 /// A clause is a disjunction (an "or") of literals, universally quantified over some variables.
 /// We include the types of the universal variables it is quantified over.
 /// It cannot contain existential quantifiers.
@@ -768,8 +788,9 @@ fn check(s: &str) {
     assert_eq!(clause, alt_clause);
 
     let kernel_context = KernelContext::test_with_constants(10, 10);
+    let literals_context = build_context_from_literals(&literals);
     clause.validate();
-    trace.validate(&literals, &clause, &kernel_context);
+    trace.validate(&literals, &literals_context, &clause, &kernel_context);
 }
 
 #[test]

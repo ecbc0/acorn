@@ -7,6 +7,7 @@ use crate::kernel::atom::Atom;
 use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::FatTerm;
+use crate::kernel::local_context::LocalContext;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 
 /// The different sorts of proof steps.
@@ -135,6 +136,9 @@ pub struct AssumptionInfo {
 
     /// The literals of the assumption before any simplification.
     pub literals: Vec<FatLiteral>,
+
+    /// The local context for the literals (variable types).
+    pub context: LocalContext,
 }
 
 /// Information about what happens to a term during equality factoring.
@@ -185,6 +189,9 @@ pub struct EqualityFactoringInfo {
     /// The literals that we got immediately after factoring.
     pub literals: Vec<FatLiteral>,
 
+    /// The local context for the literals.
+    pub context: LocalContext,
+
     /// Parallel to literals. Tracks how we got them from the input clause.
     pub ef_trace: Vec<EFLiteralTrace>,
 }
@@ -201,6 +208,9 @@ pub struct EqualityResolutionInfo {
     // The literals that we got immediately after resolution.
     pub literals: Vec<FatLiteral>,
 
+    // The local context for the literals.
+    pub context: LocalContext,
+
     // Parallel to literals. Tracks whether they were flipped or not.
     pub flipped: Vec<bool>,
 }
@@ -216,6 +226,9 @@ pub struct InjectivityInfo {
 
     /// The literals that we got immediately after function elimination.
     pub literals: Vec<FatLiteral>,
+
+    /// The local context for the literals.
+    pub context: LocalContext,
 
     /// Whether the function-eliminated literal was flipped.
     pub flipped: bool,
@@ -235,6 +248,9 @@ pub struct BooleanReductionInfo {
 
     /// The literals that we got immediately after boolean reduction.
     pub literals: Vec<FatLiteral>,
+
+    /// The local context for the literals.
+    pub context: LocalContext,
 }
 
 /// Information about an extensionality inference.
@@ -245,6 +261,9 @@ pub struct ExtensionalityInfo {
 
     /// The literals that we got immediately after applying extensionality.
     pub literals: Vec<FatLiteral>,
+
+    /// The local context for the literals.
+    pub context: LocalContext,
 }
 
 /// The rules that can generate new clauses, along with the clause ids used to generate.
@@ -391,10 +410,12 @@ impl ProofStep {
     ) -> ProofStep {
         let source = proposition.source.clone();
         let literals = clause.literals.clone();
+        let context = clause.get_local_context().clone();
         let rule = Rule::Assumption(AssumptionInfo {
             source,
             defined_atom,
             literals,
+            context,
         });
 
         // Create traces to indicate that no literals have been moved around
@@ -655,10 +676,12 @@ impl ProofStep {
     pub fn mock_from_clause(clause: FatClause) -> ProofStep {
         let truthiness = Truthiness::Factual;
         let literals = clause.literals.clone();
+        let context = clause.get_local_context().clone();
         let rule = Rule::Assumption(AssumptionInfo {
             source: Source::mock(),
             defined_atom: None,
             literals,
+            context,
         });
         ProofStep {
             clause,

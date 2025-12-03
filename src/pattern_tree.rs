@@ -1,7 +1,7 @@
 use qp_trie::{Entry, SubTrie, Trie};
 
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::fat_clause::FatClause;
+use crate::kernel::fat_clause::{build_context_from_terms, FatClause};
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::{FatTerm, TypeId};
 use crate::kernel::kernel_context::KernelContext;
@@ -834,11 +834,13 @@ impl LiteralSet {
         );
         if !literal.strict_kbo() {
             let (right, left) = literal.normalized_reversed();
+            // After renormalization, we need a new context that matches the new variable ids
+            let reversed_context = build_context_from_terms(&[&right, &left]);
             self.tree.insert_pair(
                 &right,
                 &left,
                 (literal.positive, id, true),
-                local_context,
+                &reversed_context,
                 kernel_context,
             );
         }

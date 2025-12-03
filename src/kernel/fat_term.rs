@@ -7,11 +7,6 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 
-/// When true, get_head_type_with_context and get_term_type_with_context will validate
-/// that embedded types match context lookups. Set to false to disable validation
-/// during incremental refactoring.
-pub const VALIDATE_TYPES_WITH_CONTEXT: bool = false;
-
 /// A type identifier that uniquely identifies a type in the type system.
 #[derive(
     Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Default,
@@ -174,36 +169,33 @@ impl FatTerm {
     }
 
     /// Get the head type with context.
-    /// When VALIDATE_TYPES_WITH_CONTEXT is true, validates that the embedded type
-    /// matches what we'd get from context lookups.
+    /// Validates that the embedded type matches what we'd get from context lookups.
     pub fn get_head_type_with_context(
         &self,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> TypeId {
-        if VALIDATE_TYPES_WITH_CONTEXT {
-            // Validate that embedded type matches context lookup
-            let context_type = match &self.head {
-                Atom::True => BOOL,
-                Atom::Variable(id) => {
-                    if let Some(t) = local_context.get_var_type(*id as usize) {
-                        t
-                    } else {
-                        panic!(
-                            "FatTerm variable x{} not found in local context (context has {} vars)",
-                            id,
-                            local_context.var_types.len()
-                        );
-                    }
+        // Validate that embedded type matches context lookup
+        let context_type = match &self.head {
+            Atom::True => BOOL,
+            Atom::Variable(id) => {
+                if let Some(t) = local_context.get_var_type(*id as usize) {
+                    t
+                } else {
+                    panic!(
+                        "FatTerm variable x{} not found in local context (context has {} vars)",
+                        id,
+                        local_context.var_types.len()
+                    );
                 }
-                Atom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol),
-            };
-            if self.head_type != context_type {
-                panic!(
-                    "FatTerm head_type mismatch: embedded {} but context says {} for head {:?}",
-                    self.head_type, context_type, self.head
-                );
             }
+            Atom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol),
+        };
+        if self.head_type != context_type {
+            panic!(
+                "FatTerm head_type mismatch: embedded {} but context says {} for head {:?}",
+                self.head_type, context_type, self.head
+            );
         }
         self.head_type
     }

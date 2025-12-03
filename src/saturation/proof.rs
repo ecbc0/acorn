@@ -232,6 +232,7 @@ impl<'a> Proof<'a> {
                 // a way that we need to reconstruct.
                 let var_maps = self.reconstruct_trace(
                     &info.literals,
+                    &info.context,
                     traces.as_slice(),
                     &step.clause,
                     conclusion_map,
@@ -258,9 +259,11 @@ impl<'a> Proof<'a> {
             }
             Rule::Rewrite(info) => {
                 // For rewrites, the trace applies to the rewritten clause.
+                // The rewritten literal uses the same variable context as the conclusion.
                 let literals = vec![info.rewritten.clone()];
                 let var_maps = self.reconstruct_trace(
                     &literals,
+                    step.clause.get_local_context(),
                     traces.as_slice(),
                     &step.clause,
                     conclusion_map,
@@ -295,9 +298,9 @@ impl<'a> Proof<'a> {
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
                         Unifier::with_map(conc_map, self.normalizer.kernel_context());
-                    unifier.set_input_context(conc_scope, LocalContext::empty_ref());
+                    unifier.set_input_context(conc_scope, step.clause.get_local_context());
                     let pattern_scope = unifier.add_scope();
-                    unifier.set_input_context(pattern_scope, LocalContext::empty_ref());
+                    unifier.set_input_context(pattern_scope, pattern_clause.get_local_context());
                     assert!(unifier.unify(pattern_scope, from_pat, conc_scope, target_subterm));
                     assert!(unifier.unify(pattern_scope, to_pat, conc_scope, rewritten_subterm));
 
@@ -314,6 +317,7 @@ impl<'a> Proof<'a> {
                 // For EF, the trace applies to the stored literals.
                 let var_maps = self.reconstruct_trace(
                     &info.literals,
+                    &info.context,
                     traces.as_slice(),
                     &step.clause,
                     conclusion_map,
@@ -328,7 +332,7 @@ impl<'a> Proof<'a> {
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
                         Unifier::with_map(conc_map, self.normalizer.kernel_context());
-                    unifier.set_input_context(conc_scope, LocalContext::empty_ref());
+                    unifier.set_input_context(conc_scope, &info.context);
                     let base_scope = unifier.add_scope();
                     unifier.set_input_context(base_scope, base_clause.get_local_context());
 
@@ -356,6 +360,7 @@ impl<'a> Proof<'a> {
                 // For ER, the trace applies to the stored literals.
                 let var_maps = self.reconstruct_trace(
                     &info.literals,
+                    &info.context,
                     traces.as_slice(),
                     &step.clause,
                     conclusion_map,
@@ -370,7 +375,7 @@ impl<'a> Proof<'a> {
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
                         Unifier::with_map(conc_map, self.normalizer.kernel_context());
-                    unifier.set_input_context(conc_scope, LocalContext::empty_ref());
+                    unifier.set_input_context(conc_scope, &info.context);
                     let base_scope = unifier.add_scope();
                     unifier.set_input_context(base_scope, base_clause.get_local_context());
                     let mut j = 0;
@@ -405,6 +410,7 @@ impl<'a> Proof<'a> {
                 // For injectivity, the trace applies to the stored literals.
                 let var_maps = self.reconstruct_trace(
                     &info.literals,
+                    &info.context,
                     traces.as_slice(),
                     &step.clause,
                     conclusion_map,
@@ -419,7 +425,7 @@ impl<'a> Proof<'a> {
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
                         Unifier::with_map(conc_map, self.normalizer.kernel_context());
-                    unifier.set_input_context(conc_scope, LocalContext::empty_ref());
+                    unifier.set_input_context(conc_scope, &info.context);
                     let base_scope = unifier.add_scope();
                     unifier.set_input_context(base_scope, base_clause.get_local_context());
 
@@ -461,6 +467,7 @@ impl<'a> Proof<'a> {
                 // For boolean reduction, the trace applies to the stored literals.
                 let var_maps = self.reconstruct_trace(
                     &info.literals,
+                    &info.context,
                     traces.as_slice(),
                     &step.clause,
                     conclusion_map,
@@ -475,7 +482,7 @@ impl<'a> Proof<'a> {
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
                         Unifier::with_map(conc_map, self.normalizer.kernel_context());
-                    unifier.set_input_context(conc_scope, LocalContext::empty_ref());
+                    unifier.set_input_context(conc_scope, &info.context);
                     let base_scope = unifier.add_scope();
                     unifier.set_input_context(base_scope, base_clause.get_local_context());
 
@@ -516,6 +523,7 @@ impl<'a> Proof<'a> {
                 let long_clause = self.get_clause(long_id)?;
                 let var_maps = self.reconstruct_trace(
                     &long_clause.literals,
+                    long_clause.get_local_context(),
                     traces.as_slice(),
                     &step.clause,
                     conclusion_map,
@@ -530,6 +538,7 @@ impl<'a> Proof<'a> {
                 let pattern_clause = self.get_clause(pattern_id)?;
                 let var_maps = self.reconstruct_trace(
                     &pattern_clause.literals,
+                    pattern_clause.get_local_context(),
                     traces.as_slice(),
                     &step.clause,
                     conclusion_map,
@@ -559,6 +568,7 @@ impl<'a> Proof<'a> {
     fn reconstruct_trace(
         &self,
         base_literals: &[FatLiteral],
+        base_context: &LocalContext,
         traces: &[LiteralTrace],
         conclusion: &FatClause,
         conc_map: VariableMap,
@@ -570,7 +580,7 @@ impl<'a> Proof<'a> {
             Unifier::with_map(conc_map, self.normalizer.kernel_context());
         unifier.set_input_context(conc_scope, conclusion.get_local_context());
         let base_scope = unifier.add_scope();
-        unifier.set_input_context(base_scope, LocalContext::empty_ref());
+        unifier.set_input_context(base_scope, base_context);
 
         // Each simplification gets its own scope.
         // A proof step gets multiple scopes if it is used for multiple simplifications.

@@ -68,11 +68,12 @@ impl VariableMap {
         &mut self,
         general: &Term,
         special: &Term,
-        local_context: &LocalContext,
+        general_context: &LocalContext,
+        special_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> bool {
-        if general.get_term_type_with_context(local_context, kernel_context)
-            != special.get_term_type_with_context(local_context, kernel_context)
+        if general.get_term_type_with_context(general_context, kernel_context)
+            != special.get_term_type_with_context(special_context, kernel_context)
         {
             return false;
         }
@@ -83,8 +84,8 @@ impl VariableMap {
         }
 
         // These checks mean we won't catch higher-order functions whose head types don't match.
-        if general.get_head_type_with_context(local_context, kernel_context)
-            != special.get_head_type_with_context(local_context, kernel_context)
+        if general.get_head_type_with_context(general_context, kernel_context)
+            != special.get_head_type_with_context(special_context, kernel_context)
         {
             return false;
         }
@@ -93,7 +94,7 @@ impl VariableMap {
         }
 
         if !self.match_atoms(
-            general.get_head_type_with_context(local_context, kernel_context),
+            general.get_head_type_with_context(general_context, kernel_context),
             &general.get_head_atom(),
             &special.get_head_atom(),
         ) {
@@ -101,7 +102,7 @@ impl VariableMap {
         }
 
         for (g, s) in general.args().iter().zip(special.args().iter()) {
-            if !self.match_terms(g, s, local_context, kernel_context) {
+            if !self.match_terms(g, s, general_context, special_context, kernel_context) {
                 return false;
             }
         }
@@ -159,18 +160,22 @@ impl VariableMap {
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> Term {
-        let (head_type, head, mut args) = match *term.get_head_atom() {
+        let (term_type, head_type, head, mut args) = match *term.get_head_atom() {
             Atom::Variable(i) => {
                 // Check if we have a mapping for this variable
                 if let Some(replacement) = self.get_mapping(i) {
+                    // Use the replacement term's embedded types directly since it comes from
+                    // a different context (the unifier's output context)
                     (
-                        replacement.get_head_type_with_context(local_context, kernel_context),
+                        replacement.get_term_type(),
+                        replacement.get_head_type(),
                         *replacement.get_head_atom(),
                         replacement.args().to_vec(),
                     )
                 } else {
                     // Keep the variable as-is if unmapped
                     (
+                        term.get_term_type_with_context(local_context, kernel_context),
                         term.get_head_type_with_context(local_context, kernel_context),
                         *term.get_head_atom(),
                         vec![],
@@ -178,6 +183,7 @@ impl VariableMap {
                 }
             }
             head => (
+                term.get_term_type_with_context(local_context, kernel_context),
                 term.get_head_type_with_context(local_context, kernel_context),
                 head,
                 vec![],
@@ -189,12 +195,7 @@ impl VariableMap {
             args.push(self.specialize_term(arg, local_context, kernel_context));
         }
 
-        Term::new(
-            term.get_term_type_with_context(local_context, kernel_context),
-            head_type,
-            head,
-            args,
-        )
+        Term::new(term_type, head_type, head, args)
     }
 
     /// This does not normalize.

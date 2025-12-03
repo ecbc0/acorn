@@ -117,11 +117,23 @@ impl<'a> Unifier<'a> {
     pub fn with_map(map: VariableMap, kernel_context: &'a KernelContext) -> (Unifier<'a>, Scope) {
         // Initialize the output map with enough blank entries for any variables in the initial map
         let mut output_map = VariableMap::new();
+        // Also build output_context with the types of variables in the initial map
+        let mut output_var_types: Vec<TypeId> = vec![];
         if let Some(max_var) = map.max_output_variable() {
             // Push blank entries up to and including the max variable index.
-            // TODO: is just pushing none okay here, or do we need some extra information?
             for _ in 0..=max_var {
                 output_map.push_none();
+                // Default to TypeId 0; will be overwritten when we find the actual type
+                output_var_types.push(TypeId::default());
+            }
+            // Extract actual types from the variables in the map
+            for (_, term) in map.iter() {
+                for (var_id, type_id) in term.iter_vars() {
+                    let idx = var_id as usize;
+                    if idx < output_var_types.len() {
+                        output_var_types[idx] = type_id;
+                    }
+                }
             }
         }
 
@@ -129,7 +141,7 @@ impl<'a> Unifier<'a> {
             maps: vec![output_map, map],
             kernel_context,
             input_contexts: vec![None, None], // Output scope and one input scope
-            output_context: LocalContext::empty(),
+            output_context: LocalContext::new(output_var_types),
         };
         (unifier, Scope(1))
     }

@@ -2,7 +2,7 @@ use super::features::Features;
 use super::fingerprint::FingerprintSpecializer;
 use super::score::Score;
 use super::scorer::{default_scorer, Scorer};
-use crate::kernel::fat_clause::FatClause;
+use crate::kernel::fat_clause::{build_context_from_terms, FatClause};
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::FatTerm;
 use crate::kernel::kernel_context::KernelContext;
@@ -55,22 +55,35 @@ pub struct PassiveSet {
 // Whether (left1, right1) can be mapped to (left2, right2) through variable substitution.
 // Only tries this direction.
 // Terms do not have to have variables normalized.
+// general_context is for left1/right1, special_context is for left2/right2.
 fn pair_specializes(
-    local_context: &LocalContext,
+    general_context: &LocalContext,
+    special_context: &LocalContext,
     kernel_context: &KernelContext,
     left1: &FatTerm,
     right1: &FatTerm,
     left2: &FatTerm,
     right2: &FatTerm,
 ) -> bool {
-    if left1.get_term_type_with_context(local_context, kernel_context)
-        != left2.get_term_type_with_context(local_context, kernel_context)
+    if left1.get_term_type_with_context(general_context, kernel_context)
+        != left2.get_term_type_with_context(special_context, kernel_context)
     {
         return false;
     }
     let mut var_map = VariableMap::new();
-    var_map.match_terms(left1, left2, local_context, kernel_context)
-        && var_map.match_terms(right1, right2, local_context, kernel_context)
+    var_map.match_terms(
+        left1,
+        left2,
+        general_context,
+        special_context,
+        kernel_context,
+    ) && var_map.match_terms(
+        right1,
+        right2,
+        general_context,
+        special_context,
+        kernel_context,
+    )
 }
 
 // Makes a new clause by simplifying a bunch of literals with respect to a given literal.
@@ -78,9 +91,11 @@ fn pair_specializes(
 // We only check against the left->right direction.
 // We already know literals[index] can be obtained from the given literal through variable substitution.
 // Returns None if the clause is tautologically implied by the literal we are simplifying with.
+// activated_context is for left/right, passive_context is for literals.
 fn make_simplified(
     activated_id: usize,
-    local_context: &LocalContext,
+    activated_context: &LocalContext,
+    passive_context: &LocalContext,
     kernel_context: &KernelContext,
     left: &FatTerm,
     right: &FatTerm,
@@ -99,7 +114,8 @@ fn make_simplified(
         let (eliminated, literal_flipped) = if i == index {
             (true, flipped)
         } else if pair_specializes(
-            local_context,
+            activated_context,
+            passive_context,
             kernel_context,
             left,
             right,
@@ -113,7 +129,8 @@ fn make_simplified(
             // This specific literal is unsatisfiable.
             (true, false)
         } else if pair_specializes(
-            local_context,
+            activated_context,
+            passive_context,
             kernel_context,
             left,
             right,
@@ -264,10 +281,12 @@ impl PassiveSet {
 
             let literal = &step.clause.literals[literal_index];
             let literal_positive = literal.positive;
+            let passive_context = step.clause.get_local_context();
 
             // We've only checked fingerprints. We need to check if they actually match.
             if !pair_specializes(
                 local_context,
+                passive_context,
                 kernel_context,
                 left,
                 right,
@@ -284,6 +303,7 @@ impl PassiveSet {
             }
 
             // It matches. So we're definitely removing the existing clause.
+            let passive_context = step.clause.get_local_context().clone();
             let (mut step, score) = self.clauses[clause_id].take().unwrap();
             self.queue.remove(&(score, clause_id));
 
@@ -295,6 +315,7 @@ impl PassiveSet {
             let Some((new_clause, traces)) = make_simplified(
                 activated_id,
                 local_context,
+                &passive_context,
                 kernel_context,
                 left,
                 right,
@@ -354,10 +375,12 @@ impl PassiveSet {
         );
         if !literal.strict_kbo() {
             let (right, left) = literal.normalized_reversed();
+            // After renormalization, we need a new context that matches the new variable ids
+            let reversed_context = build_context_from_terms(&[&right, &left]);
             self.simplify_one_direction(
                 activated_id,
                 &step,
-                local_context,
+                &reversed_context,
                 kernel_context,
                 &right,
                 &left,
