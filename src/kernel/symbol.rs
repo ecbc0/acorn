@@ -18,7 +18,7 @@ pub enum Symbol {
     GlobalConstant(AtomId),
 
     // Constant values that are only accessible inside a particular block.
-    LocalConstant(AtomId),
+    ScopedConstant(AtomId),
 
     // Monomorphizations of polymorphic functions.
     // A monomorphization is when every parametric type has been replaced with a concrete type.
@@ -30,7 +30,7 @@ impl fmt::Display for Symbol {
         match self {
             Symbol::Synthetic(i) => write!(f, "s{}", i),
             Symbol::GlobalConstant(i) => write!(f, "g{}", i),
-            Symbol::LocalConstant(i) => write!(f, "c{}", i),
+            Symbol::ScopedConstant(i) => write!(f, "c{}", i),
             Symbol::Monomorph(i) => write!(f, "m{}", i),
         }
     }

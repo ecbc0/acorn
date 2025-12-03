@@ -329,7 +329,7 @@ enum Edge {
 const MAX_ARGS: u8 = 100;
 const TRUE: u8 = 101;
 const GLOBAL_CONSTANT: u8 = 102;
-const LOCAL_CONSTANT: u8 = 103;
+const SCOPED_CONSTANT: u8 = 103;
 const MONOMORPH: u8 = 104;
 const VARIABLE: u8 = 105;
 const SYNTHETIC: u8 = 106;
@@ -345,7 +345,7 @@ impl Edge {
             Edge::Atom(a) => match a {
                 Atom::True => TRUE,
                 Atom::Symbol(Symbol::GlobalConstant(_)) => GLOBAL_CONSTANT,
-                Atom::Symbol(Symbol::LocalConstant(_)) => LOCAL_CONSTANT,
+                Atom::Symbol(Symbol::ScopedConstant(_)) => SCOPED_CONSTANT,
                 Atom::Symbol(Symbol::Monomorph(_)) => MONOMORPH,
                 Atom::Variable(_) => VARIABLE,
                 Atom::Symbol(Symbol::Synthetic(_)) => SYNTHETIC,
@@ -364,7 +364,7 @@ impl Edge {
             Edge::Atom(a) => match a {
                 Atom::True => 0,
                 Atom::Symbol(Symbol::GlobalConstant(c)) => *c,
-                Atom::Symbol(Symbol::LocalConstant(c)) => *c,
+                Atom::Symbol(Symbol::ScopedConstant(c)) => *c,
                 Atom::Symbol(Symbol::Monomorph(m)) => *m,
                 Atom::Variable(i) => *i,
                 Atom::Symbol(Symbol::Synthetic(s)) => *s,
@@ -382,7 +382,7 @@ impl Edge {
         match byte1 {
             TRUE => Edge::Atom(Atom::True),
             GLOBAL_CONSTANT => Edge::Atom(Atom::Symbol(Symbol::GlobalConstant(id))),
-            LOCAL_CONSTANT => Edge::Atom(Atom::Symbol(Symbol::LocalConstant(id))),
+            SCOPED_CONSTANT => Edge::Atom(Atom::Symbol(Symbol::ScopedConstant(id))),
             MONOMORPH => Edge::Atom(Atom::Symbol(Symbol::Monomorph(id))),
             VARIABLE => Edge::Atom(Atom::Variable(id)),
             SYNTHETIC => Edge::Atom(Atom::Symbol(Symbol::Synthetic(id))),

@@ -98,8 +98,8 @@ impl ThinLiteral {
     }
 
     /// Check if this literal contains any local constants.
-    pub fn has_local_constant(&self) -> bool {
-        self.left.has_local_constant() || self.right.has_local_constant()
+    pub fn has_scoped_constant(&self) -> bool {
+        self.left.has_scoped_constant() || self.right.has_scoped_constant()
     }
 
     /// Check if this literal contains any synthetic atoms.

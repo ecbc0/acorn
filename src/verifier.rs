@@ -724,7 +724,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verifier_concrete_local_constants() {
+    fn test_verifier_concrete_scoped_constants() {
         let (acornlib, src, _) = setup();
 
         src.child("main.ac")

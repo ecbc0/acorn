@@ -301,7 +301,7 @@ impl Block {
         let mut unexportable: BTreeMap<String, AcornType> = BTreeMap::new();
         outer_env
             .bindings
-            .find_unknown_local_constants(inner_value, &mut unexportable);
+            .find_unknown_scoped_constants(inner_value, &mut unexportable);
 
         // Unexportable constants that are not arguments export as "exists" variables.
         let mut exists_names = vec![];

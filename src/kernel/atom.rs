@@ -53,7 +53,7 @@ impl Atom {
         let rest = chars.as_str();
         match first {
             'g' => Some(Atom::Symbol(Symbol::GlobalConstant(rest.parse().ok()?))),
-            'c' => Some(Atom::Symbol(Symbol::LocalConstant(rest.parse().ok()?))),
+            'c' => Some(Atom::Symbol(Symbol::ScopedConstant(rest.parse().ok()?))),
             'x' => Some(Atom::Variable(rest.parse().ok()?)),
             'm' => Some(Atom::Symbol(Symbol::Monomorph(rest.parse().ok()?))),
             's' => Some(Atom::Symbol(Symbol::Synthetic(rest.parse().ok()?))),
@@ -61,8 +61,8 @@ impl Atom {
         }
     }
 
-    pub fn is_local_constant(&self) -> bool {
-        matches!(self, Atom::Symbol(Symbol::LocalConstant(_)))
+    pub fn is_scoped_constant(&self) -> bool {
+        matches!(self, Atom::Symbol(Symbol::ScopedConstant(_)))
     }
 
     pub fn is_variable(&self) -> bool {

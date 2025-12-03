@@ -260,8 +260,8 @@ impl FatClause {
         self.literals.iter().any(|x| x.has_synthetic())
     }
 
-    pub fn has_local_constant(&self) -> bool {
-        self.literals.iter().any(|x| x.has_local_constant())
+    pub fn has_scoped_constant(&self) -> bool {
+        self.literals.iter().any(|x| x.has_scoped_constant())
     }
 
     pub fn num_positive_literals(&self) -> usize {

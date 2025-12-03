@@ -148,10 +148,10 @@ impl ThinTerm {
     }
 
     /// Check if this term contains any local constants.
-    pub fn has_local_constant(&self) -> bool {
+    pub fn has_scoped_constant(&self) -> bool {
         for component in &self.components {
             if let ThinTermComponent::Atom(atom) = component {
-                if atom.is_local_constant() {
+                if atom.is_scoped_constant() {
                     return true;
                 }
             }

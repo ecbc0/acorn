@@ -27,12 +27,12 @@ pub struct SymbolTable {
     /// For global constant i in the prover, global_constant_types[i] is the type.
     global_constant_types: Vec<TypeId>,
 
-    /// For local constant i in the prover, local_constants[i] is the corresponding ConstantName.
+    /// For local constant i in the prover, scoped_constants[i] is the corresponding ConstantName.
     /// Part of the Symbol -> ConstantName lookup direction.
-    local_constants: Vec<Option<ConstantName>>,
+    scoped_constants: Vec<Option<ConstantName>>,
 
-    /// For local constant i in the prover, local_constant_types[i] is the type.
-    local_constant_types: Vec<TypeId>,
+    /// For local constant i in the prover, scoped_constant_types[i] is the type.
+    scoped_constant_types: Vec<TypeId>,
 
     /// Inverse map of constants that can be referenced with a single name.
     /// The ConstantName -> Symbol lookup direction.
@@ -58,8 +58,8 @@ impl SymbolTable {
         SymbolTable {
             global_constants: vec![],
             global_constant_types: vec![],
-            local_constants: vec![],
-            local_constant_types: vec![],
+            scoped_constants: vec![],
+            scoped_constant_types: vec![],
             name_to_symbol: HashMap::new(),
             monomorph_to_symbol: HashMap::new(),
             id_to_monomorph: vec![],
@@ -80,7 +80,7 @@ impl SymbolTable {
         match symbol {
             Symbol::Synthetic(i) => self.synthetic_types[i as usize],
             Symbol::GlobalConstant(i) => self.global_constant_types[i as usize],
-            Symbol::LocalConstant(i) => self.local_constant_types[i as usize],
+            Symbol::ScopedConstant(i) => self.scoped_constant_types[i as usize],
             Symbol::Monomorph(i) => self.monomorph_types[i as usize],
         }
     }
@@ -108,10 +108,10 @@ impl SymbolTable {
         }
         let symbol = match ctype {
             NewConstantType::Local => {
-                let atom_id = self.local_constants.len() as AtomId;
-                self.local_constants.push(Some(name.clone()));
-                self.local_constant_types.push(type_id);
-                Symbol::LocalConstant(atom_id)
+                let atom_id = self.scoped_constants.len() as AtomId;
+                self.scoped_constants.push(Some(name.clone()));
+                self.scoped_constant_types.push(type_id);
+                Symbol::ScopedConstant(atom_id)
             }
             NewConstantType::Global => {
                 let atom_id = self.global_constants.len() as AtomId;
@@ -156,7 +156,7 @@ impl SymbolTable {
 
     /// Get the name corresponding to a particular local AtomId.
     pub fn name_for_local_id(&self, atom_id: AtomId) -> &ConstantName {
-        &self.local_constants[atom_id as usize].as_ref().unwrap()
+        &self.scoped_constants[atom_id as usize].as_ref().unwrap()
     }
 
     /// Make this monomorphized constant an alias for the given name.

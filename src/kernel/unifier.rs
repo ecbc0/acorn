@@ -748,7 +748,7 @@ mod tests {
         );
 
         // Right side: m2(c0, s5(m2(c0), x0))
-        let c0 = FatTerm::atom(TypeId::new(2), Atom::Symbol(Symbol::LocalConstant(0)));
+        let c0 = FatTerm::atom(TypeId::new(2), Atom::Symbol(Symbol::ScopedConstant(0)));
         let m2_c0 = FatTerm::new(
             TypeId::new(11),
             TypeId::new(10),

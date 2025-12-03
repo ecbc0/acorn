@@ -327,12 +327,12 @@ impl FatTerm {
         false
     }
 
-    pub fn has_local_constant(&self) -> bool {
-        if self.head.is_local_constant() {
+    pub fn has_scoped_constant(&self) -> bool {
+        if self.head.is_scoped_constant() {
             return true;
         }
         for arg in &self.args {
-            if arg.has_local_constant() {
+            if arg.has_scoped_constant() {
                 return true;
             }
         }
@@ -594,7 +594,7 @@ impl FatTerm {
                 weight1 += 1;
                 weight2 += 4 * i as u32;
             }
-            Atom::Symbol(Symbol::LocalConstant(i)) => {
+            Atom::Symbol(Symbol::ScopedConstant(i)) => {
                 weight1 += 1;
                 weight2 += 1 + 4 * i as u32;
             }

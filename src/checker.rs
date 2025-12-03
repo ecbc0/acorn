@@ -387,7 +387,7 @@ impl Checker {
                             None,
                             String::new(),
                         );
-                        normalizer.to_mut().add_local_constant(cname, &acorn_type);
+                        normalizer.to_mut().add_scoped_constant(cname, &acorn_type);
                     }
                 }
 

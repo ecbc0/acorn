@@ -205,8 +205,8 @@ impl FatLiteral {
         self.left.has_any_applied_variable() || self.right.has_any_applied_variable()
     }
 
-    pub fn has_local_constant(&self) -> bool {
-        self.left.has_local_constant() || self.right.has_local_constant()
+    pub fn has_scoped_constant(&self) -> bool {
+        self.left.has_scoped_constant() || self.right.has_scoped_constant()
     }
 
     // Whether the components of this literal are strictly ordered according to the KBO.

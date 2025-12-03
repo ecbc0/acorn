@@ -192,7 +192,7 @@ impl Normalizer {
         Ok(())
     }
 
-    pub fn add_local_constant(&mut self, cname: ConstantName, acorn_type: &AcornType) -> Atom {
+    pub fn add_scoped_constant(&mut self, cname: ConstantName, acorn_type: &AcornType) -> Atom {
         let type_id = self.type_store.add_type(acorn_type);
         Atom::Symbol(
             self.symbol_table
@@ -1524,7 +1524,7 @@ impl Normalizer {
                 let name = self.symbol_table.name_for_global_id(*i).clone();
                 AcornValue::constant(name, vec![], acorn_type)
             }
-            Atom::Symbol(Symbol::LocalConstant(i)) => {
+            Atom::Symbol(Symbol::ScopedConstant(i)) => {
                 let name = self.symbol_table.name_for_local_id(*i).clone();
                 AcornValue::constant(name, vec![], acorn_type)
             }
@@ -1664,7 +1664,7 @@ impl Normalizer {
             Atom::Symbol(Symbol::GlobalConstant(i)) => {
                 self.symbol_table.name_for_global_id(*i).to_string()
             }
-            Atom::Symbol(Symbol::LocalConstant(i)) => {
+            Atom::Symbol(Symbol::ScopedConstant(i)) => {
                 self.symbol_table.name_for_local_id(*i).to_string()
             }
             Atom::Symbol(Symbol::Monomorph(i)) => {
