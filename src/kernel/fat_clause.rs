@@ -679,6 +679,8 @@ impl FatClause {
 
 #[cfg(test)]
 fn check(s: &str) {
+    use crate::kernel::kernel_context::KernelContext;
+
     let literals: Vec<FatLiteral> = s
         .split(" or ")
         .map(|x| FatLiteral::parse(x))
@@ -687,8 +689,9 @@ fn check(s: &str) {
     let (alt_clause, trace) = FatClause::normalize_with_trace(literals.clone());
     assert_eq!(clause, alt_clause);
 
+    let kernel_context = KernelContext::new();
     clause.validate();
-    trace.validate(&literals, &clause);
+    trace.validate(&literals, &clause, &kernel_context);
 }
 
 #[test]

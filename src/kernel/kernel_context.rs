@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use crate::kernel::symbol_table::SymbolTable;
 use crate::kernel::type_store::TypeStore;
 
@@ -15,6 +17,13 @@ impl KernelContext {
             type_store: TypeStore::new(),
             symbol_table: SymbolTable::new(),
         }
+    }
+
+    /// Returns a reference to a fake empty KernelContext.
+    /// Use this when working with FatTerm/FatClause that don't actually need the context.
+    pub fn fake() -> &'static KernelContext {
+        static FAKE_KERNEL_CONTEXT: LazyLock<KernelContext> = LazyLock::new(KernelContext::new);
+        &FAKE_KERNEL_CONTEXT
     }
 }
 

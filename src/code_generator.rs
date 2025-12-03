@@ -273,7 +273,7 @@ impl CodeGenerator<'_> {
         definitions: &mut Vec<String>,
         codes: &mut Vec<String>,
     ) -> Result<()> {
-        let clause = var_map.specialize_clause(&generic);
+        let clause = var_map.specialize_clause(&generic, normalizer.kernel_context());
 
         // This is the only place where we use the feature of "denormalize" that we can
         // pass the arbitrary names like this.

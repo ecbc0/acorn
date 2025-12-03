@@ -108,6 +108,10 @@ impl Normalizer {
         self.kernel_context.type_store.get_type(type_id)
     }
 
+    pub fn kernel_context(&self) -> &KernelContext {
+        &self.kernel_context
+    }
+
     /// Gets a synthetic definition for a value, if one exists.
     /// The value should be of the form "exists ___ (forall x and forall y and ...)".
     pub fn get_synthetic_definition(

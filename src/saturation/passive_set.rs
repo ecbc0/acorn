@@ -2,9 +2,11 @@ use super::features::Features;
 use super::fingerprint::FingerprintSpecializer;
 use super::score::Score;
 use super::scorer::{default_scorer, Scorer};
+use crate::kernel::context::LocalContext;
 use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::FatTerm;
+use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::variable_map::VariableMap;
 use crate::proof_step::ProofStep;
@@ -53,12 +55,20 @@ pub struct PassiveSet {
 // Whether (left1, right1) can be mapped to (left2, right2) through variable substitution.
 // Only tries this direction.
 // Terms do not have to have variables normalized.
-fn pair_specializes(left1: &FatTerm, right1: &FatTerm, left2: &FatTerm, right2: &FatTerm) -> bool {
+fn pair_specializes(
+    local_context: &LocalContext,
+    left1: &FatTerm,
+    right1: &FatTerm,
+    left2: &FatTerm,
+    right2: &FatTerm,
+) -> bool {
     if left1.get_term_type() != left2.get_term_type() {
         return false;
     }
+    let kernel_context = KernelContext::fake();
     let mut var_map = VariableMap::new();
-    var_map.match_terms(left1, left2) && var_map.match_terms(right1, right2)
+    var_map.match_terms(left1, left2, local_context, kernel_context)
+        && var_map.match_terms(right1, right2, local_context, kernel_context)
 }
 
 // Makes a new clause by simplifying a bunch of literals with respect to a given literal.
@@ -68,6 +78,7 @@ fn pair_specializes(left1: &FatTerm, right1: &FatTerm, left2: &FatTerm, right2: 
 // Returns None if the clause is tautologically implied by the literal we are simplifying with.
 fn make_simplified(
     activated_id: usize,
+    local_context: &LocalContext,
     left: &FatTerm,
     right: &FatTerm,
     positive: bool,
@@ -84,14 +95,14 @@ fn make_simplified(
     for (i, literal) in literals.into_iter().enumerate() {
         let (eliminated, literal_flipped) = if i == index {
             (true, flipped)
-        } else if pair_specializes(left, right, &literal.left, &literal.right) {
+        } else if pair_specializes(local_context, left, right, &literal.left, &literal.right) {
             if literal.positive == positive {
                 // The whole clause is implied by the literal we are simplifying with.
                 return None;
             }
             // This specific literal is unsatisfiable.
             (true, false)
-        } else if pair_specializes(left, right, &literal.right, &literal.left) {
+        } else if pair_specializes(local_context, left, right, &literal.right, &literal.left) {
             if literal.positive == positive {
                 // The whole clause is implied by the literal we are simplifying with.
                 return None;
@@ -211,6 +222,7 @@ impl PassiveSet {
         &mut self,
         activated_id: usize,
         activated_step: &ProofStep,
+        local_context: &LocalContext,
         left: &FatTerm,
         right: &FatTerm,
         positive: bool,
@@ -231,7 +243,7 @@ impl PassiveSet {
             let literal_positive = literal.positive;
 
             // We've only checked fingerprints. We need to check if they actually match.
-            if !pair_specializes(left, right, &literal.left, &literal.right) {
+            if !pair_specializes(local_context, left, right, &literal.left, &literal.right) {
                 continue;
             }
 
@@ -252,6 +264,7 @@ impl PassiveSet {
             }
             let Some((new_clause, traces)) = make_simplified(
                 activated_id,
+                local_context,
                 left,
                 right,
                 positive,
@@ -291,10 +304,12 @@ impl PassiveSet {
     // Checks both directions.
     pub fn simplify(&mut self, activated_id: usize, step: &ProofStep) {
         assert!(step.clause.literals.len() == 1);
+        let local_context = step.clause.get_local_context();
         let literal = &step.clause.literals[0];
         self.simplify_one_direction(
             activated_id,
             &step,
+            local_context,
             &literal.left,
             &literal.right,
             literal.positive,
@@ -302,7 +317,15 @@ impl PassiveSet {
         );
         if !literal.strict_kbo() {
             let (right, left) = literal.normalized_reversed();
-            self.simplify_one_direction(activated_id, &step, &right, &left, literal.positive, true);
+            self.simplify_one_direction(
+                activated_id,
+                &step,
+                local_context,
+                &right,
+                &left,
+                literal.positive,
+                true,
+            );
         }
     }
 

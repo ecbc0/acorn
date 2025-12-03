@@ -1,6 +1,8 @@
 use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::{Atom, AtomId};
+use crate::kernel::context::LocalContext;
 use crate::kernel::fat_term::TypeId;
+use crate::kernel::kernel_context::KernelContext;
 use std::fmt;
 
 // A VariableMap maintains a mapping from variables to terms, allowing us to turn a more general term
@@ -62,8 +64,16 @@ impl VariableMap {
         }
     }
 
-    pub fn match_terms(&mut self, general: &Term, special: &Term) -> bool {
-        if general.get_term_type() != special.get_term_type() {
+    pub fn match_terms(
+        &mut self,
+        general: &Term,
+        special: &Term,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> bool {
+        if general.get_term_type_with_context(local_context, kernel_context)
+            != special.get_term_type_with_context(local_context, kernel_context)
+        {
             return false;
         }
 
@@ -73,7 +83,9 @@ impl VariableMap {
         }
 
         // These checks mean we won't catch higher-order functions whose head types don't match.
-        if general.get_head_type() != special.get_head_type() {
+        if general.get_head_type_with_context(local_context, kernel_context)
+            != special.get_head_type_with_context(local_context, kernel_context)
+        {
             return false;
         }
         if general.args().len() != special.args().len() {
@@ -81,7 +93,7 @@ impl VariableMap {
         }
 
         if !self.match_atoms(
-            general.get_head_type(),
+            general.get_head_type_with_context(local_context, kernel_context),
             &general.get_head_atom(),
             &special.get_head_atom(),
         ) {
@@ -89,7 +101,7 @@ impl VariableMap {
         }
 
         for (g, s) in general.args().iter().zip(special.args().iter()) {
-            if !self.match_terms(g, s) {
+            if !self.match_terms(g, s, local_context, kernel_context) {
                 return false;
             }
         }
@@ -141,49 +153,73 @@ impl VariableMap {
 
     /// This does not normalize.
     /// Unmapped variables are kept as-is.
-    fn specialize_term(&self, term: &Term) -> Term {
+    fn specialize_term(
+        &self,
+        term: &Term,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> Term {
         let (head_type, head, mut args) = match *term.get_head_atom() {
             Atom::Variable(i) => {
                 // Check if we have a mapping for this variable
                 if let Some(replacement) = self.get_mapping(i) {
                     (
-                        replacement.get_head_type(),
+                        replacement.get_head_type_with_context(local_context, kernel_context),
                         *replacement.get_head_atom(),
                         replacement.args().to_vec(),
                     )
                 } else {
                     // Keep the variable as-is if unmapped
-                    (term.get_head_type(), *term.get_head_atom(), vec![])
+                    (
+                        term.get_head_type_with_context(local_context, kernel_context),
+                        *term.get_head_atom(),
+                        vec![],
+                    )
                 }
             }
-            head => (term.get_head_type(), head, vec![]),
+            head => (
+                term.get_head_type_with_context(local_context, kernel_context),
+                head,
+                vec![],
+            ),
         };
 
         // Recurse on the arguments
         for arg in term.args() {
-            args.push(self.specialize_term(arg));
+            args.push(self.specialize_term(arg, local_context, kernel_context));
         }
 
-        Term::new(term.get_term_type(), head_type, head, args)
-    }
-
-    /// This does not normalize.
-    /// Unmapped variables are kept as-is.
-    fn specialize_literal(&self, literal: &Literal) -> Literal {
-        Literal::new(
-            literal.positive,
-            self.specialize_term(&literal.left),
-            self.specialize_term(&literal.right),
+        Term::new(
+            term.get_term_type_with_context(local_context, kernel_context),
+            head_type,
+            head,
+            args,
         )
     }
 
     /// This does not normalize.
     /// Unmapped variables are kept as-is.
-    pub fn specialize_clause(&self, clause: &Clause) -> Clause {
+    fn specialize_literal(
+        &self,
+        literal: &Literal,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> Literal {
+        Literal::new(
+            literal.positive,
+            self.specialize_term(&literal.left, local_context, kernel_context),
+            self.specialize_term(&literal.right, local_context, kernel_context),
+        )
+    }
+
+    /// This does not normalize.
+    /// Unmapped variables are kept as-is.
+    pub fn specialize_clause(&self, clause: &Clause, kernel_context: &KernelContext) -> Clause {
+        let local_context = clause.get_local_context();
         let literals = clause
             .literals
             .iter()
-            .map(|lit| self.specialize_literal(lit))
+            .map(|lit| self.specialize_literal(lit, local_context, kernel_context))
             .collect();
         Clause { literals }
     }
