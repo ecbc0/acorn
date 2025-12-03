@@ -3,6 +3,8 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::kernel::atom::{Atom, AtomId};
+use crate::kernel::context::LocalContext;
+use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::symbol::Symbol;
 
 /// A type identifier that uniquely identifies a type in the type system.
@@ -149,7 +151,27 @@ impl FatTerm {
         self.term_type
     }
 
+    /// Get the term type with context (for API compatibility with ThinTerm).
+    /// The context parameters are ignored for FatTerm since types are embedded.
+    pub fn get_term_type_with_context(
+        &self,
+        _local_context: &LocalContext,
+        _kernel_context: &KernelContext,
+    ) -> TypeId {
+        self.term_type
+    }
+
     pub fn get_head_type(&self) -> TypeId {
+        self.head_type
+    }
+
+    /// Get the head type with context (for API compatibility with ThinTerm).
+    /// The context parameters are ignored for FatTerm since types are embedded.
+    pub fn get_head_type_with_context(
+        &self,
+        _local_context: &LocalContext,
+        _kernel_context: &KernelContext,
+    ) -> TypeId {
         self.head_type
     }
 

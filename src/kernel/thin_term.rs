@@ -3,7 +3,8 @@ use std::fmt;
 
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::context::LocalContext;
-use crate::kernel::fat_term::TypeId;
+use crate::kernel::fat_term::{TypeId, BOOL, EMPTY};
+use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::symbol_table::SymbolTable;
 use crate::kernel::type_store::TypeStore;
 
@@ -495,7 +496,9 @@ impl ThinTerm {
     }
 
     /// Create a ThinTerm representing a single atom with no arguments.
-    pub fn atom(atom: Atom) -> ThinTerm {
+    /// The type_id parameter is accepted for API compatibility with FatTerm but is ignored
+    /// since ThinTerm stores types separately.
+    pub fn atom(_type_id: TypeId, atom: Atom) -> ThinTerm {
         ThinTerm {
             components: vec![ThinTermComponent::Atom(atom)],
         }
@@ -509,12 +512,12 @@ impl ThinTerm {
         let s = s.trim();
 
         if s == "true" {
-            return ThinTerm::atom(Atom::True);
+            return ThinTerm::atom(BOOL, Atom::True);
         }
 
         let first_paren = match s.find('(') {
             Some(i) => i,
-            None => return ThinTerm::atom(Atom::new(s)),
+            None => return ThinTerm::atom(EMPTY, Atom::new(s)),
         };
 
         // Figure out which commas are inside precisely one level of parentheses.
@@ -606,18 +609,51 @@ impl ThinTerm {
         todo!("get_term_type for non-atomic terms requires type inference")
     }
 
-    /// Get the type of the head atom.
+    /// Get the term type with context (for API compatibility with FatTerm).
+    /// Uses LocalContext for variable types and KernelContext for symbol types.
+    pub fn get_term_type_with_context(
+        &self,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> TypeId {
+        // For a simple atom with no arguments, the term type equals the head type
+        if self.is_atomic() {
+            return self.get_head_type_with_context(local_context, kernel_context);
+        }
+
+        // For function applications, we need to compute the result type
+        // This is a placeholder - full implementation needs type inference
+        todo!("get_term_type_with_context for non-atomic terms requires type inference")
+    }
+
+    /// Get the type of the head atom (non-variable version).
     ///
-    /// WARNING: This panics if the head is a variable. For variables, use Context::get_var_type() instead.
-    /// This is a fundamental difference from FatTerm::get_head_type() which can return the type directly.
+    /// WARNING: This panics if the head is a variable. For variables, use get_head_type_with_context instead.
     pub fn get_head_type(&self, symbol_table: &SymbolTable) -> TypeId {
         let head = self.get_head_atom();
         match head {
             Atom::Variable(_) => {
-                panic!("ThinTerm::get_head_type called on variable - use Context::get_var_type() instead")
+                panic!("ThinTerm::get_head_type called on variable - use get_head_type_with_context instead")
             }
             Atom::Symbol(symbol) => symbol_table.get_type(*symbol),
             Atom::True => crate::kernel::fat_term::BOOL,
+        }
+    }
+
+    /// Get the head type with context (for API compatibility with FatTerm).
+    /// Uses LocalContext for variable types and KernelContext for symbol types.
+    pub fn get_head_type_with_context(
+        &self,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> TypeId {
+        let head = self.get_head_atom();
+        match head {
+            Atom::Variable(i) => local_context
+                .get_var_type(*i as usize)
+                .expect("Variable not found in LocalContext"),
+            Atom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol),
+            Atom::True => BOOL,
         }
     }
 

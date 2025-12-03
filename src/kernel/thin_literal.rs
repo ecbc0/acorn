@@ -3,7 +3,7 @@ use std::fmt;
 
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::context::LocalContext;
-use crate::kernel::fat_term::TypeId;
+use crate::kernel::fat_term::{TypeId, BOOL};
 use crate::kernel::thin_term::ThinTerm;
 
 /// A thin literal stores the structure of a literal without type information.
@@ -27,12 +27,12 @@ impl ThinLiteral {
 
     /// Create a positive literal from a single term (term = true).
     pub fn positive(term: ThinTerm) -> ThinLiteral {
-        ThinLiteral::new(true, term, ThinTerm::atom(Atom::True))
+        ThinLiteral::new(true, term, ThinTerm::atom(BOOL, Atom::True))
     }
 
     /// Create a negative literal from a single term (not term, i.e., term != true).
     pub fn negative(term: ThinTerm) -> ThinLiteral {
-        ThinLiteral::new(false, term, ThinTerm::atom(Atom::True))
+        ThinLiteral::new(false, term, ThinTerm::atom(BOOL, Atom::True))
     }
 
     /// Create an equality literal (left = right).
@@ -69,15 +69,19 @@ impl ThinLiteral {
 
     /// Create a literal representing the value "true" (true = true).
     pub fn true_value() -> ThinLiteral {
-        ThinLiteral::new(true, ThinTerm::atom(Atom::True), ThinTerm::atom(Atom::True))
+        ThinLiteral::new(
+            true,
+            ThinTerm::atom(BOOL, Atom::True),
+            ThinTerm::atom(BOOL, Atom::True),
+        )
     }
 
     /// Create a literal representing the value "false" (true != true).
     pub fn false_value() -> ThinLiteral {
         ThinLiteral::new(
             false,
-            ThinTerm::atom(Atom::True),
-            ThinTerm::atom(Atom::True),
+            ThinTerm::atom(BOOL, Atom::True),
+            ThinTerm::atom(BOOL, Atom::True),
         )
     }
 
