@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::context::LocalContext;
@@ -355,6 +356,123 @@ impl<'a> ThinTermRef<'a> {
     }
 }
 
+impl fmt::Display for ThinTermRef<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // Format the term by walking through components
+        format_term_at(f, self.components, 0)
+    }
+}
+
+/// Helper function to format a term starting at the given position.
+/// Returns the position after the formatted term.
+fn format_term_at(
+    f: &mut fmt::Formatter,
+    components: &[ThinTermComponent],
+    pos: usize,
+) -> fmt::Result {
+    if pos >= components.len() {
+        return Ok(());
+    }
+
+    match &components[pos] {
+        ThinTermComponent::Composite { span } => {
+            // This shouldn't happen at the start of a term, but handle it
+            // by formatting the contents (skip the Composite marker)
+            let end = pos + *span as usize;
+            format_composite_contents(f, components, pos + 1, end)
+        }
+        ThinTermComponent::Atom(atom) => {
+            // Format the head atom
+            match atom {
+                Atom::Variable(i) => write!(f, "x{}", i)?,
+                _ => write!(f, "{}", atom)?,
+            }
+            // Check if there are arguments following
+            if pos + 1 < components.len() {
+                // Format the arguments
+                write!(f, "(")?;
+                let mut arg_pos = pos + 1;
+                let mut first = true;
+                while arg_pos < components.len() {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    first = false;
+                    arg_pos = format_arg_at(f, components, arg_pos)?;
+                }
+                write!(f, ")")?;
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Format an argument at the given position.
+/// Returns the position after the argument.
+fn format_arg_at(
+    f: &mut fmt::Formatter,
+    components: &[ThinTermComponent],
+    pos: usize,
+) -> Result<usize, fmt::Error> {
+    match &components[pos] {
+        ThinTermComponent::Composite { span } => {
+            // Format the composite subterm
+            let end = pos + *span as usize;
+            format_composite_contents(f, components, pos + 1, end)?;
+            Ok(end)
+        }
+        ThinTermComponent::Atom(atom) => {
+            // Simple atom argument
+            match atom {
+                Atom::Variable(i) => write!(f, "x{}", i)?,
+                _ => write!(f, "{}", atom)?,
+            }
+            Ok(pos + 1)
+        }
+    }
+}
+
+/// Format the contents of a composite (head + args) from start to end.
+fn format_composite_contents(
+    f: &mut fmt::Formatter,
+    components: &[ThinTermComponent],
+    start: usize,
+    end: usize,
+) -> fmt::Result {
+    if start >= end {
+        return Ok(());
+    }
+
+    // The first element after Composite marker is the head
+    match &components[start] {
+        ThinTermComponent::Atom(atom) => match atom {
+            Atom::Variable(i) => write!(f, "x{}", i)?,
+            _ => write!(f, "{}", atom)?,
+        },
+        ThinTermComponent::Composite { .. } => {
+            // Nested composite as head - shouldn't normally happen
+            return Err(fmt::Error);
+        }
+    }
+
+    // Format arguments if any
+    if start + 1 < end {
+        write!(f, "(")?;
+        let mut arg_pos = start + 1;
+        let mut first = true;
+        while arg_pos < end {
+            if !first {
+                write!(f, ", ")?;
+            }
+            first = false;
+            arg_pos = format_arg_at(f, components, arg_pos)?;
+        }
+        write!(f, ")")?;
+    }
+
+    Ok(())
+}
+
 /// A thin term stores term structure without type information.
 /// Type information is stored separately in the TypeStore and SymbolTable.
 /// The term is represented as a flat vector of components in pre-order traversal.
@@ -574,6 +692,12 @@ impl ThinTerm {
     /// Extended KBO comparison - total ordering where only identical terms are equal.
     pub fn extended_kbo_cmp(&self, other: &ThinTerm) -> std::cmp::Ordering {
         self.as_ref().extended_kbo_cmp(&other.as_ref())
+    }
+}
+
+impl fmt::Display for ThinTerm {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.as_ref())
     }
 }
 

@@ -57,10 +57,7 @@ impl CNF {
         for lits in &self.0 {
             for lit in lits {
                 if !lit.is_normalized() {
-                    #[cfg(not(feature = "thin"))]
                     panic!("CNF contains non-normalized literal: {}", lit);
-                    #[cfg(feature = "thin")]
-                    panic!("CNF contains non-normalized literal");
                 }
             }
         }

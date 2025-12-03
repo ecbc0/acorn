@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::context::LocalContext;
@@ -167,6 +168,22 @@ impl ThinLiteral {
     /// The larger term (by KBO ordering) should be on the left.
     pub fn is_normalized(&self) -> bool {
         !needs_to_flip(&self.left, &self.right)
+    }
+}
+
+impl fmt::Display for ThinLiteral {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.positive {
+            if self.is_signed_term() {
+                write!(f, "{}", self.left)
+            } else {
+                write!(f, "{} = {}", self.left, self.right)
+            }
+        } else if self.is_signed_term() {
+            write!(f, "not {}", self.left)
+        } else {
+            write!(f, "{} != {}", self.left, self.right)
+        }
     }
 }
 
