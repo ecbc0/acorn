@@ -6,6 +6,7 @@ use crate::elaborator::acorn_value::AcornValue;
 use crate::elaborator::binding_map::BindingMap;
 use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
+use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::trace::LiteralTrace;
 use crate::kernel::unifier::{Scope, Unifier};
 use crate::kernel::variable_map::VariableMap;
@@ -292,7 +293,8 @@ impl<'a> Proof<'a> {
                 };
                 let rewritten_subterm = rewritten_term.get_term_at_path(&info.path).unwrap();
                 for conc_map in var_maps {
-                    let (mut unifier, conc_scope) = Unifier::with_map(conc_map);
+                    let (mut unifier, conc_scope) =
+                        Unifier::with_map(conc_map, KernelContext::fake());
                     let pattern_scope = unifier.add_scope();
                     assert!(unifier.unify(pattern_scope, from_pat, conc_scope, target_subterm));
                     assert!(unifier.unify(pattern_scope, to_pat, conc_scope, rewritten_subterm));
@@ -322,7 +324,8 @@ impl<'a> Proof<'a> {
                 assert!(base_clause.literals.len() == info.literals.len());
 
                 for conc_map in var_maps {
-                    let (mut unifier, conc_scope) = Unifier::with_map(conc_map);
+                    let (mut unifier, conc_scope) =
+                        Unifier::with_map(conc_map, KernelContext::fake());
                     let base_scope = unifier.add_scope();
 
                     for (base_lit, lit_trace) in base_clause.literals.iter().zip(&info.ef_trace) {
@@ -361,7 +364,8 @@ impl<'a> Proof<'a> {
                 assert!(base_clause.literals.len() == info.literals.len() + 1);
 
                 for conc_map in var_maps {
-                    let (mut unifier, conc_scope) = Unifier::with_map(conc_map);
+                    let (mut unifier, conc_scope) =
+                        Unifier::with_map(conc_map, KernelContext::fake());
                     let base_scope = unifier.add_scope();
                     let mut j = 0;
                     for (i, base_lit) in base_clause.literals.iter().enumerate() {
@@ -407,7 +411,8 @@ impl<'a> Proof<'a> {
                 assert!(base_clause.literals.len() == info.literals.len());
 
                 for conc_map in var_maps {
-                    let (mut unifier, conc_scope) = Unifier::with_map(conc_map);
+                    let (mut unifier, conc_scope) =
+                        Unifier::with_map(conc_map, KernelContext::fake());
                     let base_scope = unifier.add_scope();
 
                     for (i, (base_lit, info_lit)) in
@@ -460,7 +465,8 @@ impl<'a> Proof<'a> {
                 assert!(base_clause.literals.len() + 1 == info.literals.len());
 
                 for conc_map in var_maps {
-                    let (mut unifier, conc_scope) = Unifier::with_map(conc_map);
+                    let (mut unifier, conc_scope) =
+                        Unifier::with_map(conc_map, KernelContext::fake());
                     let base_scope = unifier.add_scope();
 
                     for i in 0..info.index {
@@ -550,7 +556,7 @@ impl<'a> Proof<'a> {
     ) -> Result<HashSet<VariableMap>, Error> {
         // The unifier will figure out the concrete clauses.
         // The base and conclusion get their own scope.
-        let (mut unifier, conc_scope) = Unifier::with_map(conc_map);
+        let (mut unifier, conc_scope) = Unifier::with_map(conc_map, KernelContext::fake());
         let base_scope = unifier.add_scope();
 
         // Each simplification gets its own scope.

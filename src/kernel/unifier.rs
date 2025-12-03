@@ -1,7 +1,9 @@
 use crate::kernel::atom::{Atom, AtomId};
+use crate::kernel::context::LocalContext;
 use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::{FatTerm, TypeId};
+use crate::kernel::kernel_context::KernelContext;
 #[cfg(test)]
 use crate::kernel::symbol::Symbol;
 use crate::kernel::variable_map::VariableMap;
@@ -31,8 +33,18 @@ impl Scope {
 // We do need a mapping for the output because we may have two complex terms in the output
 // scope that we need to unify, and during this unification we may discover that previously
 // unrelated variables now need to relate to each other.
-pub struct Unifier {
+pub struct Unifier<'a> {
     maps: Vec<VariableMap>,
+
+    // Shared kernel context for symbol table access
+    kernel_context: &'a KernelContext,
+
+    // One LocalContext per input scope (borrowed from source clauses)
+    // Index 0 is unused (that's the output scope), indices 1+ correspond to input scopes
+    input_contexts: Vec<Option<&'a LocalContext>>,
+
+    // Owned output context, built during unification as new variables are created
+    output_context: LocalContext,
 }
 
 // Information for how to replace a subterm
@@ -42,18 +54,49 @@ struct Replacement<'a> {
     term: &'a FatTerm,
 }
 
-impl Unifier {
+impl<'a> Unifier<'a> {
     /// Creates a new unifier with the given number of scopes.
-    pub fn new(num_scopes: usize) -> Unifier {
+    pub fn new(num_scopes: usize, kernel_context: &'a KernelContext) -> Unifier<'a> {
         let mut maps = Vec::with_capacity(num_scopes);
         for _ in 0..num_scopes {
             maps.push(VariableMap::new());
         }
-        Unifier { maps }
+        // Initialize input_contexts with None for each scope (including output at index 0)
+        let mut input_contexts = Vec::with_capacity(num_scopes);
+        for _ in 0..num_scopes {
+            input_contexts.push(None);
+        }
+        Unifier {
+            maps,
+            kernel_context,
+            input_contexts,
+            output_context: LocalContext::empty(),
+        }
+    }
+
+    /// Sets the input context for a specific scope.
+    /// Should be called for LEFT and RIGHT scopes before unification.
+    pub fn set_input_context(&mut self, scope: Scope, context: &'a LocalContext) {
+        self.input_contexts[scope.get()] = Some(context);
+    }
+
+    /// Returns a reference to the output context.
+    pub fn output_context(&self) -> &LocalContext {
+        &self.output_context
+    }
+
+    /// Consumes the unifier and returns the output context.
+    pub fn take_output_context(self) -> LocalContext {
+        self.output_context
+    }
+
+    /// Returns the kernel context.
+    pub fn kernel_context(&self) -> &KernelContext {
+        self.kernel_context
     }
 
     /// Creates a single-scope unifier.
-    pub fn with_map(map: VariableMap) -> (Unifier, Scope) {
+    pub fn with_map(map: VariableMap, kernel_context: &'a KernelContext) -> (Unifier<'a>, Scope) {
         // Initialize the output map with enough blank entries for any variables in the initial map
         let mut output_map = VariableMap::new();
         if let Some(max_var) = map.max_output_variable() {
@@ -66,6 +109,9 @@ impl Unifier {
 
         let unifier = Unifier {
             maps: vec![output_map, map],
+            kernel_context,
+            input_contexts: vec![None, None], // Output scope and one input scope
+            output_context: LocalContext::empty(),
         };
         (unifier, Scope(1))
     }
@@ -88,6 +134,7 @@ impl Unifier {
     pub fn add_scope(&mut self) -> Scope {
         let scope = Scope(self.maps.len());
         self.maps.push(VariableMap::new());
+        self.input_contexts.push(None);
         scope
     }
 
@@ -457,7 +504,9 @@ impl Unifier {
         if left.literals.len() != right.literals.len() {
             return false;
         }
-        let mut unifier = Unifier::new(3);
+        let mut unifier = Unifier::new(3, KernelContext::fake());
+        unifier.set_input_context(Scope::LEFT, left.get_local_context());
+        unifier.set_input_context(Scope::RIGHT, right.get_local_context());
         for (lit1, lit2) in left.literals.iter().zip(right.literals.iter()) {
             if !unifier.unify_literals(Scope::LEFT, lit1, Scope::RIGHT, lit2, false) {
                 return false;
@@ -598,7 +647,7 @@ impl Unifier {
     }
 }
 
-impl fmt::Display for Unifier {
+impl fmt::Display for Unifier<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Unifier:")?;
         for (scope, map) in self.maps.iter().enumerate() {
@@ -630,7 +679,7 @@ mod tests {
             Atom::Symbol(Symbol::GlobalConstant(0)),
             vec![bool0.clone(), bool1.clone()],
         );
-        let mut u = Unifier::new(3);
+        let mut u = Unifier::new(3, KernelContext::fake());
 
         // Replace x0 with x1 and x1 with x2.
         assert!(u.unify_variable(Scope::LEFT, 0, Scope::OUTPUT, &bool1));
@@ -652,7 +701,7 @@ mod tests {
             Atom::Symbol(Symbol::GlobalConstant(0)),
             vec![bool1.clone(), bool2.clone()],
         );
-        let mut u = Unifier::new(3);
+        let mut u = Unifier::new(3, KernelContext::fake());
 
         u.assert_unify(Scope::LEFT, &term1, Scope::LEFT, &term2);
         let new1 = u.apply(Scope::LEFT, &term1);
@@ -674,7 +723,7 @@ mod tests {
             Atom::Symbol(Symbol::GlobalConstant(0)),
             vec![bool1.clone(), bool2.clone()],
         );
-        let mut u = Unifier::new(3);
+        let mut u = Unifier::new(3, KernelContext::fake());
 
         u.assert_unify(Scope::LEFT, &term1, Scope::RIGHT, &term2);
         let new1 = u.apply(Scope::LEFT, &term1);
@@ -689,7 +738,7 @@ mod tests {
         let const_f_term = bool_fn(Atom::Symbol(Symbol::GlobalConstant(0)), vec![bool0.clone()]);
         let var_f_term = bool_fn(Atom::Variable(1), vec![bool0.clone()]);
 
-        let mut u = Unifier::new(3);
+        let mut u = Unifier::new(3, KernelContext::fake());
         u.assert_unify(Scope::LEFT, &const_f_term, Scope::RIGHT, &var_f_term);
     }
 
@@ -697,7 +746,7 @@ mod tests {
     fn test_nested_functional_unify() {
         let left_term = FatTerm::parse("x0(x0(c0))");
         let right_term = FatTerm::parse("c1(x0(x1))");
-        let mut u = Unifier::new(3);
+        let mut u = Unifier::new(3, KernelContext::fake());
         u.assert_unify(Scope::LEFT, &left_term, Scope::RIGHT, &right_term);
         u.print();
         assert!(u.get_mapping(Scope::LEFT, 0).unwrap().to_string() == "c1");
@@ -714,7 +763,7 @@ mod tests {
         let target_path = &[0];
         let resolution_clause =
             FatClause::parse("c1(c1(x0(x1))) != c1(x2(x3)) or c1(x0(x1)) = x2(x3)");
-        let mut u = Unifier::new(3);
+        let mut u = Unifier::new(3, KernelContext::fake());
         u.assert_unify(Scope::LEFT, &s, Scope::RIGHT, &u_subterm);
         u.print();
         u.superpose_clauses(&t, &pm_clause, 0, target_path, &resolution_clause, 0, true);
@@ -774,7 +823,7 @@ mod tests {
         );
 
         // Try to unify these terms
-        let mut u = Unifier::new(3);
+        let mut u = Unifier::new(3, KernelContext::fake());
 
         let result = u.unify(Scope::LEFT, &left_term, Scope::RIGHT, &right_term);
 
@@ -802,7 +851,7 @@ mod tests {
         let target_path = &[0];
         let resolution_clause =
             FatClause::parse("c1(c1(x0(x1))) != c1(x2(x3)) or c1(x0(x1)) = x2(x3)");
-        let mut u = Unifier::new(3);
+        let mut u = Unifier::new(3, KernelContext::fake());
         u.assert_unify(Scope::LEFT, &s, Scope::RIGHT, &u_subterm);
         u.print();
         let literals =
@@ -816,7 +865,7 @@ mod tests {
 
     #[test]
     fn test_mutual_containment_invalid_1() {
-        let mut u = Unifier::new(3);
+        let mut u = Unifier::new(3, KernelContext::fake());
         u.unify_str(
             Scope::LEFT,
             "c0(x0, c0(x1, c1(x2)))",
@@ -828,7 +877,7 @@ mod tests {
 
     #[test]
     fn test_mutual_containment_invalid_2() {
-        let mut u = Unifier::new(3);
+        let mut u = Unifier::new(3, KernelContext::fake());
         u.unify_str(
             Scope::LEFT,
             "c0(c0(x0, c1(x1)), x2)",
@@ -840,7 +889,7 @@ mod tests {
 
     #[test]
     fn test_recursive_reference_in_output() {
-        let mut u = Unifier::new(3);
+        let mut u = Unifier::new(3, KernelContext::fake());
         u.unify_str(
             Scope::LEFT,
             "g2(x0, x0)",
@@ -854,7 +903,7 @@ mod tests {
     fn test_initializing_with_variables_in_map() {
         let mut initial_map = VariableMap::new();
         initial_map.set(0, FatTerm::parse("s0(x0, x1, s4)"));
-        let (mut unifier, scope1) = Unifier::with_map(initial_map);
+        let (mut unifier, scope1) = Unifier::with_map(initial_map, KernelContext::fake());
         let scope2 = unifier.add_scope();
         let scope3 = unifier.add_scope();
 

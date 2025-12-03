@@ -6,6 +6,7 @@ use crate::clause_set::TermId;
 use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::FatTerm;
+use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::unifier::{Scope, Unifier};
 use crate::pattern_tree::LiteralSet;
@@ -250,7 +251,9 @@ impl ActiveSet {
         }
 
         // Heuristics done. Let's unify.
-        let mut unifier = Unifier::new(3);
+        let mut unifier = Unifier::new(3, KernelContext::fake());
+        unifier.set_input_context(Scope::LEFT, short_clause.get_local_context());
+        unifier.set_input_context(Scope::RIGHT, long_clause.get_local_context());
 
         // The short clause is "left" scope and the long clause is "right" scope.
         // This is different from the "left" and "right" of the literals - unfortunately
@@ -423,7 +426,9 @@ impl ActiveSet {
                 let subterm_info = &self.subterms[subterm_id];
                 let subterm = &subterm_info.term;
 
-                let mut unifier = Unifier::new(3);
+                let mut unifier = Unifier::new(3, KernelContext::fake());
+                unifier.set_input_context(Scope::LEFT, pattern_step.clause.get_local_context());
+                // TODO: Thread proper context for subterms instead of using fake()
                 if !unifier.unify(Scope::LEFT, s, Scope::RIGHT, subterm) {
                     continue;
                 }

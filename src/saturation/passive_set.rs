@@ -57,15 +57,17 @@ pub struct PassiveSet {
 // Terms do not have to have variables normalized.
 fn pair_specializes(
     local_context: &LocalContext,
+    kernel_context: &KernelContext,
     left1: &FatTerm,
     right1: &FatTerm,
     left2: &FatTerm,
     right2: &FatTerm,
 ) -> bool {
-    if left1.get_term_type() != left2.get_term_type() {
+    if left1.get_term_type_with_context(local_context, kernel_context)
+        != left2.get_term_type_with_context(local_context, kernel_context)
+    {
         return false;
     }
-    let kernel_context = KernelContext::fake();
     let mut var_map = VariableMap::new();
     var_map.match_terms(left1, left2, local_context, kernel_context)
         && var_map.match_terms(right1, right2, local_context, kernel_context)
@@ -79,6 +81,7 @@ fn pair_specializes(
 fn make_simplified(
     activated_id: usize,
     local_context: &LocalContext,
+    kernel_context: &KernelContext,
     left: &FatTerm,
     right: &FatTerm,
     positive: bool,
@@ -95,14 +98,28 @@ fn make_simplified(
     for (i, literal) in literals.into_iter().enumerate() {
         let (eliminated, literal_flipped) = if i == index {
             (true, flipped)
-        } else if pair_specializes(local_context, left, right, &literal.left, &literal.right) {
+        } else if pair_specializes(
+            local_context,
+            kernel_context,
+            left,
+            right,
+            &literal.left,
+            &literal.right,
+        ) {
             if literal.positive == positive {
                 // The whole clause is implied by the literal we are simplifying with.
                 return None;
             }
             // This specific literal is unsatisfiable.
             (true, false)
-        } else if pair_specializes(local_context, left, right, &literal.right, &literal.left) {
+        } else if pair_specializes(
+            local_context,
+            kernel_context,
+            left,
+            right,
+            &literal.right,
+            &literal.left,
+        ) {
             if literal.positive == positive {
                 // The whole clause is implied by the literal we are simplifying with.
                 return None;
@@ -223,6 +240,7 @@ impl PassiveSet {
         activated_id: usize,
         activated_step: &ProofStep,
         local_context: &LocalContext,
+        kernel_context: &KernelContext,
         left: &FatTerm,
         right: &FatTerm,
         positive: bool,
@@ -243,7 +261,14 @@ impl PassiveSet {
             let literal_positive = literal.positive;
 
             // We've only checked fingerprints. We need to check if they actually match.
-            if !pair_specializes(local_context, left, right, &literal.left, &literal.right) {
+            if !pair_specializes(
+                local_context,
+                kernel_context,
+                left,
+                right,
+                &literal.left,
+                &literal.right,
+            ) {
                 continue;
             }
 
@@ -265,6 +290,7 @@ impl PassiveSet {
             let Some((new_clause, traces)) = make_simplified(
                 activated_id,
                 local_context,
+                kernel_context,
                 left,
                 right,
                 positive,
@@ -305,11 +331,14 @@ impl PassiveSet {
     pub fn simplify(&mut self, activated_id: usize, step: &ProofStep) {
         assert!(step.clause.literals.len() == 1);
         let local_context = step.clause.get_local_context();
+        // TODO: Thread KernelContext through SaturationProver instead of using fake()
+        let kernel_context = KernelContext::fake();
         let literal = &step.clause.literals[0];
         self.simplify_one_direction(
             activated_id,
             &step,
             local_context,
+            kernel_context,
             &literal.left,
             &literal.right,
             literal.positive,
@@ -321,6 +350,7 @@ impl PassiveSet {
                 activated_id,
                 &step,
                 local_context,
+                kernel_context,
                 &right,
                 &left,
                 literal.positive,

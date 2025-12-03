@@ -6,6 +6,7 @@ use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::context::LocalContext;
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::{FatTerm, BOOL};
+use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::unifier::{Scope, Unifier};
 use crate::proof_step::{EFLiteralTrace, EFTermTrace};
@@ -349,7 +350,8 @@ impl FatClause {
             }
 
             // The variables are in the same scope, which we will call "left".
-            let mut unifier = Unifier::new(3);
+            let mut unifier = Unifier::new(3, KernelContext::fake());
+            unifier.set_input_context(Scope::LEFT, self.get_local_context());
             if !unifier.unify(Scope::LEFT, &literal.left, Scope::LEFT, &literal.right) {
                 continue;
             }
@@ -405,7 +407,8 @@ impl FatClause {
                 }
 
                 for (uv_forwards, u, v) in uv_literal.both_term_pairs() {
-                    let mut unifier = Unifier::new(3);
+                    let mut unifier = Unifier::new(3, KernelContext::fake());
+                    unifier.set_input_context(Scope::LEFT, self.get_local_context());
                     if !unifier.unify(Scope::LEFT, s, Scope::LEFT, u) {
                         continue;
                     }
