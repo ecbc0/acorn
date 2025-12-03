@@ -147,10 +147,6 @@ impl FatTerm {
         }
     }
 
-    pub fn get_term_type(&self) -> TypeId {
-        self.term_type
-    }
-
     /// Get the term type with context (for API compatibility with ThinTerm).
     /// The context parameters are ignored for FatTerm since types are embedded.
     pub fn get_term_type_with_context(
@@ -159,10 +155,6 @@ impl FatTerm {
         _kernel_context: &KernelContext,
     ) -> TypeId {
         self.term_type
-    }
-
-    pub fn get_head_type(&self) -> TypeId {
-        self.head_type
     }
 
     /// Get the head type with context (for API compatibility with ThinTerm).
