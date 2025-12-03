@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::context::Context;
+use crate::kernel::context::LocalContext;
 use crate::kernel::fat_term::TypeId;
 use crate::kernel::symbol_table::SymbolTable;
 use crate::kernel::type_store::TypeStore;
@@ -68,7 +68,7 @@ impl ThinTerm {
     /// Requires context to look up the type information.
     pub fn get_term_type(
         &self,
-        _context: &Context,
+        _context: &LocalContext,
         symbol_table: &SymbolTable,
         _type_store: &TypeStore,
     ) -> TypeId {

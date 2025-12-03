@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::context::Context;
+use crate::kernel::context::LocalContext;
 use crate::kernel::thin_literal::ThinLiteral;
 
 /// A thin clause stores the structure of a clause without type information.
@@ -11,11 +11,11 @@ use crate::kernel::thin_literal::ThinLiteral;
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct ThinClause {
     pub literals: Vec<ThinLiteral>,
-    pub context: Context,
+    pub context: LocalContext,
 }
 
 impl ThinClause {
-    pub fn new(literals: Vec<ThinLiteral>, context: Context) -> ThinClause {
+    pub fn new(literals: Vec<ThinLiteral>, context: LocalContext) -> ThinClause {
         ThinClause { literals, context }
     }
 
@@ -23,7 +23,7 @@ impl ThinClause {
     pub fn impossible() -> ThinClause {
         ThinClause {
             literals: vec![],
-            context: Context::empty(),
+            context: LocalContext::empty(),
         }
     }
 

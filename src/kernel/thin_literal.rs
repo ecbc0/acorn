@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::context::Context;
+use crate::kernel::context::LocalContext;
 use crate::kernel::fat_term::TypeId;
 use crate::kernel::thin_term::ThinTerm;
 
@@ -113,7 +113,7 @@ impl ThinLiteral {
     }
 
     /// Get the type of a variable if it appears in this literal.
-    pub fn var_type(&self, i: AtomId, context: &Context) -> Option<TypeId> {
+    pub fn var_type(&self, i: AtomId, context: &LocalContext) -> Option<TypeId> {
         // Check if the variable appears in left or right term
         if self.left.has_variable(i) || self.right.has_variable(i) {
             context.get_var_type(i as usize)

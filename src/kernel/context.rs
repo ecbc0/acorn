@@ -6,19 +6,19 @@ use crate::kernel::fat_term::TypeId;
 /// This is used with thin terms/literals/clauses to track variable types
 /// without embedding them in the term structure itself.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct Context {
+pub struct LocalContext {
     /// The types of variables, indexed by variable id.
     /// var_types[i] is the type of variable x_i.
     pub var_types: Vec<TypeId>,
 }
 
-impl Context {
-    pub fn new(var_types: Vec<TypeId>) -> Context {
-        Context { var_types }
+impl LocalContext {
+    pub fn new(var_types: Vec<TypeId>) -> LocalContext {
+        LocalContext { var_types }
     }
 
-    pub fn empty() -> Context {
-        Context { var_types: vec![] }
+    pub fn empty() -> LocalContext {
+        LocalContext { var_types: vec![] }
     }
 
     /// Get the type of a variable by its id.
