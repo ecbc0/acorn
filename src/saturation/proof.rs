@@ -4,7 +4,7 @@ use crate::certificate::Certificate;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::elaborator::acorn_value::AcornValue;
 use crate::elaborator::binding_map::BindingMap;
-use crate::kernel::fat_clause::FatClause;
+use crate::kernel::fat_clause::{fake_local_context, FatClause};
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::trace::LiteralTrace;
@@ -295,7 +295,9 @@ impl<'a> Proof<'a> {
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
                         Unifier::with_map(conc_map, KernelContext::fake());
+                    unifier.set_input_context(conc_scope, fake_local_context());
                     let pattern_scope = unifier.add_scope();
+                    unifier.set_input_context(pattern_scope, fake_local_context());
                     assert!(unifier.unify(pattern_scope, from_pat, conc_scope, target_subterm));
                     assert!(unifier.unify(pattern_scope, to_pat, conc_scope, rewritten_subterm));
 
@@ -326,7 +328,9 @@ impl<'a> Proof<'a> {
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
                         Unifier::with_map(conc_map, KernelContext::fake());
+                    unifier.set_input_context(conc_scope, fake_local_context());
                     let base_scope = unifier.add_scope();
+                    unifier.set_input_context(base_scope, base_clause.get_local_context());
 
                     for (base_lit, lit_trace) in base_clause.literals.iter().zip(&info.ef_trace) {
                         for (base_term, term_trace) in [
@@ -366,7 +370,9 @@ impl<'a> Proof<'a> {
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
                         Unifier::with_map(conc_map, KernelContext::fake());
+                    unifier.set_input_context(conc_scope, fake_local_context());
                     let base_scope = unifier.add_scope();
+                    unifier.set_input_context(base_scope, base_clause.get_local_context());
                     let mut j = 0;
                     for (i, base_lit) in base_clause.literals.iter().enumerate() {
                         if i == info.index {
@@ -413,7 +419,9 @@ impl<'a> Proof<'a> {
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
                         Unifier::with_map(conc_map, KernelContext::fake());
+                    unifier.set_input_context(conc_scope, fake_local_context());
                     let base_scope = unifier.add_scope();
+                    unifier.set_input_context(base_scope, base_clause.get_local_context());
 
                     for (i, (base_lit, info_lit)) in
                         base_clause.literals.iter().zip(&info.literals).enumerate()
@@ -467,7 +475,9 @@ impl<'a> Proof<'a> {
                 for conc_map in var_maps {
                     let (mut unifier, conc_scope) =
                         Unifier::with_map(conc_map, KernelContext::fake());
+                    unifier.set_input_context(conc_scope, fake_local_context());
                     let base_scope = unifier.add_scope();
+                    unifier.set_input_context(base_scope, base_clause.get_local_context());
 
                     for i in 0..info.index {
                         let base = &base_clause.literals[i];
@@ -557,7 +567,9 @@ impl<'a> Proof<'a> {
         // The unifier will figure out the concrete clauses.
         // The base and conclusion get their own scope.
         let (mut unifier, conc_scope) = Unifier::with_map(conc_map, KernelContext::fake());
+        unifier.set_input_context(conc_scope, conclusion.get_local_context());
         let base_scope = unifier.add_scope();
+        unifier.set_input_context(base_scope, fake_local_context());
 
         // Each simplification gets its own scope.
         // A proof step gets multiple scopes if it is used for multiple simplifications.
@@ -576,6 +588,7 @@ impl<'a> Proof<'a> {
                     let scope = unifier.add_scope();
                     simp_scopes.insert(scope, step_id);
                     let clause = self.get_clause(step_id)?;
+                    unifier.set_input_context(scope, clause.get_local_context());
                     if clause.literals.len() != 1 {
                         // This is two-long-clause resolution.
                         // This should only happen for concrete clauses, and thus we don't

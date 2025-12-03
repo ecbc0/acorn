@@ -95,6 +95,17 @@ impl<'a> Unifier<'a> {
         self.kernel_context
     }
 
+    /// Returns the LocalContext for a given scope.
+    /// For OUTPUT scope, returns the output_context.
+    /// For input scopes (LEFT, RIGHT, etc.), returns the stored input context.
+    fn get_local_context(&self, scope: Scope) -> &LocalContext {
+        if scope == Scope::OUTPUT {
+            &self.output_context
+        } else {
+            self.input_contexts[scope.get()].expect("Input context not set for scope")
+        }
+    }
+
     /// Creates a single-scope unifier.
     pub fn with_map(map: VariableMap, kernel_context: &'a KernelContext) -> (Unifier<'a>, Scope) {
         // Initialize the output map with enough blank entries for any variables in the initial map
@@ -188,6 +199,18 @@ impl<'a> Unifier<'a> {
             }
         }
 
+        // Extract term's type info upfront before any mutations
+        // (For FatTerm, this just reads embedded fields, but we use _with_context for API consistency)
+        let kernel_context = self.kernel_context;
+        let term_type = {
+            let local_context = self.get_local_context(scope);
+            term.get_term_type_with_context(local_context, kernel_context)
+        };
+        let term_head_type = {
+            let local_context = self.get_local_context(scope);
+            term.get_head_type_with_context(local_context, kernel_context)
+        };
+
         // First figure out what the head expands to, if it's a variable.
         // We track the head_type, head atom, and any args from the expansion separately.
         let (head_type, head, mut args) = match term.get_head_atom() {
@@ -197,8 +220,8 @@ impl<'a> Unifier<'a> {
                     let var_id = self.maps[Scope::OUTPUT.get()].len() as AtomId;
                     self.maps[Scope::OUTPUT.get()].push_none();
                     let new_var = FatTerm::new(
-                        term.get_head_type(),
-                        term.get_head_type(),
+                        term_head_type,
+                        term_head_type,
                         Atom::Variable(var_id),
                         vec![],
                     );
@@ -208,9 +231,10 @@ impl<'a> Unifier<'a> {
                 match self.get_mapping(scope, *i) {
                     Some(mapped_head) => {
                         // The head of our initial term expands to a full term.
-                        // Clone its args so we can append more.
+                        // mapped_head is in OUTPUT scope since mappings produce output terms.
+                        let output_local = self.output_context();
                         (
-                            mapped_head.get_head_type(),
+                            mapped_head.get_head_type_with_context(output_local, kernel_context),
                             mapped_head.get_head_atom().clone(),
                             mapped_head.args().to_vec(),
                         )
@@ -219,11 +243,11 @@ impl<'a> Unifier<'a> {
                         // The head is an output variable with no mapping.
                         // Just leave it as it is.
                         assert!(scope == Scope::OUTPUT);
-                        (term.get_head_type(), term.get_head_atom().clone(), vec![])
+                        (term_head_type, term.get_head_atom().clone(), vec![])
                     }
                 }
             }
-            head => (term.get_head_type(), head.clone(), vec![]),
+            _head => (term_head_type, term.get_head_atom().clone(), vec![]),
         };
 
         // Recurse on the arguments and append them
@@ -247,7 +271,7 @@ impl<'a> Unifier<'a> {
         }
 
         // Now construct the final term with correct types
-        FatTerm::new(term.get_term_type(), head_type, head, args)
+        FatTerm::new(term_type, head_type, head, args)
     }
 
     pub fn apply(&mut self, scope: Scope, term: &FatTerm) -> FatTerm {
@@ -270,7 +294,10 @@ impl<'a> Unifier<'a> {
             if other_id > id {
                 // Let's keep this id and remap the other one instead.
                 // Since term is an atomic variable, create a new variable term with the lower id.
-                let new_term = FatTerm::new_variable(term.get_term_type(), id);
+                // term is in OUTPUT scope
+                let term_type =
+                    term.get_term_type_with_context(self.output_context(), self.kernel_context);
+                let new_term = FatTerm::new_variable(term_type, id);
                 return self.unify_variable(Scope::OUTPUT, other_id, Scope::OUTPUT, &new_term);
             }
         }
@@ -375,9 +402,11 @@ impl<'a> Unifier<'a> {
 
                 // Create the partial application term
                 // Use the head_type of var_term (the variable's type) as the term_type
+                let var_local = self.get_local_context(var_scope);
+                let full_local = self.get_local_context(full_scope);
                 let partial = FatTerm::new(
-                    var_term.get_head_type(),
-                    full_term.get_head_type(),
+                    var_term.get_head_type_with_context(var_local, self.kernel_context),
+                    full_term.get_head_type_with_context(full_local, self.kernel_context),
                     *full_term.get_head_atom(),
                     partial_args,
                 );
@@ -429,7 +458,13 @@ impl<'a> Unifier<'a> {
         scope2: Scope,
         term2: &FatTerm,
     ) -> bool {
-        if term1.get_term_type() != term2.get_term_type() {
+        let local1 = self.get_local_context(scope1);
+        let local2 = self.get_local_context(scope2);
+        let kc = self.kernel_context;
+
+        if term1.get_term_type_with_context(local1, kc)
+            != term2.get_term_type_with_context(local2, kc)
+        {
             return false;
         }
 
@@ -451,8 +486,14 @@ impl<'a> Unifier<'a> {
             return result;
         }
 
+        // Re-get local contexts since we may have modified them above
+        let local1 = self.get_local_context(scope1);
+        let local2 = self.get_local_context(scope2);
+
         // These checks mean we won't unify higher-order functions whose head types don't match.
-        if term1.get_head_type() != term2.get_head_type() {
+        if term1.get_head_type_with_context(local1, kc)
+            != term2.get_head_type_with_context(local2, kc)
+        {
             return false;
         }
         if term1.args().len() != term2.args().len() {
@@ -460,7 +501,7 @@ impl<'a> Unifier<'a> {
         }
 
         if !self.unify_atoms(
-            term1.get_head_type(),
+            term1.get_head_type_with_context(local1, kc),
             scope1,
             &term1.get_head_atom(),
             scope2,
@@ -670,6 +711,16 @@ mod tests {
         FatTerm::new(BOOL, TypeId::new(0), head, args)
     }
 
+    /// Creates a test unifier with LEFT and RIGHT contexts set to the fake context.
+    fn test_unifier<'a>(kernel_context: &'a KernelContext) -> Unifier<'a> {
+        use crate::kernel::fat_clause::fake_local_context;
+        let mut u = Unifier::new(3, kernel_context);
+        // For FatTerm tests, we use the fake local context
+        u.set_input_context(Scope::LEFT, fake_local_context());
+        u.set_input_context(Scope::RIGHT, fake_local_context());
+        u
+    }
+
     #[test]
     fn test_unifying_variables() {
         let bool0 = FatTerm::atom(BOOL, Atom::Variable(0));
@@ -679,7 +730,7 @@ mod tests {
             Atom::Symbol(Symbol::GlobalConstant(0)),
             vec![bool0.clone(), bool1.clone()],
         );
-        let mut u = Unifier::new(3, KernelContext::fake());
+        let mut u = test_unifier(KernelContext::fake());
 
         // Replace x0 with x1 and x1 with x2.
         assert!(u.unify_variable(Scope::LEFT, 0, Scope::OUTPUT, &bool1));
@@ -701,7 +752,7 @@ mod tests {
             Atom::Symbol(Symbol::GlobalConstant(0)),
             vec![bool1.clone(), bool2.clone()],
         );
-        let mut u = Unifier::new(3, KernelContext::fake());
+        let mut u = test_unifier(KernelContext::fake());
 
         u.assert_unify(Scope::LEFT, &term1, Scope::LEFT, &term2);
         let new1 = u.apply(Scope::LEFT, &term1);
@@ -723,7 +774,7 @@ mod tests {
             Atom::Symbol(Symbol::GlobalConstant(0)),
             vec![bool1.clone(), bool2.clone()],
         );
-        let mut u = Unifier::new(3, KernelContext::fake());
+        let mut u = test_unifier(KernelContext::fake());
 
         u.assert_unify(Scope::LEFT, &term1, Scope::RIGHT, &term2);
         let new1 = u.apply(Scope::LEFT, &term1);
@@ -738,7 +789,7 @@ mod tests {
         let const_f_term = bool_fn(Atom::Symbol(Symbol::GlobalConstant(0)), vec![bool0.clone()]);
         let var_f_term = bool_fn(Atom::Variable(1), vec![bool0.clone()]);
 
-        let mut u = Unifier::new(3, KernelContext::fake());
+        let mut u = test_unifier(KernelContext::fake());
         u.assert_unify(Scope::LEFT, &const_f_term, Scope::RIGHT, &var_f_term);
     }
 
@@ -746,7 +797,7 @@ mod tests {
     fn test_nested_functional_unify() {
         let left_term = FatTerm::parse("x0(x0(c0))");
         let right_term = FatTerm::parse("c1(x0(x1))");
-        let mut u = Unifier::new(3, KernelContext::fake());
+        let mut u = test_unifier(KernelContext::fake());
         u.assert_unify(Scope::LEFT, &left_term, Scope::RIGHT, &right_term);
         u.print();
         assert!(u.get_mapping(Scope::LEFT, 0).unwrap().to_string() == "c1");
@@ -763,7 +814,7 @@ mod tests {
         let target_path = &[0];
         let resolution_clause =
             FatClause::parse("c1(c1(x0(x1))) != c1(x2(x3)) or c1(x0(x1)) = x2(x3)");
-        let mut u = Unifier::new(3, KernelContext::fake());
+        let mut u = test_unifier(KernelContext::fake());
         u.assert_unify(Scope::LEFT, &s, Scope::RIGHT, &u_subterm);
         u.print();
         u.superpose_clauses(&t, &pm_clause, 0, target_path, &resolution_clause, 0, true);
@@ -823,7 +874,7 @@ mod tests {
         );
 
         // Try to unify these terms
-        let mut u = Unifier::new(3, KernelContext::fake());
+        let mut u = test_unifier(KernelContext::fake());
 
         let result = u.unify(Scope::LEFT, &left_term, Scope::RIGHT, &right_term);
 
@@ -851,7 +902,7 @@ mod tests {
         let target_path = &[0];
         let resolution_clause =
             FatClause::parse("c1(c1(x0(x1))) != c1(x2(x3)) or c1(x0(x1)) = x2(x3)");
-        let mut u = Unifier::new(3, KernelContext::fake());
+        let mut u = test_unifier(KernelContext::fake());
         u.assert_unify(Scope::LEFT, &s, Scope::RIGHT, &u_subterm);
         u.print();
         let literals =
@@ -865,7 +916,7 @@ mod tests {
 
     #[test]
     fn test_mutual_containment_invalid_1() {
-        let mut u = Unifier::new(3, KernelContext::fake());
+        let mut u = test_unifier(KernelContext::fake());
         u.unify_str(
             Scope::LEFT,
             "c0(x0, c0(x1, c1(x2)))",
@@ -877,7 +928,7 @@ mod tests {
 
     #[test]
     fn test_mutual_containment_invalid_2() {
-        let mut u = Unifier::new(3, KernelContext::fake());
+        let mut u = test_unifier(KernelContext::fake());
         u.unify_str(
             Scope::LEFT,
             "c0(c0(x0, c1(x1)), x2)",
@@ -889,7 +940,7 @@ mod tests {
 
     #[test]
     fn test_recursive_reference_in_output() {
-        let mut u = Unifier::new(3, KernelContext::fake());
+        let mut u = test_unifier(KernelContext::fake());
         u.unify_str(
             Scope::LEFT,
             "g2(x0, x0)",
@@ -901,11 +952,16 @@ mod tests {
 
     #[test]
     fn test_initializing_with_variables_in_map() {
+        use crate::kernel::fat_clause::fake_local_context;
         let mut initial_map = VariableMap::new();
         initial_map.set(0, FatTerm::parse("s0(x0, x1, s4)"));
         let (mut unifier, scope1) = Unifier::with_map(initial_map, KernelContext::fake());
+        // Set contexts for all scopes
+        unifier.set_input_context(scope1, fake_local_context());
         let scope2 = unifier.add_scope();
+        unifier.set_input_context(scope2, fake_local_context());
         let scope3 = unifier.add_scope();
+        unifier.set_input_context(scope3, fake_local_context());
 
         unifier.unify_str(scope2, "g6(x0, x1)", scope3, "g6(c1, x0)", true);
         unifier.unify_str(scope2, "g0(x2, x1)", scope1, "g0(s4, x0)", true);

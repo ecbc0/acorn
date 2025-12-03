@@ -15,6 +15,12 @@ use crate::proof_step::{EFLiteralTrace, EFTermTrace};
 /// the context is never actually read - this just provides API compatibility with ThinClause.
 static FAKE_LOCAL_CONTEXT: LazyLock<LocalContext> = LazyLock::new(LocalContext::empty);
 
+/// Returns a reference to the fake local context used by FatClause.
+/// This is useful for tests and other code that needs a LocalContext but is working with FatTerms.
+pub fn fake_local_context() -> &'static LocalContext {
+    &FAKE_LOCAL_CONTEXT
+}
+
 /// A clause is a disjunction (an "or") of literals, universally quantified over some variables.
 /// We include the types of the universal variables it is quantified over.
 /// It cannot contain existential quantifiers.

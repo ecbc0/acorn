@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use super::fingerprint::FingerprintUnifier;
 use super::rewrite_tree::{Rewrite, RewriteTree};
 use crate::clause_set::TermId;
-use crate::kernel::fat_clause::FatClause;
+use crate::kernel::fat_clause::{fake_local_context, FatClause};
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::FatTerm;
 use crate::kernel::kernel_context::KernelContext;
@@ -428,7 +428,8 @@ impl ActiveSet {
 
                 let mut unifier = Unifier::new(3, KernelContext::fake());
                 unifier.set_input_context(Scope::LEFT, pattern_step.clause.get_local_context());
-                // TODO: Thread proper context for subterms instead of using fake()
+                // Subterms are stored as FatTerms with embedded types, so fake context is fine
+                unifier.set_input_context(Scope::RIGHT, fake_local_context());
                 if !unifier.unify(Scope::LEFT, s, Scope::RIGHT, subterm) {
                     continue;
                 }
