@@ -231,7 +231,6 @@ impl CNF {
     /// Parse a CNF formula from a string.
     /// The string should be in the format "clause1 and clause2 and ..."
     /// where each clause is "literal1 or literal2 or ...".
-    #[cfg(not(feature = "thin"))]
     pub fn parse(s: &str) -> Self {
         let clauses: Vec<Vec<Literal>> = s
             .split(" and ")
@@ -243,11 +242,6 @@ impl CNF {
             })
             .collect();
         CNF::new(clauses)
-    }
-
-    #[cfg(feature = "thin")]
-    pub fn parse(_s: &str) -> Self {
-        todo!("ThinLiteral::parse() requires TypeStore/SymbolTable parameters");
     }
 }
 

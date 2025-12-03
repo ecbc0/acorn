@@ -501,6 +501,73 @@ impl ThinTerm {
         }
     }
 
+    /// Parse a ThinTerm from a string representation.
+    /// Format: "f(a, g(b))" or just "x0" for atoms.
+    /// Variables are written as x0, x1, etc.
+    /// Constants are written as c0, c1, etc.
+    pub fn parse(s: &str) -> ThinTerm {
+        let s = s.trim();
+
+        if s == "true" {
+            return ThinTerm::atom(Atom::True);
+        }
+
+        let first_paren = match s.find('(') {
+            Some(i) => i,
+            None => return ThinTerm::atom(Atom::new(s)),
+        };
+
+        // Figure out which commas are inside precisely one level of parentheses.
+        let mut terminator_indices = vec![];
+        let mut num_parens = 0;
+        for (i, c) in s.chars().enumerate() {
+            match c {
+                '(' => num_parens += 1,
+                ')' => {
+                    num_parens -= 1;
+                    if num_parens == 0 {
+                        terminator_indices.push(i);
+                    }
+                }
+                ',' => {
+                    if num_parens == 1 {
+                        terminator_indices.push(i);
+                    }
+                }
+                _ => (),
+            }
+        }
+
+        // Split the string into the head and the args.
+        let head = &s[0..first_paren];
+        let mut args = vec![];
+        for (i, terminator_index) in terminator_indices.iter().enumerate() {
+            let start = if i == 0 {
+                first_paren + 1
+            } else {
+                terminator_indices[i - 1] + 1
+            };
+            args.push(ThinTerm::parse(&s[start..*terminator_index]));
+        }
+
+        // Build the component vector
+        let mut components = vec![ThinTermComponent::Atom(Atom::new(head))];
+        for arg in args {
+            if arg.components.len() == 1 {
+                // Atomic argument - just add the atom
+                components.push(arg.components[0]);
+            } else {
+                // Compound argument - add Composite marker with span
+                components.push(ThinTermComponent::Composite {
+                    span: arg.components.len() as u16 + 1,
+                });
+                components.extend(arg.components);
+            }
+        }
+
+        ThinTerm { components }
+    }
+
     /// Get the components of this thin term.
     pub fn components(&self) -> &[ThinTermComponent] {
         &self.components

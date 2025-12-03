@@ -45,6 +45,28 @@ impl ThinLiteral {
         ThinLiteral::new(false, left, right)
     }
 
+    /// Parse a ThinLiteral from a string representation.
+    /// Format: "left = right", "left != right", "not term", or just "term".
+    pub fn parse(s: &str) -> ThinLiteral {
+        if s.contains(" != ") {
+            let mut parts = s.split(" != ");
+            let left = ThinTerm::parse(parts.next().unwrap());
+            let right = ThinTerm::parse(parts.next().unwrap());
+            ThinLiteral::not_equals(left, right)
+        } else if s.contains(" = ") {
+            let mut parts = s.split(" = ");
+            let left = ThinTerm::parse(parts.next().unwrap());
+            let right = ThinTerm::parse(parts.next().unwrap());
+            ThinLiteral::equals(left, right)
+        } else if s.starts_with("not ") {
+            let term = ThinTerm::parse(&s[4..]);
+            ThinLiteral::negative(term)
+        } else {
+            let term = ThinTerm::parse(s);
+            ThinLiteral::positive(term)
+        }
+    }
+
     /// Create a literal representing the value "true" (true = true).
     pub fn true_value() -> ThinLiteral {
         ThinLiteral::new(true, ThinTerm::atom(Atom::True), ThinTerm::atom(Atom::True))
