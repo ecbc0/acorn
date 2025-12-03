@@ -126,21 +126,11 @@ impl CNF {
         self.0.into_iter()
     }
 
-    #[cfg(not(feature = "thin"))]
-    pub fn into_clauses(self, _local_context: LocalContext) -> Vec<Clause> {
+    pub fn into_clauses(self, local_context: &LocalContext) -> Vec<Clause> {
         self.0
             .into_iter()
             .filter(|literals| !literals.iter().any(|l| l.is_tautology()))
-            .map(Clause::new)
-            .collect()
-    }
-
-    #[cfg(feature = "thin")]
-    pub fn into_clauses(self, local_context: LocalContext) -> Vec<Clause> {
-        self.0
-            .into_iter()
-            .filter(|literals| !literals.iter().any(|l| l.is_tautology()))
-            .map(|literals| Clause::new(literals, local_context.clone()))
+            .map(|literals| Clause::new(literals, local_context))
             .collect()
     }
 

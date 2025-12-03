@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::kernel::atom::{Atom, AtomId};
+use crate::kernel::context::LocalContext;
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::{FatTerm, BOOL};
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
@@ -33,7 +34,14 @@ impl fmt::Display for FatClause {
 
 impl FatClause {
     /// Creates a new normalized clause.
-    pub fn new(literals: Vec<FatLiteral>) -> FatClause {
+    /// The context parameter is ignored for FatClause but accepted for API compatibility with ThinClause.
+    pub fn new(literals: Vec<FatLiteral>, _context: &LocalContext) -> FatClause {
+        Self::new_without_context(literals)
+    }
+
+    /// Creates a new normalized clause without requiring a context.
+    /// This is the original FatClause::new - use this when you don't have a LocalContext.
+    pub fn new_without_context(literals: Vec<FatLiteral>) -> FatClause {
         let mut c = FatClause { literals };
         c.normalize();
         c
@@ -161,7 +169,7 @@ impl FatClause {
         incremental_trace: &ClauseTrace,
     ) -> (FatClause, Option<ClauseTrace>) {
         let Some(mut base_trace) = base_trace else {
-            return (FatClause::new(literals), None);
+            return (FatClause::new_without_context(literals), None);
         };
         base_trace.compose(incremental_trace);
         let (c, trace) = FatClause::new_with_trace(literals, base_trace);
@@ -198,11 +206,11 @@ impl FatClause {
 
     /// An unsatisfiable clause. Like a lone "false".
     pub fn impossible() -> FatClause {
-        FatClause::new(vec![])
+        FatClause::new_without_context(vec![])
     }
 
     pub fn parse(s: &str) -> FatClause {
-        FatClause::new(
+        FatClause::new_without_context(
             s.split(" or ")
                 .map(|x| FatLiteral::parse(x))
                 .collect::<Vec<_>>(),
@@ -299,7 +307,7 @@ impl FatClause {
             .iter()
             .map(|lit| lit.invalidate_synthetics(from))
             .collect();
-        FatClause::new(new_literals)
+        FatClause::new_without_context(new_literals)
     }
 
     /// Replace the first `num_to_replace` variables with invalid synthetic atoms, adjusting
@@ -310,7 +318,7 @@ impl FatClause {
             .iter()
             .map(|lit| lit.instantiate_invalid_synthetics(num_to_replace))
             .collect();
-        FatClause::new(new_literals)
+        FatClause::new_without_context(new_literals)
     }
 
     /// Finds all possible equality resolutions for this clause.
@@ -358,7 +366,7 @@ impl FatClause {
     pub fn equality_resolutions(&self) -> Vec<FatClause> {
         self.find_equality_resolutions()
             .into_iter()
-            .map(|(_, literals, _)| FatClause::new(literals))
+            .map(|(_, literals, _)| FatClause::new_without_context(literals))
             .filter(|clause| !clause.is_tautology())
             .collect()
     }
@@ -457,7 +465,7 @@ impl FatClause {
     pub fn equality_factorings(&self) -> Vec<FatClause> {
         self.find_equality_factorings()
             .into_iter()
-            .map(|(literals, _)| FatClause::new(literals))
+            .map(|(literals, _)| FatClause::new_without_context(literals))
             .filter(|clause| !clause.is_tautology())
             .collect()
     }
@@ -517,7 +525,7 @@ impl FatClause {
     pub fn injectivities(&self) -> Vec<FatClause> {
         self.find_injectivities()
             .into_iter()
-            .map(|(_, _, literals, _)| FatClause::new(literals))
+            .map(|(_, _, literals, _)| FatClause::new_without_context(literals))
             .filter(|clause| !clause.is_tautology())
             .collect()
     }
@@ -566,7 +574,7 @@ impl FatClause {
     pub fn boolean_reductions(&self) -> Vec<FatClause> {
         let mut answer = vec![];
         for (_, literals) in self.find_boolean_reductions() {
-            let clause = FatClause::new(literals);
+            let clause = FatClause::new_without_context(literals);
             answer.push(clause);
         }
         answer
@@ -663,7 +671,7 @@ fn check(s: &str) {
         .split(" or ")
         .map(|x| FatLiteral::parse(x))
         .collect::<Vec<_>>();
-    let clause = FatClause::new(literals.clone());
+    let clause = FatClause::new_without_context(literals.clone());
     let (alt_clause, trace) = FatClause::normalize_with_trace(literals.clone());
     assert_eq!(clause, alt_clause);
 

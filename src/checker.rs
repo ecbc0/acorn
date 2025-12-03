@@ -191,7 +191,7 @@ impl Checker {
             }
 
             if let Some(extensionality) = clause.find_extensionality() {
-                let clause = FatClause::new(extensionality);
+                let clause = FatClause::new_without_context(extensionality);
                 self.insert_clause(&clause, StepReason::Extensionality(step_id));
             }
         } else {

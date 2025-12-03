@@ -16,8 +16,11 @@ pub struct ThinClause {
 
 impl ThinClause {
     /// Creates a new normalized clause.
-    pub fn new(literals: Vec<ThinLiteral>, context: LocalContext) -> ThinClause {
-        let mut c = ThinClause { literals, context };
+    pub fn new(literals: Vec<ThinLiteral>, context: &LocalContext) -> ThinClause {
+        let mut c = ThinClause {
+            literals,
+            context: context.clone(),
+        };
         c.normalize();
         c
     }

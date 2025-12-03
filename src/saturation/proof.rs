@@ -248,7 +248,7 @@ impl<'a> Proof<'a> {
                             concrete_step.var_maps.insert(var_map);
                         }
                         std::collections::hash_map::Entry::Vacant(entry) => {
-                            let generic = FatClause::new(info.literals.clone());
+                            let generic = FatClause::new_without_context(info.literals.clone());
                             let concrete_step = ConcreteStep::new(generic, var_map);
                             entry.insert(concrete_step);
                         }

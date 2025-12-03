@@ -268,7 +268,7 @@ impl NormalizerView<'_> {
                     self.value_to_cnf(&value, false, &mut stack, &mut next_var_id, synthesized)?;
                 // TODO: value_to_cnf should return (CNF, LocalContext)
                 let local_context = LocalContext::empty(); // Temporary placeholder
-                Ok(cnf.into_clauses(local_context))
+                Ok(cnf.into_clauses(&local_context))
             }
         }
     }
@@ -972,7 +972,7 @@ impl NormalizerView<'_> {
             self.eq_to_cnf(&skolem_value, value, false, stack, next_var_id, synth)?;
         // TODO: value_to_cnf should return (CNF, LocalContext)
         let local_context = LocalContext::empty(); // Temporary placeholder
-        let clauses = definition_cnf.clone().into_clauses(local_context);
+        let clauses = definition_cnf.clone().into_clauses(&local_context);
 
         // Check if an equivalent definition already exists
         let synthetic_key_form: Vec<_> = clauses
@@ -1087,7 +1087,7 @@ impl NormalizerView<'_> {
         for clause_lits in cnf.clone().into_iter() {
             let mut new_clause_lits = vec![synth_lit.negate()];
             new_clause_lits.extend(clause_lits);
-            defining_clauses.push(FatClause::new(new_clause_lits));
+            defining_clauses.push(FatClause::new_without_context(new_clause_lits));
         }
 
         // For (not C or s):
@@ -1096,7 +1096,7 @@ impl NormalizerView<'_> {
         for clause_lits in neg_cnf.into_iter() {
             let mut new_clause_lits = clause_lits;
             new_clause_lits.push(synth_lit.clone());
-            defining_clauses.push(FatClause::new(new_clause_lits));
+            defining_clauses.push(FatClause::new_without_context(new_clause_lits));
         }
 
         // Add the definition
@@ -1195,11 +1195,17 @@ impl NormalizerView<'_> {
 
                 // First clause: not cond or synth_term = then_term
                 let then_eq = FatLiteral::new(true, synth_term.clone(), then_term);
-                defining_clauses.push(FatClause::new(vec![cond_lit.negate(), then_eq]));
+                defining_clauses.push(FatClause::new_without_context(vec![
+                    cond_lit.negate(),
+                    then_eq,
+                ]));
 
                 // Second clause: cond or synth_term = else_term
                 let else_eq = FatLiteral::new(true, synth_term.clone(), else_term);
-                defining_clauses.push(FatClause::new(vec![cond_lit.clone(), else_eq]));
+                defining_clauses.push(FatClause::new_without_context(vec![
+                    cond_lit.clone(),
+                    else_eq,
+                ]));
 
                 // Add the definition
                 self.as_mut()?
@@ -1409,7 +1415,7 @@ impl Normalizer {
                 let left_term = view.force_simple_value_to_term(left, &vec![])?;
                 let right_term = view.force_simple_value_to_term(right, &vec![])?;
                 let literal = FatLiteral::new(true, left_term, right_term);
-                let clause = FatClause::new(vec![literal]);
+                let clause = FatClause::new_without_context(vec![literal]);
                 clauses.push(clause);
             }
         }

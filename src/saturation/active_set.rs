@@ -936,7 +936,7 @@ mod tests {
         set.activate_rewrite_pattern(1, &pattern_step, &mut result);
 
         assert_eq!(result.len(), 1);
-        let expected = FatClause::new(vec![FatLiteral::equals(
+        let expected = FatClause::new_without_context(vec![FatLiteral::equals(
             FatTerm::parse("c0(c1)"),
             FatTerm::parse("c2"),
         )]);
@@ -960,7 +960,7 @@ mod tests {
 
     #[test]
     fn test_equality_resolution() {
-        let old_clause = FatClause::new(vec![
+        let old_clause = FatClause::new_without_context(vec![
             FatLiteral::not_equals(FatTerm::parse("x0"), FatTerm::parse("c0")),
             FatLiteral::equals(FatTerm::parse("x0"), FatTerm::parse("c1")),
         ]);
@@ -981,7 +981,7 @@ mod tests {
 
     #[test]
     fn test_equality_factoring_basic() {
-        let old_clause = FatClause::new(vec![
+        let old_clause = FatClause::new_without_context(vec![
             FatLiteral::equals(FatTerm::parse("x0"), FatTerm::parse("c0")),
             FatLiteral::equals(FatTerm::parse("x1"), FatTerm::parse("c0")),
         ]);
