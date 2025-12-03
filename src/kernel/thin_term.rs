@@ -20,6 +20,341 @@ pub enum ThinTermComponent {
     Atom(Atom),
 }
 
+/// A borrowed reference to a thin term - wraps a slice of components.
+/// This is the borrowed equivalent of ThinTerm, similar to how &str relates to String.
+/// Most operations work on ThinTermRef to avoid unnecessary allocations.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct ThinTermRef<'a> {
+    components: &'a [ThinTermComponent],
+}
+
+impl<'a> ThinTermRef<'a> {
+    /// Create a ThinTermRef from a slice of components.
+    pub fn new(components: &'a [ThinTermComponent]) -> ThinTermRef<'a> {
+        ThinTermRef { components }
+    }
+
+    /// Convert this reference to an owned ThinTerm by cloning the components.
+    pub fn to_owned(&self) -> ThinTerm {
+        ThinTerm {
+            components: self.components.to_vec(),
+        }
+    }
+
+    /// Get the head atom of this term.
+    /// The head is always the first component (or first after Composite marker).
+    pub fn get_head_atom(&self) -> &Atom {
+        match &self.components[0] {
+            ThinTermComponent::Atom(atom) => atom,
+            ThinTermComponent::Composite { .. } => {
+                panic!("ThinTerm should not start with Composite marker")
+            }
+        }
+    }
+
+    /// Check if this term is atomic (no arguments).
+    pub fn is_atomic(&self) -> bool {
+        self.components.len() == 1
+    }
+
+    /// Check if this term is the boolean constant "true".
+    pub fn is_true(&self) -> bool {
+        matches!(self.get_head_atom(), Atom::True)
+    }
+
+    /// Check if this term is a variable (atomic and head is a variable).
+    pub fn is_variable(&self) -> bool {
+        self.is_atomic() && self.get_head_atom().is_variable()
+    }
+
+    /// If this is an atomic variable, return its index.
+    pub fn atomic_variable(&self) -> Option<AtomId> {
+        if !self.is_atomic() {
+            return None;
+        }
+        match self.get_head_atom() {
+            Atom::Variable(i) => Some(*i),
+            _ => None,
+        }
+    }
+
+    /// Check if this term contains a variable with the given index anywhere.
+    pub fn has_variable(&self, index: AtomId) -> bool {
+        for component in self.components {
+            if let ThinTermComponent::Atom(Atom::Variable(i)) = component {
+                if *i == index {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Check if this term contains any variables.
+    pub fn has_any_variable(&self) -> bool {
+        for component in self.components {
+            if let ThinTermComponent::Atom(atom) = component {
+                if atom.is_variable() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Check if this term contains any local constants.
+    pub fn has_scoped_constant(&self) -> bool {
+        for component in self.components {
+            if let ThinTermComponent::Atom(atom) = component {
+                if atom.is_scoped_constant() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Check if this term contains any synthetic atoms.
+    pub fn has_synthetic(&self) -> bool {
+        use crate::kernel::symbol::Symbol;
+        for component in self.components {
+            if let ThinTermComponent::Atom(Atom::Symbol(Symbol::Synthetic(_))) = component {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Count the number of atom components (excluding Composite markers).
+    pub fn atom_count(&self) -> u32 {
+        let mut count = 0;
+        for component in self.components {
+            if let ThinTermComponent::Atom(Atom::True) = component {
+                continue; // "true" counts as 0
+            }
+            if matches!(component, ThinTermComponent::Atom(_)) {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    /// Get the number of arguments this term has.
+    pub fn num_args(&self) -> usize {
+        if self.components.len() <= 1 {
+            return 0;
+        }
+
+        let mut arg_count = 0;
+        let mut i = 1; // Skip the head
+        while i < self.components.len() {
+            arg_count += 1;
+            if let ThinTermComponent::Composite { span } = self.components[i] {
+                i += span as usize;
+            } else {
+                i += 1;
+            }
+        }
+        arg_count
+    }
+
+    /// Iterate over the arguments of this term without allocating.
+    /// Each argument is returned as a ThinTermRef.
+    pub fn iter_args(&self) -> ThinTermRefArgsIterator<'a> {
+        ThinTermRefArgsIterator {
+            components: self.components,
+            position: if self.components.len() > 1 {
+                1
+            } else {
+                self.components.len()
+            },
+        }
+    }
+
+    /// Iterate over all atoms in the term.
+    pub fn iter_atoms(&self) -> impl Iterator<Item = &Atom> + 'a {
+        self.components.iter().filter_map(|component| {
+            if let ThinTermComponent::Atom(atom) = component {
+                Some(atom)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Get the maximum variable index in this term, or None if there are no variables.
+    pub fn max_variable(&self) -> Option<AtomId> {
+        let mut max: Option<AtomId> = None;
+        for atom in self.iter_atoms() {
+            if let Atom::Variable(i) = atom {
+                max = Some(match max {
+                    None => *i,
+                    Some(current_max) => current_max.max(*i),
+                });
+            }
+        }
+        max
+    }
+
+    /// Get the lowest variable number this term doesn't use.
+    pub fn least_unused_variable(&self) -> AtomId {
+        match self.max_variable() {
+            Some(max) => max + 1,
+            None => 0,
+        }
+    }
+
+    /// Calculate multi-weight for KBO ordering.
+    /// Returns (weight1, weight2) and populates refcounts with variable usage.
+    fn multi_weight(&self, refcounts: &mut Vec<u8>) -> (u32, u32) {
+        use crate::kernel::symbol::Symbol;
+
+        let mut weight1 = 0;
+        let mut weight2 = 0;
+
+        for component in self.components {
+            match component {
+                ThinTermComponent::Composite { .. } => {
+                    // Composite markers don't contribute to weight
+                }
+                ThinTermComponent::Atom(Atom::True) => {
+                    // True doesn't contribute to weight
+                }
+                ThinTermComponent::Atom(Atom::Variable(i)) => {
+                    while refcounts.len() <= *i as usize {
+                        refcounts.push(0);
+                    }
+                    refcounts[*i as usize] += 1;
+                }
+                ThinTermComponent::Atom(Atom::Symbol(Symbol::GlobalConstant(i))) => {
+                    weight1 += 1;
+                    weight2 += 4 * (*i) as u32;
+                }
+                ThinTermComponent::Atom(Atom::Symbol(Symbol::ScopedConstant(i))) => {
+                    weight1 += 1;
+                    weight2 += 1 + 4 * (*i) as u32;
+                }
+                ThinTermComponent::Atom(Atom::Symbol(Symbol::Monomorph(i))) => {
+                    weight1 += 1;
+                    weight2 += 2 + 4 * (*i) as u32;
+                }
+                ThinTermComponent::Atom(Atom::Symbol(Symbol::Synthetic(i))) => {
+                    weight1 += 1;
+                    weight2 += 3 + 4 * (*i) as u32;
+                }
+            }
+        }
+
+        (weight1, weight2)
+    }
+
+    /// KBO helper that can skip the domination check.
+    fn kbo_helper(&self, other: &ThinTermRef, check_domination: bool) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+
+        let mut self_refcounts = vec![];
+        let (self_weight1, self_weight2) = self.multi_weight(&mut self_refcounts);
+
+        let mut other_refcounts = vec![];
+        let (other_weight1, other_weight2) = other.multi_weight(&mut other_refcounts);
+
+        if self_weight1 > other_weight1
+            || self_weight1 == other_weight1 && self_weight2 > other_weight2
+        {
+            if !check_domination || dominates(&self_refcounts, &other_refcounts) {
+                return Ordering::Greater;
+            }
+            return Ordering::Equal;
+        }
+
+        if self_weight1 < other_weight1
+            || self_weight1 == other_weight1 && self_weight2 < other_weight2
+        {
+            if !check_domination || dominates(&other_refcounts, &self_refcounts) {
+                return Ordering::Less;
+            }
+            return Ordering::Equal;
+        }
+
+        Ordering::Equal
+    }
+
+    /// Partial tiebreak for KBO - stable under variable renaming.
+    fn partial_tiebreak(&self, other: &ThinTermRef) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+
+        let head_cmp = self
+            .get_head_atom()
+            .stable_partial_order(other.get_head_atom());
+        if head_cmp != Ordering::Equal {
+            return head_cmp;
+        }
+
+        // More arguments means simpler (less nested)
+        let len_cmp = other.num_args().cmp(&self.num_args());
+        if len_cmp != Ordering::Equal {
+            return len_cmp;
+        }
+
+        // Compare arguments lexicographically
+        for (arg1, arg2) in self.iter_args().zip(other.iter_args()) {
+            let arg_cmp = arg1.partial_tiebreak(&arg2);
+            if arg_cmp != Ordering::Equal {
+                return arg_cmp;
+            }
+        }
+
+        Ordering::Equal
+    }
+
+    /// Total tiebreak for KBO - not stable under variable renaming.
+    fn total_tiebreak(&self, other: &ThinTermRef) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+
+        let head_cmp = other.get_head_atom().cmp(self.get_head_atom());
+        if head_cmp != Ordering::Equal {
+            return head_cmp;
+        }
+
+        // The partial tiebreak should have caught this
+        debug_assert!(self.num_args() == other.num_args());
+
+        // Compare arguments lexicographically
+        for (arg1, arg2) in self.iter_args().zip(other.iter_args()) {
+            let arg_cmp = arg1.extended_kbo_cmp(&arg2);
+            if arg_cmp != Ordering::Equal {
+                return arg_cmp;
+            }
+        }
+
+        Ordering::Equal
+    }
+
+    /// Knuth-Bendix partial reduction ordering.
+    /// Returns Greater if self > other, Less if other > self.
+    /// Returns Equal if they cannot be ordered (not equality in the usual sense).
+    pub fn kbo_cmp(&self, other: &ThinTermRef) -> std::cmp::Ordering {
+        self.kbo_helper(other, true)
+    }
+
+    /// Extended KBO comparison - total ordering where only identical terms are equal.
+    pub fn extended_kbo_cmp(&self, other: &ThinTermRef) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+
+        let kbo_cmp = self.kbo_helper(other, false);
+        if kbo_cmp != Ordering::Equal {
+            return kbo_cmp;
+        }
+
+        let tiebreak = self.partial_tiebreak(other);
+        if tiebreak != Ordering::Equal {
+            return tiebreak;
+        }
+
+        self.total_tiebreak(other)
+    }
+}
+
 /// A thin term stores term structure without type information.
 /// Type information is stored separately in the TypeStore and SymbolTable.
 /// The term is represented as a flat vector of components in pre-order traversal.
@@ -53,8 +388,12 @@ impl ThinTerm {
         &self.components
     }
 
+    /// Get a borrowed reference to this term.
+    pub fn as_ref(&self) -> ThinTermRef {
+        ThinTermRef::new(&self.components)
+    }
+
     /// Get the head atom of this term.
-    /// The head is always the first component (or first after Composite marker).
     pub fn get_head_atom(&self) -> &Atom {
         match &self.components[0] {
             ThinTermComponent::Atom(atom) => atom,
@@ -99,135 +438,58 @@ impl ThinTerm {
 
     /// Check if this term is atomic (no arguments).
     pub fn is_atomic(&self) -> bool {
-        self.components.len() == 1
+        self.as_ref().is_atomic()
     }
 
     /// Check if this term is the boolean constant "true".
     pub fn is_true(&self) -> bool {
-        matches!(self.get_head_atom(), Atom::True)
+        self.as_ref().is_true()
     }
 
     /// Check if this term is a variable (atomic and head is a variable).
     pub fn is_variable(&self) -> bool {
-        self.is_atomic() && self.get_head_atom().is_variable()
+        self.as_ref().is_variable()
     }
 
     /// If this is an atomic variable, return its index.
     pub fn atomic_variable(&self) -> Option<AtomId> {
-        if !self.is_atomic() {
-            return None;
-        }
-        match self.get_head_atom() {
-            Atom::Variable(i) => Some(*i),
-            _ => None,
-        }
+        self.as_ref().atomic_variable()
     }
 
     /// Check if this term contains a variable with the given index anywhere.
     pub fn has_variable(&self, index: AtomId) -> bool {
-        for component in &self.components {
-            if let ThinTermComponent::Atom(Atom::Variable(i)) = component {
-                if *i == index {
-                    return true;
-                }
-            }
-        }
-        false
+        self.as_ref().has_variable(index)
     }
 
     /// Check if this term contains any variables.
     pub fn has_any_variable(&self) -> bool {
-        for component in &self.components {
-            if let ThinTermComponent::Atom(atom) = component {
-                if atom.is_variable() {
-                    return true;
-                }
-            }
-        }
-        false
+        self.as_ref().has_any_variable()
     }
 
     /// Check if this term contains any local constants.
     pub fn has_scoped_constant(&self) -> bool {
-        for component in &self.components {
-            if let ThinTermComponent::Atom(atom) = component {
-                if atom.is_scoped_constant() {
-                    return true;
-                }
-            }
-        }
-        false
+        self.as_ref().has_scoped_constant()
     }
 
     /// Check if this term contains any synthetic atoms.
     pub fn has_synthetic(&self) -> bool {
-        use crate::kernel::symbol::Symbol;
-        for component in &self.components {
-            if let ThinTermComponent::Atom(Atom::Symbol(Symbol::Synthetic(_))) = component {
-                return true;
-            }
-        }
-        false
+        self.as_ref().has_synthetic()
     }
 
     /// Count the number of atom components (excluding Composite markers).
     pub fn atom_count(&self) -> u32 {
-        let mut count = 0;
-        for component in &self.components {
-            if let ThinTermComponent::Atom(Atom::True) = component {
-                continue; // "true" counts as 0
-            }
-            if matches!(component, ThinTermComponent::Atom(_)) {
-                count += 1;
-            }
-        }
-        count
+        self.as_ref().atom_count()
     }
 
     /// Get the number of arguments this term has.
     pub fn num_args(&self) -> usize {
-        if self.components.len() <= 1 {
-            return 0;
-        }
-
-        let mut arg_count = 0;
-        let mut i = 1; // Skip the head
-        while i < self.components.len() {
-            arg_count += 1;
-            if let ThinTermComponent::Composite { span } = self.components[i] {
-                i += span as usize;
-            } else {
-                i += 1;
-            }
-        }
-        arg_count
+        self.as_ref().num_args()
     }
 
-    /// Get the arguments of this term as a vector of ThinTerms.
-    /// If this is an atomic term (just a head), returns an empty vector.
-    pub fn args(&self) -> Vec<ThinTerm> {
-        if self.components.len() <= 1 {
-            return vec![];
-        }
-
-        let mut args = vec![];
-        let mut i = 1; // Skip the head
-        while i < self.components.len() {
-            if let ThinTermComponent::Composite { span } = self.components[i] {
-                // Extract the composite term
-                let arg_components = self.components[i..i + span as usize].to_vec();
-                args.push(ThinTerm::new(arg_components));
-                i += span as usize;
-            } else {
-                // Simple atomic argument
-                args.push(ThinTerm::atom(match self.components[i] {
-                    ThinTermComponent::Atom(atom) => atom,
-                    _ => unreachable!(),
-                }));
-                i += 1;
-            }
-        }
-        args
+    /// Iterate over the arguments of this term without allocating.
+    /// Each argument is returned as a ThinTermRef.
+    pub fn iter_args(&self) -> ThinTermRefArgsIterator {
+        self.as_ref().iter_args()
     }
 
     /// Iterate over all atoms in the term.
@@ -243,24 +505,12 @@ impl ThinTerm {
 
     /// Get the maximum variable index in this term, or None if there are no variables.
     pub fn max_variable(&self) -> Option<AtomId> {
-        let mut max: Option<AtomId> = None;
-        for atom in self.iter_atoms() {
-            if let Atom::Variable(i) = atom {
-                max = Some(match max {
-                    None => *i,
-                    Some(current_max) => current_max.max(*i),
-                });
-            }
-        }
-        max
+        self.as_ref().max_variable()
     }
 
     /// Get the lowest variable number this term doesn't use.
     pub fn least_unused_variable(&self) -> AtomId {
-        match self.max_variable() {
-            Some(max) => max + 1,
-            None => 0,
-        }
+        self.as_ref().least_unused_variable()
     }
 
     /// Replace all occurrences of a variable with a term.
@@ -314,158 +564,16 @@ impl ThinTerm {
         ThinTerm::new(new_components)
     }
 
-    /// Calculate multi-weight for KBO ordering.
-    /// Returns (weight1, weight2) and populates refcounts with variable usage.
-    fn multi_weight(&self, refcounts: &mut Vec<u8>) -> (u32, u32) {
-        use crate::kernel::symbol::Symbol;
-
-        let mut weight1 = 0;
-        let mut weight2 = 0;
-
-        for component in &self.components {
-            match component {
-                ThinTermComponent::Composite { .. } => {
-                    // Composite markers don't contribute to weight
-                }
-                ThinTermComponent::Atom(Atom::True) => {
-                    // True doesn't contribute to weight
-                }
-                ThinTermComponent::Atom(Atom::Variable(i)) => {
-                    while refcounts.len() <= *i as usize {
-                        refcounts.push(0);
-                    }
-                    refcounts[*i as usize] += 1;
-                }
-                ThinTermComponent::Atom(Atom::Symbol(Symbol::GlobalConstant(i))) => {
-                    weight1 += 1;
-                    weight2 += 4 * (*i) as u32;
-                }
-                ThinTermComponent::Atom(Atom::Symbol(Symbol::ScopedConstant(i))) => {
-                    weight1 += 1;
-                    weight2 += 1 + 4 * (*i) as u32;
-                }
-                ThinTermComponent::Atom(Atom::Symbol(Symbol::Monomorph(i))) => {
-                    weight1 += 1;
-                    weight2 += 2 + 4 * (*i) as u32;
-                }
-                ThinTermComponent::Atom(Atom::Symbol(Symbol::Synthetic(i))) => {
-                    weight1 += 1;
-                    weight2 += 3 + 4 * (*i) as u32;
-                }
-            }
-        }
-
-        (weight1, weight2)
-    }
-
-    /// KBO helper that can skip the domination check.
-    fn kbo_helper(&self, other: &ThinTerm, check_domination: bool) -> std::cmp::Ordering {
-        use std::cmp::Ordering;
-
-        let mut self_refcounts = vec![];
-        let (self_weight1, self_weight2) = self.multi_weight(&mut self_refcounts);
-
-        let mut other_refcounts = vec![];
-        let (other_weight1, other_weight2) = other.multi_weight(&mut other_refcounts);
-
-        if self_weight1 > other_weight1
-            || self_weight1 == other_weight1 && self_weight2 > other_weight2
-        {
-            if !check_domination || dominates(&self_refcounts, &other_refcounts) {
-                return Ordering::Greater;
-            }
-            return Ordering::Equal;
-        }
-
-        if self_weight1 < other_weight1
-            || self_weight1 == other_weight1 && self_weight2 < other_weight2
-        {
-            if !check_domination || dominates(&other_refcounts, &self_refcounts) {
-                return Ordering::Less;
-            }
-            return Ordering::Equal;
-        }
-
-        Ordering::Equal
-    }
-
-    /// Partial tiebreak for KBO - stable under variable renaming.
-    fn partial_tiebreak(&self, other: &ThinTerm) -> std::cmp::Ordering {
-        use std::cmp::Ordering;
-
-        let head_cmp = self
-            .get_head_atom()
-            .stable_partial_order(other.get_head_atom());
-        if head_cmp != Ordering::Equal {
-            return head_cmp;
-        }
-
-        // More arguments means simpler (less nested)
-        let len_cmp = other.num_args().cmp(&self.num_args());
-        if len_cmp != Ordering::Equal {
-            return len_cmp;
-        }
-
-        // Compare arguments lexicographically
-        let self_args = self.args();
-        let other_args = other.args();
-        for (arg1, arg2) in self_args.iter().zip(other_args.iter()) {
-            let arg_cmp = arg1.partial_tiebreak(arg2);
-            if arg_cmp != Ordering::Equal {
-                return arg_cmp;
-            }
-        }
-
-        Ordering::Equal
-    }
-
-    /// Total tiebreak for KBO - not stable under variable renaming.
-    fn total_tiebreak(&self, other: &ThinTerm) -> std::cmp::Ordering {
-        use std::cmp::Ordering;
-
-        let head_cmp = other.get_head_atom().cmp(self.get_head_atom());
-        if head_cmp != Ordering::Equal {
-            return head_cmp;
-        }
-
-        // The partial tiebreak should have caught this
-        debug_assert!(self.num_args() == other.num_args());
-
-        // Compare arguments lexicographically
-        let self_args = self.args();
-        let other_args = other.args();
-        for (arg1, arg2) in self_args.iter().zip(other_args.iter()) {
-            let arg_cmp = arg1.extended_kbo_cmp(arg2);
-            if arg_cmp != Ordering::Equal {
-                return arg_cmp;
-            }
-        }
-
-        Ordering::Equal
-    }
-
     /// Knuth-Bendix partial reduction ordering.
     /// Returns Greater if self > other, Less if other > self.
     /// Returns Equal if they cannot be ordered (not equality in the usual sense).
     pub fn kbo_cmp(&self, other: &ThinTerm) -> std::cmp::Ordering {
-        self.kbo_helper(other, true)
+        self.as_ref().kbo_cmp(&other.as_ref())
     }
 
     /// Extended KBO comparison - total ordering where only identical terms are equal.
     pub fn extended_kbo_cmp(&self, other: &ThinTerm) -> std::cmp::Ordering {
-        use std::cmp::Ordering;
-
-        let kbo_cmp = self.kbo_helper(other, false);
-        if kbo_cmp != Ordering::Equal {
-            return kbo_cmp;
-        }
-
-        let tiebreak = self.partial_tiebreak(other);
-        if tiebreak != Ordering::Equal {
-            return tiebreak;
-        }
-
-        self.total_tiebreak(other)
+        self.as_ref().extended_kbo_cmp(&other.as_ref())
     }
 }
 
@@ -480,4 +588,35 @@ fn dominates(a: &Vec<u8>, b: &Vec<u8>) -> bool {
         }
     }
     true
+}
+
+/// Iterator over the arguments of a ThinTermRef, yielding borrowed references.
+pub struct ThinTermRefArgsIterator<'a> {
+    components: &'a [ThinTermComponent],
+    position: usize,
+}
+
+impl<'a> Iterator for ThinTermRefArgsIterator<'a> {
+    type Item = ThinTermRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.position >= self.components.len() {
+            return None;
+        }
+
+        match self.components[self.position] {
+            ThinTermComponent::Composite { span } => {
+                // Extract the composite term as a slice reference
+                let arg_slice = &self.components[self.position..self.position + span as usize];
+                self.position += span as usize;
+                Some(ThinTermRef::new(arg_slice))
+            }
+            ThinTermComponent::Atom(_) => {
+                // Simple atomic argument as a single-element slice
+                let arg_slice = &self.components[self.position..self.position + 1];
+                self.position += 1;
+                Some(ThinTermRef::new(arg_slice))
+            }
+        }
+    }
 }
