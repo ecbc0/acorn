@@ -736,6 +736,7 @@ mod tests {
 
     /// Creates a test unifier with EMPTY types for variables.
     /// Use this for tests that use FatTerm::parse() which creates EMPTY types.
+    #[cfg(not(feature = "thin"))]
     fn test_unifier<'a>(kernel_context: &'a KernelContext) -> Unifier<'a> {
         use crate::kernel::local_context::LocalContext;
         let mut u = Unifier::new(3, kernel_context);
@@ -862,20 +863,47 @@ mod tests {
         u.assert_unify(Scope::LEFT, &const_f_term, Scope::RIGHT, &var_f_term);
     }
 
-    // This test uses Term::parse which creates EMPTY types.
-    // ThinTerm looks up types from the symbol table, so this test only works with FatTerm.
-    #[cfg(not(feature = "thin"))]
     #[test]
     fn test_nested_functional_unify() {
-        let left_term = Term::parse("x0(x0(c0))");
-        let right_term = Term::parse("c1(x0(x1))");
-        let ctx = test_ctx_empty();
-        let mut u = test_unifier(&ctx);
+        use crate::kernel::local_context::LocalContext;
+
+        // Test: unify x0(x0(c5)) with c1(x0(x1))
+        // x0 should map to c1, x1 should map to c5
+        // x0 has type Bool -> Bool, x1 has type Bool
+        // c1 is Bool -> Bool, c5 is Bool
+        let ctx = test_ctx();
+        let bool_to_bool = ctx.symbol_table.get_type(Symbol::ScopedConstant(1));
+
+        // Create local context where x0: Bool -> Bool, x1: Bool
+        let local_ctx = LocalContext::with_types(vec![bool_to_bool, BOOL]);
+        let local_ctx_ref: &'static LocalContext = Box::leak(Box::new(local_ctx));
+
+        let c5 = Term::atom(BOOL, Atom::Symbol(Symbol::ScopedConstant(5)));
+        let x1_var = Term::atom(BOOL, Atom::Variable(1));
+
+        // left_term = x0(x0(c5)) where x0 has type Bool -> Bool
+        let inner = Term::new(BOOL, bool_to_bool, Atom::Variable(0), vec![c5.clone()]);
+        let left_term = Term::new(BOOL, bool_to_bool, Atom::Variable(0), vec![inner]);
+
+        // right_term = c1(x0(x1)) where c1: Bool -> Bool
+        let x0_x1 = Term::new(BOOL, bool_to_bool, Atom::Variable(0), vec![x1_var.clone()]);
+        let right_term = Term::new(
+            BOOL,
+            bool_to_bool,
+            Atom::Symbol(Symbol::ScopedConstant(1)),
+            vec![x0_x1],
+        );
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, local_ctx_ref);
+        u.set_input_context(Scope::RIGHT, local_ctx_ref);
+        u.set_output_var_types(vec![bool_to_bool, BOOL, BOOL, BOOL, BOOL]);
+
         u.assert_unify(Scope::LEFT, &left_term, Scope::RIGHT, &right_term);
         u.print();
         assert!(u.get_mapping(Scope::LEFT, 0).unwrap().to_string() == "c1");
         assert!(u.get_mapping(Scope::RIGHT, 0).unwrap().to_string() == "c1");
-        assert!(u.get_mapping(Scope::RIGHT, 1).unwrap().to_string() == "c0");
+        assert!(u.get_mapping(Scope::RIGHT, 1).unwrap().to_string() == "c5");
     }
 
     // This test uses Term::parse which creates EMPTY types.
@@ -1023,75 +1051,233 @@ mod tests {
         );
     }
 
-    // This test uses unify_str which uses Term::parse with EMPTY types.
-    // ThinTerm looks up types from the symbol table, so this test only works with FatTerm.
-    #[cfg(not(feature = "thin"))]
     #[test]
     fn test_mutual_containment_invalid_1() {
-        let ctx = test_ctx_empty();
-        let mut u = test_unifier(&ctx);
-        u.unify_str(
-            Scope::LEFT,
-            "c0(x0, c0(x1, c1(x2)))",
-            Scope::LEFT,
-            "c0(c0(x2, x1), x0)",
-            false,
+        // Test: c0(x0, c0(x1, c1(x2))) should not unify with c0(c0(x2, x1), x0)
+        // Using g0 which has type (Bool, Bool) -> Bool for c0-like behavior
+        // Using g1 which has type Bool -> Bool for c1-like behavior
+        let ctx = test_ctx();
+        let bool2_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(0)); // g0
+        let bool_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(1)); // g1
+
+        let x0 = Term::atom(BOOL, Atom::Variable(0));
+        let x1 = Term::atom(BOOL, Atom::Variable(1));
+        let x2 = Term::atom(BOOL, Atom::Variable(2));
+
+        // c1(x2) -> g1(x2)
+        let g1_x2 = Term::new(
+            BOOL,
+            bool_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(1)),
+            vec![x2.clone()],
         );
+        // c0(x1, c1(x2)) -> g0(x1, g1(x2))
+        let inner = Term::new(
+            BOOL,
+            bool2_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![x1.clone(), g1_x2],
+        );
+        // c0(x0, c0(x1, c1(x2))) -> g0(x0, g0(x1, g1(x2)))
+        let left_term = Term::new(
+            BOOL,
+            bool2_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![x0.clone(), inner],
+        );
+
+        // c0(x2, x1) -> g0(x2, x1)
+        let g0_x2_x1 = Term::new(
+            BOOL,
+            bool2_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![x2.clone(), x1.clone()],
+        );
+        // c0(c0(x2, x1), x0) -> g0(g0(x2, x1), x0)
+        let right_term = Term::new(
+            BOOL,
+            bool2_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![g0_x2_x1, x0.clone()],
+        );
+
+        let mut u = test_unifier_bool(&ctx);
+        let result = u.unify(Scope::LEFT, &left_term, Scope::LEFT, &right_term);
+        assert!(!result, "Mutual containment should not unify");
     }
 
-    // This test uses unify_str which uses Term::parse with EMPTY types.
-    // ThinTerm looks up types from the symbol table, so this test only works with FatTerm.
-    #[cfg(not(feature = "thin"))]
     #[test]
     fn test_mutual_containment_invalid_2() {
-        let ctx = test_ctx_empty();
-        let mut u = test_unifier(&ctx);
-        u.unify_str(
-            Scope::LEFT,
-            "c0(c0(x0, c1(x1)), x2)",
-            Scope::LEFT,
-            "c0(x2, c0(x1, x0))",
-            false,
+        // Test: c0(c0(x0, c1(x1)), x2) should not unify with c0(x2, c0(x1, x0))
+        let ctx = test_ctx();
+        let bool2_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(0)); // g0
+        let bool_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(1)); // g1
+
+        let x0 = Term::atom(BOOL, Atom::Variable(0));
+        let x1 = Term::atom(BOOL, Atom::Variable(1));
+        let x2 = Term::atom(BOOL, Atom::Variable(2));
+
+        // c1(x1) -> g1(x1)
+        let g1_x1 = Term::new(
+            BOOL,
+            bool_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(1)),
+            vec![x1.clone()],
         );
+        // c0(x0, c1(x1)) -> g0(x0, g1(x1))
+        let inner_left = Term::new(
+            BOOL,
+            bool2_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![x0.clone(), g1_x1],
+        );
+        // c0(c0(x0, c1(x1)), x2) -> g0(g0(x0, g1(x1)), x2)
+        let left_term = Term::new(
+            BOOL,
+            bool2_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![inner_left, x2.clone()],
+        );
+
+        // c0(x1, x0) -> g0(x1, x0)
+        let inner_right = Term::new(
+            BOOL,
+            bool2_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![x1.clone(), x0.clone()],
+        );
+        // c0(x2, c0(x1, x0)) -> g0(x2, g0(x1, x0))
+        let right_term = Term::new(
+            BOOL,
+            bool2_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![x2.clone(), inner_right],
+        );
+
+        let mut u = test_unifier_bool(&ctx);
+        let result = u.unify(Scope::LEFT, &left_term, Scope::LEFT, &right_term);
+        assert!(!result, "Mutual containment should not unify");
     }
 
-    // This test uses unify_str which uses Term::parse with EMPTY types.
-    // ThinTerm looks up types from the symbol table, so this test only works with FatTerm.
-    #[cfg(not(feature = "thin"))]
     #[test]
     fn test_recursive_reference_in_output() {
-        let ctx = test_ctx_empty();
-        let mut u = test_unifier(&ctx);
-        u.unify_str(
-            Scope::LEFT,
-            "g2(x0, x0)",
-            Scope::RIGHT,
-            "g2(g2(g1(c0, x0), x0), g2(x1, x1))",
-            false,
+        // Test: g2(x0, x0) should not unify with g2(g2(g1(c0, x0), x0), g2(x1, x1))
+        // g2 has type (Bool, Bool, Bool) -> Bool, but we need (Bool, Bool) -> Bool
+        // So we use g0 instead
+        let ctx = test_ctx();
+        let bool2_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(0)); // g0
+        let bool_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(1)); // g1
+
+        let x0 = Term::atom(BOOL, Atom::Variable(0));
+        let x1 = Term::atom(BOOL, Atom::Variable(1));
+        let c5 = Term::atom(BOOL, Atom::Symbol(Symbol::ScopedConstant(5))); // c5 is Bool
+
+        // Left: g0(x0, x0)
+        let left_term = Term::new(
+            BOOL,
+            bool2_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![x0.clone(), x0.clone()],
         );
+
+        // g1(c5) -> this doesn't fit since g1 has Bool -> Bool but we need a different structure
+        // Original was g2(g2(g1(c0, x0), x0), g2(x1, x1)) which uses g1 with 2 args
+        // Let's simplify: g0(g0(g0(c5, x0), x0), g0(x1, x1))
+        let g0_c5_x0 = Term::new(
+            BOOL,
+            bool2_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![c5.clone(), x0.clone()],
+        );
+        let g0_inner_x0 = Term::new(
+            BOOL,
+            bool2_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![g0_c5_x0, x0.clone()],
+        );
+        let g0_x1_x1 = Term::new(
+            BOOL,
+            bool2_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![x1.clone(), x1.clone()],
+        );
+        let right_term = Term::new(
+            BOOL,
+            bool2_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![g0_inner_x0, g0_x1_x1],
+        );
+
+        let mut u = test_unifier_bool(&ctx);
+        let result = u.unify(Scope::LEFT, &left_term, Scope::RIGHT, &right_term);
+        assert!(!result, "Recursive reference should not unify");
     }
 
-    // This test uses Term::parse which creates EMPTY types.
-    // ThinTerm looks up types from the symbol table, so this test only works with FatTerm.
-    #[cfg(not(feature = "thin"))]
     #[test]
     fn test_initializing_with_variables_in_map() {
         use crate::kernel::local_context::LocalContext;
-        let ctx = test_ctx_empty();
-        let mut initial_map = VariableMap::new();
-        initial_map.set(0, Term::parse("s0(x0, x1, s4)"));
-        let output_context = initial_map.build_output_context(LocalContext::test_empty_ref());
-        let (mut unifier, scope1) = Unifier::with_map(initial_map, &ctx, output_context);
-        // Set contexts for all scopes
-        unifier.set_input_context(scope1, LocalContext::test_empty_ref());
-        let scope2 = unifier.add_scope();
-        unifier.set_input_context(scope2, LocalContext::test_empty_ref());
-        let scope3 = unifier.add_scope();
-        unifier.set_input_context(scope3, LocalContext::test_empty_ref());
-        // Pre-populate output context with enough types for all output variables
-        unifier.set_output_var_types(vec![EMPTY; 10]);
 
-        unifier.unify_str(scope2, "g6(x0, x1)", scope3, "g6(c1, x0)", true);
-        unifier.unify_str(scope2, "g0(x2, x1)", scope1, "g0(s4, x0)", true);
+        // Test initializing a unifier with pre-existing variable mappings
+        let ctx = test_ctx();
+        let bool2_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(0)); // g0
+
+        // Create a term for the initial mapping using only atomic synthetics
+        // Use g2(x0, x1, s4) instead of s0(x0, x1, s4) since g2 has proper function type
+        let x0 = Term::atom(BOOL, Atom::Variable(0));
+        let x1 = Term::atom(BOOL, Atom::Variable(1));
+        let s4 = Term::atom(BOOL, Atom::Symbol(Symbol::Synthetic(4))); // BOOL type
+        let bool3_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(2)); // g2
+        let g2_term = Term::new(
+            BOOL,
+            bool3_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(2)),
+            vec![x0.clone(), x1.clone(), s4.clone()],
+        );
+
+        let mut initial_map = VariableMap::new();
+        initial_map.set(0, g2_term);
+
+        let local_ctx = LocalContext::with_types(vec![BOOL; 10]);
+        let local_ctx_ref: &'static LocalContext = Box::leak(Box::new(local_ctx));
+        let output_context = initial_map.build_output_context(local_ctx_ref);
+        let (mut unifier, scope1) = Unifier::with_map(initial_map, &ctx, output_context);
+        unifier.set_input_context(scope1, local_ctx_ref);
+        let scope2 = unifier.add_scope();
+        unifier.set_input_context(scope2, local_ctx_ref);
+        let scope3 = unifier.add_scope();
+        unifier.set_input_context(scope3, local_ctx_ref);
+        unifier.set_output_var_types(vec![BOOL; 10]);
+
+        // Unify g0(x0, x1) with g0(c5, x0)
+        let c5 = Term::atom(BOOL, Atom::Symbol(Symbol::ScopedConstant(5)));
+        let g0_x0_x1 = Term::new(
+            BOOL,
+            bool2_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![x0.clone(), x1.clone()],
+        );
+        let g0_c5_x0 = Term::new(
+            BOOL,
+            bool2_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![c5.clone(), x0.clone()],
+        );
+        assert!(unifier.unify(scope2, &g0_x0_x1, scope3, &g0_c5_x0));
+
+        // Unify g0(x2, x1) with g0(s4, x0)
+        let x2 = Term::atom(BOOL, Atom::Variable(2));
+        let g0_x2_x1 = Term::new(
+            BOOL,
+            bool2_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![x2.clone(), x1.clone()],
+        );
+        let g0_s4_x0 = Term::new(
+            BOOL,
+            bool2_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![s4.clone(), x0.clone()],
+        );
+        assert!(unifier.unify(scope2, &g0_x2_x1, scope1, &g0_s4_x0));
     }
 }
