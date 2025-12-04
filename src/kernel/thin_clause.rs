@@ -4,6 +4,7 @@ use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::thin_literal::ThinLiteral;
+use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 
 /// A thin clause stores the structure of a clause without type information.
 /// Like Clause, it represents a disjunction (an "or") of literals.
@@ -30,6 +31,101 @@ impl ThinClause {
         };
         c.normalize();
         c
+    }
+
+    /// Normalizes literals into a clause, creating a trace of where each one is sent.
+    /// Note that this doesn't flip any literals. It only creates the "Output" and "Impossible"
+    /// type traces.
+    pub fn normalize_with_trace(
+        literals: Vec<ThinLiteral>,
+        context: &LocalContext,
+    ) -> (ThinClause, ClauseTrace) {
+        let mut trace = vec![LiteralTrace::Impossible; literals.len()];
+
+        // Pair each literal with its initial index.
+        let mut indexed_literals: Vec<(ThinLiteral, usize)> = literals
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, lit)| {
+                if lit.is_impossible() {
+                    None
+                } else {
+                    Some((lit, i))
+                }
+            })
+            .collect();
+        indexed_literals.sort();
+
+        let mut output_literals = vec![];
+        for (literal, input_index) in indexed_literals {
+            if !output_literals.is_empty() {
+                let last_index = output_literals.len() - 1;
+                if literal == output_literals[last_index] {
+                    // This literal is a duplicate, but it is in the output.
+                    trace[input_index] = LiteralTrace::Output {
+                        index: last_index,
+                        flipped: false,
+                    };
+                    continue;
+                }
+            }
+            let output_index = output_literals.len();
+            output_literals.push(literal);
+            trace[input_index] = LiteralTrace::Output {
+                index: output_index,
+                flipped: false,
+            };
+        }
+
+        // Build the clause with context
+        let mut clause = ThinClause {
+            literals: output_literals,
+            context: context.clone(),
+        };
+        clause.normalize_var_ids();
+        (clause, ClauseTrace::new(trace))
+    }
+
+    /// Creates a new clause and a new trace, given a list of literals and a
+    /// trace of how they were created.
+    pub fn new_with_trace(
+        literals: Vec<ThinLiteral>,
+        mut trace: ClauseTrace,
+        context: &LocalContext,
+    ) -> (ThinClause, ClauseTrace) {
+        let (c, incremental_trace) = ThinClause::normalize_with_trace(literals, context);
+        trace.compose(&incremental_trace);
+        (c, trace)
+    }
+
+    /// Creates a new clause. If a trace is provided, we compose the traces.
+    /// The base_trace should be applicable to the provided literals.
+    pub fn new_composing_traces(
+        literals: Vec<ThinLiteral>,
+        base_trace: Option<ClauseTrace>,
+        incremental_trace: &ClauseTrace,
+        context: &LocalContext,
+    ) -> (ThinClause, Option<ClauseTrace>) {
+        let Some(mut base_trace) = base_trace else {
+            return (ThinClause::new(literals, context), None);
+        };
+        base_trace.compose(incremental_trace);
+        let (c, trace) = ThinClause::new_with_trace(literals, base_trace, context);
+        (c, Some(trace))
+    }
+
+    /// Create a clause from a single literal with trace.
+    /// Note: ThinClause requires the context parameter, unlike FatClause which derives it.
+    pub fn from_literal_traced(
+        literal: ThinLiteral,
+        flipped: bool,
+        context: &LocalContext,
+    ) -> (ThinClause, ClauseTrace) {
+        ThinClause::new_with_trace(
+            vec![literal],
+            ClauseTrace::new(vec![LiteralTrace::Output { index: 0, flipped }]),
+            context,
+        )
     }
 
     /// Sorts literals.
@@ -453,5 +549,16 @@ impl ThinClause {
             answer.push(clause);
         }
         answer
+    }
+}
+
+impl std::fmt::Display for ThinClause {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.literals.is_empty() {
+            write!(f, "false")
+        } else {
+            let parts: Vec<String> = self.literals.iter().map(|l| l.to_string()).collect();
+            write!(f, "{}", parts.join(" | "))
+        }
     }
 }

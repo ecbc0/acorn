@@ -2,9 +2,7 @@ use super::features::Features;
 use super::fingerprint::FingerprintSpecializer;
 use super::score::Score;
 use super::scorer::{default_scorer, Scorer};
-use crate::kernel::fat_clause::FatClause;
-use crate::kernel::fat_literal::FatLiteral;
-use crate::kernel::fat_term::FatTerm;
+use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
@@ -37,7 +35,7 @@ pub struct PassiveSet {
     // Stores every clause in clauses that is just a single literal, along with its index.
     // The format is
     // (left, right) -> (positive, index into clauses)
-    singles: HashMap<(FatTerm, FatTerm), (bool, usize)>,
+    singles: HashMap<(Term, Term), (bool, usize)>,
 
     // Set if we ever discover a contradiction between two members of the passive set.
     contradiction: Option<(usize, usize)>,
@@ -60,10 +58,10 @@ fn pair_specializes(
     general_context: &LocalContext,
     special_context: &LocalContext,
     kernel_context: &KernelContext,
-    left1: &FatTerm,
-    right1: &FatTerm,
-    left2: &FatTerm,
-    right2: &FatTerm,
+    left1: &Term,
+    right1: &Term,
+    left2: &Term,
+    right2: &Term,
 ) -> bool {
     if left1.get_term_type_with_context(general_context, kernel_context)
         != left2.get_term_type_with_context(special_context, kernel_context)
@@ -97,14 +95,14 @@ fn make_simplified(
     activated_context: &LocalContext,
     passive_context: &LocalContext,
     kernel_context: &KernelContext,
-    left: &FatTerm,
-    right: &FatTerm,
+    left: &Term,
+    right: &Term,
     positive: bool,
     flipped: bool,
     index: usize,
-    literals: Vec<FatLiteral>,
+    literals: Vec<Literal>,
     trace: Option<ClauseTrace>,
-) -> Option<(FatClause, Option<ClauseTrace>)> {
+) -> Option<(Clause, Option<ClauseTrace>)> {
     if literals[index].positive == positive {
         return None;
     }
@@ -160,10 +158,11 @@ fn make_simplified(
             new_literals.push(literal);
         }
     }
-    Some(FatClause::new_composing_traces(
+    Some(Clause::new_composing_traces(
         new_literals,
         trace,
         &ClauseTrace::new(incremental_trace),
+        passive_context,
     ))
 }
 
@@ -260,8 +259,8 @@ impl PassiveSet {
         activated_step: &ProofStep,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
-        left: &FatTerm,
-        right: &FatTerm,
+        left: &Term,
+        right: &Term,
         positive: bool,
         flipped: bool,
     ) {

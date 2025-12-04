@@ -5,6 +5,7 @@ pub mod extended_term;
 pub mod fat_clause;
 pub mod fat_literal;
 pub mod fat_term;
+pub mod inference;
 pub mod kernel_context;
 pub mod local_context;
 pub mod symbol;

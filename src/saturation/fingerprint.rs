@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 
+use crate::kernel::aliases::{Literal, Term};
 use crate::kernel::atom::Atom;
-use crate::kernel::fat_literal::FatLiteral;
-use crate::kernel::fat_term::{FatTerm, TypeId};
+use crate::kernel::fat_term::TypeId;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 
@@ -24,7 +24,7 @@ pub enum FingerprintComponent {
 
 impl FingerprintComponent {
     pub fn new(
-        term: &FatTerm,
+        term: &Term,
         path: &&[usize],
         local_context: &LocalContext,
         kernel_context: &KernelContext,
@@ -101,7 +101,7 @@ struct TermFingerprint {
 
 impl TermFingerprint {
     pub fn new(
-        term: &FatTerm,
+        term: &Term,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> TermFingerprint {
@@ -146,7 +146,7 @@ impl<T> FingerprintUnifier<T> {
 
     pub fn insert(
         &mut self,
-        term: &FatTerm,
+        term: &Term,
         value: T,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
@@ -158,7 +158,7 @@ impl<T> FingerprintUnifier<T> {
     // Find all T with a fingerprint that this term could unify with.
     pub fn find_unifying(
         &self,
-        term: &FatTerm,
+        term: &Term,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> Vec<&T> {
@@ -187,8 +187,8 @@ struct LiteralFingerprint {
 
 impl LiteralFingerprint {
     pub fn new(
-        left: &FatTerm,
-        right: &FatTerm,
+        left: &Term,
+        right: &Term,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> LiteralFingerprint {
@@ -219,7 +219,7 @@ impl<T> FingerprintSpecializer<T> {
 
     pub fn insert(
         &mut self,
-        literal: &FatLiteral,
+        literal: &Literal,
         value: T,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
@@ -241,8 +241,8 @@ impl<T> FingerprintSpecializer<T> {
     // Only does a single left->right direction of lookup.
     pub fn find_specializing(
         &self,
-        left: &FatTerm,
-        right: &FatTerm,
+        left: &Term,
+        right: &Term,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> Vec<&T> {
@@ -277,7 +277,7 @@ mod tests {
         LocalContext::with_types(vec![TypeId::new(1); 10])
     }
 
-    fn make_fingerprint(term: &FatTerm) -> TermFingerprint {
+    fn make_fingerprint(term: &Term) -> TermFingerprint {
         let lctx = test_local_context();
         let kctx = KernelContext::test_with_constants(10, 10);
         TermFingerprint::new(term, &lctx, &kctx)
@@ -285,14 +285,14 @@ mod tests {
 
     #[test]
     fn test_fingerprint() {
-        let term = FatTerm::parse("c0(x0, x1)");
+        let term = Term::parse("c0(x0, x1)");
         make_fingerprint(&term);
     }
 
     #[test]
     fn test_fingerprint_matching() {
-        let term1 = FatTerm::parse("c2(x0, x1, c0)");
-        let term2 = FatTerm::parse("c2(c1, c3(x0), c0)");
+        let term1 = Term::parse("c2(x0, x1, c0)");
+        let term2 = Term::parse("c2(c1, c3(x0), c0)");
         assert!(make_fingerprint(&term1).could_unify(&make_fingerprint(&term2)));
     }
 
@@ -301,8 +301,8 @@ mod tests {
         let lctx = test_local_context();
         let kctx = KernelContext::test_with_constants(10, 10);
         let mut tree = FingerprintUnifier::new();
-        let term1 = FatTerm::parse("c2(x0, x1, c0)");
-        let term2 = FatTerm::parse("c2(c1, c3(x0), c0)");
+        let term1 = Term::parse("c2(x0, x1, c0)");
+        let term2 = Term::parse("c2(c1, c3(x0), c0)");
         tree.insert(&term1, 1, &lctx, &kctx);
         assert!(tree.find_unifying(&term1, &lctx, &kctx).len() > 0);
         assert!(tree.find_unifying(&term2, &lctx, &kctx).len() > 0);

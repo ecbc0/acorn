@@ -3,10 +3,8 @@ use std::fmt;
 
 use crate::elaborator::proposition::MonomorphicProposition;
 use crate::elaborator::source::{Source, SourceType};
+use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::Atom;
-use crate::kernel::fat_clause::FatClause;
-use crate::kernel::fat_literal::FatLiteral;
-use crate::kernel::fat_term::FatTerm;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 
@@ -108,7 +106,7 @@ pub struct RewriteInfo {
 
     /// The literal initially created by the rewrite.
     /// This is usually redundant, but not always, because the output clause can get simplified.
-    pub rewritten: FatLiteral,
+    pub rewritten: Literal,
 
     /// Whether the literal was flipped during normalization
     pub flipped: bool,
@@ -135,7 +133,7 @@ pub struct AssumptionInfo {
     pub defined_atom: Option<Atom>,
 
     /// The literals of the assumption before any simplification.
-    pub literals: Vec<FatLiteral>,
+    pub literals: Vec<Literal>,
 
     /// The local context for the literals (variable types).
     pub context: LocalContext,
@@ -187,7 +185,7 @@ pub struct EqualityFactoringInfo {
     pub id: usize,
 
     /// The literals that we got immediately after factoring.
-    pub literals: Vec<FatLiteral>,
+    pub literals: Vec<Literal>,
 
     /// The local context for the literals.
     pub context: LocalContext,
@@ -206,7 +204,7 @@ pub struct EqualityResolutionInfo {
     pub index: usize,
 
     // The literals that we got immediately after resolution.
-    pub literals: Vec<FatLiteral>,
+    pub literals: Vec<Literal>,
 
     // The local context for the literals.
     pub context: LocalContext,
@@ -225,7 +223,7 @@ pub struct InjectivityInfo {
     pub index: usize,
 
     /// The literals that we got immediately after function elimination.
-    pub literals: Vec<FatLiteral>,
+    pub literals: Vec<Literal>,
 
     /// The local context for the literals.
     pub context: LocalContext,
@@ -247,7 +245,7 @@ pub struct BooleanReductionInfo {
     pub index: usize,
 
     /// The literals that we got immediately after boolean reduction.
-    pub literals: Vec<FatLiteral>,
+    pub literals: Vec<Literal>,
 
     /// The local context for the literals.
     pub context: LocalContext,
@@ -260,7 +258,7 @@ pub struct ExtensionalityInfo {
     pub id: usize,
 
     /// The literals that we got immediately after applying extensionality.
-    pub literals: Vec<FatLiteral>,
+    pub literals: Vec<Literal>,
 
     /// The local context for the literals.
     pub context: LocalContext,
@@ -362,7 +360,7 @@ impl Rule {
 pub struct ProofStep {
     /// The proof step is primarily defined by a clause that it proves.
     /// Semantically, this clause is implied by the input clauses (activated and existing).
-    pub clause: FatClause,
+    pub clause: Clause,
 
     /// Whether this clause is the normal sort of true, or just something we're hypothesizing for
     /// the sake of the proof.
@@ -405,7 +403,7 @@ impl ProofStep {
     /// Assumptions are always depth zero, but eventually we may have to revisit that.
     pub fn assumption(
         proposition: &MonomorphicProposition,
-        clause: FatClause,
+        clause: Clause,
         defined_atom: Option<Atom>,
     ) -> ProofStep {
         let source = proposition.source.clone();
@@ -448,7 +446,7 @@ impl ProofStep {
         _activated_id: usize,
         activated_step: &ProofStep,
         rule: Rule,
-        clause: FatClause,
+        clause: Clause,
         trace: ClauseTrace,
     ) -> ProofStep {
         // Direct implication does not add to depth.
@@ -470,7 +468,7 @@ impl ProofStep {
         pattern_id: usize,
         inspiration_id: usize,
         pattern_step: &ProofStep,
-        clause: FatClause,
+        clause: Clause,
         trace: ClauseTrace,
     ) -> ProofStep {
         let info = SpecializationInfo {
@@ -494,7 +492,7 @@ impl ProofStep {
         long_step: &ProofStep,
         short_id: usize,
         short_step: &ProofStep,
-        clause: FatClause,
+        clause: Clause,
     ) -> ProofStep {
         let rule = Rule::Resolution(ResolutionInfo { short_id, long_id });
 
@@ -532,7 +530,7 @@ impl ProofStep {
     pub fn simplified(
         long_step: ProofStep,
         short_steps: &[(usize, &ProofStep)],
-        clause: FatClause,
+        clause: Clause,
         trace: Option<ClauseTrace>,
     ) -> ProofStep {
         let mut truthiness = long_step.truthiness;
@@ -574,7 +572,7 @@ impl ProofStep {
         target_left: bool,
         path: &[usize],
         forwards: bool,
-        new_subterm: &FatTerm,
+        new_subterm: &Term,
     ) -> ProofStep {
         assert_eq!(target_step.clause.literals.len(), 1);
 
@@ -584,7 +582,8 @@ impl ProofStep {
         let rewritten = new_literal.clone();
 
         let simplifying = new_literal.extended_kbo_cmp(&target_literal) == Ordering::Less;
-        let (clause, trace) = FatClause::from_literal(new_literal, false);
+        let (clause, trace) =
+            Clause::from_literal_traced(new_literal, false, &LocalContext::empty());
 
         let truthiness = pattern_step.truthiness.combine(target_step.truthiness);
 
@@ -634,7 +633,7 @@ impl ProofStep {
 
         // proof size is wrong but we don't use it for a contradiction.
         ProofStep {
-            clause: FatClause::impossible(),
+            clause: Clause::impossible(),
             truthiness,
             rule,
             simplification_rules: vec![],
@@ -657,7 +656,7 @@ impl ProofStep {
         }
 
         ProofStep {
-            clause: FatClause::impossible(),
+            clause: Clause::impossible(),
             truthiness,
             rule,
             simplification_rules: vec![],
@@ -669,11 +668,11 @@ impl ProofStep {
 
     /// Construct a ProofStep with fake heuristic data for testing
     pub fn mock(s: &str) -> ProofStep {
-        let clause = FatClause::parse(s);
+        let clause = Clause::parse(s);
         Self::mock_from_clause(clause)
     }
 
-    pub fn mock_from_clause(clause: FatClause) -> ProofStep {
+    pub fn mock_from_clause(clause: Clause) -> ProofStep {
         let truthiness = Truthiness::Factual;
         let literals = clause.literals.clone();
         let context = clause.get_local_context().clone();

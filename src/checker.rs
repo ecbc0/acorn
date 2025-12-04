@@ -13,7 +13,8 @@ use crate::elaborator::potential_value::PotentialValue;
 use crate::elaborator::source::Source;
 use crate::elaborator::stack::Stack;
 use crate::generalization_set::GeneralizationSet;
-use crate::kernel::fat_clause::FatClause;
+use crate::kernel::aliases::Clause;
+use crate::kernel::inference;
 use crate::kernel::kernel_context::KernelContext;
 use crate::normalizer::{Normalizer, NormalizerView};
 use crate::project::Project;
@@ -96,7 +97,7 @@ impl StepReason {
 
 /// Converts a clause to readable code using the environment's names.
 fn clause_to_code(
-    clause: &FatClause,
+    clause: &Clause,
     normalizer: &Normalizer,
     bindings: &Cow<BindingMap>,
 ) -> String {
@@ -138,17 +139,17 @@ pub struct Checker {
 
     /// A hack, but we need to break out of loops, since equality factoring and boolean
     /// reduction can create cycles.
-    past_boolean_reductions: HashSet<FatClause>,
+    past_boolean_reductions: HashSet<Clause>,
 
     /// The reason for each step. The step_id is the index in this vector.
     reasons: Vec<StepReason>,
 
     /// The clause for each step. Only tracked in verbose mode.
-    clauses: Option<Vec<FatClause>>,
+    clauses: Option<Vec<Clause>>,
 }
 
 impl Checker {
-    fn new(clauses: Option<Vec<FatClause>>) -> Checker {
+    fn new(clauses: Option<Vec<Clause>>) -> Checker {
         Checker {
             term_graph: TermGraph::new(),
             generalization_set: Arc::new(GeneralizationSet::new()),
@@ -170,7 +171,7 @@ impl Checker {
     /// Adds a true clause to the checker with a specific reason.
     pub fn insert_clause(
         &mut self,
-        clause: &FatClause,
+        clause: &Clause,
         reason: StepReason,
         kernel_context: &KernelContext,
     ) {
@@ -196,7 +197,7 @@ impl Checker {
 
             // We only need to do equality resolution for clauses with free variables,
             // because resolvable concrete literals would already have been simplified out.
-            for resolution in clause.equality_resolutions(kernel_context) {
+            for resolution in inference::equality_resolutions(clause, kernel_context) {
                 self.insert_clause(
                     &resolution,
                     StepReason::EqualityResolution(step_id),
@@ -205,7 +206,7 @@ impl Checker {
             }
 
             if let Some(extensionality) = clause.find_extensionality(kernel_context) {
-                let clause = FatClause::new_without_context(extensionality);
+                let clause = Clause::new_without_context(extensionality);
                 self.insert_clause(&clause, StepReason::Extensionality(step_id), kernel_context);
             }
         } else {
@@ -214,7 +215,9 @@ impl Checker {
                 .insert_clause(clause, StepId(step_id), kernel_context);
         }
 
-        for factoring in clause.equality_factorings(kernel_context) {
+        for factoring in
+            inference::equality_factorings(clause, clause.get_local_context(), kernel_context)
+        {
             self.insert_clause(
                 &factoring,
                 StepReason::EqualityFactoring(step_id),
@@ -249,7 +252,7 @@ impl Checker {
     /// Returns None if the clause cannot be proven.
     pub fn check_clause(
         &mut self,
-        clause: &FatClause,
+        clause: &Clause,
         kernel_context: &KernelContext,
     ) -> Option<StepReason> {
         if self.has_contradiction() {
@@ -642,14 +645,14 @@ impl TestChecker {
         let context = KernelContext::test_with_constants(10, 10);
         let mut checker = Checker::new(None);
         for clause_str in clauses {
-            let clause = FatClause::parse(clause_str);
+            let clause = Clause::parse(clause_str);
             checker.insert_clause(&clause, StepReason::Testing, &context);
         }
         TestChecker { checker, context }
     }
 
     fn check_clause_str(&mut self, s: &str) {
-        let clause = FatClause::parse(s);
+        let clause = Clause::parse(s);
         if !self.checker.check_clause(&clause, &self.context).is_some() {
             panic!("check_clause_str(\"{}\") failed", s);
         }

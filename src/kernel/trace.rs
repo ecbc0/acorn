@@ -1,5 +1,4 @@
-use crate::kernel::fat_clause::FatClause;
-use crate::kernel::fat_literal::FatLiteral;
+use crate::kernel::aliases::{Clause, Literal};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::variable_map::VariableMap;
@@ -89,9 +88,9 @@ impl ClauseTrace {
     /// literals_context is the local context for the input literals.
     pub fn validate(
         &self,
-        literals: &Vec<FatLiteral>,
+        literals: &Vec<Literal>,
         literals_context: &LocalContext,
-        clause: &FatClause,
+        clause: &Clause,
         kernel_context: &KernelContext,
     ) {
         let clause_context = clause.get_local_context();

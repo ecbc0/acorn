@@ -1,9 +1,8 @@
 use qp_trie::{Entry, SubTrie, Trie};
 
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::fat_clause::FatClause;
-use crate::kernel::fat_literal::FatLiteral;
-use crate::kernel::fat_term::{FatTerm, TypeId};
+use crate::kernel::aliases::{Clause, Literal, Term};
+use crate::kernel::fat_term::TypeId;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
@@ -39,7 +38,7 @@ impl TermComponent {
     }
 
     fn flatten_next(
-        term: &FatTerm,
+        term: &Term,
         output: &mut Vec<TermComponent>,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
@@ -74,7 +73,7 @@ impl TermComponent {
     }
 
     pub fn flatten_term(
-        term: &FatTerm,
+        term: &Term,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> Vec<TermComponent> {
@@ -84,8 +83,8 @@ impl TermComponent {
     }
 
     fn flatten_pair(
-        term1: &FatTerm,
-        term2: &FatTerm,
+        term1: &Term,
+        term2: &Term,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> Vec<TermComponent> {
@@ -100,7 +99,7 @@ impl TermComponent {
         output
     }
 
-    fn flatten_clause(clause: &FatClause, kernel_context: &KernelContext) -> Vec<TermComponent> {
+    fn flatten_clause(clause: &Clause, kernel_context: &KernelContext) -> Vec<TermComponent> {
         let local_context = clause.get_local_context();
         let mut output = Vec::new();
         for literal in &clause.literals {
@@ -112,7 +111,7 @@ impl TermComponent {
 
     /// Constructs a term, starting at components[i].
     /// Returns the next unused index and the term.
-    fn unflatten_next(components: &[TermComponent], i: usize) -> (usize, FatTerm) {
+    fn unflatten_next(components: &[TermComponent], i: usize) -> (usize, Term) {
         match components[i] {
             TermComponent::Composite(term_type, num_args, size) => {
                 let size = size as usize;
@@ -134,13 +133,13 @@ impl TermComponent {
                 if args.len() != num_args as usize {
                     panic!("Composite term has wrong number of args");
                 }
-                (j, FatTerm::new(term_type, head_type, head, args))
+                (j, Term::new(term_type, head_type, head, args))
             }
-            TermComponent::Atom(term_type, atom) => (i + 1, FatTerm::atom(term_type, atom)),
+            TermComponent::Atom(term_type, atom) => (i + 1, Term::atom(term_type, atom)),
         }
     }
 
-    pub fn unflatten_term(components: &[TermComponent]) -> FatTerm {
+    pub fn unflatten_term(components: &[TermComponent]) -> Term {
         let (size, term) = TermComponent::unflatten_next(components, 0);
         if size != components.len() {
             panic!("Term has wrong size");
@@ -148,7 +147,7 @@ impl TermComponent {
         term
     }
 
-    pub fn unflatten_pair(components: &[TermComponent]) -> (FatTerm, FatTerm) {
+    pub fn unflatten_pair(components: &[TermComponent]) -> (Term, Term) {
         let (size1, term1) = TermComponent::unflatten_next(components, 0);
         let (size2, term2) = TermComponent::unflatten_next(components, size1);
         if size2 != components.len() {
@@ -437,7 +436,7 @@ impl Edge {
 
 /// Appends the key for this term, but does not add the top-level type
 fn key_from_term_helper(
-    term: &FatTerm,
+    term: &Term,
     key: &mut Vec<u8>,
     local_context: &LocalContext,
     kernel_context: &KernelContext,
@@ -465,7 +464,7 @@ pub fn term_key_prefix(type_id: TypeId) -> Vec<u8> {
 
 /// Appends the key for this term, prefixing with the top-level type
 pub fn key_from_term(
-    term: &FatTerm,
+    term: &Term,
     local_context: &LocalContext,
     kernel_context: &KernelContext,
 ) -> Vec<u8> {
@@ -481,8 +480,8 @@ fn literal_key_prefix(type_id: TypeId) -> Vec<u8> {
 }
 
 fn key_from_pair(
-    term1: &FatTerm,
-    term2: &FatTerm,
+    term1: &Term,
+    term2: &Term,
     local_context: &LocalContext,
     kernel_context: &KernelContext,
 ) -> Vec<u8> {
@@ -494,7 +493,7 @@ fn key_from_pair(
 }
 
 /// Just creates the category prefix for a clause key.
-fn clause_key_prefix(clause: &FatClause, kernel_context: &KernelContext) -> Vec<u8> {
+fn clause_key_prefix(clause: &Clause, kernel_context: &KernelContext) -> Vec<u8> {
     let local_context = clause.get_local_context();
     let mut key = Vec::new();
     for literal in &clause.literals {
@@ -518,7 +517,7 @@ fn clause_key_prefix(clause: &FatClause, kernel_context: &KernelContext) -> Vec<
 }
 
 /// Generates a key for a clause, starting with the category edges, then the term edges.
-fn key_from_clause(clause: &FatClause, kernel_context: &KernelContext) -> Vec<u8> {
+fn key_from_clause(clause: &Clause, kernel_context: &KernelContext) -> Vec<u8> {
     let local_context = clause.get_local_context();
     let mut key = clause_key_prefix(clause, kernel_context);
     for literal in &clause.literals {
@@ -676,7 +675,7 @@ impl<T> PatternTree<T> {
 
     pub fn insert_term(
         &mut self,
-        term: &FatTerm,
+        term: &Term,
         value: T,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
@@ -690,8 +689,8 @@ impl<T> PatternTree<T> {
     /// The pair needs to have normalized variable numbering, with term1's variables preceding term2's.
     pub fn insert_pair(
         &mut self,
-        term1: &FatTerm,
-        term2: &FatTerm,
+        term1: &Term,
+        term2: &Term,
         value: T,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
@@ -702,7 +701,7 @@ impl<T> PatternTree<T> {
         self.trie.insert(key, value_id);
     }
 
-    pub fn insert_clause(&mut self, clause: &FatClause, value: T, kernel_context: &KernelContext) {
+    pub fn insert_clause(&mut self, clause: &Clause, value: T, kernel_context: &KernelContext) {
         let key = key_from_clause(clause, kernel_context);
         let value_id = self.values.len();
         self.values.push(value);
@@ -744,8 +743,8 @@ impl<T> PatternTree<T> {
 
     fn find_pair<'a>(
         &'a self,
-        left: &FatTerm,
-        right: &FatTerm,
+        left: &Term,
+        right: &Term,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> Option<&'a T> {
@@ -760,7 +759,7 @@ impl<T> PatternTree<T> {
 
     pub fn find_clause<'a>(
         &'a self,
-        clause: &FatClause,
+        clause: &Clause,
         kernel_context: &KernelContext,
     ) -> Option<&'a T> {
         let flat = TermComponent::flatten_clause(clause, kernel_context);
@@ -776,7 +775,7 @@ impl PatternTree<()> {
     /// Appends to the existing value if possible. Otherwises, inserts a vec![U].
     pub fn insert_or_append<U>(
         pt: &mut PatternTree<Vec<U>>,
-        term: &FatTerm,
+        term: &Term,
         value: U,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
@@ -820,7 +819,7 @@ impl LiteralSet {
     /// Overwrites if the negation already exists.
     pub fn insert(
         &mut self,
-        literal: &FatLiteral,
+        literal: &Literal,
         id: usize,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
@@ -851,7 +850,7 @@ impl LiteralSet {
     ///   3. whether this is a flip-match, meaning we swapped left and right
     pub fn find_generalization(
         &self,
-        literal: &FatLiteral,
+        literal: &Literal,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> Option<(bool, usize, bool)> {
@@ -875,7 +874,7 @@ mod tests {
     }
 
     fn check_term(s: &str) {
-        let input_term = FatTerm::parse(s);
+        let input_term = Term::parse(s);
         // Count max variable id and max constant id used
         let local_context = test_local_context(10);
         let kernel_context = KernelContext::test_with_scoped_constants(10);
@@ -894,8 +893,8 @@ mod tests {
     }
 
     fn check_pair(s1: &str, s2: &str) {
-        let input_term1 = FatTerm::parse(s1);
-        let input_term2 = FatTerm::parse(s2);
+        let input_term1 = Term::parse(s1);
+        let input_term2 = Term::parse(s2);
         let local_context = test_local_context(10);
         let kernel_context = KernelContext::test_with_scoped_constants(10);
         let flat = TermComponent::flatten_pair(
@@ -924,32 +923,32 @@ mod tests {
 
         let mut set = LiteralSet::new();
         set.insert(
-            &FatLiteral::parse("c0(x0, c1) = x0"),
+            &Literal::parse("c0(x0, c1) = x0"),
             7,
             &local_context,
             &kernel_context,
         );
 
-        let lit = FatLiteral::parse("c0(x0, c1) = x0");
+        let lit = Literal::parse("c0(x0, c1) = x0");
         assert!(
             set.find_generalization(&lit, &local_context, &kernel_context)
                 .unwrap()
                 .0
         );
 
-        let lit = FatLiteral::parse("c0(c2, c1) = c2");
+        let lit = Literal::parse("c0(c2, c1) = c2");
         assert!(
             set.find_generalization(&lit, &local_context, &kernel_context)
                 .unwrap()
                 .0
         );
 
-        let lit = FatLiteral::parse("c0(x0, x1) = x0");
+        let lit = Literal::parse("c0(x0, x1) = x0");
         assert!(set
             .find_generalization(&lit, &local_context, &kernel_context)
             .is_none());
 
-        let lit = FatLiteral::parse("c0(x0, c1) != x0");
+        let lit = Literal::parse("c0(x0, c1) != x0");
         assert!(
             !set.find_generalization(&lit, &local_context, &kernel_context)
                 .unwrap()
@@ -957,23 +956,23 @@ mod tests {
         );
 
         set.insert(
-            &FatLiteral::parse("x0 = x0"),
+            &Literal::parse("x0 = x0"),
             8,
             &local_context,
             &kernel_context,
         );
 
-        let lit = FatLiteral::parse("x0 = c0");
+        let lit = Literal::parse("x0 = c0");
         assert!(set
             .find_generalization(&lit, &local_context, &kernel_context)
             .is_none());
 
-        let lit = FatLiteral::parse("c0 = x0");
+        let lit = Literal::parse("c0 = x0");
         assert!(set
             .find_generalization(&lit, &local_context, &kernel_context)
             .is_none());
 
-        let lit = FatLiteral::parse("c0 = c0");
+        let lit = Literal::parse("c0 = c0");
         assert!(
             set.find_generalization(&lit, &local_context, &kernel_context)
                 .unwrap()
@@ -988,12 +987,12 @@ mod tests {
 
         let mut set = LiteralSet::new();
         set.insert(
-            &FatLiteral::parse("c0(x0, x0, x1) = c0(x1, x0, x0)"),
+            &Literal::parse("c0(x0, x0, x1) = c0(x1, x0, x0)"),
             7,
             &local_context,
             &kernel_context,
         );
-        let lit = FatLiteral::parse("c0(c2, c1, c1) = c0(c1, c1, c2)");
+        let lit = Literal::parse("c0(c2, c1, c1) = c0(c1, c1, c2)");
         assert!(
             set.find_generalization(&lit, &local_context, &kernel_context)
                 .unwrap()

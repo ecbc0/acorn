@@ -7,8 +7,8 @@ use crate::kernel::fat_term::{FatTerm, TypeId, BOOL};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
-use crate::kernel::unifier::{Scope, Unifier};
-use crate::proof_step::{EFLiteralTrace, EFTermTrace};
+#[cfg(not(feature = "thin"))]
+use crate::proof_step::EFLiteralTrace;
 
 /// Builds a LocalContext from a slice of literals by extracting variable types.
 /// This is internal to FatClause construction - reads embedded types from FatTerm.
@@ -157,7 +157,12 @@ impl FatClause {
     /// Normalizes literals into a clause, creating a trace of where each one is sent.
     /// Note that this doesn't flip any literals. It only creates the "Output" and "Impossible"
     /// type traces.
-    pub fn normalize_with_trace(literals: Vec<FatLiteral>) -> (FatClause, ClauseTrace) {
+    /// The _context parameter is ignored for FatClause (context is built from literals),
+    /// but is included for API compatibility with ThinClause.
+    pub fn normalize_with_trace(
+        literals: Vec<FatLiteral>,
+        _context: &LocalContext,
+    ) -> (FatClause, ClauseTrace) {
         let mut trace = vec![LiteralTrace::Impossible; literals.len()];
 
         // Pair each literal with its initial index.
@@ -251,34 +256,49 @@ impl FatClause {
 
     /// Creates a new clause and a new trace, given a list of literals and a
     /// trace of how they were created.
+    /// The _context parameter is ignored for FatClause (context is built from literals),
+    /// but is included for API compatibility with ThinClause.
     pub fn new_with_trace(
         literals: Vec<FatLiteral>,
         mut trace: ClauseTrace,
+        _context: &LocalContext,
     ) -> (FatClause, ClauseTrace) {
-        let (c, incremental_trace) = FatClause::normalize_with_trace(literals);
+        let (c, incremental_trace) =
+            FatClause::normalize_with_trace(literals, &LocalContext::empty());
         trace.compose(&incremental_trace);
         (c, trace)
     }
 
     /// Creates a new clause. If a trace is provided, we compose the traces.
     /// The base_trace should be applicable to the provided literals.
+    /// The _context parameter is ignored for FatClause (context is built from literals),
+    /// but is included for API compatibility with ThinClause.
     pub fn new_composing_traces(
         literals: Vec<FatLiteral>,
         base_trace: Option<ClauseTrace>,
         incremental_trace: &ClauseTrace,
+        _context: &LocalContext,
     ) -> (FatClause, Option<ClauseTrace>) {
         let Some(mut base_trace) = base_trace else {
             return (FatClause::new_without_context(literals), None);
         };
         base_trace.compose(incremental_trace);
-        let (c, trace) = FatClause::new_with_trace(literals, base_trace);
+        let (c, trace) = FatClause::new_with_trace(literals, base_trace, &LocalContext::empty());
         (c, Some(trace))
     }
 
-    pub fn from_literal(literal: FatLiteral, flipped: bool) -> (FatClause, ClauseTrace) {
+    /// Creates a clause from a single literal with trace.
+    /// The _context parameter is ignored for FatClause (context is built from literals),
+    /// but is included for API compatibility with ThinClause.
+    pub fn from_literal_traced(
+        literal: FatLiteral,
+        flipped: bool,
+        _context: &LocalContext,
+    ) -> (FatClause, ClauseTrace) {
         FatClause::new_with_trace(
             vec![literal],
             ClauseTrace::new(vec![LiteralTrace::Output { index: 0, flipped }]),
+            &LocalContext::empty(),
         )
     }
 
@@ -422,6 +442,11 @@ impl FatClause {
         FatClause::new_without_context(new_literals)
     }
 
+    // The inference methods (find_equality_resolutions, find_equality_factorings, etc.)
+    // are in the inference module and work with the Clause/Literal/Term aliases.
+    // When not using the thin feature, FatClause IS the Clause alias, so these work.
+    // When using the thin feature, use the inference module directly with ThinClause.
+    #[cfg(not(feature = "thin"))]
     /// Finds all possible equality resolutions for this clause.
     /// Returns a vector of tuples containing:
     /// - The index of the literal that was resolved
@@ -433,54 +458,17 @@ impl FatClause {
         &self,
         kernel_context: &KernelContext,
     ) -> Vec<(usize, Vec<FatLiteral>, Vec<bool>, LocalContext)> {
-        let mut results = vec![];
-
-        for i in 0..self.literals.len() {
-            let literal = &self.literals[i];
-            if literal.positive {
-                // Negative literals come before positive ones, so we're done
-                break;
-            }
-
-            // The variables are in the same scope, which we will call "left".
-            let mut unifier = Unifier::new(3, kernel_context);
-            unifier.set_input_context(Scope::LEFT, self.get_local_context());
-            if !unifier.unify(Scope::LEFT, &literal.left, Scope::LEFT, &literal.right) {
-                continue;
-            }
-
-            // We can do equality resolution
-            let mut new_literals = vec![];
-            let mut flipped = vec![];
-            for (j, lit) in self.literals.iter().enumerate() {
-                if j != i {
-                    let (new_lit, j_flipped) = unifier.apply_to_literal(Scope::LEFT, lit);
-                    new_literals.push(new_lit);
-                    flipped.push(j_flipped);
-                }
-            }
-
-            // Get the output context from the unifier
-            let output_context = unifier.take_output_context();
-
-            // Return the raw literals without checking for tautology
-            // The ActiveSet::equality_resolution will handle that after normalization
-            results.push((i, new_literals, flipped, output_context));
-        }
-
-        results
+        crate::kernel::inference::find_equality_resolutions(self, kernel_context)
     }
 
+    #[cfg(not(feature = "thin"))]
     /// Generates all clauses that can be derived from this clause using equality resolution.
     /// This is a convenience method that returns just the normalized clauses.
     pub fn equality_resolutions(&self, kernel_context: &KernelContext) -> Vec<FatClause> {
-        self.find_equality_resolutions(kernel_context)
-            .into_iter()
-            .map(|(_, literals, _, _)| FatClause::new_without_context(literals))
-            .filter(|clause| !clause.is_tautology())
-            .collect()
+        crate::kernel::inference::equality_resolutions(self, kernel_context)
     }
 
+    #[cfg(not(feature = "thin"))]
     /// Finds all possible equality factorings for this clause.
     /// Returns a vector of (literals, ef_trace) pairs.
     /// The literals are the result of factoring before normalization.
@@ -489,99 +477,18 @@ impl FatClause {
         &self,
         kernel_context: &KernelContext,
     ) -> Vec<(Vec<FatLiteral>, Vec<EFLiteralTrace>)> {
-        let mut results = vec![];
-
-        // The first literal must be positive for equality factoring
-        if self.literals.is_empty() || !self.literals[0].positive {
-            return results;
-        }
-
-        let st_literal = &self.literals[0];
-
-        for (st_forwards, s, t) in st_literal.both_term_pairs() {
-            for i in 1..self.literals.len() {
-                let uv_literal = &self.literals[i];
-                if !uv_literal.positive {
-                    continue;
-                }
-
-                for (uv_forwards, u, v) in uv_literal.both_term_pairs() {
-                    let mut unifier = Unifier::new(3, kernel_context);
-                    unifier.set_input_context(Scope::LEFT, self.get_local_context());
-                    if !unifier.unify(Scope::LEFT, s, Scope::LEFT, u) {
-                        continue;
-                    }
-
-                    // Create the factored terms.
-                    let mut literals = vec![];
-                    let mut ef_trace = vec![];
-                    let (tv_lit, tv_flip) = FatLiteral::new_with_flip(
-                        false,
-                        unifier.apply(Scope::LEFT, t),
-                        unifier.apply(Scope::LEFT, v),
-                    );
-                    let (uv_out, uv_out_flip) = FatLiteral::new_with_flip(
-                        true,
-                        unifier.apply(Scope::LEFT, u),
-                        unifier.apply(Scope::LEFT, v),
-                    );
-
-                    literals.push(tv_lit);
-                    literals.push(uv_out);
-
-                    // Figure out where the factored terms went.
-                    // The output has two literals:
-                    // literals[0] = t != v (the new inequality)
-                    // literals[1] = u = v (the preserved equality, with s unified to u)
-
-                    // s and u both go to the left of u = v (they were unified)
-                    let s_out = EFTermTrace {
-                        index: 1,
-                        left: !uv_out_flip,
-                    };
-                    // t goes to the left of t != v
-                    let t_out = EFTermTrace {
-                        index: 0,
-                        left: !tv_flip,
-                    };
-                    // u goes to the same place as s
-                    let u_out = s_out;
-                    // v goes to the right of t != v
-                    let v_out = EFTermTrace {
-                        index: 0,
-                        left: tv_flip,
-                    };
-
-                    ef_trace.push(EFLiteralTrace::to_out(s_out, t_out, !st_forwards));
-
-                    for j in 1..self.literals.len() {
-                        if i == j {
-                            ef_trace.push(EFLiteralTrace::to_out(u_out, v_out, !uv_forwards));
-                        } else {
-                            let (new_lit, j_flipped) =
-                                unifier.apply_to_literal(Scope::LEFT, &self.literals[j]);
-                            let index = literals.len();
-                            ef_trace.push(EFLiteralTrace::to_index(index, j_flipped));
-                            literals.push(new_lit);
-                        }
-                    }
-
-                    results.push((literals, ef_trace));
-                }
-            }
-        }
-
-        results
+        crate::kernel::inference::find_equality_factorings(self, kernel_context)
     }
 
+    #[cfg(not(feature = "thin"))]
     /// Generates all clauses that can be derived from this clause using equality factoring.
     /// This is a convenience method that returns just the normalized clauses.
     pub fn equality_factorings(&self, kernel_context: &KernelContext) -> Vec<FatClause> {
-        self.find_equality_factorings(kernel_context)
-            .into_iter()
-            .map(|(literals, _)| FatClause::new_without_context(literals))
-            .filter(|clause| !clause.is_tautology())
-            .collect()
+        crate::kernel::inference::equality_factorings(
+            self,
+            self.get_local_context(),
+            kernel_context,
+        )
     }
 
     /// Finds all possible injectivity applications for this clause.
@@ -796,7 +703,8 @@ fn check(s: &str) {
         .map(|x| FatLiteral::parse(x))
         .collect::<Vec<_>>();
     let clause = FatClause::new_without_context(literals.clone());
-    let (alt_clause, trace) = FatClause::normalize_with_trace(literals.clone());
+    let (alt_clause, trace) =
+        FatClause::normalize_with_trace(literals.clone(), &LocalContext::empty());
     assert_eq!(clause, alt_clause);
 
     let kernel_context = KernelContext::test_with_constants(10, 10);

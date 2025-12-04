@@ -9,8 +9,8 @@ use crate::elaborator::binding_map::BindingMap;
 use crate::elaborator::names::{ConstantName, DefinedName};
 use crate::elaborator::type_unifier::TypeclassRegistry;
 use crate::kernel::atom::AtomId;
-use crate::kernel::fat_clause::FatClause;
-use crate::kernel::fat_term::{FatTerm, TypeId};
+use crate::kernel::aliases::{Clause, Term};
+use crate::kernel::fat_term::TypeId;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::variable_map::VariableMap;
@@ -269,7 +269,7 @@ impl CodeGenerator<'_> {
     /// and appends the actual clause content to codes.
     fn specialization_to_code(
         &mut self,
-        generic: &FatClause,
+        generic: &Clause,
         var_map: &VariableMap,
         normalizer: &Normalizer,
         definitions: &mut Vec<String>,
@@ -329,7 +329,7 @@ impl CodeGenerator<'_> {
 
     fn add_arbitrary_for_term(
         &mut self,
-        term: &FatTerm,
+        term: &Term,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) {
@@ -349,7 +349,7 @@ impl CodeGenerator<'_> {
     }
 
     /// For any variables in this clause, add an arbitrary variable.
-    fn add_arbitrary_for_clause(&mut self, clause: &FatClause, kernel_context: &KernelContext) {
+    fn add_arbitrary_for_clause(&mut self, clause: &Clause, kernel_context: &KernelContext) {
         let local_context = clause.get_local_context();
         for literal in &clause.literals {
             for term in [&literal.left, &literal.right] {

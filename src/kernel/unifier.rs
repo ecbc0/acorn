@@ -261,8 +261,11 @@ impl<'a> Unifier<'a> {
             _head => (term_head_type, term.get_head_atom().clone(), vec![]),
         };
 
-        // Recurse on the arguments and append them
-        for (i, arg) in term.iter_args().enumerate() {
+        // Recurse on the arguments and append them.
+        // We call args() to get owned terms - for ThinTerm this already returns Vec<ThinTerm>,
+        // for FatTerm this returns &[FatTerm] which we convert to Vec via .to_vec().
+        let term_args = term.args();
+        for (i, arg) in term_args.iter().enumerate() {
             // Figure out what replacement to pass recursively
             let new_replacement = if let Some(ref replacement) = replacement {
                 if replacement.path[0] == i {

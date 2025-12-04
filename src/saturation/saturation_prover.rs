@@ -9,9 +9,9 @@ use crate::checker::Checker;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::elaborator::binding_map::BindingMap;
 use crate::elaborator::goal::Goal;
-use crate::kernel::fat_clause::FatClause;
-use crate::kernel::fat_literal::FatLiteral;
+use crate::kernel::aliases::{Clause, Literal};
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::local_context::LocalContext;
 use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::project::Project;
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
@@ -326,12 +326,13 @@ impl SaturationProver {
 
             // Create a new proof step, without activating it, to express the
             // specific equality used by this rewrite.
-            let (literal, flipped) = FatLiteral::new_with_flip(
+            let (literal, flipped) = Literal::new_with_flip(
                 true,
                 step.left_term().clone(),
                 step.right_term().clone(),
             );
-            let (clause, traces) = FatClause::from_literal(literal, flipped);
+            let (clause, traces) =
+                Clause::from_literal_traced(literal, flipped, &LocalContext::empty());
             if new_clauses.contains(&clause) {
                 // We already created a step for this equality
                 // TODO: is it really okay to not insert any sort of id here?
@@ -461,7 +462,7 @@ impl SaturationProver {
     }
 
     /// Gets a clause by its proof step ID
-    fn get_clause(&self, id: ProofStepId) -> &FatClause {
+    fn get_clause(&self, id: ProofStepId) -> &Clause {
         match id {
             ProofStepId::Active(i) => self.active_set.get_clause(i),
             ProofStepId::Passive(i) => &self.useful_passive[i as usize].clause,
