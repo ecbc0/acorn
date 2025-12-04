@@ -112,45 +112,8 @@ impl<'a> Unifier<'a> {
         }
     }
 
-    /// Creates a unifier with an initial VariableMap.
-    /// For FatTerm (default): extracts types from embedded term information.
-    /// For ThinTerm: requires output_context to be provided via with_map_and_context.
-    #[cfg(not(feature = "thin"))]
-    pub fn with_map(map: VariableMap, kernel_context: &'a KernelContext) -> (Unifier<'a>, Scope) {
-        // Initialize the output map with enough blank entries for any variables in the initial map
-        let mut output_map = VariableMap::new();
-        // Also build output_context with the types of variables in the initial map
-        let mut output_var_types: Vec<TypeId> = vec![];
-        if let Some(max_var) = map.max_output_variable() {
-            // Push blank entries up to and including the max variable index.
-            for _ in 0..=max_var {
-                output_map.push_none();
-                // Default to TypeId 0; will be overwritten when we find the actual type
-                output_var_types.push(TypeId::default());
-            }
-            // Extract actual types from the variables in the map using FatTerm's embedded types
-            for (_, term) in map.iter() {
-                for (var_id, type_id) in term.collect_vars_embedded() {
-                    let idx = var_id as usize;
-                    if idx < output_var_types.len() {
-                        output_var_types[idx] = type_id;
-                    }
-                }
-            }
-        }
-
-        let unifier = Unifier {
-            maps: vec![output_map, map],
-            kernel_context,
-            input_contexts: vec![None, None], // Output scope and one input scope
-            output_context: LocalContext::new(output_var_types),
-        };
-        (unifier, Scope(1))
-    }
-
     /// Creates a unifier with an initial VariableMap and explicit output context.
-    /// This is the ThinTerm version - requires the caller to provide context for type lookups.
-    #[cfg(feature = "thin")]
+    /// The output_context provides the types for variables in the output scope.
     pub fn with_map(
         map: VariableMap,
         kernel_context: &'a KernelContext,
@@ -1052,7 +1015,8 @@ mod tests {
         let ctx = test_ctx();
         let mut initial_map = VariableMap::new();
         initial_map.set(0, Term::parse("s0(x0, x1, s4)"));
-        let (mut unifier, scope1) = Unifier::with_map(initial_map, &ctx);
+        let output_context = initial_map.build_output_context();
+        let (mut unifier, scope1) = Unifier::with_map(initial_map, &ctx, output_context);
         // Set contexts for all scopes
         unifier.set_input_context(scope1, LocalContext::test_empty_ref());
         let scope2 = unifier.add_scope();
