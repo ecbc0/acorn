@@ -351,6 +351,40 @@ impl ThinLiteral {
         let (lit, _) = ThinLiteral::new_with_flip(self.positive, new_left, new_right);
         lit
     }
+
+    /// Get the subterm at the given path.
+    /// If `left` is true, navigate into the left term, otherwise the right term.
+    pub fn get_term_at_path(&self, left: bool, path: &[usize]) -> Option<ThinTerm> {
+        if left {
+            self.left.get_term_at_path(path)
+        } else {
+            self.right.get_term_at_path(path)
+        }
+    }
+
+    /// Replace the subterm at the given path with a new term.
+    /// If `left` is true, replace in the left term, otherwise the right term.
+    /// Returns a new literal (may be flipped for normalization) and whether it was flipped.
+    pub fn replace_at_path(
+        &self,
+        left: bool,
+        path: &[usize],
+        new_subterm: ThinTerm,
+    ) -> (ThinLiteral, bool) {
+        let (new_left, new_right) = if left {
+            (
+                self.left.replace_at_path(path, new_subterm),
+                self.right.clone(),
+            )
+        } else {
+            (
+                self.left.clone(),
+                self.right.replace_at_path(path, new_subterm),
+            )
+        };
+
+        ThinLiteral::new_with_flip(self.positive, new_left, new_right)
+    }
 }
 
 impl fmt::Display for ThinLiteral {

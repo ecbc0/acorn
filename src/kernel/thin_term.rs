@@ -740,6 +740,17 @@ impl ThinTerm {
         self.as_ref().iter_args()
     }
 
+    /// Get the arguments of this term as owned ThinTerms.
+    /// This allocates a new vector, unlike iter_args() which borrows.
+    pub fn args(&self) -> Vec<ThinTerm> {
+        self.iter_args().map(|arg| arg.to_owned()).collect()
+    }
+
+    /// Get a specific argument by index.
+    pub fn get_arg(&self, index: usize) -> Option<ThinTerm> {
+        self.iter_args().nth(index).map(|arg| arg.to_owned())
+    }
+
     /// Iterate over all atoms in the term.
     pub fn iter_atoms(&self) -> impl Iterator<Item = &Atom> + '_ {
         self.components.iter().filter_map(|component| {
@@ -1027,6 +1038,78 @@ impl ThinTerm {
         ThinTerm::new(new_components)
     }
 
+    /// Build a term from a spine (function + arguments).
+    /// If the spine has one element, returns just that element.
+    /// Otherwise, treats the first element as the function and the rest as arguments.
+    pub fn from_spine(mut spine: Vec<ThinTerm>) -> ThinTerm {
+        if spine.is_empty() {
+            panic!("from_spine called with empty spine");
+        }
+
+        if spine.len() == 1 {
+            // Just the function, no arguments
+            spine.pop().unwrap()
+        } else {
+            // Take the function (first element)
+            let func = spine.remove(0);
+            let func_args = func.args();
+
+            // Combine the function's existing args with the new ones
+            let mut all_args = func_args;
+            all_args.extend(spine);
+
+            // Build the new term
+            let mut components = vec![ThinTermComponent::Atom(*func.get_head_atom())];
+            for arg in all_args {
+                if arg.components.len() == 1 {
+                    components.push(arg.components[0]);
+                } else {
+                    components.push(ThinTermComponent::Composite {
+                        span: arg.components.len() as u16 + 1,
+                    });
+                    components.extend(arg.components.iter().copied());
+                }
+            }
+            ThinTerm::new(components)
+        }
+    }
+
+    /// Apply additional arguments to this term.
+    pub fn apply(&self, args: &[ThinTerm]) -> ThinTerm {
+        if args.is_empty() {
+            return self.clone();
+        }
+
+        let mut components = self.components.clone();
+        for arg in args {
+            if arg.components.len() == 1 {
+                components.push(arg.components[0]);
+            } else {
+                components.push(ThinTermComponent::Composite {
+                    span: arg.components.len() as u16 + 1,
+                });
+                components.extend(arg.components.iter().copied());
+            }
+        }
+        ThinTerm::new(components)
+    }
+
+    /// Replace all arguments with new arguments.
+    pub fn replace_args(&self, new_args: Vec<ThinTerm>) -> ThinTerm {
+        let mut components = vec![ThinTermComponent::Atom(*self.get_head_atom())];
+        for arg in new_args {
+            if arg.components.len() == 1 {
+                components.push(arg.components[0]);
+            } else {
+                components.push(ThinTermComponent::Composite {
+                    span: arg.components.len() as u16 + 1,
+                });
+                components.extend(arg.components.iter().copied());
+            }
+        }
+        ThinTerm::new(components)
+    }
+
     /// Knuth-Bendix partial reduction ordering.
     /// Returns Greater if self > other, Less if other > self.
     /// Returns Equal if they cannot be ordered (not equality in the usual sense).
@@ -1056,6 +1139,142 @@ impl ThinTerm {
                 }
             }
         }
+    }
+
+    /// Get the subterm at the given path.
+    /// A path is a sequence of argument indices to follow.
+    /// An empty path returns the whole term.
+    pub fn get_term_at_path(&self, path: &[usize]) -> Option<ThinTerm> {
+        if path.is_empty() {
+            return Some(self.clone());
+        }
+
+        // Navigate to the argument at path[0]
+        let arg_index = path[0];
+        let mut current_pos = 1; // Skip the head
+        let mut current_arg = 0;
+
+        while current_pos < self.components.len() && current_arg < arg_index {
+            // Skip this argument
+            match self.components[current_pos] {
+                ThinTermComponent::Composite { span } => {
+                    current_pos += span as usize;
+                }
+                ThinTermComponent::Atom(_) => {
+                    current_pos += 1;
+                }
+            }
+            current_arg += 1;
+        }
+
+        if current_arg != arg_index || current_pos >= self.components.len() {
+            return None;
+        }
+
+        // Extract the argument at current_pos
+        let arg = match self.components[current_pos] {
+            ThinTermComponent::Composite { span } => {
+                // The argument spans from current_pos to current_pos + span
+                // But the Composite marker isn't part of the term's components, so skip it
+                ThinTerm::new(
+                    self.components[current_pos + 1..current_pos + span as usize].to_vec(),
+                )
+            }
+            ThinTermComponent::Atom(atom) => ThinTerm::new(vec![ThinTermComponent::Atom(atom)]),
+        };
+
+        // Recurse for the rest of the path
+        arg.get_term_at_path(&path[1..])
+    }
+
+    /// Replace the subterm at the given path with a replacement.
+    /// A path is a sequence of argument indices to follow.
+    /// An empty path replaces the whole term.
+    pub fn replace_at_path(&self, path: &[usize], replacement: ThinTerm) -> ThinTerm {
+        if path.is_empty() {
+            return replacement;
+        }
+
+        // We need to rebuild the term with the replacement at the path
+        let mut new_components = vec![self.components[0]]; // Keep the head
+
+        let arg_index = path[0];
+        let mut current_pos = 1; // Skip the head
+        let mut current_arg = 0;
+
+        while current_pos < self.components.len() {
+            let arg_start = current_pos;
+            let arg_end = match self.components[current_pos] {
+                ThinTermComponent::Composite { span } => current_pos + span as usize,
+                ThinTermComponent::Atom(_) => current_pos + 1,
+            };
+
+            if current_arg == arg_index {
+                // This is the argument to replace (or recurse into)
+                let old_arg = match self.components[arg_start] {
+                    ThinTermComponent::Composite { span } => ThinTerm::new(
+                        self.components[arg_start + 1..arg_start + span as usize].to_vec(),
+                    ),
+                    ThinTermComponent::Atom(atom) => {
+                        ThinTerm::new(vec![ThinTermComponent::Atom(atom)])
+                    }
+                };
+
+                let new_arg = old_arg.replace_at_path(&path[1..], replacement.clone());
+
+                // Add the new argument to components
+                if new_arg.components.len() == 1 {
+                    new_components.push(new_arg.components[0]);
+                } else {
+                    new_components.push(ThinTermComponent::Composite {
+                        span: new_arg.components.len() as u16 + 1,
+                    });
+                    new_components.extend(new_arg.components.iter().copied());
+                }
+            } else {
+                // Copy this argument unchanged
+                new_components.extend(self.components[arg_start..arg_end].iter().copied());
+            }
+
+            current_pos = arg_end;
+            current_arg += 1;
+        }
+
+        ThinTerm::new(new_components)
+    }
+
+    /// Find all rewritable subterms with their paths.
+    /// It is an error to call this on any variables.
+    /// Any term is rewritable except for "true".
+    pub fn rewritable_subterms(&self) -> Vec<(Vec<usize>, ThinTerm)> {
+        let mut answer = vec![];
+        let mut prefix = vec![];
+        self.push_rewritable_subterms(&mut prefix, &mut answer);
+        answer
+    }
+
+    /// Helper for rewritable_subterms.
+    fn push_rewritable_subterms(
+        &self,
+        prefix: &mut Vec<usize>,
+        answer: &mut Vec<(Vec<usize>, ThinTerm)>,
+    ) {
+        if self.is_true() {
+            return;
+        }
+        if self.is_variable() {
+            panic!("expected no variables");
+        }
+
+        // Process arguments first (prefix order)
+        for (i, arg) in self.iter_args().enumerate() {
+            prefix.push(i);
+            arg.to_owned().push_rewritable_subterms(prefix, answer);
+            prefix.pop();
+        }
+
+        // Add this term itself
+        answer.push((prefix.clone(), self.clone()));
     }
 }
 

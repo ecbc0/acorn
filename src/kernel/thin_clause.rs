@@ -240,4 +240,218 @@ impl ThinClause {
             polarities,
         )
     }
+
+    /// Finds all possible injectivity applications for this clause.
+    /// Returns a vector of (index, arg_index, literals, flipped) tuples.
+    /// - index: the literal index where injectivity can be applied
+    /// - arg_index: which argument position differs
+    /// - literals: the resulting literals after applying injectivity
+    /// - flipped: whether the resulting literal was flipped
+    pub fn find_injectivities(&self) -> Vec<(usize, usize, Vec<ThinLiteral>, bool)> {
+        let mut results = vec![];
+
+        for (i, target) in self.literals.iter().enumerate() {
+            // Check if we can apply injectivity to the ith literal.
+            if target.positive {
+                // Negative literals come before positive ones so we're done
+                break;
+            }
+            if target.left.get_head_atom() != target.right.get_head_atom() {
+                continue;
+            }
+            if target.left.num_args() != target.right.num_args() {
+                continue;
+            }
+
+            // We can do function elimination when precisely one of the arguments is different.
+            let left_args = target.left.args();
+            let right_args = target.right.args();
+            let mut different_index = None;
+            for (j, arg) in left_args.iter().enumerate() {
+                if arg != &right_args[j] {
+                    if different_index.is_some() {
+                        different_index = None;
+                        break;
+                    }
+                    different_index = Some(j);
+                }
+            }
+
+            if let Some(j) = different_index {
+                // Looks like we can eliminate the functions from this literal
+                let mut literals = self.literals.clone();
+                let (new_literal, flipped) =
+                    ThinLiteral::new_with_flip(false, left_args[j].clone(), right_args[j].clone());
+                literals[i] = new_literal;
+                results.push((i, j, literals, flipped));
+            }
+        }
+
+        results
+    }
+
+    /// Generates all clauses that can be derived from this clause using injectivity.
+    /// This is a convenience method that returns just the normalized clauses.
+    pub fn injectivities(&self) -> Vec<ThinClause> {
+        self.find_injectivities()
+            .into_iter()
+            .map(|(_, _, literals, _)| ThinClause::new(literals, &self.context))
+            .filter(|clause| !clause.is_tautology())
+            .collect()
+    }
+
+    /// Finds if extensionality can be applied to this clause.
+    /// Returns the resulting literals if extensionality applies.
+    /// Only works on single-literal clauses.
+    pub fn find_extensionality(&self, kernel_context: &KernelContext) -> Option<Vec<ThinLiteral>> {
+        // Extensionality only works on single-literal clauses
+        if self.literals.len() != 1 {
+            return None;
+        }
+        let literal = &self.literals[0];
+
+        // Extensionality only applies to positive equality literals
+        if !literal.positive {
+            return None;
+        }
+
+        // Check if this is f(a, b, c, x1, x2, ..., xn) = g(x1, x2, ..., xn)
+        let (longer, shorter) = if literal.left.num_args() >= literal.right.num_args() {
+            (&literal.left, &literal.right)
+        } else {
+            (&literal.right, &literal.left)
+        };
+
+        let longer_args = longer.args();
+        let shorter_args = shorter.args();
+        let n = shorter_args.len();
+
+        // Check if the last n arguments are identical
+        let diff = longer_args.len() - n;
+        for i in 0..n {
+            if longer_args[diff + i] != shorter_args[i] {
+                return None;
+            }
+        }
+
+        // Check that the matching arguments are all distinct variables
+        for i in 0..n {
+            match shorter_args[i].atomic_variable() {
+                Some(var_id) => {
+                    // Make sure this variable isn't used elsewhere
+                    for j in 0..n {
+                        if i != j && shorter_args[j].has_variable(var_id) {
+                            return None;
+                        }
+                    }
+                    // Make sure this variable isn't in the "extra" args of the longer term
+                    for j in 0..diff {
+                        if longer_args[j].has_variable(var_id) {
+                            return None;
+                        }
+                    }
+                    // Make sure this variable isn't in the heads
+                    if longer.get_head_atom().is_variable() || shorter.get_head_atom().is_variable()
+                    {
+                        return None;
+                    }
+                }
+                None => return None,
+            }
+        }
+
+        // We can apply extensionality
+        // Build the new literal without the trailing arguments
+        let new_longer = if diff == 0 {
+            longer.get_head_term()
+        } else {
+            let mut components = vec![crate::kernel::thin_term::ThinTermComponent::Atom(
+                *longer.get_head_atom(),
+            )];
+            for arg in &longer_args[..diff] {
+                if arg.is_atomic() {
+                    components.push(crate::kernel::thin_term::ThinTermComponent::Atom(
+                        *arg.get_head_atom(),
+                    ));
+                } else {
+                    components.push(crate::kernel::thin_term::ThinTermComponent::Composite {
+                        span: arg.components().len() as u16 + 1,
+                    });
+                    components.extend(arg.components().iter().copied());
+                }
+            }
+            crate::kernel::thin_term::ThinTerm::new(components)
+        };
+
+        let new_shorter = shorter.get_head_term();
+
+        // Check the types are compatible
+        let longer_type = new_longer.get_term_type_with_context(&self.context, kernel_context);
+        let shorter_type = new_shorter.get_term_type_with_context(&self.context, kernel_context);
+        if longer_type != shorter_type {
+            return None;
+        }
+
+        let (new_lit, _) = ThinLiteral::new_with_flip(true, new_longer, new_shorter);
+        Some(vec![new_lit])
+    }
+
+    /// Generates all clauses that can be derived from this clause using boolean reduction.
+    /// Boolean reduction is replacing a boolean equality with a disjunction that it implies.
+    ///
+    /// Returns a vector of (index, resulting_literals) pairs.
+    /// The index describes the index of a literal that got replaced by two literals.
+    /// We always replace a (left ~ right) at position i with ~left at i and ~right at i+1.
+    pub fn find_boolean_reductions(
+        &self,
+        kernel_context: &KernelContext,
+    ) -> Vec<(usize, Vec<ThinLiteral>)> {
+        use crate::kernel::fat_term::BOOL;
+
+        let mut answer = vec![];
+
+        for i in 0..self.literals.len() {
+            let literal = &self.literals[i];
+            if literal
+                .left
+                .get_term_type_with_context(&self.context, kernel_context)
+                != BOOL
+            {
+                continue;
+            }
+            if literal.right.is_true() {
+                continue;
+            }
+            // We make two copies since there are two ways to do it
+            let mut first = self.literals[..i].to_vec();
+            let mut second = self.literals[..i].to_vec();
+            if literal.positive {
+                first.push(ThinLiteral::positive(literal.left.clone()));
+                first.push(ThinLiteral::negative(literal.right.clone()));
+                second.push(ThinLiteral::negative(literal.left.clone()));
+                second.push(ThinLiteral::positive(literal.right.clone()));
+            } else {
+                first.push(ThinLiteral::negative(literal.left.clone()));
+                first.push(ThinLiteral::negative(literal.right.clone()));
+                second.push(ThinLiteral::positive(literal.left.clone()));
+                second.push(ThinLiteral::positive(literal.right.clone()));
+            }
+            first.extend_from_slice(&self.literals[i + 1..]);
+            second.extend_from_slice(&self.literals[i + 1..]);
+            answer.push((i, first));
+            answer.push((i, second));
+        }
+        answer
+    }
+
+    /// Generates all clauses that can be derived from this clause using boolean reduction.
+    /// This is a convenience method that returns just the normalized clauses.
+    pub fn boolean_reductions(&self, kernel_context: &KernelContext) -> Vec<ThinClause> {
+        let mut answer = vec![];
+        for (_, literals) in self.find_boolean_reductions(kernel_context) {
+            let clause = ThinClause::new(literals, &self.context);
+            answer.push(clause);
+        }
+        answer
+    }
 }
