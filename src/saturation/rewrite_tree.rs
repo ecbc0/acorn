@@ -1,8 +1,8 @@
 // The RewriteTree stores a set of potential rewrites.
 // A given pattern can be rewritten to multiple different output terms.
 
-use crate::kernel::atom::AtomId;
 use crate::kernel::aliases::{Literal, Term};
+use crate::kernel::atom::AtomId;
 use crate::kernel::fat_term::TypeId;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
@@ -178,11 +178,7 @@ mod tests {
 
     use super::*;
 
-    fn get_test_rewrites(
-        tree: &RewriteTree,
-        input_term: &Term,
-        next_var: AtomId,
-    ) -> Vec<Rewrite> {
+    fn get_test_rewrites(tree: &RewriteTree, input_term: &Term, next_var: AtomId) -> Vec<Rewrite> {
         let kernel_context = KernelContext::test_with_constants(10, 10);
         tree.get_rewrites(
             input_term,
@@ -201,14 +197,7 @@ mod tests {
         let ctx = KernelContext::test_with_constants(10, 10);
         let lctx = test_local_context();
         let mut tree = RewriteTree::new();
-        tree.insert_terms(
-            0,
-            &Term::parse("c1"),
-            &Term::parse("c0"),
-            true,
-            &lctx,
-            &ctx,
-        );
+        tree.insert_terms(0, &Term::parse("c1"), &Term::parse("c0"), true, &lctx, &ctx);
         let rewrites = get_test_rewrites(&tree, &Term::parse("c1"), 0);
         assert_eq!(rewrites.len(), 1);
         assert_eq!(rewrites[0].term, Term::parse("c0"));

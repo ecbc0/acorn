@@ -3,8 +3,8 @@ use std::fmt;
 use std::hash::Hash;
 
 use crate::clause_set::{ClauseId, ClauseSet, GroupId, LiteralId, Normalization, TermId};
-use crate::kernel::atom::Atom;
 use crate::kernel::aliases::{Clause, Literal, Term};
+use crate::kernel::atom::Atom;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 
@@ -507,12 +507,7 @@ impl TermGraph {
     /// All terms in the clause are inserted if not already present.
     /// The clause is indexed by all groups that appear in its literals.
     /// Don't insert clauses with no literals.
-    pub fn insert_clause(
-        &mut self,
-        clause: &Clause,
-        step: StepId,
-        kernel_context: &KernelContext,
-    ) {
+    pub fn insert_clause(&mut self, clause: &Clause, step: StepId, kernel_context: &KernelContext) {
         // First, insert all terms and collect literal IDs
         let mut literal_ids = Vec::new();
         for literal in &clause.literals {

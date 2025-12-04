@@ -12,7 +12,6 @@ use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
 use crate::kernel::cnf::CNF;
 use crate::kernel::extended_term::ExtendedTerm;
-use crate::kernel::fat_clause::build_context_from_terms;
 use crate::kernel::fat_term::{TypeId, BOOL};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
@@ -203,25 +202,36 @@ impl Normalizer {
 }
 
 // Represents a binding for a variable on the stack during normalization.
+// Each binding corresponds to a variable in the output clause.
+// The TypeId tracks the type of the variable for building LocalContext.
 enum TermBinding {
-    Bound(Term),
-    Free(Term),
+    Bound(Term, TypeId),
+    Free(Term, TypeId),
 }
 
 impl TermBinding {
     /// Get the underlying term regardless of binding type
     fn term(&self) -> &Term {
         match self {
-            TermBinding::Bound(t) | TermBinding::Free(t) => t,
+            TermBinding::Bound(t, _) | TermBinding::Free(t, _) => t,
+        }
+    }
+
+    /// Get the type of the variable this binding represents
+    fn type_id(&self) -> TypeId {
+        match self {
+            TermBinding::Bound(_, t) | TermBinding::Free(_, t) => *t,
         }
     }
 }
 
 /// Builds a LocalContext from the terms in the stack.
-/// This collects variable types from all bindings.
+/// Each stack position corresponds to a variable id, and we use the stored TypeId.
 fn build_context_from_stack(stack: &[TermBinding]) -> LocalContext {
-    let terms: Vec<&Term> = stack.iter().map(|b| b.term()).collect();
-    build_context_from_terms(&terms)
+    // Each stack position i corresponds to variable x_i
+    // We collect the types from the bindings directly
+    let var_types: Vec<TypeId> = stack.iter().map(|b| b.type_id()).collect();
+    LocalContext::new(var_types)
 }
 
 // A NormalizerView lets us share methods between mutable and non-mutable normalizers that
@@ -419,15 +429,16 @@ impl NormalizerView<'_> {
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
     ) -> Result<CNF, String> {
-        if let AcornValue::Lambda(_, return_value) = function {
+        if let AcornValue::Lambda(arg_types, return_value) = function {
             let mut arg_terms = vec![];
             for arg in args {
                 arg_terms.push(arg.to_term()?);
             }
             let num_args = arg_terms.len();
             // Lambda arguments are bound variables
-            for arg in arg_terms {
-                stack.push(TermBinding::Bound(arg));
+            for (arg, arg_type) in arg_terms.into_iter().zip(arg_types.iter()) {
+                let type_id = self.type_store().get_type_id(arg_type)?;
+                stack.push(TermBinding::Bound(arg, type_id));
             }
             let answer = self.value_to_cnf(&return_value, negate, stack, next_var_id, synthesized);
             stack.truncate(stack.len() - num_args);
@@ -461,7 +472,7 @@ impl NormalizerView<'_> {
             let type_id = self.type_store().get_type_id(quant)?;
             let var = Term::new_variable(type_id, *next_var_id);
             *next_var_id += 1;
-            stack.push(TermBinding::Free(var));
+            stack.push(TermBinding::Free(var, type_id));
         }
         let result = self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized)?;
         for _ in quants {
@@ -484,6 +495,8 @@ impl NormalizerView<'_> {
         let mut seen_vars = std::collections::HashSet::new();
 
         for binding in stack.iter() {
+            // Use collect_vars_embedded because the terms may contain variables
+            // with IDs that don't match the stack position
             for (var_id, type_id) in binding.term().collect_vars_embedded() {
                 if seen_vars.insert(var_id) {
                     let var_term = Term::new_variable(type_id, var_id);
@@ -539,8 +552,9 @@ impl NormalizerView<'_> {
     ) -> Result<CNF, String> {
         let skolem_terms = self.make_skolem_terms(quants, stack, synthesized)?;
         let len = skolem_terms.len();
-        for skolem_term in skolem_terms {
-            stack.push(TermBinding::Bound(skolem_term));
+        for (skolem_term, quant) in skolem_terms.into_iter().zip(quants.iter()) {
+            let type_id = self.type_store().get_type_id(quant)?;
+            stack.push(TermBinding::Bound(skolem_term, type_id));
         }
         let result = self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized)?;
         for _ in 0..len {
@@ -678,8 +692,7 @@ impl NormalizerView<'_> {
                     if let Some((right_term, right_sign)) = right_pos.match_negated(&right_neg) {
                         // Both sides are simple, so we can return a single literal.
                         let positive = left_sign == right_sign;
-                        let literal =
-                            Literal::new(positive, left_term.clone(), right_term.clone());
+                        let literal = Literal::new(positive, left_term.clone(), right_term.clone());
                         return Ok(CNF::from_literal(literal));
                     }
                 }
@@ -860,15 +873,16 @@ impl NormalizerView<'_> {
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
     ) -> Result<ExtendedTerm, String> {
-        if let AcornValue::Lambda(_, return_value) = function {
+        if let AcornValue::Lambda(arg_types, return_value) = function {
             let mut arg_terms = vec![];
             for arg in args {
                 arg_terms.push(arg.to_term()?);
             }
             let num_args = arg_terms.len();
             // Lambda arguments are bound variables
-            for arg in arg_terms {
-                stack.push(TermBinding::Bound(arg));
+            for (arg, arg_type) in arg_terms.into_iter().zip(arg_types.iter()) {
+                let type_id = self.type_store().get_type_id(arg_type)?;
+                stack.push(TermBinding::Bound(arg, type_id));
             }
             let answer = self.value_to_extended_term(&return_value, stack, next_var_id, synth);
             stack.truncate(stack.len() - num_args);
@@ -1067,6 +1081,8 @@ impl NormalizerView<'_> {
         let mut seen_vars = std::collections::HashSet::new();
 
         for binding in stack.iter() {
+            // Use collect_vars_embedded because the terms may contain variables
+            // with IDs that don't match the stack position
             for (var_id, type_id) in binding.term().collect_vars_embedded() {
                 if seen_vars.insert(var_id) {
                     let var_term = Term::new_variable(type_id, var_id);
@@ -1126,9 +1142,11 @@ impl NormalizerView<'_> {
 
     /// Converts an ExtendedTerm to a plain Term.
     /// If the ExtendedTerm is an If expression, synthesizes a new atom for it.
+    /// The local_context provides variable type information.
     fn extended_term_to_term(
         &mut self,
         ext_term: ExtendedTerm,
+        local_context: &LocalContext,
         synth: &mut Vec<AtomId>,
     ) -> Result<Term, String> {
         match ext_term {
@@ -1148,9 +1166,8 @@ impl NormalizerView<'_> {
                 use crate::kernel::atom::Atom;
 
                 // Determine the type of the result (should be same as then_term and else_term)
-                // Normalized terms have no variables, so empty local context is safe
-                let result_type_id = then_term
-                    .get_term_type_with_context(LocalContext::empty_ref(), self.kernel_context());
+                let result_type_id =
+                    then_term.get_term_type_with_context(local_context, self.kernel_context());
                 let result_type = self.type_store().get_type(result_type_id).clone();
 
                 // Create a new synthetic atom with the appropriate function type
@@ -1160,14 +1177,14 @@ impl NormalizerView<'_> {
                 let mut seen_vars = std::collections::HashSet::new();
 
                 // Collect free variables from the condition literal
-                for (var_id, type_id) in cond_lit.left.collect_vars_embedded() {
+                for (var_id, type_id) in cond_lit.left.collect_vars(local_context) {
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(type_id, var_id);
                         args.push(var_term);
                         arg_types.push(self.type_store().get_type(type_id).clone());
                     }
                 }
-                for (var_id, type_id) in cond_lit.right.collect_vars_embedded() {
+                for (var_id, type_id) in cond_lit.right.collect_vars(local_context) {
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(type_id, var_id);
                         args.push(var_term);
@@ -1176,7 +1193,7 @@ impl NormalizerView<'_> {
                 }
 
                 // Collect free variables from the then branch
-                for (var_id, type_id) in then_term.collect_vars_embedded() {
+                for (var_id, type_id) in then_term.collect_vars(local_context) {
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(type_id, var_id);
                         args.push(var_term);
@@ -1185,7 +1202,7 @@ impl NormalizerView<'_> {
                 }
 
                 // Collect free variables from the else branch
-                for (var_id, type_id) in else_term.collect_vars_embedded() {
+                for (var_id, type_id) in else_term.collect_vars(local_context) {
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(type_id, var_id);
                         args.push(var_term);
@@ -1222,10 +1239,7 @@ impl NormalizerView<'_> {
 
                 // Second clause: cond or synth_term = else_term
                 let else_eq = Literal::new(true, synth_term.clone(), else_term);
-                defining_clauses.push(Clause::new_without_context(vec![
-                    cond_lit.clone(),
-                    else_eq,
-                ]));
+                defining_clauses.push(Clause::new_without_context(vec![cond_lit.clone(), else_eq]));
 
                 // Add the definition
                 self.as_mut()?
@@ -1256,10 +1270,11 @@ impl NormalizerView<'_> {
                 };
                 let then_ext =
                     self.value_to_extended_term(then_value, stack, next_var_id, synth)?;
-                let then_branch = self.extended_term_to_term(then_ext, synth)?;
+                let local_context = build_context_from_stack(stack);
+                let then_branch = self.extended_term_to_term(then_ext, &local_context, synth)?;
                 let else_ext =
                     self.value_to_extended_term(else_value, stack, next_var_id, synth)?;
-                let else_branch = self.extended_term_to_term(else_ext, synth)?;
+                let else_branch = self.extended_term_to_term(else_ext, &local_context, synth)?;
                 Ok(ExtendedTerm::If(cond_lit, then_branch, else_branch))
             }
             AcornValue::Application(app) => {
@@ -1306,7 +1321,7 @@ impl NormalizerView<'_> {
                     let var_id = stack.len() as AtomId;
                     let var = Term::new_variable(type_id, var_id);
                     args.push((var_id, type_id));
-                    stack.push(TermBinding::Free(var));
+                    stack.push(TermBinding::Free(var, type_id));
                     // Update next_var_id to be at least one past this variable
                     if var_id >= *next_var_id {
                         *next_var_id = var_id + 1;

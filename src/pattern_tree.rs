@@ -1,7 +1,7 @@
 use qp_trie::{Entry, SubTrie, Trie};
 
-use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::aliases::{Clause, Literal, Term};
+use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::fat_term::TypeId;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
