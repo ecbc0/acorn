@@ -440,7 +440,13 @@ impl NormalizerView<'_> {
             AcornValue::Application(app) => {
                 let mut arg_exts = vec![];
                 for arg in &app.args {
-                    arg_exts.push(self.arg_to_extended_term(arg, stack, next_var_id, synth)?);
+                    arg_exts.push(self.arg_to_extended_term(
+                        arg,
+                        stack,
+                        next_var_id,
+                        synth,
+                        context,
+                    )?);
                 }
                 self.apply_to_cnf(
                     &app.function,
@@ -454,7 +460,7 @@ impl NormalizerView<'_> {
             }
             AcornValue::Variable(..) | AcornValue::Constant(..) | AcornValue::Lambda(..) => {
                 let term = self
-                    .value_to_extended_term(value, stack, next_var_id, synth)?
+                    .value_to_extended_term(value, stack, next_var_id, synth, context)?
                     .to_term()?;
                 let literal = Literal::from_signed_term(term, !negate);
                 Ok(CNF::from_literal(literal))
@@ -498,7 +504,7 @@ impl NormalizerView<'_> {
 
         // Fall back to converting via extended term
         let extended =
-            self.apply_to_extended_term(function, args, stack, next_var_id, synthesized)?;
+            self.apply_to_extended_term(function, args, stack, next_var_id, synthesized, context)?;
         match extended {
             ExtendedTerm::Term(term) => {
                 let literal = Literal::from_signed_term(term, !negate);
@@ -830,8 +836,8 @@ impl NormalizerView<'_> {
             }
 
             // Non-boolean functional comparison.
-            let left = self.value_to_extended_term(left, stack, next_var_id, synth)?;
-            let right = self.value_to_extended_term(right, stack, next_var_id, synth)?;
+            let left = self.value_to_extended_term(left, stack, next_var_id, synth, context)?;
+            let right = self.value_to_extended_term(right, stack, next_var_id, synth, context)?;
             if negate {
                 // Functional inequality.
                 // Create skolem terms for each argument
@@ -900,8 +906,8 @@ impl NormalizerView<'_> {
         }
 
         // Plain old equality of terms.
-        let left = self.value_to_extended_term(left, stack, next_var_id, synth)?;
-        let right = self.value_to_extended_term(right, stack, next_var_id, synth)?;
+        let left = self.value_to_extended_term(left, stack, next_var_id, synth, context)?;
+        let right = self.value_to_extended_term(right, stack, next_var_id, synth, context)?;
         left.eq_to_cnf(right, negate)
     }
 
@@ -1012,6 +1018,7 @@ impl NormalizerView<'_> {
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
+        context: &mut LocalContext,
     ) -> Result<ExtendedTerm, String> {
         if let AcornValue::Lambda(arg_types, return_value) = function {
             let mut arg_terms = vec![];
@@ -1024,7 +1031,8 @@ impl NormalizerView<'_> {
                 let type_id = self.type_store().get_type_id(arg_type)?;
                 stack.push(TermBinding::Bound(arg, type_id));
             }
-            let answer = self.value_to_extended_term(&return_value, stack, next_var_id, synth);
+            let answer =
+                self.value_to_extended_term(&return_value, stack, next_var_id, synth, context);
             stack.truncate(stack.len() - num_args);
             return answer;
         }
@@ -1037,7 +1045,7 @@ impl NormalizerView<'_> {
         let mut spine2 = vec![];
 
         // First process the function
-        match self.value_to_extended_term(function, stack, next_var_id, synth)? {
+        match self.value_to_extended_term(function, stack, next_var_id, synth, context)? {
             ExtendedTerm::Term(t) => {
                 spine1.push(t);
             }
@@ -1142,7 +1150,8 @@ impl NormalizerView<'_> {
         let skolem_value =
             self.as_ref()
                 .denormalize_term(&skolem_term, &stack_context, &mut None, None);
-        let mut local_context = LocalContext::empty();
+        // Start with the stack context so we have types for existing variables
+        let mut local_context = stack_context.clone();
         let definition_cnf = self.eq_to_cnf(
             &skolem_value,
             value,
@@ -1193,6 +1202,7 @@ impl NormalizerView<'_> {
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
+        context: &mut LocalContext,
     ) -> Result<ExtendedTerm, String> {
         match value {
             AcornValue::Lambda(_, _) => {
@@ -1204,7 +1214,7 @@ impl NormalizerView<'_> {
             }
             _ => {
                 // For non-lambda values, use the standard conversion
-                self.value_to_extended_term(value, stack, next_var_id, synth)
+                self.value_to_extended_term(value, stack, next_var_id, synth, context)
             }
         }
     }
@@ -1403,6 +1413,7 @@ impl NormalizerView<'_> {
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
+        context: &mut LocalContext,
     ) -> Result<ExtendedTerm, String> {
         match value {
             AcornValue::IfThenElse(cond_val, then_value, else_value) => {
@@ -1426,19 +1437,32 @@ impl NormalizerView<'_> {
                     self.synthesize_literal_from_cnf(cond_cnf, stack, synth, &stack_context)?
                 };
                 let then_ext =
-                    self.value_to_extended_term(then_value, stack, next_var_id, synth)?;
+                    self.value_to_extended_term(then_value, stack, next_var_id, synth, context)?;
                 let then_branch = self.extended_term_to_term(then_ext, &stack_context, synth)?;
                 let else_ext =
-                    self.value_to_extended_term(else_value, stack, next_var_id, synth)?;
+                    self.value_to_extended_term(else_value, stack, next_var_id, synth, context)?;
                 let else_branch = self.extended_term_to_term(else_ext, &stack_context, synth)?;
                 Ok(ExtendedTerm::If(cond_lit, then_branch, else_branch))
             }
             AcornValue::Application(app) => {
                 let mut arg_exts = vec![];
                 for arg in &app.args {
-                    arg_exts.push(self.arg_to_extended_term(arg, stack, next_var_id, synth)?);
+                    arg_exts.push(self.arg_to_extended_term(
+                        arg,
+                        stack,
+                        next_var_id,
+                        synth,
+                        context,
+                    )?);
                 }
-                self.apply_to_extended_term(&app.function, arg_exts, stack, next_var_id, synth)
+                self.apply_to_extended_term(
+                    &app.function,
+                    arg_exts,
+                    stack,
+                    next_var_id,
+                    synth,
+                    context,
+                )
             }
             AcornValue::Variable(i, _) => {
                 if (*i as usize) < stack.len() {
@@ -1476,6 +1500,8 @@ impl NormalizerView<'_> {
                     let type_id = self.type_store().get_type_id(arg_type)?;
                     let var_id = *next_var_id;
                     *next_var_id += 1;
+                    // Add the variable type to the context
+                    context.set_var_type(var_id as usize, type_id);
                     let var = Term::new_variable(type_id, var_id);
                     args.push((var_id, type_id));
                     stack.push(TermBinding::Free(var, type_id));
@@ -1483,7 +1509,7 @@ impl NormalizerView<'_> {
 
                 // Evaluate the body with the lambda arguments on the stack
                 let body_term = self
-                    .value_to_extended_term(body, stack, next_var_id, synth)?
+                    .value_to_extended_term(body, stack, next_var_id, synth, context)?
                     .to_term()?;
 
                 // Pop the lambda arguments from the stack
@@ -1895,9 +1921,12 @@ impl Normalizer {
     #[cfg(test)]
     fn check_denormalize_renormalize(&mut self, clause: &Clause) {
         let denormalized = self.denormalize(clause, None);
-        denormalized
-            .validate()
-            .expect("denormalized clause should validate");
+        if let Err(e) = denormalized.validate() {
+            eprintln!("DEBUG: clause = {}", clause);
+            eprintln!("DEBUG: clause context = {:?}", clause.get_local_context());
+            eprintln!("DEBUG: denormalized = {}", denormalized);
+            panic!("denormalized clause should validate: {:?}", e);
+        }
         let renormalized = self
             .normalize_value(&denormalized, NewConstantType::Local, &Source::mock())
             .unwrap();
@@ -1916,8 +1945,26 @@ impl Normalizer {
         }
         if clause != &renormalized[0] {
             println!("original clause: {}", clause);
+            println!("original context: {:?}", clause.get_local_context());
             println!("denormalized: {}", denormalized);
             println!("renormalized: {}", renormalized[0]);
+            println!(
+                "renormalized context: {:?}",
+                renormalized[0].get_local_context()
+            );
+            if clause.get_local_context() == renormalized[0].get_local_context() {
+                // Contexts match but clauses don't - might be variable ordering in literals
+                for (i, (orig_lit, renorm_lit)) in clause
+                    .literals
+                    .iter()
+                    .zip(renormalized[0].literals.iter())
+                    .enumerate()
+                {
+                    if orig_lit != renorm_lit {
+                        println!("literal {} differs: {} vs {}", i, orig_lit, renorm_lit);
+                    }
+                }
+            }
             panic!("renormalized clause does not match original");
         }
     }

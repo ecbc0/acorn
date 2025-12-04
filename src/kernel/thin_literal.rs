@@ -227,6 +227,27 @@ impl ThinLiteral {
         }
     }
 
+    /// Normalize variable IDs in place so they appear in order of first occurrence,
+    /// tracking the types of variables in the output.
+    /// Returns true if the literal was flipped during normalization.
+    pub fn normalize_var_ids_with_types(
+        &mut self,
+        var_ids: &mut Vec<AtomId>,
+        var_types: &mut Vec<TypeId>,
+        input_context: &LocalContext,
+    ) -> bool {
+        self.left
+            .normalize_var_ids_with_types(var_ids, var_types, input_context);
+        self.right
+            .normalize_var_ids_with_types(var_ids, var_types, input_context);
+        if needs_to_flip(&self.left, &self.right) {
+            self.flip();
+            true
+        } else {
+            false
+        }
+    }
+
     /// Normalizes the direction and returns whether it was flipped.
     /// The larger term should be on the left of the literal.
     pub fn new_with_flip(positive: bool, left: ThinTerm, right: ThinTerm) -> (ThinLiteral, bool) {

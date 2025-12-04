@@ -1344,8 +1344,7 @@ impl<'a> Iterator for ThinTermRefArgsIterator<'a> {
             ThinTermComponent::Composite { span } => {
                 // Extract the composite term as a slice reference.
                 // Skip the Composite marker itself - the term content starts after it.
-                let arg_slice =
-                    &self.components[self.position + 1..self.position + span as usize];
+                let arg_slice = &self.components[self.position + 1..self.position + span as usize];
                 self.position += span as usize;
                 Some(ThinTermRef::new(arg_slice))
             }

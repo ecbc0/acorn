@@ -713,10 +713,25 @@ mod tests {
         Term::new(BOOL, head_type, head, args)
     }
 
-    /// Creates a test unifier with LEFT and RIGHT contexts set to an empty context.
-    /// Creates a test KernelContext suitable for tests using GlobalConstant symbols.
+    /// Creates a test KernelContext with proper function types for testing.
+    /// g0: (Bool, Bool) -> Bool
+    /// g1: Bool -> Bool
+    /// g2: (Bool, Bool, Bool) -> Bool
     fn test_ctx() -> KernelContext {
+        KernelContext::test_with_function_types()
+    }
+
+    /// Creates a test KernelContext with EMPTY types for all symbols.
+    /// Use this only for FatTerm tests that use Term::parse() which creates EMPTY types.
+    /// This will NOT work with ThinTerm since ThinTerm looks up types from the symbol table.
+    #[cfg(not(feature = "thin"))]
+    fn test_ctx_empty() -> KernelContext {
         KernelContext::test_with_constants(10, 10)
+    }
+
+    /// Get the type for a 2-arg Bool function: (Bool, Bool) -> Bool
+    fn bool2_fn_type(ctx: &KernelContext) -> TypeId {
+        ctx.symbol_table.get_type(Symbol::GlobalConstant(0))
     }
 
     /// Creates a test unifier with EMPTY types for variables.
@@ -743,15 +758,16 @@ mod tests {
 
     #[test]
     fn test_unifying_variables() {
+        let ctx = test_ctx();
+        let head_type = bool2_fn_type(&ctx);
         let bool0 = Term::atom(BOOL, Atom::Variable(0));
         let bool1 = Term::atom(BOOL, Atom::Variable(1));
         let bool2 = Term::atom(BOOL, Atom::Variable(2));
         let fterm = bool_fn(
             Atom::Symbol(Symbol::GlobalConstant(0)),
-            EMPTY, // GlobalConstant head type is EMPTY from test_ctx
+            head_type,
             vec![bool0.clone(), bool1.clone()],
         );
-        let ctx = test_ctx();
         let mut u = test_unifier_bool(&ctx);
 
         // Replace x0 with x1 and x1 with x2.
@@ -763,20 +779,21 @@ mod tests {
 
     #[test]
     fn test_same_scope() {
+        let ctx = test_ctx();
+        let head_type = bool2_fn_type(&ctx);
         let bool0 = Term::atom(BOOL, Atom::Variable(0));
         let bool1 = Term::atom(BOOL, Atom::Variable(1));
         let bool2 = Term::atom(BOOL, Atom::Variable(2));
         let term1 = bool_fn(
             Atom::Symbol(Symbol::GlobalConstant(0)),
-            EMPTY, // GlobalConstant head type is EMPTY from test_ctx
+            head_type,
             vec![bool0.clone(), bool1.clone()],
         );
         let term2 = bool_fn(
             Atom::Symbol(Symbol::GlobalConstant(0)),
-            EMPTY, // GlobalConstant head type is EMPTY from test_ctx
+            head_type,
             vec![bool1.clone(), bool2.clone()],
         );
-        let ctx = test_ctx();
         let mut u = test_unifier_bool(&ctx);
 
         u.assert_unify(Scope::LEFT, &term1, Scope::LEFT, &term2);
@@ -788,20 +805,21 @@ mod tests {
 
     #[test]
     fn test_different_scope() {
+        let ctx = test_ctx();
+        let head_type = bool2_fn_type(&ctx);
         let bool0 = Term::atom(BOOL, Atom::Variable(0));
         let bool1 = Term::atom(BOOL, Atom::Variable(1));
         let bool2 = Term::atom(BOOL, Atom::Variable(2));
         let term1 = bool_fn(
             Atom::Symbol(Symbol::GlobalConstant(0)),
-            EMPTY, // GlobalConstant head type is EMPTY from test_ctx
+            head_type,
             vec![bool0.clone(), bool1.clone()],
         );
         let term2 = bool_fn(
             Atom::Symbol(Symbol::GlobalConstant(0)),
-            EMPTY, // GlobalConstant head type is EMPTY from test_ctx
+            head_type,
             vec![bool1.clone(), bool2.clone()],
         );
-        let ctx = test_ctx();
         let mut u = test_unifier_bool(&ctx);
 
         u.assert_unify(Scope::LEFT, &term1, Scope::RIGHT, &term2);
@@ -814,31 +832,44 @@ mod tests {
     #[test]
     fn test_unifying_functional_variable() {
         // This test checks that a variable can unify with a constant in functional position.
-        // Variable(1) should unify with GlobalConstant(0), both with type EMPTY.
+        // Variable(1) should unify with GlobalConstant(3), both with type Empty -> Bool.
+        let ctx = test_ctx();
+        // g3 has type Empty -> Bool
+        let empty_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(3));
+
         let empty0 = Term::atom(EMPTY, Atom::Variable(0));
         let const_f_term = Term::new(
             BOOL,
-            EMPTY, // GlobalConstant head type is EMPTY from test_ctx
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            empty_to_bool,
+            Atom::Symbol(Symbol::GlobalConstant(3)),
             vec![empty0.clone()],
         );
         let var_f_term = Term::new(
             BOOL,
-            EMPTY, // Variable head type - must match GlobalConstant for unification
+            empty_to_bool, // Variable head type must match for unification
             Atom::Variable(1),
             vec![empty0.clone()],
         );
 
-        let ctx = test_ctx();
-        let mut u = test_unifier(&ctx); // Use EMPTY types for variables
+        // Set up a unifier where Variable(0) has EMPTY type and Variable(1) has Empty -> Bool type
+        let mut u = Unifier::new(3, &ctx);
+        // x0: EMPTY, x1: Empty -> Bool
+        let local_ctx = LocalContext::with_types(vec![EMPTY, empty_to_bool]);
+        let local_ctx_ref: &'static LocalContext = Box::leak(Box::new(local_ctx));
+        u.set_input_context(Scope::LEFT, local_ctx_ref);
+        u.set_input_context(Scope::RIGHT, local_ctx_ref);
+        u.set_output_var_types(vec![EMPTY; 10]);
         u.assert_unify(Scope::LEFT, &const_f_term, Scope::RIGHT, &var_f_term);
     }
 
+    // This test uses Term::parse which creates EMPTY types.
+    // ThinTerm looks up types from the symbol table, so this test only works with FatTerm.
+    #[cfg(not(feature = "thin"))]
     #[test]
     fn test_nested_functional_unify() {
         let left_term = Term::parse("x0(x0(c0))");
         let right_term = Term::parse("c1(x0(x1))");
-        let ctx = test_ctx();
+        let ctx = test_ctx_empty();
         let mut u = test_unifier(&ctx);
         u.assert_unify(Scope::LEFT, &left_term, Scope::RIGHT, &right_term);
         u.print();
@@ -847,6 +878,9 @@ mod tests {
         assert!(u.get_mapping(Scope::RIGHT, 1).unwrap().to_string() == "c0");
     }
 
+    // This test uses Term::parse which creates EMPTY types.
+    // ThinTerm looks up types from the symbol table, so this test only works with FatTerm.
+    #[cfg(not(feature = "thin"))]
     #[test]
     fn test_nested_functional_superpose() {
         let s = Term::parse("x0(x0(x1))");
@@ -861,13 +895,16 @@ mod tests {
             "c1(c1(x0(x1))) != c1(x2(x3)) or c1(x0(x1)) = x2(x3)",
             LocalContext::empty_ref(),
         );
-        let ctx = test_ctx();
+        let ctx = test_ctx_empty();
         let mut u = test_unifier(&ctx);
         u.assert_unify(Scope::LEFT, &s, Scope::RIGHT, &u_subterm);
         u.print();
         u.superpose_clauses(&t, &pm_clause, 0, target_path, &resolution_clause, 0, true);
     }
 
+    // This test uses custom type IDs that are not set up as function types in the type_store.
+    // ThinTerm looks up types and requires proper function types, so this test only works with FatTerm.
+    #[cfg(not(feature = "thin"))]
     #[test]
     fn test_higher_order_partial_application_unification() {
         // This test reproduces the issue from test_concrete_proof_list_contains
@@ -956,6 +993,9 @@ mod tests {
         }
     }
 
+    // This test uses Term::parse which creates EMPTY types.
+    // ThinTerm looks up types from the symbol table, so this test only works with FatTerm.
+    #[cfg(not(feature = "thin"))]
     #[test]
     fn test_original_superpose() {
         let s = Term::parse("x0(x0(x1))");
@@ -970,7 +1010,7 @@ mod tests {
             "c1(c1(x0(x1))) != c1(x2(x3)) or c1(x0(x1)) = x2(x3)",
             LocalContext::empty_ref(),
         );
-        let ctx = test_ctx();
+        let ctx = test_ctx_empty();
         let mut u = test_unifier(&ctx);
         u.assert_unify(Scope::LEFT, &s, Scope::RIGHT, &u_subterm);
         u.print();
@@ -983,9 +1023,12 @@ mod tests {
         );
     }
 
+    // This test uses unify_str which uses Term::parse with EMPTY types.
+    // ThinTerm looks up types from the symbol table, so this test only works with FatTerm.
+    #[cfg(not(feature = "thin"))]
     #[test]
     fn test_mutual_containment_invalid_1() {
-        let ctx = test_ctx();
+        let ctx = test_ctx_empty();
         let mut u = test_unifier(&ctx);
         u.unify_str(
             Scope::LEFT,
@@ -996,9 +1039,12 @@ mod tests {
         );
     }
 
+    // This test uses unify_str which uses Term::parse with EMPTY types.
+    // ThinTerm looks up types from the symbol table, so this test only works with FatTerm.
+    #[cfg(not(feature = "thin"))]
     #[test]
     fn test_mutual_containment_invalid_2() {
-        let ctx = test_ctx();
+        let ctx = test_ctx_empty();
         let mut u = test_unifier(&ctx);
         u.unify_str(
             Scope::LEFT,
@@ -1009,9 +1055,12 @@ mod tests {
         );
     }
 
+    // This test uses unify_str which uses Term::parse with EMPTY types.
+    // ThinTerm looks up types from the symbol table, so this test only works with FatTerm.
+    #[cfg(not(feature = "thin"))]
     #[test]
     fn test_recursive_reference_in_output() {
-        let ctx = test_ctx();
+        let ctx = test_ctx_empty();
         let mut u = test_unifier(&ctx);
         u.unify_str(
             Scope::LEFT,
@@ -1022,10 +1071,13 @@ mod tests {
         );
     }
 
+    // This test uses Term::parse which creates EMPTY types.
+    // ThinTerm looks up types from the symbol table, so this test only works with FatTerm.
+    #[cfg(not(feature = "thin"))]
     #[test]
     fn test_initializing_with_variables_in_map() {
         use crate::kernel::local_context::LocalContext;
-        let ctx = test_ctx();
+        let ctx = test_ctx_empty();
         let mut initial_map = VariableMap::new();
         initial_map.set(0, Term::parse("s0(x0, x1, s4)"));
         let output_context = initial_map.build_output_context(LocalContext::test_empty_ref());

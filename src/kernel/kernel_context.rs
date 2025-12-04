@@ -114,6 +114,99 @@ impl KernelContext {
         }
         ctx
     }
+
+    /// Creates a test KernelContext with function types for testing.
+    /// Sets up various function types and assigns them to symbols.
+    ///
+    /// Function types created:
+    /// - TypeId(2): Bool -> Bool
+    /// - TypeId(3): (Bool, Bool) -> Bool  (curried as Bool -> (Bool -> Bool))
+    /// - TypeId(4): (Bool, Bool, Bool) -> Bool
+    /// - TypeId(5): Empty -> Bool
+    /// - TypeId(6): (Empty, Empty) -> Empty
+    ///
+    /// Symbol type assignments:
+    /// - g0, c0: (Bool, Bool) -> Bool
+    /// - g1, c1: Bool -> Bool
+    /// - g2, c2: (Bool, Bool, Bool) -> Bool
+    /// - g3, c3: Empty -> Bool (for tests with EMPTY-typed args)
+    /// - g4, c4: (Empty, Empty) -> Empty
+    /// - g5-g9, c5-c9: Bool
+    #[cfg(test)]
+    pub fn test_with_function_types() -> KernelContext {
+        use crate::elaborator::acorn_type::{AcornType, FunctionType};
+        use crate::kernel::fat_term::BOOL;
+
+        let mut ctx = KernelContext::new();
+
+        // Add function types
+        let bool_to_bool = AcornType::Function(FunctionType {
+            arg_types: vec![AcornType::Bool],
+            return_type: Box::new(AcornType::Bool),
+        });
+        let bool2_to_bool = AcornType::Function(FunctionType {
+            arg_types: vec![AcornType::Bool, AcornType::Bool],
+            return_type: Box::new(AcornType::Bool),
+        });
+        let bool3_to_bool = AcornType::Function(FunctionType {
+            arg_types: vec![AcornType::Bool, AcornType::Bool, AcornType::Bool],
+            return_type: Box::new(AcornType::Bool),
+        });
+        let empty_to_bool = AcornType::Function(FunctionType {
+            arg_types: vec![AcornType::Empty],
+            return_type: Box::new(AcornType::Bool),
+        });
+        let empty2_to_empty = AcornType::Function(FunctionType {
+            arg_types: vec![AcornType::Empty, AcornType::Empty],
+            return_type: Box::new(AcornType::Empty),
+        });
+
+        let type_bool_to_bool = ctx.type_store.add_type(&bool_to_bool);
+        let type_bool2_to_bool = ctx.type_store.add_type(&bool2_to_bool);
+        let type_bool3_to_bool = ctx.type_store.add_type(&bool3_to_bool);
+        let type_empty_to_bool = ctx.type_store.add_type(&empty_to_bool);
+        let type_empty2_to_empty = ctx.type_store.add_type(&empty2_to_empty);
+
+        // Add global constants with function types
+        ctx.symbol_table
+            .add_global_constant_with_type(type_bool2_to_bool); // g0
+        ctx.symbol_table
+            .add_global_constant_with_type(type_bool_to_bool); // g1
+        ctx.symbol_table
+            .add_global_constant_with_type(type_bool3_to_bool); // g2
+        ctx.symbol_table
+            .add_global_constant_with_type(type_empty_to_bool); // g3
+        ctx.symbol_table
+            .add_global_constant_with_type(type_empty2_to_empty); // g4
+        for _ in 5..10 {
+            ctx.symbol_table.add_global_constant_with_type(BOOL);
+        }
+
+        // Add scoped constants with similar types
+        ctx.symbol_table
+            .add_scoped_constant_with_type(type_bool2_to_bool); // c0
+        ctx.symbol_table
+            .add_scoped_constant_with_type(type_bool_to_bool); // c1
+        ctx.symbol_table
+            .add_scoped_constant_with_type(type_bool3_to_bool); // c2
+        ctx.symbol_table
+            .add_scoped_constant_with_type(type_empty_to_bool); // c3
+        ctx.symbol_table
+            .add_scoped_constant_with_type(type_empty2_to_empty); // c4
+        for _ in 5..10 {
+            ctx.symbol_table.add_scoped_constant_with_type(BOOL);
+        }
+
+        // Add monomorphs and synthetics with BOOL type
+        for _ in 0..10 {
+            ctx.symbol_table.add_monomorph_with_type(BOOL);
+        }
+        for _ in 0..10 {
+            ctx.symbol_table.declare_synthetic(BOOL);
+        }
+
+        ctx
+    }
 }
 
 impl Default for KernelContext {

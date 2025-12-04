@@ -412,7 +412,9 @@ impl PassiveSet {
     }
 }
 
-#[cfg(test)]
+// These tests use ProofStep::mock which uses Clause::parse with EMPTY types.
+// ThinTerm looks up types from the symbol table, so these tests only work with FatTerm.
+#[cfg(all(test, not(feature = "thin")))]
 mod tests {
     use super::*;
 

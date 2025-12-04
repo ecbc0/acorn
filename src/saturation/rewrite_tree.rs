@@ -172,7 +172,9 @@ impl RewriteTree {
     }
 }
 
-#[cfg(test)]
+// These tests use Term::parse which creates EMPTY types.
+// ThinTerm looks up types from the symbol table, so these tests only work with FatTerm.
+#[cfg(all(test, not(feature = "thin")))]
 mod tests {
     use crate::kernel::atom::Atom;
 

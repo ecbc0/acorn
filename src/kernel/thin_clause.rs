@@ -76,10 +76,15 @@ impl ThinClause {
             };
         }
 
-        // Normalize variable IDs and track flips
+        // Normalize variable IDs and track flips, rebuilding the context
         let mut var_ids = vec![];
+        let mut var_types = vec![];
         for i in 0..output_literals.len() {
-            if output_literals[i].normalize_var_ids(&mut var_ids) {
+            if output_literals[i].normalize_var_ids_with_types(
+                &mut var_ids,
+                &mut var_types,
+                context,
+            ) {
                 // We flipped literal i. Update the trace.
                 for t in &mut trace {
                     if let LiteralTrace::Output { index, flipped } = t {
@@ -93,7 +98,7 @@ impl ThinClause {
 
         let clause = ThinClause {
             literals: output_literals,
-            context: context.clone(),
+            context: LocalContext::new(var_types),
         };
         (clause, ClauseTrace::new(trace))
     }
@@ -152,11 +157,15 @@ impl ThinClause {
 
     /// Normalizes the variable IDs in the literals.
     /// This may flip literals, so keep in mind it will break any trace.
+    /// Also rebuilds the context to match the renumbered variables.
     pub fn normalize_var_ids(&mut self) {
         let mut var_ids = vec![];
+        let mut var_types = vec![];
+        let input_context = self.context.clone();
         for literal in &mut self.literals {
-            literal.normalize_var_ids(&mut var_ids);
+            literal.normalize_var_ids_with_types(&mut var_ids, &mut var_types, &input_context);
         }
+        self.context = LocalContext::new(var_types);
     }
 
     /// Create an impossible clause (empty clause, represents false).
@@ -263,12 +272,22 @@ impl ThinClause {
     }
 
     /// Normalize variable IDs without flipping literals.
+    /// Also rebuilds the context to match the renumbered variables.
     pub fn normalize_var_ids_no_flip(&mut self) {
         let mut var_ids = vec![];
+        let mut var_types = vec![];
+        let input_context = self.context.clone();
         for literal in &mut self.literals {
-            literal.left.normalize_var_ids(&mut var_ids);
-            literal.right.normalize_var_ids(&mut var_ids);
+            literal
+                .left
+                .normalize_var_ids_with_types(&mut var_ids, &mut var_types, &input_context);
+            literal.right.normalize_var_ids_with_types(
+                &mut var_ids,
+                &mut var_types,
+                &input_context,
+            );
         }
+        self.context = LocalContext::new(var_types);
     }
 
     /// Create a clause from literals without normalizing.
@@ -441,6 +460,16 @@ impl ThinClause {
             (&literal.right, &literal.left)
         };
 
+        // Both sides must be function applications
+        if longer.num_args() == 0 || shorter.num_args() == 0 {
+            return None;
+        }
+
+        // Functions must be different
+        if longer.get_head_atom() == shorter.get_head_atom() {
+            return None;
+        }
+
         let longer_args = longer.args();
         let shorter_args = shorter.args();
         let n = shorter_args.len();
@@ -583,5 +612,62 @@ impl std::fmt::Display for ThinClause {
             let parts: Vec<String> = self.literals.iter().map(|l| l.to_string()).collect();
             write!(f, "{}", parts.join(" | "))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kernel::atom::Atom;
+    use crate::kernel::fat_term::TypeId;
+    use crate::kernel::kernel_context::KernelContext;
+    use crate::kernel::symbol::Symbol;
+    use crate::kernel::thin_literal::ThinLiteral;
+    use crate::kernel::thin_term::ThinTerm;
+
+    /// Test that extensionality doesn't match clauses without function applications.
+    /// This prevents infinite recursion when extensionality produces the same clause.
+    #[test]
+    fn test_extensionality_rejects_atomic_terms() {
+        let kernel_context = KernelContext::new();
+
+        // Create a clause like "g0 = x0" (global constant equals variable)
+        let g0 = ThinTerm::atom(TypeId::new(2), Atom::Symbol(Symbol::GlobalConstant(0)));
+        let x0 = ThinTerm::atom(TypeId::new(2), Atom::Variable(0));
+        let literal = ThinLiteral::equals(g0, x0);
+
+        let context = LocalContext::new(vec![TypeId::new(2)]);
+        let clause = ThinClause::from_literals_unnormalized(vec![literal], &context);
+
+        // Extensionality should not match this clause since both terms are atomic
+        assert!(
+            clause.find_extensionality(&kernel_context).is_none(),
+            "Extensionality should not match atomic terms"
+        );
+    }
+
+    /// Test that extensionality doesn't match clauses where functions are the same.
+    #[test]
+    fn test_extensionality_rejects_same_function() {
+        let kernel_context = KernelContext::new();
+
+        // Create a clause like "f(x0) = f(x0)" (same function on both sides)
+        let x0 = ThinTerm::atom(TypeId::new(2), Atom::Variable(0));
+        let f_x0 = ThinTerm::new(
+            TypeId::new(2),
+            TypeId::new(3),
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![x0.clone()],
+        );
+        let literal = ThinLiteral::equals(f_x0.clone(), f_x0);
+
+        let context = LocalContext::new(vec![TypeId::new(2)]);
+        let clause = ThinClause::from_literals_unnormalized(vec![literal], &context);
+
+        // Extensionality should not match this clause since both sides use the same function
+        assert!(
+            clause.find_extensionality(&kernel_context).is_none(),
+            "Extensionality should not match when functions are the same"
+        );
     }
 }
