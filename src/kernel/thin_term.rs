@@ -614,6 +614,19 @@ impl ThinTerm {
         ThinTerm { components }
     }
 
+    /// Parse a term string with proper types from context.
+    /// For tests that need properly typed terms.
+    #[cfg(test)]
+    pub fn parse_with_context(
+        s: &str,
+        _local_context: &LocalContext,
+        _kernel_context: &KernelContext,
+    ) -> ThinTerm {
+        // ThinTerm doesn't store types internally, so we can use the same parse logic.
+        // The types will be looked up from context when needed.
+        ThinTerm::parse(s)
+    }
+
     /// Get the components of this thin term.
     pub fn components(&self) -> &[ThinTermComponent] {
         &self.components

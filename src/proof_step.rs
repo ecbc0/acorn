@@ -5,6 +5,8 @@ use crate::elaborator::proposition::MonomorphicProposition;
 use crate::elaborator::source::{Source, SourceType};
 use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::Atom;
+#[cfg(test)]
+use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 
@@ -669,6 +671,17 @@ impl ProofStep {
     /// Construct a ProofStep with fake heuristic data for testing
     pub fn mock(s: &str) -> ProofStep {
         let clause = Clause::parse(s, LocalContext::empty_ref());
+        Self::mock_from_clause(clause)
+    }
+
+    /// Construct a ProofStep with properly typed terms for testing
+    #[cfg(test)]
+    pub fn mock_with_context(
+        s: &str,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> ProofStep {
+        let clause = Clause::parse_with_context(s, local_context, kernel_context);
         Self::mock_from_clause(clause)
     }
 

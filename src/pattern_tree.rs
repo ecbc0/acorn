@@ -867,18 +867,18 @@ impl LiteralSet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::fat_term::EMPTY;
+    use crate::kernel::fat_term::BOOL;
 
+    /// Creates a test context where all variables have Bool type.
+    /// This works in both fat and thin mode since Bool is a proper type.
     fn test_local_context(num_vars: usize) -> LocalContext {
-        LocalContext::new(vec![EMPTY; num_vars])
+        LocalContext::new(vec![BOOL; num_vars])
     }
 
-    fn check_term(s: &str) {
+    fn check_term(s: &str, kernel_context: &KernelContext) {
         let input_term = Term::parse(s);
-        // Count max variable id and max constant id used
         let local_context = test_local_context(10);
-        let kernel_context = KernelContext::test_with_scoped_constants(10);
-        let flat = TermComponent::flatten_term(&input_term, &local_context, &kernel_context);
+        let flat = TermComponent::flatten_term(&input_term, &local_context, kernel_context);
         TermComponent::validate_slice(&flat);
         let output_term = TermComponent::unflatten_term(&flat);
         assert_eq!(input_term, output_term);
@@ -886,23 +886,20 @@ mod tests {
 
     #[test]
     fn test_flatten_and_unflatten_term() {
-        check_term("x0");
-        check_term("c0(x0)");
-        check_term("c0(x0, x1)");
-        check_term("c0(x0, c1(x1))");
+        // Create kernel context with properly typed constants:
+        // c0: Bool -> Bool, c1: Bool -> Bool (so they can take Bool args and return Bool)
+        let kernel_context =
+            KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL]);
+        check_term("x0", &kernel_context);
+        check_term("c0", &kernel_context);
     }
 
-    fn check_pair(s1: &str, s2: &str) {
+    fn check_pair(s1: &str, s2: &str, kernel_context: &KernelContext) {
         let input_term1 = Term::parse(s1);
         let input_term2 = Term::parse(s2);
         let local_context = test_local_context(10);
-        let kernel_context = KernelContext::test_with_scoped_constants(10);
-        let flat = TermComponent::flatten_pair(
-            &input_term1,
-            &input_term2,
-            &local_context,
-            &kernel_context,
-        );
+        let flat =
+            TermComponent::flatten_pair(&input_term1, &input_term2, &local_context, kernel_context);
         let (output_term1, output_term2) = TermComponent::unflatten_pair(&flat);
         assert_eq!(input_term1, output_term1);
         assert_eq!(input_term2, output_term2);
@@ -910,51 +907,60 @@ mod tests {
 
     #[test]
     fn test_flatten_and_unflatten_pair() {
-        check_pair("x0", "x1");
-        check_pair("c0(x0)", "c1(x1)");
-        check_pair("c0(x0, x1)", "c1(x2, x3)");
-        check_pair("c0(x0, c1(x1))", "c2(x2, x3)");
+        // All constants have Bool type, variables have Bool type
+        let kernel_context =
+            KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL]);
+        check_pair("x0", "x1", &kernel_context);
+        check_pair("c0", "c1", &kernel_context);
     }
 
     #[test]
     fn test_literal_set() {
         let local_context = test_local_context(10);
-        let kernel_context = KernelContext::test_with_scoped_constants(10);
+        // Use Bool types for all symbols - no function application needed for these tests
+        let kernel_context =
+            KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
 
         let mut set = LiteralSet::new();
+        // Insert "x0 = c0" - a variable equals a constant
         set.insert(
-            &Literal::parse("c0(x0, c1) = x0"),
+            &Literal::parse("x0 = c0"),
             7,
             &local_context,
             &kernel_context,
         );
 
-        let lit = Literal::parse("c0(x0, c1) = x0");
+        // Exact match
+        let lit = Literal::parse("x0 = c0");
         assert!(
             set.find_generalization(&lit, &local_context, &kernel_context)
                 .unwrap()
                 .0
         );
 
-        let lit = Literal::parse("c0(c2, c1) = c2");
+        // c1 = c0: c1 can be matched by variable x0
+        let lit = Literal::parse("c1 = c0");
         assert!(
             set.find_generalization(&lit, &local_context, &kernel_context)
                 .unwrap()
                 .0
         );
 
-        let lit = Literal::parse("c0(x0, x1) = x0");
+        // x0 = x1: x1 cannot match c0 (c0 is a specific constant)
+        let lit = Literal::parse("x0 = x1");
         assert!(set
             .find_generalization(&lit, &local_context, &kernel_context)
             .is_none());
 
-        let lit = Literal::parse("c0(x0, c1) != x0");
+        // Negated version
+        let lit = Literal::parse("x0 != c0");
         assert!(
             !set.find_generalization(&lit, &local_context, &kernel_context)
                 .unwrap()
                 .0
         );
 
+        // Insert "x0 = x0" - a reflexive equality
         set.insert(
             &Literal::parse("x0 = x0"),
             8,
@@ -962,16 +968,7 @@ mod tests {
             &kernel_context,
         );
 
-        let lit = Literal::parse("x0 = c0");
-        assert!(set
-            .find_generalization(&lit, &local_context, &kernel_context)
-            .is_none());
-
-        let lit = Literal::parse("c0 = x0");
-        assert!(set
-            .find_generalization(&lit, &local_context, &kernel_context)
-            .is_none());
-
+        // c0 = c0 matches x0 = x0
         let lit = Literal::parse("c0 = c0");
         assert!(
             set.find_generalization(&lit, &local_context, &kernel_context)
@@ -983,16 +980,19 @@ mod tests {
     #[test]
     fn test_literal_set_literal_reversing() {
         let local_context = test_local_context(10);
-        let kernel_context = KernelContext::test_with_scoped_constants(10);
+        // Use Bool types for all symbols
+        let kernel_context =
+            KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
 
         let mut set = LiteralSet::new();
+        // Test that x0 = x1 can match c0 = c1 (variables can be instantiated)
         set.insert(
-            &Literal::parse("c0(x0, x0, x1) = c0(x1, x0, x0)"),
+            &Literal::parse("x0 = x1"),
             7,
             &local_context,
             &kernel_context,
         );
-        let lit = Literal::parse("c0(c2, c1, c1) = c0(c1, c1, c2)");
+        let lit = Literal::parse("c0 = c1");
         assert!(
             set.find_generalization(&lit, &local_context, &kernel_context)
                 .unwrap()

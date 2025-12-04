@@ -607,10 +607,15 @@ impl ThinClause {
 impl std::fmt::Display for ThinClause {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.literals.is_empty() {
-            write!(f, "false")
+            write!(f, "<empty>")
         } else {
-            let parts: Vec<String> = self.literals.iter().map(|l| l.to_string()).collect();
-            write!(f, "{}", parts.join(" | "))
+            for (i, literal) in self.literals.iter().enumerate() {
+                if i > 0 {
+                    write!(f, " or ")?;
+                }
+                write!(f, "{}", literal)?;
+            }
+            Ok(())
         }
     }
 }

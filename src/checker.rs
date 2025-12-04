@@ -14,6 +14,8 @@ use crate::elaborator::source::Source;
 use crate::elaborator::stack::Stack;
 use crate::generalization_set::GeneralizationSet;
 use crate::kernel::aliases::Clause;
+#[cfg(test)]
+use crate::kernel::fat_term::BOOL;
 use crate::kernel::inference;
 use crate::kernel::kernel_context::KernelContext;
 #[cfg(test)]
@@ -639,22 +641,30 @@ impl Checker {
 struct TestChecker {
     checker: Checker,
     context: KernelContext,
+    local_context: LocalContext,
 }
 
 #[cfg(test)]
 impl TestChecker {
+    /// Creates a TestChecker with properly typed symbols.
+    /// Uses test_with_all_bool_types which gives all symbols Bool type.
     fn with_clauses(clauses: &[&str]) -> TestChecker {
-        let context = KernelContext::test_with_constants(10, 10);
+        let context = KernelContext::test_with_all_bool_types();
+        let local_context = LocalContext::new(vec![BOOL; 10]);
         let mut checker = Checker::new(None);
         for clause_str in clauses {
-            let clause = Clause::parse(clause_str, LocalContext::empty_ref());
+            let clause = Clause::parse_with_context(clause_str, &local_context, &context);
             checker.insert_clause(&clause, StepReason::Testing, &context);
         }
-        TestChecker { checker, context }
+        TestChecker {
+            checker,
+            context,
+            local_context,
+        }
     }
 
     fn check_clause_str(&mut self, s: &str) {
-        let clause = Clause::parse(s, LocalContext::empty_ref());
+        let clause = Clause::parse_with_context(s, &self.local_context, &self.context);
         if !self.checker.check_clause(&clause, &self.context).is_some() {
             panic!("check_clause_str(\"{}\") failed", s);
         }

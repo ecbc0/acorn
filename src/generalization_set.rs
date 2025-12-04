@@ -336,300 +336,336 @@ fn specialized_form(mut clause: Clause, kernel_context: &KernelContext) -> Claus
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::fat_term::BOOL;
+
+    /// Creates a LocalContext with enough Bool-typed variables for tests.
+    fn test_context() -> LocalContext {
+        LocalContext::new(vec![BOOL; 10])
+    }
 
     #[test]
     fn test_clause_set_basic_generalization() {
-        let ctx = KernelContext::test_with_constants(10, 10);
+        // Using test_with_function_types():
+        // - c0: (Bool, Bool) -> Bool
+        // - c1: Bool -> Bool
+        // - c5, c6, c7, c8, c9: Bool
+        // - x0, x1, etc: Bool (from test_context)
+        let ctx = KernelContext::test_with_function_types();
+        let local = test_context();
         let mut clause_set = GeneralizationSet::new();
 
-        // Insert a general clause: "c0(x0, c1) or c2(c3, x0)"
-        let general_clause = Clause::parse("c0(x0, c1) or c2(c3, x0)", LocalContext::empty_ref());
+        // Insert a general clause with valid types:
+        // c0(x0, c5) - c0 takes (Bool, Bool), x0:Bool, c5:Bool ✓
+        // c1(x0) - c1 takes Bool, x0:Bool ✓
+        let general_clause = Clause::parse_with_context("c0(x0, c5) or c1(x0)", &local, &ctx);
         clause_set.insert(general_clause, 1, &ctx);
 
-        // Test that a specialized version is recognized
-        let special_clause = Clause::parse("c2(c3, c3) or c0(c3, c1)", LocalContext::empty_ref());
+        // Test that a specialized version is recognized (x0 -> c6)
+        let special_clause = Clause::parse_with_context("c1(c6) or c0(c6, c5)", &local, &ctx);
         let result = clause_set.find_generalization(special_clause, &ctx);
         assert_eq!(result, Some(1), "Should find the generalization");
     }
 
     #[test]
     fn test_clause_set_reordered_literals() {
-        let ctx = KernelContext::test_with_constants(10, 10);
+        // c0: (Bool, Bool) -> Bool, c1: Bool -> Bool, c5-c9: Bool
+        let ctx = KernelContext::test_with_function_types();
+        let local = test_context();
         let mut clause_set = GeneralizationSet::new();
 
-        // Insert a clause with specific order
-        let clause = Clause::parse(
-            "c0(x0) or c1(c2, x0) or c3(x0, c4)",
-            LocalContext::empty_ref(),
-        );
+        // Insert a clause with valid types:
+        // c1(x0) - c1 takes Bool ✓
+        // c0(x0, c5) - c0 takes (Bool, Bool) ✓
+        let clause = Clause::parse_with_context("c1(x0) or c0(x0, c5)", &local, &ctx);
         clause_set.insert(clause, 2, &ctx);
 
-        // Test that reordered specializations are recognized
-        let special1 = Clause::parse(
-            "c1(c2, c5) or c3(c5, c4) or c0(c5)",
-            LocalContext::empty_ref(),
-        );
+        // Test that reordered specializations are recognized (x0 -> c6)
+        let special1 = Clause::parse_with_context("c0(c6, c5) or c1(c6)", &local, &ctx);
         assert_eq!(clause_set.find_generalization(special1, &ctx), Some(2));
 
-        let special2 = Clause::parse(
-            "c3(c6, c4) or c0(c6) or c1(c2, c6)",
-            LocalContext::empty_ref(),
-        );
+        // Another reordering (x0 -> c7)
+        let special2 = Clause::parse_with_context("c1(c7) or c0(c7, c5)", &local, &ctx);
         assert_eq!(clause_set.find_generalization(special2, &ctx), Some(2));
     }
 
     #[test]
     fn test_clause_set_flipped_equality() {
-        let ctx = KernelContext::test_with_constants(10, 10);
+        // c0: (Bool, Bool) -> Bool, c1: Bool -> Bool, c5-c9: Bool
+        let ctx = KernelContext::test_with_function_types();
+        let local = test_context();
         let mut clause_set = GeneralizationSet::new();
 
-        // Insert an equality clause
-        let clause = Clause::parse("x0 = c0 or c1(x0)", LocalContext::empty_ref());
+        // Insert an equality clause with valid types:
+        // x0 = c5 where both are Bool ✓
+        // c1(x0) where c1 takes Bool ✓
+        let clause = Clause::parse_with_context("x0 = c5 or c1(x0)", &local, &ctx);
         clause_set.insert(clause, 3, &ctx);
 
-        // Test that flipped equalities are recognized
-        let special = Clause::parse("c2 = c0 or c1(c2)", LocalContext::empty_ref());
+        // Test that flipped equalities are recognized (x0 -> c6)
+        let special = Clause::parse_with_context("c6 = c5 or c1(c6)", &local, &ctx);
         assert_eq!(clause_set.find_generalization(special, &ctx), Some(3));
 
-        // Also test with the equality already flipped
-        let special2 = Clause::parse("c0 = c3 or c1(c3)", LocalContext::empty_ref());
+        // Also test with the equality already flipped (x0 -> c7)
+        let special2 = Clause::parse_with_context("c5 = c7 or c1(c7)", &local, &ctx);
         assert_eq!(clause_set.find_generalization(special2, &ctx), Some(3));
     }
 
     #[test]
     fn test_clause_set_no_generalization() {
-        let ctx = KernelContext::test_with_constants(10, 10);
+        // c0: (Bool, Bool) -> Bool, c1: Bool -> Bool, c5-c9: Bool
+        let ctx = KernelContext::test_with_function_types();
+        let local = test_context();
         let mut clause_set = GeneralizationSet::new();
 
-        // Insert a specific clause
-        let clause = Clause::parse("c0(c1, c2) or c3(c4)", LocalContext::empty_ref());
+        // Insert a specific clause with valid types:
+        // c0(c5, c6) - c0 takes (Bool, Bool) ✓
+        // c1(c7) - c1 takes Bool ✓
+        let clause = Clause::parse_with_context("c0(c5, c6) or c1(c7)", &local, &ctx);
         clause_set.insert(clause, 4, &ctx);
 
         // Test clauses that should NOT have generalizations
-        let no_match1 = Clause::parse("c0(c1, c4) or c3(c4)", LocalContext::empty_ref());
+        // Different second arg to c0
+        let no_match1 = Clause::parse_with_context("c0(c5, c7) or c1(c7)", &local, &ctx);
         assert_eq!(clause_set.find_generalization(no_match1, &ctx), None);
 
-        let no_match2 = Clause::parse("c0(c2, c1) or c3(c4)", LocalContext::empty_ref());
+        // Swapped args to c0
+        let no_match2 = Clause::parse_with_context("c0(c6, c5) or c1(c7)", &local, &ctx);
         assert_eq!(clause_set.find_generalization(no_match2, &ctx), None);
     }
 
     #[test]
     fn test_clause_set_multiple_variables() {
-        let ctx = KernelContext::test_with_constants(10, 10);
+        // c0: (Bool, Bool) -> Bool, c1: Bool -> Bool, c5-c9: Bool
+        let ctx = KernelContext::test_with_function_types();
+        let local = test_context();
         let mut clause_set = GeneralizationSet::new();
 
-        // Insert a clause with multiple variables
-        let clause = Clause::parse("c0(x0, x1) or c1(x1, x0)", LocalContext::empty_ref());
+        // Insert a clause with multiple variables (valid types):
+        // c0(x0, x1) - c0 takes (Bool, Bool), x0:Bool, x1:Bool ✓
+        // c0(x1, x0) - same, just swapped ✓
+        let clause = Clause::parse_with_context("c0(x0, x1) or c0(x1, x0)", &local, &ctx);
         clause_set.insert(clause, 5, &ctx);
 
-        // Test various specializations
-        let special1 = Clause::parse("c0(c2, c3) or c1(c3, c2)", LocalContext::empty_ref());
+        // Test various specializations (x0 -> c5, x1 -> c6)
+        let special1 = Clause::parse_with_context("c0(c5, c6) or c0(c6, c5)", &local, &ctx);
         assert_eq!(clause_set.find_generalization(special1, &ctx), Some(5));
 
-        let special2 = Clause::parse("c1(c4, c5) or c0(c5, c4)", LocalContext::empty_ref());
+        // Reordered (x0 -> c7, x1 -> c8)
+        let special2 = Clause::parse_with_context("c0(c8, c7) or c0(c7, c8)", &local, &ctx);
         assert_eq!(clause_set.find_generalization(special2, &ctx), Some(5));
 
         // This should NOT match because the variable pattern is different
-        let no_match = Clause::parse("c0(c2, c3) or c1(c4, c5)", LocalContext::empty_ref());
+        // (different constants in each literal, doesn't match x0/x1 pattern)
+        let no_match = Clause::parse_with_context("c0(c5, c6) or c0(c7, c8)", &local, &ctx);
         assert_eq!(clause_set.find_generalization(no_match, &ctx), None);
     }
 
     #[test]
     fn test_clause_set_single_literal() {
-        let ctx = KernelContext::test_with_constants(10, 10);
+        // Using test_with_function_types():
+        // - c0: (Bool, Bool) -> Bool
+        // - c5, c6, c7, c8, c9: Bool
+        // - x0, x1, etc: Bool (from test_context)
+        let ctx = KernelContext::test_with_function_types();
+        let local = test_context();
         let mut clause_set = GeneralizationSet::new();
 
-        // Insert single literal clauses
-        let clause1 = Clause::parse("c0(x0, c1)", LocalContext::empty_ref());
+        // Insert single literal clauses with valid types
+        // c0(x0, c5) where x0:Bool, c5:Bool, result:Bool
+        let clause1 = Clause::parse_with_context("c0(x0, c5)", &local, &ctx);
         clause_set.insert(clause1, 6, &ctx);
 
-        let clause2 = Clause::parse("x0 = c1", LocalContext::empty_ref());
+        // x0 = c5 where both are Bool
+        let clause2 = Clause::parse_with_context("x0 = c5", &local, &ctx);
         clause_set.insert(clause2, 7, &ctx);
 
         // Test specializations
+        // c0(c6, c5) should match c0(x0, c5) with x0 -> c6
         assert_eq!(
             clause_set
-                .find_generalization(Clause::parse("c0(c2, c1)", LocalContext::empty_ref()), &ctx),
+                .find_generalization(Clause::parse_with_context("c0(c6, c5)", &local, &ctx), &ctx),
             Some(6)
         );
+        // c6 = c5 should match x0 = c5 with x0 -> c6
         assert_eq!(
             clause_set
-                .find_generalization(Clause::parse("c2 = c1", LocalContext::empty_ref()), &ctx),
+                .find_generalization(Clause::parse_with_context("c6 = c5", &local, &ctx), &ctx),
             Some(7)
         );
+        // c5 = c6 should also match x0 = c5 (equality is symmetric)
         assert_eq!(
             clause_set
-                .find_generalization(Clause::parse("c1 = c2", LocalContext::empty_ref()), &ctx),
+                .find_generalization(Clause::parse_with_context("c5 = c6", &local, &ctx), &ctx),
             Some(7)
         );
     }
 
     #[test]
     fn test_clause_set_negated_literals() {
-        let ctx = KernelContext::test_with_constants(10, 10);
+        // c5-c9: Bool, x0-x9: Bool
+        let ctx = KernelContext::test_with_function_types();
+        let local = test_context();
         let mut clause_set = GeneralizationSet::new();
 
-        // Insert a clause with negated literals
-        let clause = Clause::parse("c0 = x0 or x1 != c1", LocalContext::empty_ref());
+        // Insert a clause with negated literals (all Bool types)
+        let clause = Clause::parse_with_context("c5 = x0 or x1 != c6", &local, &ctx);
         clause_set.insert(clause, 1, &ctx);
 
-        // Test that it matches correct specializations
-        let special1 = Clause::parse("c0 = c2 or c3 != c1", LocalContext::empty_ref());
+        // Test that it matches correct specializations (x0 -> c7, x1 -> c8)
+        let special1 = Clause::parse_with_context("c5 = c7 or c8 != c6", &local, &ctx);
         assert_eq!(clause_set.find_generalization(special1, &ctx), Some(1));
 
-        // Test with reordered literals
-        let special2 = Clause::parse("c4 != c1 or c0 = c4", LocalContext::empty_ref());
+        // Test with reordered literals (x0 -> c7, x1 -> c7)
+        let special2 = Clause::parse_with_context("c7 != c6 or c5 = c7", &local, &ctx);
         assert_eq!(clause_set.find_generalization(special2, &ctx), Some(1));
 
-        // Test with flipped inequality
-        let special3 = Clause::parse("c0 = c5 or c1 != c5", LocalContext::empty_ref());
+        // Test with flipped inequality (x0 -> c8, x1 -> c8)
+        let special3 = Clause::parse_with_context("c5 = c8 or c6 != c8", &local, &ctx);
         assert_eq!(clause_set.find_generalization(special3, &ctx), Some(1));
     }
 
     #[test]
     fn test_clause_set_no_positive_negative_confusion() {
-        let ctx = KernelContext::test_with_constants(10, 10);
+        // c5-c9: Bool, x0-x9: Bool
+        let ctx = KernelContext::test_with_function_types();
+        let local = test_context();
         let mut clause_set = GeneralizationSet::new();
 
-        // Insert a clause with a positive literal
-        let positive_clause = Clause::parse("x0 = c0", LocalContext::empty_ref());
+        // Insert a clause with a positive literal (all Bool types)
+        let positive_clause = Clause::parse_with_context("x0 = c5", &local, &ctx);
         clause_set.insert(positive_clause, 1, &ctx);
 
         // Insert a clause with a negative literal
-        let negative_clause = Clause::parse("x0 != c1", LocalContext::empty_ref());
+        let negative_clause = Clause::parse_with_context("x0 != c6", &local, &ctx);
         clause_set.insert(negative_clause, 2, &ctx);
 
-        // Test that positive matches positive
+        // Test that positive matches positive (x0 -> c7)
         assert_eq!(
             clause_set
-                .find_generalization(Clause::parse("c2 = c0", LocalContext::empty_ref()), &ctx),
+                .find_generalization(Clause::parse_with_context("c7 = c5", &local, &ctx), &ctx),
             Some(1)
         );
 
-        // Test that negative matches negative
+        // Test that negative matches negative (x0 -> c8)
         assert_eq!(
             clause_set
-                .find_generalization(Clause::parse("c3 != c1", LocalContext::empty_ref()), &ctx),
+                .find_generalization(Clause::parse_with_context("c8 != c6", &local, &ctx), &ctx),
             Some(2)
         );
 
         // Test that positive does NOT match negative
         assert_eq!(
             clause_set
-                .find_generalization(Clause::parse("c2 != c0", LocalContext::empty_ref()), &ctx),
+                .find_generalization(Clause::parse_with_context("c7 != c5", &local, &ctx), &ctx),
             None
         );
 
         // Test that negative does NOT match positive
         assert_eq!(
             clause_set
-                .find_generalization(Clause::parse("c3 = c1", LocalContext::empty_ref()), &ctx),
+                .find_generalization(Clause::parse_with_context("c8 = c6", &local, &ctx), &ctx),
             None
         );
     }
 
     #[test]
     fn test_clause_set_mixed_positive_negative() {
-        let ctx = KernelContext::test_with_constants(10, 10);
+        // c0: (Bool, Bool) -> Bool, c1: Bool -> Bool, c5-c9: Bool
+        let ctx = KernelContext::test_with_function_types();
+        let local = test_context();
         let mut clause_set = GeneralizationSet::new();
 
-        // Insert a complex clause with both positive and negative literals
-        // Using "not" for boolean literals and "!=" for inequalities
-        let clause = Clause::parse(
-            "not c0(x0) or c1(x0, x1) or x1 != c2",
-            LocalContext::empty_ref(),
-        );
+        // Insert a clause with both positive and negative literals (valid types):
+        // not c1(x0) - c1 takes Bool, negated ✓
+        // c0(x0, x1) - c0 takes (Bool, Bool) ✓
+        // x1 != c5 - Bool != Bool ✓
+        let clause =
+            Clause::parse_with_context("not c1(x0) or c0(x0, x1) or x1 != c5", &local, &ctx);
         clause_set.insert(clause, 1, &ctx);
 
-        // Test various specializations
-        let special1 = Clause::parse(
-            "not c0(c3) or c1(c3, c4) or c4 != c2",
-            LocalContext::empty_ref(),
-        );
+        // Test various specializations (x0 -> c6, x1 -> c7)
+        let special1 =
+            Clause::parse_with_context("not c1(c6) or c0(c6, c7) or c7 != c5", &local, &ctx);
         assert_eq!(clause_set.find_generalization(special1, &ctx), Some(1));
 
-        // Test with reordering
-        let special2 = Clause::parse(
-            "c1(c5, c6) or c6 != c2 or not c0(c5)",
-            LocalContext::empty_ref(),
-        );
+        // Test with reordering (x0 -> c8, x1 -> c9)
+        let special2 =
+            Clause::parse_with_context("c0(c8, c9) or c9 != c5 or not c1(c8)", &local, &ctx);
         assert_eq!(clause_set.find_generalization(special2, &ctx), Some(1));
 
         // Test that wrong signs don't match
-        let wrong1 = Clause::parse(
-            "c0(c3) or c1(c3, c4) or c4 != c2",
-            LocalContext::empty_ref(),
-        ); // First literal should be negative
+        let wrong1 = Clause::parse_with_context("c1(c6) or c0(c6, c7) or c7 != c5", &local, &ctx); // First literal should be negative
         assert_eq!(clause_set.find_generalization(wrong1, &ctx), None);
 
-        let wrong2 = Clause::parse(
-            "not c0(c3) or not c1(c3, c4) or c4 != c2",
-            LocalContext::empty_ref(),
-        ); // Second literal should be positive
+        let wrong2 =
+            Clause::parse_with_context("not c1(c6) or not c0(c6, c7) or c7 != c5", &local, &ctx); // Second literal should be positive
         assert_eq!(clause_set.find_generalization(wrong2, &ctx), None);
     }
 
     #[test]
     fn test_clause_set_all_negative() {
-        let ctx = KernelContext::test_with_constants(10, 10);
+        // c5-c9: Bool, x0-x9: Bool
+        let ctx = KernelContext::test_with_function_types();
+        let local = test_context();
         let mut clause_set = GeneralizationSet::new();
 
-        // Insert a simpler clause with only inequality literals
-        let clause = Clause::parse(
-            "x0 != c0 or x1 != c1 or x0 != x1",
-            LocalContext::empty_ref(),
-        );
+        // Insert a clause with only inequality literals (all Bool types)
+        let clause = Clause::parse_with_context("x0 != c5 or x1 != c6 or x0 != x1", &local, &ctx);
         clause_set.insert(clause, 1, &ctx);
 
-        // Test that it matches
-        let special = Clause::parse(
-            "c2 != c0 or c3 != c1 or c2 != c3",
-            LocalContext::empty_ref(),
-        );
+        // Test that it matches (x0 -> c7, x1 -> c8)
+        let special = Clause::parse_with_context("c7 != c5 or c8 != c6 or c7 != c8", &local, &ctx);
         assert_eq!(clause_set.find_generalization(special, &ctx), Some(1));
 
-        // Test with reordering
-        let special2 = Clause::parse(
-            "c4 != c5 or c4 != c0 or c5 != c1",
-            LocalContext::empty_ref(),
-        );
+        // Test with reordering (x0 -> c7, x1 -> c8)
+        let special2 = Clause::parse_with_context("c7 != c8 or c7 != c5 or c8 != c6", &local, &ctx);
         assert_eq!(clause_set.find_generalization(special2, &ctx), Some(1));
     }
 
     #[test]
     fn test_clause_set_boolean_negation() {
-        let ctx = KernelContext::test_with_constants(10, 10);
+        // c0: (Bool, Bool) -> Bool, c1: Bool -> Bool, c5-c9: Bool
+        let ctx = KernelContext::test_with_function_types();
+        let local = test_context();
         let mut clause_set = GeneralizationSet::new();
 
-        // Test with boolean negation (not)
-        let clause = Clause::parse("not c0(x0) or c1(x0)", LocalContext::empty_ref());
+        // Test with boolean negation (not) - valid types:
+        // not c0(x0, c5) - c0 takes (Bool, Bool), negated ✓
+        // c1(x0) - c1 takes Bool ✓
+        let clause = Clause::parse_with_context("not c0(x0, c5) or c1(x0)", &local, &ctx);
         clause_set.insert(clause, 1, &ctx);
 
-        // Test that it matches
-        let special = Clause::parse("not c0(c2) or c1(c2)", LocalContext::empty_ref());
+        // Test that it matches (x0 -> c6)
+        let special = Clause::parse_with_context("not c0(c6, c5) or c1(c6)", &local, &ctx);
         assert_eq!(clause_set.find_generalization(special, &ctx), Some(1));
 
-        // Test reordering
-        let special2 = Clause::parse("c1(c3) or not c0(c3)", LocalContext::empty_ref());
+        // Test reordering (x0 -> c7)
+        let special2 = Clause::parse_with_context("c1(c7) or not c0(c7, c5)", &local, &ctx);
         assert_eq!(clause_set.find_generalization(special2, &ctx), Some(1));
 
         // Test that signs matter
-        let wrong = Clause::parse("c0(c2) or c1(c2)", LocalContext::empty_ref()); // Missing "not"
+        let wrong = Clause::parse_with_context("c0(c6, c5) or c1(c6)", &local, &ctx); // Missing "not"
         assert_eq!(clause_set.find_generalization(wrong, &ctx), None);
     }
 
     #[test]
     fn test_clause_set_compound_generalization() {
-        let ctx = KernelContext::test_with_constants(10, 10);
+        // g0: (Bool, Bool) -> Bool, g1: Bool -> Bool, c5-c9: Bool
+        let ctx = KernelContext::test_with_function_types();
+        let local = test_context();
         let mut clause_set = GeneralizationSet::new();
-        let general = Clause::parse("g2(g1, x0) = x0", LocalContext::empty_ref());
+        // g0(c5, x0) = x0 where g0 takes (Bool, Bool), x0:Bool ✓
+        let general = Clause::parse_with_context("g0(c5, x0) = x0", &local, &ctx);
         clause_set.insert(general, 1, &ctx);
-        let special = Clause::parse("g2(g1, g2(c2, c3)) = g2(c2, c3)", LocalContext::empty_ref());
+        // Specialization: g0(c5, g0(c6, c7)) = g0(c6, c7)
+        let special = Clause::parse_with_context("g0(c5, g0(c6, c7)) = g0(c6, c7)", &local, &ctx);
         assert_eq!(clause_set.find_generalization(special, &ctx), Some(1));
     }
 
     #[test]
+    #[cfg(not(feature = "thin"))]
     fn test_clause_set_literal_with_indeterminate_ordering() {
+        // This test uses FatClause JSON format which is not compatible with ThinClause.
         // Taken from a failing example.
         // The JSON clause uses specific types for symbols:
         // - GlobalConstant(1) has head_type 2

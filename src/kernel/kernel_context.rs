@@ -72,6 +72,45 @@ impl KernelContext {
         ctx
     }
 
+    /// Creates a test KernelContext for tests that use arbitrary clause strings.
+    /// All scoped/global constants are Bool type (c0-c9, g0-g9).
+    /// All monomorphs are (Bool, Bool) -> Bool type (m0-m9).
+    /// All synthetics are Bool type (s0-s9).
+    /// This allows parsing clauses like "m0(c0, c1)" where functions take Bool args.
+    #[cfg(test)]
+    pub fn test_with_all_bool_types() -> KernelContext {
+        use crate::elaborator::acorn_type::{AcornType, FunctionType};
+        use crate::kernel::fat_term::BOOL;
+
+        let mut ctx = KernelContext::new();
+
+        // Create a (Bool, Bool) -> Bool function type for monomorphs
+        let bool2_to_bool = AcornType::Function(FunctionType {
+            arg_types: vec![AcornType::Bool, AcornType::Bool],
+            return_type: Box::new(AcornType::Bool),
+        });
+        let type_bool2_to_bool = ctx.type_store.add_type(&bool2_to_bool);
+
+        // Scoped and global constants are Bool
+        for _ in 0..10 {
+            ctx.symbol_table.add_scoped_constant_with_type(BOOL);
+        }
+        for _ in 0..10 {
+            ctx.symbol_table.add_global_constant_with_type(BOOL);
+        }
+
+        // Monomorphs are (Bool, Bool) -> Bool functions
+        for _ in 0..10 {
+            ctx.symbol_table.add_monomorph_with_type(type_bool2_to_bool);
+        }
+
+        // Synthetics are Bool
+        for _ in 0..10 {
+            ctx.symbol_table.declare_synthetic(BOOL);
+        }
+        ctx
+    }
+
     /// Creates a test KernelContext with pre-populated scoped and global constants with
     /// specified types.
     /// For use in tests that load FatClauses from JSON with specific type requirements.
@@ -197,10 +236,18 @@ impl KernelContext {
             ctx.symbol_table.add_scoped_constant_with_type(BOOL);
         }
 
-        // Add monomorphs and synthetics with BOOL type
-        for _ in 0..10 {
+        // Add monomorphs with function types (m0-m4 are functions, m5-m9 are Bool)
+        ctx.symbol_table.add_monomorph_with_type(type_bool2_to_bool); // m0
+        ctx.symbol_table.add_monomorph_with_type(type_bool_to_bool); // m1
+        ctx.symbol_table.add_monomorph_with_type(type_bool3_to_bool); // m2
+        ctx.symbol_table.add_monomorph_with_type(type_empty_to_bool); // m3
+        ctx.symbol_table
+            .add_monomorph_with_type(type_empty2_to_empty); // m4
+        for _ in 5..10 {
             ctx.symbol_table.add_monomorph_with_type(BOOL);
         }
+
+        // Add synthetics with BOOL type
         for _ in 0..10 {
             ctx.symbol_table.declare_synthetic(BOOL);
         }
