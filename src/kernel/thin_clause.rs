@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::kernel::atom::{Atom, AtomId};
+use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::thin_literal::ThinLiteral;
 
@@ -146,5 +147,97 @@ impl ThinClause {
             }
         }
         false
+    }
+
+    /// Check if this clause contains any applied variables.
+    pub fn has_any_applied_variable(&self) -> bool {
+        self.literals.iter().any(|x| x.has_any_applied_variable())
+    }
+
+    /// Normalize variable IDs without flipping literals.
+    pub fn normalize_var_ids_no_flip(&mut self) {
+        let mut var_ids = vec![];
+        for literal in &mut self.literals {
+            literal.left.normalize_var_ids(&mut var_ids);
+            literal.right.normalize_var_ids(&mut var_ids);
+        }
+    }
+
+    /// Create a clause from literals without normalizing.
+    pub fn from_literals_unnormalized(
+        literals: Vec<ThinLiteral>,
+        context: &LocalContext,
+    ) -> ThinClause {
+        ThinClause {
+            literals,
+            context: context.clone(),
+        }
+    }
+
+    /// Create a clause from a single literal.
+    pub fn from_literal(literal: ThinLiteral, context: &LocalContext) -> ThinClause {
+        ThinClause::new(vec![literal], context)
+    }
+
+    /// Validate that all literals have consistent types.
+    pub fn validate(&self, kernel_context: &KernelContext) {
+        for literal in &self.literals {
+            literal.validate_type(&self.context, kernel_context);
+        }
+    }
+
+    /// Parse a clause from a string.
+    /// Format: "lit1 | lit2 | lit3" where each literal is parsed by ThinLiteral::parse.
+    pub fn parse(s: &str, context: &LocalContext) -> ThinClause {
+        let literals: Vec<ThinLiteral> = s
+            .split(" | ")
+            .map(|part| ThinLiteral::parse(part.trim()))
+            .collect();
+        ThinClause::new(literals, context)
+    }
+
+    /// Renumbers synthetic atoms from the provided list into the invalid range.
+    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> ThinClause {
+        let new_literals: Vec<ThinLiteral> = self
+            .literals
+            .iter()
+            .map(|lit| lit.invalidate_synthetics(from))
+            .collect();
+        ThinClause::new(new_literals, &self.context)
+    }
+
+    /// Replace the first `num_to_replace` variables with invalid synthetic atoms.
+    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> ThinClause {
+        let new_literals: Vec<ThinLiteral> = self
+            .literals
+            .iter()
+            .map(|lit| lit.instantiate_invalid_synthetics(num_to_replace))
+            .collect();
+        // The context needs to be adjusted - the first num_to_replace var types are removed
+        let new_var_types: Vec<_> = self
+            .context
+            .var_types
+            .iter()
+            .skip(num_to_replace)
+            .copied()
+            .collect();
+        let new_context = LocalContext::new(new_var_types);
+        ThinClause::new(new_literals, &new_context)
+    }
+
+    /// Extracts the polarity from all literals.
+    /// Returns a clause with all positive literals and a vector of the original polarities.
+    pub fn extract_polarity(&self) -> (ThinClause, Vec<bool>) {
+        let mut polarities = Vec::new();
+        let mut new_literals = Vec::new();
+        for literal in &self.literals {
+            let (pos_lit, polarity) = literal.extract_polarity();
+            new_literals.push(pos_lit);
+            polarities.push(polarity);
+        }
+        (
+            ThinClause::from_literals_unnormalized(new_literals, &self.context),
+            polarities,
+        )
     }
 }
