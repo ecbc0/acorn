@@ -34,11 +34,12 @@ impl VariableMap {
     }
 
     /// Builds a LocalContext from all the variables in the replacement terms.
+    /// Uses embedded types from FatTerm.
     pub fn build_output_context(&self) -> LocalContext {
         let mut var_types: Vec<Option<TypeId>> = vec![];
         for opt_term in &self.map {
             if let Some(term) = opt_term {
-                for (var_id, type_id) in term.iter_vars() {
+                for (var_id, type_id) in term.collect_vars_embedded() {
                     let idx = var_id as usize;
                     if idx >= var_types.len() {
                         var_types.resize(idx + 1, None);

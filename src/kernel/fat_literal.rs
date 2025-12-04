@@ -174,14 +174,20 @@ impl FatLiteral {
         self.left.is_higher_order() || self.right.is_higher_order()
     }
 
-    pub fn var_type(&self, i: AtomId) -> Option<TypeId> {
-        self.left.var_type(i).or_else(|| self.right.var_type(i))
+    pub fn var_type(&self, i: AtomId, local_context: &LocalContext) -> Option<TypeId> {
+        self.left
+            .var_type(i, local_context)
+            .or_else(|| self.right.var_type(i, local_context))
     }
 
     // Deduplicates
-    pub fn typed_atoms(&self) -> Vec<(TypeId, Atom)> {
-        let mut answer = self.left.typed_atoms();
-        answer.extend(self.right.typed_atoms());
+    pub fn typed_atoms(
+        &self,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> Vec<(TypeId, Atom)> {
+        let mut answer = self.left.typed_atoms(local_context, kernel_context);
+        answer.extend(self.right.typed_atoms(local_context, kernel_context));
         answer.sort();
         answer.dedup();
         answer

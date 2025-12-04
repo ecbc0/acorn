@@ -484,7 +484,7 @@ impl NormalizerView<'_> {
         let mut seen_vars = std::collections::HashSet::new();
 
         for binding in stack.iter() {
-            for (var_id, type_id) in binding.term().iter_vars() {
+            for (var_id, type_id) in binding.term().collect_vars_embedded() {
                 if seen_vars.insert(var_id) {
                     let var_term = FatTerm::new_variable(type_id, var_id);
                     args.push(var_term);
@@ -1067,7 +1067,7 @@ impl NormalizerView<'_> {
         let mut seen_vars = std::collections::HashSet::new();
 
         for binding in stack.iter() {
-            for (var_id, type_id) in binding.term().iter_vars() {
+            for (var_id, type_id) in binding.term().collect_vars_embedded() {
                 if seen_vars.insert(var_id) {
                     let var_term = FatTerm::new_variable(type_id, var_id);
                     args.push(var_term);
@@ -1160,14 +1160,14 @@ impl NormalizerView<'_> {
                 let mut seen_vars = std::collections::HashSet::new();
 
                 // Collect free variables from the condition literal
-                for (var_id, type_id) in cond_lit.left.iter_vars() {
+                for (var_id, type_id) in cond_lit.left.collect_vars_embedded() {
                     if seen_vars.insert(var_id) {
                         let var_term = FatTerm::new_variable(type_id, var_id);
                         args.push(var_term);
                         arg_types.push(self.type_store().get_type(type_id).clone());
                     }
                 }
-                for (var_id, type_id) in cond_lit.right.iter_vars() {
+                for (var_id, type_id) in cond_lit.right.collect_vars_embedded() {
                     if seen_vars.insert(var_id) {
                         let var_term = FatTerm::new_variable(type_id, var_id);
                         args.push(var_term);
@@ -1176,7 +1176,7 @@ impl NormalizerView<'_> {
                 }
 
                 // Collect free variables from the then branch
-                for (var_id, type_id) in then_term.iter_vars() {
+                for (var_id, type_id) in then_term.collect_vars_embedded() {
                     if seen_vars.insert(var_id) {
                         let var_term = FatTerm::new_variable(type_id, var_id);
                         args.push(var_term);
@@ -1185,7 +1185,7 @@ impl NormalizerView<'_> {
                 }
 
                 // Collect free variables from the else branch
-                for (var_id, type_id) in else_term.iter_vars() {
+                for (var_id, type_id) in else_term.collect_vars_embedded() {
                     if seen_vars.insert(var_id) {
                         let var_term = FatTerm::new_variable(type_id, var_id);
                         args.push(var_term);

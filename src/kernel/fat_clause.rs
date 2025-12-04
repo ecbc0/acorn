@@ -11,11 +11,16 @@ use crate::kernel::unifier::{Scope, Unifier};
 use crate::proof_step::{EFLiteralTrace, EFTermTrace};
 
 /// Builds a LocalContext from a slice of literals by extracting variable types.
-/// This is internal to FatClause construction.
+/// This is internal to FatClause construction - reads embedded types from FatTerm.
 fn build_context_from_literals(literals: &[FatLiteral]) -> LocalContext {
     let mut var_types: Vec<Option<TypeId>> = vec![];
     for literal in literals {
-        for (var_id, type_id) in literal.left.iter_vars().chain(literal.right.iter_vars()) {
+        for (var_id, type_id) in literal
+            .left
+            .collect_vars_embedded()
+            .into_iter()
+            .chain(literal.right.collect_vars_embedded())
+        {
             let idx = var_id as usize;
             if idx >= var_types.len() {
                 var_types.resize(idx + 1, None);
@@ -32,10 +37,11 @@ fn build_context_from_literals(literals: &[FatLiteral]) -> LocalContext {
 }
 
 /// Builds a LocalContext from a slice of terms by extracting variable types.
+/// This reads embedded types from FatTerm - for FatTerm internal use only.
 pub fn build_context_from_terms(terms: &[&FatTerm]) -> LocalContext {
     let mut var_types: Vec<Option<TypeId>> = vec![];
     for term in terms {
-        for (var_id, type_id) in term.iter_vars() {
+        for (var_id, type_id) in term.collect_vars_embedded() {
             let idx = var_id as usize;
             if idx >= var_types.len() {
                 var_types.resize(idx + 1, None);

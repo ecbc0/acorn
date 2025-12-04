@@ -223,19 +223,43 @@ impl FatTerm {
         )
     }
 
-    /// Iterates over all variables in the term (recursively through arguments)
-    /// Returns (AtomId, TypeId) pairs for each variable found
-    pub fn iter_vars(&self) -> Box<dyn Iterator<Item = (AtomId, TypeId)> + '_> {
-        let head_var = if let Atom::Variable(id) = self.head {
-            Some((id, self.head_type))
-        } else {
-            None
-        };
-        Box::new(
-            head_var
-                .into_iter()
-                .chain(self.args.iter().flat_map(|arg| arg.iter_vars())),
-        )
+    /// Collects all variables in the term (recursively through arguments)
+    /// Returns (AtomId, TypeId) pairs for each variable found.
+    /// Uses the local_context to look up variable types.
+    pub fn collect_vars(&self, local_context: &LocalContext) -> Vec<(AtomId, TypeId)> {
+        let mut result = Vec::new();
+        self.collect_vars_into(&mut result, local_context);
+        result
+    }
+
+    fn collect_vars_into(&self, result: &mut Vec<(AtomId, TypeId)>, local_context: &LocalContext) {
+        if let Atom::Variable(id) = self.head {
+            let type_id = local_context
+                .get_var_type(id as usize)
+                .expect("Variable not found in local context");
+            result.push((id, type_id));
+        }
+        for arg in &self.args {
+            arg.collect_vars_into(result, local_context);
+        }
+    }
+
+    /// Collects all variables using embedded type information.
+    /// This is for internal FatTerm use only, when building contexts from terms.
+    /// For ThinTerm, this method would not exist.
+    pub(crate) fn collect_vars_embedded(&self) -> Vec<(AtomId, TypeId)> {
+        let mut result = Vec::new();
+        self.collect_vars_embedded_into(&mut result);
+        result
+    }
+
+    fn collect_vars_embedded_into(&self, result: &mut Vec<(AtomId, TypeId)>) {
+        if let Atom::Variable(id) = self.head {
+            result.push((id, self.head_type));
+        }
+        for arg in &self.args {
+            arg.collect_vars_embedded_into(result);
+        }
     }
 
     pub fn num_args(&self) -> usize {
@@ -402,16 +426,12 @@ impl FatTerm {
         self.atomic_variable().is_some()
     }
 
-    pub fn var_type(&self, index: AtomId) -> Option<TypeId> {
-        if self.head == Atom::Variable(index) {
-            return Some(self.head_type);
+    pub fn var_type(&self, index: AtomId, local_context: &LocalContext) -> Option<TypeId> {
+        if self.has_variable(index) {
+            local_context.get_var_type(index as usize)
+        } else {
+            None
         }
-        for arg in &self.args {
-            if let Some(t) = arg.var_type(index) {
-                return Some(t);
-            }
-        }
-        None
     }
 
     pub fn apply(&self, args: &[FatTerm], result_type: TypeId) -> FatTerm {
@@ -446,23 +466,34 @@ impl FatTerm {
         false
     }
 
-    pub fn atoms_for_type(&self, type_id: TypeId) -> Vec<Atom> {
+    pub fn atoms_for_type(
+        &self,
+        type_id: TypeId,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> Vec<Atom> {
         let mut answer = vec![];
-        if self.term_type == type_id {
+        let my_type = self.get_term_type_with_context(local_context, kernel_context);
+        if my_type == type_id {
             answer.push(self.head);
         }
         for arg in &self.args {
-            answer.append(&mut arg.atoms_for_type(type_id));
+            answer.append(&mut arg.atoms_for_type(type_id, local_context, kernel_context));
         }
         answer
     }
 
     /// Does not deduplicate
-    pub fn typed_atoms(&self) -> Vec<(TypeId, Atom)> {
+    pub fn typed_atoms(
+        &self,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> Vec<(TypeId, Atom)> {
         let mut answer = vec![];
-        answer.push((self.head_type, self.head));
+        let head_type = self.get_head_type_with_context(local_context, kernel_context);
+        answer.push((head_type, self.head));
         for arg in &self.args {
-            answer.append(&mut arg.typed_atoms());
+            answer.append(&mut arg.typed_atoms(local_context, kernel_context));
         }
         answer
     }

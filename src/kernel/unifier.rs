@@ -128,7 +128,7 @@ impl<'a> Unifier<'a> {
             }
             // Extract actual types from the variables in the map
             for (_, term) in map.iter() {
-                for (var_id, type_id) in term.iter_vars() {
+                for (var_id, type_id) in term.collect_vars_embedded() {
                     let idx = var_id as usize;
                     if idx < output_var_types.len() {
                         output_var_types[idx] = type_id;
