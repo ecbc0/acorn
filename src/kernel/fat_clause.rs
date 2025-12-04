@@ -11,7 +11,8 @@ use crate::kernel::unifier::{Scope, Unifier};
 use crate::proof_step::{EFLiteralTrace, EFTermTrace};
 
 /// Builds a LocalContext from a slice of literals by extracting variable types.
-pub fn build_context_from_literals(literals: &[FatLiteral]) -> LocalContext {
+/// This is internal to FatClause construction.
+fn build_context_from_literals(literals: &[FatLiteral]) -> LocalContext {
     let mut var_types: Vec<Option<TypeId>> = vec![];
     for literal in literals {
         for (var_id, type_id) in literal.left.iter_vars().chain(literal.right.iter_vars()) {
@@ -420,10 +421,12 @@ impl FatClause {
     /// - The index of the literal that was resolved
     /// - The resulting literals after applying the unifier
     /// - The flipped flags for each literal
+    /// Returns (index, new_literals, flipped, output_context) for each possible equality resolution.
+    /// The output_context contains the types of variables in the resulting literals.
     pub fn find_equality_resolutions(
         &self,
         kernel_context: &KernelContext,
-    ) -> Vec<(usize, Vec<FatLiteral>, Vec<bool>)> {
+    ) -> Vec<(usize, Vec<FatLiteral>, Vec<bool>, LocalContext)> {
         let mut results = vec![];
 
         for i in 0..self.literals.len() {
@@ -451,9 +454,12 @@ impl FatClause {
                 }
             }
 
+            // Get the output context from the unifier
+            let output_context = unifier.take_output_context();
+
             // Return the raw literals without checking for tautology
             // The ActiveSet::equality_resolution will handle that after normalization
-            results.push((i, new_literals, flipped));
+            results.push((i, new_literals, flipped, output_context));
         }
 
         results
@@ -464,7 +470,7 @@ impl FatClause {
     pub fn equality_resolutions(&self, kernel_context: &KernelContext) -> Vec<FatClause> {
         self.find_equality_resolutions(kernel_context)
             .into_iter()
-            .map(|(_, literals, _)| FatClause::new_without_context(literals))
+            .map(|(_, literals, _, _)| FatClause::new_without_context(literals))
             .filter(|clause| !clause.is_tautology())
             .collect()
     }

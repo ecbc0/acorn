@@ -845,6 +845,29 @@ impl FatTerm {
             arg.normalize_var_ids(var_ids);
         }
     }
+
+    /// Like normalize_var_ids, but also tracks variable types for building a context.
+    /// var_types[i] will contain the type of the new variable xi after renumbering.
+    pub fn normalize_var_ids_with_types(
+        &mut self,
+        var_ids: &mut Vec<AtomId>,
+        var_types: &mut Vec<TypeId>,
+    ) {
+        if let Atom::Variable(i) = self.head {
+            let pos = var_ids.iter().position(|&x| x == i);
+            match pos {
+                Some(j) => self.head = Atom::Variable(j as AtomId),
+                None => {
+                    self.head = Atom::Variable(var_ids.len() as AtomId);
+                    var_ids.push(i);
+                    var_types.push(self.head_type);
+                }
+            }
+        }
+        for arg in &mut self.args {
+            arg.normalize_var_ids_with_types(var_ids, var_types);
+        }
+    }
 }
 
 #[cfg(test)]

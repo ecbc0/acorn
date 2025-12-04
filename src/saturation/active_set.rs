@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use super::fingerprint::FingerprintUnifier;
 use super::rewrite_tree::{Rewrite, RewriteTree};
 use crate::clause_set::TermId;
-use crate::kernel::fat_clause::{build_context_from_literals, FatClause};
+use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::FatTerm;
 use crate::kernel::kernel_context::KernelContext;
@@ -534,14 +534,14 @@ impl ActiveSet {
         let mut answer = vec![];
 
         // Use the new method to find all possible equality resolutions
-        for (index, new_literals, flipped) in clause.find_equality_resolutions(kernel_context) {
+        for (index, new_literals, flipped, context) in
+            clause.find_equality_resolutions(kernel_context)
+        {
             let literals = new_literals.clone();
             let (new_clause, traces) = FatClause::normalize_with_trace(new_literals);
 
             // Check if normalization resulted in a tautology
             if !new_clause.is_tautology() {
-                // Build context from the new literals since they're in the unifier's OUTPUT scope
-                let context = build_context_from_literals(&literals);
                 let step = ProofStep::direct(
                     activated_id,
                     activated_step,

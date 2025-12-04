@@ -217,6 +217,13 @@ impl TermBinding {
     }
 }
 
+/// Builds a LocalContext from the terms in the stack.
+/// This collects variable types from all bindings.
+fn build_context_from_stack(stack: &[TermBinding]) -> LocalContext {
+    let terms: Vec<&FatTerm> = stack.iter().map(|b| b.term()).collect();
+    build_context_from_terms(&terms)
+}
+
 // A NormalizerView lets us share methods between mutable and non-mutable normalizers that
 // only differ in a small number of places.
 pub enum NormalizerView<'a> {
@@ -804,9 +811,9 @@ impl NormalizerView<'_> {
                     None => return Ok(None),
                 };
                 let head = *func_term.get_head_atom();
-                let func_context = build_context_from_terms(&[&func_term]);
+                let stack_context = build_context_from_stack(stack);
                 let head_type =
-                    func_term.get_head_type_with_context(&func_context, self.kernel_context());
+                    func_term.get_head_type_with_context(&stack_context, self.kernel_context());
                 let mut args = func_term.args().to_vec();
                 for arg in &application.args {
                     let arg_term = match self.try_simple_value_to_term(arg, stack)? {
@@ -975,9 +982,10 @@ impl NormalizerView<'_> {
         };
 
         // Create the definition for this synthetic term
-        let skolem_value = self
-            .as_ref()
-            .denormalize_term(&skolem_term, &mut None, None);
+        let stack_context = build_context_from_stack(stack);
+        let skolem_value =
+            self.as_ref()
+                .denormalize_term(&skolem_term, &stack_context, &mut None, None);
         let definition_cnf =
             self.eq_to_cnf(&skolem_value, value, false, stack, next_var_id, synth)?;
         // TODO: value_to_cnf should return (CNF, LocalContext)
@@ -998,10 +1006,9 @@ impl NormalizerView<'_> {
             // Reuse the existing synthetic atom
             let existing_id = existing_def.atoms[0];
             let existing_atom = Atom::Symbol(Symbol::Synthetic(existing_id));
-            let skolem_context = build_context_from_terms(&[&skolem_term]);
             let reused_term = FatTerm::new(
-                skolem_term.get_term_type_with_context(&skolem_context, self.kernel_context()),
-                skolem_term.get_head_type_with_context(&skolem_context, self.kernel_context()),
+                skolem_term.get_term_type_with_context(&stack_context, self.kernel_context()),
+                skolem_term.get_head_type_with_context(&stack_context, self.kernel_context()),
                 existing_atom,
                 skolem_term.args().to_vec(),
             );
@@ -1596,12 +1603,12 @@ impl Normalizer {
     fn denormalize_term(
         &self,
         term: &FatTerm,
+        local_context: &LocalContext,
         var_types: &mut Option<Vec<AcornType>>,
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
-        let term_context = build_context_from_terms(&[term]);
         let head = self.denormalize_atom(
-            term.get_head_type_with_context(&term_context, self.kernel_context()),
+            term.get_head_type_with_context(local_context, self.kernel_context()),
             &term.get_head_atom(),
             var_types,
             arbitrary_names,
@@ -1609,7 +1616,7 @@ impl Normalizer {
         let args: Vec<_> = term
             .args()
             .iter()
-            .map(|t| self.denormalize_term(t, var_types, arbitrary_names))
+            .map(|t| self.denormalize_term(t, local_context, var_types, arbitrary_names))
             .collect();
         AcornValue::apply(head, args)
     }
@@ -1621,10 +1628,11 @@ impl Normalizer {
     fn denormalize_literal(
         &self,
         literal: &FatLiteral,
+        local_context: &LocalContext,
         var_types: &mut Option<Vec<AcornType>>,
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
-        let left = self.denormalize_term(&literal.left, var_types, arbitrary_names);
+        let left = self.denormalize_term(&literal.left, local_context, var_types, arbitrary_names);
         if literal.right.is_true() {
             if literal.positive {
                 return left;
@@ -1632,7 +1640,8 @@ impl Normalizer {
                 return AcornValue::Not(Box::new(left));
             }
         }
-        let right = self.denormalize_term(&literal.right, var_types, arbitrary_names);
+        let right =
+            self.denormalize_term(&literal.right, local_context, var_types, arbitrary_names);
         if literal.positive {
             AcornValue::equals(left, right)
         } else {
@@ -1653,11 +1662,13 @@ impl Normalizer {
         if clause.literals.is_empty() {
             return AcornValue::Bool(false);
         }
+        let local_context = clause.get_local_context();
         let mut var_types = Some(vec![]);
         let mut denormalized_literals = vec![];
         for literal in &clause.literals {
             denormalized_literals.push(self.denormalize_literal(
                 literal,
+                local_context,
                 &mut var_types,
                 arbitrary_names,
             ));

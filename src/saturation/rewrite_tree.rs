@@ -2,7 +2,6 @@
 // A given pattern can be rewritten to multiple different output terms.
 
 use crate::kernel::atom::AtomId;
-use crate::kernel::fat_clause::build_context_from_terms;
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::{FatTerm, TypeId};
 use crate::kernel::kernel_context::KernelContext;
@@ -99,9 +98,7 @@ impl RewriteTree {
         );
 
         if !literal.right.is_true() {
-            let (right, left) = literal.normalized_reversed();
-            // After renormalization, we need a new context that matches the new variable ids
-            let reversed_context = build_context_from_terms(&[&right, &left]);
+            let (right, left, reversed_context) = literal.normalized_reversed();
             self.insert_terms(
                 pattern_id,
                 &right,

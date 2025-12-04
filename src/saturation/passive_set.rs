@@ -2,7 +2,7 @@ use super::features::Features;
 use super::fingerprint::FingerprintSpecializer;
 use super::score::Score;
 use super::scorer::{default_scorer, Scorer};
-use crate::kernel::fat_clause::{build_context_from_terms, FatClause};
+use crate::kernel::fat_clause::FatClause;
 use crate::kernel::fat_literal::FatLiteral;
 use crate::kernel::fat_term::FatTerm;
 use crate::kernel::kernel_context::KernelContext;
@@ -374,9 +374,7 @@ impl PassiveSet {
             false,
         );
         if !literal.strict_kbo() {
-            let (right, left) = literal.normalized_reversed();
-            // After renormalization, we need a new context that matches the new variable ids
-            let reversed_context = build_context_from_terms(&[&right, &left]);
+            let (right, left, reversed_context) = literal.normalized_reversed();
             self.simplify_one_direction(
                 activated_id,
                 &step,
