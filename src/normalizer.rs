@@ -1412,9 +1412,7 @@ impl NormalizerView<'_> {
                 // Build context from stack for variable type lookups
                 let stack_context = build_context_from_stack(stack);
 
-                // Note: We create a local context here for the condition CNF conversion.
-                // This is not ideal - in the future, value_to_extended_term should also
-                // take a context parameter.
+                // Convert the condition to CNF, tracking any new variables in cond_context
                 let mut cond_context = LocalContext::empty();
                 let cond_cnf = self.value_to_cnf(
                     cond_val,
