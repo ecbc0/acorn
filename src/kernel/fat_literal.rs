@@ -155,6 +155,35 @@ impl FatLiteral {
         }
     }
 
+    /// Parse a literal with proper type information from contexts.
+    pub fn parse_with_context(
+        s: &str,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> FatLiteral {
+        if s.contains(" != ") {
+            let mut parts = s.split(" != ");
+            let left =
+                FatTerm::parse_with_context(parts.next().unwrap(), local_context, kernel_context);
+            let right =
+                FatTerm::parse_with_context(parts.next().unwrap(), local_context, kernel_context);
+            FatLiteral::not_equals(left, right)
+        } else if s.contains(" = ") {
+            let mut parts = s.split(" = ");
+            let left =
+                FatTerm::parse_with_context(parts.next().unwrap(), local_context, kernel_context);
+            let right =
+                FatTerm::parse_with_context(parts.next().unwrap(), local_context, kernel_context);
+            FatLiteral::equals(left, right)
+        } else if s.starts_with("not ") {
+            let term = FatTerm::parse_with_context(&s[4..], local_context, kernel_context);
+            FatLiteral::negative(term)
+        } else {
+            let term = FatTerm::parse_with_context(s, local_context, kernel_context);
+            FatLiteral::positive(term)
+        }
+    }
+
     // Returns true if this literal is a tautology, i.e. foo = foo
     pub fn is_tautology(&self) -> bool {
         self.positive && self.left == self.right

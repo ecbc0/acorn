@@ -34,8 +34,7 @@ impl ThinClause {
     }
 
     /// Normalizes literals into a clause, creating a trace of where each one is sent.
-    /// Note that this doesn't flip any literals. It only creates the "Output" and "Impossible"
-    /// type traces.
+    /// Tracks flips that occur during variable ID normalization.
     pub fn normalize_with_trace(
         literals: Vec<ThinLiteral>,
         context: &LocalContext,
@@ -77,12 +76,25 @@ impl ThinClause {
             };
         }
 
-        // Build the clause with context
-        let mut clause = ThinClause {
+        // Normalize variable IDs and track flips
+        let mut var_ids = vec![];
+        for i in 0..output_literals.len() {
+            if output_literals[i].normalize_var_ids(&mut var_ids) {
+                // We flipped literal i. Update the trace.
+                for t in &mut trace {
+                    if let LiteralTrace::Output { index, flipped } = t {
+                        if *index == i {
+                            *flipped = !*flipped;
+                        }
+                    }
+                }
+            }
+        }
+
+        let clause = ThinClause {
             literals: output_literals,
             context: context.clone(),
         };
-        clause.normalize_var_ids();
         (clause, ClauseTrace::new(trace))
     }
 
@@ -283,13 +295,24 @@ impl ThinClause {
     }
 
     /// Parse a clause from a string.
-    /// Format: "lit1 | lit2 | lit3" where each literal is parsed by ThinLiteral::parse.
+    /// Format: "lit1 or lit2 or lit3" where each literal is parsed by ThinLiteral::parse.
     pub fn parse(s: &str, context: &LocalContext) -> ThinClause {
         let literals: Vec<ThinLiteral> = s
-            .split(" | ")
+            .split(" or ")
             .map(|part| ThinLiteral::parse(part.trim()))
             .collect();
         ThinClause::new(literals, context)
+    }
+
+    /// Parse a ThinClause with context (for API compatibility with FatClause).
+    /// ThinTerm doesn't embed types, so this is the same as parse().
+    /// The kernel_context is accepted but not used during parsing.
+    pub fn parse_with_context(
+        s: &str,
+        context: &LocalContext,
+        _kernel_context: &KernelContext,
+    ) -> ThinClause {
+        ThinClause::parse(s, context)
     }
 
     /// Renumbers synthetic atoms from the provided list into the invalid range.

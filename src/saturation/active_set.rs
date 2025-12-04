@@ -1058,10 +1058,10 @@ mod tests {
         set.activate_rewrite_pattern(1, &pattern_step, &mut result, &ctx);
 
         assert_eq!(result.len(), 1);
-        let expected = Clause::new_without_context(vec![Literal::equals(
-            Term::parse("c0(c1)"),
-            Term::parse("c2"),
-        )]);
+        let expected = Clause::new(
+            vec![Literal::equals(Term::parse("c0(c1)"), Term::parse("c2"))],
+            LocalContext::empty_ref(),
+        );
         assert_eq!(result[0].clause, expected);
     }
 
@@ -1084,10 +1084,13 @@ mod tests {
     #[test]
     fn test_equality_resolution() {
         let ctx = KernelContext::test_with_constants(10, 10);
-        let old_clause = Clause::new_without_context(vec![
-            Literal::not_equals(Term::parse("x0"), Term::parse("c0")),
-            Literal::equals(Term::parse("x0"), Term::parse("c1")),
-        ]);
+        let old_clause = Clause::new(
+            vec![
+                Literal::not_equals(Term::parse("x0"), Term::parse("c0")),
+                Literal::equals(Term::parse("x0"), Term::parse("c1")),
+            ],
+            LocalContext::empty_ref(),
+        );
         let mock_step = ProofStep::mock_from_clause(old_clause);
         let proof_steps = ActiveSet::equality_resolution(0, &mock_step, &ctx);
         assert_eq!(proof_steps.len(), 1);
@@ -1110,10 +1113,13 @@ mod tests {
     #[test]
     fn test_equality_factoring_basic() {
         let kernel_context = KernelContext::test_with_constants(10, 10);
-        let old_clause = Clause::new_without_context(vec![
-            Literal::equals(Term::parse("x0"), Term::parse("c0")),
-            Literal::equals(Term::parse("x1"), Term::parse("c0")),
-        ]);
+        let old_clause = Clause::new(
+            vec![
+                Literal::equals(Term::parse("x0"), Term::parse("c0")),
+                Literal::equals(Term::parse("x1"), Term::parse("c0")),
+            ],
+            LocalContext::empty_ref(),
+        );
         let mock_step = ProofStep::mock_from_clause(old_clause);
         let proof_steps = ActiveSet::equality_factoring(0, &mock_step, &kernel_context);
         let expected = Clause::parse("c0 = x0", LocalContext::empty_ref());

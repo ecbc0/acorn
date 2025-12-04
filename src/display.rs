@@ -1,9 +1,7 @@
 use std::fmt;
 
+use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::Atom;
-use crate::kernel::fat_clause::FatClause;
-use crate::kernel::fat_literal::FatLiteral;
-use crate::kernel::fat_term::FatTerm;
 use crate::normalizer::Normalizer;
 
 struct DisplayAtom<'a> {
@@ -18,7 +16,7 @@ impl fmt::Display for DisplayAtom<'_> {
 }
 
 pub struct DisplayTerm<'a> {
-    pub term: &'a FatTerm,
+    pub term: &'a Term,
     pub normalizer: &'a Normalizer,
 }
 
@@ -54,12 +52,12 @@ impl fmt::Display for DisplayTerm<'_> {
 }
 
 struct DisplayLiteral<'a> {
-    literal: &'a FatLiteral,
+    literal: &'a Literal,
     normalizer: &'a Normalizer,
 }
 
 impl DisplayLiteral<'_> {
-    fn term<'a>(&'a self, term: &'a FatTerm) -> DisplayTerm<'a> {
+    fn term<'a>(&'a self, term: &'a Term) -> DisplayTerm<'a> {
         DisplayTerm {
             term,
             normalizer: self.normalizer,
@@ -94,7 +92,7 @@ impl fmt::Display for DisplayLiteral<'_> {
 }
 
 pub struct DisplayClause<'a> {
-    pub clause: &'a FatClause,
+    pub clause: &'a Clause,
     pub normalizer: &'a Normalizer,
 }
 

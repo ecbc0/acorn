@@ -225,7 +225,9 @@ impl FatClause {
         (c, ClauseTrace::new(trace))
     }
 
-    pub fn validate(&self) {
+    /// Validate that this clause is well-formed.
+    /// The _kernel_context parameter is ignored for FatClause but required for ThinClause.
+    pub fn validate(&self, _kernel_context: &KernelContext) {
         // Check that the literals are sorted
         for i in 0..self.literals.len() {
             if i > 0 && self.literals[i - 1] > self.literals[i] {
@@ -342,6 +344,19 @@ impl FatClause {
         FatClause::new_without_context(
             s.split(" or ")
                 .map(|x| FatLiteral::parse(x))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    /// Parse a clause with proper type information from contexts.
+    pub fn parse_with_context(
+        s: &str,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> FatClause {
+        FatClause::new_without_context(
+            s.split(" or ")
+                .map(|x| FatLiteral::parse_with_context(x, local_context, kernel_context))
                 .collect::<Vec<_>>(),
         )
     }
@@ -700,33 +715,4 @@ impl FatClause {
         let context = build_context_from_literals(&literals);
         (FatClause { literals, context }, polarities)
     }
-}
-
-#[cfg(test)]
-fn check(s: &str) {
-    use crate::kernel::kernel_context::KernelContext;
-
-    let literals: Vec<FatLiteral> = s
-        .split(" or ")
-        .map(|x| FatLiteral::parse(x))
-        .collect::<Vec<_>>();
-    let clause = FatClause::new_without_context(literals.clone());
-    let (alt_clause, trace) =
-        FatClause::normalize_with_trace(literals.clone(), &LocalContext::empty());
-    assert_eq!(clause, alt_clause);
-
-    let kernel_context = KernelContext::test_with_constants(10, 10);
-    let literals_context = build_context_from_literals(&literals);
-    clause.validate();
-    trace.validate(&literals, &literals_context, &clause, &kernel_context);
-}
-
-#[test]
-fn test_easy_clause_normalization() {
-    check("c0 or c1");
-}
-
-#[test]
-fn test_hard_clause_normalization() {
-    check("not x0(x2) or c0(x0, x1, x2) or x1 = x2");
 }

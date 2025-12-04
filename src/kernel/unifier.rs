@@ -976,7 +976,7 @@ mod tests {
         u.print();
         let literals =
             u.superpose_clauses(&t, &pm_clause, 0, target_path, &resolution_clause, 0, true);
-        let new_clause = Clause::new_without_context(literals);
+        let new_clause = Clause::new(literals, LocalContext::test_empty_ref());
         assert!(
             new_clause.to_string()
                 == "c1(c2(c1, x0, c1(c1(c0)))) != c1(x1(x2)) or c1(c1(x0)) = x1(x2)"

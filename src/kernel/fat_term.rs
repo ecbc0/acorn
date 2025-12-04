@@ -321,6 +321,96 @@ impl FatTerm {
         }
     }
 
+    /// Parse a term with proper type information from contexts.
+    /// Variables get their types from local_context, symbols from kernel_context.
+    pub fn parse_with_context(
+        s: &str,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> FatTerm {
+        if s == "true" {
+            return FatTerm::atom(BOOL, Atom::True);
+        }
+
+        let first_paren = match s.find('(') {
+            Some(i) => i,
+            None => {
+                // Atomic term - look up its type
+                let atom = Atom::new(s);
+                let type_id = match &atom {
+                    Atom::Variable(id) => local_context
+                        .get_var_type(*id as usize)
+                        .expect("Variable not found in local context during parse"),
+                    Atom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol),
+                    Atom::True => BOOL,
+                };
+                return FatTerm::atom(type_id, atom);
+            }
+        };
+
+        // Figure out which commas are inside precisely one level of parentheses.
+        let mut terminator_indices = vec![];
+        let mut num_parens = 0;
+        for (i, c) in s.chars().enumerate() {
+            match c {
+                '(' => num_parens += 1,
+                ')' => {
+                    num_parens -= 1;
+                    if num_parens == 0 {
+                        terminator_indices.push(i);
+                    }
+                }
+                ',' => {
+                    if num_parens == 1 {
+                        terminator_indices.push(i);
+                    }
+                }
+                _ => (),
+            }
+        }
+
+        // Split the string into the head and the args.
+        let head_str = &s[0..first_paren];
+        let head = Atom::new(head_str);
+        let head_type = match &head {
+            Atom::Variable(id) => local_context
+                .get_var_type(*id as usize)
+                .expect("Variable not found in local context during parse"),
+            Atom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol),
+            Atom::True => BOOL,
+        };
+
+        let mut args = vec![];
+        for (i, comma_index) in terminator_indices.iter().enumerate() {
+            let start = if i == 0 {
+                first_paren + 1
+            } else {
+                terminator_indices[i - 1] + 1
+            };
+            args.push(FatTerm::parse_with_context(
+                &s[start..*comma_index],
+                local_context,
+                kernel_context,
+            ));
+        }
+
+        // Compute the term type by applying the head type
+        let mut term_type = head_type;
+        for _ in &args {
+            term_type = kernel_context
+                .type_store
+                .apply_type(term_type)
+                .expect("Function type expected during parse");
+        }
+
+        FatTerm {
+            term_type,
+            head_type,
+            head,
+            args,
+        }
+    }
+
     pub fn atom(type_id: TypeId, atom: Atom) -> FatTerm {
         FatTerm {
             term_type: type_id,

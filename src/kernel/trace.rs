@@ -129,3 +129,45 @@ impl ClauseTrace {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kernel::aliases::Clause;
+    use crate::kernel::fat_term::BOOL;
+
+    /// Check clause normalization with trace validation.
+    /// context provides the types of variables in the clause.
+    fn check_clause_normalization(s: &str, context: &LocalContext, kernel_context: &KernelContext) {
+        let clause = Clause::parse_with_context(s, context, kernel_context);
+        clause.validate(kernel_context);
+
+        // Parse literals separately and normalize with trace
+        let literals: Vec<Literal> = s
+            .split(" or ")
+            .map(|x| Literal::parse_with_context(x.trim(), context, kernel_context))
+            .collect();
+        let literals_context = clause.get_local_context().clone();
+
+        let (alt_clause, trace) = Clause::normalize_with_trace(literals.clone(), &literals_context);
+
+        assert_eq!(clause, alt_clause);
+
+        trace.validate(&literals, &literals_context, &clause, kernel_context);
+    }
+
+    #[test]
+    fn test_clause_normalization_with_equality() {
+        // "c0 = c1" - equality between two constants of type BOOL
+        let kernel_context = KernelContext::test_with_constant_types(&[BOOL; 10], &[BOOL; 10]);
+        check_clause_normalization("c0 = c1", LocalContext::empty_ref(), &kernel_context);
+    }
+
+    #[test]
+    fn test_clause_normalization_with_variable_equality() {
+        // "x0 = x1" - equality between two BOOL variables
+        let kernel_context = KernelContext::test_with_constant_types(&[BOOL; 10], &[BOOL; 10]);
+        let context = LocalContext::with_types(vec![BOOL, BOOL]);
+        check_clause_normalization("x0 = x1", &context, &kernel_context);
+    }
+}

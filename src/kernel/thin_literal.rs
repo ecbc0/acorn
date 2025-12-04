@@ -69,6 +69,17 @@ impl ThinLiteral {
         }
     }
 
+    /// Parse a ThinLiteral with context (for API compatibility with FatLiteral).
+    /// ThinTerm doesn't embed types, so this is the same as parse().
+    /// The contexts are accepted but not used during parsing.
+    pub fn parse_with_context(
+        s: &str,
+        _local_context: &LocalContext,
+        _kernel_context: &KernelContext,
+    ) -> ThinLiteral {
+        ThinLiteral::parse(s)
+    }
+
     /// Create a literal representing the value "true" (true = true).
     pub fn true_value() -> ThinLiteral {
         ThinLiteral::new(
