@@ -1,7 +1,6 @@
+use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::fat_clause::FatClause;
-use crate::kernel::fat_literal::FatLiteral;
-use crate::kernel::fat_term::{FatTerm, TypeId};
+use crate::kernel::fat_term::TypeId;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 #[cfg(test)]
@@ -51,7 +50,7 @@ pub struct Unifier<'a> {
 struct Replacement<'a> {
     path: &'a [usize],
     scope: Scope,
-    term: &'a FatTerm,
+    term: &'a Term,
 }
 
 impl<'a> Unifier<'a> {
@@ -113,7 +112,10 @@ impl<'a> Unifier<'a> {
         }
     }
 
-    /// Creates a single-scope unifier.
+    /// Creates a unifier with an initial VariableMap.
+    /// For FatTerm (default): extracts types from embedded term information.
+    /// For ThinTerm: requires output_context to be provided via with_map_and_context.
+    #[cfg(not(feature = "thin"))]
     pub fn with_map(map: VariableMap, kernel_context: &'a KernelContext) -> (Unifier<'a>, Scope) {
         // Initialize the output map with enough blank entries for any variables in the initial map
         let mut output_map = VariableMap::new();
@@ -126,7 +128,7 @@ impl<'a> Unifier<'a> {
                 // Default to TypeId 0; will be overwritten when we find the actual type
                 output_var_types.push(TypeId::default());
             }
-            // Extract actual types from the variables in the map
+            // Extract actual types from the variables in the map using FatTerm's embedded types
             for (_, term) in map.iter() {
                 for (var_id, type_id) in term.collect_vars_embedded() {
                     let idx = var_id as usize;
@@ -142,6 +144,31 @@ impl<'a> Unifier<'a> {
             kernel_context,
             input_contexts: vec![None, None], // Output scope and one input scope
             output_context: LocalContext::new(output_var_types),
+        };
+        (unifier, Scope(1))
+    }
+
+    /// Creates a unifier with an initial VariableMap and explicit output context.
+    /// This is the ThinTerm version - requires the caller to provide context for type lookups.
+    #[cfg(feature = "thin")]
+    pub fn with_map(
+        map: VariableMap,
+        kernel_context: &'a KernelContext,
+        output_context: LocalContext,
+    ) -> (Unifier<'a>, Scope) {
+        // Initialize the output map with enough blank entries for any variables in the initial map
+        let mut output_map = VariableMap::new();
+        if let Some(max_var) = map.max_output_variable() {
+            for _ in 0..=max_var {
+                output_map.push_none();
+            }
+        }
+
+        let unifier = Unifier {
+            maps: vec![output_map, map],
+            kernel_context,
+            input_contexts: vec![None, None], // Output scope and one input scope
+            output_context,
         };
         (unifier, Scope(1))
     }
@@ -172,11 +199,11 @@ impl<'a> Unifier<'a> {
         self.map(scope).has_mapping(i)
     }
 
-    fn set_mapping(&mut self, scope: Scope, i: AtomId, term: FatTerm) {
+    fn set_mapping(&mut self, scope: Scope, i: AtomId, term: Term) {
         self.mut_map(scope).set(i, term);
     }
 
-    fn get_mapping(&self, scope: Scope, i: AtomId) -> Option<&FatTerm> {
+    fn get_mapping(&self, scope: Scope, i: AtomId) -> Option<&Term> {
         self.map(scope).get_mapping(i)
     }
 
@@ -209,9 +236,9 @@ impl<'a> Unifier<'a> {
     fn apply_replace(
         &mut self,
         scope: Scope,
-        term: &FatTerm,
+        term: &Term,
         replacement: Option<Replacement>,
-    ) -> FatTerm {
+    ) -> Term {
         if let Some(ref replacement) = replacement {
             if replacement.path.is_empty() {
                 return self.apply(replacement.scope, replacement.term);
@@ -240,7 +267,7 @@ impl<'a> Unifier<'a> {
                     self.maps[Scope::OUTPUT.get()].push_none();
                     // Track the type in output_context
                     self.output_context.var_types.push(term_head_type);
-                    let new_var = FatTerm::new(
+                    let new_var = Term::new(
                         term_head_type,
                         term_head_type,
                         Atom::Variable(var_id),
@@ -292,25 +319,25 @@ impl<'a> Unifier<'a> {
         }
 
         // Now construct the final term with correct types
-        FatTerm::new(term_type, head_type, head, args)
+        Term::new(term_type, head_type, head, args)
     }
 
-    pub fn apply(&mut self, scope: Scope, term: &FatTerm) -> FatTerm {
+    pub fn apply(&mut self, scope: Scope, term: &Term) -> Term {
         self.apply_replace(scope, term, None)
     }
 
     /// Returns the resulting literal, and whether it was flipped.
-    pub fn apply_to_literal(&mut self, scope: Scope, literal: &FatLiteral) -> (FatLiteral, bool) {
+    pub fn apply_to_literal(&mut self, scope: Scope, literal: &Literal) -> (Literal, bool) {
         let apply_left = self.apply(scope, &literal.left);
         let apply_right = self.apply(scope, &literal.right);
-        FatLiteral::new_with_flip(literal.positive, apply_left, apply_right)
+        Literal::new_with_flip(literal.positive, apply_left, apply_right)
     }
 
     // Replace variable i in the output scope with the given term (which is also in the output scope).
     // If they're both variables, keep the one with the lower id.
     // Returns whether this succeeded.
     // It fails if this would require making a variable self-nesting.
-    fn remap(&mut self, id: AtomId, term: &FatTerm) -> bool {
+    fn remap(&mut self, id: AtomId, term: &Term) -> bool {
         if let Some(other_id) = term.atomic_variable() {
             if other_id > id {
                 // Let's keep this id and remap the other one instead.
@@ -318,7 +345,7 @@ impl<'a> Unifier<'a> {
                 // term is in OUTPUT scope
                 let term_type =
                     term.get_term_type_with_context(self.output_context(), self.kernel_context);
-                let new_term = FatTerm::new_variable(term_type, id);
+                let new_term = Term::new_variable(term_type, id);
                 return self.unify_variable(Scope::OUTPUT, other_id, Scope::OUTPUT, &new_term);
             }
         }
@@ -342,7 +369,7 @@ impl<'a> Unifier<'a> {
         var_scope: Scope,
         var_id: AtomId,
         term_scope: Scope,
-        term: &FatTerm,
+        term: &Term,
     ) -> bool {
         if term_scope != Scope::OUTPUT {
             // Convert our term to the output scope and then unify.
@@ -387,10 +414,10 @@ impl<'a> Unifier<'a> {
         atom2: &Atom,
     ) -> bool {
         if let Atom::Variable(i) = atom1 {
-            return self.unify_variable(scope1, *i, scope2, &FatTerm::atom(atom_type, *atom2));
+            return self.unify_variable(scope1, *i, scope2, &Term::atom(atom_type, *atom2));
         }
         if let Atom::Variable(i) = atom2 {
-            return self.unify_variable(scope2, *i, scope1, &FatTerm::atom(atom_type, *atom1));
+            return self.unify_variable(scope2, *i, scope1, &Term::atom(atom_type, *atom1));
         }
         if atom1 == atom2 {
             return true;
@@ -402,9 +429,9 @@ impl<'a> Unifier<'a> {
     // Returns true if successful, false otherwise
     fn try_unify_partial_application(
         &mut self,
-        var_term: &FatTerm,
+        var_term: &Term,
         var_scope: Scope,
-        full_term: &FatTerm,
+        full_term: &Term,
         full_scope: Scope,
     ) -> Option<bool> {
         // Check if var_term has a variable head with arguments
@@ -425,7 +452,7 @@ impl<'a> Unifier<'a> {
                 // Use the head_type of var_term (the variable's type) as the term_type
                 let var_local = self.get_local_context(var_scope);
                 let full_local = self.get_local_context(full_scope);
-                let partial = FatTerm::new(
+                let partial = Term::new(
                     var_term.get_head_type_with_context(var_local, self.kernel_context),
                     full_term.get_head_type_with_context(full_local, self.kernel_context),
                     *full_term.get_head_atom(),
@@ -458,13 +485,7 @@ impl<'a> Unifier<'a> {
     // Public interface for unification
     // Does not allow unification with the output scope - callers should not directly
     // provide terms in the output scope as the unifier manages output variables internally
-    pub fn unify(
-        &mut self,
-        scope1: Scope,
-        term1: &FatTerm,
-        scope2: Scope,
-        term2: &FatTerm,
-    ) -> bool {
+    pub fn unify(&mut self, scope1: Scope, term1: &Term, scope2: Scope, term2: &Term) -> bool {
         if scope1 == Scope::OUTPUT || scope2 == Scope::OUTPUT {
             panic!("Cannot call unify with output scope - the unifier manages output variables internally");
         }
@@ -472,13 +493,7 @@ impl<'a> Unifier<'a> {
     }
 
     // Internal unification implementation
-    fn unify_internal(
-        &mut self,
-        scope1: Scope,
-        term1: &FatTerm,
-        scope2: Scope,
-        term2: &FatTerm,
-    ) -> bool {
+    fn unify_internal(&mut self, scope1: Scope, term1: &Term, scope2: Scope, term2: &Term) -> bool {
         let local1 = self.get_local_context(scope1);
         let local2 = self.get_local_context(scope2);
         let kc = self.kernel_context;
@@ -544,9 +559,9 @@ impl<'a> Unifier<'a> {
     pub fn unify_literals(
         &mut self,
         scope1: Scope,
-        literal1: &FatLiteral,
+        literal1: &Literal,
         scope2: Scope,
-        literal2: &FatLiteral,
+        literal2: &Literal,
         flipped: bool,
     ) -> bool {
         if flipped {
@@ -562,11 +577,7 @@ impl<'a> Unifier<'a> {
 
     /// Tries to unify a left clause and a right clause.
     /// Does not reorder anything.
-    pub fn unify_clauses(
-        left: &FatClause,
-        right: &FatClause,
-        kernel_context: &KernelContext,
-    ) -> bool {
+    pub fn unify_clauses(left: &Clause, right: &Clause, kernel_context: &KernelContext) -> bool {
         if left.literals.len() != right.literals.len() {
             return false;
         }
@@ -581,7 +592,7 @@ impl<'a> Unifier<'a> {
         true
     }
 
-    pub fn assert_unify(&mut self, scope1: Scope, term1: &FatTerm, scope2: Scope, term2: &FatTerm) {
+    pub fn assert_unify(&mut self, scope1: Scope, term1: &Term, scope2: Scope, term2: &Term) {
         assert!(
             self.unify(scope1, term1, scope2, term2),
             "Failed to unify {} and {}",
@@ -601,8 +612,8 @@ impl<'a> Unifier<'a> {
     // Helper method for testing unification
     #[cfg(test)]
     fn unify_str(&mut self, scope1: Scope, str1: &str, scope2: Scope, str2: &str, expected: bool) {
-        let term1 = FatTerm::parse(str1);
-        let term2 = FatTerm::parse(str2);
+        let term1 = Term::parse(str1);
+        let term2 = Term::parse(str2);
         let result = self.unify(scope1, &term1, scope2, &term2);
         assert_eq!(
             result, expected,
@@ -634,11 +645,11 @@ impl<'a> Unifier<'a> {
     /// Refer to page 3 of "E: A Brainiac Theorem Prover" for more detail.
     pub fn superpose_literals(
         &mut self,
-        t: &FatTerm,
+        t: &Term,
         path: &[usize],
-        res_literal: &FatLiteral,
+        res_literal: &Literal,
         res_forwards: bool,
-    ) -> FatLiteral {
+    ) -> Literal {
         let (u, v) = if res_forwards {
             (&res_literal.left, &res_literal.right)
         } else {
@@ -654,7 +665,7 @@ impl<'a> Unifier<'a> {
             }),
         );
         let unified_v = self.apply(Scope::RIGHT, &v);
-        FatLiteral::new(res_literal.positive, unified_u, unified_v)
+        Literal::new(res_literal.positive, unified_u, unified_v)
     }
 
     // Handle superposition between two entire clauses.
@@ -672,14 +683,14 @@ impl<'a> Unifier<'a> {
     // Refer to page 3 of "E: A Brainiac Theorem Prover" for more detail.
     pub fn superpose_clauses(
         &mut self,
-        t: &FatTerm,
-        pm_clause: &FatClause,
+        t: &Term,
+        pm_clause: &Clause,
         pm_literal_index: usize,
         path: &[usize],
-        res_clause: &FatClause,
+        res_clause: &Clause,
         res_literal_index: usize,
         res_forwards: bool,
-    ) -> Vec<FatLiteral> {
+    ) -> Vec<Literal> {
         let resolution_literal = &res_clause.literals[res_literal_index];
         let new_literal = self.superpose_literals(t, path, resolution_literal, res_forwards);
 
@@ -732,8 +743,8 @@ mod tests {
 
     use super::*;
 
-    fn bool_fn(head: Atom, head_type: TypeId, args: Vec<FatTerm>) -> FatTerm {
-        FatTerm::new(BOOL, head_type, head, args)
+    fn bool_fn(head: Atom, head_type: TypeId, args: Vec<Term>) -> Term {
+        Term::new(BOOL, head_type, head, args)
     }
 
     /// Creates a test unifier with LEFT and RIGHT contexts set to an empty context.
@@ -766,9 +777,9 @@ mod tests {
 
     #[test]
     fn test_unifying_variables() {
-        let bool0 = FatTerm::atom(BOOL, Atom::Variable(0));
-        let bool1 = FatTerm::atom(BOOL, Atom::Variable(1));
-        let bool2 = FatTerm::atom(BOOL, Atom::Variable(2));
+        let bool0 = Term::atom(BOOL, Atom::Variable(0));
+        let bool1 = Term::atom(BOOL, Atom::Variable(1));
+        let bool2 = Term::atom(BOOL, Atom::Variable(2));
         let fterm = bool_fn(
             Atom::Symbol(Symbol::GlobalConstant(0)),
             EMPTY, // GlobalConstant head type is EMPTY from test_ctx
@@ -786,9 +797,9 @@ mod tests {
 
     #[test]
     fn test_same_scope() {
-        let bool0 = FatTerm::atom(BOOL, Atom::Variable(0));
-        let bool1 = FatTerm::atom(BOOL, Atom::Variable(1));
-        let bool2 = FatTerm::atom(BOOL, Atom::Variable(2));
+        let bool0 = Term::atom(BOOL, Atom::Variable(0));
+        let bool1 = Term::atom(BOOL, Atom::Variable(1));
+        let bool2 = Term::atom(BOOL, Atom::Variable(2));
         let term1 = bool_fn(
             Atom::Symbol(Symbol::GlobalConstant(0)),
             EMPTY, // GlobalConstant head type is EMPTY from test_ctx
@@ -811,9 +822,9 @@ mod tests {
 
     #[test]
     fn test_different_scope() {
-        let bool0 = FatTerm::atom(BOOL, Atom::Variable(0));
-        let bool1 = FatTerm::atom(BOOL, Atom::Variable(1));
-        let bool2 = FatTerm::atom(BOOL, Atom::Variable(2));
+        let bool0 = Term::atom(BOOL, Atom::Variable(0));
+        let bool1 = Term::atom(BOOL, Atom::Variable(1));
+        let bool2 = Term::atom(BOOL, Atom::Variable(2));
         let term1 = bool_fn(
             Atom::Symbol(Symbol::GlobalConstant(0)),
             EMPTY, // GlobalConstant head type is EMPTY from test_ctx
@@ -838,14 +849,14 @@ mod tests {
     fn test_unifying_functional_variable() {
         // This test checks that a variable can unify with a constant in functional position.
         // Variable(1) should unify with GlobalConstant(0), both with type EMPTY.
-        let empty0 = FatTerm::atom(EMPTY, Atom::Variable(0));
-        let const_f_term = FatTerm::new(
+        let empty0 = Term::atom(EMPTY, Atom::Variable(0));
+        let const_f_term = Term::new(
             BOOL,
             EMPTY, // GlobalConstant head type is EMPTY from test_ctx
             Atom::Symbol(Symbol::GlobalConstant(0)),
             vec![empty0.clone()],
         );
-        let var_f_term = FatTerm::new(
+        let var_f_term = Term::new(
             BOOL,
             EMPTY, // Variable head type - must match GlobalConstant for unification
             Atom::Variable(1),
@@ -859,8 +870,8 @@ mod tests {
 
     #[test]
     fn test_nested_functional_unify() {
-        let left_term = FatTerm::parse("x0(x0(c0))");
-        let right_term = FatTerm::parse("c1(x0(x1))");
+        let left_term = Term::parse("x0(x0(c0))");
+        let right_term = Term::parse("c1(x0(x1))");
         let ctx = test_ctx();
         let mut u = test_unifier(&ctx);
         u.assert_unify(Scope::LEFT, &left_term, Scope::RIGHT, &right_term);
@@ -872,13 +883,13 @@ mod tests {
 
     #[test]
     fn test_nested_functional_superpose() {
-        let s = FatTerm::parse("x0(x0(x1))");
-        let u_subterm = FatTerm::parse("c1(x0(x1))");
-        let t = FatTerm::parse("c2(x0, x1, c1(c1(c0)))");
-        let pm_clause = FatClause::parse("c2(x0, x1, c1(c1(c0))) = x0(x0(x1))");
+        let s = Term::parse("x0(x0(x1))");
+        let u_subterm = Term::parse("c1(x0(x1))");
+        let t = Term::parse("c2(x0, x1, c1(c1(c0)))");
+        let pm_clause = Clause::parse("c2(x0, x1, c1(c1(c0))) = x0(x0(x1))");
         let target_path = &[0];
         let resolution_clause =
-            FatClause::parse("c1(c1(x0(x1))) != c1(x2(x3)) or c1(x0(x1)) = x2(x3)");
+            Clause::parse("c1(c1(x0(x1))) != c1(x2(x3)) or c1(x0(x1)) = x2(x3)");
         let ctx = test_ctx();
         let mut u = test_unifier(&ctx);
         u.assert_unify(Scope::LEFT, &s, Scope::RIGHT, &u_subterm);
@@ -894,11 +905,11 @@ mod tests {
 
         // Create terms with proper types
         // For simplicity, let's use type 11 for functions and type 4 for the result
-        let x0_var = FatTerm::atom(TypeId::new(11), Atom::Variable(0));
-        let x1_var = FatTerm::atom(TypeId::new(2), Atom::Variable(1));
+        let x0_var = Term::atom(TypeId::new(11), Atom::Variable(0));
+        let x1_var = Term::atom(TypeId::new(2), Atom::Variable(1));
 
         // s5 is a skolem function that takes two arguments
-        let s5_left = FatTerm::new(
+        let s5_left = Term::new(
             TypeId::new(4),
             TypeId::new(14),
             Atom::Symbol(Symbol::Synthetic(5)),
@@ -906,7 +917,7 @@ mod tests {
         );
 
         // Left side: x0(s5(x0, x1))
-        let left_term = FatTerm::new(
+        let left_term = Term::new(
             TypeId::new(4),
             TypeId::new(11),
             Atom::Variable(0),
@@ -914,25 +925,22 @@ mod tests {
         );
 
         // Right side: m2(c0, s5(m2(c0), x0))
-        let c0 = FatTerm::atom(TypeId::new(2), Atom::Symbol(Symbol::ScopedConstant(0)));
-        let m2_c0 = FatTerm::new(
+        let c0 = Term::atom(TypeId::new(2), Atom::Symbol(Symbol::ScopedConstant(0)));
+        let m2_c0 = Term::new(
             TypeId::new(11),
             TypeId::new(10),
             Atom::Symbol(Symbol::Monomorph(2)),
             vec![c0.clone()],
         );
 
-        let s5_right = FatTerm::new(
+        let s5_right = Term::new(
             TypeId::new(4),
             TypeId::new(14),
             Atom::Symbol(Symbol::Synthetic(5)),
-            vec![
-                m2_c0.clone(),
-                FatTerm::atom(TypeId::new(2), Atom::Variable(0)),
-            ],
+            vec![m2_c0.clone(), Term::atom(TypeId::new(2), Atom::Variable(0))],
         );
 
-        let right_term = FatTerm::new(
+        let right_term = Term::new(
             TypeId::new(4),
             TypeId::new(10),
             Atom::Symbol(Symbol::Monomorph(2)),
@@ -979,20 +987,20 @@ mod tests {
 
     #[test]
     fn test_original_superpose() {
-        let s = FatTerm::parse("x0(x0(x1))");
-        let u_subterm = FatTerm::parse("c1(x0(x1))");
-        let t = FatTerm::parse("c2(x0, x1, c1(c1(c0)))");
-        let pm_clause = FatClause::parse("c2(x0, x1, c1(c1(c0))) = x0(x0(x1))");
+        let s = Term::parse("x0(x0(x1))");
+        let u_subterm = Term::parse("c1(x0(x1))");
+        let t = Term::parse("c2(x0, x1, c1(c1(c0)))");
+        let pm_clause = Clause::parse("c2(x0, x1, c1(c1(c0))) = x0(x0(x1))");
         let target_path = &[0];
         let resolution_clause =
-            FatClause::parse("c1(c1(x0(x1))) != c1(x2(x3)) or c1(x0(x1)) = x2(x3)");
+            Clause::parse("c1(c1(x0(x1))) != c1(x2(x3)) or c1(x0(x1)) = x2(x3)");
         let ctx = test_ctx();
         let mut u = test_unifier(&ctx);
         u.assert_unify(Scope::LEFT, &s, Scope::RIGHT, &u_subterm);
         u.print();
         let literals =
             u.superpose_clauses(&t, &pm_clause, 0, target_path, &resolution_clause, 0, true);
-        let new_clause = FatClause::new_without_context(literals);
+        let new_clause = Clause::new_without_context(literals);
         assert!(
             new_clause.to_string()
                 == "c1(c2(c1, x0, c1(c1(c0)))) != c1(x1(x2)) or c1(c1(x0)) = x1(x2)"
@@ -1043,7 +1051,7 @@ mod tests {
         use crate::kernel::local_context::LocalContext;
         let ctx = test_ctx();
         let mut initial_map = VariableMap::new();
-        initial_map.set(0, FatTerm::parse("s0(x0, x1, s4)"));
+        initial_map.set(0, Term::parse("s0(x0, x1, s4)"));
         let (mut unifier, scope1) = Unifier::with_map(initial_map, &ctx);
         // Set contexts for all scopes
         unifier.set_input_context(scope1, LocalContext::test_empty_ref());

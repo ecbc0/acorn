@@ -380,7 +380,7 @@ impl ThinClause {
                     components.extend(arg.components().iter().copied());
                 }
             }
-            crate::kernel::thin_term::ThinTerm::new(components)
+            crate::kernel::thin_term::ThinTerm::from_components(components)
         };
 
         let new_shorter = shorter.get_head_term();

@@ -509,8 +509,32 @@ pub struct ThinTerm {
 }
 
 impl ThinTerm {
+    /// Create a new ThinTerm with the same signature as FatTerm::new.
+    /// The term_type and head_type parameters are ignored since ThinTerm stores types externally.
+    pub fn new(
+        _term_type: TypeId,
+        _head_type: TypeId,
+        head: Atom,
+        args: Vec<ThinTerm>,
+    ) -> ThinTerm {
+        let mut components = vec![ThinTermComponent::Atom(head)];
+        for arg in args {
+            if arg.components.len() == 1 {
+                // Atomic argument - just add the atom
+                components.push(arg.components[0]);
+            } else {
+                // Compound argument - add Composite marker with span
+                components.push(ThinTermComponent::Composite {
+                    span: arg.components.len() as u16 + 1,
+                });
+                components.extend(arg.components.iter().copied());
+            }
+        }
+        ThinTerm { components }
+    }
+
     /// Create a new ThinTerm from a vector of components.
-    pub fn new(components: Vec<ThinTermComponent>) -> ThinTerm {
+    pub fn from_components(components: Vec<ThinTermComponent>) -> ThinTerm {
         ThinTerm { components }
     }
 
@@ -832,7 +856,7 @@ impl ThinTerm {
         // Build the result by processing components, tracking size changes for spans
         let mut result = Vec::new();
         self.replace_variable_recursive(&mut result, id, value);
-        ThinTerm::new(result)
+        ThinTerm::from_components(result)
     }
 
     /// Helper for replace_variable that processes components recursively.
@@ -876,8 +900,9 @@ impl ThinTerm {
                     let subterm_end = i + *span as usize;
 
                     // Create a temporary ThinTerm for the subterm (excluding Composite marker)
-                    let subterm =
-                        ThinTerm::new(self.components[subterm_start..subterm_end].to_vec());
+                    let subterm = ThinTerm::from_components(
+                        self.components[subterm_start..subterm_end].to_vec(),
+                    );
 
                     // Recursively replace in the subterm
                     let mut sub_result = Vec::new();
@@ -935,7 +960,7 @@ impl ThinTerm {
                 c => *c,
             })
             .collect();
-        ThinTerm::new(new_components)
+        ThinTerm::from_components(new_components)
     }
 
     /// Renumbers synthetic atoms from the provided list into the invalid range.
@@ -950,7 +975,7 @@ impl ThinTerm {
                 c => *c,
             })
             .collect();
-        ThinTerm::new(new_components)
+        ThinTerm::from_components(new_components)
     }
 
     /// Replace the first `num_to_replace` variables with invalid synthetic atoms, adjusting
@@ -966,7 +991,7 @@ impl ThinTerm {
                 c => *c,
             })
             .collect();
-        ThinTerm::new(new_components)
+        ThinTerm::from_components(new_components)
     }
 
     /// Normalize variable IDs in place, tracking types from the input context.
@@ -1035,7 +1060,7 @@ impl ThinTerm {
                 c => *c,
             })
             .collect();
-        ThinTerm::new(new_components)
+        ThinTerm::from_components(new_components)
     }
 
     /// Build a term from a spine (function + arguments).
@@ -1070,7 +1095,7 @@ impl ThinTerm {
                     components.extend(arg.components.iter().copied());
                 }
             }
-            ThinTerm::new(components)
+            ThinTerm::from_components(components)
         }
     }
 
@@ -1091,7 +1116,7 @@ impl ThinTerm {
                 components.extend(arg.components.iter().copied());
             }
         }
-        ThinTerm::new(components)
+        ThinTerm::from_components(components)
     }
 
     /// Replace all arguments with new arguments.
@@ -1107,7 +1132,7 @@ impl ThinTerm {
                 components.extend(arg.components.iter().copied());
             }
         }
-        ThinTerm::new(components)
+        ThinTerm::from_components(components)
     }
 
     /// Knuth-Bendix partial reduction ordering.
@@ -1176,11 +1201,13 @@ impl ThinTerm {
             ThinTermComponent::Composite { span } => {
                 // The argument spans from current_pos to current_pos + span
                 // But the Composite marker isn't part of the term's components, so skip it
-                ThinTerm::new(
+                ThinTerm::from_components(
                     self.components[current_pos + 1..current_pos + span as usize].to_vec(),
                 )
             }
-            ThinTermComponent::Atom(atom) => ThinTerm::new(vec![ThinTermComponent::Atom(atom)]),
+            ThinTermComponent::Atom(atom) => {
+                ThinTerm::from_components(vec![ThinTermComponent::Atom(atom)])
+            }
         };
 
         // Recurse for the rest of the path
@@ -1212,11 +1239,11 @@ impl ThinTerm {
             if current_arg == arg_index {
                 // This is the argument to replace (or recurse into)
                 let old_arg = match self.components[arg_start] {
-                    ThinTermComponent::Composite { span } => ThinTerm::new(
+                    ThinTermComponent::Composite { span } => ThinTerm::from_components(
                         self.components[arg_start + 1..arg_start + span as usize].to_vec(),
                     ),
                     ThinTermComponent::Atom(atom) => {
-                        ThinTerm::new(vec![ThinTermComponent::Atom(atom)])
+                        ThinTerm::from_components(vec![ThinTermComponent::Atom(atom)])
                     }
                 };
 
@@ -1240,7 +1267,7 @@ impl ThinTerm {
             current_arg += 1;
         }
 
-        ThinTerm::new(new_components)
+        ThinTerm::from_components(new_components)
     }
 
     /// Find all rewritable subterms with their paths.
