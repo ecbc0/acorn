@@ -1342,8 +1342,10 @@ impl<'a> Iterator for ThinTermRefArgsIterator<'a> {
 
         match self.components[self.position] {
             ThinTermComponent::Composite { span } => {
-                // Extract the composite term as a slice reference
-                let arg_slice = &self.components[self.position..self.position + span as usize];
+                // Extract the composite term as a slice reference.
+                // Skip the Composite marker itself - the term content starts after it.
+                let arg_slice =
+                    &self.components[self.position + 1..self.position + span as usize];
                 self.position += span as usize;
                 Some(ThinTermRef::new(arg_slice))
             }
@@ -1353,6 +1355,37 @@ impl<'a> Iterator for ThinTermRefArgsIterator<'a> {
                 self.position += 1;
                 Some(ThinTermRef::new(arg_slice))
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_nested_term_comparison() {
+        // Create nested terms like f(g(a)) and f(g(b))
+        // This exercises iter_args() and partial_tiebreak on composite arguments
+        let term1 = ThinTerm::parse("c0(c1(c2))");
+        let term2 = ThinTerm::parse("c0(c1(c3))");
+
+        // This should not panic - it exercises the code path where
+        // iter_args returns a ThinTermRef for a composite argument
+        let _ = term1.extended_kbo_cmp(&term2);
+    }
+
+    #[test]
+    fn test_iter_args_on_nested_term() {
+        // f(g(a), b) has two args: g(a) which is composite, and b which is atomic
+        let term = ThinTerm::parse("c0(c1(c2), c3)");
+
+        let args: Vec<_> = term.iter_args().collect();
+        assert_eq!(args.len(), 2);
+
+        // Each arg should be able to get its head atom without panicking
+        for arg in &args {
+            let _ = arg.get_head_atom();
         }
     }
 }
