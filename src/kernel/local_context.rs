@@ -37,6 +37,36 @@ impl LocalContext {
         self.var_types.get(var_id).copied()
     }
 
+    /// Push a new variable type to the context.
+    /// The variable ID will be the current length of the context.
+    /// Returns the assigned variable ID.
+    pub fn push_var_type(&mut self, type_id: TypeId) -> usize {
+        let var_id = self.var_types.len();
+        self.var_types.push(type_id);
+        var_id
+    }
+
+    /// Set the type for a variable at a specific index.
+    /// If the context is too short, it will be extended with EMPTY types.
+    /// This is used when variable IDs are assigned externally (e.g., by next_var_id).
+    pub fn set_var_type(&mut self, var_id: usize, type_id: TypeId) {
+        use crate::kernel::fat_term::EMPTY;
+        if var_id >= self.var_types.len() {
+            self.var_types.resize(var_id + 1, EMPTY);
+        }
+        self.var_types[var_id] = type_id;
+    }
+
+    /// Returns the number of variables in this context.
+    pub fn len(&self) -> usize {
+        self.var_types.len()
+    }
+
+    /// Returns true if this context has no variables.
+    pub fn is_empty(&self) -> bool {
+        self.var_types.is_empty()
+    }
+
     /// Returns a reference to a LocalContext with BOOL types for tests.
     /// The context has 10 variables, all with type BOOL (TypeId 1).
     #[cfg(test)]

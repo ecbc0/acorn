@@ -289,10 +289,15 @@ impl NormalizerView<'_> {
             _ => {
                 let mut stack = vec![];
                 let mut next_var_id = 0;
-                let cnf =
-                    self.value_to_cnf(&value, false, &mut stack, &mut next_var_id, synthesized)?;
-                // TODO: value_to_cnf should return (CNF, LocalContext)
-                let local_context = LocalContext::empty(); // Temporary placeholder
+                let mut local_context = LocalContext::empty();
+                let cnf = self.value_to_cnf(
+                    &value,
+                    false,
+                    &mut stack,
+                    &mut next_var_id,
+                    synthesized,
+                    &mut local_context,
+                )?;
                 Ok(cnf.into_clauses(&local_context))
             }
         }
@@ -307,7 +312,15 @@ impl NormalizerView<'_> {
         value: &AcornValue,
     ) -> Result<Vec<Clause>, String> {
         let mut output = vec![];
-        let cnf = self.value_to_cnf(&value, false, &mut vec![], &mut 0, &mut vec![])?;
+        let mut context = LocalContext::empty();
+        let cnf = self.value_to_cnf(
+            &value,
+            false,
+            &mut vec![],
+            &mut 0,
+            &mut vec![],
+            &mut context,
+        )?;
         for mut literals in cnf.into_iter() {
             literals.sort();
             output.push(Clause::from_literals_unnormalized(literals));
@@ -339,51 +352,70 @@ impl NormalizerView<'_> {
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
+        context: &mut LocalContext,
     ) -> Result<CNF, String> {
         match value {
             AcornValue::ForAll(qs, sub) => {
                 if !negate {
-                    self.forall_to_cnf(qs, sub, false, stack, next_var_id, synth)
+                    self.forall_to_cnf(qs, sub, false, stack, next_var_id, synth, context)
                 } else {
-                    self.exists_to_cnf(qs, sub, true, stack, next_var_id, synth)
+                    self.exists_to_cnf(qs, sub, true, stack, next_var_id, synth, context)
                 }
             }
             AcornValue::Exists(qs, sub) => {
                 if !negate {
-                    self.exists_to_cnf(qs, sub, false, stack, next_var_id, synth)
+                    self.exists_to_cnf(qs, sub, false, stack, next_var_id, synth, context)
                 } else {
-                    self.forall_to_cnf(qs, sub, true, stack, next_var_id, synth)
+                    self.forall_to_cnf(qs, sub, true, stack, next_var_id, synth, context)
                 }
             }
             AcornValue::Binary(BinaryOp::And, left, right) => {
                 if !negate {
-                    self.and_to_cnf(left, right, false, false, stack, next_var_id, synth)
+                    self.and_to_cnf(
+                        left,
+                        right,
+                        false,
+                        false,
+                        stack,
+                        next_var_id,
+                        synth,
+                        context,
+                    )
                 } else {
-                    self.or_to_cnf(left, right, true, true, stack, next_var_id, synth)
+                    self.or_to_cnf(left, right, true, true, stack, next_var_id, synth, context)
                 }
             }
             AcornValue::Binary(BinaryOp::Or, left, right) => {
                 if !negate {
-                    self.or_to_cnf(left, right, false, false, stack, next_var_id, synth)
+                    self.or_to_cnf(
+                        left,
+                        right,
+                        false,
+                        false,
+                        stack,
+                        next_var_id,
+                        synth,
+                        context,
+                    )
                 } else {
-                    self.and_to_cnf(left, right, true, true, stack, next_var_id, synth)
+                    self.and_to_cnf(left, right, true, true, stack, next_var_id, synth, context)
                 }
             }
             AcornValue::Binary(BinaryOp::Implies, left, right) => {
                 if !negate {
-                    self.or_to_cnf(left, right, true, false, stack, next_var_id, synth)
+                    self.or_to_cnf(left, right, true, false, stack, next_var_id, synth, context)
                 } else {
-                    self.and_to_cnf(left, right, false, true, stack, next_var_id, synth)
+                    self.and_to_cnf(left, right, false, true, stack, next_var_id, synth, context)
                 }
             }
             AcornValue::Binary(BinaryOp::Equals, left, right) => {
-                self.eq_to_cnf(left, right, negate, stack, next_var_id, synth)
+                self.eq_to_cnf(left, right, negate, stack, next_var_id, synth, context)
             }
             AcornValue::Binary(BinaryOp::NotEquals, left, right) => {
-                self.eq_to_cnf(left, right, !negate, stack, next_var_id, synth)
+                self.eq_to_cnf(left, right, !negate, stack, next_var_id, synth, context)
             }
             AcornValue::Not(subvalue) => {
-                self.value_to_cnf(subvalue, !negate, stack, next_var_id, synth)
+                self.value_to_cnf(subvalue, !negate, stack, next_var_id, synth, context)
             }
             AcornValue::Try(_, _) => Err("try operator not yet implemented".to_string()),
             AcornValue::Bool(value) => {
@@ -394,12 +426,15 @@ impl NormalizerView<'_> {
                 }
             }
             AcornValue::IfThenElse(cond_value, then_value, else_value) => {
-                let cond_cnf = self.value_to_cnf(cond_value, false, stack, next_var_id, synth)?;
+                let cond_cnf =
+                    self.value_to_cnf(cond_value, false, stack, next_var_id, synth, context)?;
                 let Some(cond_lit) = cond_cnf.to_literal() else {
                     return Err("value 'if' condition is too complicated".to_string());
                 };
-                let then_cnf = self.value_to_cnf(then_value, negate, stack, next_var_id, synth)?;
-                let else_cnf = self.value_to_cnf(else_value, negate, stack, next_var_id, synth)?;
+                let then_cnf =
+                    self.value_to_cnf(then_value, negate, stack, next_var_id, synth, context)?;
+                let else_cnf =
+                    self.value_to_cnf(else_value, negate, stack, next_var_id, synth, context)?;
                 Ok(CNF::cnf_if(cond_lit, then_cnf, else_cnf))
             }
             AcornValue::Application(app) => {
@@ -407,7 +442,15 @@ impl NormalizerView<'_> {
                 for arg in &app.args {
                     arg_exts.push(self.arg_to_extended_term(arg, stack, next_var_id, synth)?);
                 }
-                self.apply_to_cnf(&app.function, arg_exts, negate, stack, next_var_id, synth)
+                self.apply_to_cnf(
+                    &app.function,
+                    arg_exts,
+                    negate,
+                    stack,
+                    next_var_id,
+                    synth,
+                    context,
+                )
             }
             AcornValue::Variable(..) | AcornValue::Constant(..) | AcornValue::Lambda(..) => {
                 let term = self
@@ -428,6 +471,7 @@ impl NormalizerView<'_> {
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
+        context: &mut LocalContext,
     ) -> Result<CNF, String> {
         if let AcornValue::Lambda(arg_types, return_value) = function {
             let mut arg_terms = vec![];
@@ -440,7 +484,14 @@ impl NormalizerView<'_> {
                 let type_id = self.type_store().get_type_id(arg_type)?;
                 stack.push(TermBinding::Bound(arg, type_id));
             }
-            let answer = self.value_to_cnf(&return_value, negate, stack, next_var_id, synthesized);
+            let answer = self.value_to_cnf(
+                &return_value,
+                negate,
+                stack,
+                next_var_id,
+                synthesized,
+                context,
+            );
             stack.truncate(stack.len() - num_args);
             return answer;
         }
@@ -467,14 +518,18 @@ impl NormalizerView<'_> {
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
+        context: &mut LocalContext,
     ) -> Result<CNF, String> {
         for quant in quants {
             let type_id = self.type_store().get_type_id(quant)?;
-            let var = Term::new_variable(type_id, *next_var_id);
+            let var_id = *next_var_id;
+            context.set_var_type(var_id as usize, type_id);
+            let var = Term::new_variable(type_id, var_id);
             *next_var_id += 1;
             stack.push(TermBinding::Free(var, type_id));
         }
-        let result = self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized)?;
+        let result =
+            self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized, context)?;
         for _ in quants {
             stack.pop();
         }
@@ -489,15 +544,15 @@ impl NormalizerView<'_> {
         skolem_types: &[AcornType],
         stack: &Vec<TermBinding>,
         synthesized: &mut Vec<AtomId>,
+        context: &LocalContext,
     ) -> Result<Vec<Term>, String> {
         let mut args = vec![];
         let mut arg_types = vec![];
         let mut seen_vars = std::collections::HashSet::new();
 
         for binding in stack.iter() {
-            // Use collect_vars_embedded because the terms may contain variables
-            // with IDs that don't match the stack position
-            for (var_id, type_id) in binding.term().collect_vars_embedded() {
+            // Use collect_vars with the context to get variable types
+            for (var_id, type_id) in binding.term().collect_vars(context) {
                 if seen_vars.insert(var_id) {
                     let var_term = Term::new_variable(type_id, var_id);
                     args.push(var_term);
@@ -533,9 +588,14 @@ impl NormalizerView<'_> {
         skolem_type: &AcornType,
         stack: &Vec<TermBinding>,
         synthesized: &mut Vec<AtomId>,
+        context: &LocalContext,
     ) -> Result<Term, String> {
-        let mut terms =
-            self.make_skolem_terms(std::slice::from_ref(skolem_type), stack, synthesized)?;
+        let mut terms = self.make_skolem_terms(
+            std::slice::from_ref(skolem_type),
+            stack,
+            synthesized,
+            context,
+        )?;
         Ok(terms.pop().unwrap())
     }
 
@@ -549,14 +609,16 @@ impl NormalizerView<'_> {
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
+        context: &mut LocalContext,
     ) -> Result<CNF, String> {
-        let skolem_terms = self.make_skolem_terms(quants, stack, synthesized)?;
+        let skolem_terms = self.make_skolem_terms(quants, stack, synthesized, context)?;
         let len = skolem_terms.len();
         for (skolem_term, quant) in skolem_terms.into_iter().zip(quants.iter()) {
             let type_id = self.type_store().get_type_id(quant)?;
             stack.push(TermBinding::Bound(skolem_term, type_id));
         }
-        let result = self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized)?;
+        let result =
+            self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized, context)?;
         for _ in 0..len {
             stack.pop();
         }
@@ -574,9 +636,18 @@ impl NormalizerView<'_> {
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
+        context: &mut LocalContext,
     ) -> Result<CNF, String> {
-        let left = self.value_to_cnf(left, negate_left, stack, next_var_id, synthesized)?;
-        let right = self.value_to_cnf(right, negate_right, stack, next_var_id, synthesized)?;
+        let left =
+            self.value_to_cnf(left, negate_left, stack, next_var_id, synthesized, context)?;
+        let right = self.value_to_cnf(
+            right,
+            negate_right,
+            stack,
+            next_var_id,
+            synthesized,
+            context,
+        )?;
         Ok(left.and(right))
     }
 
@@ -591,9 +662,18 @@ impl NormalizerView<'_> {
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
+        context: &mut LocalContext,
     ) -> Result<CNF, String> {
-        let left = self.value_to_cnf(left, negate_left, stack, next_var_id, synthesized)?;
-        let right = self.value_to_cnf(right, negate_right, stack, next_var_id, synthesized)?;
+        let left =
+            self.value_to_cnf(left, negate_left, stack, next_var_id, synthesized, context)?;
+        let right = self.value_to_cnf(
+            right,
+            negate_right,
+            stack,
+            next_var_id,
+            synthesized,
+            context,
+        )?;
         Ok(left.or(right))
     }
 
@@ -607,6 +687,7 @@ impl NormalizerView<'_> {
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
+        context: &mut LocalContext,
     ) -> Result<CNF, String> {
         if let AcornValue::Match(scrutinee, cases) = right {
             // TODO: don't clone values here
@@ -625,7 +706,7 @@ impl NormalizerView<'_> {
                 let branch = AcornValue::implies(condition, conclusion);
                 let conjunct_value = AcornValue::forall(vars.clone(), branch);
                 let conjunct_cnf =
-                    self.value_to_cnf(&conjunct_value, false, stack, next_var_id, synth)?;
+                    self.value_to_cnf(&conjunct_value, false, stack, next_var_id, synth, context)?;
                 answer = answer.and(conjunct_cnf);
             }
             return Ok(answer);
@@ -645,16 +726,38 @@ impl NormalizerView<'_> {
                 if negate {
                     // Boolean functional inequality.
                     // Create skolem terms for each argument
-                    let arg_terms = self.make_skolem_terms(&app.arg_types, stack, synth)?;
+                    let arg_terms =
+                        self.make_skolem_terms(&app.arg_types, stack, synth, context)?;
                     let args: Vec<_> = arg_terms.into_iter().map(ExtendedTerm::Term).collect();
-                    let left_pos =
-                        self.apply_to_cnf(left, args.clone(), false, stack, next_var_id, synth)?;
-                    let left_neg =
-                        self.apply_to_cnf(left, args.clone(), true, stack, next_var_id, synth)?;
-                    let right_pos =
-                        self.apply_to_cnf(right, args.clone(), false, stack, next_var_id, synth)?;
+                    let left_pos = self.apply_to_cnf(
+                        left,
+                        args.clone(),
+                        false,
+                        stack,
+                        next_var_id,
+                        synth,
+                        context,
+                    )?;
+                    let left_neg = self.apply_to_cnf(
+                        left,
+                        args.clone(),
+                        true,
+                        stack,
+                        next_var_id,
+                        synth,
+                        context,
+                    )?;
+                    let right_pos = self.apply_to_cnf(
+                        right,
+                        args.clone(),
+                        false,
+                        stack,
+                        next_var_id,
+                        synth,
+                        context,
+                    )?;
                     let right_neg =
-                        self.apply_to_cnf(right, args, true, stack, next_var_id, synth)?;
+                        self.apply_to_cnf(right, args, true, stack, next_var_id, synth, context)?;
 
                     if let Some((left_term, left_sign)) = left_pos.match_negated(&left_neg) {
                         if let Some((right_term, right_sign)) = right_pos.match_negated(&right_neg)
@@ -676,17 +779,41 @@ impl NormalizerView<'_> {
                 // Create new free variables for each argument
                 let mut args = vec![];
                 for arg_type in &arg_types {
-                    let var = Term::new_variable(*arg_type, *next_var_id);
+                    let var_id = *next_var_id;
+                    context.set_var_type(var_id as usize, *arg_type);
+                    let var = Term::new_variable(*arg_type, var_id);
                     *next_var_id += 1;
                     args.push(ExtendedTerm::Term(var));
                 }
-                let left_pos =
-                    self.apply_to_cnf(left, args.clone(), false, stack, next_var_id, synth)?;
-                let left_neg =
-                    self.apply_to_cnf(left, args.clone(), true, stack, next_var_id, synth)?;
-                let right_pos =
-                    self.apply_to_cnf(right, args.clone(), false, stack, next_var_id, synth)?;
-                let right_neg = self.apply_to_cnf(right, args, true, stack, next_var_id, synth)?;
+                let left_pos = self.apply_to_cnf(
+                    left,
+                    args.clone(),
+                    false,
+                    stack,
+                    next_var_id,
+                    synth,
+                    context,
+                )?;
+                let left_neg = self.apply_to_cnf(
+                    left,
+                    args.clone(),
+                    true,
+                    stack,
+                    next_var_id,
+                    synth,
+                    context,
+                )?;
+                let right_pos = self.apply_to_cnf(
+                    right,
+                    args.clone(),
+                    false,
+                    stack,
+                    next_var_id,
+                    synth,
+                    context,
+                )?;
+                let right_neg =
+                    self.apply_to_cnf(right, args, true, stack, next_var_id, synth, context)?;
 
                 if let Some((left_term, left_sign)) = left_pos.match_negated(&left_neg) {
                     if let Some((right_term, right_sign)) = right_pos.match_negated(&right_neg) {
@@ -708,7 +835,7 @@ impl NormalizerView<'_> {
             if negate {
                 // Functional inequality.
                 // Create skolem terms for each argument
-                let args = self.make_skolem_terms(&app.arg_types, stack, synth)?;
+                let args = self.make_skolem_terms(&app.arg_types, stack, synth, context)?;
                 // Apply the skolem terms to both sides
                 let left = left.apply(&args, result_type);
                 let right = right.apply(&args, result_type);
@@ -719,7 +846,9 @@ impl NormalizerView<'_> {
             // Create new free variables for each argument
             let mut args = vec![];
             for arg_type in &arg_types {
-                let var = Term::new_variable(*arg_type, *next_var_id);
+                let var_id = *next_var_id;
+                context.set_var_type(var_id as usize, *arg_type);
+                let var = Term::new_variable(*arg_type, var_id);
                 *next_var_id += 1;
                 args.push(var);
             }
@@ -747,15 +876,26 @@ impl NormalizerView<'_> {
             // variables in these calls, or we need to globally deduplicate at synthesis time.
             if negate {
                 // Boolean inequality.
-                let some = self.or_to_cnf(left, right, true, true, stack, next_var_id, synth)?;
-                let not_both =
-                    self.or_to_cnf(left, right, false, false, stack, next_var_id, synth)?;
+                let some =
+                    self.or_to_cnf(left, right, true, true, stack, next_var_id, synth, context)?;
+                let not_both = self.or_to_cnf(
+                    left,
+                    right,
+                    false,
+                    false,
+                    stack,
+                    next_var_id,
+                    synth,
+                    context,
+                )?;
                 return Ok(some.and(not_both));
             }
 
             // Boolean equality.
-            let l_imp_r = self.or_to_cnf(left, right, true, false, stack, next_var_id, synth)?;
-            let r_imp_l = self.or_to_cnf(left, right, false, true, stack, next_var_id, synth)?;
+            let l_imp_r =
+                self.or_to_cnf(left, right, true, false, stack, next_var_id, synth, context)?;
+            let r_imp_l =
+                self.or_to_cnf(left, right, false, true, stack, next_var_id, synth, context)?;
             return Ok(l_imp_r.and(r_imp_l));
         }
 
@@ -987,8 +1127,11 @@ impl NormalizerView<'_> {
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
     ) -> Result<Term, String> {
+        // Create the context from the stack to use for lookups
+        let stack_context = build_context_from_stack(stack);
+
         // Create a tentative skolem term with the value's type
-        let skolem_term = self.make_skolem_term(value_type, stack, synth)?;
+        let skolem_term = self.make_skolem_term(value_type, stack, synth, &stack_context)?;
         let skolem_id = if let Atom::Symbol(Symbol::Synthetic(id)) = *skolem_term.get_head_atom() {
             id
         } else {
@@ -996,14 +1139,19 @@ impl NormalizerView<'_> {
         };
 
         // Create the definition for this synthetic term
-        let stack_context = build_context_from_stack(stack);
         let skolem_value =
             self.as_ref()
                 .denormalize_term(&skolem_term, &stack_context, &mut None, None);
-        let definition_cnf =
-            self.eq_to_cnf(&skolem_value, value, false, stack, next_var_id, synth)?;
-        // TODO: value_to_cnf should return (CNF, LocalContext)
-        let local_context = LocalContext::empty(); // Temporary placeholder
+        let mut local_context = LocalContext::empty();
+        let definition_cnf = self.eq_to_cnf(
+            &skolem_value,
+            value,
+            false,
+            stack,
+            next_var_id,
+            synth,
+            &mut local_context,
+        )?;
         let clauses = definition_cnf.clone().into_clauses(&local_context);
 
         // Check if an equivalent definition already exists
@@ -1070,6 +1218,7 @@ impl NormalizerView<'_> {
         cnf: CNF,
         stack: &Vec<TermBinding>,
         synth: &mut Vec<AtomId>,
+        context: &LocalContext,
     ) -> Result<Literal, String> {
         use crate::elaborator::acorn_type::AcornType;
         use crate::kernel::atom::Atom;
@@ -1081,9 +1230,8 @@ impl NormalizerView<'_> {
         let mut seen_vars = std::collections::HashSet::new();
 
         for binding in stack.iter() {
-            // Use collect_vars_embedded because the terms may contain variables
-            // with IDs that don't match the stack position
-            for (var_id, type_id) in binding.term().collect_vars_embedded() {
+            // Use collect_vars with the context to get variable types
+            for (var_id, type_id) in binding.term().collect_vars(context) {
                 if seen_vars.insert(var_id) {
                     let var_term = Term::new_variable(type_id, var_id);
                     args.push(var_term);
@@ -1261,20 +1409,33 @@ impl NormalizerView<'_> {
     ) -> Result<ExtendedTerm, String> {
         match value {
             AcornValue::IfThenElse(cond_val, then_value, else_value) => {
-                let cond_cnf = self.value_to_cnf(cond_val, false, stack, next_var_id, synth)?;
+                // Build context from stack for variable type lookups
+                let stack_context = build_context_from_stack(stack);
+
+                // Note: We create a local context here for the condition CNF conversion.
+                // This is not ideal - in the future, value_to_extended_term should also
+                // take a context parameter.
+                let mut cond_context = LocalContext::empty();
+                let cond_cnf = self.value_to_cnf(
+                    cond_val,
+                    false,
+                    stack,
+                    next_var_id,
+                    synth,
+                    &mut cond_context,
+                )?;
                 let cond_lit = if cond_cnf.is_literal() {
                     cond_cnf.to_literal().unwrap()
                 } else {
                     // For non-literal conditions, synthesize a new boolean atom
-                    self.synthesize_literal_from_cnf(cond_cnf, stack, synth)?
+                    self.synthesize_literal_from_cnf(cond_cnf, stack, synth, &stack_context)?
                 };
                 let then_ext =
                     self.value_to_extended_term(then_value, stack, next_var_id, synth)?;
-                let local_context = build_context_from_stack(stack);
-                let then_branch = self.extended_term_to_term(then_ext, &local_context, synth)?;
+                let then_branch = self.extended_term_to_term(then_ext, &stack_context, synth)?;
                 let else_ext =
                     self.value_to_extended_term(else_value, stack, next_var_id, synth)?;
-                let else_branch = self.extended_term_to_term(else_ext, &local_context, synth)?;
+                let else_branch = self.extended_term_to_term(else_ext, &stack_context, synth)?;
                 Ok(ExtendedTerm::If(cond_lit, then_branch, else_branch))
             }
             AcornValue::Application(app) => {
@@ -1314,18 +1475,15 @@ impl NormalizerView<'_> {
             AcornValue::Try(_, _) => Err("try operator not yet implemented".to_string()),
             AcornValue::Lambda(arg_types, body) => {
                 // Create variable terms for each lambda argument
-                // Use stack.len() as the variable ID to ensure it matches the AcornValue's stack-position indexing
+                // Use next_var_id to assign unique variable IDs
                 let mut args = vec![];
                 for arg_type in arg_types {
                     let type_id = self.type_store().get_type_id(arg_type)?;
-                    let var_id = stack.len() as AtomId;
+                    let var_id = *next_var_id;
+                    *next_var_id += 1;
                     let var = Term::new_variable(type_id, var_id);
                     args.push((var_id, type_id));
                     stack.push(TermBinding::Free(var, type_id));
-                    // Update next_var_id to be at least one past this variable
-                    if var_id >= *next_var_id {
-                        *next_var_id = var_id + 1;
-                    }
                 }
 
                 // Evaluate the body with the lambda arguments on the stack
