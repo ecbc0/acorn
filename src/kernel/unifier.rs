@@ -852,10 +852,15 @@ mod tests {
         let s = Term::parse("x0(x0(x1))");
         let u_subterm = Term::parse("c1(x0(x1))");
         let t = Term::parse("c2(x0, x1, c1(c1(c0)))");
-        let pm_clause = Clause::parse("c2(x0, x1, c1(c1(c0))) = x0(x0(x1))");
+        let pm_clause = Clause::parse(
+            "c2(x0, x1, c1(c1(c0))) = x0(x0(x1))",
+            LocalContext::empty_ref(),
+        );
         let target_path = &[0];
-        let resolution_clause =
-            Clause::parse("c1(c1(x0(x1))) != c1(x2(x3)) or c1(x0(x1)) = x2(x3)");
+        let resolution_clause = Clause::parse(
+            "c1(c1(x0(x1))) != c1(x2(x3)) or c1(x0(x1)) = x2(x3)",
+            LocalContext::empty_ref(),
+        );
         let ctx = test_ctx();
         let mut u = test_unifier(&ctx);
         u.assert_unify(Scope::LEFT, &s, Scope::RIGHT, &u_subterm);
@@ -956,10 +961,15 @@ mod tests {
         let s = Term::parse("x0(x0(x1))");
         let u_subterm = Term::parse("c1(x0(x1))");
         let t = Term::parse("c2(x0, x1, c1(c1(c0)))");
-        let pm_clause = Clause::parse("c2(x0, x1, c1(c1(c0))) = x0(x0(x1))");
+        let pm_clause = Clause::parse(
+            "c2(x0, x1, c1(c1(c0))) = x0(x0(x1))",
+            LocalContext::empty_ref(),
+        );
         let target_path = &[0];
-        let resolution_clause =
-            Clause::parse("c1(c1(x0(x1))) != c1(x2(x3)) or c1(x0(x1)) = x2(x3)");
+        let resolution_clause = Clause::parse(
+            "c1(c1(x0(x1))) != c1(x2(x3)) or c1(x0(x1)) = x2(x3)",
+            LocalContext::empty_ref(),
+        );
         let ctx = test_ctx();
         let mut u = test_unifier(&ctx);
         u.assert_unify(Scope::LEFT, &s, Scope::RIGHT, &u_subterm);
@@ -1018,7 +1028,7 @@ mod tests {
         let ctx = test_ctx();
         let mut initial_map = VariableMap::new();
         initial_map.set(0, Term::parse("s0(x0, x1, s4)"));
-        let output_context = initial_map.build_output_context();
+        let output_context = initial_map.build_output_context(LocalContext::test_empty_ref());
         let (mut unifier, scope1) = Unifier::with_map(initial_map, &ctx, output_context);
         // Set contexts for all scopes
         unifier.set_input_context(scope1, LocalContext::test_empty_ref());

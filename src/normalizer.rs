@@ -323,7 +323,7 @@ impl NormalizerView<'_> {
         )?;
         for mut literals in cnf.into_iter() {
             literals.sort();
-            output.push(Clause::from_literals_unnormalized(literals));
+            output.push(Clause::from_literals_unnormalized(literals, &context));
         }
         Ok(output)
     }
@@ -1269,7 +1269,7 @@ impl NormalizerView<'_> {
         for clause_lits in cnf.clone().into_iter() {
             let mut new_clause_lits = vec![synth_lit.negate()];
             new_clause_lits.extend(clause_lits);
-            defining_clauses.push(Clause::new_without_context(new_clause_lits));
+            defining_clauses.push(Clause::new(new_clause_lits, context));
         }
 
         // For (not C or s):
@@ -1278,7 +1278,7 @@ impl NormalizerView<'_> {
         for clause_lits in neg_cnf.into_iter() {
             let mut new_clause_lits = clause_lits;
             new_clause_lits.push(synth_lit.clone());
-            defining_clauses.push(Clause::new_without_context(new_clause_lits));
+            defining_clauses.push(Clause::new(new_clause_lits, context));
         }
 
         // Add the definition
@@ -1380,14 +1380,11 @@ impl NormalizerView<'_> {
 
                 // First clause: not cond or synth_term = then_term
                 let then_eq = Literal::new(true, synth_term.clone(), then_term);
-                defining_clauses.push(Clause::new_without_context(vec![
-                    cond_lit.negate(),
-                    then_eq,
-                ]));
+                defining_clauses.push(Clause::new(vec![cond_lit.negate(), then_eq], local_context));
 
                 // Second clause: cond or synth_term = else_term
                 let else_eq = Literal::new(true, synth_term.clone(), else_term);
-                defining_clauses.push(Clause::new_without_context(vec![cond_lit.clone(), else_eq]));
+                defining_clauses.push(Clause::new(vec![cond_lit.clone(), else_eq], local_context));
 
                 // Add the definition
                 self.as_mut()?
@@ -1606,7 +1603,8 @@ impl Normalizer {
                 let left_term = view.force_simple_value_to_term(left, &vec![])?;
                 let right_term = view.force_simple_value_to_term(right, &vec![])?;
                 let literal = Literal::new(true, left_term, right_term);
-                let clause = Clause::new_without_context(vec![literal]);
+                // Empty context is fine since there are no variables (empty stack)
+                let clause = Clause::new(vec![literal], LocalContext::empty_ref());
                 clauses.push(clause);
             }
         }

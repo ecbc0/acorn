@@ -60,7 +60,7 @@ impl TermComponent {
             *term.get_head_atom(),
         ));
         for arg in term.args() {
-            TermComponent::flatten_next(arg, output, local_context, kernel_context);
+            TermComponent::flatten_next(&arg, output, local_context, kernel_context);
         }
 
         // Now we can fill in the real size
@@ -451,7 +451,7 @@ fn key_from_term_helper(
         .append_to(key);
         Edge::Atom(*term.get_head_atom()).append_to(key);
         for arg in term.args() {
-            key_from_term_helper(arg, key, local_context, kernel_context);
+            key_from_term_helper(&arg, key, local_context, kernel_context);
         }
     }
 }

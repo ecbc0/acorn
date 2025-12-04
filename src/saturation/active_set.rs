@@ -345,7 +345,7 @@ impl ActiveSet {
                     // We need to find all the possible rewrites for it.
                     // Note: concrete terms (no variables), so empty local context is safe.
                     let rewrites = self.rewrite_tree.get_rewrites(
-                        u_subterm,
+                        &u_subterm,
                         0,
                         LocalContext::empty_ref(),
                         kernel_context,
@@ -380,7 +380,7 @@ impl ActiveSet {
                     self.subterm_map.insert(u_subterm.clone(), id);
                     // Subterms are concrete (no variables), so empty local context is safe
                     self.subterm_unifier.insert(
-                        u_subterm,
+                        &u_subterm,
                         id,
                         LocalContext::empty_ref(),
                         kernel_context,
@@ -1099,7 +1099,10 @@ mod tests {
     fn test_mutually_recursive_equality_resolution() {
         // This is a bug we ran into. It shouldn't work
         let ctx = KernelContext::test_with_constants(10, 10);
-        let clause = Clause::parse("c0(x0, c0(x1, c1(x2))) != c0(c0(x2, x1), x0)");
+        let clause = Clause::parse(
+            "c0(x0, c0(x1, c1(x2))) != c0(c0(x2, x1), x0)",
+            LocalContext::empty_ref(),
+        );
         let mock_step = ProofStep::mock_from_clause(clause);
         assert!(ActiveSet::equality_resolution(0, &mock_step, &ctx).is_empty());
     }
@@ -1113,7 +1116,7 @@ mod tests {
         ]);
         let mock_step = ProofStep::mock_from_clause(old_clause);
         let proof_steps = ActiveSet::equality_factoring(0, &mock_step, &kernel_context);
-        let expected = Clause::parse("c0 = x0");
+        let expected = Clause::parse("c0 = x0", LocalContext::empty_ref());
         for ps in &proof_steps {
             if ps.clause == expected {
                 return;
@@ -1150,7 +1153,10 @@ mod tests {
         set.activate(step, &ctx);
 
         // Trichotomy
-        let clause = Clause::parse("c1(x0, x1) or c1(x1, x0) or x0 = x1");
+        let clause = Clause::parse(
+            "c1(x0, x1) or c1(x1, x0) or x0 = x1",
+            LocalContext::empty_ref(),
+        );
         let mock_step = ProofStep::mock_from_clause(clause);
         let output = ActiveSet::equality_factoring(0, &mock_step, &ctx);
         assert_eq!(output[0].clause.to_string(), "c1(x0, x0) or x0 = x0");

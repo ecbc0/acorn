@@ -249,7 +249,7 @@ impl<'a> Proof<'a> {
                             concrete_step.var_maps.insert(var_map);
                         }
                         std::collections::hash_map::Entry::Vacant(entry) => {
-                            let generic = Clause::new_without_context(info.literals.clone());
+                            let generic = Clause::new(info.literals.clone(), &info.context);
                             let concrete_step = ConcreteStep::new(generic, var_map);
                             entry.insert(concrete_step);
                         }
@@ -295,17 +295,18 @@ impl<'a> Proof<'a> {
                 };
                 let rewritten_subterm = rewritten_term.get_term_at_path(&info.path).unwrap();
                 for conc_map in var_maps {
-                    let output_context = conc_map.build_output_context();
+                    let step_context = step.clause.get_local_context();
+                    let output_context = conc_map.build_output_context(step_context);
                     let (mut unifier, conc_scope) = Unifier::with_map(
                         conc_map,
                         self.normalizer.kernel_context(),
                         output_context,
                     );
-                    unifier.set_input_context(conc_scope, step.clause.get_local_context());
+                    unifier.set_input_context(conc_scope, step_context);
                     let pattern_scope = unifier.add_scope();
                     unifier.set_input_context(pattern_scope, pattern_clause.get_local_context());
-                    assert!(unifier.unify(pattern_scope, from_pat, conc_scope, target_subterm));
-                    assert!(unifier.unify(pattern_scope, to_pat, conc_scope, rewritten_subterm));
+                    assert!(unifier.unify(pattern_scope, from_pat, conc_scope, &target_subterm));
+                    assert!(unifier.unify(pattern_scope, to_pat, conc_scope, &rewritten_subterm));
 
                     // Report the concrete pattern
                     let map = unifier.into_one_map(pattern_scope);
@@ -333,7 +334,7 @@ impl<'a> Proof<'a> {
                 assert!(base_clause.literals.len() == info.literals.len());
 
                 for conc_map in var_maps {
-                    let output_context = conc_map.build_output_context();
+                    let output_context = conc_map.build_output_context(&info.context);
                     let (mut unifier, conc_scope) = Unifier::with_map(
                         conc_map,
                         self.normalizer.kernel_context(),
@@ -380,7 +381,7 @@ impl<'a> Proof<'a> {
                 assert!(base_clause.literals.len() == info.literals.len() + 1);
 
                 for conc_map in var_maps {
-                    let output_context = conc_map.build_output_context();
+                    let output_context = conc_map.build_output_context(&info.context);
                     let (mut unifier, conc_scope) = Unifier::with_map(
                         conc_map,
                         self.normalizer.kernel_context(),
@@ -434,7 +435,7 @@ impl<'a> Proof<'a> {
                 assert!(base_clause.literals.len() == info.literals.len());
 
                 for conc_map in var_maps {
-                    let output_context = conc_map.build_output_context();
+                    let output_context = conc_map.build_output_context(&info.context);
                     let (mut unifier, conc_scope) = Unifier::with_map(
                         conc_map,
                         self.normalizer.kernel_context(),
@@ -495,7 +496,7 @@ impl<'a> Proof<'a> {
                 assert!(base_clause.literals.len() + 1 == info.literals.len());
 
                 for conc_map in var_maps {
-                    let output_context = conc_map.build_output_context();
+                    let output_context = conc_map.build_output_context(&info.context);
                     let (mut unifier, conc_scope) = Unifier::with_map(
                         conc_map,
                         self.normalizer.kernel_context(),
@@ -595,7 +596,7 @@ impl<'a> Proof<'a> {
     ) -> Result<HashSet<VariableMap>, Error> {
         // The unifier will figure out the concrete clauses.
         // The base and conclusion get their own scope.
-        let output_context = conc_map.build_output_context();
+        let output_context = conc_map.build_output_context(conclusion.get_local_context());
         let (mut unifier, conc_scope) =
             Unifier::with_map(conc_map, self.normalizer.kernel_context(), output_context);
         unifier.set_input_context(conc_scope, conclusion.get_local_context());

@@ -139,7 +139,12 @@ impl FatClause {
     /// Creates a clause from literals without normalizing.
     /// The context is built from the literals.
     /// Use this when you need to skip normalization (e.g., for permutation generation).
-    pub fn from_literals_unnormalized(literals: Vec<FatLiteral>) -> FatClause {
+    /// The _context parameter is ignored for FatClause (context is built from literals),
+    /// but is included for API compatibility with ThinClause.
+    pub fn from_literals_unnormalized(
+        literals: Vec<FatLiteral>,
+        _context: &LocalContext,
+    ) -> FatClause {
         let context = build_context_from_literals(&literals);
         FatClause { literals, context }
     }
@@ -330,7 +335,10 @@ impl FatClause {
         FatClause::new_without_context(vec![])
     }
 
-    pub fn parse(s: &str) -> FatClause {
+    /// Parse a clause from a string representation.
+    /// The _context parameter is ignored for FatClause (context is built from literals),
+    /// but is included for API compatibility with ThinClause.
+    pub fn parse(s: &str, _context: &LocalContext) -> FatClause {
         FatClause::new_without_context(
             s.split(" or ")
                 .map(|x| FatLiteral::parse(x))

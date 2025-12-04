@@ -34,12 +34,38 @@ impl VariableMap {
     }
 
     /// Builds a LocalContext from all the variables in the replacement terms.
-    /// Uses embedded types from FatTerm.
-    pub fn build_output_context(&self) -> LocalContext {
+    /// For FatTerm, we use embedded types. For ThinTerm, we use input_context.
+    /// The input_context parameter is ignored for FatTerm but required for ThinTerm.
+    #[cfg(not(feature = "thin"))]
+    pub fn build_output_context(&self, _input_context: &LocalContext) -> LocalContext {
         let mut var_types: Vec<Option<TypeId>> = vec![];
         for opt_term in &self.map {
             if let Some(term) = opt_term {
                 for (var_id, type_id) in term.collect_vars_embedded() {
+                    let idx = var_id as usize;
+                    if idx >= var_types.len() {
+                        var_types.resize(idx + 1, None);
+                    }
+                    var_types[idx] = Some(type_id);
+                }
+            }
+        }
+        LocalContext::new(
+            var_types
+                .into_iter()
+                .map(|t| t.unwrap_or_default())
+                .collect(),
+        )
+    }
+
+    /// Builds a LocalContext from all the variables in the replacement terms.
+    /// For ThinTerm, we need the input_context to look up variable types.
+    #[cfg(feature = "thin")]
+    pub fn build_output_context(&self, input_context: &LocalContext) -> LocalContext {
+        let mut var_types: Vec<Option<TypeId>> = vec![];
+        for opt_term in &self.map {
+            if let Some(term) = opt_term {
+                for (var_id, type_id) in term.collect_vars(input_context) {
                     let idx = var_id as usize;
                     if idx >= var_types.len() {
                         var_types.resize(idx + 1, None);
@@ -217,7 +243,7 @@ impl VariableMap {
 
         // Recurse on the arguments
         for arg in term.args() {
-            args.push(self.specialize_term(arg, input_context, output_context, kernel_context));
+            args.push(self.specialize_term(&arg, input_context, output_context, kernel_context));
         }
 
         Term::new(term_type, head_type, head, args)
@@ -249,13 +275,13 @@ impl VariableMap {
     /// Unmapped variables are kept as-is.
     pub fn specialize_clause(&self, clause: &Clause, kernel_context: &KernelContext) -> Clause {
         let input_context = clause.get_local_context();
-        let output_context = self.build_output_context();
+        let output_context = self.build_output_context(input_context);
         let literals = clause
             .literals
             .iter()
             .map(|lit| self.specialize_literal(lit, input_context, &output_context, kernel_context))
             .collect();
-        Clause::from_literals_unnormalized(literals)
+        Clause::from_literals_unnormalized(literals, &output_context)
     }
 
     pub fn output_has_any_variable(&self) -> bool {

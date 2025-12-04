@@ -668,7 +668,7 @@ impl ProofStep {
 
     /// Construct a ProofStep with fake heuristic data for testing
     pub fn mock(s: &str) -> ProofStep {
-        let clause = Clause::parse(s);
+        let clause = Clause::parse(s, LocalContext::empty_ref());
         Self::mock_from_clause(clause)
     }
 

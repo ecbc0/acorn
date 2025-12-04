@@ -16,6 +16,8 @@ use crate::generalization_set::GeneralizationSet;
 use crate::kernel::aliases::Clause;
 use crate::kernel::inference;
 use crate::kernel::kernel_context::KernelContext;
+#[cfg(test)]
+use crate::kernel::local_context::LocalContext;
 use crate::normalizer::{Normalizer, NormalizerView};
 use crate::project::Project;
 use crate::syntax::expression::Declaration;
@@ -202,8 +204,12 @@ impl Checker {
             }
 
             if let Some(extensionality) = clause.find_extensionality(kernel_context) {
-                let clause = Clause::new_without_context(extensionality);
-                self.insert_clause(&clause, StepReason::Extensionality(step_id), kernel_context);
+                let ext_clause = Clause::new(extensionality, clause.get_local_context());
+                self.insert_clause(
+                    &ext_clause,
+                    StepReason::Extensionality(step_id),
+                    kernel_context,
+                );
             }
         } else {
             // The clause is concrete.
@@ -641,14 +647,14 @@ impl TestChecker {
         let context = KernelContext::test_with_constants(10, 10);
         let mut checker = Checker::new(None);
         for clause_str in clauses {
-            let clause = Clause::parse(clause_str);
+            let clause = Clause::parse(clause_str, LocalContext::empty_ref());
             checker.insert_clause(&clause, StepReason::Testing, &context);
         }
         TestChecker { checker, context }
     }
 
     fn check_clause_str(&mut self, s: &str) {
-        let clause = Clause::parse(s);
+        let clause = Clause::parse(s, LocalContext::empty_ref());
         if !self.checker.check_clause(&clause, &self.context).is_some() {
             panic!("check_clause_str(\"{}\") failed", s);
         }

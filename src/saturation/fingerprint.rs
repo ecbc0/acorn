@@ -29,26 +29,34 @@ impl FingerprintComponent {
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> FingerprintComponent {
-        let mut current_term = term;
-        for &i in *path {
-            if i >= current_term.args().len() {
-                if current_term.atomic_variable().is_some() {
-                    return FingerprintComponent::Below;
+        // Use get_term_at_path to traverse to the subterm
+        match term.get_term_at_path(*path) {
+            Some(subterm) => match subterm.get_head_atom() {
+                Atom::Variable(_) => FingerprintComponent::Something(
+                    subterm.get_term_type_with_context(local_context, kernel_context),
+                    Atom::Variable(0),
+                ),
+                a => FingerprintComponent::Something(
+                    subterm.get_term_type_with_context(local_context, kernel_context),
+                    *a,
+                ),
+            },
+            None => {
+                // Path doesn't exist - check if we stopped at a variable
+                // Need to traverse as far as we can and check
+                let mut current = term.clone();
+                for &i in *path {
+                    if current.atomic_variable().is_some() {
+                        return FingerprintComponent::Below;
+                    }
+                    match current.get_term_at_path(&[i]) {
+                        Some(next) => current = next.clone(),
+                        None => return FingerprintComponent::Nothing,
+                    }
                 }
-                return FingerprintComponent::Nothing;
+                // Should not reach here since get_term_at_path returned None
+                FingerprintComponent::Nothing
             }
-            current_term = &current_term.args()[i];
-        }
-
-        match current_term.get_head_atom() {
-            Atom::Variable(_) => FingerprintComponent::Something(
-                current_term.get_term_type_with_context(local_context, kernel_context),
-                Atom::Variable(0),
-            ),
-            a => FingerprintComponent::Something(
-                current_term.get_term_type_with_context(local_context, kernel_context),
-                *a,
-            ),
         }
     }
 

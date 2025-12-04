@@ -1066,7 +1066,8 @@ impl ThinTerm {
     /// Build a term from a spine (function + arguments).
     /// If the spine has one element, returns just that element.
     /// Otherwise, treats the first element as the function and the rest as arguments.
-    pub fn from_spine(mut spine: Vec<ThinTerm>) -> ThinTerm {
+    /// The term_type parameter is ignored for ThinTerm (it's used by FatTerm).
+    pub fn from_spine(mut spine: Vec<ThinTerm>, _term_type: TypeId) -> ThinTerm {
         if spine.is_empty() {
             panic!("from_spine called with empty spine");
         }
@@ -1100,7 +1101,8 @@ impl ThinTerm {
     }
 
     /// Apply additional arguments to this term.
-    pub fn apply(&self, args: &[ThinTerm]) -> ThinTerm {
+    /// The result_type parameter is ignored for ThinTerm (it's used by FatTerm).
+    pub fn apply(&self, args: &[ThinTerm], _result_type: TypeId) -> ThinTerm {
         if args.is_empty() {
             return self.clone();
         }

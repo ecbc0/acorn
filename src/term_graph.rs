@@ -327,7 +327,7 @@ impl TermGraph {
         // Look up the args
         let mut arg_ids = Vec::new();
         for arg in term.args() {
-            arg_ids.push(self.get_term_id(arg)?);
+            arg_ids.push(self.get_term_id(&arg)?);
         }
 
         let compound_key = Decomposition::Compound(head_id, arg_ids);
@@ -491,7 +491,7 @@ impl TermGraph {
         let mut arg_term_ids = vec![];
         let mut arg_group_ids = vec![];
         for arg in term.args() {
-            let arg_term_id = self.insert_term(arg, kernel_context);
+            let arg_term_id = self.insert_term(&arg, kernel_context);
             arg_term_ids.push(arg_term_id);
             let arg_group_id = self.get_group_id(arg_term_id);
             arg_group_ids.push(arg_group_id);
@@ -1409,7 +1409,7 @@ impl TestGraph {
     }
 
     fn insert_clause_str(&mut self, s: &str, step: StepId) {
-        let clause = Clause::parse(s);
+        let clause = Clause::parse(s, LocalContext::empty_ref());
         self.graph.insert_clause(&clause, step, &self.context);
         self.graph.validate();
     }
@@ -1433,7 +1433,7 @@ impl TestGraph {
     }
 
     fn check_clause_str(&mut self, s: &str) {
-        let clause = Clause::parse(s);
+        let clause = Clause::parse(s, LocalContext::empty_ref());
         if !self.graph.check_clause(&clause, &self.context) {
             panic!("check_clause_str(\"{}\") failed", s);
         }

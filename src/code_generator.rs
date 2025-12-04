@@ -344,7 +344,7 @@ impl CodeGenerator<'_> {
             }
         }
         for arg in term.args() {
-            self.add_arbitrary_for_term(arg, local_context, kernel_context);
+            self.add_arbitrary_for_term(&arg, local_context, kernel_context);
         }
     }
 
