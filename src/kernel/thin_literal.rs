@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::fmt;
 
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::fat_term::{TypeId, BOOL};
+use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::thin_term::ThinTerm;
 
@@ -212,6 +214,142 @@ impl ThinLiteral {
         } else {
             false
         }
+    }
+
+    /// Normalizes the direction and returns whether it was flipped.
+    /// The larger term should be on the left of the literal.
+    pub fn new_with_flip(positive: bool, left: ThinTerm, right: ThinTerm) -> (ThinLiteral, bool) {
+        if needs_to_flip(&left, &right) {
+            (
+                ThinLiteral {
+                    positive,
+                    left: right,
+                    right: left,
+                },
+                true,
+            )
+        } else {
+            (
+                ThinLiteral {
+                    positive,
+                    left,
+                    right,
+                },
+                false,
+            )
+        }
+    }
+
+    /// Create a literal from a term with a sign.
+    pub fn from_signed_term(term: ThinTerm, positive: bool) -> ThinLiteral {
+        ThinLiteral::new(positive, term, ThinTerm::new_true())
+    }
+
+    /// A higher order literal contains a higher order term.
+    pub fn is_higher_order(&self) -> bool {
+        self.left.is_higher_order() || self.right.is_higher_order()
+    }
+
+    /// Check if this literal contains any applied variables.
+    pub fn has_any_applied_variable(&self) -> bool {
+        self.left.has_any_applied_variable() || self.right.has_any_applied_variable()
+    }
+
+    /// Whether the components of this literal are strictly ordered according to the KBO.
+    pub fn strict_kbo(&self) -> bool {
+        match self.left.kbo_cmp(&self.right) {
+            Ordering::Less => panic!("kbo inconsistency"),
+            Ordering::Equal => false,
+            Ordering::Greater => true,
+        }
+    }
+
+    /// An extension of the kbo ordering on literals.
+    /// Ignores sign.
+    pub fn extended_kbo_cmp(&self, other: &ThinLiteral) -> Ordering {
+        let left_cmp = self.left.extended_kbo_cmp(&other.left);
+        if left_cmp != Ordering::Equal {
+            return left_cmp;
+        }
+        self.right.extended_kbo_cmp(&other.right)
+    }
+
+    /// Returns (right, left, output_context) with normalized var ids.
+    /// The output_context contains the types of the renumbered variables.
+    /// The input_context provides the types of variables before renumbering.
+    pub fn normalized_reversed(
+        &self,
+        input_context: &LocalContext,
+    ) -> (ThinTerm, ThinTerm, LocalContext) {
+        let mut var_ids: Vec<AtomId> = vec![];
+        let mut var_types: Vec<TypeId> = vec![];
+        let mut right = self.right.clone();
+        right.normalize_var_ids_with_types(&mut var_ids, &mut var_types, input_context);
+        let mut left = self.left.clone();
+        left.normalize_var_ids_with_types(&mut var_ids, &mut var_types, input_context);
+        let output_context = LocalContext::new(var_types);
+        (right, left, output_context)
+    }
+
+    /// Deduplicates
+    pub fn typed_atoms(
+        &self,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> Vec<(TypeId, Atom)> {
+        let mut answer = self.left.typed_atoms(local_context, kernel_context);
+        answer.extend(self.right.typed_atoms(local_context, kernel_context));
+        answer.sort();
+        answer.dedup();
+        answer
+    }
+
+    /// Validate that both sides of the literal have the same type.
+    pub fn validate_type(&self, local_context: &LocalContext, kernel_context: &KernelContext) {
+        let left_type = self
+            .left
+            .get_term_type_with_context(local_context, kernel_context);
+        let right_type = self
+            .right
+            .get_term_type_with_context(local_context, kernel_context);
+        if left_type != right_type {
+            panic!(
+                "Literal type mismatch: {} has type {:?} but {} has type {:?}",
+                self.left, left_type, self.right, right_type
+            );
+        }
+    }
+
+    /// Extracts the polarity from this literal, returning a positive version and the original polarity.
+    /// If the literal is already positive, returns (self, true).
+    /// If the literal is negative, returns (positive version, false).
+    pub fn extract_polarity(&self) -> (ThinLiteral, bool) {
+        if self.positive {
+            (self.clone(), true)
+        } else {
+            (self.negate(), false)
+        }
+    }
+
+    /// Whether either side of the literal has this as its head.
+    pub fn has_head(&self, head: &Atom) -> bool {
+        self.left.get_head_atom() == head || self.right.get_head_atom() == head
+    }
+
+    /// Renumbers synthetic atoms from the provided list into the invalid range.
+    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> ThinLiteral {
+        let new_left = self.left.invalidate_synthetics(from);
+        let new_right = self.right.invalidate_synthetics(from);
+        let (lit, _) = ThinLiteral::new_with_flip(self.positive, new_left, new_right);
+        lit
+    }
+
+    /// Replace the first `num_to_replace` variables with invalid synthetic atoms.
+    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> ThinLiteral {
+        let new_left = self.left.instantiate_invalid_synthetics(num_to_replace);
+        let new_right = self.right.instantiate_invalid_synthetics(num_to_replace);
+        let (lit, _) = ThinLiteral::new_with_flip(self.positive, new_left, new_right);
+        lit
     }
 }
 
