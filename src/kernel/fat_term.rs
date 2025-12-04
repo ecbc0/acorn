@@ -848,10 +848,12 @@ impl FatTerm {
 
     /// Like normalize_var_ids, but also tracks variable types for building a context.
     /// var_types[i] will contain the type of the new variable xi after renumbering.
+    /// The input_context provides the types of variables before renumbering.
     pub fn normalize_var_ids_with_types(
         &mut self,
         var_ids: &mut Vec<AtomId>,
         var_types: &mut Vec<TypeId>,
+        input_context: &LocalContext,
     ) {
         if let Atom::Variable(i) = self.head {
             let pos = var_ids.iter().position(|&x| x == i);
@@ -860,12 +862,16 @@ impl FatTerm {
                 None => {
                     self.head = Atom::Variable(var_ids.len() as AtomId);
                     var_ids.push(i);
-                    var_types.push(self.head_type);
+                    // Look up the type from the input context using the original variable ID
+                    let var_type = input_context
+                        .get_var_type(i as usize)
+                        .expect("Variable not found in input context during renumbering");
+                    var_types.push(var_type);
                 }
             }
         }
         for arg in &mut self.args {
-            arg.normalize_var_ids_with_types(var_ids, var_types);
+            arg.normalize_var_ids_with_types(var_ids, var_types, input_context);
         }
     }
 }

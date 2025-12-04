@@ -236,17 +236,21 @@ impl FatLiteral {
         Box::new(self.left.iter_atoms().chain(self.right.iter_atoms()))
     }
 
-    // Returns (right, left, context) with normalized var ids.
-    // The context contains the types of the renumbered variables.
-    pub fn normalized_reversed(&self) -> (FatTerm, FatTerm, LocalContext) {
+    /// Returns (right, left, output_context) with normalized var ids.
+    /// The output_context contains the types of the renumbered variables.
+    /// The input_context provides the types of variables before renumbering.
+    pub fn normalized_reversed(
+        &self,
+        input_context: &LocalContext,
+    ) -> (FatTerm, FatTerm, LocalContext) {
         let mut var_ids: Vec<AtomId> = vec![];
         let mut var_types: Vec<TypeId> = vec![];
         let mut right = self.right.clone();
-        right.normalize_var_ids_with_types(&mut var_ids, &mut var_types);
+        right.normalize_var_ids_with_types(&mut var_ids, &mut var_types, input_context);
         let mut left = self.left.clone();
-        left.normalize_var_ids_with_types(&mut var_ids, &mut var_types);
-        let context = LocalContext::new(var_types);
-        (right, left, context)
+        left.normalize_var_ids_with_types(&mut var_ids, &mut var_types, input_context);
+        let output_context = LocalContext::new(var_types);
+        (right, left, output_context)
     }
 
     // Returns whether we flipped this literal.

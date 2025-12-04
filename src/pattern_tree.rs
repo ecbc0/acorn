@@ -833,7 +833,7 @@ impl LiteralSet {
             kernel_context,
         );
         if !literal.strict_kbo() {
-            let (right, left, reversed_context) = literal.normalized_reversed();
+            let (right, left, reversed_context) = literal.normalized_reversed(local_context);
             self.tree.insert_pair(
                 &right,
                 &left,

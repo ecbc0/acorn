@@ -98,7 +98,7 @@ impl RewriteTree {
         );
 
         if !literal.right.is_true() {
-            let (right, left, reversed_context) = literal.normalized_reversed();
+            let (right, left, reversed_context) = literal.normalized_reversed(local_context);
             self.insert_terms(
                 pattern_id,
                 &right,
