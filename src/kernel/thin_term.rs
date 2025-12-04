@@ -125,6 +125,27 @@ impl<'a> ThinTermRef<'a> {
         false
     }
 
+    /// A higher order term is one that has a variable as its head.
+    pub fn is_higher_order(&self) -> bool {
+        matches!(self.get_head_atom(), Atom::Variable(_))
+    }
+
+    /// Recursively checks if any term has a variable as its head with arguments applied to it.
+    /// Returns true for terms like x0(a, b) but false for plain variables like x0.
+    pub fn has_any_applied_variable(&self) -> bool {
+        // Check if this term itself is an applied variable
+        if matches!(self.get_head_atom(), Atom::Variable(_)) && self.num_args() > 0 {
+            return true;
+        }
+        // Recursively check arguments
+        for arg in self.iter_args() {
+            if arg.has_any_applied_variable() {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Count the number of atom components (excluding Composite markers).
     pub fn atom_count(&self) -> u32 {
         let mut count = 0;
@@ -591,19 +612,24 @@ impl ThinTerm {
 
     /// Get the term type with context.
     /// Uses LocalContext for variable types and KernelContext for symbol types.
+    /// For function applications, applies the function type once per argument.
     pub fn get_term_type_with_context(
         &self,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> TypeId {
-        // For a simple atom with no arguments, the term type equals the head type
-        if self.is_atomic() {
-            return self.get_head_type_with_context(local_context, kernel_context);
+        // Start with the head type
+        let mut result_type = self.get_head_type_with_context(local_context, kernel_context);
+
+        // Apply the type once per argument
+        for _ in self.iter_args() {
+            result_type = kernel_context
+                .type_store
+                .apply_type(result_type)
+                .expect("Function type expected but not found during type application");
         }
 
-        // For function applications, we need to compute the result type
-        // This is a placeholder - full implementation needs type inference
-        todo!("get_term_type_with_context for non-atomic terms requires type inference")
+        result_type
     }
 
     /// Get the head type with context.
@@ -631,6 +657,41 @@ impl ThinTerm {
     /// Check if this term is the boolean constant "true".
     pub fn is_true(&self) -> bool {
         self.as_ref().is_true()
+    }
+
+    /// Create a new ThinTerm representing the boolean constant "true".
+    pub fn new_true() -> ThinTerm {
+        ThinTerm::atom(BOOL, Atom::True)
+    }
+
+    /// Create a new ThinTerm representing a variable with the given index.
+    /// The type_id parameter is accepted for API compatibility with FatTerm but is ignored
+    /// since ThinTerm stores types separately in the context.
+    pub fn new_variable(_type_id: TypeId, index: AtomId) -> ThinTerm {
+        ThinTerm {
+            components: vec![ThinTermComponent::Atom(Atom::Variable(index))],
+        }
+    }
+
+    /// A higher order term is one that has a variable as its head.
+    pub fn is_higher_order(&self) -> bool {
+        matches!(self.get_head_atom(), Atom::Variable(_))
+    }
+
+    /// Recursively checks if any term has a variable as its head with arguments applied to it.
+    /// Returns true for terms like x0(a, b) but false for plain variables like x0.
+    pub fn has_any_applied_variable(&self) -> bool {
+        // Check if this term itself is an applied variable
+        if matches!(self.get_head_atom(), Atom::Variable(_)) && self.num_args() > 0 {
+            return true;
+        }
+        // Recursively check arguments
+        for arg in self.iter_args() {
+            if arg.has_any_applied_variable() {
+                return true;
+            }
+        }
+        false
     }
 
     /// Check if this term is a variable (atomic and head is a variable).
@@ -690,6 +751,59 @@ impl ThinTerm {
         })
     }
 
+    /// Returns the head of this term as a ThinTerm with no arguments.
+    pub fn get_head_term(&self) -> ThinTerm {
+        ThinTerm {
+            components: vec![ThinTermComponent::Atom(*self.get_head_atom())],
+        }
+    }
+
+    /// Collects all variables in the term (recursively through arguments).
+    /// Returns (AtomId, TypeId) pairs for each variable found.
+    /// Uses the local_context to look up variable types.
+    pub fn collect_vars(&self, local_context: &LocalContext) -> Vec<(AtomId, TypeId)> {
+        let mut result = Vec::new();
+        for atom in self.iter_atoms() {
+            if let Atom::Variable(id) = atom {
+                let type_id = local_context
+                    .get_var_type(*id as usize)
+                    .expect("Variable not found in local context");
+                result.push((*id, type_id));
+            }
+        }
+        result
+    }
+
+    /// Get the type of a variable if it appears in this term.
+    pub fn var_type(&self, index: AtomId, local_context: &LocalContext) -> Option<TypeId> {
+        if self.has_variable(index) {
+            local_context.get_var_type(index as usize)
+        } else {
+            None
+        }
+    }
+
+    /// Returns all (TypeId, Atom) pairs in this term.
+    /// Does not deduplicate.
+    pub fn typed_atoms(
+        &self,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> Vec<(TypeId, Atom)> {
+        let mut result = Vec::new();
+        for atom in self.iter_atoms() {
+            let type_id = match atom {
+                Atom::Variable(id) => local_context
+                    .get_var_type(*id as usize)
+                    .expect("Variable not found in local context"),
+                Atom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol),
+                Atom::True => BOOL,
+            };
+            result.push((type_id, *atom));
+        }
+        result
+    }
+
     /// Get the maximum variable index in this term, or None if there are no variables.
     pub fn max_variable(&self) -> Option<AtomId> {
         self.as_ref().max_variable()
@@ -701,23 +815,101 @@ impl ThinTerm {
     }
 
     /// Replace all occurrences of a variable with a term.
-    ///
-    /// WARNING: Current implementation is INCORRECT!
-    /// When replacing variables, we need to:
-    /// 1. Recursively process subterms (respecting Composite span markers)
-    /// 2. Update span markers when the replacement changes the size
-    /// 3. Handle the case where a variable is replaced with a complex term
-    ///
-    /// TODO: Implement proper recursive replacement with span adjustment.
-    /// This is complex because we need to:
-    /// - Track the size change when replacing a variable (1 component) with value (N components)
-    /// - Update all parent Composite markers to reflect the new spans
-    /// - Process subterms recursively
-    pub fn replace_variable(&self, _id: AtomId, _value: &ThinTerm) -> ThinTerm {
-        todo!(
-            "ThinTerm::replace_variable needs proper implementation with span adjustment. \
-             Current naive implementation breaks span invariants when replacing variables with complex terms."
-        )
+    /// This handles the complexity of updating Composite span markers when
+    /// the replacement term has a different size than the variable (1 component).
+    pub fn replace_variable(&self, id: AtomId, value: &ThinTerm) -> ThinTerm {
+        // Build the result by processing components, tracking size changes for spans
+        let mut result = Vec::new();
+        self.replace_variable_recursive(&mut result, id, value);
+        ThinTerm::new(result)
+    }
+
+    /// Helper for replace_variable that processes components recursively.
+    /// Returns the number of components added to result.
+    fn replace_variable_recursive(
+        &self,
+        result: &mut Vec<ThinTermComponent>,
+        id: AtomId,
+        value: &ThinTerm,
+    ) -> usize {
+        let mut i = 0;
+        let mut added = 0;
+
+        while i < self.components.len() {
+            match &self.components[i] {
+                ThinTermComponent::Atom(Atom::Variable(var_id)) if *var_id == id => {
+                    // Replace this variable with the value's components
+                    if value.components.len() == 1 {
+                        // Simple replacement - just copy the single component
+                        result.push(value.components[0]);
+                        added += 1;
+                    } else {
+                        // Complex replacement - need to wrap in Composite
+                        result.push(ThinTermComponent::Composite {
+                            span: value.components.len() as u16 + 1,
+                        });
+                        result.extend(value.components.iter().copied());
+                        added += value.components.len() + 1;
+                    }
+                    i += 1;
+                }
+                ThinTermComponent::Atom(atom) => {
+                    // Non-matching atom - copy as-is
+                    result.push(ThinTermComponent::Atom(*atom));
+                    added += 1;
+                    i += 1;
+                }
+                ThinTermComponent::Composite { span } => {
+                    // Process the composite subterm recursively
+                    let subterm_start = i + 1;
+                    let subterm_end = i + *span as usize;
+
+                    // Create a temporary ThinTerm for the subterm (excluding Composite marker)
+                    let subterm =
+                        ThinTerm::new(self.components[subterm_start..subterm_end].to_vec());
+
+                    // Recursively replace in the subterm
+                    let mut sub_result = Vec::new();
+                    subterm.replace_variable_recursive(&mut sub_result, id, value);
+
+                    // If the subterm is now atomic (single component), don't wrap it
+                    if sub_result.len() == 1 {
+                        result.push(sub_result[0]);
+                        added += 1;
+                    } else {
+                        // Add a new Composite marker with the correct span
+                        result.push(ThinTermComponent::Composite {
+                            span: sub_result.len() as u16 + 1,
+                        });
+                        result.extend(sub_result.iter().copied());
+                        added += sub_result.len() + 1;
+                    }
+
+                    i = subterm_end;
+                }
+            }
+        }
+
+        added
+    }
+
+    /// Replace multiple variables at once.
+    pub fn replace_variables(
+        &self,
+        var_ids: &[AtomId],
+        replacement_terms: &[&ThinTerm],
+    ) -> ThinTerm {
+        if var_ids.is_empty() {
+            return self.clone();
+        }
+
+        // Apply replacements one at a time
+        // This could be optimized to do all at once, but this is simpler
+        let mut result = self.clone();
+        for (id, term) in var_ids.iter().zip(replacement_terms.iter()) {
+            result = result.replace_variable(*id, term);
+        }
+        result
     }
 
     /// Replace an atom with another atom throughout the term.
@@ -733,6 +925,90 @@ impl ThinTerm {
             })
             .collect();
         ThinTerm::new(new_components)
+    }
+
+    /// Renumbers synthetic atoms from the provided list into the invalid range.
+    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> ThinTerm {
+        let new_components = self
+            .components
+            .iter()
+            .map(|component| match component {
+                ThinTermComponent::Atom(atom) => {
+                    ThinTermComponent::Atom(atom.invalidate_synthetics(from))
+                }
+                c => *c,
+            })
+            .collect();
+        ThinTerm::new(new_components)
+    }
+
+    /// Replace the first `num_to_replace` variables with invalid synthetic atoms, adjusting
+    /// the subsequent variable ids accordingly.
+    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> ThinTerm {
+        let new_components = self
+            .components
+            .iter()
+            .map(|component| match component {
+                ThinTermComponent::Atom(atom) => {
+                    ThinTermComponent::Atom(atom.instantiate_invalid_synthetics(num_to_replace))
+                }
+                c => *c,
+            })
+            .collect();
+        ThinTerm::new(new_components)
+    }
+
+    /// Normalize variable IDs in place, tracking types from the input context.
+    /// This is used when reversing literals to build a new context.
+    pub fn normalize_var_ids_with_types(
+        &mut self,
+        var_ids: &mut Vec<AtomId>,
+        var_types: &mut Vec<TypeId>,
+        input_context: &LocalContext,
+    ) {
+        for component in &mut self.components {
+            if let ThinTermComponent::Atom(Atom::Variable(i)) = component {
+                let pos = var_ids.iter().position(|&x| x == *i);
+                match pos {
+                    Some(j) => *i = j as AtomId,
+                    None => {
+                        let new_id = var_ids.len() as AtomId;
+                        var_ids.push(*i);
+                        // Look up the type from the input context using the original variable ID
+                        let var_type = input_context
+                            .get_var_type(*i as usize)
+                            .expect("Variable not found in input context during renumbering");
+                        var_types.push(var_type);
+                        *i = new_id;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Find atoms whose term (not just head) has a specific type.
+    /// Returns the head atom of each subterm that has the matching type.
+    pub fn atoms_for_type(
+        &self,
+        type_id: TypeId,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> Vec<Atom> {
+        let mut result = Vec::new();
+
+        // Check if this term's type matches
+        let my_type = self.get_term_type_with_context(local_context, kernel_context);
+        if my_type == type_id {
+            result.push(*self.get_head_atom());
+        }
+
+        // Recursively check arguments
+        for arg in self.iter_args() {
+            let arg_owned = arg.to_owned();
+            result.append(&mut arg_owned.atoms_for_type(type_id, local_context, kernel_context));
+        }
+
+        result
     }
 
     /// Remap variables according to a mapping.
