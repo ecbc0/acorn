@@ -412,6 +412,7 @@ impl ActiveSet {
                         &path,
                         rewrite.forwards,
                         &rewrite.term,
+                        &rewrite.context,
                     );
                     output.push(ps);
                 }
@@ -466,6 +467,7 @@ impl ActiveSet {
                     continue;
                 }
                 let new_subterm = unifier.apply(Scope::LEFT, t);
+                let new_subterm_context = unifier.output_context().clone();
 
                 for location in &subterm_info.locations {
                     if location.target_id == pattern_id {
@@ -491,6 +493,7 @@ impl ActiveSet {
                         &location.path,
                         forwards,
                         &new_subterm,
+                        &new_subterm_context,
                     );
                     output.push(ps);
                 }
@@ -516,6 +519,7 @@ impl ActiveSet {
                     pattern_id,
                     forwards,
                     term: new_subterm,
+                    context: new_subterm_context,
                 });
             }
         }

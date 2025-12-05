@@ -156,6 +156,30 @@ impl TermComponent {
         (term1, term2)
     }
 
+    /// Builds a LocalContext from a slice of TermComponents by extracting variable types.
+    /// This is used to reconstruct the context for variables in a term when we only have
+    /// the flattened TermComponent representation.
+    pub fn build_context(components: &[TermComponent]) -> LocalContext {
+        use crate::kernel::fat_term::TypeId;
+
+        let mut var_types: Vec<Option<TypeId>> = vec![];
+        for component in components {
+            if let TermComponent::Atom(type_id, Atom::Variable(var_id)) = component {
+                let idx = *var_id as usize;
+                if idx >= var_types.len() {
+                    var_types.resize(idx + 1, None);
+                }
+                var_types[idx] = Some(*type_id);
+            }
+        }
+        LocalContext::new(
+            var_types
+                .into_iter()
+                .map(|t| t.unwrap_or_default())
+                .collect(),
+        )
+    }
+
     /// Validates the subterm starting at the given position.
     /// Returns the position the next subterm should start at.
     fn validate_one(components: &[TermComponent], position: usize) -> Result<usize, String> {

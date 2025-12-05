@@ -5,6 +5,10 @@ use crate::elaborator::proposition::MonomorphicProposition;
 use crate::elaborator::source::{Source, SourceType};
 use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::Atom;
+#[cfg(not(feature = "thin"))]
+use crate::kernel::fat_clause;
+#[cfg(feature = "thin")]
+use crate::kernel::fat_term::TypeId;
 #[cfg(test)]
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
@@ -580,6 +584,8 @@ impl ProofStep {
         path: &[usize],
         forwards: bool,
         new_subterm: &Term,
+        #[cfg_attr(not(feature = "thin"), allow(unused_variables))]
+        new_subterm_context: &LocalContext,
     ) -> ProofStep {
         assert_eq!(target_step.clause.literals.len(), 1);
 
@@ -589,7 +595,32 @@ impl ProofStep {
         let rewritten = new_literal.clone();
 
         let simplifying = new_literal.extended_kbo_cmp(&target_literal) == Ordering::Less;
-        // The new literal may have variables from the pattern step's clause
+
+        // Build the context from the rewritten literal.
+        // In fat mode, we extract types from the embedded terms.
+        // In thin mode, we use the provided new_subterm_context which contains
+        // the correct types from the unifier's output context.
+        #[cfg(not(feature = "thin"))]
+        let rewritten_context =
+            fat_clause::build_context_from_terms(&[&rewritten.left, &rewritten.right]);
+        #[cfg(feature = "thin")]
+        let rewritten_context = {
+            // For thin mode, combine the target's context with the new_subterm's context
+            // The rewritten literal's variables come from both the target and the new_subterm
+            let target_context = target_step.clause.get_local_context();
+            let mut types = target_context.var_types.clone();
+            for (i, t) in new_subterm_context.var_types.iter().enumerate() {
+                if i >= types.len() {
+                    types.resize(i + 1, *t);
+                } else if types[i] == TypeId::default() {
+                    types[i] = *t;
+                }
+            }
+            LocalContext::new(types)
+        };
+
+        // Use pattern_step's context for normalization (for compatibility with existing behavior)
+        // but store rewritten_context in RewriteInfo since it matches the embedded types.
         let context = pattern_step.clause.get_local_context();
         let (clause, trace) = Clause::from_literal_traced(new_literal, false, context);
 
@@ -602,7 +633,7 @@ impl ProofStep {
             path: path.to_vec(),
             forwards,
             rewritten,
-            context: context.clone(),
+            context: rewritten_context,
             flipped,
         });
 
@@ -784,6 +815,7 @@ mod tests {
     /// rewrite, the fresh variable x1 has type T embedded, but if we incorrectly store
     /// the original pattern context [T, List], then x1 would be expected to have type List.
     #[test]
+    #[cfg(not(feature = "thin"))]
     fn test_rewrite_context_matches_embedded_types() {
         // Use test context where all variables are Bool (BOOL = TypeId 1)
         // This simplifies the test since we don't need multi-typed variables
@@ -792,11 +824,7 @@ mod tests {
         // Pattern: m0(x0, x1) = x1 (two variables, same type)
         // Context: [Bool, Bool]
         let pattern_context = LocalContext::new(vec![BOOL, BOOL]);
-        let pattern_step = ProofStep::mock_with_context(
-            "m0(x0, x1) = x1",
-            &pattern_context,
-            &kctx,
-        );
+        let pattern_step = ProofStep::mock_with_context("m0(x0, x1) = x1", &pattern_context, &kctx);
 
         // Target: a concrete literal with c0
         let target_context = LocalContext::new(vec![]);
@@ -816,6 +844,7 @@ mod tests {
             &[],   // path - at root
             false, // forwards
             &new_subterm,
+            &pattern_context, // context for new_subterm's variables
         );
 
         // Verify: the rewritten literal should have variables whose embedded types
@@ -857,7 +886,10 @@ mod tests {
     /// The bug: ProofStep::rewrite stores pattern_step.clause.get_local_context() as the
     /// context, but the new_subterm may have variables with types from a DIFFERENT context
     /// (e.g., the reversed context for backwards rewrites).
+    ///
+    /// This test uses collect_vars_embedded which is only available in fat mode.
     #[test]
+    #[cfg(not(feature = "thin"))]
     fn test_backwards_rewrite_different_types() {
         use crate::kernel::fat_term::TypeId;
         use crate::kernel::symbol::Symbol;
@@ -892,6 +924,9 @@ mod tests {
         // Target: concrete literal
         let target_step = ProofStep::mock("m1(c0) = c0");
 
+        // The context for new_subterm's variables: x1 has type type_a
+        let new_subterm_context = LocalContext::new(vec![TypeId::default(), type_a]);
+
         let rewrite_step = ProofStep::rewrite(
             0,
             &pattern_step,
@@ -901,6 +936,7 @@ mod tests {
             &[],   // path
             false, // forwards (this is a backwards rewrite)
             &new_subterm,
+            &new_subterm_context,
         );
 
         // Verify the rewritten literal's variables match the stored context

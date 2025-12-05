@@ -34,6 +34,10 @@ pub struct Rewrite {
 
     // The term that we are rewriting into.
     pub term: Term,
+
+    // The context for variables in the rewritten term.
+    // This is important for backwards rewrites where the context may differ from the original pattern.
+    pub context: LocalContext,
 }
 
 #[derive(Clone)]
@@ -159,10 +163,12 @@ impl RewriteTree {
             next_var,
             &mut |pattern_id, forwards, new_components| {
                 let term = TermComponent::unflatten_term(new_components);
+                let context = TermComponent::build_context(new_components);
                 answer.push(Rewrite {
                     pattern_id,
                     forwards,
                     term,
+                    context,
                 });
             },
         );
