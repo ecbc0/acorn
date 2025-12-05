@@ -36,6 +36,16 @@ impl<'a> ThinTermRef<'a> {
 
     /// Convert this reference to an owned ThinTerm by cloning the components.
     pub fn to_owned(&self) -> ThinTerm {
+        // Validate that the result will be a valid ThinTerm
+        if self.components.is_empty() {
+            panic!("Cannot convert empty ThinTermRef to ThinTerm");
+        }
+        if let ThinTermComponent::Composite { span } = self.components[0] {
+            panic!(
+                "ThinTermRef starts with Composite (span={}) - cannot convert to ThinTerm. Components: {:?}",
+                span, self.components
+            );
+        }
         ThinTerm {
             components: self.components.to_vec(),
         }
@@ -46,8 +56,11 @@ impl<'a> ThinTermRef<'a> {
     pub fn get_head_atom(&self) -> &Atom {
         match &self.components[0] {
             ThinTermComponent::Atom(atom) => atom,
-            ThinTermComponent::Composite { .. } => {
-                panic!("ThinTerm should not start with Composite marker")
+            ThinTermComponent::Composite { span } => {
+                panic!(
+                    "ThinTerm should not start with Composite marker. Components: {:?}, span: {}",
+                    self.components, span
+                )
             }
         }
     }
@@ -518,7 +531,18 @@ impl ThinTerm {
         args: Vec<ThinTerm>,
     ) -> ThinTerm {
         let mut components = vec![ThinTermComponent::Atom(head)];
-        for arg in args {
+        for (i, arg) in args.iter().enumerate() {
+            // Validate that arg is a valid term (starts with Atom)
+            if arg.components.is_empty() {
+                panic!("ThinTerm::new: arg {} is empty", i);
+            }
+            if let ThinTermComponent::Composite { span } = arg.components[0] {
+                panic!(
+                    "ThinTerm::new: arg {} starts with Composite (span={}). Arg components: {:?}",
+                    i, span, arg.components
+                );
+            }
+
             if arg.components.len() == 1 {
                 // Atomic argument - just add the atom
                 components.push(arg.components[0]);
@@ -535,11 +559,33 @@ impl ThinTerm {
 
     /// Create a new ThinTerm from a vector of components.
     pub fn from_components(components: Vec<ThinTermComponent>) -> ThinTerm {
-        debug_assert!(
-            !components.is_empty() && matches!(components[0], ThinTermComponent::Atom(_)),
-            "ThinTerm must start with an Atom, got: {:?}",
-            components.first()
-        );
+        // Validate structure: must start with Atom, and after each Composite must come an Atom
+        if components.is_empty() {
+            panic!("from_components: empty components");
+        }
+        if let ThinTermComponent::Composite { span } = components[0] {
+            panic!(
+                "from_components: starts with Composite (span={}). Components: {:?}",
+                span, components
+            );
+        }
+        // Validate that after each Composite comes an Atom
+        for i in 0..components.len() {
+            if let ThinTermComponent::Composite { .. } = components[i] {
+                if i + 1 >= components.len() {
+                    panic!(
+                        "from_components: Composite at {} has no following component. Components: {:?}",
+                        i, components
+                    );
+                }
+                if let ThinTermComponent::Composite { span: inner } = components[i + 1] {
+                    panic!(
+                        "from_components: Composite at {} followed by Composite (span={}). Components: {:?}",
+                        i, inner, components
+                    );
+                }
+            }
+        }
         ThinTerm { components }
     }
 
@@ -646,8 +692,11 @@ impl ThinTerm {
     pub fn get_head_atom(&self) -> &Atom {
         match &self.components[0] {
             ThinTermComponent::Atom(atom) => atom,
-            ThinTermComponent::Composite { .. } => {
-                panic!("ThinTerm should not start with Composite marker")
+            ThinTermComponent::Composite { span } => {
+                panic!(
+                    "ThinTerm should not start with Composite marker. Components: {:?}, span: {}",
+                    self.components, span
+                )
             }
         }
     }
@@ -876,6 +925,21 @@ impl ThinTerm {
     /// This handles the complexity of updating Composite span markers when
     /// the replacement term has a different size than the variable (1 component).
     pub fn replace_variable(&self, id: AtomId, value: &ThinTerm) -> ThinTerm {
+        // Validate input term is well-formed
+        for i in 0..self.components.len() {
+            if let ThinTermComponent::Composite { .. } = self.components[i] {
+                if i + 1 < self.components.len() {
+                    if let ThinTermComponent::Composite { span } = self.components[i + 1] {
+                        panic!(
+                            "replace_variable: input term has Composite followed by Composite at {}. \
+                             span={}, components: {:?}",
+                            i, span, self.components
+                        );
+                    }
+                }
+            }
+        }
+
         // Special case: if this term IS the variable being replaced, just return the value
         if self.components.len() == 1 {
             if let ThinTermComponent::Atom(Atom::Variable(var_id)) = self.components[0] {
@@ -910,8 +974,14 @@ impl ThinTerm {
                         // Simple replacement - just copy the single component
                         result.push(value.components[0]);
                         added += 1;
+                    } else if i == 0 {
+                        // Head position replacement - don't wrap in Composite
+                        // The value's head becomes this term's head, and value's args
+                        // are inserted before the remaining args
+                        result.extend(value.components.iter().copied());
+                        added += value.components.len();
                     } else {
-                        // Complex replacement - need to wrap in Composite
+                        // Non-head position - need to wrap in Composite
                         result.push(ThinTermComponent::Composite {
                             span: value.components.len() as u16 + 1,
                         });
@@ -939,6 +1009,16 @@ impl ThinTerm {
                     // Recursively replace in the subterm
                     let mut sub_result = Vec::new();
                     subterm.replace_variable_recursive(&mut sub_result, id, value);
+
+                    // Validate: sub_result must start with Atom, not Composite
+                    if let Some(ThinTermComponent::Composite { span: sr_span }) = sub_result.first()
+                    {
+                        panic!(
+                            "replace_variable_recursive: sub_result starts with Composite (span={}). \
+                             Original subterm: {:?}, sub_result: {:?}",
+                            sr_span, subterm.components, sub_result
+                        );
+                    }
 
                     // If the subterm is now atomic (single component), don't wrap it
                     if sub_result.len() == 1 {
@@ -1376,7 +1456,25 @@ impl<'a> Iterator for ThinTermRefArgsIterator<'a> {
             ThinTermComponent::Composite { span } => {
                 // Extract the composite term as a slice reference.
                 // Skip the Composite marker itself - the term content starts after it.
-                let arg_slice = &self.components[self.position + 1..self.position + span as usize];
+                let start = self.position + 1;
+                let end = self.position + span as usize;
+                if end > self.components.len() {
+                    panic!(
+                        "iter_args: span {} at position {} exceeds components length {}. Components: {:?}",
+                        span, self.position, self.components.len(), self.components
+                    );
+                }
+                let arg_slice = &self.components[start..end];
+                // Validate the extracted slice starts with an Atom
+                if !arg_slice.is_empty() {
+                    if let ThinTermComponent::Composite { span: inner_span } = arg_slice[0] {
+                        panic!(
+                            "iter_args: extracted arg starts with Composite (inner_span={}). \
+                             Parent components: {:?}, position: {}, span: {}, arg_slice: {:?}",
+                            inner_span, self.components, self.position, span, arg_slice
+                        );
+                    }
+                }
                 self.position += span as usize;
                 Some(ThinTermRef::new(arg_slice))
             }
@@ -1393,6 +1491,81 @@ impl<'a> Iterator for ThinTermRefArgsIterator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::symbol::Symbol;
+
+    #[test]
+    fn test_replace_head_variable_with_compound_term() {
+        // This tests the bug where replacing a variable at head position with a
+        // compound term incorrectly wrapped the result in a Composite marker.
+        //
+        // Term: x0(x1) - variable x0 applied to x1
+        // Replace x0 with m0(c0) - a compound term
+        // Expected result: m0(c0, x1) - m0 applied to c0 and x1
+        // Bug would produce: [Composite, m0, c0, x1] which is invalid
+        let term = ThinTerm::parse("x0(x1)");
+        let replacement = ThinTerm::parse("m0(c0)");
+
+        // Replace x0 with m0(c0)
+        let result = term.replace_variable(0, &replacement);
+
+        // Result should be m0(c0, x1)
+        // This should not panic due to invalid term structure
+        let head = result.get_head_atom();
+        assert!(matches!(head, Atom::Symbol(Symbol::Monomorph(0))));
+
+        // The result should have exactly two args: c0 and x1
+        let args: Vec<_> = result.iter_args().collect();
+        assert_eq!(args.len(), 2, "Expected 2 args, got {}", args.len());
+
+        // First arg should be c0
+        let arg0_head = args[0].get_head_atom();
+        assert!(matches!(arg0_head, Atom::Symbol(Symbol::ScopedConstant(0))));
+
+        // Second arg should be x1
+        let arg1_head = args[1].get_head_atom();
+        assert!(matches!(arg1_head, Atom::Variable(1)));
+    }
+
+    #[test]
+    fn test_replace_head_variable_simple() {
+        // Simpler case: x0(x1) with x0 -> c0 (atomic replacement)
+        let term = ThinTerm::parse("x0(x1)");
+        let replacement = ThinTerm::parse("c0");
+
+        let result = term.replace_variable(0, &replacement);
+
+        // Result should be c0(x1)
+        let head = result.get_head_atom();
+        assert!(matches!(head, Atom::Symbol(Symbol::ScopedConstant(0))));
+
+        let args: Vec<_> = result.iter_args().collect();
+        assert_eq!(args.len(), 1);
+        assert!(matches!(args[0].get_head_atom(), Atom::Variable(1)));
+    }
+
+    #[test]
+    fn test_replace_non_head_variable_with_compound() {
+        // Non-head position should still wrap in Composite
+        // Term: c0(x0) - c0 applied to variable x0
+        // Replace x0 with m0(c1) - a compound term
+        // Result: c0(m0(c1)) - c0 applied to m0(c1)
+        let term = ThinTerm::parse("c0(x0)");
+        let replacement = ThinTerm::parse("m0(c1)");
+
+        let result = term.replace_variable(0, &replacement);
+
+        // Result should be c0(m0(c1))
+        let head = result.get_head_atom();
+        assert!(matches!(head, Atom::Symbol(Symbol::ScopedConstant(0))));
+
+        let args: Vec<_> = result.iter_args().collect();
+        assert_eq!(args.len(), 1);
+
+        // The arg should be compound: m0(c1)
+        let arg = &args[0];
+        let arg_head = arg.get_head_atom();
+        assert!(matches!(arg_head, Atom::Symbol(Symbol::Monomorph(0))));
+    }
 
     #[test]
     fn test_nested_term_comparison() {
