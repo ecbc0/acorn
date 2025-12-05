@@ -2050,3 +2050,26 @@ fn test_verify_reflexivity() {
         "#,
     );
 }
+
+// This test exercises a bug where rewrite patterns with variables that get renumbered
+// during normalization would cause certificate creation to fail. The bug was that
+// RewriteInfo stored the pre-normalization literal but used the post-normalization
+// context, causing variable lookup failures in thin mode.
+//
+// The pattern axiom `g(x, y) = g(y, x)` has two variables. When the rewritten literal
+// only uses y (which becomes x0 after normalization), certificate reconstruction must
+// use the correct context that matches the pre-normalization variable numbering.
+#[test]
+fn test_rewrite_with_variable_renumbering() {
+    // The key is having a pattern where not all variables appear in the result,
+    // causing normalization to renumber them. Here g(x, y) = g(y, x) is symmetric,
+    // and the proof will use rewrites that exercise variable mapping.
+    let text = r#"
+        axiom g_sym(x: Thing, y: Thing) { g(x, y) = g(y, x) }
+        axiom h_of_g_t { h(g(t, t2)) = t }
+        theorem goal { h(g(t2, t)) = t }
+    "#;
+    // This uses verify_succeeds which calls make_cert and check_cert,
+    // exercising the full certificate creation path including the Rewrite rule handling.
+    verify_succeeds(&format!("{}\n{}", THING, text));
+}

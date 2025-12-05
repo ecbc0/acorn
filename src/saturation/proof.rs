@@ -277,12 +277,13 @@ impl<'a> Proof<'a> {
                 }
             }
             Rule::Rewrite(info) => {
-                // For rewrites, the trace applies to the rewritten clause.
-                // The rewritten literal uses the same variable context as the conclusion.
+                // For rewrites, the trace applies to the original rewritten literal.
+                // We use info.rewritten and info.context which store the pre-normalization
+                // literal and its variable context.
                 let literals = vec![info.rewritten.clone()];
                 let (var_maps, unifier_context) = self.reconstruct_trace(
                     &literals,
-                    step.clause.get_local_context(),
+                    &info.context,
                     traces.as_slice(),
                     &step.clause,
                     conclusion_map,
@@ -325,11 +326,14 @@ impl<'a> Proof<'a> {
                         self.normalizer.kernel_context(),
                         output_context,
                     );
-                    let step_context = step.clause.get_local_context();
-                    unifier.set_input_context(conc_scope, step_context);
+                    // The conc_scope uses the rewritten literal's context (info.context),
+                    // because that's what the trace was computed with.
+                    unifier.set_input_context(conc_scope, &info.context);
                     let pattern_scope = unifier.add_scope();
                     unifier.set_input_context(pattern_scope, pattern_clause.get_local_context());
-                    assert!(unifier.unify(pattern_scope, from_pat, conc_scope, &target_subterm));
+                    let target_scope = unifier.add_scope();
+                    unifier.set_input_context(target_scope, target_clause.get_local_context());
+                    assert!(unifier.unify(pattern_scope, from_pat, target_scope, &target_subterm));
                     assert!(unifier.unify(pattern_scope, to_pat, conc_scope, &rewritten_subterm));
 
                     // Report the concrete pattern

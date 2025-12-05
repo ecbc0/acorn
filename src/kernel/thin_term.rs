@@ -732,9 +732,14 @@ impl ThinTerm {
     ) -> TypeId {
         let head = self.get_head_atom();
         match head {
-            Atom::Variable(i) => local_context
-                .get_var_type(*i as usize)
-                .expect("Variable not found in LocalContext"),
+            Atom::Variable(i) => local_context.get_var_type(*i as usize).unwrap_or_else(|| {
+                panic!(
+                    "Variable x{} not found in LocalContext (size={}). Term: {:?}",
+                    i,
+                    local_context.len(),
+                    self.components
+                )
+            }),
             Atom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol),
             Atom::True => BOOL,
         }

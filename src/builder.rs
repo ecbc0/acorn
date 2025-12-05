@@ -627,11 +627,6 @@ impl<'a> Builder<'a> {
         new_certs: &mut Vec<Certificate>,
         worklist: &mut CertificateWorklist,
     ) -> Result<(), BuildError> {
-        // Log goal name when doing whole-project reprove (for debugging crashes)
-        if self.single_goal.is_none() && !self.check_hashes {
-            eprintln!("verify_goal: {}", goal.name);
-        }
-
         // Check if we've been cancelled before starting any work
         if self.cancellation_token.is_cancelled() {
             return Err(BuildError::goal(goal, "was interrupted"));

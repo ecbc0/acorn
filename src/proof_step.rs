@@ -110,6 +110,11 @@ pub struct RewriteInfo {
     /// This is usually redundant, but not always, because the output clause can get simplified.
     pub rewritten: Literal,
 
+    /// The variable context for the rewritten literal.
+    /// This is needed because normalization may renumber variables, so the clause's
+    /// context might not match the rewritten literal's variables.
+    pub context: LocalContext,
+
     /// Whether the literal was flipped during normalization
     pub flipped: bool,
 }
@@ -597,6 +602,7 @@ impl ProofStep {
             path: path.to_vec(),
             forwards,
             rewritten,
+            context: context.clone(),
             flipped,
         });
 
