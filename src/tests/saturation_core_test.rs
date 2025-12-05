@@ -2054,7 +2054,7 @@ fn test_verify_reflexivity() {
 // This test exercises a bug where rewrite patterns with variables that get renumbered
 // during normalization would cause certificate creation to fail. The bug was that
 // RewriteInfo stored the pre-normalization literal but used the post-normalization
-// context, causing variable lookup failures in thin mode.
+// context, causing variable lookup failures.
 //
 // The pattern axiom `g(x, y) = g(y, x)` has two variables. When the rewritten literal
 // only uses y (which becomes x0 after normalization), certificate reconstruction must

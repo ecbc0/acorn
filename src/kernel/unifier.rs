@@ -152,7 +152,7 @@ impl<'a> Unifier<'a> {
     }
 
     /// Like into_maps, but also returns the output context.
-    /// This is needed in thin mode where VariableMap replacement terms reference
+    /// This is needed because VariableMap replacement terms reference
     /// variables in the unifier's output context.
     pub fn into_maps_with_context(self) -> (Vec<(Scope, VariableMap)>, LocalContext) {
         let maps: Vec<_> = self
@@ -687,7 +687,7 @@ impl<'a> Unifier<'a> {
     }
 
     /// Like into_one_map, but also returns the output context.
-    /// This is needed in thin mode where VariableMap replacement terms reference
+    /// This is needed because VariableMap replacement terms reference
     /// variables in the unifier's output context.
     pub fn into_one_map_with_context(self, scope: Scope) -> (VariableMap, LocalContext) {
         let map = self.maps.into_iter().nth(scope.get()).unwrap();

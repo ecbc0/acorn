@@ -2,21 +2,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::thin_literal::ThinLiteral;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 
-/// A thin clause stores the structure of a clause without type information.
-/// Like Clause, it represents a disjunction (an "or") of literals.
+/// A Clause represents a disjunction (an "or") of literals.
 /// Type information is stored separately in the TypeStore and SymbolTable,
 /// along with a Context that tracks the types of variables in the clause.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct ThinClause {
-    pub literals: Vec<ThinLiteral>,
+pub struct Clause {
+    pub literals: Vec<Literal>,
     pub context: LocalContext,
 }
 
-impl ThinClause {
+impl Clause {
     /// Get the local context for this clause.
     /// This returns the context that stores variable types for this clause.
     pub fn get_local_context(&self) -> &LocalContext {
@@ -24,7 +23,7 @@ impl ThinClause {
     }
 
     /// Creates a new normalized clause.
-    pub fn new(literals: Vec<ThinLiteral>, context: &LocalContext) -> ThinClause {
+    pub fn new(literals: Vec<Literal>, context: &LocalContext) -> Clause {
         // Debug: validate that all variables in literals have types in context
         #[cfg(debug_assertions)]
         for (i, lit) in literals.iter().enumerate() {
@@ -32,14 +31,14 @@ impl ThinClause {
                 if let crate::kernel::atom::Atom::Variable(var_id) = atom {
                     if context.get_var_type(*var_id as usize).is_none() {
                         panic!(
-                            "ThinClause::new: literal {} has variable x{} but context has no type for it. Context len: {}",
+                            "Clause::new: literal {} has variable x{} but context has no type for it. Context len: {}",
                             i, var_id, context.len()
                         );
                     }
                 }
             }
         }
-        let mut c = ThinClause {
+        let mut c = Clause {
             literals,
             context: context.clone(),
         };
@@ -50,13 +49,13 @@ impl ThinClause {
     /// Normalizes literals into a clause, creating a trace of where each one is sent.
     /// Tracks flips that occur during variable ID normalization.
     pub fn normalize_with_trace(
-        literals: Vec<ThinLiteral>,
+        literals: Vec<Literal>,
         context: &LocalContext,
-    ) -> (ThinClause, ClauseTrace) {
+    ) -> (Clause, ClauseTrace) {
         let mut trace = vec![LiteralTrace::Impossible; literals.len()];
 
         // Pair each literal with its initial index.
-        let mut indexed_literals: Vec<(ThinLiteral, usize)> = literals
+        let mut indexed_literals: Vec<(Literal, usize)> = literals
             .into_iter()
             .enumerate()
             .filter_map(|(i, lit)| {
@@ -110,7 +109,7 @@ impl ThinClause {
             }
         }
 
-        let clause = ThinClause {
+        let clause = Clause {
             literals: output_literals,
             context: LocalContext::new(var_types),
         };
@@ -120,11 +119,11 @@ impl ThinClause {
     /// Creates a new clause and a new trace, given a list of literals and a
     /// trace of how they were created.
     pub fn new_with_trace(
-        literals: Vec<ThinLiteral>,
+        literals: Vec<Literal>,
         mut trace: ClauseTrace,
         context: &LocalContext,
-    ) -> (ThinClause, ClauseTrace) {
-        let (c, incremental_trace) = ThinClause::normalize_with_trace(literals, context);
+    ) -> (Clause, ClauseTrace) {
+        let (c, incremental_trace) = Clause::normalize_with_trace(literals, context);
         trace.compose(&incremental_trace);
         (c, trace)
     }
@@ -132,26 +131,26 @@ impl ThinClause {
     /// Creates a new clause. If a trace is provided, we compose the traces.
     /// The base_trace should be applicable to the provided literals.
     pub fn new_composing_traces(
-        literals: Vec<ThinLiteral>,
+        literals: Vec<Literal>,
         base_trace: Option<ClauseTrace>,
         incremental_trace: &ClauseTrace,
         context: &LocalContext,
-    ) -> (ThinClause, Option<ClauseTrace>) {
+    ) -> (Clause, Option<ClauseTrace>) {
         let Some(mut base_trace) = base_trace else {
-            return (ThinClause::new(literals, context), None);
+            return (Clause::new(literals, context), None);
         };
         base_trace.compose(incremental_trace);
-        let (c, trace) = ThinClause::new_with_trace(literals, base_trace, context);
+        let (c, trace) = Clause::new_with_trace(literals, base_trace, context);
         (c, Some(trace))
     }
 
     /// Create a clause from a single literal with trace.
     pub fn from_literal_traced(
-        literal: ThinLiteral,
+        literal: Literal,
         flipped: bool,
         context: &LocalContext,
-    ) -> (ThinClause, ClauseTrace) {
-        ThinClause::new_with_trace(
+    ) -> (Clause, ClauseTrace) {
+        Clause::new_with_trace(
             vec![literal],
             ClauseTrace::new(vec![LiteralTrace::Output { index: 0, flipped }]),
             context,
@@ -182,8 +181,8 @@ impl ThinClause {
     }
 
     /// Create an impossible clause (empty clause, represents false).
-    pub fn impossible() -> ThinClause {
-        ThinClause {
+    pub fn impossible() -> Clause {
+        Clause {
             literals: vec![],
             context: LocalContext::empty(),
         }
@@ -260,7 +259,7 @@ impl ThinClause {
     }
 
     /// Check if this clause contains all literals from another clause.
-    pub fn contains(&self, other: &ThinClause) -> bool {
+    pub fn contains(&self, other: &Clause) -> bool {
         for literal in &other.literals {
             if !self.literals.iter().any(|x| x == literal) {
                 return false;
@@ -304,10 +303,7 @@ impl ThinClause {
     }
 
     /// Create a clause from literals without normalizing.
-    pub fn from_literals_unnormalized(
-        literals: Vec<ThinLiteral>,
-        context: &LocalContext,
-    ) -> ThinClause {
+    pub fn from_literals_unnormalized(literals: Vec<Literal>, context: &LocalContext) -> Clause {
         // Debug: validate that all variables in literals have types in context
         #[cfg(debug_assertions)]
         for (i, lit) in literals.iter().enumerate() {
@@ -315,22 +311,22 @@ impl ThinClause {
                 if let crate::kernel::atom::Atom::Variable(var_id) = atom {
                     if context.get_var_type(*var_id as usize).is_none() {
                         panic!(
-                            "ThinClause::from_literals_unnormalized: literal {} has variable x{} but context has no type for it. Context len: {}",
+                            "Clause::from_literals_unnormalized: literal {} has variable x{} but context has no type for it. Context len: {}",
                             i, var_id, context.len()
                         );
                     }
                 }
             }
         }
-        ThinClause {
+        Clause {
             literals,
             context: context.clone(),
         }
     }
 
     /// Create a clause from a single literal.
-    pub fn from_literal(literal: ThinLiteral, context: &LocalContext) -> ThinClause {
-        ThinClause::new(vec![literal], context)
+    pub fn from_literal(literal: Literal, context: &LocalContext) -> Clause {
+        Clause::new(vec![literal], context)
     }
 
     /// Validate that all literals have consistent types.
@@ -341,38 +337,38 @@ impl ThinClause {
     }
 
     /// Parse a clause from a string.
-    /// Format: "lit1 or lit2 or lit3" where each literal is parsed by ThinLiteral::parse.
-    pub fn parse(s: &str, context: &LocalContext) -> ThinClause {
-        let literals: Vec<ThinLiteral> = s
+    /// Format: "lit1 or lit2 or lit3" where each literal is parsed by Literal::parse.
+    pub fn parse(s: &str, context: &LocalContext) -> Clause {
+        let literals: Vec<Literal> = s
             .split(" or ")
-            .map(|part| ThinLiteral::parse(part.trim()))
+            .map(|part| Literal::parse(part.trim()))
             .collect();
-        ThinClause::new(literals, context)
+        Clause::new(literals, context)
     }
 
-    /// Parse a ThinClause with context.
+    /// Parse a Clause with context.
     /// The kernel_context is accepted but not used during parsing.
     pub fn parse_with_context(
         s: &str,
         context: &LocalContext,
         _kernel_context: &KernelContext,
-    ) -> ThinClause {
-        ThinClause::parse(s, context)
+    ) -> Clause {
+        Clause::parse(s, context)
     }
 
     /// Renumbers synthetic atoms from the provided list into the invalid range.
-    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> ThinClause {
-        let new_literals: Vec<ThinLiteral> = self
+    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> Clause {
+        let new_literals: Vec<Literal> = self
             .literals
             .iter()
             .map(|lit| lit.invalidate_synthetics(from))
             .collect();
-        ThinClause::new(new_literals, &self.context)
+        Clause::new(new_literals, &self.context)
     }
 
     /// Replace the first `num_to_replace` variables with invalid synthetic atoms.
-    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> ThinClause {
-        let new_literals: Vec<ThinLiteral> = self
+    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> Clause {
+        let new_literals: Vec<Literal> = self
             .literals
             .iter()
             .map(|lit| lit.instantiate_invalid_synthetics(num_to_replace))
@@ -386,12 +382,12 @@ impl ThinClause {
             .copied()
             .collect();
         let new_context = LocalContext::new(new_var_types);
-        ThinClause::new(new_literals, &new_context)
+        Clause::new(new_literals, &new_context)
     }
 
     /// Extracts the polarity from all literals.
     /// Returns a clause with all positive literals and a vector of the original polarities.
-    pub fn extract_polarity(&self) -> (ThinClause, Vec<bool>) {
+    pub fn extract_polarity(&self) -> (Clause, Vec<bool>) {
         let mut polarities = Vec::new();
         let mut new_literals = Vec::new();
         for literal in &self.literals {
@@ -400,7 +396,7 @@ impl ThinClause {
             polarities.push(polarity);
         }
         (
-            ThinClause::from_literals_unnormalized(new_literals, &self.context),
+            Clause::from_literals_unnormalized(new_literals, &self.context),
             polarities,
         )
     }
@@ -411,7 +407,7 @@ impl ThinClause {
     /// - arg_index: which argument position differs
     /// - literals: the resulting literals after applying injectivity
     /// - flipped: whether the resulting literal was flipped
-    pub fn find_injectivities(&self) -> Vec<(usize, usize, Vec<ThinLiteral>, bool)> {
+    pub fn find_injectivities(&self) -> Vec<(usize, usize, Vec<Literal>, bool)> {
         let mut results = vec![];
 
         for (i, target) in self.literals.iter().enumerate() {
@@ -445,7 +441,7 @@ impl ThinClause {
                 // Looks like we can eliminate the functions from this literal
                 let mut literals = self.literals.clone();
                 let (new_literal, flipped) =
-                    ThinLiteral::new_with_flip(false, left_args[j].clone(), right_args[j].clone());
+                    Literal::new_with_flip(false, left_args[j].clone(), right_args[j].clone());
                 literals[i] = new_literal;
                 results.push((i, j, literals, flipped));
             }
@@ -456,10 +452,10 @@ impl ThinClause {
 
     /// Generates all clauses that can be derived from this clause using injectivity.
     /// This is a convenience method that returns just the normalized clauses.
-    pub fn injectivities(&self) -> Vec<ThinClause> {
+    pub fn injectivities(&self) -> Vec<Clause> {
         self.find_injectivities()
             .into_iter()
-            .map(|(_, _, literals, _)| ThinClause::new(literals, &self.context))
+            .map(|(_, _, literals, _)| Clause::new(literals, &self.context))
             .filter(|clause| !clause.is_tautology())
             .collect()
     }
@@ -467,7 +463,7 @@ impl ThinClause {
     /// Finds if extensionality can be applied to this clause.
     /// Returns the resulting literals if extensionality applies.
     /// Only works on single-literal clauses.
-    pub fn find_extensionality(&self, kernel_context: &KernelContext) -> Option<Vec<ThinLiteral>> {
+    pub fn find_extensionality(&self, kernel_context: &KernelContext) -> Option<Vec<Literal>> {
         // Extensionality only works on single-literal clauses
         if self.literals.len() != 1 {
             return None;
@@ -539,22 +535,22 @@ impl ThinClause {
         let new_longer = if diff == 0 {
             longer.get_head_term()
         } else {
-            let mut components = vec![crate::kernel::thin_term::ThinTermComponent::Atom(
+            let mut components = vec![crate::kernel::term::TermComponent::Atom(
                 *longer.get_head_atom(),
             )];
             for arg in &longer_args[..diff] {
                 if arg.is_atomic() {
-                    components.push(crate::kernel::thin_term::ThinTermComponent::Atom(
+                    components.push(crate::kernel::term::TermComponent::Atom(
                         *arg.get_head_atom(),
                     ));
                 } else {
-                    components.push(crate::kernel::thin_term::ThinTermComponent::Composite {
+                    components.push(crate::kernel::term::TermComponent::Composite {
                         span: arg.components().len() as u16 + 1,
                     });
                     components.extend(arg.components().iter().copied());
                 }
             }
-            crate::kernel::thin_term::ThinTerm::from_components(components)
+            crate::kernel::term::Term::from_components(components)
         };
 
         let new_shorter = shorter.get_head_term();
@@ -566,7 +562,7 @@ impl ThinClause {
             return None;
         }
 
-        let (new_lit, _) = ThinLiteral::new_with_flip(true, new_longer, new_shorter);
+        let (new_lit, _) = Literal::new_with_flip(true, new_longer, new_shorter);
         Some(vec![new_lit])
     }
 
@@ -579,7 +575,7 @@ impl ThinClause {
     pub fn find_boolean_reductions(
         &self,
         kernel_context: &KernelContext,
-    ) -> Vec<(usize, Vec<ThinLiteral>)> {
+    ) -> Vec<(usize, Vec<Literal>)> {
         use crate::kernel::types::BOOL;
 
         let mut answer = vec![];
@@ -600,15 +596,15 @@ impl ThinClause {
             let mut first = self.literals[..i].to_vec();
             let mut second = self.literals[..i].to_vec();
             if literal.positive {
-                first.push(ThinLiteral::positive(literal.left.clone()));
-                first.push(ThinLiteral::negative(literal.right.clone()));
-                second.push(ThinLiteral::negative(literal.left.clone()));
-                second.push(ThinLiteral::positive(literal.right.clone()));
+                first.push(Literal::positive(literal.left.clone()));
+                first.push(Literal::negative(literal.right.clone()));
+                second.push(Literal::negative(literal.left.clone()));
+                second.push(Literal::positive(literal.right.clone()));
             } else {
-                first.push(ThinLiteral::negative(literal.left.clone()));
-                first.push(ThinLiteral::negative(literal.right.clone()));
-                second.push(ThinLiteral::positive(literal.left.clone()));
-                second.push(ThinLiteral::positive(literal.right.clone()));
+                first.push(Literal::negative(literal.left.clone()));
+                first.push(Literal::negative(literal.right.clone()));
+                second.push(Literal::positive(literal.left.clone()));
+                second.push(Literal::positive(literal.right.clone()));
             }
             first.extend_from_slice(&self.literals[i + 1..]);
             second.extend_from_slice(&self.literals[i + 1..]);
@@ -620,17 +616,17 @@ impl ThinClause {
 
     /// Generates all clauses that can be derived from this clause using boolean reduction.
     /// This is a convenience method that returns just the normalized clauses.
-    pub fn boolean_reductions(&self, kernel_context: &KernelContext) -> Vec<ThinClause> {
+    pub fn boolean_reductions(&self, kernel_context: &KernelContext) -> Vec<Clause> {
         let mut answer = vec![];
         for (_, literals) in self.find_boolean_reductions(kernel_context) {
-            let clause = ThinClause::new(literals, &self.context);
+            let clause = Clause::new(literals, &self.context);
             answer.push(clause);
         }
         answer
     }
 }
 
-impl std::fmt::Display for ThinClause {
+impl std::fmt::Display for Clause {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.literals.is_empty() {
             write!(f, "<empty>")
@@ -651,9 +647,9 @@ mod tests {
     use super::*;
     use crate::kernel::atom::Atom;
     use crate::kernel::kernel_context::KernelContext;
+    use crate::kernel::literal::Literal;
     use crate::kernel::symbol::Symbol;
-    use crate::kernel::thin_literal::ThinLiteral;
-    use crate::kernel::thin_term::ThinTerm;
+    use crate::kernel::term::Term;
     use crate::kernel::types::TypeId;
 
     /// Test that extensionality doesn't match clauses without function applications.
@@ -663,12 +659,12 @@ mod tests {
         let kernel_context = KernelContext::new();
 
         // Create a clause like "g0 = x0" (global constant equals variable)
-        let g0 = ThinTerm::atom(TypeId::new(2), Atom::Symbol(Symbol::GlobalConstant(0)));
-        let x0 = ThinTerm::atom(TypeId::new(2), Atom::Variable(0));
-        let literal = ThinLiteral::equals(g0, x0);
+        let g0 = Term::atom(TypeId::new(2), Atom::Symbol(Symbol::GlobalConstant(0)));
+        let x0 = Term::atom(TypeId::new(2), Atom::Variable(0));
+        let literal = Literal::equals(g0, x0);
 
         let context = LocalContext::new(vec![TypeId::new(2)]);
-        let clause = ThinClause::from_literals_unnormalized(vec![literal], &context);
+        let clause = Clause::from_literals_unnormalized(vec![literal], &context);
 
         // Extensionality should not match this clause since both terms are atomic
         assert!(
@@ -683,17 +679,17 @@ mod tests {
         let kernel_context = KernelContext::new();
 
         // Create a clause like "f(x0) = f(x0)" (same function on both sides)
-        let x0 = ThinTerm::atom(TypeId::new(2), Atom::Variable(0));
-        let f_x0 = ThinTerm::new(
+        let x0 = Term::atom(TypeId::new(2), Atom::Variable(0));
+        let f_x0 = Term::new(
             TypeId::new(2),
             TypeId::new(3),
             Atom::Symbol(Symbol::GlobalConstant(0)),
             vec![x0.clone()],
         );
-        let literal = ThinLiteral::equals(f_x0.clone(), f_x0);
+        let literal = Literal::equals(f_x0.clone(), f_x0);
 
         let context = LocalContext::new(vec![TypeId::new(2)]);
-        let clause = ThinClause::from_literals_unnormalized(vec![literal], &context);
+        let clause = Clause::from_literals_unnormalized(vec![literal], &context);
 
         // Extensionality should not match this clause since both sides use the same function
         assert!(
@@ -718,12 +714,12 @@ mod tests {
         let type_bool = TypeId::new(1); // Bool
 
         // x0 and x1 are Foo, x2 is Bool
-        let x0 = ThinTerm::atom(type_foo, Atom::Variable(0));
-        let x1 = ThinTerm::atom(type_foo, Atom::Variable(1));
-        let x2 = ThinTerm::atom(type_bool, Atom::Variable(2));
+        let x0 = Term::atom(type_foo, Atom::Variable(0));
+        let x1 = Term::atom(type_foo, Atom::Variable(1));
+        let x2 = Term::atom(type_bool, Atom::Variable(2));
 
         // Create f(x0, x1, x2) - a function application
-        let f_args = ThinTerm::new(
+        let f_args = Term::new(
             type_bool,
             TypeId::new(3), // function head type
             Atom::Symbol(Symbol::GlobalConstant(0)),
@@ -731,16 +727,16 @@ mod tests {
         );
 
         // Literal 1: not f(x0, x1, x2) = true (negative Bool equality)
-        let lit1 = ThinLiteral::new(false, f_args.clone(), ThinTerm::atom(type_bool, Atom::True));
+        let lit1 = Literal::new(false, f_args.clone(), Term::atom(type_bool, Atom::True));
 
         // Literal 2: x2 = true (positive Bool equality)
-        let lit2 = ThinLiteral::new(true, x2.clone(), ThinTerm::atom(type_bool, Atom::True));
+        let lit2 = Literal::new(true, x2.clone(), Term::atom(type_bool, Atom::True));
 
         // Context: x0:Foo, x1:Foo, x2:Bool
         let context = LocalContext::new(vec![type_foo, type_foo, type_bool]);
 
         // Normalize the clause
-        let (clause, _trace) = ThinClause::normalize_with_trace(vec![lit1, lit2], &context);
+        let (clause, _trace) = Clause::normalize_with_trace(vec![lit1, lit2], &context);
 
         // After normalization, check the output context:
         // Should have 3 variables with types [TypeId(2), TypeId(2), TypeId(1)]

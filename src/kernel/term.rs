@@ -6,10 +6,10 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::types::{TypeId, BOOL, EMPTY};
 
-/// A component of a ThinTerm in its flattened representation.
+/// A component of a Term in its flattened representation.
 /// Either a Composite node or an Atom leaf node.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub enum ThinTermComponent {
+pub enum TermComponent {
     /// Indicates a composite argument with the given span (total number of components).
     /// The span includes this Composite marker itself, the head, and all arguments recursively.
     /// To skip over this entire subterm: index += span
@@ -20,33 +20,33 @@ pub enum ThinTermComponent {
     Atom(Atom),
 }
 
-/// A borrowed reference to a thin term - wraps a slice of components.
-/// This is the borrowed equivalent of ThinTerm, similar to how &str relates to String.
-/// Most operations work on ThinTermRef to avoid unnecessary allocations.
+/// A borrowed reference to a term - wraps a slice of components.
+/// This is the borrowed equivalent of Term, similar to how &str relates to String.
+/// Most operations work on TermRef to avoid unnecessary allocations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct ThinTermRef<'a> {
-    components: &'a [ThinTermComponent],
+pub struct TermRef<'a> {
+    components: &'a [TermComponent],
 }
 
-impl<'a> ThinTermRef<'a> {
-    /// Create a ThinTermRef from a slice of components.
-    pub fn new(components: &'a [ThinTermComponent]) -> ThinTermRef<'a> {
-        ThinTermRef { components }
+impl<'a> TermRef<'a> {
+    /// Create a TermRef from a slice of components.
+    pub fn new(components: &'a [TermComponent]) -> TermRef<'a> {
+        TermRef { components }
     }
 
-    /// Convert this reference to an owned ThinTerm by cloning the components.
-    pub fn to_owned(&self) -> ThinTerm {
-        // Validate that the result will be a valid ThinTerm
+    /// Convert this reference to an owned Term by cloning the components.
+    pub fn to_owned(&self) -> Term {
+        // Validate that the result will be a valid Term
         if self.components.is_empty() {
-            panic!("Cannot convert empty ThinTermRef to ThinTerm");
+            panic!("Cannot convert empty TermRef to Term");
         }
-        if let ThinTermComponent::Composite { span } = self.components[0] {
+        if let TermComponent::Composite { span } = self.components[0] {
             panic!(
-                "ThinTermRef starts with Composite (span={}) - cannot convert to ThinTerm. Components: {:?}",
+                "TermRef starts with Composite (span={}) - cannot convert to Term. Components: {:?}",
                 span, self.components
             );
         }
-        ThinTerm {
+        Term {
             components: self.components.to_vec(),
         }
     }
@@ -55,10 +55,10 @@ impl<'a> ThinTermRef<'a> {
     /// The head is always the first component (or first after Composite marker).
     pub fn get_head_atom(&self) -> &Atom {
         match &self.components[0] {
-            ThinTermComponent::Atom(atom) => atom,
-            ThinTermComponent::Composite { span } => {
+            TermComponent::Atom(atom) => atom,
+            TermComponent::Composite { span } => {
                 panic!(
-                    "ThinTerm should not start with Composite marker. Components: {:?}, span: {}",
+                    "Term should not start with Composite marker. Components: {:?}, span: {}",
                     self.components, span
                 )
             }
@@ -94,7 +94,7 @@ impl<'a> ThinTermRef<'a> {
     /// Check if this term contains a variable with the given index anywhere.
     pub fn has_variable(&self, index: AtomId) -> bool {
         for component in self.components {
-            if let ThinTermComponent::Atom(Atom::Variable(i)) = component {
+            if let TermComponent::Atom(Atom::Variable(i)) = component {
                 if *i == index {
                     return true;
                 }
@@ -106,7 +106,7 @@ impl<'a> ThinTermRef<'a> {
     /// Check if this term contains any variables.
     pub fn has_any_variable(&self) -> bool {
         for component in self.components {
-            if let ThinTermComponent::Atom(atom) = component {
+            if let TermComponent::Atom(atom) = component {
                 if atom.is_variable() {
                     return true;
                 }
@@ -118,7 +118,7 @@ impl<'a> ThinTermRef<'a> {
     /// Check if this term contains any local constants.
     pub fn has_scoped_constant(&self) -> bool {
         for component in self.components {
-            if let ThinTermComponent::Atom(atom) = component {
+            if let TermComponent::Atom(atom) = component {
                 if atom.is_scoped_constant() {
                     return true;
                 }
@@ -131,7 +131,7 @@ impl<'a> ThinTermRef<'a> {
     pub fn has_synthetic(&self) -> bool {
         use crate::kernel::symbol::Symbol;
         for component in self.components {
-            if let ThinTermComponent::Atom(Atom::Symbol(Symbol::Synthetic(_))) = component {
+            if let TermComponent::Atom(Atom::Symbol(Symbol::Synthetic(_))) = component {
                 return true;
             }
         }
@@ -163,10 +163,10 @@ impl<'a> ThinTermRef<'a> {
     pub fn atom_count(&self) -> u32 {
         let mut count = 0;
         for component in self.components {
-            if let ThinTermComponent::Atom(Atom::True) = component {
+            if let TermComponent::Atom(Atom::True) = component {
                 continue; // "true" counts as 0
             }
-            if matches!(component, ThinTermComponent::Atom(_)) {
+            if matches!(component, TermComponent::Atom(_)) {
                 count += 1;
             }
         }
@@ -183,7 +183,7 @@ impl<'a> ThinTermRef<'a> {
         let mut i = 1; // Skip the head
         while i < self.components.len() {
             arg_count += 1;
-            if let ThinTermComponent::Composite { span } = self.components[i] {
+            if let TermComponent::Composite { span } = self.components[i] {
                 i += span as usize;
             } else {
                 i += 1;
@@ -193,9 +193,9 @@ impl<'a> ThinTermRef<'a> {
     }
 
     /// Iterate over the arguments of this term without allocating.
-    /// Each argument is returned as a ThinTermRef.
-    pub fn iter_args(&self) -> ThinTermRefArgsIterator<'a> {
-        ThinTermRefArgsIterator {
+    /// Each argument is returned as a TermRef.
+    pub fn iter_args(&self) -> TermRefArgsIterator<'a> {
+        TermRefArgsIterator {
             components: self.components,
             position: if self.components.len() > 1 {
                 1
@@ -208,7 +208,7 @@ impl<'a> ThinTermRef<'a> {
     /// Iterate over all atoms in the term.
     pub fn iter_atoms(&self) -> impl Iterator<Item = &Atom> + 'a {
         self.components.iter().filter_map(|component| {
-            if let ThinTermComponent::Atom(atom) = component {
+            if let TermComponent::Atom(atom) = component {
                 Some(atom)
             } else {
                 None
@@ -248,31 +248,31 @@ impl<'a> ThinTermRef<'a> {
 
         for component in self.components {
             match component {
-                ThinTermComponent::Composite { .. } => {
+                TermComponent::Composite { .. } => {
                     // Composite markers don't contribute to weight
                 }
-                ThinTermComponent::Atom(Atom::True) => {
+                TermComponent::Atom(Atom::True) => {
                     // True doesn't contribute to weight
                 }
-                ThinTermComponent::Atom(Atom::Variable(i)) => {
+                TermComponent::Atom(Atom::Variable(i)) => {
                     while refcounts.len() <= *i as usize {
                         refcounts.push(0);
                     }
                     refcounts[*i as usize] += 1;
                 }
-                ThinTermComponent::Atom(Atom::Symbol(Symbol::GlobalConstant(i))) => {
+                TermComponent::Atom(Atom::Symbol(Symbol::GlobalConstant(i))) => {
                     weight1 += 1;
                     weight2 += 4 * (*i) as u32;
                 }
-                ThinTermComponent::Atom(Atom::Symbol(Symbol::ScopedConstant(i))) => {
+                TermComponent::Atom(Atom::Symbol(Symbol::ScopedConstant(i))) => {
                     weight1 += 1;
                     weight2 += 1 + 4 * (*i) as u32;
                 }
-                ThinTermComponent::Atom(Atom::Symbol(Symbol::Monomorph(i))) => {
+                TermComponent::Atom(Atom::Symbol(Symbol::Monomorph(i))) => {
                     weight1 += 1;
                     weight2 += 2 + 4 * (*i) as u32;
                 }
-                ThinTermComponent::Atom(Atom::Symbol(Symbol::Synthetic(i))) => {
+                TermComponent::Atom(Atom::Symbol(Symbol::Synthetic(i))) => {
                     weight1 += 1;
                     weight2 += 3 + 4 * (*i) as u32;
                 }
@@ -283,7 +283,7 @@ impl<'a> ThinTermRef<'a> {
     }
 
     /// KBO helper that can skip the domination check.
-    fn kbo_helper(&self, other: &ThinTermRef, check_domination: bool) -> std::cmp::Ordering {
+    fn kbo_helper(&self, other: &TermRef, check_domination: bool) -> std::cmp::Ordering {
         use std::cmp::Ordering;
 
         let mut self_refcounts = vec![];
@@ -314,7 +314,7 @@ impl<'a> ThinTermRef<'a> {
     }
 
     /// Partial tiebreak for KBO - stable under variable renaming.
-    fn partial_tiebreak(&self, other: &ThinTermRef) -> std::cmp::Ordering {
+    fn partial_tiebreak(&self, other: &TermRef) -> std::cmp::Ordering {
         use std::cmp::Ordering;
 
         let head_cmp = self
@@ -342,7 +342,7 @@ impl<'a> ThinTermRef<'a> {
     }
 
     /// Total tiebreak for KBO - not stable under variable renaming.
-    fn total_tiebreak(&self, other: &ThinTermRef) -> std::cmp::Ordering {
+    fn total_tiebreak(&self, other: &TermRef) -> std::cmp::Ordering {
         use std::cmp::Ordering;
 
         let head_cmp = other.get_head_atom().cmp(self.get_head_atom());
@@ -367,12 +367,12 @@ impl<'a> ThinTermRef<'a> {
     /// Knuth-Bendix partial reduction ordering.
     /// Returns Greater if self > other, Less if other > self.
     /// Returns Equal if they cannot be ordered (not equality in the usual sense).
-    pub fn kbo_cmp(&self, other: &ThinTermRef) -> std::cmp::Ordering {
+    pub fn kbo_cmp(&self, other: &TermRef) -> std::cmp::Ordering {
         self.kbo_helper(other, true)
     }
 
     /// Extended KBO comparison - total ordering where only identical terms are equal.
-    pub fn extended_kbo_cmp(&self, other: &ThinTermRef) -> std::cmp::Ordering {
+    pub fn extended_kbo_cmp(&self, other: &TermRef) -> std::cmp::Ordering {
         use std::cmp::Ordering;
 
         let kbo_cmp = self.kbo_helper(other, false);
@@ -389,7 +389,7 @@ impl<'a> ThinTermRef<'a> {
     }
 }
 
-impl fmt::Display for ThinTermRef<'_> {
+impl fmt::Display for TermRef<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // Format the term by walking through components
         format_term_at(f, self.components, 0)
@@ -398,23 +398,19 @@ impl fmt::Display for ThinTermRef<'_> {
 
 /// Helper function to format a term starting at the given position.
 /// Returns the position after the formatted term.
-fn format_term_at(
-    f: &mut fmt::Formatter,
-    components: &[ThinTermComponent],
-    pos: usize,
-) -> fmt::Result {
+fn format_term_at(f: &mut fmt::Formatter, components: &[TermComponent], pos: usize) -> fmt::Result {
     if pos >= components.len() {
         return Ok(());
     }
 
     match &components[pos] {
-        ThinTermComponent::Composite { span } => {
+        TermComponent::Composite { span } => {
             // This shouldn't happen at the start of a term, but handle it
             // by formatting the contents (skip the Composite marker)
             let end = pos + *span as usize;
             format_composite_contents(f, components, pos + 1, end)
         }
-        ThinTermComponent::Atom(atom) => {
+        TermComponent::Atom(atom) => {
             // Format the head atom
             match atom {
                 Atom::Variable(i) => write!(f, "x{}", i)?,
@@ -444,17 +440,17 @@ fn format_term_at(
 /// Returns the position after the argument.
 fn format_arg_at(
     f: &mut fmt::Formatter,
-    components: &[ThinTermComponent],
+    components: &[TermComponent],
     pos: usize,
 ) -> Result<usize, fmt::Error> {
     match &components[pos] {
-        ThinTermComponent::Composite { span } => {
+        TermComponent::Composite { span } => {
             // Format the composite subterm
             let end = pos + *span as usize;
             format_composite_contents(f, components, pos + 1, end)?;
             Ok(end)
         }
-        ThinTermComponent::Atom(atom) => {
+        TermComponent::Atom(atom) => {
             // Simple atom argument
             match atom {
                 Atom::Variable(i) => write!(f, "x{}", i)?,
@@ -468,7 +464,7 @@ fn format_arg_at(
 /// Format the contents of a composite (head + args) from start to end.
 fn format_composite_contents(
     f: &mut fmt::Formatter,
-    components: &[ThinTermComponent],
+    components: &[TermComponent],
     start: usize,
     end: usize,
 ) -> fmt::Result {
@@ -478,11 +474,11 @@ fn format_composite_contents(
 
     // The first element after Composite marker is the head
     match &components[start] {
-        ThinTermComponent::Atom(atom) => match atom {
+        TermComponent::Atom(atom) => match atom {
             Atom::Variable(i) => write!(f, "x{}", i)?,
             _ => write!(f, "{}", atom)?,
         },
-        ThinTermComponent::Composite { .. } => {
+        TermComponent::Composite { .. } => {
             // Nested composite as head - shouldn't normally happen
             return Err(fmt::Error);
         }
@@ -506,7 +502,7 @@ fn format_composite_contents(
     Ok(())
 }
 
-/// A thin term stores term structure without type information.
+/// A Term stores term structure without embedding type information.
 /// Type information is stored separately in the TypeStore and SymbolTable.
 /// The term is represented as a flat vector of components in pre-order traversal.
 /// The first element is always the head atom, followed by the arguments.
@@ -517,28 +513,23 @@ fn format_composite_contents(
 /// - Nested "f(a, g(b))": [Atom(f), Atom(a), Composite{span: 3}, Atom(g), Atom(b)]
 ///                                            ^--- this composite has span 3: the marker, g, and b
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct ThinTerm {
-    components: Vec<ThinTermComponent>,
+pub struct Term {
+    components: Vec<TermComponent>,
 }
 
-impl ThinTerm {
-    /// Create a new ThinTerm.
-    /// The term_type and head_type parameters are ignored since ThinTerm stores types externally.
-    pub fn new(
-        _term_type: TypeId,
-        _head_type: TypeId,
-        head: Atom,
-        args: Vec<ThinTerm>,
-    ) -> ThinTerm {
-        let mut components = vec![ThinTermComponent::Atom(head)];
+impl Term {
+    /// Create a new Term.
+    /// The term_type and head_type parameters are ignored since Term stores types externally.
+    pub fn new(_term_type: TypeId, _head_type: TypeId, head: Atom, args: Vec<Term>) -> Term {
+        let mut components = vec![TermComponent::Atom(head)];
         for (i, arg) in args.iter().enumerate() {
             // Validate that arg is a valid term (starts with Atom)
             if arg.components.is_empty() {
-                panic!("ThinTerm::new: arg {} is empty", i);
+                panic!("Term::new: arg {} is empty", i);
             }
-            if let ThinTermComponent::Composite { span } = arg.components[0] {
+            if let TermComponent::Composite { span } = arg.components[0] {
                 panic!(
-                    "ThinTerm::new: arg {} starts with Composite (span={}). Arg components: {:?}",
+                    "Term::new: arg {} starts with Composite (span={}). Arg components: {:?}",
                     i, span, arg.components
                 );
             }
@@ -548,22 +539,22 @@ impl ThinTerm {
                 components.push(arg.components[0]);
             } else {
                 // Compound argument - add Composite marker with span
-                components.push(ThinTermComponent::Composite {
+                components.push(TermComponent::Composite {
                     span: arg.components.len() as u16 + 1,
                 });
                 components.extend(arg.components.iter().copied());
             }
         }
-        ThinTerm { components }
+        Term { components }
     }
 
-    /// Create a new ThinTerm from a vector of components.
-    pub fn from_components(components: Vec<ThinTermComponent>) -> ThinTerm {
+    /// Create a new Term from a vector of components.
+    pub fn from_components(components: Vec<TermComponent>) -> Term {
         // Validate structure: must start with Atom, and after each Composite must come an Atom
         if components.is_empty() {
             panic!("from_components: empty components");
         }
-        if let ThinTermComponent::Composite { span } = components[0] {
+        if let TermComponent::Composite { span } = components[0] {
             panic!(
                 "from_components: starts with Composite (span={}). Components: {:?}",
                 span, components
@@ -571,14 +562,14 @@ impl ThinTerm {
         }
         // Validate that after each Composite comes an Atom
         for i in 0..components.len() {
-            if let ThinTermComponent::Composite { .. } = components[i] {
+            if let TermComponent::Composite { .. } = components[i] {
                 if i + 1 >= components.len() {
                     panic!(
                         "from_components: Composite at {} has no following component. Components: {:?}",
                         i, components
                     );
                 }
-                if let ThinTermComponent::Composite { span: inner } = components[i + 1] {
+                if let TermComponent::Composite { span: inner } = components[i + 1] {
                     panic!(
                         "from_components: Composite at {} followed by Composite (span={}). Components: {:?}",
                         i, inner, components
@@ -586,31 +577,31 @@ impl ThinTerm {
                 }
             }
         }
-        ThinTerm { components }
+        Term { components }
     }
 
-    /// Create a ThinTerm representing a single atom with no arguments.
-    /// The type_id parameter is ignored since ThinTerm stores types separately.
-    pub fn atom(_type_id: TypeId, atom: Atom) -> ThinTerm {
-        ThinTerm {
-            components: vec![ThinTermComponent::Atom(atom)],
+    /// Create a Term representing a single atom with no arguments.
+    /// The type_id parameter is ignored since Term stores types separately.
+    pub fn atom(_type_id: TypeId, atom: Atom) -> Term {
+        Term {
+            components: vec![TermComponent::Atom(atom)],
         }
     }
 
-    /// Parse a ThinTerm from a string representation.
+    /// Parse a Term from a string representation.
     /// Format: "f(a, g(b))" or just "x0" for atoms.
     /// Variables are written as x0, x1, etc.
     /// Constants are written as c0, c1, etc.
-    pub fn parse(s: &str) -> ThinTerm {
+    pub fn parse(s: &str) -> Term {
         let s = s.trim();
 
         if s == "true" {
-            return ThinTerm::atom(BOOL, Atom::True);
+            return Term::atom(BOOL, Atom::True);
         }
 
         let first_paren = match s.find('(') {
             Some(i) => i,
-            None => return ThinTerm::atom(EMPTY, Atom::new(s)),
+            None => return Term::atom(EMPTY, Atom::new(s)),
         };
 
         // Figure out which commas are inside precisely one level of parentheses.
@@ -643,25 +634,25 @@ impl ThinTerm {
             } else {
                 terminator_indices[i - 1] + 1
             };
-            args.push(ThinTerm::parse(&s[start..*terminator_index]));
+            args.push(Term::parse(&s[start..*terminator_index]));
         }
 
         // Build the component vector
-        let mut components = vec![ThinTermComponent::Atom(Atom::new(head))];
+        let mut components = vec![TermComponent::Atom(Atom::new(head))];
         for arg in args {
             if arg.components.len() == 1 {
                 // Atomic argument - just add the atom
                 components.push(arg.components[0]);
             } else {
                 // Compound argument - add Composite marker with span
-                components.push(ThinTermComponent::Composite {
+                components.push(TermComponent::Composite {
                     span: arg.components.len() as u16 + 1,
                 });
                 components.extend(arg.components);
             }
         }
 
-        ThinTerm { components }
+        Term { components }
     }
 
     /// Parse a term string with proper types from context.
@@ -671,29 +662,29 @@ impl ThinTerm {
         s: &str,
         _local_context: &LocalContext,
         _kernel_context: &KernelContext,
-    ) -> ThinTerm {
-        // ThinTerm doesn't store types internally, so we can use the same parse logic.
+    ) -> Term {
+        // Term doesn't store types internally, so we can use the same parse logic.
         // The types will be looked up from context when needed.
-        ThinTerm::parse(s)
+        Term::parse(s)
     }
 
-    /// Get the components of this thin term.
-    pub fn components(&self) -> &[ThinTermComponent] {
+    /// Get the components of this term.
+    pub fn components(&self) -> &[TermComponent] {
         &self.components
     }
 
     /// Get a borrowed reference to this term.
-    pub fn as_ref(&self) -> ThinTermRef {
-        ThinTermRef::new(&self.components)
+    pub fn as_ref(&self) -> TermRef {
+        TermRef::new(&self.components)
     }
 
     /// Get the head atom of this term.
     pub fn get_head_atom(&self) -> &Atom {
         match &self.components[0] {
-            ThinTermComponent::Atom(atom) => atom,
-            ThinTermComponent::Composite { span } => {
+            TermComponent::Atom(atom) => atom,
+            TermComponent::Composite { span } => {
                 panic!(
-                    "ThinTerm should not start with Composite marker. Components: {:?}, span: {}",
+                    "Term should not start with Composite marker. Components: {:?}, span: {}",
                     self.components, span
                 )
             }
@@ -754,16 +745,16 @@ impl ThinTerm {
         self.as_ref().is_true()
     }
 
-    /// Create a new ThinTerm representing the boolean constant "true".
-    pub fn new_true() -> ThinTerm {
-        ThinTerm::atom(BOOL, Atom::True)
+    /// Create a new Term representing the boolean constant "true".
+    pub fn new_true() -> Term {
+        Term::atom(BOOL, Atom::True)
     }
 
-    /// Create a new ThinTerm representing a variable with the given index.
-    /// The type_id parameter is ignored since ThinTerm stores types separately in the context.
-    pub fn new_variable(_type_id: TypeId, index: AtomId) -> ThinTerm {
-        ThinTerm {
-            components: vec![ThinTermComponent::Atom(Atom::Variable(index))],
+    /// Create a new Term representing a variable with the given index.
+    /// The type_id parameter is ignored since Term stores types separately in the context.
+    pub fn new_variable(_type_id: TypeId, index: AtomId) -> Term {
+        Term {
+            components: vec![TermComponent::Atom(Atom::Variable(index))],
         }
     }
 
@@ -829,26 +820,26 @@ impl ThinTerm {
     }
 
     /// Iterate over the arguments of this term without allocating.
-    /// Each argument is returned as a ThinTermRef.
-    pub fn iter_args(&self) -> ThinTermRefArgsIterator {
+    /// Each argument is returned as a TermRef.
+    pub fn iter_args(&self) -> TermRefArgsIterator {
         self.as_ref().iter_args()
     }
 
-    /// Get the arguments of this term as owned ThinTerms.
+    /// Get the arguments of this term as owned Terms.
     /// This allocates a new vector, unlike iter_args() which borrows.
-    pub fn args(&self) -> Vec<ThinTerm> {
+    pub fn args(&self) -> Vec<Term> {
         self.iter_args().map(|arg| arg.to_owned()).collect()
     }
 
     /// Get a specific argument by index.
-    pub fn get_arg(&self, index: usize) -> Option<ThinTerm> {
+    pub fn get_arg(&self, index: usize) -> Option<Term> {
         self.iter_args().nth(index).map(|arg| arg.to_owned())
     }
 
     /// Iterate over all atoms in the term.
     pub fn iter_atoms(&self) -> impl Iterator<Item = &Atom> + '_ {
         self.components.iter().filter_map(|component| {
-            if let ThinTermComponent::Atom(atom) = component {
+            if let TermComponent::Atom(atom) = component {
                 Some(atom)
             } else {
                 None
@@ -856,10 +847,10 @@ impl ThinTerm {
         })
     }
 
-    /// Returns the head of this term as a ThinTerm with no arguments.
-    pub fn get_head_term(&self) -> ThinTerm {
-        ThinTerm {
-            components: vec![ThinTermComponent::Atom(*self.get_head_atom())],
+    /// Returns the head of this term as a Term with no arguments.
+    pub fn get_head_term(&self) -> Term {
+        Term {
+            components: vec![TermComponent::Atom(*self.get_head_atom())],
         }
     }
 
@@ -927,12 +918,12 @@ impl ThinTerm {
     /// Replace all occurrences of a variable with a term.
     /// This handles the complexity of updating Composite span markers when
     /// the replacement term has a different size than the variable (1 component).
-    pub fn replace_variable(&self, id: AtomId, value: &ThinTerm) -> ThinTerm {
+    pub fn replace_variable(&self, id: AtomId, value: &Term) -> Term {
         // Validate input term is well-formed
         for i in 0..self.components.len() {
-            if let ThinTermComponent::Composite { .. } = self.components[i] {
+            if let TermComponent::Composite { .. } = self.components[i] {
                 if i + 1 < self.components.len() {
-                    if let ThinTermComponent::Composite { span } = self.components[i + 1] {
+                    if let TermComponent::Composite { span } = self.components[i + 1] {
                         panic!(
                             "replace_variable: input term has Composite followed by Composite at {}. \
                              span={}, components: {:?}",
@@ -945,7 +936,7 @@ impl ThinTerm {
 
         // Special case: if this term IS the variable being replaced, just return the value
         if self.components.len() == 1 {
-            if let ThinTermComponent::Atom(Atom::Variable(var_id)) = self.components[0] {
+            if let TermComponent::Atom(Atom::Variable(var_id)) = self.components[0] {
                 if var_id == id {
                     return value.clone();
                 }
@@ -955,23 +946,23 @@ impl ThinTerm {
         // Build the result by processing components, tracking size changes for spans
         let mut result = Vec::new();
         self.replace_variable_recursive(&mut result, id, value);
-        ThinTerm::from_components(result)
+        Term::from_components(result)
     }
 
     /// Helper for replace_variable that processes components recursively.
     /// Returns the number of components added to result.
     fn replace_variable_recursive(
         &self,
-        result: &mut Vec<ThinTermComponent>,
+        result: &mut Vec<TermComponent>,
         id: AtomId,
-        value: &ThinTerm,
+        value: &Term,
     ) -> usize {
         let mut i = 0;
         let mut added = 0;
 
         while i < self.components.len() {
             match &self.components[i] {
-                ThinTermComponent::Atom(Atom::Variable(var_id)) if *var_id == id => {
+                TermComponent::Atom(Atom::Variable(var_id)) if *var_id == id => {
                     // Replace this variable with the value's components
                     if value.components.len() == 1 {
                         // Simple replacement - just copy the single component
@@ -985,7 +976,7 @@ impl ThinTerm {
                         added += value.components.len();
                     } else {
                         // Non-head position - need to wrap in Composite
-                        result.push(ThinTermComponent::Composite {
+                        result.push(TermComponent::Composite {
                             span: value.components.len() as u16 + 1,
                         });
                         result.extend(value.components.iter().copied());
@@ -993,29 +984,27 @@ impl ThinTerm {
                     }
                     i += 1;
                 }
-                ThinTermComponent::Atom(atom) => {
+                TermComponent::Atom(atom) => {
                     // Non-matching atom - copy as-is
-                    result.push(ThinTermComponent::Atom(*atom));
+                    result.push(TermComponent::Atom(*atom));
                     added += 1;
                     i += 1;
                 }
-                ThinTermComponent::Composite { span } => {
+                TermComponent::Composite { span } => {
                     // Process the composite subterm recursively
                     let subterm_start = i + 1;
                     let subterm_end = i + *span as usize;
 
-                    // Create a temporary ThinTerm for the subterm (excluding Composite marker)
-                    let subterm = ThinTerm::from_components(
-                        self.components[subterm_start..subterm_end].to_vec(),
-                    );
+                    // Create a temporary Term for the subterm (excluding Composite marker)
+                    let subterm =
+                        Term::from_components(self.components[subterm_start..subterm_end].to_vec());
 
                     // Recursively replace in the subterm
                     let mut sub_result = Vec::new();
                     subterm.replace_variable_recursive(&mut sub_result, id, value);
 
                     // Validate: sub_result must start with Atom, not Composite
-                    if let Some(ThinTermComponent::Composite { span: sr_span }) = sub_result.first()
-                    {
+                    if let Some(TermComponent::Composite { span: sr_span }) = sub_result.first() {
                         panic!(
                             "replace_variable_recursive: sub_result starts with Composite (span={}). \
                              Original subterm: {:?}, sub_result: {:?}",
@@ -1029,7 +1018,7 @@ impl ThinTerm {
                         added += 1;
                     } else {
                         // Add a new Composite marker with the correct span
-                        result.push(ThinTermComponent::Composite {
+                        result.push(TermComponent::Composite {
                             span: sub_result.len() as u16 + 1,
                         });
                         result.extend(sub_result.iter().copied());
@@ -1045,11 +1034,7 @@ impl ThinTerm {
     }
 
     /// Replace multiple variables at once.
-    pub fn replace_variables(
-        &self,
-        var_ids: &[AtomId],
-        replacement_terms: &[&ThinTerm],
-    ) -> ThinTerm {
+    pub fn replace_variables(&self, var_ids: &[AtomId], replacement_terms: &[&Term]) -> Term {
         if var_ids.is_empty() {
             return self.clone();
         }
@@ -1064,49 +1049,45 @@ impl ThinTerm {
     }
 
     /// Replace an atom with another atom throughout the term.
-    pub fn replace_atom(&self, old_atom: &Atom, new_atom: &Atom) -> ThinTerm {
+    pub fn replace_atom(&self, old_atom: &Atom, new_atom: &Atom) -> Term {
         let new_components = self
             .components
             .iter()
             .map(|component| match component {
-                ThinTermComponent::Atom(atom) if atom == old_atom => {
-                    ThinTermComponent::Atom(*new_atom)
-                }
+                TermComponent::Atom(atom) if atom == old_atom => TermComponent::Atom(*new_atom),
                 c => *c,
             })
             .collect();
-        ThinTerm::from_components(new_components)
+        Term::from_components(new_components)
     }
 
     /// Renumbers synthetic atoms from the provided list into the invalid range.
-    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> ThinTerm {
+    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> Term {
         let new_components = self
             .components
             .iter()
             .map(|component| match component {
-                ThinTermComponent::Atom(atom) => {
-                    ThinTermComponent::Atom(atom.invalidate_synthetics(from))
-                }
+                TermComponent::Atom(atom) => TermComponent::Atom(atom.invalidate_synthetics(from)),
                 c => *c,
             })
             .collect();
-        ThinTerm::from_components(new_components)
+        Term::from_components(new_components)
     }
 
     /// Replace the first `num_to_replace` variables with invalid synthetic atoms, adjusting
     /// the subsequent variable ids accordingly.
-    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> ThinTerm {
+    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> Term {
         let new_components = self
             .components
             .iter()
             .map(|component| match component {
-                ThinTermComponent::Atom(atom) => {
-                    ThinTermComponent::Atom(atom.instantiate_invalid_synthetics(num_to_replace))
+                TermComponent::Atom(atom) => {
+                    TermComponent::Atom(atom.instantiate_invalid_synthetics(num_to_replace))
                 }
                 c => *c,
             })
             .collect();
-        ThinTerm::from_components(new_components)
+        Term::from_components(new_components)
     }
 
     /// Normalize variable IDs in place, tracking types from the input context.
@@ -1118,7 +1099,7 @@ impl ThinTerm {
         input_context: &LocalContext,
     ) {
         for component in &mut self.components {
-            if let ThinTermComponent::Atom(Atom::Variable(i)) = component {
+            if let TermComponent::Atom(Atom::Variable(i)) = component {
                 let pos = var_ids.iter().position(|&x| x == *i);
                 match pos {
                     Some(j) => *i = j as AtomId,
@@ -1164,25 +1145,23 @@ impl ThinTerm {
 
     /// Remap variables according to a mapping.
     /// Replaces x_i with x_{var_map[i]}.
-    pub fn remap_variables(&self, var_map: &[AtomId]) -> ThinTerm {
+    pub fn remap_variables(&self, var_map: &[AtomId]) -> Term {
         let new_components = self
             .components
             .iter()
             .map(|component| match component {
-                ThinTermComponent::Atom(atom) => {
-                    ThinTermComponent::Atom(atom.remap_variables(var_map))
-                }
+                TermComponent::Atom(atom) => TermComponent::Atom(atom.remap_variables(var_map)),
                 c => *c,
             })
             .collect();
-        ThinTerm::from_components(new_components)
+        Term::from_components(new_components)
     }
 
     /// Build a term from a spine (function + arguments).
     /// If the spine has one element, returns just that element.
     /// Otherwise, treats the first element as the function and the rest as arguments.
-    /// The term_type parameter is ignored since ThinTerm stores types externally.
-    pub fn from_spine(mut spine: Vec<ThinTerm>, _term_type: TypeId) -> ThinTerm {
+    /// The term_type parameter is ignored since Term stores types externally.
+    pub fn from_spine(mut spine: Vec<Term>, _term_type: TypeId) -> Term {
         if spine.is_empty() {
             panic!("from_spine called with empty spine");
         }
@@ -1200,24 +1179,24 @@ impl ThinTerm {
             all_args.extend(spine);
 
             // Build the new term
-            let mut components = vec![ThinTermComponent::Atom(*func.get_head_atom())];
+            let mut components = vec![TermComponent::Atom(*func.get_head_atom())];
             for arg in all_args {
                 if arg.components.len() == 1 {
                     components.push(arg.components[0]);
                 } else {
-                    components.push(ThinTermComponent::Composite {
+                    components.push(TermComponent::Composite {
                         span: arg.components.len() as u16 + 1,
                     });
                     components.extend(arg.components.iter().copied());
                 }
             }
-            ThinTerm::from_components(components)
+            Term::from_components(components)
         }
     }
 
     /// Apply additional arguments to this term.
-    /// The result_type parameter is ignored since ThinTerm stores types externally.
-    pub fn apply(&self, args: &[ThinTerm], _result_type: TypeId) -> ThinTerm {
+    /// The result_type parameter is ignored since Term stores types externally.
+    pub fn apply(&self, args: &[Term], _result_type: TypeId) -> Term {
         if args.is_empty() {
             return self.clone();
         }
@@ -1227,40 +1206,40 @@ impl ThinTerm {
             if arg.components.len() == 1 {
                 components.push(arg.components[0]);
             } else {
-                components.push(ThinTermComponent::Composite {
+                components.push(TermComponent::Composite {
                     span: arg.components.len() as u16 + 1,
                 });
                 components.extend(arg.components.iter().copied());
             }
         }
-        ThinTerm::from_components(components)
+        Term::from_components(components)
     }
 
     /// Replace all arguments with new arguments.
-    pub fn replace_args(&self, new_args: Vec<ThinTerm>) -> ThinTerm {
-        let mut components = vec![ThinTermComponent::Atom(*self.get_head_atom())];
+    pub fn replace_args(&self, new_args: Vec<Term>) -> Term {
+        let mut components = vec![TermComponent::Atom(*self.get_head_atom())];
         for arg in new_args {
             if arg.components.len() == 1 {
                 components.push(arg.components[0]);
             } else {
-                components.push(ThinTermComponent::Composite {
+                components.push(TermComponent::Composite {
                     span: arg.components.len() as u16 + 1,
                 });
                 components.extend(arg.components.iter().copied());
             }
         }
-        ThinTerm::from_components(components)
+        Term::from_components(components)
     }
 
     /// Knuth-Bendix partial reduction ordering.
     /// Returns Greater if self > other, Less if other > self.
     /// Returns Equal if they cannot be ordered (not equality in the usual sense).
-    pub fn kbo_cmp(&self, other: &ThinTerm) -> std::cmp::Ordering {
+    pub fn kbo_cmp(&self, other: &Term) -> std::cmp::Ordering {
         self.as_ref().kbo_cmp(&other.as_ref())
     }
 
     /// Extended KBO comparison - total ordering where only identical terms are equal.
-    pub fn extended_kbo_cmp(&self, other: &ThinTerm) -> std::cmp::Ordering {
+    pub fn extended_kbo_cmp(&self, other: &Term) -> std::cmp::Ordering {
         self.as_ref().extended_kbo_cmp(&other.as_ref())
     }
 
@@ -1269,7 +1248,7 @@ impl ThinTerm {
     /// This mutates the term in place.
     pub fn normalize_var_ids(&mut self, var_ids: &mut Vec<AtomId>) {
         for component in &mut self.components {
-            if let ThinTermComponent::Atom(Atom::Variable(i)) = component {
+            if let TermComponent::Atom(Atom::Variable(i)) = component {
                 let pos = var_ids.iter().position(|&x| x == *i);
                 match pos {
                     Some(j) => *i = j as AtomId,
@@ -1286,7 +1265,7 @@ impl ThinTerm {
     /// Get the subterm at the given path.
     /// A path is a sequence of argument indices to follow.
     /// An empty path returns the whole term.
-    pub fn get_term_at_path(&self, path: &[usize]) -> Option<ThinTerm> {
+    pub fn get_term_at_path(&self, path: &[usize]) -> Option<Term> {
         if path.is_empty() {
             return Some(self.clone());
         }
@@ -1299,10 +1278,10 @@ impl ThinTerm {
         while current_pos < self.components.len() && current_arg < arg_index {
             // Skip this argument
             match self.components[current_pos] {
-                ThinTermComponent::Composite { span } => {
+                TermComponent::Composite { span } => {
                     current_pos += span as usize;
                 }
-                ThinTermComponent::Atom(_) => {
+                TermComponent::Atom(_) => {
                     current_pos += 1;
                 }
             }
@@ -1315,16 +1294,14 @@ impl ThinTerm {
 
         // Extract the argument at current_pos
         let arg = match self.components[current_pos] {
-            ThinTermComponent::Composite { span } => {
+            TermComponent::Composite { span } => {
                 // The argument spans from current_pos to current_pos + span
                 // But the Composite marker isn't part of the term's components, so skip it
-                ThinTerm::from_components(
+                Term::from_components(
                     self.components[current_pos + 1..current_pos + span as usize].to_vec(),
                 )
             }
-            ThinTermComponent::Atom(atom) => {
-                ThinTerm::from_components(vec![ThinTermComponent::Atom(atom)])
-            }
+            TermComponent::Atom(atom) => Term::from_components(vec![TermComponent::Atom(atom)]),
         };
 
         // Recurse for the rest of the path
@@ -1334,7 +1311,7 @@ impl ThinTerm {
     /// Replace the subterm at the given path with a replacement.
     /// A path is a sequence of argument indices to follow.
     /// An empty path replaces the whole term.
-    pub fn replace_at_path(&self, path: &[usize], replacement: ThinTerm) -> ThinTerm {
+    pub fn replace_at_path(&self, path: &[usize], replacement: Term) -> Term {
         if path.is_empty() {
             return replacement;
         }
@@ -1349,18 +1326,18 @@ impl ThinTerm {
         while current_pos < self.components.len() {
             let arg_start = current_pos;
             let arg_end = match self.components[current_pos] {
-                ThinTermComponent::Composite { span } => current_pos + span as usize,
-                ThinTermComponent::Atom(_) => current_pos + 1,
+                TermComponent::Composite { span } => current_pos + span as usize,
+                TermComponent::Atom(_) => current_pos + 1,
             };
 
             if current_arg == arg_index {
                 // This is the argument to replace (or recurse into)
                 let old_arg = match self.components[arg_start] {
-                    ThinTermComponent::Composite { span } => ThinTerm::from_components(
+                    TermComponent::Composite { span } => Term::from_components(
                         self.components[arg_start + 1..arg_start + span as usize].to_vec(),
                     ),
-                    ThinTermComponent::Atom(atom) => {
-                        ThinTerm::from_components(vec![ThinTermComponent::Atom(atom)])
+                    TermComponent::Atom(atom) => {
+                        Term::from_components(vec![TermComponent::Atom(atom)])
                     }
                 };
 
@@ -1370,7 +1347,7 @@ impl ThinTerm {
                 if new_arg.components.len() == 1 {
                     new_components.push(new_arg.components[0]);
                 } else {
-                    new_components.push(ThinTermComponent::Composite {
+                    new_components.push(TermComponent::Composite {
                         span: new_arg.components.len() as u16 + 1,
                     });
                     new_components.extend(new_arg.components.iter().copied());
@@ -1384,13 +1361,13 @@ impl ThinTerm {
             current_arg += 1;
         }
 
-        ThinTerm::from_components(new_components)
+        Term::from_components(new_components)
     }
 
     /// Find all rewritable subterms with their paths.
     /// It is an error to call this on any variables.
     /// Any term is rewritable except for "true".
-    pub fn rewritable_subterms(&self) -> Vec<(Vec<usize>, ThinTerm)> {
+    pub fn rewritable_subterms(&self) -> Vec<(Vec<usize>, Term)> {
         let mut answer = vec![];
         let mut prefix = vec![];
         self.push_rewritable_subterms(&mut prefix, &mut answer);
@@ -1401,7 +1378,7 @@ impl ThinTerm {
     fn push_rewritable_subterms(
         &self,
         prefix: &mut Vec<usize>,
-        answer: &mut Vec<(Vec<usize>, ThinTerm)>,
+        answer: &mut Vec<(Vec<usize>, Term)>,
     ) {
         if self.is_true() {
             return;
@@ -1422,7 +1399,7 @@ impl ThinTerm {
     }
 }
 
-impl fmt::Display for ThinTerm {
+impl fmt::Display for Term {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.as_ref())
     }
@@ -1441,14 +1418,14 @@ fn dominates(a: &Vec<u8>, b: &Vec<u8>) -> bool {
     true
 }
 
-/// Iterator over the arguments of a ThinTermRef, yielding borrowed references.
-pub struct ThinTermRefArgsIterator<'a> {
-    components: &'a [ThinTermComponent],
+/// Iterator over the arguments of a TermRef, yielding borrowed references.
+pub struct TermRefArgsIterator<'a> {
+    components: &'a [TermComponent],
     position: usize,
 }
 
-impl<'a> Iterator for ThinTermRefArgsIterator<'a> {
-    type Item = ThinTermRef<'a>;
+impl<'a> Iterator for TermRefArgsIterator<'a> {
+    type Item = TermRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.position >= self.components.len() {
@@ -1456,7 +1433,7 @@ impl<'a> Iterator for ThinTermRefArgsIterator<'a> {
         }
 
         match self.components[self.position] {
-            ThinTermComponent::Composite { span } => {
+            TermComponent::Composite { span } => {
                 // Extract the composite term as a slice reference.
                 // Skip the Composite marker itself - the term content starts after it.
                 let start = self.position + 1;
@@ -1470,7 +1447,7 @@ impl<'a> Iterator for ThinTermRefArgsIterator<'a> {
                 let arg_slice = &self.components[start..end];
                 // Validate the extracted slice starts with an Atom
                 if !arg_slice.is_empty() {
-                    if let ThinTermComponent::Composite { span: inner_span } = arg_slice[0] {
+                    if let TermComponent::Composite { span: inner_span } = arg_slice[0] {
                         panic!(
                             "iter_args: extracted arg starts with Composite (inner_span={}). \
                              Parent components: {:?}, position: {}, span: {}, arg_slice: {:?}",
@@ -1479,13 +1456,13 @@ impl<'a> Iterator for ThinTermRefArgsIterator<'a> {
                     }
                 }
                 self.position += span as usize;
-                Some(ThinTermRef::new(arg_slice))
+                Some(TermRef::new(arg_slice))
             }
-            ThinTermComponent::Atom(_) => {
+            TermComponent::Atom(_) => {
                 // Simple atomic argument as a single-element slice
                 let arg_slice = &self.components[self.position..self.position + 1];
                 self.position += 1;
-                Some(ThinTermRef::new(arg_slice))
+                Some(TermRef::new(arg_slice))
             }
         }
     }
@@ -1505,8 +1482,8 @@ mod tests {
         // Replace x0 with m0(c0) - a compound term
         // Expected result: m0(c0, x1) - m0 applied to c0 and x1
         // Bug would produce: [Composite, m0, c0, x1] which is invalid
-        let term = ThinTerm::parse("x0(x1)");
-        let replacement = ThinTerm::parse("m0(c0)");
+        let term = Term::parse("x0(x1)");
+        let replacement = Term::parse("m0(c0)");
 
         // Replace x0 with m0(c0)
         let result = term.replace_variable(0, &replacement);
@@ -1532,8 +1509,8 @@ mod tests {
     #[test]
     fn test_replace_head_variable_simple() {
         // Simpler case: x0(x1) with x0 -> c0 (atomic replacement)
-        let term = ThinTerm::parse("x0(x1)");
-        let replacement = ThinTerm::parse("c0");
+        let term = Term::parse("x0(x1)");
+        let replacement = Term::parse("c0");
 
         let result = term.replace_variable(0, &replacement);
 
@@ -1552,8 +1529,8 @@ mod tests {
         // Term: c0(x0) - c0 applied to variable x0
         // Replace x0 with m0(c1) - a compound term
         // Result: c0(m0(c1)) - c0 applied to m0(c1)
-        let term = ThinTerm::parse("c0(x0)");
-        let replacement = ThinTerm::parse("m0(c1)");
+        let term = Term::parse("c0(x0)");
+        let replacement = Term::parse("m0(c1)");
 
         let result = term.replace_variable(0, &replacement);
 
@@ -1574,18 +1551,18 @@ mod tests {
     fn test_nested_term_comparison() {
         // Create nested terms like f(g(a)) and f(g(b))
         // This exercises iter_args() and partial_tiebreak on composite arguments
-        let term1 = ThinTerm::parse("c0(c1(c2))");
-        let term2 = ThinTerm::parse("c0(c1(c3))");
+        let term1 = Term::parse("c0(c1(c2))");
+        let term2 = Term::parse("c0(c1(c3))");
 
         // This should not panic - it exercises the code path where
-        // iter_args returns a ThinTermRef for a composite argument
+        // iter_args returns a TermRef for a composite argument
         let _ = term1.extended_kbo_cmp(&term2);
     }
 
     #[test]
     fn test_iter_args_on_nested_term() {
         // f(g(a), b) has two args: g(a) which is composite, and b which is atomic
-        let term = ThinTerm::parse("c0(c1(c2), c3)");
+        let term = Term::parse("c0(c1(c2), c3)");
 
         let args: Vec<_> = term.iter_args().collect();
         assert_eq!(args.len(), 2);

@@ -259,7 +259,7 @@ impl VariableMap {
     }
 
     /// Like specialize_clause, but uses a separate context for looking up types in replacement terms.
-    /// This is needed in thin mode when the VariableMap's replacement terms were created with
+    /// This is needed when the VariableMap's replacement terms were created with
     /// variables from a different context than the clause being specialized.
     pub fn specialize_clause_with_replacement_context(
         &self,

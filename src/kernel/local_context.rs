@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::kernel::types::TypeId;
 
 /// A context stores type information for variables.
-/// This is used with thin terms/literals/clauses to track variable types
+/// This is used with terms/literals/clauses to track variable types
 /// without embedding them in the term structure itself.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct LocalContext {

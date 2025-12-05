@@ -5,98 +5,97 @@ use std::fmt;
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::thin_term::ThinTerm;
+use crate::kernel::term::Term;
 use crate::kernel::types::{TypeId, BOOL};
 
-/// A thin literal stores the structure of a literal without type information.
-/// Like Literal, it represents an equation (or inequality) between two terms.
+/// A Literal stores an equation (or inequality) between two terms.
 /// Type information is stored separately in the TypeStore and SymbolTable.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct ThinLiteral {
+pub struct Literal {
     pub positive: bool,
-    pub left: ThinTerm,
-    pub right: ThinTerm,
+    pub left: Term,
+    pub right: Term,
 }
 
-impl ThinLiteral {
-    pub fn new(positive: bool, left: ThinTerm, right: ThinTerm) -> ThinLiteral {
-        let (lit, _) = ThinLiteral::new_with_flip(positive, left, right);
+impl Literal {
+    pub fn new(positive: bool, left: Term, right: Term) -> Literal {
+        let (lit, _) = Literal::new_with_flip(positive, left, right);
         lit
     }
 
     /// Create a positive literal from a single term (term = true).
-    pub fn positive(term: ThinTerm) -> ThinLiteral {
-        ThinLiteral::new(true, term, ThinTerm::atom(BOOL, Atom::True))
+    pub fn positive(term: Term) -> Literal {
+        Literal::new(true, term, Term::atom(BOOL, Atom::True))
     }
 
     /// Create a negative literal from a single term (not term, i.e., term != true).
-    pub fn negative(term: ThinTerm) -> ThinLiteral {
-        ThinLiteral::new(false, term, ThinTerm::atom(BOOL, Atom::True))
+    pub fn negative(term: Term) -> Literal {
+        Literal::new(false, term, Term::atom(BOOL, Atom::True))
     }
 
     /// Create an equality literal (left = right).
-    pub fn equals(left: ThinTerm, right: ThinTerm) -> ThinLiteral {
-        ThinLiteral::new(true, left, right)
+    pub fn equals(left: Term, right: Term) -> Literal {
+        Literal::new(true, left, right)
     }
 
     /// Create an inequality literal (left != right).
-    pub fn not_equals(left: ThinTerm, right: ThinTerm) -> ThinLiteral {
-        ThinLiteral::new(false, left, right)
+    pub fn not_equals(left: Term, right: Term) -> Literal {
+        Literal::new(false, left, right)
     }
 
-    /// Parse a ThinLiteral from a string representation.
+    /// Parse a Literal from a string representation.
     /// Format: "left = right", "left != right", "not term", or just "term".
-    pub fn parse(s: &str) -> ThinLiteral {
+    pub fn parse(s: &str) -> Literal {
         if s.contains(" != ") {
             let mut parts = s.split(" != ");
-            let left = ThinTerm::parse(parts.next().unwrap());
-            let right = ThinTerm::parse(parts.next().unwrap());
-            ThinLiteral::not_equals(left, right)
+            let left = Term::parse(parts.next().unwrap());
+            let right = Term::parse(parts.next().unwrap());
+            Literal::not_equals(left, right)
         } else if s.contains(" = ") {
             let mut parts = s.split(" = ");
-            let left = ThinTerm::parse(parts.next().unwrap());
-            let right = ThinTerm::parse(parts.next().unwrap());
-            ThinLiteral::equals(left, right)
+            let left = Term::parse(parts.next().unwrap());
+            let right = Term::parse(parts.next().unwrap());
+            Literal::equals(left, right)
         } else if s.starts_with("not ") {
-            let term = ThinTerm::parse(&s[4..]);
-            ThinLiteral::negative(term)
+            let term = Term::parse(&s[4..]);
+            Literal::negative(term)
         } else {
-            let term = ThinTerm::parse(s);
-            ThinLiteral::positive(term)
+            let term = Term::parse(s);
+            Literal::positive(term)
         }
     }
 
-    /// Parse a ThinLiteral with context.
+    /// Parse a Literal with context.
     /// The contexts are accepted but not used during parsing.
     pub fn parse_with_context(
         s: &str,
         _local_context: &LocalContext,
         _kernel_context: &KernelContext,
-    ) -> ThinLiteral {
-        ThinLiteral::parse(s)
+    ) -> Literal {
+        Literal::parse(s)
     }
 
     /// Create a literal representing the value "true" (true = true).
-    pub fn true_value() -> ThinLiteral {
-        ThinLiteral::new(
+    pub fn true_value() -> Literal {
+        Literal::new(
             true,
-            ThinTerm::atom(BOOL, Atom::True),
-            ThinTerm::atom(BOOL, Atom::True),
+            Term::atom(BOOL, Atom::True),
+            Term::atom(BOOL, Atom::True),
         )
     }
 
     /// Create a literal representing the value "false" (true != true).
-    pub fn false_value() -> ThinLiteral {
-        ThinLiteral::new(
+    pub fn false_value() -> Literal {
+        Literal::new(
             false,
-            ThinTerm::atom(BOOL, Atom::True),
-            ThinTerm::atom(BOOL, Atom::True),
+            Term::atom(BOOL, Atom::True),
+            Term::atom(BOOL, Atom::True),
         )
     }
 
     /// Negate this literal (flip positive/negative).
-    pub fn negate(&self) -> ThinLiteral {
-        ThinLiteral {
+    pub fn negate(&self) -> Literal {
+        Literal {
             positive: !self.positive,
             left: self.left.clone(),
             right: self.right.clone(),
@@ -159,13 +158,13 @@ impl ThinLiteral {
     }
 
     /// Apply a function to both terms in this literal.
-    pub fn map(&self, f: &mut impl FnMut(&ThinTerm) -> ThinTerm) -> ThinLiteral {
-        ThinLiteral::new(self.positive, f(&self.left), f(&self.right))
+    pub fn map(&self, f: &mut impl FnMut(&Term) -> Term) -> Literal {
+        Literal::new(self.positive, f(&self.left), f(&self.right))
     }
 
     /// Replace an atom with another atom in both terms.
-    pub fn replace_atom(&self, atom: &Atom, replacement: &Atom) -> ThinLiteral {
-        ThinLiteral {
+    pub fn replace_atom(&self, atom: &Atom, replacement: &Atom) -> Literal {
+        Literal {
             positive: self.positive,
             left: self.left.replace_atom(atom, replacement),
             right: self.right.replace_atom(atom, replacement),
@@ -185,13 +184,13 @@ impl ThinLiteral {
     }
 
     /// Check if these two literals are negations of each other.
-    pub fn equals_negated(&self, other: &ThinLiteral) -> bool {
+    pub fn equals_negated(&self, other: &Literal) -> bool {
         self.positive != other.positive && self.left == other.left && self.right == other.right
     }
 
     /// Get both term pairs for matching (for use in equality reasoning).
     /// Returns (forward, left, right) and (backward, right, left).
-    pub fn both_term_pairs(&self) -> Vec<(bool, &ThinTerm, &ThinTerm)> {
+    pub fn both_term_pairs(&self) -> Vec<(bool, &Term, &Term)> {
         vec![
             (true, &self.left, &self.right),
             (false, &self.right, &self.left),
@@ -246,10 +245,10 @@ impl ThinLiteral {
 
     /// Normalizes the direction and returns whether it was flipped.
     /// The larger term should be on the left of the literal.
-    pub fn new_with_flip(positive: bool, left: ThinTerm, right: ThinTerm) -> (ThinLiteral, bool) {
+    pub fn new_with_flip(positive: bool, left: Term, right: Term) -> (Literal, bool) {
         if needs_to_flip(&left, &right) {
             (
-                ThinLiteral {
+                Literal {
                     positive,
                     left: right,
                     right: left,
@@ -258,7 +257,7 @@ impl ThinLiteral {
             )
         } else {
             (
-                ThinLiteral {
+                Literal {
                     positive,
                     left,
                     right,
@@ -269,8 +268,8 @@ impl ThinLiteral {
     }
 
     /// Create a literal from a term with a sign.
-    pub fn from_signed_term(term: ThinTerm, positive: bool) -> ThinLiteral {
-        ThinLiteral::new(positive, term, ThinTerm::new_true())
+    pub fn from_signed_term(term: Term, positive: bool) -> Literal {
+        Literal::new(positive, term, Term::new_true())
     }
 
     /// A higher order literal contains a higher order term.
@@ -294,7 +293,7 @@ impl ThinLiteral {
 
     /// An extension of the kbo ordering on literals.
     /// Ignores sign.
-    pub fn extended_kbo_cmp(&self, other: &ThinLiteral) -> Ordering {
+    pub fn extended_kbo_cmp(&self, other: &Literal) -> Ordering {
         let left_cmp = self.left.extended_kbo_cmp(&other.left);
         if left_cmp != Ordering::Equal {
             return left_cmp;
@@ -305,10 +304,7 @@ impl ThinLiteral {
     /// Returns (right, left, output_context) with normalized var ids.
     /// The output_context contains the types of the renumbered variables.
     /// The input_context provides the types of variables before renumbering.
-    pub fn normalized_reversed(
-        &self,
-        input_context: &LocalContext,
-    ) -> (ThinTerm, ThinTerm, LocalContext) {
+    pub fn normalized_reversed(&self, input_context: &LocalContext) -> (Term, Term, LocalContext) {
         let mut var_ids: Vec<AtomId> = vec![];
         let mut var_types: Vec<TypeId> = vec![];
         let mut right = self.right.clone();
@@ -351,7 +347,7 @@ impl ThinLiteral {
     /// Extracts the polarity from this literal, returning a positive version and the original polarity.
     /// If the literal is already positive, returns (self, true).
     /// If the literal is negative, returns (positive version, false).
-    pub fn extract_polarity(&self) -> (ThinLiteral, bool) {
+    pub fn extract_polarity(&self) -> (Literal, bool) {
         if self.positive {
             (self.clone(), true)
         } else {
@@ -365,24 +361,24 @@ impl ThinLiteral {
     }
 
     /// Renumbers synthetic atoms from the provided list into the invalid range.
-    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> ThinLiteral {
+    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> Literal {
         let new_left = self.left.invalidate_synthetics(from);
         let new_right = self.right.invalidate_synthetics(from);
-        let (lit, _) = ThinLiteral::new_with_flip(self.positive, new_left, new_right);
+        let (lit, _) = Literal::new_with_flip(self.positive, new_left, new_right);
         lit
     }
 
     /// Replace the first `num_to_replace` variables with invalid synthetic atoms.
-    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> ThinLiteral {
+    pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> Literal {
         let new_left = self.left.instantiate_invalid_synthetics(num_to_replace);
         let new_right = self.right.instantiate_invalid_synthetics(num_to_replace);
-        let (lit, _) = ThinLiteral::new_with_flip(self.positive, new_left, new_right);
+        let (lit, _) = Literal::new_with_flip(self.positive, new_left, new_right);
         lit
     }
 
     /// Get the subterm at the given path.
     /// If `left` is true, navigate into the left term, otherwise the right term.
-    pub fn get_term_at_path(&self, left: bool, path: &[usize]) -> Option<ThinTerm> {
+    pub fn get_term_at_path(&self, left: bool, path: &[usize]) -> Option<Term> {
         if left {
             self.left.get_term_at_path(path)
         } else {
@@ -397,8 +393,8 @@ impl ThinLiteral {
         &self,
         left: bool,
         path: &[usize],
-        new_subterm: ThinTerm,
-    ) -> (ThinLiteral, bool) {
+        new_subterm: Term,
+    ) -> (Literal, bool) {
         let (new_left, new_right) = if left {
             (
                 self.left.replace_at_path(path, new_subterm),
@@ -411,11 +407,11 @@ impl ThinLiteral {
             )
         };
 
-        ThinLiteral::new_with_flip(self.positive, new_left, new_right)
+        Literal::new_with_flip(self.positive, new_left, new_right)
     }
 }
 
-impl fmt::Display for ThinLiteral {
+impl fmt::Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.positive {
             if self.is_signed_term() {
@@ -431,7 +427,7 @@ impl fmt::Display for ThinLiteral {
     }
 }
 
-impl PartialOrd for ThinLiteral {
+impl PartialOrd for Literal {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         use std::cmp::Ordering;
 
@@ -449,7 +445,7 @@ impl PartialOrd for ThinLiteral {
     }
 }
 
-impl Ord for ThinLiteral {
+impl Ord for Literal {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.partial_cmp(other).unwrap()
     }
@@ -457,7 +453,7 @@ impl Ord for ThinLiteral {
 
 /// Helper function to check if a literal needs to flip its terms.
 /// Returns true if left < right in extended KBO ordering.
-fn needs_to_flip(left: &ThinTerm, right: &ThinTerm) -> bool {
+fn needs_to_flip(left: &Term, right: &Term) -> bool {
     use std::cmp::Ordering;
     left.extended_kbo_cmp(right) == Ordering::Less
 }

@@ -894,7 +894,6 @@ mod tests {
     use crate::kernel::types::BOOL;
 
     /// Creates a test context where all variables have Bool type.
-    /// This works in both fat and thin mode since Bool is a proper type.
     fn test_local_context(num_vars: usize) -> LocalContext {
         LocalContext::new(vec![BOOL; num_vars])
     }

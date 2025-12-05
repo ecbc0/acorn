@@ -85,7 +85,7 @@ pub struct ConcreteStep {
 
     // All of the ways to map the generic variables to concrete ones.
     // Each var_map is paired with the context that its replacement terms reference.
-    // In thin mode, this context is needed to look up variable types when specializing.
+    // This context is needed to look up variable types when specializing.
     pub var_maps: Vec<(VariableMap, LocalContext)>,
 }
 
@@ -209,7 +209,7 @@ impl<'a> Proof<'a> {
     // If the step cannot be reconstructed, we return an error.
     //
     // The conclusion_map_context is the context that conclusion_map's replacement terms reference.
-    // In thin mode, this is needed to look up variable types when building output contexts.
+    // This is needed to look up variable types when building output contexts.
     fn reconstruct_step(
         &self,
         id: ProofStepId,
@@ -318,8 +318,7 @@ impl<'a> Proof<'a> {
                 let rewritten_subterm = rewritten_term.get_term_at_path(&info.path).unwrap();
                 for conc_map in var_maps {
                     // Use the unifier's output context from reconstruct_trace, not the step context.
-                    // In thin mode, the conc_map's replacement terms reference variables in
-                    // the unifier's output context.
+                    // The conc_map's replacement terms reference variables in the unifier's output context.
                     let output_context = conc_map.build_output_context(&unifier_context);
                     let (mut unifier, conc_scope) = Unifier::with_map(
                         conc_map,
@@ -620,11 +619,11 @@ impl<'a> Proof<'a> {
     //
     // If the step cannot be reconstructed, we return an error.
     /// Returns (var_maps, output_context) where output_context is the context
-    /// that the VariableMaps' replacement terms reference. In thin mode, this context
+    /// that the VariableMaps' replacement terms reference. This context
     /// must be used when calling build_output_context on the returned maps.
     ///
     /// The conc_map_context is the context that conc_map's replacement terms reference.
-    /// In thin mode, this is needed to look up variable types when building output contexts.
+    /// This is needed to look up variable types when building output contexts.
     fn reconstruct_trace(
         &self,
         base_literals: &[Literal],
@@ -699,7 +698,7 @@ impl<'a> Proof<'a> {
         }
 
         // Now that we've unified, get the var maps and output context.
-        // The output context is needed in thin mode for build_output_context calls.
+        // The output context is needed for build_output_context calls.
         let mut answer = HashSet::new();
         let (maps, unifier_output_context) = unifier.into_maps_with_context();
 

@@ -269,7 +269,7 @@ impl CodeGenerator<'_> {
     /// and appends the actual clause content to codes.
     ///
     /// The replacement_context is the context that the var_map's replacement terms reference.
-    /// In thin mode, this is needed to look up variable types when specializing.
+    /// This is needed to look up variable types when specializing.
     fn specialization_to_code(
         &mut self,
         generic: &Clause,

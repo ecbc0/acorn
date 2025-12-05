@@ -798,9 +798,8 @@ mod tests {
     ///
     /// This tests a bug where ProofStep::rewrite used pattern_step's context for
     /// from_literal_traced, but the rewritten literal has variables from both the
-    /// target and the new_subterm. In thin mode, this caused variable type lookups
-    /// to fail because the pattern's context doesn't have types for variables
-    /// from the target.
+    /// target and the new_subterm. This caused variable type lookups to fail
+    /// because the pattern's context doesn't have types for variables from the target.
     ///
     /// The specific failure was:
     /// "failed to unify base literal ... with trace literal ..."
