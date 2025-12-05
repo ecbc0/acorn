@@ -139,14 +139,11 @@ mod tests {
     /// Check clause normalization with trace validation.
     /// context provides the types of variables in the clause.
     fn check_clause_normalization(s: &str, context: &LocalContext, kernel_context: &KernelContext) {
-        let clause = Clause::parse_with_context(s, context, kernel_context);
+        let clause = Clause::parse(s, context);
         clause.validate(kernel_context);
 
         // Parse literals separately and normalize with trace
-        let literals: Vec<Literal> = s
-            .split(" or ")
-            .map(|x| Literal::parse_with_context(x.trim(), context, kernel_context))
-            .collect();
+        let literals: Vec<Literal> = s.split(" or ").map(|x| Literal::parse(x.trim())).collect();
         let literals_context = clause.get_local_context().clone();
 
         let (alt_clause, trace) = Clause::normalize_with_trace(literals.clone(), &literals_context);

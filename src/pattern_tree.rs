@@ -54,8 +54,7 @@ pub fn replace_term_variables(
                             )
                         })
                         .collect();
-                    // Result type is ignored by Term::apply anyway
-                    replacement_term.apply(&replaced_args, TypeId::default())
+                    replacement_term.apply(&replaced_args)
                 } else {
                     // Just a variable, return the replacement
                     replacement.to_owned()
@@ -87,14 +86,9 @@ pub fn replace_term_variables(
                             )
                         })
                         .collect();
-                    Term::new(
-                        TypeId::default(), // Will be ignored
-                        TypeId::default(), // Will be ignored
-                        Atom::Variable(new_var_id),
-                        replaced_args,
-                    )
+                    Term::new(Atom::Variable(new_var_id), replaced_args)
                 } else {
-                    Term::atom(var_type, Atom::Variable(new_var_id))
+                    Term::atom(Atom::Variable(new_var_id))
                 }
             }
         } else {
@@ -106,12 +100,7 @@ pub fn replace_term_variables(
                         replace_recursive(arg, term_context, replacements, shift, output_var_types)
                     })
                     .collect();
-                Term::new(
-                    TypeId::default(), // Will be ignored
-                    TypeId::default(), // Will be ignored
-                    *head,
-                    replaced_args,
-                )
+                Term::new(*head, replaced_args)
             } else {
                 term.to_owned()
             }

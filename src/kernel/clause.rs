@@ -346,16 +346,6 @@ impl Clause {
         Clause::new(literals, context)
     }
 
-    /// Parse a Clause with context.
-    /// The kernel_context is accepted but not used during parsing.
-    pub fn parse_with_context(
-        s: &str,
-        context: &LocalContext,
-        _kernel_context: &KernelContext,
-    ) -> Clause {
-        Clause::parse(s, context)
-    }
-
     /// Renumbers synthetic atoms from the provided list into the invalid range.
     pub fn invalidate_synthetics(&self, from: &[AtomId]) -> Clause {
         let new_literals: Vec<Literal> = self
@@ -659,8 +649,8 @@ mod tests {
         let kernel_context = KernelContext::new();
 
         // Create a clause like "g0 = x0" (global constant equals variable)
-        let g0 = Term::atom(TypeId::new(2), Atom::Symbol(Symbol::GlobalConstant(0)));
-        let x0 = Term::atom(TypeId::new(2), Atom::Variable(0));
+        let g0 = Term::atom(Atom::Symbol(Symbol::GlobalConstant(0)));
+        let x0 = Term::atom(Atom::Variable(0));
         let literal = Literal::equals(g0, x0);
 
         let context = LocalContext::new(vec![TypeId::new(2)]);
@@ -679,13 +669,8 @@ mod tests {
         let kernel_context = KernelContext::new();
 
         // Create a clause like "f(x0) = f(x0)" (same function on both sides)
-        let x0 = Term::atom(TypeId::new(2), Atom::Variable(0));
-        let f_x0 = Term::new(
-            TypeId::new(2),
-            TypeId::new(3),
-            Atom::Symbol(Symbol::GlobalConstant(0)),
-            vec![x0.clone()],
-        );
+        let x0 = Term::atom(Atom::Variable(0));
+        let f_x0 = Term::new(Atom::Symbol(Symbol::GlobalConstant(0)), vec![x0.clone()]);
         let literal = Literal::equals(f_x0.clone(), f_x0);
 
         let context = LocalContext::new(vec![TypeId::new(2)]);
@@ -714,23 +699,21 @@ mod tests {
         let type_bool = TypeId::new(1); // Bool
 
         // x0 and x1 are Foo, x2 is Bool
-        let x0 = Term::atom(type_foo, Atom::Variable(0));
-        let x1 = Term::atom(type_foo, Atom::Variable(1));
-        let x2 = Term::atom(type_bool, Atom::Variable(2));
+        let x0 = Term::atom(Atom::Variable(0));
+        let x1 = Term::atom(Atom::Variable(1));
+        let x2 = Term::atom(Atom::Variable(2));
 
         // Create f(x0, x1, x2) - a function application
         let f_args = Term::new(
-            type_bool,
-            TypeId::new(3), // function head type
             Atom::Symbol(Symbol::GlobalConstant(0)),
             vec![x0.clone(), x1.clone(), x2.clone()],
         );
 
         // Literal 1: not f(x0, x1, x2) = true (negative Bool equality)
-        let lit1 = Literal::new(false, f_args.clone(), Term::atom(type_bool, Atom::True));
+        let lit1 = Literal::new(false, f_args.clone(), Term::atom(Atom::True));
 
         // Literal 2: x2 = true (positive Bool equality)
-        let lit2 = Literal::new(true, x2.clone(), Term::atom(type_bool, Atom::True));
+        let lit2 = Literal::new(true, x2.clone(), Term::atom(Atom::True));
 
         // Context: x0:Foo, x1:Foo, x2:Bool
         let context = LocalContext::new(vec![type_foo, type_foo, type_bool]);

@@ -321,19 +321,9 @@ mod tests {
         let lctx = test_local_context();
         let mut tree = RewriteTree::new();
         // x0 = c0 where both are Bool
-        tree.insert_literal(
-            0,
-            &Literal::parse_with_context("x0 = c0", &lctx, &kctx),
-            &lctx,
-            &kctx,
-        );
+        tree.insert_literal(0, &Literal::parse("x0 = c0"), &lctx, &kctx);
         // c0 alone as literal (Bool = true)
-        tree.insert_literal(
-            1,
-            &Literal::parse_with_context("c0", &lctx, &kctx),
-            &lctx,
-            &kctx,
-        );
+        tree.insert_literal(1, &Literal::parse("c0"), &lctx, &kctx);
     }
 
     #[test]
@@ -342,12 +332,7 @@ mod tests {
         let lctx = test_local_context();
         let mut tree = RewriteTree::new();
         // m1(x0, c1) = c0 means c0 rewrites to m1(x1, c1) with a new variable x1
-        tree.insert_literal(
-            0,
-            &Literal::parse_with_context("m1(x0, c1) = c0", &lctx, &kctx),
-            &lctx,
-            &kctx,
-        );
+        tree.insert_literal(0, &Literal::parse("m1(x0, c1) = c0"), &lctx, &kctx);
         let rewrites = get_test_rewrites(
             &tree,
             &Term::parse_with_context("c0", &lctx, &kctx),
@@ -369,7 +354,7 @@ mod tests {
         let mut tree = RewriteTree::new();
 
         // Make a rule for BOOL variables (TypeId 1)
-        let var_bool = Term::atom(BOOL, Atom::Variable(0));
+        let var_bool = Term::atom(Atom::Variable(0));
         tree.insert_terms(0, &var_bool, &var_bool, true, &lctx, &kctx);
 
         // A BOOL constant should match it - use c0 which is Bool

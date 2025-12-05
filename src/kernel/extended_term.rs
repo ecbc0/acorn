@@ -52,12 +52,12 @@ impl ExtendedTerm {
     }
 
     /// Apply arguments to an ExtendedTerm, similar to Term::apply.
-    pub fn apply(&self, args: &[Term], result_type: TypeId) -> ExtendedTerm {
+    pub fn apply(&self, args: &[Term]) -> ExtendedTerm {
         match self {
-            ExtendedTerm::Term(term) => ExtendedTerm::Term(term.apply(args, result_type)),
+            ExtendedTerm::Term(term) => ExtendedTerm::Term(term.apply(args)),
             ExtendedTerm::If(cond, then_term, else_term) => {
-                let new_then = then_term.apply(args, result_type);
-                let new_else = else_term.apply(args, result_type);
+                let new_then = then_term.apply(args);
+                let new_else = else_term.apply(args);
                 ExtendedTerm::If(cond.clone(), new_then, new_else)
             }
             ExtendedTerm::Lambda(lambda_args, body) => {
@@ -80,7 +80,7 @@ impl ExtendedTerm {
                     let var_ids: Vec<_> = lambda_args.iter().map(|(var_id, _)| *var_id).collect();
                     let terms: Vec<_> = lambda_args_slice.iter().collect();
                     let result = body.replace_variables(&var_ids, &terms);
-                    let applied = result.apply(rest_args, result_type);
+                    let applied = result.apply(rest_args);
                     ExtendedTerm::Term(applied)
                 }
             }

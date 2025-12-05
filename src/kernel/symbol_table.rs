@@ -239,8 +239,7 @@ impl SymbolTable {
     /// The monomorph should already have been added.
     pub fn term_from_monomorph(&self, c: &ConstantInstance) -> Result<Term, String> {
         if let Some(&symbol) = self.monomorph_to_symbol.get(&c) {
-            let type_id = self.get_type(symbol);
-            Ok(Term::new(type_id, type_id, Atom::Symbol(symbol), vec![]))
+            Ok(Term::new(Atom::Symbol(symbol), vec![]))
         } else {
             Err(format!(
                 "Monomorphized constant {} not found in symbol table",

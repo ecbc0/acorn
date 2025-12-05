@@ -6,7 +6,6 @@ use crate::clause_set::{ClauseId, ClauseSet, GroupId, LiteralId, Normalization, 
 use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::Atom;
 use crate::kernel::kernel_context::KernelContext;
-use crate::kernel::local_context::LocalContext;
 
 /// Every time we set two terms equal or not equal, that action is tagged with a StepId.
 /// The term graph uses it to provide a history of the reasoning that led to a conclusion.
@@ -376,7 +375,7 @@ impl TermGraph {
     // Inserts the head of the provided term as an atom.
     // If it's already in the graph, return the existing term id.
     // Otherwise, make a new term id and give it a new group.
-    fn insert_head(&mut self, term: &Term, kernel_context: &KernelContext) -> TermId {
+    fn insert_head(&mut self, term: &Term, _kernel_context: &KernelContext) -> TermId {
         let key = Decomposition::Atomic(term.get_head_atom().clone());
         if let Some(&id) = self.decompositions.get(&key) {
             return id;
@@ -386,14 +385,7 @@ impl TermGraph {
         let term_id = TermId(self.terms.len() as u32);
         let group_id = GroupId(self.groups.len() as u32);
 
-        // Term graph only has concrete terms (no variables), so we use empty local context.
-        let local_context = LocalContext::empty_ref();
-        let head = Term::new(
-            term.get_head_type_with_context(local_context, kernel_context),
-            term.get_head_type_with_context(local_context, kernel_context),
-            *term.get_head_atom(),
-            vec![],
-        );
+        let head = Term::new(*term.get_head_atom(), vec![]);
         let term_info = TermInfo {
             term: head,
             group: group_id,
@@ -1379,6 +1371,9 @@ impl TermGraph {
 }
 
 /// A test wrapper that combines a TermGraph with its KernelContext.
+#[cfg(test)]
+use crate::kernel::local_context::LocalContext;
+
 #[cfg(test)]
 struct TestGraph {
     graph: TermGraph,

@@ -4,7 +4,7 @@ use std::fmt;
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::types::{TypeId, BOOL, EMPTY};
+use crate::kernel::types::{TypeId, BOOL};
 
 /// A component of a Term in its flattened representation.
 /// Either a Composite node or an Atom leaf node.
@@ -592,9 +592,8 @@ pub struct Term {
 }
 
 impl Term {
-    /// Create a new Term.
-    /// The term_type and head_type parameters are ignored since Term stores types externally.
-    pub fn new(_term_type: TypeId, _head_type: TypeId, head: Atom, args: Vec<Term>) -> Term {
+    /// Create a new Term with the given head atom and arguments.
+    pub fn new(head: Atom, args: Vec<Term>) -> Term {
         let mut components = vec![TermComponent::Atom(head)];
         for (i, arg) in args.iter().enumerate() {
             // Validate that arg is a valid term (starts with Atom)
@@ -655,8 +654,7 @@ impl Term {
     }
 
     /// Create a Term representing a single atom with no arguments.
-    /// The type_id parameter is ignored since Term stores types separately.
-    pub fn atom(_type_id: TypeId, atom: Atom) -> Term {
+    pub fn atom(atom: Atom) -> Term {
         Term {
             components: vec![TermComponent::Atom(atom)],
         }
@@ -670,12 +668,12 @@ impl Term {
         let s = s.trim();
 
         if s == "true" {
-            return Term::atom(BOOL, Atom::True);
+            return Term::atom(Atom::True);
         }
 
         let first_paren = match s.find('(') {
             Some(i) => i,
-            None => return Term::atom(EMPTY, Atom::new(s)),
+            None => return Term::atom(Atom::new(s)),
         };
 
         // Figure out which commas are inside precisely one level of parentheses.
@@ -729,16 +727,9 @@ impl Term {
         Term { components }
     }
 
-    /// Parse a term string with proper types from context.
-    /// For tests that need properly typed terms.
+    /// Parse a term string. Kept for test compatibility.
     #[cfg(test)]
-    pub fn parse_with_context(
-        s: &str,
-        _local_context: &LocalContext,
-        _kernel_context: &KernelContext,
-    ) -> Term {
-        // Term doesn't store types internally, so we can use the same parse logic.
-        // The types will be looked up from context when needed.
+    pub fn parse_with_context(s: &str, _: &LocalContext, _: &KernelContext) -> Term {
         Term::parse(s)
     }
 
@@ -800,12 +791,11 @@ impl Term {
 
     /// Create a new Term representing the boolean constant "true".
     pub fn new_true() -> Term {
-        Term::atom(BOOL, Atom::True)
+        Term::atom(Atom::True)
     }
 
     /// Create a new Term representing a variable with the given index.
-    /// The type_id parameter is ignored since Term stores types separately in the context.
-    pub fn new_variable(_type_id: TypeId, index: AtomId) -> Term {
+    pub fn new_variable(index: AtomId) -> Term {
         Term {
             components: vec![TermComponent::Atom(Atom::Variable(index))],
         }
@@ -1206,8 +1196,8 @@ impl Term {
     /// Build a term from a spine (function + arguments).
     /// If the spine has one element, returns just that element.
     /// Otherwise, treats the first element as the function and the rest as arguments.
-    /// The term_type parameter is ignored since Term stores types externally.
-    pub fn from_spine(mut spine: Vec<Term>, _term_type: TypeId) -> Term {
+    /// Create a Term from a spine (head followed by arguments).
+    pub fn from_spine(mut spine: Vec<Term>) -> Term {
         if spine.is_empty() {
             panic!("from_spine called with empty spine");
         }
@@ -1241,8 +1231,8 @@ impl Term {
     }
 
     /// Apply additional arguments to this term.
-    /// The result_type parameter is ignored since Term stores types externally.
-    pub fn apply(&self, args: &[Term], _result_type: TypeId) -> Term {
+    /// Apply this term to a slice of arguments.
+    pub fn apply(&self, args: &[Term]) -> Term {
         if args.is_empty() {
             return self.clone();
         }

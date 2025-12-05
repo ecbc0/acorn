@@ -6,7 +6,7 @@ use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::Term;
-use crate::kernel::types::{TypeId, BOOL};
+use crate::kernel::types::TypeId;
 
 /// A Literal stores an equation (or inequality) between two terms.
 /// Type information is stored separately in the TypeStore and SymbolTable.
@@ -25,12 +25,12 @@ impl Literal {
 
     /// Create a positive literal from a single term (term = true).
     pub fn positive(term: Term) -> Literal {
-        Literal::new(true, term, Term::atom(BOOL, Atom::True))
+        Literal::new(true, term, Term::atom(Atom::True))
     }
 
     /// Create a negative literal from a single term (not term, i.e., term != true).
     pub fn negative(term: Term) -> Literal {
-        Literal::new(false, term, Term::atom(BOOL, Atom::True))
+        Literal::new(false, term, Term::atom(Atom::True))
     }
 
     /// Create an equality literal (left = right).
@@ -65,32 +65,14 @@ impl Literal {
         }
     }
 
-    /// Parse a Literal with context.
-    /// The contexts are accepted but not used during parsing.
-    pub fn parse_with_context(
-        s: &str,
-        _local_context: &LocalContext,
-        _kernel_context: &KernelContext,
-    ) -> Literal {
-        Literal::parse(s)
-    }
-
     /// Create a literal representing the value "true" (true = true).
     pub fn true_value() -> Literal {
-        Literal::new(
-            true,
-            Term::atom(BOOL, Atom::True),
-            Term::atom(BOOL, Atom::True),
-        )
+        Literal::new(true, Term::atom(Atom::True), Term::atom(Atom::True))
     }
 
     /// Create a literal representing the value "false" (true != true).
     pub fn false_value() -> Literal {
-        Literal::new(
-            false,
-            Term::atom(BOOL, Atom::True),
-            Term::atom(BOOL, Atom::True),
-        )
+        Literal::new(false, Term::atom(Atom::True), Term::atom(Atom::True))
     }
 
     /// Negate this literal (flip positive/negative).

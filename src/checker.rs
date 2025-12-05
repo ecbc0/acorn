@@ -653,7 +653,7 @@ impl TestChecker {
         let local_context = LocalContext::new(vec![BOOL; 10]);
         let mut checker = Checker::new(None);
         for clause_str in clauses {
-            let clause = Clause::parse_with_context(clause_str, &local_context, &context);
+            let clause = Clause::parse(clause_str, &local_context);
             checker.insert_clause(&clause, StepReason::Testing, &context);
         }
         TestChecker {
@@ -664,7 +664,7 @@ impl TestChecker {
     }
 
     fn check_clause_str(&mut self, s: &str) {
-        let clause = Clause::parse_with_context(s, &self.local_context, &self.context);
+        let clause = Clause::parse(s, &self.local_context);
         if !self.checker.check_clause(&clause, &self.context).is_some() {
             panic!("check_clause_str(\"{}\") failed", s);
         }

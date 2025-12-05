@@ -80,9 +80,9 @@ impl VariableMap {
         }
     }
 
-    fn match_atoms(&mut self, atom_type: TypeId, general: &Atom, special: &Atom) -> bool {
+    fn match_atoms(&mut self, _atom_type: TypeId, general: &Atom, special: &Atom) -> bool {
         if let Atom::Variable(i) = general {
-            self.match_var(*i, Term::atom(atom_type, *special).as_ref())
+            self.match_var(*i, Term::atom(*special).as_ref())
         } else {
             general == special
         }
@@ -186,34 +186,17 @@ impl VariableMap {
         output_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> Term {
-        let (term_type, head_type, head, mut args) = match *term.get_head_atom() {
+        let (head, mut args) = match *term.get_head_atom() {
             Atom::Variable(i) => {
                 // Check if we have a mapping for this variable
                 if let Some(replacement) = self.get_mapping(i) {
-                    // Use output_context for the replacement term since it comes from
-                    // a different context (the unifier's output context)
-                    (
-                        replacement.get_term_type_with_context(output_context, kernel_context),
-                        replacement.get_head_type_with_context(output_context, kernel_context),
-                        *replacement.get_head_atom(),
-                        replacement.args(),
-                    )
+                    (*replacement.get_head_atom(), replacement.args())
                 } else {
                     // Keep the variable as-is if unmapped
-                    (
-                        term.get_term_type_with_context(input_context, kernel_context),
-                        term.get_head_type_with_context(input_context, kernel_context),
-                        *term.get_head_atom(),
-                        vec![],
-                    )
+                    (*term.get_head_atom(), vec![])
                 }
             }
-            head => (
-                term.get_term_type_with_context(input_context, kernel_context),
-                term.get_head_type_with_context(input_context, kernel_context),
-                head,
-                vec![],
-            ),
+            head => (head, vec![]),
         };
 
         // Recurse on the arguments
@@ -221,7 +204,7 @@ impl VariableMap {
             args.push(self.specialize_term(arg, input_context, output_context, kernel_context));
         }
 
-        Term::new(term_type, head_type, head, args)
+        Term::new(head, args)
     }
 
     /// This does not normalize.

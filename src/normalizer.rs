@@ -530,7 +530,7 @@ impl NormalizerView<'_> {
             let type_id = self.type_store().get_type_id(quant)?;
             let var_id = *next_var_id;
             context.set_var_type(var_id as usize, type_id);
-            let var = Term::new_variable(type_id, var_id);
+            let var = Term::new_variable(var_id);
             *next_var_id += 1;
             stack.push(TermBinding::Free(var, type_id));
         }
@@ -560,7 +560,7 @@ impl NormalizerView<'_> {
             // Use collect_vars with the context to get variable types
             for (var_id, type_id) in binding.term().collect_vars(context) {
                 if seen_vars.insert(var_id) {
-                    let var_term = Term::new_variable(type_id, var_id);
+                    let var_term = Term::new_variable(var_id);
                     args.push(var_term);
                     arg_types.push(self.type_store().get_type(type_id).clone());
                 }
@@ -573,17 +573,11 @@ impl NormalizerView<'_> {
             // The skolem term is that atom applied to the free variables on the stack.
             // Note that the skolem atom may be a type we have not used before.
             let skolem_atom_type = AcornType::functional(arg_types.clone(), t.clone());
-            let skolem_atom_type_id = self.type_store_mut()?.add_type(&skolem_atom_type);
-            let skolem_term_type_id = self.type_store().get_type_id(t)?;
+            self.type_store_mut()?.add_type(&skolem_atom_type);
             let skolem_id = self.as_mut()?.declare_synthetic_atom(skolem_atom_type)?;
             synthesized.push(skolem_id);
             let skolem_atom = Atom::Symbol(Symbol::Synthetic(skolem_id));
-            let skolem_term = Term::new(
-                skolem_term_type_id,
-                skolem_atom_type_id,
-                skolem_atom,
-                args.clone(),
-            );
+            let skolem_term = Term::new(skolem_atom, args.clone());
             output.push(skolem_term);
         }
         Ok(output)
@@ -787,7 +781,7 @@ impl NormalizerView<'_> {
                 for arg_type in &arg_types {
                     let var_id = *next_var_id;
                     context.set_var_type(var_id as usize, *arg_type);
-                    let var = Term::new_variable(*arg_type, var_id);
+                    let var = Term::new_variable(var_id);
                     *next_var_id += 1;
                     args.push(ExtendedTerm::Term(var));
                 }
@@ -843,8 +837,8 @@ impl NormalizerView<'_> {
                 // Create skolem terms for each argument
                 let args = self.make_skolem_terms(&app.arg_types, stack, synth, context)?;
                 // Apply the skolem terms to both sides
-                let left = left.apply(&args, result_type);
-                let right = right.apply(&args, result_type);
+                let left = left.apply(&args);
+                let right = right.apply(&args);
                 return left.eq_to_cnf(right, true);
             }
 
@@ -854,13 +848,13 @@ impl NormalizerView<'_> {
             for arg_type in &arg_types {
                 let var_id = *next_var_id;
                 context.set_var_type(var_id as usize, *arg_type);
-                let var = Term::new_variable(*arg_type, var_id);
+                let var = Term::new_variable(var_id);
                 *next_var_id += 1;
                 args.push(var);
             }
             // Apply the free variables to both sides
-            let left = left.apply(&args, result_type);
-            let right = right.apply(&args, result_type);
+            let left = left.apply(&args);
+            let right = right.apply(&args);
             return left.eq_to_cnf(right, false);
         }
 
@@ -963,16 +957,11 @@ impl NormalizerView<'_> {
                 }
             }
             AcornValue::Application(application) => {
-                let application_type = application.get_type();
-                let term_type = self.type_store().get_type_id(&application_type)?;
                 let func_term = match self.try_simple_value_to_term(&application.function, stack)? {
                     Some(t) => t,
                     None => return Ok(None),
                 };
                 let head = *func_term.get_head_atom();
-                let stack_context = build_context_from_stack(stack);
-                let head_type =
-                    func_term.get_head_type_with_context(&stack_context, self.kernel_context());
                 let mut args = func_term.args().to_vec();
                 for arg in &application.args {
                     let arg_term = match self.try_simple_value_to_term(arg, stack)? {
@@ -981,19 +970,14 @@ impl NormalizerView<'_> {
                     };
                     args.push(arg_term);
                 }
-                Ok(Some((Term::new(term_type, head_type, head, args), true)))
+                Ok(Some((Term::new(head, args), true)))
             }
             AcornValue::Constant(c) => {
                 if c.params.is_empty() {
-                    let type_id = self.type_store().get_type_id(&c.instance_type)?;
-
                     let Some(symbol) = self.symbol_table().get_symbol(&c.name) else {
                         return Err(format!("constant {} not found in symbol table", c));
                     };
-                    Ok(Some((
-                        Term::new(type_id, type_id, Atom::Symbol(symbol), vec![]),
-                        true,
-                    )))
+                    Ok(Some((Term::new(Atom::Symbol(symbol), vec![]), true)))
                 } else {
                     Ok(Some((self.symbol_table().term_from_monomorph(&c)?, true)))
                 }
@@ -1086,37 +1070,28 @@ impl NormalizerView<'_> {
                 }
             }
         }
-        let result_type = {
+        // Validate function type
+        {
             let func_type = function.get_type();
             if let AcornType::Function(fapp) = func_type {
                 if args_len > fapp.arg_types.len() {
                     return Err("too many arguments".to_string());
                 }
-                let remaining_args = fapp.arg_types.len() - args_len;
-                if remaining_args == 0 {
-                    self.type_store().get_type_id(&fapp.return_type)?
-                } else {
-                    let remaining_type = AcornType::functional(
-                        fapp.arg_types[args_len..].to_vec(),
-                        (*fapp.return_type).clone(),
-                    );
-                    self.type_store().get_type_id(&remaining_type)?
-                }
             } else {
                 return Err("cannot apply non-function".to_string());
             }
-        };
+        }
 
         match cond {
             Some(cond) => {
                 assert_eq!(spine1.len(), spine2.len());
-                let then_term = Term::from_spine(spine1, result_type);
-                let else_term = Term::from_spine(spine2, result_type);
+                let then_term = Term::from_spine(spine1);
+                let else_term = Term::from_spine(spine2);
                 Ok(ExtendedTerm::If(cond, then_term, else_term))
             }
             None => {
                 assert!(spine2.is_empty());
-                let term = Term::from_spine(spine1, result_type);
+                let term = Term::from_spine(spine1);
                 Ok(ExtendedTerm::Term(term))
             }
         }
@@ -1177,12 +1152,7 @@ impl NormalizerView<'_> {
             // Reuse the existing synthetic atom
             let existing_id = existing_def.atoms[0];
             let existing_atom = Atom::Symbol(Symbol::Synthetic(existing_id));
-            let reused_term = Term::new(
-                skolem_term.get_term_type_with_context(&stack_context, self.kernel_context()),
-                skolem_term.get_head_type_with_context(&stack_context, self.kernel_context()),
-                existing_atom,
-                skolem_term.args().to_vec(),
-            );
+            let reused_term = Term::new(existing_atom, skolem_term.args().to_vec());
             Ok(reused_term)
         } else {
             // Define the new synthetic atom
@@ -1243,7 +1213,7 @@ impl NormalizerView<'_> {
             // Use collect_vars with the context to get variable types
             for (var_id, type_id) in binding.term().collect_vars(context) {
                 if seen_vars.insert(var_id) {
-                    let var_term = Term::new_variable(type_id, var_id);
+                    let var_term = Term::new_variable(var_id);
                     args.push(var_term);
                     arg_types.push(self.type_store().get_type(type_id).clone());
                 }
@@ -1261,12 +1231,8 @@ impl NormalizerView<'_> {
         let atom_id = self.as_mut()?.declare_synthetic_atom(atom_type.clone())?;
         synth.push(atom_id);
 
-        // Now we can safely get type IDs
-        let bool_type_id = self.type_store().get_type_id(&bool_type)?;
-        let atom_type_id = self.type_store().get_type_id(&atom_type)?;
-
         let atom = Atom::Symbol(Symbol::Synthetic(atom_id));
-        let synth_term = Term::new(bool_type_id, atom_type_id, atom, args);
+        let synth_term = Term::new(atom, args);
         let synth_lit = Literal::from_signed_term(synth_term.clone(), true);
 
         // Create defining clauses for: s <-> C
@@ -1337,14 +1303,14 @@ impl NormalizerView<'_> {
                 // Collect free variables from the condition literal
                 for (var_id, type_id) in cond_lit.left.collect_vars(local_context) {
                     if seen_vars.insert(var_id) {
-                        let var_term = Term::new_variable(type_id, var_id);
+                        let var_term = Term::new_variable(var_id);
                         args.push(var_term);
                         arg_types.push(self.type_store().get_type(type_id).clone());
                     }
                 }
                 for (var_id, type_id) in cond_lit.right.collect_vars(local_context) {
                     if seen_vars.insert(var_id) {
-                        let var_term = Term::new_variable(type_id, var_id);
+                        let var_term = Term::new_variable(var_id);
                         args.push(var_term);
                         arg_types.push(self.type_store().get_type(type_id).clone());
                     }
@@ -1353,7 +1319,7 @@ impl NormalizerView<'_> {
                 // Collect free variables from the then branch
                 for (var_id, type_id) in then_term.collect_vars(local_context) {
                     if seen_vars.insert(var_id) {
-                        let var_term = Term::new_variable(type_id, var_id);
+                        let var_term = Term::new_variable(var_id);
                         args.push(var_term);
                         arg_types.push(self.type_store().get_type(type_id).clone());
                     }
@@ -1362,7 +1328,7 @@ impl NormalizerView<'_> {
                 // Collect free variables from the else branch
                 for (var_id, type_id) in else_term.collect_vars(local_context) {
                     if seen_vars.insert(var_id) {
-                        let var_term = Term::new_variable(type_id, var_id);
+                        let var_term = Term::new_variable(var_id);
                         args.push(var_term);
                         arg_types.push(self.type_store().get_type(type_id).clone());
                     }
@@ -1378,11 +1344,8 @@ impl NormalizerView<'_> {
                 let atom_id = self.as_mut()?.declare_synthetic_atom(atom_type.clone())?;
                 synth.push(atom_id);
 
-                // Now we can safely get type IDs
-                let atom_type_id = self.type_store().get_type_id(&atom_type)?;
-
                 let atom = Atom::Symbol(Symbol::Synthetic(atom_id));
-                let synth_term = Term::new(result_type_id, atom_type_id, atom, args);
+                let synth_term = Term::new(atom, args);
 
                 // Create defining clauses for the if-expression
                 // (not cond or synth_term = then_term) and (cond or synth_term = else_term)
@@ -1473,17 +1436,10 @@ impl NormalizerView<'_> {
             }
             AcornValue::Constant(c) => {
                 if c.params.is_empty() {
-                    let type_id = self.type_store().get_type_id(&c.instance_type)?;
-
                     let Some(symbol) = self.symbol_table().get_symbol(&c.name) else {
                         return Err(format!("constant {} not found in symbol table", c));
                     };
-                    Ok(ExtendedTerm::Term(Term::new(
-                        type_id,
-                        type_id,
-                        Atom::Symbol(symbol),
-                        vec![],
-                    )))
+                    Ok(ExtendedTerm::Term(Term::new(Atom::Symbol(symbol), vec![])))
                 } else {
                     Ok(ExtendedTerm::Term(
                         self.symbol_table().term_from_monomorph(&c)?,
@@ -1502,7 +1458,7 @@ impl NormalizerView<'_> {
                     *next_var_id += 1;
                     // Add the variable type to the context
                     context.set_var_type(var_id as usize, type_id);
-                    let var = Term::new_variable(type_id, var_id);
+                    let var = Term::new_variable(var_id);
                     args.push((var_id, type_id));
                     stack.push(TermBinding::Free(var, type_id));
                 }

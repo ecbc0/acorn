@@ -1060,17 +1060,17 @@ mod tests {
         // Create an active set that knows m0(c3, c4) = c2
         // m0: (Bool, Bool) -> Bool, c2, c3, c4: Bool
         let mut set = ActiveSet::new();
-        let mut step = ProofStep::mock_with_context("m0(c3, c4) = c2", &local, &ctx);
+        let mut step = ProofStep::mock_with_context("m0(c3, c4) = c2", &local);
         step.truthiness = Truthiness::Hypothetical;
         set.activate(step, &ctx);
 
         // We should be able replace c1 with c3 in "m0(c3, c4) = c2"
-        let pattern_step = ProofStep::mock_with_context("c1 = c3", &local, &ctx);
+        let pattern_step = ProofStep::mock_with_context("c1 = c3", &local);
         let mut result = vec![];
         set.activate_rewrite_pattern(1, &pattern_step, &mut result, &ctx);
 
         assert_eq!(result.len(), 1);
-        let expected = Clause::parse_with_context("m0(c1, c4) = c2", &local, &ctx);
+        let expected = Clause::parse("m0(c1, c4) = c2", &local);
         assert_eq!(result[0].clause, expected);
     }
 
@@ -1080,11 +1080,11 @@ mod tests {
         let local = test_local();
         // Create an active set that knows c1 = c3
         let mut set = ActiveSet::new();
-        let step = ProofStep::mock_with_context("c1 = c3", &local, &ctx);
+        let step = ProofStep::mock_with_context("c1 = c3", &local);
         set.activate(step, &ctx);
 
         // We want to use m0(c3, c4) = c2 to get m0(c1, c4) = c2.
-        let mut target_step = ProofStep::mock_with_context("m0(c3, c4) = c2", &local, &ctx);
+        let mut target_step = ProofStep::mock_with_context("m0(c3, c4) = c2", &local);
         target_step.truthiness = Truthiness::Hypothetical;
         let mut result = vec![];
         set.activate_rewrite_target(1, &target_step, &mut result, &ctx);
@@ -1121,11 +1121,7 @@ mod tests {
         let ctx = test_context();
         let local = test_local();
         // m0: (Bool, Bool) -> Bool, m1: (Bool, Bool) -> Bool
-        let clause = Clause::parse_with_context(
-            "m0(x0, m0(x1, m1(x2, c0))) != m0(m0(x2, x1), x0)",
-            &local,
-            &ctx,
-        );
+        let clause = Clause::parse("m0(x0, m0(x1, m1(x2, c0))) != m0(m0(x2, x1), x0)", &local);
         let mock_step = ProofStep::mock_from_clause(clause);
         assert!(ActiveSet::equality_resolution(0, &mock_step, &ctx).is_empty());
     }
@@ -1149,7 +1145,7 @@ mod tests {
         );
         let mock_step = ProofStep::mock_from_clause(old_clause);
         let proof_steps = ActiveSet::equality_factoring(0, &mock_step, &ctx);
-        let expected = Clause::parse_with_context("c0 = x0", &local, &ctx);
+        let expected = Clause::parse("c0 = x0", &local);
         for ps in &proof_steps {
             if ps.clause == expected {
                 return;
@@ -1170,11 +1166,10 @@ mod tests {
         let mut step = ProofStep::mock_with_context(
             "not m2(m0(m0(x0, c4), c5), c6) or m0(x0, c7) != x0",
             &local,
-            &ctx,
         );
         step.truthiness = Truthiness::Factual;
         set.activate(step, &ctx);
-        let mut step = ProofStep::mock_with_context("m0(c3, c7) = c3", &local, &ctx);
+        let mut step = ProofStep::mock_with_context("m0(c3, c7) = c3", &local);
         step.truthiness = Truthiness::Counterfactual;
         let (_, new_clauses) = set.activate(step, &ctx);
         // Find the expected clause in results
@@ -1200,12 +1195,11 @@ mod tests {
         let mut set = ActiveSet::new();
 
         // Nonreflexive rule of less-than
-        let step = ProofStep::mock_with_context("not m1(x0, x0)", &local, &ctx);
+        let step = ProofStep::mock_with_context("not m1(x0, x0)", &local);
         set.activate(step, &ctx);
 
         // Trichotomy
-        let clause =
-            Clause::parse_with_context("m1(x0, x1) or m1(x1, x0) or x0 = x1", &local, &ctx);
+        let clause = Clause::parse("m1(x0, x1) or m1(x1, x0) or x0 = x1", &local);
         let mock_step = ProofStep::mock_from_clause(clause);
         let output = ActiveSet::equality_factoring(0, &mock_step, &ctx);
         assert_eq!(output[0].clause.to_string(), "m1(x0, x0) or x0 = x0");
@@ -1218,11 +1212,11 @@ mod tests {
         let local = test_local();
         let mut set = ActiveSet::new();
         set.activate(
-            ProofStep::mock_with_context("m2(x0, x0) = c0", &local, &ctx),
+            ProofStep::mock_with_context("m2(x0, x0) = c0", &local),
             &ctx,
         );
         let mut step =
-            ProofStep::mock_with_context("m2(m2(m1(c0, x0), x0), m2(x1, x1)) != c0", &local, &ctx);
+            ProofStep::mock_with_context("m2(m2(m1(c0, x0), x0), m2(x1, x1)) != c0", &local);
         step.truthiness = Truthiness::Counterfactual;
         let mut results = vec![];
         set.find_resolutions(&step, &mut results, &ctx);
