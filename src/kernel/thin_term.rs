@@ -1414,4 +1414,5 @@ mod tests {
             let _ = arg.get_head_atom();
         }
     }
+
 }

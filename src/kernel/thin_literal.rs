@@ -20,11 +20,8 @@ pub struct ThinLiteral {
 
 impl ThinLiteral {
     pub fn new(positive: bool, left: ThinTerm, right: ThinTerm) -> ThinLiteral {
-        ThinLiteral {
-            positive,
-            left,
-            right,
-        }
+        let (lit, _) = ThinLiteral::new_with_flip(positive, left, right);
+        lit
     }
 
     /// Create a positive literal from a single term (term = true).
