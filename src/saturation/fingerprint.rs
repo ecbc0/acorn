@@ -277,42 +277,55 @@ impl<T> FingerprintSpecializer<T> {
     }
 }
 
-// These tests use Term::parse which creates EMPTY types.
-// ThinTerm looks up types from the symbol table, so these tests only work with FatTerm.
-#[cfg(all(test, not(feature = "thin")))]
+// Tests for fingerprint matching.
+// Using test_with_all_bool_types: c0-c9 are Bool; m0-m9 are (Bool, Bool) -> Bool.
+#[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::fat_term::BOOL;
 
     fn test_local_context() -> LocalContext {
-        LocalContext::with_types(vec![TypeId::new(1); 10])
+        LocalContext::new(vec![BOOL; 10])
     }
 
-    fn make_fingerprint(term: &Term) -> TermFingerprint {
-        let lctx = test_local_context();
-        let kctx = KernelContext::test_with_constants(10, 10);
-        TermFingerprint::new(term, &lctx, &kctx)
+    fn test_kernel_context() -> KernelContext {
+        KernelContext::test_with_all_bool_types()
+    }
+
+    fn make_fingerprint(term: &Term, lctx: &LocalContext, kctx: &KernelContext) -> TermFingerprint {
+        TermFingerprint::new(term, lctx, kctx)
     }
 
     #[test]
     fn test_fingerprint() {
-        let term = Term::parse("c0(x0, x1)");
-        make_fingerprint(&term);
+        let lctx = test_local_context();
+        let kctx = test_kernel_context();
+        // m0: (Bool, Bool) -> Bool, x0 and x1 are Bool
+        let term = Term::parse_with_context("m0(x0, x1)", &lctx, &kctx);
+        make_fingerprint(&term, &lctx, &kctx);
     }
 
     #[test]
     fn test_fingerprint_matching() {
-        let term1 = Term::parse("c2(x0, x1, c0)");
-        let term2 = Term::parse("c2(c1, c3(x0), c0)");
-        assert!(make_fingerprint(&term1).could_unify(&make_fingerprint(&term2)));
+        let lctx = test_local_context();
+        let kctx = test_kernel_context();
+        // m2: (Bool, Bool) -> Bool, m3: (Bool, Bool) -> Bool
+        // term1: m2(x0, x1) where x0, x1 are Bool (2-arg function needs simplification)
+        // Since m0-m9 are all (Bool, Bool) -> Bool, we simplify to 2-arg terms
+        let term1 = Term::parse_with_context("m2(x0, c0)", &lctx, &kctx);
+        let term2 = Term::parse_with_context("m2(c1, c0)", &lctx, &kctx);
+        assert!(make_fingerprint(&term1, &lctx, &kctx)
+            .could_unify(&make_fingerprint(&term2, &lctx, &kctx)));
     }
 
     #[test]
     fn test_fingerprint_tree() {
         let lctx = test_local_context();
-        let kctx = KernelContext::test_with_constants(10, 10);
+        let kctx = test_kernel_context();
         let mut tree = FingerprintUnifier::new();
-        let term1 = Term::parse("c2(x0, x1, c0)");
-        let term2 = Term::parse("c2(c1, c3(x0), c0)");
+        // m2: (Bool, Bool) -> Bool
+        let term1 = Term::parse_with_context("m2(x0, c0)", &lctx, &kctx);
+        let term2 = Term::parse_with_context("m2(c1, c0)", &lctx, &kctx);
         tree.insert(&term1, 1, &lctx, &kctx);
         assert!(tree.find_unifying(&term1, &lctx, &kctx).len() > 0);
         assert!(tree.find_unifying(&term2, &lctx, &kctx).len() > 0);

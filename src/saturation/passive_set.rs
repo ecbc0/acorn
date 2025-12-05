@@ -412,19 +412,43 @@ impl PassiveSet {
     }
 }
 
-// These tests use ProofStep::mock which uses Clause::parse with EMPTY types.
-// ThinTerm looks up types from the symbol table, so these tests only work with FatTerm.
-#[cfg(all(test, not(feature = "thin")))]
+// Tests for passive set.
+// Using test_with_all_bool_types: c0-c9 are Bool; m0-m9 are (Bool, Bool) -> Bool.
+#[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::fat_term::BOOL;
+    use crate::kernel::local_context::LocalContext;
+
+    fn test_local_context() -> LocalContext {
+        LocalContext::new(vec![BOOL; 10])
+    }
+
+    fn test_kernel_context() -> KernelContext {
+        KernelContext::test_with_all_bool_types()
+    }
 
     #[test]
     fn test_passive_set_simplification() {
-        let ctx = KernelContext::test_with_constants(10, 10);
+        let lctx = test_local_context();
+        let kctx = test_kernel_context();
         let mut passive_set = PassiveSet::new();
-        passive_set.push_batch(vec![ProofStep::mock("c0(c1) or c0(c2)")], &ctx);
+        // m0 is (Bool, Bool) -> Bool; c0, c1, c2 are Bool
+        passive_set.push_batch(
+            vec![ProofStep::mock_with_context(
+                "m0(c0, c1) or m0(c0, c2)",
+                &lctx,
+                &kctx,
+            )],
+            &kctx,
+        );
         // This should match *both* the literals in our existing clause
-        passive_set.simplify(3, &ProofStep::mock("not c0(x0)"), &ctx);
+        // x0 is a Bool variable that matches both c1 and c2
+        passive_set.simplify(
+            3,
+            &ProofStep::mock_with_context("not m0(c0, x0)", &lctx, &kctx),
+            &kctx,
+        );
         let step = passive_set.pop().unwrap();
         assert_eq!(step.clause.to_string(), "<empty>");
     }
