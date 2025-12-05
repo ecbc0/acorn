@@ -1147,9 +1147,9 @@ impl NormalizerView<'_> {
         };
 
         // Create the definition for this synthetic term
-        let skolem_value =
-            self.as_ref()
-                .denormalize_term(&skolem_term, &stack_context, &mut None, None);
+        let skolem_value = self
+            .as_ref()
+            .denormalize_term(&skolem_term, &stack_context, None);
         // Start with the stack context so we have types for existing variables
         let mut local_context = stack_context.clone();
         let definition_cnf = self.eq_to_cnf(
@@ -1734,12 +1734,10 @@ impl Normalizer {
 
     /// If arbitrary names are provided, any free variables of the keyed types are converted
     /// to constants.
-    /// Any other free variables are left unbound. Their types are accumulated.
     fn denormalize_atom(
         &self,
         atom_type: TypeId,
         atom: &Atom,
-        var_types: &mut Option<Vec<AcornType>>,
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
         let acorn_type = self.kernel_context.type_store.get_type(atom_type).clone();
@@ -1770,16 +1768,6 @@ impl Normalizer {
                         return AcornValue::constant(name.clone(), vec![], acorn_type);
                     }
                 }
-                if let Some(var_types) = var_types {
-                    let index = *i as usize;
-                    if index < var_types.len() {
-                        assert_eq!(var_types[index], acorn_type);
-                    } else if index == var_types.len() {
-                        var_types.push(acorn_type.clone());
-                    } else {
-                        panic!("variable index out of order");
-                    }
-                }
                 AcornValue::Variable(*i, acorn_type)
             }
             Atom::Symbol(Symbol::Synthetic(i)) => {
@@ -1794,40 +1782,34 @@ impl Normalizer {
 
     /// If arbitrary names are provided, any free variables of the keyed types are converted
     /// to constants.
-    /// Any other free variables are left unbound. Their types are accumulated.
     fn denormalize_term(
         &self,
         term: &Term,
         local_context: &LocalContext,
-        var_types: &mut Option<Vec<AcornType>>,
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
         let head = self.denormalize_atom(
             term.get_head_type_with_context(local_context, self.kernel_context()),
             &term.get_head_atom(),
-            var_types,
             arbitrary_names,
         );
         let args: Vec<_> = term
             .args()
             .iter()
-            .map(|t| self.denormalize_term(t, local_context, var_types, arbitrary_names))
+            .map(|t| self.denormalize_term(t, local_context, arbitrary_names))
             .collect();
         AcornValue::apply(head, args)
     }
 
     /// If arbitrary names are provided, any free variables of the keyed types are converted
     /// to constants.
-    /// If var_types is provided, we accumulate the types of any free variables we encounter.
-    /// Any other free variables are left unbound. Their types are accumulated.
     fn denormalize_literal(
         &self,
         literal: &Literal,
         local_context: &LocalContext,
-        var_types: &mut Option<Vec<AcornType>>,
         arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
     ) -> AcornValue {
-        let left = self.denormalize_term(&literal.left, local_context, var_types, arbitrary_names);
+        let left = self.denormalize_term(&literal.left, local_context, arbitrary_names);
         if literal.right.is_true() {
             if literal.positive {
                 return left;
@@ -1835,8 +1817,7 @@ impl Normalizer {
                 return AcornValue::Not(Box::new(left));
             }
         }
-        let right =
-            self.denormalize_term(&literal.right, local_context, var_types, arbitrary_names);
+        let right = self.denormalize_term(&literal.right, local_context, arbitrary_names);
         if literal.positive {
             AcornValue::equals(left, right)
         } else {
@@ -1858,18 +1839,50 @@ impl Normalizer {
             return AcornValue::Bool(false);
         }
         let local_context = clause.get_local_context();
-        let mut var_types = Some(vec![]);
         let mut denormalized_literals = vec![];
         for literal in &clause.literals {
             denormalized_literals.push(self.denormalize_literal(
                 literal,
                 local_context,
-                &mut var_types,
                 arbitrary_names,
             ));
         }
         let disjunction = AcornValue::reduce(BinaryOp::Or, denormalized_literals);
-        AcornValue::forall(var_types.unwrap(), disjunction)
+
+        // Find the number of variables actually used in the clause.
+        // The local_context may have more variables than are used.
+        let num_vars = clause
+            .literals
+            .iter()
+            .filter_map(|lit| {
+                let left_max = lit.left.max_variable();
+                let right_max = lit.right.max_variable();
+                match (left_max, right_max) {
+                    (Some(l), Some(r)) => Some(l.max(r)),
+                    (Some(l), None) => Some(l),
+                    (None, Some(r)) => Some(r),
+                    (None, None) => None,
+                }
+            })
+            .max()
+            .map(|max| (max + 1) as usize)
+            .unwrap_or(0);
+
+        // Build var_types for the forall quantifier, but exclude any variables that
+        // were converted to arbitrary constants (their types are in arbitrary_names).
+        let var_types: Vec<AcornType> = local_context
+            .var_types
+            .iter()
+            .take(num_vars)
+            .filter(|type_id| {
+                // Keep this variable if its type is NOT in arbitrary_names
+                arbitrary_names
+                    .map(|names| !names.contains_key(type_id))
+                    .unwrap_or(true)
+            })
+            .map(|type_id| self.kernel_context.type_store.get_type(*type_id).clone())
+            .collect();
+        AcornValue::forall(var_types, disjunction)
     }
 
     pub fn denormalize_type(&self, type_id: TypeId) -> AcornType {

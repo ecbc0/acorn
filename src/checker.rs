@@ -101,10 +101,7 @@ impl StepReason {
 
 /// Converts a clause to readable code using the environment's names.
 fn clause_to_code(clause: &Clause, normalizer: &Normalizer, bindings: &Cow<BindingMap>) -> String {
-    // Clone and normalize variable IDs before denormalizing
-    let mut clause_for_display = clause.clone();
-    clause_for_display.normalize_var_ids_no_flip();
-    let value = normalizer.denormalize(&clause_for_display, None);
+    let value = normalizer.denormalize(clause, None);
     let mut code_gen = crate::code_generator::CodeGenerator::new(bindings);
     code_gen
         .value_to_code(&value)

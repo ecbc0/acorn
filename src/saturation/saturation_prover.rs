@@ -174,12 +174,7 @@ impl SaturationProver {
             if step.clause.is_impossible() {
                 println!("Contradiction, depth {}, {}.", step.depth, rule);
             } else {
-                // Clone and normalize variable IDs before denormalizing.
-                // In thin mode, clauses may have out-of-order variables which
-                // denormalize cannot handle.
-                let mut clause_for_display = step.clause.clone();
-                clause_for_display.normalize_var_ids_no_flip();
-                let denormalized = normalizer.denormalize(&clause_for_display, None);
+                let denormalized = normalizer.denormalize(&step.clause, None);
                 let clause_text = CodeGenerator::new(bindings)
                     .value_to_code(&denormalized)
                     .unwrap_or_else(|_| format!("{:?}", step.clause));
@@ -213,10 +208,7 @@ impl SaturationProver {
                 let dep_text = if dep_clause.is_impossible() {
                     "contradiction".to_string()
                 } else {
-                    // Clone and normalize variable IDs before denormalizing
-                    let mut clause_for_display = dep_clause.clone();
-                    clause_for_display.normalize_var_ids_no_flip();
-                    let denormalized = normalizer.denormalize(&clause_for_display, None);
+                    let denormalized = normalizer.denormalize(&dep_clause, None);
                     CodeGenerator::new(bindings)
                         .value_to_code(&denormalized)
                         .unwrap_or_else(|_| format!("{:?}", dep_clause))

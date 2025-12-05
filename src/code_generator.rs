@@ -243,10 +243,7 @@ impl CodeGenerator<'_> {
             // Create code for the condition
             let mut cond_parts = vec![];
             for clause in &info.clauses {
-                // Clone and normalize variable IDs before denormalizing
-                let mut clause_for_display = clause.clone();
-                clause_for_display.normalize_var_ids_no_flip();
-                let part = normalizer.denormalize(&clause_for_display, None);
+                let part = normalizer.denormalize(clause, None);
                 cond_parts.push(part);
             }
             let cond_val = AcornValue::reduce(BinaryOp::And, cond_parts);
@@ -280,10 +277,9 @@ impl CodeGenerator<'_> {
     ) -> Result<()> {
         let mut clause = var_map.specialize_clause(&generic, normalizer.kernel_context());
 
-        // Normalize variable IDs to ensure they are in order (0, 1, 2, ...).
-        // This is needed because in thin mode, specialize_clause may produce
-        // clauses with out-of-order variables, which denormalize cannot handle.
-        // Using normalize_var_ids_no_flip to avoid reordering literals.
+        // Normalize variable IDs to ensure they are in order (0, 1, 2, ...) with no gaps.
+        // This is needed because specialize_clause may produce clauses with gaps in variable
+        // indices when some variables are replaced with constants.
         clause.normalize_var_ids_no_flip();
 
         // This is the only place where we use the feature of "denormalize" that we can
