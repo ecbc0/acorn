@@ -493,13 +493,14 @@ impl FatClause {
 
     #[cfg(not(feature = "thin"))]
     /// Finds all possible equality factorings for this clause.
-    /// Returns a vector of (literals, ef_trace) pairs.
+    /// Returns a vector of (literals, ef_trace, output_context) tuples.
     /// The literals are the result of factoring before normalization.
     /// The ef_trace tracks how the literals were transformed.
+    /// The output_context contains types for variables in the resulting literals.
     pub fn find_equality_factorings(
         &self,
         kernel_context: &KernelContext,
-    ) -> Vec<(Vec<FatLiteral>, Vec<EFLiteralTrace>)> {
+    ) -> Vec<(Vec<FatLiteral>, Vec<EFLiteralTrace>, LocalContext)> {
         crate::kernel::inference::find_equality_factorings(self, kernel_context)
     }
 

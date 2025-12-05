@@ -79,13 +79,14 @@ pub fn equality_resolutions(clause: &Clause, kernel_context: &KernelContext) -> 
 /// Equality factoring applies when a clause has two positive literals that can
 /// be partially unified. It creates a new clause with an additional negative literal.
 ///
-/// Returns a vector of (literals, ef_trace) pairs.
+/// Returns a vector of (literals, ef_trace, output_context) tuples.
 /// The literals are the result of factoring before normalization.
 /// The ef_trace tracks how the literals were transformed.
+/// The output_context contains types for variables in the resulting literals.
 pub fn find_equality_factorings(
     clause: &Clause,
     kernel_context: &KernelContext,
-) -> Vec<(Vec<Literal>, Vec<EFLiteralTrace>)> {
+) -> Vec<(Vec<Literal>, Vec<EFLiteralTrace>, LocalContext)> {
     let mut results = vec![];
 
     // The first literal must be positive for equality factoring
@@ -163,7 +164,10 @@ pub fn find_equality_factorings(
                     }
                 }
 
-                results.push((literals, ef_trace));
+                // Get the output context from the unifier
+                let output_context = unifier.take_output_context();
+
+                results.push((literals, ef_trace, output_context));
             }
         }
     }
@@ -175,12 +179,12 @@ pub fn find_equality_factorings(
 /// This is a convenience function that returns just the normalized clauses.
 pub fn equality_factorings(
     clause: &Clause,
-    context: &LocalContext,
+    _context: &LocalContext,
     kernel_context: &KernelContext,
 ) -> Vec<Clause> {
     find_equality_factorings(clause, kernel_context)
         .into_iter()
-        .map(|(literals, _)| Clause::new(literals, context))
+        .map(|(literals, _, output_context)| Clause::new(literals, &output_context))
         .filter(|c| !c.is_tautology())
         .collect()
 }

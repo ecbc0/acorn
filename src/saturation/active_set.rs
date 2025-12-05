@@ -680,14 +680,13 @@ impl ActiveSet {
         // Use the clause's helper method to find all factorings
         let factorings = inference::find_equality_factorings(clause, kernel_context);
 
-        for (literals, ef_trace) in factorings {
+        for (literals, ef_trace, output_context) in factorings {
             // Capture the literals before normalization
             let literals_before_normalization = literals.clone();
-            let context = activated_step.clause.get_local_context().clone();
 
-            // Create the new clause with trace
+            // Create the new clause with trace using the unifier's output context
             let (new_clause, normalization_traces) =
-                Clause::normalize_with_trace(literals, &context);
+                Clause::normalize_with_trace(literals, &output_context);
 
             let step = ProofStep::direct(
                 activated_id,
@@ -695,7 +694,7 @@ impl ActiveSet {
                 Rule::EqualityFactoring(EqualityFactoringInfo {
                     id: activated_id,
                     literals: literals_before_normalization,
-                    context,
+                    context: output_context,
                     ef_trace,
                 }),
                 new_clause,

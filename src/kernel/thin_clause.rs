@@ -25,6 +25,20 @@ impl ThinClause {
 
     /// Creates a new normalized clause.
     pub fn new(literals: Vec<ThinLiteral>, context: &LocalContext) -> ThinClause {
+        // Debug: validate that all variables in literals have types in context
+        #[cfg(debug_assertions)]
+        for (i, lit) in literals.iter().enumerate() {
+            for atom in lit.iter_atoms() {
+                if let crate::kernel::atom::Atom::Variable(var_id) = atom {
+                    if context.get_var_type(*var_id as usize).is_none() {
+                        panic!(
+                            "ThinClause::new: literal {} has variable x{} but context has no type for it. Context len: {}",
+                            i, var_id, context.len()
+                        );
+                    }
+                }
+            }
+        }
         let mut c = ThinClause {
             literals,
             context: context.clone(),
@@ -295,6 +309,20 @@ impl ThinClause {
         literals: Vec<ThinLiteral>,
         context: &LocalContext,
     ) -> ThinClause {
+        // Debug: validate that all variables in literals have types in context
+        #[cfg(debug_assertions)]
+        for (i, lit) in literals.iter().enumerate() {
+            for atom in lit.iter_atoms() {
+                if let crate::kernel::atom::Atom::Variable(var_id) = atom {
+                    if context.get_var_type(*var_id as usize).is_none() {
+                        panic!(
+                            "ThinClause::from_literals_unnormalized: literal {} has variable x{} but context has no type for it. Context len: {}",
+                            i, var_id, context.len()
+                        );
+                    }
+                }
+            }
+        }
         ThinClause {
             literals,
             context: context.clone(),
@@ -674,5 +702,79 @@ mod tests {
             clause.find_extensionality(&kernel_context).is_none(),
             "Extensionality should not match when functions are the same"
         );
+    }
+
+    /// Test that normalize_with_trace correctly preserves variable types when
+    /// literals are reordered during sorting. This reproduces a bug where
+    /// variable types were getting shuffled incorrectly.
+    #[test]
+    fn test_normalize_with_trace_preserves_types() {
+        // Create a clause with mixed types:
+        // not f(x0, x1, x2) or x2
+        // where x0: TypeId(2), x1: TypeId(2), x2: TypeId(1) (Bool)
+        //
+        // After sorting, the literals may be reordered. The variable renumbering
+        // should correctly track which type belongs to which new variable ID.
+
+        let type_foo = TypeId::new(2); // Some non-Bool type
+        let type_bool = TypeId::new(1); // Bool
+
+        // x0 and x1 are Foo, x2 is Bool
+        let x0 = ThinTerm::atom(type_foo, Atom::Variable(0));
+        let x1 = ThinTerm::atom(type_foo, Atom::Variable(1));
+        let x2 = ThinTerm::atom(type_bool, Atom::Variable(2));
+
+        // Create f(x0, x1, x2) - a function application
+        let f_args = ThinTerm::new(
+            type_bool,
+            TypeId::new(3), // function head type
+            Atom::Symbol(Symbol::GlobalConstant(0)),
+            vec![x0.clone(), x1.clone(), x2.clone()],
+        );
+
+        // Literal 1: not f(x0, x1, x2) = true (negative Bool equality)
+        let lit1 = ThinLiteral::new(false, f_args.clone(), ThinTerm::atom(type_bool, Atom::True));
+
+        // Literal 2: x2 = true (positive Bool equality)
+        let lit2 = ThinLiteral::new(true, x2.clone(), ThinTerm::atom(type_bool, Atom::True));
+
+        // Context: x0:Foo, x1:Foo, x2:Bool
+        let context = LocalContext::new(vec![type_foo, type_foo, type_bool]);
+
+        // Normalize the clause
+        let (clause, _trace) = ThinClause::normalize_with_trace(vec![lit1, lit2], &context);
+
+        // After normalization, check the output context:
+        // Should have 3 variables with types [TypeId(2), TypeId(2), TypeId(1)]
+        // The order may vary but the types should be consistent
+        assert_eq!(clause.context.len(), 3);
+
+        // Count how many Foo and Bool types we have
+        let mut foo_count = 0;
+        let mut bool_count = 0;
+        for i in 0..clause.context.len() {
+            match clause.context.get_var_type(i) {
+                Some(t) if t == type_foo => foo_count += 1,
+                Some(t) if t == type_bool => bool_count += 1,
+                _ => panic!("Unexpected type in context"),
+            }
+        }
+        assert_eq!(foo_count, 2, "Should have 2 Foo variables");
+        assert_eq!(bool_count, 1, "Should have 1 Bool variable");
+
+        // Specifically check that the literal that is just a variable (from lit2)
+        // has the correct Bool type in the context
+        for lit in &clause.literals {
+            if lit.left.is_atomic() {
+                if let Atom::Variable(var_id) = lit.left.get_head_atom() {
+                    let var_type = clause.context.get_var_type(*var_id as usize).unwrap();
+                    assert_eq!(
+                        var_type, type_bool,
+                        "Variable in atomic Bool literal should have Bool type, got {:?}",
+                        var_type
+                    );
+                }
+            }
+        }
     }
 }
