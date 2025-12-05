@@ -584,8 +584,9 @@ impl ProofStep {
         let rewritten = new_literal.clone();
 
         let simplifying = new_literal.extended_kbo_cmp(&target_literal) == Ordering::Less;
-        let (clause, trace) =
-            Clause::from_literal_traced(new_literal, false, &LocalContext::empty());
+        // The new literal may have variables from the pattern step's clause
+        let context = pattern_step.clause.get_local_context();
+        let (clause, trace) = Clause::from_literal_traced(new_literal, false, context);
 
         let truthiness = pattern_step.truthiness.combine(target_step.truthiness);
 
