@@ -2073,3 +2073,4 @@ fn test_rewrite_with_variable_renumbering() {
     // exercising the full certificate creation path including the Rewrite rule handling.
     verify_succeeds(&format!("{}\n{}", THING, text));
 }
+

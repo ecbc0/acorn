@@ -182,8 +182,8 @@ impl FatTerm {
         };
         if self.head_type != context_type {
             panic!(
-                "FatTerm head_type mismatch: embedded {} but context says {} for head {:?}",
-                self.head_type, context_type, self.head
+                "FatTerm head_type mismatch: embedded {} but context says {} for head {:?}. Context types: {:?}",
+                self.head_type, context_type, self.head, local_context.var_types
             );
         }
         self.head_type

@@ -767,3 +767,166 @@ impl ProofStep {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kernel::fat_term::BOOL;
+    use crate::kernel::kernel_context::KernelContext;
+    use crate::kernel::local_context::LocalContext;
+
+    /// Test that ProofStep::rewrite produces a RewriteInfo where the rewritten literal's
+    /// embedded variable types match the stored context.
+    ///
+    /// This tests a bug where backwards rewrites with differently-typed variables would
+    /// produce mismatched types: the pattern `tail(cons(x0:T, x1:List)) = x1:List` when
+    /// reversed becomes `x0:List -> tail(cons(x1:T, x0:List))`. When used in a backwards
+    /// rewrite, the fresh variable x1 has type T embedded, but if we incorrectly store
+    /// the original pattern context [T, List], then x1 would be expected to have type List.
+    #[test]
+    fn test_rewrite_context_matches_embedded_types() {
+        // Use test context where all variables are Bool (BOOL = TypeId 1)
+        // This simplifies the test since we don't need multi-typed variables
+        let kctx = KernelContext::test_with_all_bool_types();
+
+        // Pattern: m0(x0, x1) = x1 (two variables, same type)
+        // Context: [Bool, Bool]
+        let pattern_context = LocalContext::new(vec![BOOL, BOOL]);
+        let pattern_step = ProofStep::mock_with_context(
+            "m0(x0, x1) = x1",
+            &pattern_context,
+            &kctx,
+        );
+
+        // Target: a concrete literal with c0
+        let target_context = LocalContext::new(vec![]);
+        let target_step = ProofStep::mock_with_context("m1(c0) = c0", &target_context, &kctx);
+
+        // new_subterm: m0(x0, c0) - this is what we're rewriting c0 to (backwards rewrite)
+        // Note: in the backwards direction, x1 was matched to c0, and x0 is fresh
+        let new_subterm = Term::parse_with_context("m0(x0, c0)", &pattern_context, &kctx);
+
+        // Perform the rewrite: replace c0 in target with new_subterm
+        let rewrite_step = ProofStep::rewrite(
+            0, // pattern_id
+            &pattern_step,
+            1, // target_id
+            &target_step,
+            true,  // target_left
+            &[],   // path - at root
+            false, // forwards
+            &new_subterm,
+        );
+
+        // Verify: the rewritten literal should have variables whose embedded types
+        // match the context stored in the rule
+        if let Rule::Rewrite(info) = &rewrite_step.rule {
+            // Collect variable types from the rewritten literal
+            let var_types_embedded: Vec<_> = info
+                .rewritten
+                .left
+                .collect_vars_embedded()
+                .into_iter()
+                .chain(info.rewritten.right.collect_vars_embedded())
+                .collect();
+
+            // Check each variable's embedded type matches the context
+            for (var_id, embedded_type) in var_types_embedded {
+                let context_type = info.context.get_var_type(var_id as usize);
+                assert_eq!(
+                    Some(embedded_type),
+                    context_type,
+                    "Variable x{} has embedded type {} but context says {:?}",
+                    var_id,
+                    embedded_type,
+                    context_type
+                );
+            }
+        } else {
+            panic!("Expected Rule::Rewrite");
+        }
+    }
+
+    /// Test that backwards rewrites with differently-typed variables produce correct contexts.
+    ///
+    /// This test specifically exercises the bug from list.list_sum line 664.
+    /// The pattern `m0(x0, x1) = x1` with context [TypeA, TypeB] when used in backwards
+    /// direction creates a subterm where the fresh variable has its type from the REVERSED
+    /// context, not the original pattern context.
+    ///
+    /// The bug: ProofStep::rewrite stores pattern_step.clause.get_local_context() as the
+    /// context, but the new_subterm may have variables with types from a DIFFERENT context
+    /// (e.g., the reversed context for backwards rewrites).
+    #[test]
+    fn test_backwards_rewrite_different_types() {
+        use crate::kernel::fat_term::TypeId;
+        use crate::kernel::symbol::Symbol;
+
+        // Use two distinct types
+        let type_a = TypeId::new(10);
+        let _type_b = TypeId::new(20);
+
+        // Create pattern step with a clause parsed using Bool types for the structure
+        let pattern_step = ProofStep::mock("m0(x0, x1) = x1");
+
+        // Create new_subterm: m0(x1, c0)
+        // This simulates a backwards rewrite where:
+        // - The reversed pattern was x1 -> m0(x0, x1) with reversed_context [type_b, type_a]
+        // - After matching x1 (now x0 in reversed) with c0, we get m0(x1, c0)
+        // - The x1 here has type type_a (from reversed_context[1])
+        //
+        // The bug: if we store pattern_context [type_a, type_b], then x1 would be
+        // expected to have type_b, but its embedded type is type_a
+        let new_subterm = Term::new(
+            BOOL, // term_type
+            BOOL, // head_type (m0's type)
+            Atom::Symbol(Symbol::Monomorph(0)),
+            vec![
+                // x1 with embedded type type_a (simulating reversed context)
+                Term::atom(type_a, Atom::Variable(1)),
+                // c0
+                Term::atom(BOOL, Atom::Symbol(Symbol::ScopedConstant(0))),
+            ],
+        );
+
+        // Target: concrete literal
+        let target_step = ProofStep::mock("m1(c0) = c0");
+
+        let rewrite_step = ProofStep::rewrite(
+            0,
+            &pattern_step,
+            1,
+            &target_step,
+            true,  // target_left
+            &[],   // path
+            false, // forwards (this is a backwards rewrite)
+            &new_subterm,
+        );
+
+        // Verify the rewritten literal's variables match the stored context
+        if let Rule::Rewrite(info) = &rewrite_step.rule {
+            let var_types_embedded: Vec<_> = info
+                .rewritten
+                .left
+                .collect_vars_embedded()
+                .into_iter()
+                .chain(info.rewritten.right.collect_vars_embedded())
+                .collect();
+
+            for (var_id, embedded_type) in var_types_embedded {
+                let context_type = info.context.get_var_type(var_id as usize);
+                assert_eq!(
+                    Some(embedded_type),
+                    context_type,
+                    "Variable x{} has embedded type {} but context says {:?}. \
+                     This indicates a context mismatch bug in backwards rewrites.",
+                    var_id,
+                    embedded_type,
+                    context_type
+                );
+            }
+        } else {
+            panic!("Expected Rule::Rewrite");
+        }
+    }
+}
