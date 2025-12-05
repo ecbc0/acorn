@@ -2,9 +2,10 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::vec;
 
-use crate::kernel::aliases::{Clause, Literal, Term};
+use crate::kernel::aliases::{Clause, Literal};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::term::TermRef;
 use crate::kernel::types::TypeId;
 use crate::kernel::unifier::Unifier;
 use crate::pattern_tree::PatternTree;
@@ -101,9 +102,9 @@ fn sub_invariant_literal_cmp(
 ) -> Option<Ordering> {
     // First compare the left terms
     let left_cmp = sub_invariant_term_cmp(
-        &lit1.left,
+        lit1.left.as_ref(),
         !lit1.positive,
-        &lit2.left,
+        lit2.left.as_ref(),
         !lit2.positive,
         local_context,
         kernel_context,
@@ -112,9 +113,9 @@ fn sub_invariant_literal_cmp(
         Some(Ordering::Equal) => {
             // If left terms are equal, compare right terms
             sub_invariant_term_cmp(
-                &lit1.right,
+                lit1.right.as_ref(),
                 !lit1.positive,
-                &lit2.right,
+                lit2.right.as_ref(),
                 !lit2.positive,
                 local_context,
                 kernel_context,
@@ -135,9 +136,9 @@ fn sub_invariant_literal_cmp(
 ///
 /// Concrete terms should always be orderable.
 pub fn sub_invariant_term_cmp(
-    left: &Term,
+    left: TermRef,
     left_neg: bool,
-    right: &Term,
+    right: TermRef,
     right_neg: bool,
     local_context: &LocalContext,
     kernel_context: &KernelContext,
@@ -177,14 +178,7 @@ pub fn sub_invariant_term_cmp(
     // Heads are the same, so recurse on arguments
     assert!(left.num_args() == right.num_args());
     for (l, r) in left.iter_args().zip(right.iter_args()) {
-        match sub_invariant_term_cmp(
-            &l.to_owned(),
-            false,
-            &r.to_owned(),
-            false,
-            local_context,
-            kernel_context,
-        ) {
+        match sub_invariant_term_cmp(l, false, r, false, local_context, kernel_context) {
             Some(Ordering::Equal) => continue,
             x => return x,
         };
@@ -215,9 +209,9 @@ fn all_generalized_forms(
     let local_context = base_clause.get_local_context();
     // Ignore literal sign in this stage
     let cmp = sub_invariant_term_cmp(
-        &literal.left,
+        literal.left.as_ref(),
         true,
-        &literal.right,
+        literal.right.as_ref(),
         true,
         local_context,
         kernel_context,
@@ -314,9 +308,9 @@ fn specialized_form(mut clause: Clause, kernel_context: &KernelContext) -> Claus
     // First, ensure each literal has the larger term on the left
     for literal in &mut clause.literals {
         let cmp = sub_invariant_term_cmp(
-            &literal.left,
+            literal.left.as_ref(),
             true,
-            &literal.right,
+            literal.right.as_ref(),
             true,
             &local_context,
             kernel_context,

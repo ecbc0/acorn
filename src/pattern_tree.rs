@@ -5,6 +5,7 @@ use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
+use crate::kernel::term::TermRef;
 use crate::kernel::types::TypeId;
 
 /// The TermComponent is designed so that a &[TermComponent] represents a preorder
@@ -38,7 +39,7 @@ impl TermComponent {
     }
 
     fn flatten_next(
-        term: &Term,
+        term: TermRef,
         output: &mut Vec<TermComponent>,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
@@ -60,7 +61,7 @@ impl TermComponent {
             *term.get_head_atom(),
         ));
         for arg in term.iter_args() {
-            TermComponent::flatten_next(&arg.to_owned(), output, local_context, kernel_context);
+            TermComponent::flatten_next(arg, output, local_context, kernel_context);
         }
 
         // Now we can fill in the real size
@@ -78,7 +79,7 @@ impl TermComponent {
         kernel_context: &KernelContext,
     ) -> Vec<TermComponent> {
         let mut output = Vec::new();
-        TermComponent::flatten_next(term, &mut output, local_context, kernel_context);
+        TermComponent::flatten_next(term.as_ref(), &mut output, local_context, kernel_context);
         output
     }
 
@@ -94,8 +95,8 @@ impl TermComponent {
         );
         let mut output = Vec::new();
         // The zero is a placeholder. We'll fill in the real info later.
-        TermComponent::flatten_next(term1, &mut output, local_context, kernel_context);
-        TermComponent::flatten_next(term2, &mut output, local_context, kernel_context);
+        TermComponent::flatten_next(term1.as_ref(), &mut output, local_context, kernel_context);
+        TermComponent::flatten_next(term2.as_ref(), &mut output, local_context, kernel_context);
         output
     }
 
@@ -103,8 +104,18 @@ impl TermComponent {
         let local_context = clause.get_local_context();
         let mut output = Vec::new();
         for literal in &clause.literals {
-            TermComponent::flatten_next(&literal.left, &mut output, local_context, kernel_context);
-            TermComponent::flatten_next(&literal.right, &mut output, local_context, kernel_context);
+            TermComponent::flatten_next(
+                literal.left.as_ref(),
+                &mut output,
+                local_context,
+                kernel_context,
+            );
+            TermComponent::flatten_next(
+                literal.right.as_ref(),
+                &mut output,
+                local_context,
+                kernel_context,
+            );
         }
         output
     }
@@ -460,7 +471,7 @@ impl Edge {
 
 /// Appends the key for this term, but does not add the top-level type
 fn key_from_term_helper(
-    term: &Term,
+    term: TermRef,
     key: &mut Vec<u8>,
     local_context: &LocalContext,
     kernel_context: &KernelContext,
@@ -475,7 +486,7 @@ fn key_from_term_helper(
         .append_to(key);
         Edge::Atom(*term.get_head_atom()).append_to(key);
         for arg in term.iter_args() {
-            key_from_term_helper(&arg.to_owned(), key, local_context, kernel_context);
+            key_from_term_helper(arg, key, local_context, kernel_context);
         }
     }
 }
@@ -493,7 +504,7 @@ pub fn key_from_term(
     kernel_context: &KernelContext,
 ) -> Vec<u8> {
     let mut key = term_key_prefix(term.get_term_type_with_context(local_context, kernel_context));
-    key_from_term_helper(term, &mut key, local_context, kernel_context);
+    key_from_term_helper(term.as_ref(), &mut key, local_context, kernel_context);
     key
 }
 
@@ -511,8 +522,8 @@ fn key_from_pair(
 ) -> Vec<u8> {
     let mut key =
         literal_key_prefix(term1.get_term_type_with_context(local_context, kernel_context));
-    key_from_term_helper(&term1, &mut key, local_context, kernel_context);
-    key_from_term_helper(&term2, &mut key, local_context, kernel_context);
+    key_from_term_helper(term1.as_ref(), &mut key, local_context, kernel_context);
+    key_from_term_helper(term2.as_ref(), &mut key, local_context, kernel_context);
     key
 }
 
@@ -545,8 +556,18 @@ fn key_from_clause(clause: &Clause, kernel_context: &KernelContext) -> Vec<u8> {
     let local_context = clause.get_local_context();
     let mut key = clause_key_prefix(clause, kernel_context);
     for literal in &clause.literals {
-        key_from_term_helper(&literal.left, &mut key, local_context, kernel_context);
-        key_from_term_helper(&literal.right, &mut key, local_context, kernel_context);
+        key_from_term_helper(
+            literal.left.as_ref(),
+            &mut key,
+            local_context,
+            kernel_context,
+        );
+        key_from_term_helper(
+            literal.right.as_ref(),
+            &mut key,
+            local_context,
+            kernel_context,
+        );
     }
     key
 }

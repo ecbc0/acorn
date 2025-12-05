@@ -4,6 +4,7 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 #[cfg(test)]
 use crate::kernel::symbol::Symbol;
+use crate::kernel::term::TermRef;
 use crate::kernel::types::TypeId;
 use crate::kernel::variable_map::VariableMap;
 use std::fmt;
@@ -212,7 +213,7 @@ impl<'a> Unifier<'a> {
     fn apply_replace(
         &mut self,
         scope: Scope,
-        term: &Term,
+        term: TermRef,
         replacement: Option<Replacement>,
     ) -> Term {
         if let Some(ref replacement) = replacement {
@@ -290,7 +291,7 @@ impl<'a> Unifier<'a> {
             } else {
                 None
             };
-            args.push(self.apply_replace(scope, &arg.to_owned(), new_replacement))
+            args.push(self.apply_replace(scope, arg, new_replacement))
         }
 
         // Now construct the final term with correct types
@@ -298,7 +299,7 @@ impl<'a> Unifier<'a> {
     }
 
     pub fn apply(&mut self, scope: Scope, term: &Term) -> Term {
-        self.apply_replace(scope, term, None)
+        self.apply_replace(scope, term.as_ref(), None)
     }
 
     /// Returns the resulting literal, and whether it was flipped.
@@ -356,7 +357,12 @@ impl<'a> Unifier<'a> {
             // We already have a mapping for this variable.
             // Unify the existing mapping with the term.
             let existing = self.get_mapping(var_scope, var_id).unwrap().clone();
-            return self.unify_internal(Scope::OUTPUT, &existing, Scope::OUTPUT, term);
+            return self.unify_internal(
+                Scope::OUTPUT,
+                existing.as_ref(),
+                Scope::OUTPUT,
+                term.as_ref(),
+            );
         }
 
         if var_scope == Scope::OUTPUT {
@@ -404,9 +410,9 @@ impl<'a> Unifier<'a> {
     // Returns true if successful, false otherwise
     fn try_unify_partial_application(
         &mut self,
-        var_term: &Term,
+        var_term: TermRef,
         var_scope: Scope,
-        full_term: &Term,
+        full_term: TermRef,
         full_scope: Scope,
     ) -> Option<bool> {
         // Check if var_term has a variable head with arguments
@@ -421,8 +427,11 @@ impl<'a> Unifier<'a> {
 
                 // Build the partial application: first (M-N) args of full_term
                 let num_partial_args = full_args_len - var_args_len;
-                let full_args = full_term.args();
-                let partial_args = full_args[0..num_partial_args].to_vec();
+                let full_args: Vec<_> = full_term.iter_args().collect();
+                let partial_args: Vec<Term> = full_args[0..num_partial_args]
+                    .iter()
+                    .map(|arg| arg.to_owned())
+                    .collect();
 
                 // Create the partial application term
                 // Use the head_type of var_term (the variable's type) as the term_type
@@ -441,13 +450,13 @@ impl<'a> Unifier<'a> {
                 }
 
                 // Unify each var_term argument with the corresponding full_term argument
-                let var_args = var_term.args();
+                let var_args: Vec<_> = var_term.iter_args().collect();
                 for i in 0..var_args_len {
                     if !self.unify_internal(
                         var_scope,
-                        &var_args[i],
+                        var_args[i],
                         full_scope,
-                        &full_args[num_partial_args + i],
+                        full_args[num_partial_args + i],
                     ) {
                         return Some(false);
                     }
@@ -466,11 +475,17 @@ impl<'a> Unifier<'a> {
         if scope1 == Scope::OUTPUT || scope2 == Scope::OUTPUT {
             panic!("Cannot call unify with output scope - the unifier manages output variables internally");
         }
-        self.unify_internal(scope1, term1, scope2, term2)
+        self.unify_internal(scope1, term1.as_ref(), scope2, term2.as_ref())
     }
 
     // Internal unification implementation
-    fn unify_internal(&mut self, scope1: Scope, term1: &Term, scope2: Scope, term2: &Term) -> bool {
+    fn unify_internal(
+        &mut self,
+        scope1: Scope,
+        term1: TermRef,
+        scope2: Scope,
+        term2: TermRef,
+    ) -> bool {
         let local1 = self.get_local_context(scope1);
         let local2 = self.get_local_context(scope2);
         let kc = self.kernel_context;
@@ -483,10 +498,10 @@ impl<'a> Unifier<'a> {
 
         // Handle the case where we're unifying something with a variable
         if let Some(i) = term1.atomic_variable() {
-            return self.unify_variable(scope1, i, scope2, term2);
+            return self.unify_variable(scope1, i, scope2, &term2.to_owned());
         }
         if let Some(i) = term2.atomic_variable() {
-            return self.unify_variable(scope2, i, scope1, term1);
+            return self.unify_variable(scope2, i, scope1, &term1.to_owned());
         }
 
         // Try to unify term1 (if it has a variable head) with a partial application of term2
@@ -516,15 +531,15 @@ impl<'a> Unifier<'a> {
         if !self.unify_atoms(
             term1.get_head_type_with_context(local1, kc),
             scope1,
-            &term1.get_head_atom(),
+            term1.get_head_atom(),
             scope2,
-            &term2.get_head_atom(),
+            term2.get_head_atom(),
         ) {
             return false;
         }
 
         for (a1, a2) in term1.iter_args().zip(term2.iter_args()) {
-            if !self.unify_internal(scope1, &a1.to_owned(), scope2, &a2.to_owned()) {
+            if !self.unify_internal(scope1, a1, scope2, a2) {
                 return false;
             }
         }
@@ -543,12 +558,30 @@ impl<'a> Unifier<'a> {
     ) -> bool {
         if flipped {
             // If we're flipped, swap the literals.
-            self.unify_internal(scope1, &literal1.right, scope2, &literal2.left)
-                && self.unify_internal(scope1, &literal1.left, scope2, &literal2.right)
+            self.unify_internal(
+                scope1,
+                literal1.right.as_ref(),
+                scope2,
+                literal2.left.as_ref(),
+            ) && self.unify_internal(
+                scope1,
+                literal1.left.as_ref(),
+                scope2,
+                literal2.right.as_ref(),
+            )
         } else {
             // If we're not flipped, keep the literals as they are.
-            self.unify_internal(scope1, &literal1.left, scope2, &literal2.left)
-                && self.unify_internal(scope1, &literal1.right, scope2, &literal2.right)
+            self.unify_internal(
+                scope1,
+                literal1.left.as_ref(),
+                scope2,
+                literal2.left.as_ref(),
+            ) && self.unify_internal(
+                scope1,
+                literal1.right.as_ref(),
+                scope2,
+                literal2.right.as_ref(),
+            )
         }
     }
 
@@ -621,7 +654,7 @@ impl<'a> Unifier<'a> {
         };
         let unified_u = self.apply_replace(
             Scope::RIGHT,
-            u,
+            u.as_ref(),
             Some(Replacement {
                 path: &path,
                 scope: Scope::LEFT,

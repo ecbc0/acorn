@@ -437,6 +437,30 @@ impl<'a> TermRef<'a> {
 
         self.total_tiebreak(other)
     }
+
+    /// Find atoms whose term (not just head) has a specific type.
+    /// Returns the head atom of each subterm that has the matching type.
+    pub fn atoms_for_type(
+        &self,
+        type_id: TypeId,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> Vec<Atom> {
+        let mut result = Vec::new();
+
+        // Check if this term's type matches
+        let my_type = self.get_term_type_with_context(local_context, kernel_context);
+        if my_type == type_id {
+            result.push(*self.get_head_atom());
+        }
+
+        // Recursively check arguments
+        for arg in self.iter_args() {
+            result.append(&mut arg.atoms_for_type(type_id, local_context, kernel_context));
+        }
+
+        result
+    }
 }
 
 impl fmt::Display for TermRef<'_> {
@@ -1161,21 +1185,8 @@ impl Term {
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> Vec<Atom> {
-        let mut result = Vec::new();
-
-        // Check if this term's type matches
-        let my_type = self.get_term_type_with_context(local_context, kernel_context);
-        if my_type == type_id {
-            result.push(*self.get_head_atom());
-        }
-
-        // Recursively check arguments
-        for arg in self.iter_args() {
-            let arg_owned = arg.to_owned();
-            result.append(&mut arg_owned.atoms_for_type(type_id, local_context, kernel_context));
-        }
-
-        result
+        self.as_ref()
+            .atoms_for_type(type_id, local_context, kernel_context)
     }
 
     /// Remap variables according to a mapping.
