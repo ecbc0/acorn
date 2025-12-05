@@ -70,14 +70,14 @@ fn pair_specializes(
     }
     let mut var_map = VariableMap::new();
     var_map.match_terms(
-        left1,
-        left2,
+        left1.as_ref(),
+        left2.as_ref(),
         general_context,
         special_context,
         kernel_context,
     ) && var_map.match_terms(
-        right1,
-        right2,
+        right1.as_ref(),
+        right2.as_ref(),
         general_context,
         special_context,
         kernel_context,

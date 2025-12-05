@@ -108,15 +108,15 @@ impl ClauseTrace {
                     covered[*index] = true;
                     let out = &clause.literals[*index];
                     assert!(var_map.match_terms(
-                        &left,
-                        &out.left,
+                        left.as_ref(),
+                        out.left.as_ref(),
                         literals_context,
                         clause_context,
                         kernel_context
                     ));
                     assert!(var_map.match_terms(
-                        &right,
-                        &out.right,
+                        right.as_ref(),
+                        out.right.as_ref(),
                         literals_context,
                         clause_context,
                         kernel_context

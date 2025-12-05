@@ -259,7 +259,7 @@ impl<'a> Unifier<'a> {
                         (
                             mapped_head.get_head_type_with_context(output_local, kernel_context),
                             mapped_head.get_head_atom().clone(),
-                            mapped_head.args().to_vec(),
+                            mapped_head.args(),
                         )
                     }
                     None => {
@@ -274,8 +274,7 @@ impl<'a> Unifier<'a> {
         };
 
         // Recurse on the arguments and append them.
-        let term_args = term.args();
-        for (i, arg) in term_args.iter().enumerate() {
+        for (i, arg) in term.iter_args().enumerate() {
             // Figure out what replacement to pass recursively
             let new_replacement = if let Some(ref replacement) = replacement {
                 if replacement.path[0] == i {
@@ -291,7 +290,7 @@ impl<'a> Unifier<'a> {
             } else {
                 None
             };
-            args.push(self.apply_replace(scope, arg, new_replacement))
+            args.push(self.apply_replace(scope, &arg.to_owned(), new_replacement))
         }
 
         // Now construct the final term with correct types
@@ -422,7 +421,8 @@ impl<'a> Unifier<'a> {
 
                 // Build the partial application: first (M-N) args of full_term
                 let num_partial_args = full_args_len - var_args_len;
-                let partial_args = full_term.args()[0..num_partial_args].to_vec();
+                let full_args = full_term.args();
+                let partial_args = full_args[0..num_partial_args].to_vec();
 
                 // Create the partial application term
                 // Use the head_type of var_term (the variable's type) as the term_type
@@ -441,12 +441,13 @@ impl<'a> Unifier<'a> {
                 }
 
                 // Unify each var_term argument with the corresponding full_term argument
+                let var_args = var_term.args();
                 for i in 0..var_args_len {
                     if !self.unify_internal(
                         var_scope,
-                        &var_term.args()[i],
+                        &var_args[i],
                         full_scope,
-                        &full_term.args()[num_partial_args + i],
+                        &full_args[num_partial_args + i],
                     ) {
                         return Some(false);
                     }
@@ -522,8 +523,8 @@ impl<'a> Unifier<'a> {
             return false;
         }
 
-        for (a1, a2) in term1.args().iter().zip(term2.args().iter()) {
-            if !self.unify_internal(scope1, a1, scope2, a2) {
+        for (a1, a2) in term1.iter_args().zip(term2.iter_args()) {
+            if !self.unify_internal(scope1, &a1.to_owned(), scope2, &a2.to_owned()) {
                 return false;
             }
         }

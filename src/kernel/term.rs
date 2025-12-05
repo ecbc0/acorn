@@ -91,6 +91,50 @@ impl<'a> TermRef<'a> {
         }
     }
 
+    /// Get the term type with context.
+    /// Uses LocalContext for variable types and KernelContext for symbol types.
+    /// For function applications, applies the function type once per argument.
+    pub fn get_term_type_with_context(
+        &self,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> TypeId {
+        // Start with the head type
+        let mut result_type = self.get_head_type_with_context(local_context, kernel_context);
+
+        // Apply the type once per argument
+        for _ in self.iter_args() {
+            result_type = kernel_context
+                .type_store
+                .apply_type(result_type)
+                .expect("Function type expected but not found during type application");
+        }
+
+        result_type
+    }
+
+    /// Get the head type with context.
+    /// Uses LocalContext for variable types and KernelContext for symbol types.
+    pub fn get_head_type_with_context(
+        &self,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> TypeId {
+        let head = self.get_head_atom();
+        match head {
+            Atom::Variable(i) => local_context.get_var_type(*i as usize).unwrap_or_else(|| {
+                panic!(
+                    "Variable x{} not found in LocalContext (size={}). TermRef components: {:?}",
+                    i,
+                    local_context.len(),
+                    self.components
+                )
+            }),
+            Atom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol),
+            Atom::True => BOOL,
+        }
+    }
+
     /// Check if this term contains a variable with the given index anywhere.
     pub fn has_variable(&self, index: AtomId) -> bool {
         for component in self.components {
@@ -705,18 +749,8 @@ impl Term {
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> TypeId {
-        // Start with the head type
-        let mut result_type = self.get_head_type_with_context(local_context, kernel_context);
-
-        // Apply the type once per argument
-        for _ in self.iter_args() {
-            result_type = kernel_context
-                .type_store
-                .apply_type(result_type)
-                .expect("Function type expected but not found during type application");
-        }
-
-        result_type
+        self.as_ref()
+            .get_term_type_with_context(local_context, kernel_context)
     }
 
     /// Get the head type with context.
@@ -726,19 +760,8 @@ impl Term {
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> TypeId {
-        let head = self.get_head_atom();
-        match head {
-            Atom::Variable(i) => local_context.get_var_type(*i as usize).unwrap_or_else(|| {
-                panic!(
-                    "Variable x{} not found in LocalContext (size={}). Term: {:?}",
-                    i,
-                    local_context.len(),
-                    self.components
-                )
-            }),
-            Atom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol),
-            Atom::True => BOOL,
-        }
+        self.as_ref()
+            .get_head_type_with_context(local_context, kernel_context)
     }
 
     /// Check if this term is atomic (no arguments).

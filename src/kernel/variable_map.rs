@@ -2,6 +2,7 @@ use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::term::TermRef;
 use crate::kernel::types::TypeId;
 use std::fmt;
 
@@ -65,23 +66,23 @@ impl VariableMap {
         }
     }
 
-    pub fn match_var(&mut self, var_id: AtomId, special_term: &Term) -> bool {
+    pub fn match_var(&mut self, var_id: AtomId, special_term: TermRef) -> bool {
         let var_id = var_id as usize;
         if var_id >= self.map.len() {
             self.map.resize(var_id + 1, None);
         }
         match &self.map[var_id] {
             None => {
-                self.map[var_id] = Some(special_term.clone());
+                self.map[var_id] = Some(special_term.to_owned());
                 true
             }
-            Some(general_term) => general_term == special_term,
+            Some(general_term) => general_term.as_ref() == special_term,
         }
     }
 
     fn match_atoms(&mut self, atom_type: TypeId, general: &Atom, special: &Atom) -> bool {
         if let Atom::Variable(i) = general {
-            self.match_var(*i, &Term::atom(atom_type, *special))
+            self.match_var(*i, Term::atom(atom_type, *special).as_ref())
         } else {
             general == special
         }
@@ -89,8 +90,8 @@ impl VariableMap {
 
     pub fn match_terms(
         &mut self,
-        general: &Term,
-        special: &Term,
+        general: TermRef,
+        special: TermRef,
         general_context: &LocalContext,
         special_context: &LocalContext,
         kernel_context: &KernelContext,
@@ -118,13 +119,13 @@ impl VariableMap {
 
         if !self.match_atoms(
             general.get_head_type_with_context(general_context, kernel_context),
-            &general.get_head_atom(),
-            &special.get_head_atom(),
+            general.get_head_atom(),
+            special.get_head_atom(),
         ) {
             return false;
         }
 
-        for (g, s) in general.args().iter().zip(special.args().iter()) {
+        for (g, s) in general.iter_args().zip(special.iter_args()) {
             if !self.match_terms(g, s, general_context, special_context, kernel_context) {
                 return false;
             }
@@ -180,7 +181,7 @@ impl VariableMap {
     /// input_context is for the input term, output_context is for replacement terms in the map.
     fn specialize_term(
         &self,
-        term: &Term,
+        term: TermRef,
         input_context: &LocalContext,
         output_context: &LocalContext,
         kernel_context: &KernelContext,
@@ -195,7 +196,7 @@ impl VariableMap {
                         replacement.get_term_type_with_context(output_context, kernel_context),
                         replacement.get_head_type_with_context(output_context, kernel_context),
                         *replacement.get_head_atom(),
-                        replacement.args().to_vec(),
+                        replacement.args(),
                     )
                 } else {
                     // Keep the variable as-is if unmapped
@@ -216,8 +217,8 @@ impl VariableMap {
         };
 
         // Recurse on the arguments
-        for arg in term.args() {
-            args.push(self.specialize_term(&arg, input_context, output_context, kernel_context));
+        for arg in term.iter_args() {
+            args.push(self.specialize_term(arg, input_context, output_context, kernel_context));
         }
 
         Term::new(term_type, head_type, head, args)
@@ -235,9 +236,14 @@ impl VariableMap {
     ) -> Literal {
         Literal::new(
             literal.positive,
-            self.specialize_term(&literal.left, input_context, output_context, kernel_context),
             self.specialize_term(
-                &literal.right,
+                literal.left.as_ref(),
+                input_context,
+                output_context,
+                kernel_context,
+            ),
+            self.specialize_term(
+                literal.right.as_ref(),
                 input_context,
                 output_context,
                 kernel_context,

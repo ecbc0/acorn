@@ -176,8 +176,15 @@ pub fn sub_invariant_term_cmp(
 
     // Heads are the same, so recurse on arguments
     assert!(left.num_args() == right.num_args());
-    for (l, r) in left.args().iter().zip(right.args().iter()) {
-        match sub_invariant_term_cmp(l, false, r, false, local_context, kernel_context) {
+    for (l, r) in left.iter_args().zip(right.iter_args()) {
+        match sub_invariant_term_cmp(
+            &l.to_owned(),
+            false,
+            &r.to_owned(),
+            false,
+            local_context,
+            kernel_context,
+        ) {
             Some(Ordering::Equal) => continue,
             x => return x,
         };

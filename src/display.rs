@@ -2,6 +2,7 @@ use std::fmt;
 
 use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::Atom;
+use crate::kernel::term::TermRef;
 use crate::normalizer::Normalizer;
 
 struct DisplayAtom<'a> {
@@ -16,8 +17,17 @@ impl fmt::Display for DisplayAtom<'_> {
 }
 
 pub struct DisplayTerm<'a> {
-    pub term: &'a Term,
+    pub term: TermRef<'a>,
     pub normalizer: &'a Normalizer,
+}
+
+impl DisplayTerm<'_> {
+    pub fn from_term<'a>(term: &'a Term, normalizer: &'a Normalizer) -> DisplayTerm<'a> {
+        DisplayTerm {
+            term: term.as_ref(),
+            normalizer,
+        }
+    }
 }
 
 impl fmt::Display for DisplayTerm<'_> {
@@ -30,9 +40,9 @@ impl fmt::Display for DisplayTerm<'_> {
                 normalizer: self.normalizer
             }
         )?;
-        if self.term.num_args() > 0 {
+        if self.term.has_args() {
             write!(f, "(")?;
-            for (i, arg) in self.term.args().iter().enumerate() {
+            for (i, arg) in self.term.iter_args().enumerate() {
                 if i > 0 {
                     write!(f, ", ")?;
                 }
@@ -58,10 +68,7 @@ struct DisplayLiteral<'a> {
 
 impl DisplayLiteral<'_> {
     fn term<'a>(&'a self, term: &'a Term) -> DisplayTerm<'a> {
-        DisplayTerm {
-            term,
-            normalizer: self.normalizer,
-        }
+        DisplayTerm::from_term(term, self.normalizer)
     }
 }
 

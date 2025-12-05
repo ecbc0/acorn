@@ -59,8 +59,8 @@ impl TermComponent {
             term.get_head_type_with_context(local_context, kernel_context),
             *term.get_head_atom(),
         ));
-        for arg in term.args() {
-            TermComponent::flatten_next(&arg, output, local_context, kernel_context);
+        for arg in term.iter_args() {
+            TermComponent::flatten_next(&arg.to_owned(), output, local_context, kernel_context);
         }
 
         // Now we can fill in the real size
@@ -474,8 +474,8 @@ fn key_from_term_helper(
         )
         .append_to(key);
         Edge::Atom(*term.get_head_atom()).append_to(key);
-        for arg in term.args() {
-            key_from_term_helper(&arg, key, local_context, kernel_context);
+        for arg in term.iter_args() {
+            key_from_term_helper(&arg.to_owned(), key, local_context, kernel_context);
         }
     }
 }
