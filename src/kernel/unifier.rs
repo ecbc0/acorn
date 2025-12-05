@@ -151,6 +151,19 @@ impl<'a> Unifier<'a> {
             .map(|(i, var_map)| (Scope(i), var_map))
     }
 
+    /// Like into_maps, but also returns the output context.
+    /// This is needed in thin mode where VariableMap replacement terms reference
+    /// variables in the unifier's output context.
+    pub fn into_maps_with_context(self) -> (Vec<(Scope, VariableMap)>, LocalContext) {
+        let maps: Vec<_> = self
+            .maps
+            .into_iter()
+            .enumerate()
+            .map(|(i, var_map)| (Scope(i), var_map))
+            .collect();
+        (maps, self.output_context)
+    }
+
     pub fn add_scope(&mut self) -> Scope {
         let scope = Scope(self.maps.len());
         self.maps.push(VariableMap::new());
@@ -674,6 +687,14 @@ impl<'a> Unifier<'a> {
 
     pub fn into_one_map(self, scope: Scope) -> VariableMap {
         self.maps.into_iter().nth(scope.get()).unwrap()
+    }
+
+    /// Like into_one_map, but also returns the output context.
+    /// This is needed in thin mode where VariableMap replacement terms reference
+    /// variables in the unifier's output context.
+    pub fn into_one_map_with_context(self, scope: Scope) -> (VariableMap, LocalContext) {
+        let map = self.maps.into_iter().nth(scope.get()).unwrap();
+        (map, self.output_context)
     }
 }
 

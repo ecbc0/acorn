@@ -85,13 +85,18 @@ pub struct ConcreteStep {
 
     // All of the ways to map the generic variables to concrete ones.
     pub var_maps: HashSet<VariableMap>,
+
+    // The context that the replacement terms in var_maps reference.
+    // In thin mode, this is needed to look up variable types when specializing.
+    pub replacement_context: LocalContext,
 }
 
 impl ConcreteStep {
-    fn new(generic: Clause, var_map: VariableMap) -> Self {
+    fn new(generic: Clause, var_map: VariableMap, replacement_context: LocalContext) -> Self {
         ConcreteStep {
             generic,
             var_maps: HashSet::from([var_map]),
+            replacement_context,
         }
     }
 }
@@ -105,17 +110,28 @@ impl<'a> Proof<'a> {
         let mut concrete_steps: HashMap<ConcreteStepId, ConcreteStep> = HashMap::new();
         for (id, step) in self.steps.iter().rev() {
             if *id == ProofStepId::Final {
-                self.reconstruct_step(*id, step, VariableMap::new(), &mut concrete_steps)?;
+                // Empty map has no replacement terms, so empty context is fine
+                self.reconstruct_step(
+                    *id,
+                    step,
+                    VariableMap::new(),
+                    &LocalContext::new(vec![]),
+                    &mut concrete_steps,
+                )?;
                 continue;
             }
             // Multiple concrete instantiations are possible
             let concrete_id = ConcreteStepId::ProofStep(id.clone());
-            let var_maps: Vec<_> = match concrete_steps.get(&concrete_id) {
-                Some(concrete_step) => concrete_step.var_maps.iter().cloned().collect(),
+            let (var_maps, context): (Vec<_>, LocalContext) = match concrete_steps.get(&concrete_id)
+            {
+                Some(concrete_step) => (
+                    concrete_step.var_maps.iter().cloned().collect(),
+                    concrete_step.replacement_context.clone(),
+                ),
                 None => continue,
             };
             for var_map in var_maps {
-                self.reconstruct_step(*id, step, var_map, &mut concrete_steps)?;
+                self.reconstruct_step(*id, step, var_map, &context, &mut concrete_steps)?;
             }
         }
 
@@ -174,6 +190,7 @@ impl<'a> Proof<'a> {
         &self,
         id: ProofStepId,
         var_map: VariableMap,
+        replacement_context: LocalContext,
         concrete_steps: &mut HashMap<ConcreteStepId, ConcreteStep>,
     ) {
         let generic = self.get_clause(id).unwrap();
@@ -183,7 +200,8 @@ impl<'a> Proof<'a> {
                 concrete_step.var_maps.insert(var_map);
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
-                let concrete_step = ConcreteStep::new(generic.clone(), var_map);
+                let concrete_step =
+                    ConcreteStep::new(generic.clone(), var_map, replacement_context);
                 entry.insert(concrete_step);
             }
         }
@@ -196,11 +214,15 @@ impl<'a> Proof<'a> {
     //
     // Reconstructed varmaps are added to concrete_steps.
     // If the step cannot be reconstructed, we return an error.
+    //
+    // The conclusion_map_context is the context that conclusion_map's replacement terms reference.
+    // In thin mode, this is needed to look up variable types when building output contexts.
     fn reconstruct_step(
         &self,
         id: ProofStepId,
         step: &ProofStep,
         conclusion_map: VariableMap,
+        conclusion_map_context: &LocalContext,
         concrete_steps: &mut HashMap<ConcreteStepId, ConcreteStep>,
     ) -> Result<(), Error> {
         // Some rules we can handle without the traces.
@@ -210,7 +232,8 @@ impl<'a> Proof<'a> {
                 // reconstruction logic.
                 for id in step.rule.premises() {
                     let map = VariableMap::new();
-                    self.add_var_map(id, map, concrete_steps);
+                    // Empty context is fine for empty maps
+                    self.add_var_map(id, map, LocalContext::new(vec![]), concrete_steps);
                 }
                 return Ok(());
             }
@@ -229,12 +252,13 @@ impl<'a> Proof<'a> {
             Rule::Assumption(info) => {
                 // We need to reconstruct assumptions because assumptions can be simplified in
                 // a way that we need to reconstruct.
-                let var_maps = self.reconstruct_trace(
+                let (var_maps, output_context) = self.reconstruct_trace(
                     &info.literals,
                     &info.context,
                     traces.as_slice(),
                     &step.clause,
                     conclusion_map,
+                    conclusion_map_context,
                     concrete_steps,
                 )?;
                 let assumption_id = ConcreteStepId::Assumption(id);
@@ -250,7 +274,8 @@ impl<'a> Proof<'a> {
                         }
                         std::collections::hash_map::Entry::Vacant(entry) => {
                             let generic = Clause::new(info.literals.clone(), &info.context);
-                            let concrete_step = ConcreteStep::new(generic, var_map);
+                            let concrete_step =
+                                ConcreteStep::new(generic, var_map, output_context.clone());
                             entry.insert(concrete_step);
                         }
                     }
@@ -260,12 +285,13 @@ impl<'a> Proof<'a> {
                 // For rewrites, the trace applies to the rewritten clause.
                 // The rewritten literal uses the same variable context as the conclusion.
                 let literals = vec![info.rewritten.clone()];
-                let var_maps = self.reconstruct_trace(
+                let (var_maps, unifier_context) = self.reconstruct_trace(
                     &literals,
                     step.clause.get_local_context(),
                     traces.as_slice(),
                     &step.clause,
                     conclusion_map,
+                    conclusion_map_context,
                     concrete_steps,
                 )?;
 
@@ -295,13 +321,16 @@ impl<'a> Proof<'a> {
                 };
                 let rewritten_subterm = rewritten_term.get_term_at_path(&info.path).unwrap();
                 for conc_map in var_maps {
-                    let step_context = step.clause.get_local_context();
-                    let output_context = conc_map.build_output_context(step_context);
+                    // Use the unifier's output context from reconstruct_trace, not the step context.
+                    // In thin mode, the conc_map's replacement terms reference variables in
+                    // the unifier's output context.
+                    let output_context = conc_map.build_output_context(&unifier_context);
                     let (mut unifier, conc_scope) = Unifier::with_map(
                         conc_map,
                         self.normalizer.kernel_context(),
                         output_context,
                     );
+                    let step_context = step.clause.get_local_context();
                     unifier.set_input_context(conc_scope, step_context);
                     let pattern_scope = unifier.add_scope();
                     unifier.set_input_context(pattern_scope, pattern_clause.get_local_context());
@@ -309,22 +338,23 @@ impl<'a> Proof<'a> {
                     assert!(unifier.unify(pattern_scope, to_pat, conc_scope, &rewritten_subterm));
 
                     // Report the concrete pattern
-                    let map = unifier.into_one_map(pattern_scope);
-                    self.add_var_map(pattern_id, map, concrete_steps);
+                    let (map, map_context) = unifier.into_one_map_with_context(pattern_scope);
+                    self.add_var_map(pattern_id, map, map_context, concrete_steps);
                 }
 
                 // The target is already concrete
                 let map = VariableMap::new();
-                self.add_var_map(target_id, map, concrete_steps);
+                self.add_var_map(target_id, map, LocalContext::new(vec![]), concrete_steps);
             }
             Rule::EqualityFactoring(info) => {
                 // For EF, the trace applies to the stored literals.
-                let var_maps = self.reconstruct_trace(
+                let (var_maps, unifier_context) = self.reconstruct_trace(
                     &info.literals,
                     &info.context,
                     traces.as_slice(),
                     &step.clause,
                     conclusion_map,
+                    conclusion_map_context,
                     concrete_steps,
                 )?;
 
@@ -334,7 +364,7 @@ impl<'a> Proof<'a> {
                 assert!(base_clause.literals.len() == info.literals.len());
 
                 for conc_map in var_maps {
-                    let output_context = conc_map.build_output_context(&info.context);
+                    let output_context = conc_map.build_output_context(&unifier_context);
                     let (mut unifier, conc_scope) = Unifier::with_map(
                         conc_map,
                         self.normalizer.kernel_context(),
@@ -360,18 +390,19 @@ impl<'a> Proof<'a> {
                     }
 
                     // Report the concrete base
-                    let map = unifier.into_one_map(base_scope);
-                    self.add_var_map(base_id, map, concrete_steps);
+                    let (map, map_context) = unifier.into_one_map_with_context(base_scope);
+                    self.add_var_map(base_id, map, map_context, concrete_steps);
                 }
             }
             Rule::EqualityResolution(info) => {
                 // For ER, the trace applies to the stored literals.
-                let var_maps = self.reconstruct_trace(
+                let (var_maps, unifier_context) = self.reconstruct_trace(
                     &info.literals,
                     &info.context,
                     traces.as_slice(),
                     &step.clause,
                     conclusion_map,
+                    conclusion_map_context,
                     concrete_steps,
                 )?;
 
@@ -381,7 +412,7 @@ impl<'a> Proof<'a> {
                 assert!(base_clause.literals.len() == info.literals.len() + 1);
 
                 for conc_map in var_maps {
-                    let output_context = conc_map.build_output_context(&info.context);
+                    let output_context = conc_map.build_output_context(&unifier_context);
                     let (mut unifier, conc_scope) = Unifier::with_map(
                         conc_map,
                         self.normalizer.kernel_context(),
@@ -414,18 +445,19 @@ impl<'a> Proof<'a> {
                     }
 
                     // Report the concrete base
-                    let map = unifier.into_one_map(base_scope);
-                    self.add_var_map(base_id, map, concrete_steps);
+                    let (map, map_context) = unifier.into_one_map_with_context(base_scope);
+                    self.add_var_map(base_id, map, map_context, concrete_steps);
                 }
             }
             Rule::Injectivity(info) => {
                 // For injectivity, the trace applies to the stored literals.
-                let var_maps = self.reconstruct_trace(
+                let (var_maps, unifier_context) = self.reconstruct_trace(
                     &info.literals,
                     &info.context,
                     traces.as_slice(),
                     &step.clause,
                     conclusion_map,
+                    conclusion_map_context,
                     concrete_steps,
                 )?;
 
@@ -435,7 +467,7 @@ impl<'a> Proof<'a> {
                 assert!(base_clause.literals.len() == info.literals.len());
 
                 for conc_map in var_maps {
-                    let output_context = conc_map.build_output_context(&info.context);
+                    let output_context = conc_map.build_output_context(&unifier_context);
                     let (mut unifier, conc_scope) = Unifier::with_map(
                         conc_map,
                         self.normalizer.kernel_context(),
@@ -475,18 +507,19 @@ impl<'a> Proof<'a> {
                     }
 
                     // Report the concrete base
-                    let map = unifier.into_one_map(base_scope);
-                    self.add_var_map(base_id, map, concrete_steps);
+                    let (map, map_context) = unifier.into_one_map_with_context(base_scope);
+                    self.add_var_map(base_id, map, map_context, concrete_steps);
                 }
             }
             Rule::BooleanReduction(info) => {
                 // For boolean reduction, the trace applies to the stored literals.
-                let var_maps = self.reconstruct_trace(
+                let (var_maps, unifier_context) = self.reconstruct_trace(
                     &info.literals,
                     &info.context,
                     traces.as_slice(),
                     &step.clause,
                     conclusion_map,
+                    conclusion_map_context,
                     concrete_steps,
                 )?;
 
@@ -496,7 +529,7 @@ impl<'a> Proof<'a> {
                 assert!(base_clause.literals.len() + 1 == info.literals.len());
 
                 for conc_map in var_maps {
-                    let output_context = conc_map.build_output_context(&info.context);
+                    let output_context = conc_map.build_output_context(&unifier_context);
                     let (mut unifier, conc_scope) = Unifier::with_map(
                         conc_map,
                         self.normalizer.kernel_context(),
@@ -527,8 +560,8 @@ impl<'a> Proof<'a> {
                     }
 
                     // Report the concrete base
-                    let map = unifier.into_one_map(base_scope);
-                    self.add_var_map(base_id, map, concrete_steps);
+                    let (map, map_context) = unifier.into_one_map_with_context(base_scope);
+                    self.add_var_map(base_id, map, map_context, concrete_steps);
                 }
             }
             Rule::Extensionality(info) => {
@@ -536,36 +569,38 @@ impl<'a> Proof<'a> {
                 // Since there are no variables in the output, we add an empty variable map.
                 let base_id = ProofStepId::Active(info.id);
                 let map = VariableMap::new();
-                self.add_var_map(base_id, map, concrete_steps);
+                self.add_var_map(base_id, map, LocalContext::new(vec![]), concrete_steps);
             }
             Rule::Resolution(info) => {
                 let long_id = ProofStepId::Active(info.long_id);
                 let long_clause = self.get_clause(long_id)?;
-                let var_maps = self.reconstruct_trace(
+                let (var_maps, output_context) = self.reconstruct_trace(
                     &long_clause.literals,
                     long_clause.get_local_context(),
                     traces.as_slice(),
                     &step.clause,
                     conclusion_map,
+                    conclusion_map_context,
                     concrete_steps,
                 )?;
                 for map in var_maps {
-                    self.add_var_map(long_id, map, concrete_steps);
+                    self.add_var_map(long_id, map, output_context.clone(), concrete_steps);
                 }
             }
             Rule::Specialization(info) => {
                 let pattern_id = ProofStepId::Active(info.pattern_id);
                 let pattern_clause = self.get_clause(pattern_id)?;
-                let var_maps = self.reconstruct_trace(
+                let (var_maps, output_context) = self.reconstruct_trace(
                     &pattern_clause.literals,
                     pattern_clause.get_local_context(),
                     traces.as_slice(),
                     &step.clause,
                     conclusion_map,
+                    conclusion_map_context,
                     concrete_steps,
                 )?;
                 for map in var_maps {
-                    self.add_var_map(pattern_id, map, concrete_steps);
+                    self.add_var_map(pattern_id, map, output_context.clone(), concrete_steps);
                 }
             }
             rule => {
@@ -585,6 +620,12 @@ impl<'a> Proof<'a> {
     // The base clause is always reconstructed, and we return its var map as the result.
     //
     // If the step cannot be reconstructed, we return an error.
+    /// Returns (var_maps, output_context) where output_context is the context
+    /// that the VariableMaps' replacement terms reference. In thin mode, this context
+    /// must be used when calling build_output_context on the returned maps.
+    ///
+    /// The conc_map_context is the context that conc_map's replacement terms reference.
+    /// In thin mode, this is needed to look up variable types when building output contexts.
     fn reconstruct_trace(
         &self,
         base_literals: &[Literal],
@@ -592,11 +633,12 @@ impl<'a> Proof<'a> {
         traces: &[LiteralTrace],
         conclusion: &Clause,
         conc_map: VariableMap,
+        conc_map_context: &LocalContext,
         simp_maps: &mut HashMap<ConcreteStepId, ConcreteStep>,
-    ) -> Result<HashSet<VariableMap>, Error> {
+    ) -> Result<(HashSet<VariableMap>, LocalContext), Error> {
         // The unifier will figure out the concrete clauses.
         // The base and conclusion get their own scope.
-        let output_context = conc_map.build_output_context(conclusion.get_local_context());
+        let output_context = conc_map.build_output_context(conc_map_context);
         let (mut unifier, conc_scope) =
             Unifier::with_map(conc_map, self.normalizer.kernel_context(), output_context);
         unifier.set_input_context(conc_scope, conclusion.get_local_context());
@@ -657,10 +699,12 @@ impl<'a> Proof<'a> {
             }
         }
 
-        // Now that we've unified, get the var maps.
+        // Now that we've unified, get the var maps and output context.
+        // The output context is needed in thin mode for build_output_context calls.
         let mut answer = HashSet::new();
+        let (maps, unifier_output_context) = unifier.into_maps_with_context();
 
-        for (scope, map) in unifier.into_maps() {
+        for (scope, map) in maps {
             if scope == Scope::OUTPUT || scope == conc_scope {
                 // We only need to store the scopes for inputs.
                 continue;
@@ -679,9 +723,9 @@ impl<'a> Proof<'a> {
                     scope
                 ))
             })?;
-            self.add_var_map(*step_id, map, simp_maps);
+            self.add_var_map(*step_id, map, unifier_output_context.clone(), simp_maps);
         }
 
-        Ok(answer)
+        Ok((answer, unifier_output_context))
     }
 }

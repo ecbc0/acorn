@@ -284,6 +284,36 @@ impl VariableMap {
         Clause::from_literals_unnormalized(literals, &output_context)
     }
 
+    /// Like specialize_clause, but uses a separate context for looking up types in replacement terms.
+    /// This is needed in thin mode when the VariableMap's replacement terms were created with
+    /// variables from a different context than the clause being specialized.
+    pub fn specialize_clause_with_replacement_context(
+        &self,
+        clause: &Clause,
+        replacement_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> Clause {
+        let input_context = clause.get_local_context();
+        // Build output context from replacement terms
+        let mut output_context = self.build_output_context(replacement_context);
+        // Also need to include unmapped variables from the input clause
+        // These keep their original types from the input context
+        for i in 0..input_context.len() {
+            if self.get_mapping(i as AtomId).is_none() {
+                // This variable is unmapped, so it will remain in the output
+                if let Some(var_type) = input_context.get_var_type(i) {
+                    output_context.set_var_type(i, var_type);
+                }
+            }
+        }
+        let literals = clause
+            .literals
+            .iter()
+            .map(|lit| self.specialize_literal(lit, input_context, &output_context, kernel_context))
+            .collect();
+        Clause::from_literals_unnormalized(literals, &output_context)
+    }
+
     pub fn output_has_any_variable(&self) -> bool {
         for term in &self.map {
             if let Some(term) = term {

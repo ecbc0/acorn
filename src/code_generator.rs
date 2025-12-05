@@ -267,15 +267,23 @@ impl CodeGenerator<'_> {
     /// This will generate synthetic atom definitions if necessary.
     /// Appends let statements that define arbitrary variables and synthetic atoms to definitions,
     /// and appends the actual clause content to codes.
+    ///
+    /// The replacement_context is the context that the var_map's replacement terms reference.
+    /// In thin mode, this is needed to look up variable types when specializing.
     fn specialization_to_code(
         &mut self,
         generic: &Clause,
         var_map: &VariableMap,
+        replacement_context: &LocalContext,
         normalizer: &Normalizer,
         definitions: &mut Vec<String>,
         codes: &mut Vec<String>,
     ) -> Result<()> {
-        let mut clause = var_map.specialize_clause(&generic, normalizer.kernel_context());
+        let mut clause = var_map.specialize_clause_with_replacement_context(
+            &generic,
+            replacement_context,
+            normalizer.kernel_context(),
+        );
 
         // Normalize variable IDs to ensure they are in order (0, 1, 2, ...) with no gaps.
         // This is needed because specialize_clause may produce clauses with gaps in variable
@@ -319,7 +327,14 @@ impl CodeGenerator<'_> {
         let mut defs = vec![];
         let mut codes = vec![];
         for var_map in &step.var_maps {
-            self.specialization_to_code(&step.generic, var_map, normalizer, &mut defs, &mut codes)?;
+            self.specialization_to_code(
+                &step.generic,
+                var_map,
+                &step.replacement_context,
+                normalizer,
+                &mut defs,
+                &mut codes,
+            )?;
         }
         // Deduplicate while preserving order (don't use sort which breaks dependency order)
         defs.dedup();
