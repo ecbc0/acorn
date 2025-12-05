@@ -7,7 +7,7 @@ use crate::kernel::fat_term::{FatTerm, TypeId, BOOL};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
-#[cfg(not(feature = "thin"))]
+#[cfg(feature = "fat")]
 use crate::proof_step::EFLiteralTrace;
 
 /// Builds a LocalContext from a slice of literals by extracting variable types.
@@ -467,9 +467,9 @@ impl FatClause {
 
     // The inference methods (find_equality_resolutions, find_equality_factorings, etc.)
     // are in the inference module and work with the Clause/Literal/Term aliases.
-    // When not using the thin feature, FatClause IS the Clause alias, so these work.
-    // When using the thin feature, use the inference module directly with ThinClause.
-    #[cfg(not(feature = "thin"))]
+    // When using the fat feature, FatClause IS the Clause alias, so these work.
+    // When not using fat feature (thin mode), use the inference module directly with ThinClause.
+    #[cfg(feature = "fat")]
     /// Finds all possible equality resolutions for this clause.
     /// Returns a vector of tuples containing:
     /// - The index of the literal that was resolved
@@ -484,14 +484,14 @@ impl FatClause {
         crate::kernel::inference::find_equality_resolutions(self, kernel_context)
     }
 
-    #[cfg(not(feature = "thin"))]
+    #[cfg(feature = "fat")]
     /// Generates all clauses that can be derived from this clause using equality resolution.
     /// This is a convenience method that returns just the normalized clauses.
     pub fn equality_resolutions(&self, kernel_context: &KernelContext) -> Vec<FatClause> {
         crate::kernel::inference::equality_resolutions(self, kernel_context)
     }
 
-    #[cfg(not(feature = "thin"))]
+    #[cfg(feature = "fat")]
     /// Finds all possible equality factorings for this clause.
     /// Returns a vector of (literals, ef_trace, output_context) tuples.
     /// The literals are the result of factoring before normalization.
@@ -504,7 +504,7 @@ impl FatClause {
         crate::kernel::inference::find_equality_factorings(self, kernel_context)
     }
 
-    #[cfg(not(feature = "thin"))]
+    #[cfg(feature = "fat")]
     /// Generates all clauses that can be derived from this clause using equality factoring.
     /// This is a convenience method that returns just the normalized clauses.
     pub fn equality_factorings(&self, kernel_context: &KernelContext) -> Vec<FatClause> {

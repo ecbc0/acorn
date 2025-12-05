@@ -36,7 +36,7 @@ impl VariableMap {
     /// Builds a LocalContext from all the variables in the replacement terms.
     /// For FatTerm, we use embedded types. For ThinTerm, we use input_context.
     /// The input_context parameter is ignored for FatTerm but required for ThinTerm.
-    #[cfg(not(feature = "thin"))]
+    #[cfg(feature = "fat")]
     pub fn build_output_context(&self, _input_context: &LocalContext) -> LocalContext {
         let mut var_types: Vec<Option<TypeId>> = vec![];
         for opt_term in &self.map {
@@ -60,7 +60,7 @@ impl VariableMap {
 
     /// Builds a LocalContext from all the variables in the replacement terms.
     /// For ThinTerm, we need the input_context to look up variable types.
-    #[cfg(feature = "thin")]
+    #[cfg(not(feature = "fat"))]
     pub fn build_output_context(&self, input_context: &LocalContext) -> LocalContext {
         let mut var_types: Vec<Option<TypeId>> = vec![];
         for opt_term in &self.map {

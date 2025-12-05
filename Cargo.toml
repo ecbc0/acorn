@@ -6,7 +6,7 @@ default-run = "acorn"
 
 [features]
 default = []
-thin = []
+fat = []
 
 [dependencies]
 async-trait = "0.1"

@@ -663,7 +663,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "thin"))]
+    #[cfg(feature = "fat")]
     fn test_clause_set_literal_with_indeterminate_ordering() {
         // This test uses FatClause JSON format which is not compatible with ThinClause.
         // Taken from a failing example.

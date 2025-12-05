@@ -5,9 +5,9 @@ use crate::elaborator::proposition::MonomorphicProposition;
 use crate::elaborator::source::{Source, SourceType};
 use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::Atom;
-#[cfg(not(feature = "thin"))]
+#[cfg(feature = "fat")]
 use crate::kernel::fat_clause;
-#[cfg(feature = "thin")]
+#[cfg(not(feature = "fat"))]
 use crate::kernel::fat_term::TypeId;
 #[cfg(test)]
 use crate::kernel::kernel_context::KernelContext;
@@ -584,8 +584,7 @@ impl ProofStep {
         path: &[usize],
         forwards: bool,
         new_subterm: &Term,
-        #[cfg_attr(not(feature = "thin"), allow(unused_variables))]
-        new_subterm_context: &LocalContext,
+        #[cfg_attr(feature = "fat", allow(unused_variables))] new_subterm_context: &LocalContext,
     ) -> ProofStep {
         assert_eq!(target_step.clause.literals.len(), 1);
 
@@ -600,10 +599,10 @@ impl ProofStep {
         // In fat mode, we extract types from the embedded terms.
         // In thin mode, we use the provided new_subterm_context which contains
         // the correct types from the unifier's output context.
-        #[cfg(not(feature = "thin"))]
+        #[cfg(feature = "fat")]
         let rewritten_context =
             fat_clause::build_context_from_terms(&[&rewritten.left, &rewritten.right]);
-        #[cfg(feature = "thin")]
+        #[cfg(not(feature = "fat"))]
         let rewritten_context = {
             // For thin mode, combine the target's context with the new_subterm's context
             // The rewritten literal's variables come from both the target and the new_subterm
@@ -814,7 +813,7 @@ mod tests {
     /// rewrite, the fresh variable x1 has type T embedded, but if we incorrectly store
     /// the original pattern context [T, List], then x1 would be expected to have type List.
     #[test]
-    #[cfg(not(feature = "thin"))]
+    #[cfg(feature = "fat")]
     fn test_rewrite_context_matches_embedded_types() {
         // Use test context where all variables are Bool (BOOL = TypeId 1)
         // This simplifies the test since we don't need multi-typed variables
@@ -888,7 +887,7 @@ mod tests {
     ///
     /// This test uses collect_vars_embedded which is only available in fat mode.
     #[test]
-    #[cfg(not(feature = "thin"))]
+    #[cfg(feature = "fat")]
     fn test_backwards_rewrite_different_types() {
         use crate::kernel::fat_term::TypeId;
         use crate::kernel::symbol::Symbol;
