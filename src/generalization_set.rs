@@ -175,7 +175,7 @@ pub fn sub_invariant_term_cmp(
     }
 
     // Heads are the same, so recurse on arguments
-    assert!(left.args().len() == right.args().len());
+    assert!(left.num_args() == right.num_args());
     for (l, r) in left.args().iter().zip(right.args().iter()) {
         match sub_invariant_term_cmp(l, false, r, false, local_context, kernel_context) {
             Some(Ordering::Equal) => continue,

@@ -173,6 +173,12 @@ impl<'a> TermRef<'a> {
         count
     }
 
+    /// Returns true if this term has any arguments.
+    /// This is O(1) unlike num_args() which must iterate.
+    pub fn has_args(&self) -> bool {
+        self.components.len() > 1
+    }
+
     /// Get the number of arguments this term has.
     pub fn num_args(&self) -> usize {
         if self.components.len() <= 1 {
@@ -812,6 +818,12 @@ impl Term {
     /// Count the number of atom components (excluding Composite markers).
     pub fn atom_count(&self) -> u32 {
         self.as_ref().atom_count()
+    }
+
+    /// Returns true if this term has any arguments.
+    /// This is O(1) unlike num_args() which must iterate.
+    pub fn has_args(&self) -> bool {
+        self.components.len() > 1
     }
 
     /// Get the number of arguments this term has.

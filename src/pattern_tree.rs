@@ -43,7 +43,7 @@ impl TermComponent {
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) {
-        if term.args().is_empty() {
+        if !term.has_args() {
             output.push(TermComponent::Atom(
                 term.get_term_type_with_context(local_context, kernel_context),
                 *term.get_head_atom(),
@@ -67,7 +67,7 @@ impl TermComponent {
         let real_size = output.len() - initial_size;
         output[initial_size] = TermComponent::Composite(
             term.get_term_type_with_context(local_context, kernel_context),
-            term.args().len() as u8,
+            term.num_args() as u8,
             real_size as u16,
         );
     }
@@ -465,11 +465,11 @@ fn key_from_term_helper(
     local_context: &LocalContext,
     kernel_context: &KernelContext,
 ) {
-    if term.args().is_empty() {
+    if !term.has_args() {
         Edge::Atom(*term.get_head_atom()).append_to(key);
     } else {
         Edge::Head(
-            term.args().len() as u8,
+            term.num_args() as u8,
             term.get_head_type_with_context(local_context, kernel_context),
         )
         .append_to(key);

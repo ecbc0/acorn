@@ -30,7 +30,7 @@ impl fmt::Display for DisplayTerm<'_> {
                 normalizer: self.normalizer
             }
         )?;
-        if self.term.args().len() > 0 {
+        if self.term.num_args() > 0 {
             write!(f, "(")?;
             for (i, arg) in self.term.args().iter().enumerate() {
                 if i > 0 {

@@ -412,8 +412,8 @@ impl<'a> Unifier<'a> {
     ) -> Option<bool> {
         // Check if var_term has a variable head with arguments
         if let Atom::Variable(var_id) = *var_term.get_head_atom() {
-            let var_args_len = var_term.args().len();
-            let full_args_len = full_term.args().len();
+            let var_args_len = var_term.num_args();
+            let full_args_len = full_term.num_args();
 
             if var_args_len >= 1 && full_args_len > var_args_len {
                 // We want to unify x0(arg1, ..., argN) with f(a1, ..., aM) where M > N
@@ -508,7 +508,7 @@ impl<'a> Unifier<'a> {
         {
             return false;
         }
-        if term1.args().len() != term2.args().len() {
+        if term1.num_args() != term2.num_args() {
             return false;
         }
 

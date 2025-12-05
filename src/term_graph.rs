@@ -320,7 +320,7 @@ impl TermGraph {
         let head_key = Decomposition::Atomic(term.get_head_atom().clone());
         let head_id = *self.decompositions.get(&head_key)?;
 
-        if term.args().is_empty() {
+        if !term.has_args() {
             return Some(head_id);
         }
 
@@ -483,7 +483,7 @@ impl TermGraph {
     /// Makes a new term, group, and compound if necessary.
     pub fn insert_term(&mut self, term: &Term, kernel_context: &KernelContext) -> TermId {
         let head_term_id = self.insert_head(term, kernel_context);
-        if term.args().is_empty() {
+        if !term.has_args() {
             return head_term_id;
         }
         let head_group_id = self.get_group_id(head_term_id);

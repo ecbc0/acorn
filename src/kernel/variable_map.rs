@@ -112,7 +112,7 @@ impl VariableMap {
         {
             return false;
         }
-        if general.args().len() != special.args().len() {
+        if general.num_args() != special.num_args() {
             return false;
         }
 
