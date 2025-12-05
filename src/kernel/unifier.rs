@@ -1,10 +1,10 @@
 use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::fat_term::TypeId;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 #[cfg(test)]
 use crate::kernel::symbol::Symbol;
+use crate::kernel::types::TypeId;
 use crate::kernel::variable_map::VariableMap;
 use std::fmt;
 
@@ -222,7 +222,6 @@ impl<'a> Unifier<'a> {
         }
 
         // Extract term's type info upfront before any mutations
-        // (For FatTerm, this just reads embedded fields, but we use _with_context for API consistency)
         let kernel_context = self.kernel_context;
         let term_type = {
             let local_context = self.get_local_context(scope);
@@ -275,8 +274,6 @@ impl<'a> Unifier<'a> {
         };
 
         // Recurse on the arguments and append them.
-        // We call args() to get owned terms - for ThinTerm this already returns Vec<ThinTerm>,
-        // for FatTerm this returns &[FatTerm] which we convert to Vec via .to_vec().
         let term_args = term.args();
         for (i, arg) in term_args.iter().enumerate() {
             // Figure out what replacement to pass recursively
@@ -713,7 +710,7 @@ impl fmt::Display for Unifier<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::kernel::fat_term::{BOOL, EMPTY};
+    use crate::kernel::types::{BOOL, EMPTY};
 
     use super::*;
 

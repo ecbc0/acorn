@@ -3,9 +3,9 @@
 
 use crate::kernel::aliases::{Literal, Term};
 use crate::kernel::atom::AtomId;
-use crate::kernel::fat_term::TypeId;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::types::TypeId;
 use crate::pattern_tree::{term_key_prefix, PatternTree, TermComponent};
 
 // Each term can correspond with multiple RewriteValues.
@@ -181,7 +181,7 @@ impl RewriteTree {
 #[cfg(test)]
 mod tests {
     use crate::kernel::atom::Atom;
-    use crate::kernel::fat_term::BOOL;
+    use crate::kernel::types::BOOL;
 
     use super::*;
 

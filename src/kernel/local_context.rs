@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::kernel::fat_term::TypeId;
+use crate::kernel::types::TypeId;
 
 /// A context stores type information for variables.
 /// This is used with thin terms/literals/clauses to track variable types
@@ -50,7 +50,7 @@ impl LocalContext {
     /// If the context is too short, it will be extended with EMPTY types.
     /// This is used when variable IDs are assigned externally (e.g., by next_var_id).
     pub fn set_var_type(&mut self, var_id: usize, type_id: TypeId) {
-        use crate::kernel::fat_term::EMPTY;
+        use crate::kernel::types::EMPTY;
         if var_id >= self.var_types.len() {
             self.var_types.resize(var_id + 1, EMPTY);
         }
@@ -71,7 +71,7 @@ impl LocalContext {
     /// The context has 10 variables, all with type BOOL (TypeId 1).
     #[cfg(test)]
     pub fn test_bool_ref() -> &'static LocalContext {
-        use crate::kernel::fat_term::BOOL;
+        use crate::kernel::types::BOOL;
         static TEST_BOOL_CONTEXT: LazyLock<LocalContext> =
             LazyLock::new(|| LocalContext::new(vec![BOOL; 10]));
         &TEST_BOOL_CONTEXT
@@ -79,10 +79,9 @@ impl LocalContext {
 
     /// Returns a reference to a LocalContext with EMPTY types for tests.
     /// The context has 10 variables, all with type EMPTY (TypeId 0).
-    /// This matches what FatTerm::parse creates.
     #[cfg(test)]
     pub fn test_empty_ref() -> &'static LocalContext {
-        use crate::kernel::fat_term::EMPTY;
+        use crate::kernel::types::EMPTY;
         static TEST_EMPTY_CONTEXT: LazyLock<LocalContext> =
             LazyLock::new(|| LocalContext::new(vec![EMPTY; 10]));
         &TEST_EMPTY_CONTEXT

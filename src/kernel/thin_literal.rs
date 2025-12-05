@@ -3,10 +3,10 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::fat_term::{TypeId, BOOL};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::thin_term::ThinTerm;
+use crate::kernel::types::{TypeId, BOOL};
 
 /// A thin literal stores the structure of a literal without type information.
 /// Like Literal, it represents an equation (or inequality) between two terms.
@@ -66,8 +66,7 @@ impl ThinLiteral {
         }
     }
 
-    /// Parse a ThinLiteral with context (for API compatibility with FatLiteral).
-    /// ThinTerm doesn't embed types, so this is the same as parse().
+    /// Parse a ThinLiteral with context.
     /// The contexts are accepted but not used during parsing.
     pub fn parse_with_context(
         s: &str,

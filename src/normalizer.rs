@@ -12,11 +12,11 @@ use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
 use crate::kernel::cnf::CNF;
 use crate::kernel::extended_term::ExtendedTerm;
-use crate::kernel::fat_term::{TypeId, BOOL};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::symbol_table::NewConstantType;
+use crate::kernel::types::{TypeId, BOOL};
 use crate::monomorphizer::Monomorphizer;
 use crate::proof_step::{ProofStep, Truthiness};
 

@@ -134,7 +134,7 @@ impl ClauseTrace {
 mod tests {
     use super::*;
     use crate::kernel::aliases::Clause;
-    use crate::kernel::fat_term::BOOL;
+    use crate::kernel::types::BOOL;
 
     /// Check clause normalization with trace validation.
     /// context provides the types of variables in the clause.

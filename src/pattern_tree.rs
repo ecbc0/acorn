@@ -2,10 +2,10 @@ use qp_trie::{Entry, SubTrie, Trie};
 
 use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::fat_term::TypeId;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
+use crate::kernel::types::TypeId;
 
 /// The TermComponent is designed so that a &[TermComponent] represents a preorder
 /// traversal of the term, and each subterm is represented by a subslice.
@@ -160,7 +160,7 @@ impl TermComponent {
     /// This is used to reconstruct the context for variables in a term when we only have
     /// the flattened TermComponent representation.
     pub fn build_context(components: &[TermComponent]) -> LocalContext {
-        use crate::kernel::fat_term::TypeId;
+        use crate::kernel::types::TypeId;
 
         let mut var_types: Vec<Option<TypeId>> = vec![];
         for component in components {
@@ -891,7 +891,7 @@ impl LiteralSet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::fat_term::BOOL;
+    use crate::kernel::types::BOOL;
 
     /// Creates a test context where all variables have Bool type.
     /// This works in both fat and thin mode since Bool is a proper type.

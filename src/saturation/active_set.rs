@@ -1043,7 +1043,7 @@ impl ActiveSet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::fat_term::BOOL;
+    use crate::kernel::types::BOOL;
 
     fn test_context() -> KernelContext {
         KernelContext::test_with_all_bool_types()

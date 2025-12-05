@@ -14,12 +14,12 @@ use crate::elaborator::source::Source;
 use crate::elaborator::stack::Stack;
 use crate::generalization_set::GeneralizationSet;
 use crate::kernel::aliases::Clause;
-#[cfg(test)]
-use crate::kernel::fat_term::BOOL;
 use crate::kernel::inference;
 use crate::kernel::kernel_context::KernelContext;
 #[cfg(test)]
 use crate::kernel::local_context::LocalContext;
+#[cfg(test)]
+use crate::kernel::types::BOOL;
 use crate::normalizer::{Normalizer, NormalizerView};
 use crate::project::Project;
 use crate::syntax::expression::Declaration;

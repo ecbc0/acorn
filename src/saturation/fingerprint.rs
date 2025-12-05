@@ -2,9 +2,9 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::kernel::aliases::{Literal, Term};
 use crate::kernel::atom::Atom;
-use crate::kernel::fat_term::TypeId;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::types::TypeId;
 
 // A fingerprint component describes the head of a term at a particular "path" from this term.
 // The path is the sequence of arg indices to get to that term
@@ -282,7 +282,7 @@ impl<T> FingerprintSpecializer<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::fat_term::BOOL;
+    use crate::kernel::types::BOOL;
 
     fn test_local_context() -> LocalContext {
         LocalContext::new(vec![BOOL; 10])

@@ -1,10 +1,6 @@
-//! Inference rules that work with both Fat and Thin clause representations.
-//!
-//! These functions implement the core inference rules used in theorem proving:
+//! Core inference rules used in theorem proving:
 //! - Equality Resolution (ER)
 //! - Equality Factoring (EF)
-//!
-//! They are generic over the clause representation through the type aliases.
 
 use crate::kernel::aliases::{Clause, Literal};
 use crate::kernel::kernel_context::KernelContext;

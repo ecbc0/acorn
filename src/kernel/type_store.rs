@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::elaborator::acorn_type::{AcornType, FunctionType};
-use crate::kernel::fat_term::TypeId;
+use crate::kernel::types::TypeId;
 
 /// Manages the bidirectional mapping between AcornTypes and TypeIds.
 #[derive(Clone)]
@@ -123,7 +123,7 @@ impl Default for TypeStore {
 
 #[cfg(test)]
 mod tests {
-    use crate::kernel::fat_term::{BOOL, EMPTY};
+    use crate::kernel::types::{BOOL, EMPTY};
 
     use super::*;
 

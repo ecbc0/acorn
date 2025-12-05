@@ -1,12 +1,12 @@
 use std::sync::LazyLock;
 
-#[cfg(test)]
-use crate::kernel::fat_term::{TypeId, EMPTY};
 use crate::kernel::symbol_table::SymbolTable;
 use crate::kernel::type_store::TypeStore;
+#[cfg(test)]
+use crate::kernel::types::{TypeId, EMPTY};
 
 /// KernelContext combines the TypeStore and SymbolTable that are needed
-/// for working with thin types and various kernel operations.
+/// for working with kernel types and various kernel operations.
 #[derive(Clone)]
 pub struct KernelContext {
     pub type_store: TypeStore,
@@ -22,7 +22,6 @@ impl KernelContext {
     }
 
     /// Returns a reference to a fake empty KernelContext.
-    /// Use this when working with FatTerm/FatClause that don't actually need the context.
     pub fn fake() -> &'static KernelContext {
         static FAKE_KERNEL_CONTEXT: LazyLock<KernelContext> = LazyLock::new(KernelContext::new);
         &FAKE_KERNEL_CONTEXT
@@ -80,7 +79,7 @@ impl KernelContext {
     #[cfg(test)]
     pub fn test_with_all_bool_types() -> KernelContext {
         use crate::elaborator::acorn_type::{AcornType, FunctionType};
-        use crate::kernel::fat_term::BOOL;
+        use crate::kernel::types::BOOL;
 
         let mut ctx = KernelContext::new();
 
@@ -113,7 +112,6 @@ impl KernelContext {
 
     /// Creates a test KernelContext with pre-populated scoped and global constants with
     /// specified types.
-    /// For use in tests that load FatClauses from JSON with specific type requirements.
     #[cfg(test)]
     pub fn test_with_constant_types(
         scoped_types: &[TypeId],
@@ -174,7 +172,7 @@ impl KernelContext {
     #[cfg(test)]
     pub fn test_with_function_types() -> KernelContext {
         use crate::elaborator::acorn_type::{AcornType, FunctionType};
-        use crate::kernel::fat_term::BOOL;
+        use crate::kernel::types::BOOL;
 
         let mut ctx = KernelContext::new();
 

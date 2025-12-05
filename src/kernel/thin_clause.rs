@@ -146,7 +146,6 @@ impl ThinClause {
     }
 
     /// Create a clause from a single literal with trace.
-    /// Note: ThinClause requires the context parameter, unlike FatClause which derives it.
     pub fn from_literal_traced(
         literal: ThinLiteral,
         flipped: bool,
@@ -351,8 +350,7 @@ impl ThinClause {
         ThinClause::new(literals, context)
     }
 
-    /// Parse a ThinClause with context (for API compatibility with FatClause).
-    /// ThinTerm doesn't embed types, so this is the same as parse().
+    /// Parse a ThinClause with context.
     /// The kernel_context is accepted but not used during parsing.
     pub fn parse_with_context(
         s: &str,
@@ -582,7 +580,7 @@ impl ThinClause {
         &self,
         kernel_context: &KernelContext,
     ) -> Vec<(usize, Vec<ThinLiteral>)> {
-        use crate::kernel::fat_term::BOOL;
+        use crate::kernel::types::BOOL;
 
         let mut answer = vec![];
 
@@ -652,11 +650,11 @@ impl std::fmt::Display for ThinClause {
 mod tests {
     use super::*;
     use crate::kernel::atom::Atom;
-    use crate::kernel::fat_term::TypeId;
     use crate::kernel::kernel_context::KernelContext;
     use crate::kernel::symbol::Symbol;
     use crate::kernel::thin_literal::ThinLiteral;
     use crate::kernel::thin_term::ThinTerm;
+    use crate::kernel::types::TypeId;
 
     /// Test that extensionality doesn't match clauses without function applications.
     /// This prevents infinite recursion when extensionality produces the same clause.

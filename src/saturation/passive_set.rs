@@ -417,8 +417,8 @@ impl PassiveSet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::fat_term::BOOL;
     use crate::kernel::local_context::LocalContext;
+    use crate::kernel::types::BOOL;
 
     fn test_local_context() -> LocalContext {
         LocalContext::new(vec![BOOL; 10])

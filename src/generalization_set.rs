@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use std::vec;
 
 use crate::kernel::aliases::{Clause, Literal, Term};
-use crate::kernel::fat_term::TypeId;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::types::TypeId;
 use crate::kernel::unifier::Unifier;
 use crate::pattern_tree::PatternTree;
 
@@ -336,7 +336,7 @@ fn specialized_form(mut clause: Clause, kernel_context: &KernelContext) -> Claus
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::fat_term::BOOL;
+    use crate::kernel::types::BOOL;
 
     /// Creates a LocalContext with enough Bool-typed variables for tests.
     fn test_context() -> LocalContext {
@@ -659,48 +659,6 @@ mod tests {
         clause_set.insert(general, 1, &ctx);
         // Specialization: g0(c5, g0(c6, c7)) = g0(c6, c7)
         let special = Clause::parse_with_context("g0(c5, g0(c6, c7)) = g0(c6, c7)", &local, &ctx);
-        assert_eq!(clause_set.find_generalization(special, &ctx), Some(1));
-    }
-
-    #[test]
-    #[cfg(feature = "fat")]
-    fn test_clause_set_literal_with_indeterminate_ordering() {
-        // This test uses FatClause JSON format which is not compatible with ThinClause.
-        // Taken from a failing example.
-        // The JSON clause uses specific types for symbols:
-        // - GlobalConstant(1) has head_type 2
-        // - GlobalConstant(12) has head_type 6
-        // - ScopedConstant(2) has head_type 2
-        // - ScopedConstant(3) has head_type 2
-        // We need to create a context with matching types for these indices.
-        let scoped_types = &[
-            TypeId::new(0),
-            TypeId::new(0),
-            TypeId::new(2),
-            TypeId::new(2),
-        ]; // indices 0-3
-        let global_types = &[
-            TypeId::new(0),
-            TypeId::new(2),
-            TypeId::new(0),
-            TypeId::new(0),
-            TypeId::new(0),
-            TypeId::new(0),
-            TypeId::new(0),
-            TypeId::new(0),
-            TypeId::new(0),
-            TypeId::new(0),
-            TypeId::new(0),
-            TypeId::new(0),
-            TypeId::new(6),
-        ]; // indices 0-12
-        let ctx = KernelContext::test_with_constant_types(scoped_types, global_types);
-        let mut clause_set = GeneralizationSet::new();
-        let general_json = r#"{"literals":[{"positive":true,"left":{"term_type":2,"head_type":6,"head":{"Symbol":{"GlobalConstant":12}},"args":[{"term_type":2,"head_type":2,"head":{"Symbol":{"GlobalConstant":1}},"args":[]},{"term_type":2,"head_type":2,"head":{"Variable":0},"args":[]}]},"right":{"term_type":2,"head_type":2,"head":{"Variable":0},"args":[]}}]}"#;
-        let general = serde_json::from_str::<Clause>(general_json).unwrap();
-        clause_set.insert(general, 1, &ctx);
-        let special_json = r#"{"literals":[{"positive":true,"left":{"term_type":2,"head_type":6,"head":{"Symbol":{"GlobalConstant":12}},"args":[{"term_type":2,"head_type":2,"head":{"Symbol":{"GlobalConstant":1}},"args":[]},{"term_type":2,"head_type":6,"head":{"Symbol":{"GlobalConstant":12}},"args":[{"term_type":2,"head_type":2,"head":{"Symbol":{"ScopedConstant":2}},"args":[]},{"term_type":2,"head_type":2,"head":{"Symbol":{"ScopedConstant":3}},"args":[]}]}]},"right":{"term_type":2,"head_type":6,"head":{"Symbol":{"GlobalConstant":12}},"args":[{"term_type":2,"head_type":2,"head":{"Symbol":{"ScopedConstant":2}},"args":[]},{"term_type":2,"head_type":2,"head":{"Symbol":{"ScopedConstant":3}},"args":[]}]}}]}"#;
-        let special = serde_json::from_str::<Clause>(special_json).unwrap();
         assert_eq!(clause_set.find_generalization(special, &ctx), Some(1));
     }
 }

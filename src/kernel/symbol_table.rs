@@ -5,9 +5,9 @@ use crate::elaborator::acorn_value::{AcornValue, ConstantInstance};
 use crate::elaborator::names::ConstantName;
 use crate::kernel::aliases::Term;
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::fat_term::TypeId;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::type_store::TypeStore;
+use crate::kernel::types::TypeId;
 
 #[derive(Clone, Copy, Debug)]
 pub enum NewConstantType {

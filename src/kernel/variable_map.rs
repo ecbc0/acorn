@@ -1,8 +1,8 @@
 use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::fat_term::TypeId;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::types::TypeId;
 use std::fmt;
 
 // A VariableMap maintains a mapping from variables to terms, allowing us to turn a more general term
@@ -34,33 +34,7 @@ impl VariableMap {
     }
 
     /// Builds a LocalContext from all the variables in the replacement terms.
-    /// For FatTerm, we use embedded types. For ThinTerm, we use input_context.
-    /// The input_context parameter is ignored for FatTerm but required for ThinTerm.
-    #[cfg(feature = "fat")]
-    pub fn build_output_context(&self, _input_context: &LocalContext) -> LocalContext {
-        let mut var_types: Vec<Option<TypeId>> = vec![];
-        for opt_term in &self.map {
-            if let Some(term) = opt_term {
-                for (var_id, type_id) in term.collect_vars_embedded() {
-                    let idx = var_id as usize;
-                    if idx >= var_types.len() {
-                        var_types.resize(idx + 1, None);
-                    }
-                    var_types[idx] = Some(type_id);
-                }
-            }
-        }
-        LocalContext::new(
-            var_types
-                .into_iter()
-                .map(|t| t.unwrap_or_default())
-                .collect(),
-        )
-    }
-
-    /// Builds a LocalContext from all the variables in the replacement terms.
-    /// For ThinTerm, we need the input_context to look up variable types.
-    #[cfg(not(feature = "fat"))]
+    /// We need the input_context to look up variable types.
     pub fn build_output_context(&self, input_context: &LocalContext) -> LocalContext {
         let mut var_types: Vec<Option<TypeId>> = vec![];
         for opt_term in &self.map {

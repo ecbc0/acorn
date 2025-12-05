@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::fat_term::{TypeId, BOOL, EMPTY};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::types::{TypeId, BOOL, EMPTY};
 
 /// A component of a ThinTerm in its flattened representation.
 /// Either a Composite node or an Atom leaf node.
@@ -522,7 +522,7 @@ pub struct ThinTerm {
 }
 
 impl ThinTerm {
-    /// Create a new ThinTerm with the same signature as FatTerm::new.
+    /// Create a new ThinTerm.
     /// The term_type and head_type parameters are ignored since ThinTerm stores types externally.
     pub fn new(
         _term_type: TypeId,
@@ -590,8 +590,7 @@ impl ThinTerm {
     }
 
     /// Create a ThinTerm representing a single atom with no arguments.
-    /// The type_id parameter is accepted for API compatibility with FatTerm but is ignored
-    /// since ThinTerm stores types separately.
+    /// The type_id parameter is ignored since ThinTerm stores types separately.
     pub fn atom(_type_id: TypeId, atom: Atom) -> ThinTerm {
         ThinTerm {
             components: vec![ThinTermComponent::Atom(atom)],
@@ -761,8 +760,7 @@ impl ThinTerm {
     }
 
     /// Create a new ThinTerm representing a variable with the given index.
-    /// The type_id parameter is accepted for API compatibility with FatTerm but is ignored
-    /// since ThinTerm stores types separately in the context.
+    /// The type_id parameter is ignored since ThinTerm stores types separately in the context.
     pub fn new_variable(_type_id: TypeId, index: AtomId) -> ThinTerm {
         ThinTerm {
             components: vec![ThinTermComponent::Atom(Atom::Variable(index))],
@@ -1183,7 +1181,7 @@ impl ThinTerm {
     /// Build a term from a spine (function + arguments).
     /// If the spine has one element, returns just that element.
     /// Otherwise, treats the first element as the function and the rest as arguments.
-    /// The term_type parameter is ignored for ThinTerm (it's used by FatTerm).
+    /// The term_type parameter is ignored since ThinTerm stores types externally.
     pub fn from_spine(mut spine: Vec<ThinTerm>, _term_type: TypeId) -> ThinTerm {
         if spine.is_empty() {
             panic!("from_spine called with empty spine");
@@ -1218,7 +1216,7 @@ impl ThinTerm {
     }
 
     /// Apply additional arguments to this term.
-    /// The result_type parameter is ignored for ThinTerm (it's used by FatTerm).
+    /// The result_type parameter is ignored since ThinTerm stores types externally.
     pub fn apply(&self, args: &[ThinTerm], _result_type: TypeId) -> ThinTerm {
         if args.is_empty() {
             return self.clone();
