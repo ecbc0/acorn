@@ -535,6 +535,11 @@ impl ThinTerm {
 
     /// Create a new ThinTerm from a vector of components.
     pub fn from_components(components: Vec<ThinTermComponent>) -> ThinTerm {
+        debug_assert!(
+            !components.is_empty() && matches!(components[0], ThinTermComponent::Atom(_)),
+            "ThinTerm must start with an Atom, got: {:?}",
+            components.first()
+        );
         ThinTerm { components }
     }
 
@@ -866,6 +871,15 @@ impl ThinTerm {
     /// This handles the complexity of updating Composite span markers when
     /// the replacement term has a different size than the variable (1 component).
     pub fn replace_variable(&self, id: AtomId, value: &ThinTerm) -> ThinTerm {
+        // Special case: if this term IS the variable being replaced, just return the value
+        if self.components.len() == 1 {
+            if let ThinTermComponent::Atom(Atom::Variable(var_id)) = self.components[0] {
+                if var_id == id {
+                    return value.clone();
+                }
+            }
+        }
+
         // Build the result by processing components, tracking size changes for spans
         let mut result = Vec::new();
         self.replace_variable_recursive(&mut result, id, value);

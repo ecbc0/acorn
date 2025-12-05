@@ -19,7 +19,10 @@ const VERBOSE: bool = false;
 
 fn print_steps(steps: &[ProofStep], normalizer: &Normalizer) {
     for step in steps {
-        let denormalized = normalizer.denormalize(&step.clause, None);
+        // Clone and normalize variable IDs before denormalizing
+        let mut clause_for_display = step.clause.clone();
+        clause_for_display.normalize_var_ids_no_flip();
+        let denormalized = normalizer.denormalize(&clause_for_display, None);
         println!("    {}", denormalized);
     }
 }
