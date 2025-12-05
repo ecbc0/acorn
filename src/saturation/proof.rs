@@ -84,19 +84,16 @@ pub struct ConcreteStep {
     pub generic: Clause,
 
     // All of the ways to map the generic variables to concrete ones.
-    pub var_maps: HashSet<VariableMap>,
-
-    // The context that the replacement terms in var_maps reference.
-    // In thin mode, this is needed to look up variable types when specializing.
-    pub replacement_context: LocalContext,
+    // Each var_map is paired with the context that its replacement terms reference.
+    // In thin mode, this context is needed to look up variable types when specializing.
+    pub var_maps: Vec<(VariableMap, LocalContext)>,
 }
 
 impl ConcreteStep {
     fn new(generic: Clause, var_map: VariableMap, replacement_context: LocalContext) -> Self {
         ConcreteStep {
             generic,
-            var_maps: HashSet::from([var_map]),
-            replacement_context,
+            var_maps: vec![(var_map, replacement_context)],
         }
     }
 }
@@ -122,15 +119,11 @@ impl<'a> Proof<'a> {
             }
             // Multiple concrete instantiations are possible
             let concrete_id = ConcreteStepId::ProofStep(id.clone());
-            let (var_maps, context): (Vec<_>, LocalContext) = match concrete_steps.get(&concrete_id)
-            {
-                Some(concrete_step) => (
-                    concrete_step.var_maps.iter().cloned().collect(),
-                    concrete_step.replacement_context.clone(),
-                ),
+            let var_maps_with_context = match concrete_steps.get(&concrete_id) {
+                Some(concrete_step) => concrete_step.var_maps.clone(),
                 None => continue,
             };
-            for var_map in var_maps {
+            for (var_map, context) in var_maps_with_context {
                 self.reconstruct_step(*id, step, var_map, &context, &mut concrete_steps)?;
             }
         }
@@ -197,7 +190,7 @@ impl<'a> Proof<'a> {
         match concrete_steps.entry(ConcreteStepId::ProofStep(id)) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 let concrete_step = entry.get_mut();
-                concrete_step.var_maps.insert(var_map);
+                concrete_step.var_maps.push((var_map, replacement_context));
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
                 let concrete_step =
@@ -270,7 +263,9 @@ impl<'a> Proof<'a> {
                     match concrete_steps.entry(assumption_id) {
                         std::collections::hash_map::Entry::Occupied(mut entry) => {
                             let concrete_step = entry.get_mut();
-                            concrete_step.var_maps.insert(var_map);
+                            concrete_step
+                                .var_maps
+                                .push((var_map, output_context.clone()));
                         }
                         std::collections::hash_map::Entry::Vacant(entry) => {
                             let generic = Clause::new(info.literals.clone(), &info.context);

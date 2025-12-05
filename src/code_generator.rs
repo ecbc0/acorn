@@ -326,11 +326,11 @@ impl CodeGenerator<'_> {
     ) -> Result<(Vec<String>, Vec<String>)> {
         let mut defs = vec![];
         let mut codes = vec![];
-        for var_map in &step.var_maps {
+        for (var_map, replacement_context) in &step.var_maps {
             self.specialization_to_code(
                 &step.generic,
                 var_map,
-                &step.replacement_context,
+                replacement_context,
                 normalizer,
                 &mut defs,
                 &mut codes,

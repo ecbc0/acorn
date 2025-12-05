@@ -818,9 +818,14 @@ impl ThinTerm {
         let mut result = Vec::new();
         for atom in self.iter_atoms() {
             if let Atom::Variable(id) = atom {
-                let type_id = local_context
-                    .get_var_type(*id as usize)
-                    .expect("Variable not found in local context");
+                let type_id = local_context.get_var_type(*id as usize).unwrap_or_else(|| {
+                    panic!(
+                        "Variable x{} not found in local context (context has {} types). Term: {}",
+                        id,
+                        local_context.len(),
+                        self
+                    )
+                });
                 result.push((*id, type_id));
             }
         }
@@ -1414,5 +1419,4 @@ mod tests {
             let _ = arg.get_head_atom();
         }
     }
-
 }
