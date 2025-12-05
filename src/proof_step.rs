@@ -619,10 +619,9 @@ impl ProofStep {
             LocalContext::new(types)
         };
 
-        // Use pattern_step's context for normalization (for compatibility with existing behavior)
-        // but store rewritten_context in RewriteInfo since it matches the embedded types.
-        let context = pattern_step.clause.get_local_context();
-        let (clause, trace) = Clause::from_literal_traced(new_literal, false, context);
+        // Use rewritten_context for normalization since it has the correct variable types
+        // for all variables in new_literal (from both target and new_subterm).
+        let (clause, trace) = Clause::from_literal_traced(new_literal, false, &rewritten_context);
 
         let truthiness = pattern_step.truthiness.combine(target_step.truthiness);
 
@@ -963,6 +962,67 @@ mod tests {
             }
         } else {
             panic!("Expected Rule::Rewrite");
+        }
+    }
+
+    /// Test that the rewritten clause has correct variable types in its context.
+    ///
+    /// This tests a bug where ProofStep::rewrite used pattern_step's context for
+    /// from_literal_traced, but the rewritten literal has variables from both the
+    /// target and the new_subterm. In thin mode, this caused variable type lookups
+    /// to fail because the pattern's context doesn't have types for variables
+    /// from the target.
+    ///
+    /// The specific failure was:
+    /// "failed to unify base literal ... with trace literal ..."
+    /// because the clause's context didn't match the literal's variables.
+    #[test]
+    fn test_rewrite_clause_context_matches_variables() {
+        let kctx = KernelContext::test_with_all_bool_types();
+
+        // Pattern: m0(x0, x1) = x1
+        // Context: [Bool, Bool]
+        let pattern_context = LocalContext::new(vec![BOOL, BOOL]);
+        let pattern_step = ProofStep::mock_with_context("m0(x0, x1) = x1", &pattern_context, &kctx);
+
+        // Target: m1(c0) = c0 (no variables)
+        let target_context = LocalContext::new(vec![]);
+        let target_step = ProofStep::mock_with_context("m1(c0) = c0", &target_context, &kctx);
+
+        // new_subterm: m0(x0, c0)
+        // This introduces a variable x0 that's NOT in the pattern_step's context
+        // (well, it is in this case, but in general it might have different types)
+        let new_subterm = Term::parse_with_context("m0(x0, c0)", &pattern_context, &kctx);
+
+        let rewrite_step = ProofStep::rewrite(
+            0,
+            &pattern_step,
+            1,
+            &target_step,
+            true,  // target_left - replace m1(c0)
+            &[],   // path - at root
+            false, // forwards=false (backwards rewrite)
+            &new_subterm,
+            &pattern_context, // context for new_subterm's variables
+        );
+
+        // The clause should have all variables in its context
+        // In this case, the rewritten literal is m0(x0, c0) = c0
+        // which has variable x0
+        let clause_context = rewrite_step.clause.get_local_context();
+        for lit in &rewrite_step.clause.literals {
+            for atom in lit.iter_atoms() {
+                if let Atom::Variable(var_id) = atom {
+                    let var_type = clause_context.get_var_type(*var_id as usize);
+                    assert!(
+                        var_type.is_some(),
+                        "Variable x{} in clause has no type in context (context len: {}). \
+                         This indicates that from_literal_traced was called with the wrong context.",
+                        var_id,
+                        clause_context.len()
+                    );
+                }
+            }
         }
     }
 }
