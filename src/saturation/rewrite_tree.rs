@@ -5,8 +5,9 @@ use crate::kernel::aliases::{Literal, Term};
 use crate::kernel::atom::AtomId;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::term::TermRef;
 use crate::kernel::types::TypeId;
-use crate::pattern_tree::{term_key_prefix, PatternTree, TermComponent};
+use crate::pattern_tree::{replace_term_variables, term_key_prefix, PatternTree};
 
 // Each term can correspond with multiple RewriteValues.
 // This is the internal representation of the pattern, before it has been applied to a term.
@@ -20,7 +21,10 @@ struct RewriteValue {
 
     // The pattern that we are rewriting into.
     // The pattern that we are rewriting *from* is kept in the key.
-    output: Vec<TermComponent>,
+    output: Term,
+
+    // Context for variables in the output term.
+    output_context: LocalContext,
 }
 
 // The external representation of a rewrite, after it has been applied to a particular term.
@@ -69,7 +73,8 @@ impl RewriteTree {
         let value = RewriteValue {
             pattern_id,
             forwards,
-            output: TermComponent::flatten_term(output_term, local_context, kernel_context),
+            output: output_term.clone(),
+            output_context: local_context.clone(),
         };
         PatternTree::insert_or_append(
             &mut self.tree,
@@ -112,30 +117,36 @@ impl RewriteTree {
         }
     }
 
-    // The callback is on (rule id, forwards, new components).
-    fn find_rewrites<F>(
+    // The callback is on (rule id, forwards, new term, new context).
+    fn find_rewrites_new<F>(
         &self,
         term_type: TypeId,
-        components: &[TermComponent],
+        input_term: TermRef,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
         next_var: AtomId,
         callback: &mut F,
     ) where
-        F: FnMut(usize, bool, &[TermComponent]),
+        F: FnMut(usize, bool, Term, LocalContext),
     {
         let mut key = term_key_prefix(term_type);
-        let mut replacements = vec![];
-        self.tree.find_matches_while(
+        let mut replacements: Vec<TermRef> = vec![];
+        self.tree.find_term_matches_while(
             &mut key,
-            components,
+            &[input_term],
+            local_context,
+            kernel_context,
             &mut replacements,
             &mut |value_id, replacements| {
                 for value in &self.tree.values[value_id] {
-                    let new_components = TermComponent::replace_or_shift(
+                    let (new_term, new_context) = replace_term_variables(
                         &value.output,
+                        &value.output_context,
                         replacements,
+                        local_context,
                         Some(next_var),
                     );
-                    callback(value.pattern_id, value.forwards, &new_components);
+                    callback(value.pattern_id, value.forwards, new_term, new_context);
                 }
                 true
             },
@@ -156,14 +167,13 @@ impl RewriteTree {
         kernel_context: &KernelContext,
     ) -> Vec<Rewrite> {
         let mut answer = vec![];
-        let components = TermComponent::flatten_term(input_term, local_context, kernel_context);
-        self.find_rewrites(
+        self.find_rewrites_new(
             input_term.get_term_type_with_context(local_context, kernel_context),
-            &components,
+            input_term.as_ref(),
+            local_context,
+            kernel_context,
             next_var,
-            &mut |pattern_id, forwards, new_components| {
-                let term = TermComponent::unflatten_term(new_components);
-                let context = TermComponent::build_context(new_components);
+            &mut |pattern_id, forwards, term, context| {
                 answer.push(Rewrite {
                     pattern_id,
                     forwards,

@@ -7,326 +7,126 @@ use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::term::TermRef;
 use crate::kernel::types::TypeId;
+/// Replaces variables in a term with corresponding replacement terms.
+/// Variables x_i are replaced with replacements[i].
+/// If a variable index >= replacements.len() and shift is Some, the variable is shifted.
+/// If a variable index >= replacements.len() and shift is None, panics.
+///
+/// Also builds the output context from:
+/// - The replacement_context (for variables in replacements)
+/// - The term_context (for shifted variables)
+pub fn replace_term_variables(
+    term: &Term,
+    term_context: &LocalContext,
+    replacements: &[TermRef],
+    replacement_context: &LocalContext,
+    shift: Option<AtomId>,
+) -> (Term, LocalContext) {
+    let mut output_var_types: Vec<TypeId> = replacement_context.var_types.clone();
 
-/// The TermComponent is designed so that a &[TermComponent] represents a preorder
-/// traversal of the term, and each subterm is represented by a subslice.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum TermComponent {
-    /// The u8 is the number of args in the term.
-    /// The u16 is the number of term components in the term, including this one.
-    /// Must be at least 3. Otherwise this would just be an atom.
-    Composite(TypeId, u8, u16),
-
-    Atom(TypeId, Atom),
-}
-
-impl TermComponent {
-    /// The number of TermComponents in the component starting with this one
-    pub fn size(&self) -> usize {
-        match self {
-            TermComponent::Composite(_, _, size) => *size as usize,
-            TermComponent::Atom(_, _) => 1,
-        }
-    }
-
-    pub fn alter_size(&self, delta: i32) -> TermComponent {
-        match self {
-            TermComponent::Composite(term_type, num_args, size) => {
-                TermComponent::Composite(*term_type, *num_args, (*size as i32 + delta) as u16)
-            }
-            TermComponent::Atom(_, _) => panic!("cannot increase size of atom"),
-        }
-    }
-
-    fn flatten_next(
+    fn replace_recursive(
         term: TermRef,
-        output: &mut Vec<TermComponent>,
-        local_context: &LocalContext,
-        kernel_context: &KernelContext,
-    ) {
-        if !term.has_args() {
-            output.push(TermComponent::Atom(
-                term.get_term_type_with_context(local_context, kernel_context),
-                *term.get_head_atom(),
-            ));
-            return;
-        }
-
-        let initial_size = output.len();
-
-        // The zeros are a placeholder. We'll fill in the real info later.
-        output.push(TermComponent::Composite(TypeId::default(), 0, 0));
-        output.push(TermComponent::Atom(
-            term.get_head_type_with_context(local_context, kernel_context),
-            *term.get_head_atom(),
-        ));
-        for arg in term.iter_args() {
-            TermComponent::flatten_next(arg, output, local_context, kernel_context);
-        }
-
-        // Now we can fill in the real size
-        let real_size = output.len() - initial_size;
-        output[initial_size] = TermComponent::Composite(
-            term.get_term_type_with_context(local_context, kernel_context),
-            term.num_args() as u8,
-            real_size as u16,
-        );
-    }
-
-    pub fn flatten_term(
-        term: &Term,
-        local_context: &LocalContext,
-        kernel_context: &KernelContext,
-    ) -> Vec<TermComponent> {
-        let mut output = Vec::new();
-        TermComponent::flatten_next(term.as_ref(), &mut output, local_context, kernel_context);
-        output
-    }
-
-    fn flatten_pair(
-        term1: &Term,
-        term2: &Term,
-        local_context: &LocalContext,
-        kernel_context: &KernelContext,
-    ) -> Vec<TermComponent> {
-        assert_eq!(
-            term1.get_term_type_with_context(local_context, kernel_context),
-            term2.get_term_type_with_context(local_context, kernel_context)
-        );
-        let mut output = Vec::new();
-        // The zero is a placeholder. We'll fill in the real info later.
-        TermComponent::flatten_next(term1.as_ref(), &mut output, local_context, kernel_context);
-        TermComponent::flatten_next(term2.as_ref(), &mut output, local_context, kernel_context);
-        output
-    }
-
-    fn flatten_clause(clause: &Clause, kernel_context: &KernelContext) -> Vec<TermComponent> {
-        let local_context = clause.get_local_context();
-        let mut output = Vec::new();
-        for literal in &clause.literals {
-            TermComponent::flatten_next(
-                literal.left.as_ref(),
-                &mut output,
-                local_context,
-                kernel_context,
-            );
-            TermComponent::flatten_next(
-                literal.right.as_ref(),
-                &mut output,
-                local_context,
-                kernel_context,
-            );
-        }
-        output
-    }
-
-    /// Constructs a term, starting at components[i].
-    /// Returns the next unused index and the term.
-    fn unflatten_next(components: &[TermComponent], i: usize) -> (usize, Term) {
-        match components[i] {
-            TermComponent::Composite(term_type, num_args, size) => {
-                let size = size as usize;
-                let (head_type, head) = match components[i + 1] {
-                    TermComponent::Atom(head_type, head) => (head_type, head),
-                    _ => panic!("Composite term must have an atom as its head"),
-                };
-
-                let mut args = Vec::new();
-                let mut j = i + 2;
-                while j < i + size {
-                    let (next_j, arg) = TermComponent::unflatten_next(components, j);
-                    j = next_j;
-                    args.push(arg);
-                }
-                if j != i + size {
-                    panic!("Composite term has wrong size");
-                }
-                if args.len() != num_args as usize {
-                    panic!("Composite term has wrong number of args");
-                }
-                (j, Term::new(term_type, head_type, head, args))
-            }
-            TermComponent::Atom(term_type, atom) => (i + 1, Term::atom(term_type, atom)),
-        }
-    }
-
-    pub fn unflatten_term(components: &[TermComponent]) -> Term {
-        let (size, term) = TermComponent::unflatten_next(components, 0);
-        if size != components.len() {
-            panic!("Term has wrong size");
-        }
-        term
-    }
-
-    pub fn unflatten_pair(components: &[TermComponent]) -> (Term, Term) {
-        let (size1, term1) = TermComponent::unflatten_next(components, 0);
-        let (size2, term2) = TermComponent::unflatten_next(components, size1);
-        if size2 != components.len() {
-            panic!("Pair has wrong size");
-        }
-        (term1, term2)
-    }
-
-    /// Builds a LocalContext from a slice of TermComponents by extracting variable types.
-    /// This is used to reconstruct the context for variables in a term when we only have
-    /// the flattened TermComponent representation.
-    pub fn build_context(components: &[TermComponent]) -> LocalContext {
-        use crate::kernel::types::TypeId;
-
-        let mut var_types: Vec<Option<TypeId>> = vec![];
-        for component in components {
-            if let TermComponent::Atom(type_id, Atom::Variable(var_id)) = component {
-                let idx = *var_id as usize;
-                if idx >= var_types.len() {
-                    var_types.resize(idx + 1, None);
-                }
-                var_types[idx] = Some(*type_id);
-            }
-        }
-        LocalContext::new(
-            var_types
-                .into_iter()
-                .map(|t| t.unwrap_or_default())
-                .collect(),
-        )
-    }
-
-    /// Validates the subterm starting at the given position.
-    /// Returns the position the next subterm should start at.
-    fn validate_one(components: &[TermComponent], position: usize) -> Result<usize, String> {
-        if position > components.len() {
-            return Err(format!("ran off the end, position {}", position));
-        }
-        match components[position] {
-            TermComponent::Composite(_, num_args, size) => {
-                if size < 3 {
-                    return Err(format!("composite terms must have size at least 3"));
-                }
-                if position + 1 >= components.len() {
-                    return Err(format!(
-                        "composite terms must have a head, but we ran off the end"
-                    ));
-                }
-                if let TermComponent::Composite(..) = components[position + 1] {
-                    return Err(format!("composite terms must have an atom as their head"));
-                }
-                // The position we expect to end up in after parsing
-                let final_pos = position + size as usize;
-                let mut next_pos = position + 2;
-                let mut args_seen = 0;
-                while next_pos < final_pos {
-                    next_pos = TermComponent::validate_one(components, next_pos)?;
-                    args_seen += 1;
-                }
-                if next_pos != final_pos {
-                    return Err(format!(
-                        "expected composite term at {} to end by {} but it went until {}",
-                        position, final_pos, next_pos
-                    ));
-                }
-                if args_seen != num_args as usize {
-                    return Err(format!(
-                        "expected composite term at {} to have {} args but it had {}",
-                        position, num_args, args_seen
-                    ));
-                }
-                Ok(final_pos)
-            }
-            TermComponent::Atom(_, _) => return Ok(position + 1),
-        }
-    }
-
-    pub fn validate_slice(components: &[TermComponent]) {
-        match TermComponent::validate_one(components, 0) {
-            Ok(final_pos) => {
-                if final_pos != components.len() {
-                    panic!(
-                        "validation fail in {:?}. we have {} components but parsing used {}",
-                        components,
-                        components.len(),
-                        final_pos
-                    );
-                }
-            }
-            Err(e) => panic!("validation fail in {:?}. error: {}", components, e),
-        }
-    }
-
-    /// In components, replace the variable x_i with the contents of replacements[i].
-    /// If there is no replacement, shift it by shift.
-    /// Appends the result to output.
-    pub fn replace_or_shift(
-        components: &[TermComponent],
-        replacements: &[&[TermComponent]],
+        term_context: &LocalContext,
+        replacements: &[TermRef],
         shift: Option<AtomId>,
-    ) -> Vec<TermComponent> {
-        let mut output: Vec<TermComponent> = vec![];
+        output_var_types: &mut Vec<TypeId>,
+    ) -> Term {
+        let head = term.get_head_atom();
 
-        // path contains all the indices of composite parents, in *output*, of the current node
-        let mut path: Vec<usize> = vec![];
-
-        for component in components {
-            // Pop any elements of the path that are no longer parents
-            while path.len() > 0 {
-                let j = path[path.len() - 1];
-                if j + output[j].size() <= output.len() {
-                    path.pop();
+        if let Atom::Variable(var_id) = head {
+            let idx = *var_id as usize;
+            if idx < replacements.len() {
+                // Replace with the replacement term
+                let replacement = replacements[idx];
+                if term.has_args() {
+                    // f(args) where f is a variable being replaced
+                    // Result: replacement applied to args
+                    let replacement_term = replacement.to_owned();
+                    let replaced_args: Vec<Term> = term
+                        .iter_args()
+                        .map(|arg| {
+                            replace_recursive(
+                                arg,
+                                term_context,
+                                replacements,
+                                shift,
+                                output_var_types,
+                            )
+                        })
+                        .collect();
+                    // Result type is ignored by Term::apply anyway
+                    replacement_term.apply(&replaced_args, TypeId::default())
                 } else {
-                    break;
+                    // Just a variable, return the replacement
+                    replacement.to_owned()
+                }
+            } else {
+                // Shift the variable
+                let new_var_id = match shift {
+                    Some(s) => *var_id + s,
+                    None => panic!("no replacement for variable x{}", var_id),
+                };
+                // Track the type for the shifted variable
+                let new_idx = new_var_id as usize;
+                let var_type = term_context.get_var_type(idx).unwrap_or(TypeId::default());
+                if new_idx >= output_var_types.len() {
+                    output_var_types.resize(new_idx + 1, TypeId::default());
+                }
+                output_var_types[new_idx] = var_type;
+
+                if term.has_args() {
+                    let replaced_args: Vec<Term> = term
+                        .iter_args()
+                        .map(|arg| {
+                            replace_recursive(
+                                arg,
+                                term_context,
+                                replacements,
+                                shift,
+                                output_var_types,
+                            )
+                        })
+                        .collect();
+                    Term::new(
+                        TypeId::default(), // Will be ignored
+                        TypeId::default(), // Will be ignored
+                        Atom::Variable(new_var_id),
+                        replaced_args,
+                    )
+                } else {
+                    Term::atom(var_type, Atom::Variable(new_var_id))
                 }
             }
-
-            match component {
-                TermComponent::Composite(..) => {
-                    path.push(output.len());
-                    output.push(component.clone());
-                }
-                TermComponent::Atom(t, a) => {
-                    if let Atom::Variable(i) = a {
-                        if *i as usize >= replacements.len() {
-                            if let Some(shift) = shift {
-                                output.push(TermComponent::Atom(*t, Atom::Variable(*i + shift)));
-                                continue;
-                            }
-                            panic!("no replacement for variable x{}", i);
-                        }
-                        let mut replacement = replacements[*i as usize];
-
-                        // If the replacement is a composite, and this is the head of a term,
-                        // we need to flatten the two terms together.
-                        if replacement.len() > 1 && output.len() > 0 {
-                            let last_index = output.len() - 1;
-                            if let TermComponent::Composite(t, num_args, size) = output[last_index]
-                            {
-                                match replacement[0] {
-                                    TermComponent::Composite(_, replacement_num_args, _) => {
-                                        // This composite now has more args, both old and new ones.
-                                        let new_num_args = num_args + replacement_num_args;
-                                        output[last_index] =
-                                            TermComponent::Composite(t, new_num_args, size);
-
-                                        // We don't need the replacement head any more.
-                                        replacement = &replacement[1..];
-                                    }
-                                    _ => panic!("replacement has length > 1 but is not composite"),
-                                }
-                            }
-                        }
-
-                        // Every parent of this node, its size is changing by delta
-                        let delta = (replacement.len() - 1) as i32;
-                        for j in &path {
-                            output[*j] = output[*j].alter_size(delta);
-                        }
-                        output.extend_from_slice(replacement);
-                    } else {
-                        output.push(component.clone());
-                    }
-                }
+        } else {
+            // Not a variable head - recurse into args if any
+            if term.has_args() {
+                let replaced_args: Vec<Term> = term
+                    .iter_args()
+                    .map(|arg| {
+                        replace_recursive(arg, term_context, replacements, shift, output_var_types)
+                    })
+                    .collect();
+                Term::new(
+                    TypeId::default(), // Will be ignored
+                    TypeId::default(), // Will be ignored
+                    *head,
+                    replaced_args,
+                )
+            } else {
+                term.to_owned()
             }
         }
-        output
     }
+
+    let result_term = replace_recursive(
+        term.as_ref(),
+        term_context,
+        replacements,
+        shift,
+        &mut output_var_types,
+    );
+    let result_context = LocalContext::new(output_var_types);
+    (result_term, result_context)
 }
 
 /// A pattern tree is built from edges.
@@ -572,29 +372,23 @@ fn key_from_clause(clause: &Clause, kernel_context: &KernelContext) -> Vec<u8> {
     key
 }
 
-/// Finds leaves in the trie that match the given term components.
-/// These term components could represent a single term, or they could represent a
-/// sequence of terms that are a suffix of a subterm. The "right part" of a subterm cut by a path.
-/// Kind of confusing, just be aware that it does not correspond to a single term.
+/// Matching implementation using TermRef directly instead of flattened components.
+/// Matches a sequence of terms against patterns in the trie.
 ///
-/// For each match, it calls the callback with the value id matched, and the replacements used.
-/// If the callback returns false, the search is stopped early.
-/// The function returns whether the search fully completed (without stopping early).
-///
-/// If the search stops early, key and replacements are left in their final state.
-/// If the search does fully complete, we reset key and replacements to their initial state.
-///
-/// On rare occasion this has blown the stack, so we add a limit.
-fn find_matches_while<'a, F>(
+/// This version passes contexts through so types can be computed on-the-fly,
+/// avoiding the need for a separate TermComponent type with embedded type info.
+fn find_term_matches_while<'a, F>(
     subtrie: &SubTrie<Vec<u8>, usize>,
     key: &mut Vec<u8>,
-    components: &'a [TermComponent],
+    terms: &[TermRef<'a>],
+    local_context: &LocalContext,
+    kernel_context: &KernelContext,
     stack_limit: usize,
-    replacements: &mut Vec<&'a [TermComponent]>,
+    replacements: &mut Vec<TermRef<'a>>,
     callback: &mut F,
 ) -> bool
 where
-    F: FnMut(usize, &Vec<&[TermComponent]>) -> bool,
+    F: FnMut(usize, &Vec<TermRef<'a>>) -> bool,
 {
     if subtrie.is_empty() {
         return true;
@@ -604,17 +398,12 @@ where
         return false;
     }
 
-    if components.is_empty() {
+    if terms.is_empty() {
         match subtrie.get(key as &[u8]) {
             Some(value_id) => {
                 return callback(*value_id, replacements);
             }
             None => {
-                // The entire term is matched, but we are not yet at the leaf.
-                // The key format is supposed to ensure that two different valid
-                // keys don't have a prefix relationship.
-                // This indicates some sort of problem, like that some atom
-                // is being used with an inconsistent number of args.
                 let (sample, _) = subtrie.iter().next().unwrap();
                 panic!(
                     "\nkey mismatch.\nquerying: {}\nexisting: {}\n",
@@ -624,21 +413,22 @@ where
             }
         }
     }
-    let initial_key_len = key.len();
 
-    // Case 1: the first term in the components could match an existing replacement
-    let size = components[0].size();
-    let first = &components[..size];
-    let rest = &components[size..];
+    let initial_key_len = key.len();
+    let first = terms[0];
+    let rest = &terms[1..];
+
+    // Case 1: the first term could match an existing replacement (backreference)
     for i in 0..replacements.len() {
         if first == replacements[i] {
-            // This term could match x_i as a backreference.
             Edge::Atom(Atom::Variable(i as u16)).append_to(key);
             let new_subtrie = subtrie.subtrie(key as &[u8]);
-            if !find_matches_while(
+            if !find_term_matches_while(
                 &new_subtrie,
                 key,
                 rest,
+                local_context,
+                kernel_context,
                 stack_limit - 1,
                 replacements,
                 callback,
@@ -654,10 +444,12 @@ where
     let new_subtrie = subtrie.subtrie(key as &[u8]);
     if !new_subtrie.is_empty() {
         replacements.push(first);
-        if !find_matches_while(
+        if !find_term_matches_while(
             &new_subtrie,
             key,
             rest,
+            local_context,
+            kernel_context,
             stack_limit - 1,
             replacements,
             callback,
@@ -668,35 +460,61 @@ where
     }
     key.truncate(initial_key_len);
 
-    // Case 3: we could exactly match just the first component
-    let edge = match components[0] {
-        TermComponent::Composite(_, num_args, _) => {
-            if let TermComponent::Atom(head_type, _) = components[1] {
-                Edge::Head(num_args, head_type)
-            } else {
-                panic!("Composite term must have an atom as its head");
-            }
-        }
-        TermComponent::Atom(_, a) => {
-            if a.is_variable() {
-                // Variables in the term have to match a replacement, they can't exact-match.
-                return true;
-            }
-            Edge::Atom(a)
-        }
-    };
-    edge.append_to(key);
-    let new_subtrie = subtrie.subtrie(key as &[u8]);
-    if !find_matches_while(
-        &new_subtrie,
-        key,
-        &components[1..],
-        stack_limit - 1,
-        replacements,
-        callback,
-    ) {
-        return false;
+    // Case 3: exact match - match the head and then recurse into args + rest
+    let head_atom = first.get_head_atom();
+    if head_atom.is_variable() {
+        // Variables in the query term must match via Cases 1 or 2, not exact match
+        return true;
     }
+
+    if first.has_args() {
+        // Composite term: match Head edge, then head atom, then args + rest
+        let edge = Edge::Head(
+            first.num_args() as u8,
+            first.get_head_type_with_context(local_context, kernel_context),
+        );
+        edge.append_to(key);
+        let new_subtrie = subtrie.subtrie(key as &[u8]);
+
+        // Now match the head atom
+        Edge::Atom(*head_atom).append_to(key);
+        let new_subtrie2 = new_subtrie.subtrie(key as &[u8]);
+
+        // Build args + rest as the new sequence to match
+        let args: Vec<TermRef<'a>> = first.iter_args().collect();
+        let mut next_terms: Vec<TermRef<'a>> = args;
+        next_terms.extend_from_slice(rest);
+
+        if !find_term_matches_while(
+            &new_subtrie2,
+            key,
+            &next_terms,
+            local_context,
+            kernel_context,
+            stack_limit - 1,
+            replacements,
+            callback,
+        ) {
+            return false;
+        }
+    } else {
+        // Atomic term: just match the atom edge
+        Edge::Atom(*head_atom).append_to(key);
+        let new_subtrie = subtrie.subtrie(key as &[u8]);
+        if !find_term_matches_while(
+            &new_subtrie,
+            key,
+            rest,
+            local_context,
+            kernel_context,
+            stack_limit - 1,
+            replacements,
+            callback,
+        ) {
+            return false;
+        }
+    }
+
     key.truncate(initial_key_len);
     true
 }
@@ -753,37 +571,31 @@ impl<T> PatternTree<T> {
         self.trie.insert(key, value_id);
     }
 
-    pub fn find_matches_while<'a, F>(
+    /// Finds matches using TermRef directly.
+    /// Takes a slice of terms to match (for multi-term patterns like pairs/clauses).
+    pub fn find_term_matches_while<'a, F>(
         &self,
         key: &mut Vec<u8>,
-        components: &'a [TermComponent],
-        replacements: &mut Vec<&'a [TermComponent]>,
+        terms: &[TermRef<'a>],
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+        replacements: &mut Vec<TermRef<'a>>,
         callback: &mut F,
     ) -> bool
     where
-        F: FnMut(usize, &Vec<&[TermComponent]>) -> bool,
+        F: FnMut(usize, &Vec<TermRef<'a>>) -> bool,
     {
         let subtrie = self.trie.subtrie(key);
-        find_matches_while(&subtrie, key, components, 100, replacements, callback)
-    }
-
-    /// Finds a single match, if possible.
-    /// Returns the value of the match, and the set of replacements used for the match.
-    pub fn find_one_match<'a, 'b>(
-        &'a self,
-        key: &mut Vec<u8>,
-        term: &'b [TermComponent],
-    ) -> Option<(&'a T, Vec<&'b [TermComponent]>)> {
-        let mut replacements = vec![];
-        let mut found_id = None;
-        self.find_matches_while(key, term, &mut replacements, &mut |value_id, _| {
-            found_id = Some(value_id);
-            false
-        });
-        match found_id {
-            Some(value_id) => Some((&self.values[value_id], replacements)),
-            None => None,
-        }
+        find_term_matches_while(
+            &subtrie,
+            key,
+            terms,
+            local_context,
+            kernel_context,
+            100,
+            replacements,
+            callback,
+        )
     }
 
     fn find_pair<'a>(
@@ -793,13 +605,23 @@ impl<T> PatternTree<T> {
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> Option<&'a T> {
-        let flat = TermComponent::flatten_pair(left, right, local_context, kernel_context);
         let mut key =
             literal_key_prefix(left.get_term_type_with_context(local_context, kernel_context));
-        match self.find_one_match(&mut key, &flat) {
-            Some((value, _)) => Some(value),
-            None => None,
-        }
+        let terms = [left.as_ref(), right.as_ref()];
+        let mut replacements: Vec<TermRef> = vec![];
+        let mut found_id = None;
+        self.find_term_matches_while(
+            &mut key,
+            &terms,
+            local_context,
+            kernel_context,
+            &mut replacements,
+            &mut |value_id, _| {
+                found_id = Some(value_id);
+                false // Stop after first match
+            },
+        );
+        found_id.map(|id| &self.values[id])
     }
 
     pub fn find_clause<'a>(
@@ -807,12 +629,30 @@ impl<T> PatternTree<T> {
         clause: &Clause,
         kernel_context: &KernelContext,
     ) -> Option<&'a T> {
-        let flat = TermComponent::flatten_clause(clause, kernel_context);
-        let mut key = clause_key_prefix(clause, kernel_context); // Use prefix, not complete key!
-        match self.find_one_match(&mut key, &flat) {
-            Some((value, _)) => Some(value),
-            None => None,
+        let local_context = clause.get_local_context();
+        let mut key = clause_key_prefix(clause, kernel_context);
+
+        // Build the terms array from all literals in the clause
+        let mut terms: Vec<TermRef> = vec![];
+        for literal in &clause.literals {
+            terms.push(literal.left.as_ref());
+            terms.push(literal.right.as_ref());
         }
+
+        let mut replacements: Vec<TermRef> = vec![];
+        let mut found_id = None;
+        self.find_term_matches_while(
+            &mut key,
+            &terms,
+            local_context,
+            kernel_context,
+            &mut replacements,
+            &mut |value_id, _| {
+                found_id = Some(value_id);
+                false // Stop after first match
+            },
+        );
+        found_id.map(|id| &self.values[id])
     }
 }
 
@@ -917,45 +757,6 @@ mod tests {
     /// Creates a test context where all variables have Bool type.
     fn test_local_context(num_vars: usize) -> LocalContext {
         LocalContext::new(vec![BOOL; num_vars])
-    }
-
-    fn check_term(s: &str, kernel_context: &KernelContext) {
-        let input_term = Term::parse(s);
-        let local_context = test_local_context(10);
-        let flat = TermComponent::flatten_term(&input_term, &local_context, kernel_context);
-        TermComponent::validate_slice(&flat);
-        let output_term = TermComponent::unflatten_term(&flat);
-        assert_eq!(input_term, output_term);
-    }
-
-    #[test]
-    fn test_flatten_and_unflatten_term() {
-        // Create kernel context with properly typed constants:
-        // c0: Bool -> Bool, c1: Bool -> Bool (so they can take Bool args and return Bool)
-        let kernel_context =
-            KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL]);
-        check_term("x0", &kernel_context);
-        check_term("c0", &kernel_context);
-    }
-
-    fn check_pair(s1: &str, s2: &str, kernel_context: &KernelContext) {
-        let input_term1 = Term::parse(s1);
-        let input_term2 = Term::parse(s2);
-        let local_context = test_local_context(10);
-        let flat =
-            TermComponent::flatten_pair(&input_term1, &input_term2, &local_context, kernel_context);
-        let (output_term1, output_term2) = TermComponent::unflatten_pair(&flat);
-        assert_eq!(input_term1, output_term1);
-        assert_eq!(input_term2, output_term2);
-    }
-
-    #[test]
-    fn test_flatten_and_unflatten_pair() {
-        // All constants have Bool type, variables have Bool type
-        let kernel_context =
-            KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL]);
-        check_pair("x0", "x1", &kernel_context);
-        check_pair("c0", "c1", &kernel_context);
     }
 
     #[test]
