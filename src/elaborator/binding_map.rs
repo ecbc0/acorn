@@ -1853,7 +1853,7 @@ impl BindingMap {
                     TerminationChecker::new(function_name.clone(), internal_arg_types.len());
                 if !checker.check(&value) {
                     return Err(
-                        value_expr.error("the compiler thinks this looks like an infinite loop")
+                        value_expr.error("the elaborator thinks this looks like an infinite loop")
                     );
                 }
             }

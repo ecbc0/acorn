@@ -221,7 +221,7 @@ impl BuildMetrics {
         }
         match status {
             BuildStatus::Error => {
-                println!("Compilation failed.");
+                println!("Elaboration failed.");
             }
             BuildStatus::Warning => {
                 println!("Verification failed.");
@@ -413,7 +413,7 @@ impl<'a> Builder<'a> {
         let display_path = self.project.display_path(descriptor);
         let line = error.range().start.line + 1;
         let log_message = format!(
-            "{}, line {}: compilation error: {}",
+            "{}, line {}: elaboration error: {}",
             display_path, line, error
         );
         let diagnostic = Diagnostic {

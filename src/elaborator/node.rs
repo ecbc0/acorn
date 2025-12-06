@@ -23,7 +23,7 @@ pub enum Node {
     /// Some nodes contain propositions that are structurally true.
     /// The prover doesn't need to prove these.
     /// For example, this could be an axiom, or a definition.
-    /// It could also be a form like a citation that has already been proven by the compiler.
+    /// It could also be a form like a citation that has already been proven by the prover.
     Structural(Fact),
 
     /// A claim is something that we need to prove, and then we can subsequently use it.

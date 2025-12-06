@@ -87,7 +87,7 @@ impl<'a> TypeUnifier<'a> {
     /// Figures out whether it is possible to instantiate self to get instance.
     ///
     /// "validator" is a function that checks whether a typeclass is valid for a given type.
-    /// This is abstracted out because the prover and the compiler have different ideas of what is valid.
+    /// This is abstracted out because the prover and the elaborator have different ideas of what is valid.
     ///
     /// Returns whether it was successful.
     pub fn match_instance(

@@ -84,7 +84,7 @@ impl ModuleCleaner {
         let env = match module_state {
             LoadState::Ok(env) => env,
             LoadState::Error(_) => {
-                // If there's a compilation error, we still want to extract what we can
+                // If there's an elaboration error, we still want to extract what we can
                 // Return empty ranges for now
                 return Ok(Vec::new());
             }

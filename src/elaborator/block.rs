@@ -36,7 +36,7 @@ pub struct Block {
 
     /// The source range for this block, if it came from source code.
     /// This spans from the opening keyword (forall, if, by, etc.) to the closing brace.
-    /// Synthetic blocks created by the compiler will have None.
+    /// Synthetic blocks created by the elaborator will have None.
     pub source_range: Option<Range>,
 }
 

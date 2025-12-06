@@ -568,7 +568,7 @@ mod tests {
         verifier.builder.check_hashes = false;
         let output = verifier.run().unwrap();
 
-        // The verifier should report a compilation error
+        // The verifier should report an elaboration error
         assert_eq!(output.status, BuildStatus::Error);
 
         // Check that the error message contains "ambiguous"
