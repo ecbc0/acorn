@@ -1,8 +1,8 @@
 use std::fmt;
 
-use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, TypeParam};
 use crate::elaborator::acorn_value::AcornValue;
+use crate::elaborator::error::{self, ErrorContext};
 use crate::elaborator::names::ConstantName;
 
 /// A generic constant that we don't know the type of yet.
@@ -29,9 +29,9 @@ impl UnresolvedConstant {
     /// Resolves the constant with the given parameters.
     pub fn resolve(
         &self,
-        source: &dyn ErrorSource,
+        source: &dyn ErrorContext,
         params: Vec<AcornType>,
-    ) -> compilation::Result<AcornValue> {
+    ) -> error::Result<AcornValue> {
         if params.len() != self.params.len() {
             return Err(source.error(&format!(
                 "expected {} type parameters, but got {}",

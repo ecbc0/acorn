@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use tower_lsp::lsp_types::Range;
 
-use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, TypeParam};
 use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
 use crate::elaborator::environment::{Environment, LineType};
+use crate::elaborator::error::{self, ErrorContext};
 use crate::elaborator::names::DefinedName;
 use crate::elaborator::node::Node;
 use crate::elaborator::proposition::Proposition;
@@ -103,7 +103,7 @@ impl Block {
         first_token: &Token,
         last_token: &Token,
         body: Option<&Body>,
-    ) -> compilation::Result<Block> {
+    ) -> error::Result<Block> {
         let mut subenv = env.create_child(first_token.line_number, body.is_none());
 
         // Inside the block, the type parameters are arbitrary types.
@@ -351,7 +351,7 @@ impl Block {
         &self,
         outer_env: &Environment,
         token: &Token,
-    ) -> compilation::Result<(AcornValue, Range)> {
+    ) -> error::Result<(AcornValue, Range)> {
         let prop = match self.env.nodes.last() {
             Some(node) => match node.proposition() {
                 Some(p) => p,

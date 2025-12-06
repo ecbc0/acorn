@@ -3,7 +3,7 @@ use std::{collections::VecDeque, fmt};
 use pretty::{DocAllocator, DocBuilder, Pretty};
 use tower_lsp::lsp_types::Range;
 
-use crate::compilation::{CompilationError, ErrorSource, Result};
+use crate::elaborator::error::{Error, ErrorContext, Result};
 use crate::syntax::token::{Token, TokenIter, TokenType};
 
 /// There are two main sorts of expressions.
@@ -83,9 +83,9 @@ impl fmt::Display for Expression {
     }
 }
 
-impl ErrorSource for Expression {
-    fn error(&self, message: &str) -> CompilationError {
-        CompilationError::new(self.first_token(), self.last_token(), message)
+impl ErrorContext for Expression {
+    fn error(&self, message: &str) -> Error {
+        Error::new(self.first_token(), self.last_token(), message)
     }
 }
 
@@ -777,8 +777,8 @@ impl fmt::Display for PartialExpression {
     }
 }
 
-impl ErrorSource for PartialExpression {
-    fn error(&self, message: &str) -> CompilationError {
+impl ErrorContext for PartialExpression {
+    fn error(&self, message: &str) -> Error {
         match &self {
             PartialExpression::Expression(e) => e.error(message),
             PartialExpression::Unary(t)
@@ -1214,7 +1214,7 @@ fn check_partial_expressions(partials: &VecDeque<PartialExpression>) -> Result<(
 fn combine_partial_expressions(
     mut partials: VecDeque<PartialExpression>,
     expected_type: ExpressionType,
-    source: &dyn ErrorSource,
+    source: &dyn ErrorContext,
 ) -> Result<Expression> {
     if partials.len() == 0 {
         return Err(source.error("expected an expression here"));

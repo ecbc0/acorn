@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::{fmt, sync::OnceLock};
 use tower_lsp::lsp_types::{Position, Range, SemanticTokenType};
 
-use crate::compilation::{CompilationError, ErrorSource, Result};
+use crate::elaborator::error::{Error, ErrorContext, Result};
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum TokenType {
@@ -489,9 +489,9 @@ impl fmt::Display for Token {
     }
 }
 
-impl ErrorSource for Token {
-    fn error(&self, message: &str) -> CompilationError {
-        CompilationError::new(self, self, message)
+impl ErrorContext for Token {
+    fn error(&self, message: &str) -> Error {
+        Error::new(self, self, message)
     }
 }
 
@@ -901,7 +901,7 @@ impl TokenIter {
         }
     }
 
-    pub fn error(&self, message: &str) -> CompilationError {
+    pub fn error(&self, message: &str) -> Error {
         match self.peek() {
             Some(token) => token.error(message),
             None => {

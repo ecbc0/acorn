@@ -1,8 +1,8 @@
 use std::fmt;
 
-use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, PotentialType, Typeclass, UnresolvedType};
 use crate::elaborator::acorn_value::AcornValue;
+use crate::elaborator::error::{self, ErrorContext};
 use crate::elaborator::potential_value::PotentialValue;
 use crate::elaborator::unresolved_constant::UnresolvedConstant;
 use crate::module::ModuleId;
@@ -35,8 +35,8 @@ impl NamedEntity {
     pub fn expect_potential_value(
         self,
         expected_type: Option<&AcornType>,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<PotentialValue> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<PotentialValue> {
         match self {
             NamedEntity::Value(value) => {
                 value.get_type().check_eq(expected_type, source)?;
@@ -59,10 +59,7 @@ impl NamedEntity {
     }
 
     // Convert this entity into a PotentialType, erroring if it's not the right sort of type.
-    pub fn expect_potential_type(
-        self,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<PotentialType> {
+    pub fn expect_potential_type(self, source: &dyn ErrorContext) -> error::Result<PotentialType> {
         match self {
             NamedEntity::Value(_) => {
                 Err(source.error("name refers to a value but we expected a type"))

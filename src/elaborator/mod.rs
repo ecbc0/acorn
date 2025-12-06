@@ -3,6 +3,7 @@ pub mod acorn_value;
 pub mod binding_map;
 pub mod block;
 pub mod environment;
+pub mod error;
 pub mod evaluator;
 pub mod fact;
 pub mod goal;

@@ -5,17 +5,17 @@ use tower_lsp::lsp_types::Range;
 use crate::module::ModuleId;
 use crate::syntax::token::Token;
 
-// Errors that happen during compilation.
+// Errors that happen during elaboration.
 // We will want to report these along with a location in the source code.
 #[derive(Debug)]
-pub struct CompilationError {
+pub struct Error {
     // The range of tokens the error occurred at.
     first_token: Token,
     last_token: Token,
 
     message: String,
 
-    // When you try to import a module that itself had a compilation error, that is an "indirect error".
+    // When you try to import a module that itself had an elaboration error, that is an "indirect error".
     // We may or may not want to report these.
     pub indirect: bool,
 
@@ -25,7 +25,7 @@ pub struct CompilationError {
     pub circular: Option<ModuleId>,
 }
 
-impl fmt::Display for CompilationError {
+impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}:\n", self.message)?;
         write!(f, "{}\n", self.first_token.line)?;
@@ -52,9 +52,9 @@ impl fmt::Display for CompilationError {
     }
 }
 
-impl CompilationError {
+impl Error {
     pub fn new(first_token: &Token, last_token: &Token, message: &str) -> Self {
-        CompilationError {
+        Error {
             first_token: first_token.clone(),
             last_token: last_token.clone(),
             message: message.to_string(),
@@ -64,7 +64,7 @@ impl CompilationError {
     }
 
     pub fn indirect(first_token: &Token, last_token: &Token, message: &str) -> Self {
-        CompilationError {
+        Error {
             first_token: first_token.clone(),
             last_token: last_token.clone(),
             message: message.to_string(),
@@ -79,7 +79,7 @@ impl CompilationError {
         last_token: &Token,
         message: &str,
     ) -> Self {
-        CompilationError {
+        Error {
             first_token: first_token.clone(),
             last_token: last_token.clone(),
             message: message.to_string(),
@@ -93,8 +93,8 @@ impl CompilationError {
     }
 }
 
-pub type Result<T> = std::result::Result<T, CompilationError>;
+pub type Result<T> = std::result::Result<T, Error>;
 
-pub trait ErrorSource {
-    fn error(&self, message: &str) -> CompilationError;
+pub trait ErrorContext {
+    fn error(&self, message: &str) -> Error;
 }

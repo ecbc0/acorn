@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt};
 
-use crate::compilation::{self, ErrorSource, Result};
+use crate::elaborator::error::{self, ErrorContext, Result};
 use crate::module::ModuleId;
 
 /// Variance of a type parameter indicates how it appears in a type definition.
@@ -94,7 +94,7 @@ impl PotentialType {
     pub fn invertible_resolve(
         self,
         params: Vec<AcornType>,
-        source: &dyn ErrorSource,
+        source: &dyn ErrorContext,
     ) -> Result<AcornType> {
         if let PotentialType::Unresolved(ut) = &self {
             if ut.params.len() != params.len() {
@@ -133,7 +133,7 @@ impl PotentialType {
     pub fn resolve_with_arbitrary(
         self,
         params: Vec<AcornType>,
-        source: &dyn ErrorSource,
+        source: &dyn ErrorContext,
     ) -> Result<AcornType> {
         if let PotentialType::Unresolved(ut) = &self {
             if ut.params.len() != params.len() {
@@ -165,7 +165,7 @@ impl PotentialType {
 
     /// Resolves the type given the parameters.
     /// Reports an error if the parameters don't match what we expected.
-    pub fn resolve(self, params: Vec<AcornType>, source: &dyn ErrorSource) -> Result<AcornType> {
+    pub fn resolve(self, params: Vec<AcornType>, source: &dyn ErrorContext) -> Result<AcornType> {
         match self {
             PotentialType::Resolved(t) => {
                 if !params.is_empty() {
@@ -375,7 +375,7 @@ impl AcornType {
     pub fn find_type_vars(
         &self,
         vars: &mut HashMap<String, TypeParam>,
-        source: &dyn ErrorSource,
+        source: &dyn ErrorContext,
     ) -> Result<()> {
         match self {
             AcornType::Variable(param) => {
@@ -409,7 +409,7 @@ impl AcornType {
     }
 
     /// This just checks exact equality, without any generic stuff.
-    pub fn check_eq(&self, expected: Option<&AcornType>, source: &dyn ErrorSource) -> Result<()> {
+    pub fn check_eq(&self, expected: Option<&AcornType>, source: &dyn ErrorContext) -> Result<()> {
         if let Some(e) = expected {
             if e != self {
                 return Err(source.error(&format!("expected type {}, but this is {}", e, self)));
@@ -418,7 +418,7 @@ impl AcornType {
         Ok(())
     }
 
-    pub fn check_instance(&self, datatype: &Datatype, source: &dyn ErrorSource) -> Result<()> {
+    pub fn check_instance(&self, datatype: &Datatype, source: &dyn ErrorContext) -> Result<()> {
         match self {
             AcornType::Data(c, _) => {
                 if c != datatype {
@@ -681,7 +681,7 @@ impl AcornType {
     }
 
     /// Extracts the datatype from this type, or errors if it is not a data type.
-    pub fn get_datatype(&self, source: &dyn ErrorSource) -> compilation::Result<&Datatype> {
+    pub fn get_datatype(&self, source: &dyn ErrorContext) -> error::Result<&Datatype> {
         match self {
             AcornType::Data(datatype, _) => Ok(datatype),
             _ => Err(source.error("not an attributable datatype")),

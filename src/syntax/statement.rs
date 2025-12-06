@@ -1,6 +1,6 @@
 use tower_lsp::lsp_types::Range;
 
-use crate::compilation::{CompilationError, ErrorSource, Result};
+use crate::elaborator::error::{Error, ErrorContext, Result};
 use crate::syntax::expression::{Declaration, Expression, Terminator, TypeParamExpr};
 use crate::syntax::token::{Token, TokenIter, TokenType};
 
@@ -317,9 +317,9 @@ pub struct Statement {
     pub statement: StatementInfo,
 }
 
-impl ErrorSource for Statement {
-    fn error(&self, message: &str) -> CompilationError {
-        CompilationError::new(&self.first_token, &self.last_token, message)
+impl ErrorContext for Statement {
+    fn error(&self, message: &str) -> Error {
+        Error::new(&self.first_token, &self.last_token, message)
     }
 }
 
@@ -1466,7 +1466,7 @@ impl Statement {
                     }
                     TokenType::Solve => {
                         let keyword = tokens.next().unwrap();
-                        return Err(CompilationError::new(
+                        return Err(Error::new(
                             &keyword,
                             &keyword,
                             "the 'solve' keyword is no longer supported",

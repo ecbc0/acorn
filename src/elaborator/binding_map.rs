@@ -4,11 +4,11 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, Range};
 
 use crate::code_generator::CodeGenerator;
-use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{
     AcornType, Datatype, PotentialType, TypeParam, Typeclass, UnresolvedType, Variance,
 };
 use crate::elaborator::acorn_value::AcornValue;
+use crate::elaborator::error::{self, ErrorContext};
 use crate::elaborator::evaluator::Evaluator;
 use crate::elaborator::named_entity::NamedEntity;
 use crate::elaborator::names::{ConstantName, DefinedName, InstanceName};
@@ -179,8 +179,8 @@ impl BindingMap {
     pub fn check_defined_name_available(
         &self,
         defined_name: &DefinedName,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<()> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<()> {
         if self.constant_name_in_use(defined_name) {
             return Err(source.error(&format!("constant name {} is already in use", defined_name)));
         }
@@ -537,8 +537,8 @@ impl BindingMap {
     pub fn check_typename_available(
         &self,
         name: &str,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<()> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<()> {
         if self.typename_to_type.contains_key(name) || self.name_to_typeclass.contains_key(name) {
             return Err(source.error(&format!("typename {} is already in use", name)));
         }
@@ -549,8 +549,8 @@ impl BindingMap {
     pub fn check_unqualified_name_available(
         &self,
         name: &str,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<()> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<()> {
         let defined_name = DefinedName::unqualified(self.module_id, name);
         self.check_defined_name_available(&defined_name, source)
     }
@@ -575,8 +575,8 @@ impl BindingMap {
         &mut self,
         name: String,
         potential_type: PotentialType,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<()> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<()> {
         // There can be multiple names for a type.
         // If we already have a name for the reverse lookup, we don't overwrite it.
         if !self.type_to_typename.contains_key(&potential_type) {
@@ -685,8 +685,8 @@ impl BindingMap {
         &mut self,
         alias: &str,
         potential: PotentialType,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<()> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<()> {
         // Local type aliases for concrete types should be preferred.
         if let PotentialType::Resolved(AcornType::Data(datatype, params)) = &potential {
             if params.is_empty() {
@@ -712,8 +712,8 @@ impl BindingMap {
         range: Option<Range>,
         definition_string: Option<String>,
         project: &Project,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<()> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<()> {
         let mut info = TypeclassDefinition::new();
         info.doc_comments = doc_comments;
         info.range = range;
@@ -766,8 +766,8 @@ impl BindingMap {
         &mut self,
         name: &str,
         typeclass: Typeclass,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<()> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<()> {
         self.add_typeclass_alias(&typeclass, name);
 
         match self.name_to_typeclass.entry(name.to_string()) {
@@ -793,8 +793,8 @@ impl BindingMap {
         typeclass: &Typeclass,
         attr_name: &str,
         project: &Project,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<(AcornValue, AcornValue)> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<(AcornValue, AcornValue)> {
         // Get the relevant properties of the typeclass.
         let typeclass_attr_name = DefinedName::typeclass_attr(typeclass, attr_name);
         let typeclass_attr = self
@@ -1269,8 +1269,8 @@ impl BindingMap {
         &mut self,
         full_name: Vec<String>,
         bindings: &BindingMap,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<()> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<()> {
         // Copy over module info from the imported module, but don't override entries with local names
         for (module_id, imported_info) in bindings.module_info.iter() {
             if !self.module_info.contains_key(module_id) {
@@ -1351,7 +1351,7 @@ impl BindingMap {
         &mut self,
         prelude_bindings: &BindingMap,
         project: &Project,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         // First, import the module's typeclass and datatype info
         self.import_module(
             vec!["prelude".to_string()],
@@ -1570,7 +1570,7 @@ impl BindingMap {
         project: &Project,
         module: ModuleId,
         name_token: &Token,
-    ) -> compilation::Result<NamedEntity> {
+    ) -> error::Result<NamedEntity> {
         // Check if this name is lowercase
         let name = name_token.text();
         if name.chars().next().map(char::is_lowercase).unwrap_or(false) {
@@ -1643,8 +1643,8 @@ impl BindingMap {
         potential: PotentialValue,
         args: Vec<AcornValue>,
         expected_type: Option<&AcornType>,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<AcornValue> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<AcornValue> {
         let value = match potential {
             PotentialValue::Resolved(f) => f.check_apply(args, expected_type, source)?,
             PotentialValue::Unresolved(u) => {
@@ -1663,8 +1663,8 @@ impl BindingMap {
         potential: PotentialValue,
         args: Vec<AcornValue>,
         expected_type: Option<&AcornType>,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<PotentialValue> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<PotentialValue> {
         match potential {
             PotentialValue::Resolved(f) => {
                 let value = f.check_apply(args, expected_type, source)?;
@@ -1685,9 +1685,9 @@ impl BindingMap {
         arg_exprs: Vec<&Expression>,
         expected_type: Option<&AcornType>,
         project: &Project,
-        source: &dyn ErrorSource,
+        source: &dyn ErrorContext,
         token_map: Option<&mut TokenMap>,
-    ) -> compilation::Result<AcornValue> {
+    ) -> error::Result<AcornValue> {
         // Evaluate the arguments
         let mut args = vec![];
         let mut evaluator = Evaluator::new(project, self, token_map);
@@ -1716,8 +1716,8 @@ impl BindingMap {
         condition_name: &str,
         instance_type: &AcornType,
         project: &Project,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<AcornValue> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<AcornValue> {
         let tc_condition_name = ConstantName::typeclass_attr(typeclass.clone(), condition_name);
         let tc_bindings = self.get_bindings(typeclass.module_id, project);
         let (def, params) = match tc_bindings.get_definition_and_params(&tc_condition_name) {
@@ -1788,7 +1788,7 @@ impl BindingMap {
         datatype_params: Option<&Vec<TypeParam>>,
         project: &Project,
         mut token_map: Option<&mut TokenMap>,
-    ) -> compilation::Result<(
+    ) -> error::Result<(
         Vec<TypeParam>,
         Vec<String>,
         Vec<AcornType>,
@@ -2100,8 +2100,8 @@ impl DatatypeDefinition {
         &mut self,
         info: &DatatypeDefinition,
         typename: &str,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<()> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<()> {
         for (attr, other_module_id) in info.attributes.iter() {
             match self.attributes.get(attr) {
                 None => {

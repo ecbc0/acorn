@@ -1,7 +1,7 @@
 use std::{fmt, path::PathBuf};
 
-use crate::compilation;
 use crate::elaborator::environment::Environment;
+use crate::elaborator::error;
 
 // The code in one file is exposed to other Acorn code as a "module".
 // You could have two different types both named "MyStruct" but defined in different places.
@@ -52,7 +52,7 @@ impl Module {
         }
     }
 
-    pub fn load_error(&mut self, error: compilation::CompilationError) {
+    pub fn load_error(&mut self, error: error::Error) {
         self.state = LoadState::Error(error);
     }
 
@@ -79,7 +79,7 @@ pub enum LoadState {
     Loading,
 
     // The module has been loaded, but there is an error in its code
-    Error(compilation::CompilationError),
+    Error(error::Error),
 
     // The module has been loaded successfully and we have its environment
     Ok(Environment),

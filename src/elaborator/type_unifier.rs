@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::elaborator::acorn_value::AcornValue;
+use crate::elaborator::error::{self, ErrorContext};
 use crate::elaborator::potential_value::PotentialValue;
 use crate::elaborator::unresolved_constant::UnresolvedConstant;
 use crate::module::ModuleId;
@@ -195,8 +195,8 @@ impl<'a> TypeUnifier<'a> {
         generic: &AcornType,
         instance: &AcornType,
         what: &str,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<()> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<()> {
         if !self.match_instance(generic, instance).is_ok() {
             return Err(source.error(&format!(
                 "{} has type {} but we expected some sort of {}",
@@ -215,8 +215,8 @@ impl<'a> TypeUnifier<'a> {
         unresolved: UnresolvedConstant,
         args: Vec<AcornValue>,
         expected_return_type: Option<&AcornType>,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<AcornValue> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<AcornValue> {
         let potential =
             self.try_resolve_with_inference(unresolved, args, expected_return_type, source)?;
 
@@ -239,8 +239,8 @@ impl<'a> TypeUnifier<'a> {
         unresolved: UnresolvedConstant,
         args: Vec<AcornValue>,
         expected_return_type: Option<&AcornType>,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<PotentialValue> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<PotentialValue> {
         // Combine stored args with new args for type inference
         let combined_args = [unresolved.args.clone(), args].concat();
 
@@ -333,8 +333,8 @@ impl<'a> TypeUnifier<'a> {
         &mut self,
         potential: PotentialValue,
         expected_type: Option<&AcornType>,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<PotentialValue> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<PotentialValue> {
         let expected_type = match expected_type {
             Some(t) => t,
             None => return Ok(potential),

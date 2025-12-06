@@ -8,8 +8,8 @@ use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Range};
 
 use crate::build_cache::BuildCache;
 use crate::certificate::{Certificate, CertificateStore, CertificateWorklist};
-use crate::compilation::CompilationError;
 use crate::elaborator::environment::Environment;
+use crate::elaborator::error::Error as ElaborationError;
 use crate::elaborator::goal::Goal;
 use crate::elaborator::node::NodeCursor;
 use crate::generative::generative_prover::GenerativeProverConfig;
@@ -409,7 +409,7 @@ impl<'a> Builder<'a> {
     }
 
     /// Logs an error during the loading phase, that can be localized to a particular place.
-    pub fn log_loading_error(&mut self, descriptor: &ModuleDescriptor, error: &CompilationError) {
+    pub fn log_loading_error(&mut self, descriptor: &ModuleDescriptor, error: &ElaborationError) {
         let display_path = self.project.display_path(descriptor);
         let line = error.range().start.line + 1;
         let log_message = format!(

@@ -11,11 +11,11 @@ use walkdir::WalkDir;
 use crate::build_cache::BuildCache;
 use crate::certificate::Certificate;
 use crate::code_generator::{self, CodeGenerator};
-use crate::compilation;
 use crate::elaborator::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::elaborator::acorn_value::AcornValue;
 use crate::elaborator::binding_map::BindingMap;
 use crate::elaborator::environment::Environment;
+use crate::elaborator::error;
 use crate::elaborator::fact::Fact;
 use crate::elaborator::goal::Goal;
 use crate::elaborator::named_entity::NamedEntity;
@@ -861,7 +861,7 @@ impl Project {
         })
     }
 
-    pub fn errors(&self) -> Vec<(ModuleId, &compilation::CompilationError)> {
+    pub fn errors(&self) -> Vec<(ModuleId, &error::Error)> {
         let mut errors = vec![];
         for (module_id, module) in self.modules.iter().enumerate() {
             if let LoadState::Error(e) = &module.state {

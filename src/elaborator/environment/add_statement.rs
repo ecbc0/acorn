@@ -1,10 +1,10 @@
 use tower_lsp::lsp_types::Range;
 
-use crate::compilation::{self, CompilationError, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, Datatype, TypeParam, Typeclass, Variance};
 use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
 use crate::elaborator::binding_map::ConstructorInfo;
 use crate::elaborator::block::{Block, BlockParams};
+use crate::elaborator::error::{self, Error, ErrorContext};
 use crate::elaborator::evaluator::{AttributesTypeArgs, Evaluator};
 use crate::elaborator::fact::Fact;
 use crate::elaborator::named_entity::NamedEntity;
@@ -50,7 +50,7 @@ impl Environment {
         project: &mut Project,
         tokens: Vec<Token>,
         strict: bool,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         let mut tokens = TokenIter::new(tokens);
         loop {
             match Statement::parse(&mut tokens, false, strict) {
@@ -72,7 +72,7 @@ impl Environment {
         &mut self,
         project: &mut Project,
         statement: &Statement,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         if self.includes_explicit_false {
             return Err(
                 statement.error("an explicit 'false' may not be followed by other statements")
@@ -203,7 +203,7 @@ impl Environment {
         ls: &LetStatement,
         range: Range,
         datatype_params: Option<&Vec<TypeParam>>,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         ls.name_token.check_not_reserved()?;
 
         if self.bindings.constant_name_in_use(&defined_name) {
@@ -353,7 +353,7 @@ impl Environment {
         datatype_params: Option<&Vec<TypeParam>>,
         ds: &DefineStatement,
         range: Range,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         ds.name_token.check_not_reserved()?;
         if self.depth > 0 && !ds.type_params.is_empty() {
             return Err(ds
@@ -461,7 +461,7 @@ impl Environment {
         project: &mut Project,
         statement: &Statement,
         ts: &TheoremStatement,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         // Figure out the range for this theorem definition.
         // It's smaller than the whole theorem statement because it doesn't
         // include the proof block.
@@ -595,7 +595,7 @@ impl Environment {
         project: &mut Project,
         statement: &Statement,
         vss: &VariableSatisfyStatement,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         // First, evaluate the type expressions with token tracking
         for declaration in &vss.declarations {
             if let Declaration::Typed(_, type_expr) = declaration {
@@ -650,7 +650,7 @@ impl Environment {
         project: &mut Project,
         statement: &Statement,
         fss: &FunctionSatisfyStatement,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         fss.name_token.check_not_reserved()?;
         self.bindings
             .check_unqualified_name_available(fss.name_token.text(), statement)?;
@@ -751,7 +751,7 @@ impl Environment {
         project: &mut Project,
         statement: &Statement,
         ss: &StructureStatement,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         self.add_line_types(
             LineType::Other,
             statement.first_line(),
@@ -1027,7 +1027,7 @@ impl Environment {
         project: &mut Project,
         statement: &Statement,
         is: &InductiveStatement,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         self.add_other_lines(statement);
         self.bindings
             .check_typename_available(is.name_token.text(), statement)?;
@@ -1387,8 +1387,8 @@ impl Environment {
         arg_type: &AcornType,
         inductive_type: &AcornType,
         inductive_params: &[AcornType],
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<()> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<()> {
         match arg_type {
             AcornType::Data(datatype, type_args) => {
                 // Check if any type argument contains the inductive type
@@ -1494,7 +1494,7 @@ impl Environment {
         project: &mut Project,
         statement: &Statement,
         ats: &AttributesStatement,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         self.add_other_lines(statement);
 
         // Try type first
@@ -1516,7 +1516,7 @@ impl Environment {
         project: &mut Project,
         ats: &AttributesStatement,
         potential: crate::elaborator::acorn_type::PotentialType,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         let type_args = self
             .evaluator(project)
             .evaluate_attributes_type_args(&ats.type_params)?;
@@ -1629,7 +1629,7 @@ impl Environment {
         project: &mut Project,
         ats: &AttributesStatement,
         typeclass: crate::elaborator::acorn_type::Typeclass,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         // Typeclasses don't support type parameters yet
         if !ats.type_params.is_empty() {
             return Err(ats.type_params[0]
@@ -1697,7 +1697,7 @@ impl Environment {
         project: &mut Project,
         statement: &Statement,
         ts: &TypeclassStatement,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         self.add_other_lines(statement);
 
         // Figure out what, if anything, this extends.
@@ -1876,7 +1876,7 @@ impl Environment {
         project: &mut Project,
         statement: &Statement,
         is: &InstanceStatement,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         // Create an expression from the type name token and evaluate it to track the token
         let type_expr = Expression::Singleton(is.type_name.clone());
         let instance_type = self.evaluator(project).evaluate_type(&type_expr)?;
@@ -2115,7 +2115,7 @@ impl Environment {
         project: &mut Project,
         statement: &Statement,
         ts: &TypeStatement,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         self.add_other_lines(statement);
         self.bindings
             .check_typename_available(ts.name_token.text(), statement)?;
@@ -2145,7 +2145,7 @@ impl Environment {
         project: &mut Project,
         statement: &Statement,
         cs: &ClaimStatement,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         let claim = self
             .evaluator(project)
             .evaluate_value(&cs.claim, Some(&AcornType::Bool))?;
@@ -2174,7 +2174,7 @@ impl Environment {
         project: &mut Project,
         statement: &Statement,
         fas: &ForAllStatement,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         if fas.body.statements.is_empty() {
             // ForAll statements with an empty body can just be ignored
             return Ok(());
@@ -2215,7 +2215,7 @@ impl Environment {
         project: &mut Project,
         statement: &Statement,
         is: &IfStatement,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         let condition = self
             .evaluator(project)
             .evaluate_value(&is.condition, Some(&AcornType::Bool))?;
@@ -2249,7 +2249,7 @@ impl Environment {
         project: &mut Project,
         statement: &Statement,
         is: &ImportStatement,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         self.add_other_lines(statement);
 
         // The old "import foo" syntax is not supported - must use "from foo import bar"
@@ -2269,7 +2269,7 @@ impl Environment {
             }
             Err(ImportError::Circular(module_id)) => {
                 // Circular imports kind of count everywhere.
-                return Err(CompilationError::circular(
+                return Err(Error::circular(
                     module_id,
                     &statement.first_token,
                     &statement.last_token,
@@ -2280,7 +2280,7 @@ impl Environment {
         let bindings = match project.get_bindings(module_id) {
             None => {
                 // The fundamental error is in the other module, not this one.
-                return Err(CompilationError::indirect(
+                return Err(Error::indirect(
                     &statement.first_token,
                     &statement.last_token,
                     &format!("error in '{}' module", full_name),
@@ -2315,7 +2315,7 @@ impl Environment {
         project: &mut Project,
         statement: &Statement,
         ds: &NumeralsStatement,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         self.add_other_lines(statement);
         let acorn_type = self.evaluator(project).evaluate_type(&ds.type_expr)?;
         if let AcornType::Data(datatype, params) = acorn_type {
@@ -2337,7 +2337,7 @@ impl Environment {
         project: &mut Project,
         statement: &Statement,
         ms: &MatchStatement,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         let scrutinee = self
             .evaluator(project)
             .evaluate_value(&ms.scrutinee, None)?;
@@ -2398,7 +2398,7 @@ impl Environment {
         project: &mut Project,
         statement: &Statement,
         ds: &DestructuringStatement,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         self.add_other_lines(statement);
 
         // Check that all arg names are unique

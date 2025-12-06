@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::compilation::{ErrorSource, Result};
 use crate::elaborator::acorn_type::{AcornType, TypeParam};
 use crate::elaborator::acorn_value::AcornValue;
+use crate::elaborator::error::{ErrorContext, Result};
 use crate::elaborator::source::{Source, SourceType};
 
 /// A value along with information on where to find it in the source.
@@ -110,7 +110,7 @@ impl Proposition {
 
     /// Validates that the params exactly match the type variables used in the value.
     /// Returns an error if there's a mismatch.
-    pub fn validate_params(&self, source: &dyn ErrorSource) -> Result<()> {
+    pub fn validate_params(&self, source: &dyn ErrorContext) -> Result<()> {
         // Collect all type variables from the value
         let mut value_vars = HashMap::new();
         self.value.find_type_vars(&mut value_vars, source)?;

@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, Datatype, TypeParam, Typeclass};
+use crate::elaborator::error::{self, ErrorContext};
 use crate::elaborator::names::{ConstantName, DefinedName, InstanceName};
 use crate::kernel::atom::AtomId;
 use crate::module::ModuleId;
@@ -1612,8 +1612,8 @@ impl AcornValue {
     pub fn check_type(
         &self,
         expected_type: Option<&AcornType>,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<()> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<()> {
         if let Some(t) = expected_type {
             self.get_type().check_eq(Some(t), source)
         } else {
@@ -1628,8 +1628,8 @@ impl AcornValue {
         self,
         args: Vec<AcornValue>,
         expected_type: Option<&AcornType>,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<AcornValue> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<AcornValue> {
         // Typecheck the arguments
         let function_type = self.get_type();
         let function_type = match function_type {
@@ -1671,8 +1671,8 @@ impl AcornValue {
     pub fn find_type_vars(
         &self,
         vars: &mut HashMap<String, TypeParam>,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<()> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<()> {
         match self {
             AcornValue::Variable(_, var_type) => {
                 var_type.find_type_vars(vars, source)?;

@@ -4,11 +4,11 @@ use std::collections::HashSet;
 
 use tower_lsp::lsp_types::Range;
 
-use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, Datatype, TypeParam};
 use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
 use crate::elaborator::binding_map::BindingMap;
 use crate::elaborator::block::{Block, BlockParams};
+use crate::elaborator::error::{self, ErrorContext};
 use crate::elaborator::evaluator::Evaluator;
 use crate::elaborator::fact::Fact;
 use crate::elaborator::names::DefinedName;
@@ -258,7 +258,7 @@ impl Environment {
         &self,
         name_token: &Token,
         datatype_type: &'a AcornType,
-    ) -> compilation::Result<&'a Datatype> {
+    ) -> error::Result<&'a Datatype> {
         match &datatype_type {
             AcornType::Data(datatype, _) => {
                 if &datatype.name != &name_token.text() {
@@ -277,7 +277,7 @@ impl Environment {
         datatype: &Datatype,
         body: &crate::syntax::statement::Body,
         _name_token: &Token,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         use crate::syntax::statement::StatementInfo;
 
         // Check if any of the new specific attributes conflict with existing generic ones
@@ -317,7 +317,7 @@ impl Environment {
         last_token: &Token,
         body: &Body,
         if_claim: Option<AcornValue>,
-    ) -> compilation::Result<Option<AcornValue>> {
+    ) -> error::Result<Option<AcornValue>> {
         if body.statements.is_empty() {
             // Conditional blocks with an empty body can just be ignored
             return Ok(None);

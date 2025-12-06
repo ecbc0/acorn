@@ -1,7 +1,7 @@
-use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, Datatype, PotentialType, TypeParam, Typeclass};
 use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
 use crate::elaborator::binding_map::BindingMap;
+use crate::elaborator::error::{self, ErrorContext};
 use crate::elaborator::named_entity::NamedEntity;
 use crate::elaborator::names::DefinedName;
 use crate::elaborator::potential_value::PotentialValue;
@@ -74,7 +74,7 @@ impl<'a> Evaluator<'a> {
     }
 
     /// Evaluates an expression that represents a type.
-    pub fn evaluate_type(&mut self, expression: &Expression) -> compilation::Result<AcornType> {
+    pub fn evaluate_type(&mut self, expression: &Expression) -> error::Result<AcornType> {
         let potential = self.evaluate_potential_type(expression)?;
         match potential {
             PotentialType::Resolved(t) => Ok(t),
@@ -88,7 +88,7 @@ impl<'a> Evaluator<'a> {
     pub fn evaluate_potential_type(
         &mut self,
         expression: &Expression,
-    ) -> compilation::Result<PotentialType> {
+    ) -> error::Result<PotentialType> {
         match expression {
             Expression::Singleton(token) => {
                 if token.token_type == TokenType::Axiom {
@@ -157,7 +157,7 @@ impl<'a> Evaluator<'a> {
         &mut self,
         expression: &Expression,
         output: &mut Vec<AcornType>,
-    ) -> compilation::Result<()> {
+    ) -> error::Result<()> {
         match expression {
             Expression::Grouping(_, e, _) => self.evaluate_type_list(e, output),
             Expression::Binary(left, token, right) if token.token_type == TokenType::Comma => {
@@ -176,7 +176,7 @@ impl<'a> Evaluator<'a> {
     pub fn evaluate_declaration(
         &mut self,
         declaration: &Declaration,
-    ) -> compilation::Result<(String, AcornType)> {
+    ) -> error::Result<(String, AcornType)> {
         match declaration {
             Declaration::Typed(name_token, type_expr) => {
                 let acorn_type = self.evaluate_type(&type_expr)?;
@@ -195,7 +195,7 @@ impl<'a> Evaluator<'a> {
         stack: &mut Stack,
         declarations: I,
         datatype_type: Option<&AcornType>,
-    ) -> compilation::Result<(Vec<String>, Vec<AcornType>)>
+    ) -> error::Result<(Vec<String>, Vec<AcornType>)>
     where
         I: IntoIterator<Item = &'b Declaration>,
     {
@@ -244,8 +244,8 @@ impl<'a> Evaluator<'a> {
         &mut self,
         expected_type: &AcornType,
         value: &AcornValue,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<(usize, usize)> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<(usize, usize)> {
         let AcornValue::Constant(ci) = value else {
             return Err(source.error("invalid pattern"));
         };
@@ -268,7 +268,7 @@ impl<'a> Evaluator<'a> {
         &mut self,
         expected_type: &AcornType,
         pattern: &Expression,
-    ) -> compilation::Result<(AcornValue, Vec<(String, AcornType)>, usize, usize)> {
+    ) -> error::Result<(AcornValue, Vec<(String, AcornType)>, usize, usize)> {
         let (fn_exp, args) = match pattern {
             Expression::Concatenation(function, args) if !args.is_type() => (function, args),
             _ => {
@@ -344,7 +344,7 @@ impl<'a> Evaluator<'a> {
         token: &Token,
         datatype: &Datatype,
         s: &str,
-    ) -> compilation::Result<AcornValue> {
+    ) -> error::Result<AcornValue> {
         if self.bindings.has_type_attr(&datatype, s) {
             return self
                 .evaluate_datatype_attr(&datatype, s, token)?
@@ -377,8 +377,8 @@ impl<'a> Evaluator<'a> {
         &self,
         datatype: &Datatype,
         attr_name: &str,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<PotentialValue> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<PotentialValue> {
         let (module_id, const_name) = match self.bindings.resolve_datatype_attr(datatype, attr_name)
         {
             Ok((module_id, const_name)) => (module_id, const_name),
@@ -411,8 +411,8 @@ impl<'a> Evaluator<'a> {
         &self,
         typeclass: &Typeclass,
         attr_name: &str,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<PotentialValue> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<PotentialValue> {
         if let Some((module_id, name)) = self.bindings.resolve_typeclass_attr(typeclass, attr_name)
         {
             // Get the bindings from the module where this attribute was actually defined
@@ -436,7 +436,7 @@ impl<'a> Evaluator<'a> {
         &mut self,
         expression: &Expression,
         expected_type: Option<&AcornType>,
-    ) -> compilation::Result<AcornValue> {
+    ) -> error::Result<AcornValue> {
         self.evaluate_value_with_stack(&mut Stack::new(), expression, expected_type)
     }
 
@@ -446,8 +446,8 @@ impl<'a> Evaluator<'a> {
         &mut self,
         receiver: AcornValue,
         attr_name: &str,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<PotentialValue> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<PotentialValue> {
         let base_type = receiver.get_type();
 
         let function = match &base_type {
@@ -521,7 +521,7 @@ impl<'a> Evaluator<'a> {
         name_token: &Token,
         stack: &Stack,
         namespace: Option<NamedEntity>,
-    ) -> compilation::Result<NamedEntity> {
+    ) -> error::Result<NamedEntity> {
         let name = name_token.text();
         let entity = match namespace {
             Some(NamedEntity::Value(instance)) => {
@@ -676,7 +676,7 @@ impl<'a> Evaluator<'a> {
         stack: &mut Stack,
         left: &Expression,
         right: &Expression,
-    ) -> compilation::Result<NamedEntity> {
+    ) -> error::Result<NamedEntity> {
         let right_token = match right {
             Expression::Singleton(token) => token,
             _ => return Err(right.error("expected an identifier after a dot")),
@@ -699,7 +699,7 @@ impl<'a> Evaluator<'a> {
 
     /// Extract a module name from an expression like foo.bar.baz
     /// Returns the module name as a string like "foo.bar.baz"
-    fn extract_module_name(&self, expression: &Expression) -> compilation::Result<String> {
+    fn extract_module_name(&self, expression: &Expression) -> error::Result<String> {
         match expression {
             Expression::Singleton(token) => {
                 if token.token_type == TokenType::Identifier {
@@ -731,7 +731,7 @@ impl<'a> Evaluator<'a> {
         &mut self,
         stack: &mut Stack,
         expression: &Expression,
-    ) -> compilation::Result<NamedEntity> {
+    ) -> error::Result<NamedEntity> {
         // Handle a plain old name
         if let Expression::Singleton(token) = expression {
             return self.evaluate_name(token, stack, None);
@@ -790,7 +790,7 @@ impl<'a> Evaluator<'a> {
         right: &Expression,
         name: &str,
         expected_type: Option<&AcornType>,
-    ) -> compilation::Result<AcornValue> {
+    ) -> error::Result<AcornValue> {
         let mut left_value = self.evaluate_value_with_stack(stack, left, None)?;
         let mut right_value = self.evaluate_value_with_stack(stack, right, None)?;
 
@@ -867,7 +867,7 @@ impl<'a> Evaluator<'a> {
         stack: &mut Stack,
         expression: &Expression,
         expected_type: Option<&AcornType>,
-    ) -> compilation::Result<AcornValue> {
+    ) -> error::Result<AcornValue> {
         let potential = self.evaluate_potential_value(stack, expression, expected_type)?;
         potential.as_value(expression)
     }
@@ -879,7 +879,7 @@ impl<'a> Evaluator<'a> {
         stack: &mut Stack,
         expression: &Expression,
         expected_type: Option<&AcornType>,
-    ) -> compilation::Result<PotentialValue> {
+    ) -> error::Result<PotentialValue> {
         let value = match expression {
             Expression::Singleton(token) => match token.token_type {
                 TokenType::Axiom => panic!("axiomatic values should be handled elsewhere"),
@@ -1287,10 +1287,7 @@ impl<'a> Evaluator<'a> {
         Ok(PotentialValue::Resolved(value))
     }
 
-    pub fn evaluate_typeclass(
-        &mut self,
-        expression: &Expression,
-    ) -> compilation::Result<Typeclass> {
+    pub fn evaluate_typeclass(&mut self, expression: &Expression) -> error::Result<Typeclass> {
         let entity = self.evaluate_entity(&mut Stack::new(), expression)?;
         match entity {
             NamedEntity::Typeclass(tc) => Ok(tc),
@@ -1303,7 +1300,7 @@ impl<'a> Evaluator<'a> {
     pub fn evaluate_type_params(
         &mut self,
         exprs: &[TypeParamExpr],
-    ) -> compilation::Result<Vec<TypeParam>> {
+    ) -> error::Result<Vec<TypeParam>> {
         let mut answer: Vec<TypeParam> = vec![];
         for expr in exprs {
             // Reject complex type expressions in type parameter context
@@ -1337,7 +1334,7 @@ impl<'a> Evaluator<'a> {
     pub fn evaluate_attributes_type_args(
         &mut self,
         exprs: &[TypeParamExpr],
-    ) -> compilation::Result<AttributesTypeArgs> {
+    ) -> error::Result<AttributesTypeArgs> {
         if exprs.is_empty() {
             return Ok(AttributesTypeArgs::Generic(vec![]));
         }

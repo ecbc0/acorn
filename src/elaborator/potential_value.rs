@@ -1,8 +1,8 @@
 use std::fmt;
 
-use crate::compilation::{self, ErrorSource};
 use crate::elaborator::acorn_type::{AcornType, TypeParam};
 use crate::elaborator::acorn_value::AcornValue;
+use crate::elaborator::error::{self, ErrorContext};
 use crate::elaborator::unresolved_constant::UnresolvedConstant;
 
 pub static EMPTY_TYPE_PARAMS: [TypeParam; 0] = [];
@@ -29,7 +29,7 @@ impl PotentialValue {
     }
 
     /// Convert this to a value, or return an error if it's unresolved.
-    pub fn as_value(self, source: &dyn ErrorSource) -> compilation::Result<AcornValue> {
+    pub fn as_value(self, source: &dyn ErrorContext) -> error::Result<AcornValue> {
         match self {
             PotentialValue::Unresolved(u) => {
                 Err(source.error(&format!("value {} has unresolved type", u.name)))
@@ -61,10 +61,7 @@ impl PotentialValue {
         }
     }
 
-    pub fn to_unresolved(
-        self,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<UnresolvedConstant> {
+    pub fn to_unresolved(self, source: &dyn ErrorContext) -> error::Result<UnresolvedConstant> {
         match self {
             PotentialValue::Unresolved(u) => Ok(u),
             PotentialValue::Resolved(v) => {
@@ -86,8 +83,8 @@ impl PotentialValue {
     pub fn resolve_constant(
         &self,
         params: &[AcornType],
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<AcornValue> {
+        source: &dyn ErrorContext,
+    ) -> error::Result<AcornValue> {
         match self {
             PotentialValue::Unresolved(u) => u.resolve(source, params.to_vec()),
             PotentialValue::Resolved(v) => {
