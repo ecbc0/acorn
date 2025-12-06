@@ -1599,6 +1599,28 @@ impl Normalizer {
     pub fn normalize_fact(&mut self, fact: Fact) -> Result<Vec<ProofStep>, BuildError> {
         let mut steps = vec![];
 
+        // Register typeclass relationships in TypeStore
+        match &fact {
+            Fact::Instance(datatype, typeclass, _) => {
+                let acorn_type = AcornType::Data(datatype.clone(), vec![]);
+                let type_id = self.kernel_context.type_store.add_type(&acorn_type);
+                let typeclass_id = self.kernel_context.type_store.add_typeclass(typeclass);
+                self.kernel_context
+                    .type_store
+                    .add_instance(type_id, typeclass_id);
+            }
+            Fact::Extends(typeclass, base_set, _) => {
+                let tc_id = self.kernel_context.type_store.add_typeclass(typeclass);
+                for base in base_set {
+                    let base_id = self.kernel_context.type_store.add_typeclass(base);
+                    self.kernel_context
+                        .type_store
+                        .add_typeclass_extends(tc_id, base_id);
+                }
+            }
+            _ => {}
+        }
+
         // Check if this looks like an aliasing.
         if let Some((ci, name, constant_type)) = fact.as_instance_alias() {
             let local = fact.source().truthiness() != Truthiness::Factual;
