@@ -1,5 +1,7 @@
 use std::sync::LazyLock;
 
+use crate::kernel::atom::Atom;
+use crate::kernel::symbol::Symbol;
 use crate::kernel::symbol_table::SymbolTable;
 use crate::kernel::type_store::TypeStore;
 #[cfg(test)]
@@ -18,6 +20,24 @@ impl KernelContext {
         KernelContext {
             type_store: TypeStore::new(),
             symbol_table: SymbolTable::new(),
+        }
+    }
+
+    /// Returns a human-readable string representation of an atom.
+    pub fn atom_str(&self, atom: &Atom) -> String {
+        match atom {
+            Atom::True => "true".to_string(),
+            Atom::Symbol(Symbol::GlobalConstant(i)) => {
+                self.symbol_table.name_for_global_id(*i).to_string()
+            }
+            Atom::Symbol(Symbol::ScopedConstant(i)) => {
+                self.symbol_table.name_for_local_id(*i).to_string()
+            }
+            Atom::Symbol(Symbol::Monomorph(i)) => {
+                format!("{}", self.symbol_table.get_monomorph(*i))
+            }
+            Atom::Variable(i) => format!("x{}", i),
+            Atom::Symbol(Symbol::Synthetic(i)) => format!("s{}", i),
         }
     }
 

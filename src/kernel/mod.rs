@@ -2,6 +2,7 @@ pub mod aliases;
 pub mod atom;
 pub mod clause;
 pub mod cnf;
+pub mod display;
 pub mod extended_term;
 pub mod inference;
 pub mod kernel_context;

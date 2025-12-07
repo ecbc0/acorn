@@ -2,30 +2,30 @@ use std::fmt;
 
 use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::Atom;
+use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::term::TermRef;
-use crate::normalizer::Normalizer;
 
 struct DisplayAtom<'a> {
     atom: Atom,
-    normalizer: &'a Normalizer,
+    context: &'a KernelContext,
 }
 
 impl fmt::Display for DisplayAtom<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.normalizer.atom_str(&self.atom))
+        write!(f, "{}", self.context.atom_str(&self.atom))
     }
 }
 
 pub struct DisplayTerm<'a> {
     pub term: TermRef<'a>,
-    pub normalizer: &'a Normalizer,
+    pub context: &'a KernelContext,
 }
 
 impl DisplayTerm<'_> {
-    pub fn from_term<'a>(term: &'a Term, normalizer: &'a Normalizer) -> DisplayTerm<'a> {
+    pub fn from_term<'a>(term: &'a Term, context: &'a KernelContext) -> DisplayTerm<'a> {
         DisplayTerm {
             term: term.as_ref(),
-            normalizer,
+            context,
         }
     }
 }
@@ -37,7 +37,7 @@ impl fmt::Display for DisplayTerm<'_> {
             "{}",
             DisplayAtom {
                 atom: *self.term.get_head_atom(),
-                normalizer: self.normalizer
+                context: self.context
             }
         )?;
         if self.term.has_args() {
@@ -51,7 +51,7 @@ impl fmt::Display for DisplayTerm<'_> {
                     "{}",
                     DisplayTerm {
                         term: arg,
-                        normalizer: self.normalizer
+                        context: self.context
                     }
                 )?;
             }
@@ -63,12 +63,12 @@ impl fmt::Display for DisplayTerm<'_> {
 
 struct DisplayLiteral<'a> {
     literal: &'a Literal,
-    normalizer: &'a Normalizer,
+    context: &'a KernelContext,
 }
 
 impl DisplayLiteral<'_> {
     fn term<'a>(&'a self, term: &'a Term) -> DisplayTerm<'a> {
-        DisplayTerm::from_term(term, self.normalizer)
+        DisplayTerm::from_term(term, self.context)
     }
 }
 
@@ -100,7 +100,7 @@ impl fmt::Display for DisplayLiteral<'_> {
 
 pub struct DisplayClause<'a> {
     pub clause: &'a Clause,
-    pub normalizer: &'a Normalizer,
+    pub context: &'a KernelContext,
 }
 
 impl fmt::Display for DisplayClause<'_> {
@@ -117,7 +117,7 @@ impl fmt::Display for DisplayClause<'_> {
                 "{}",
                 DisplayLiteral {
                     literal,
-                    normalizer: self.normalizer
+                    context: self.context
                 }
             )?;
         }

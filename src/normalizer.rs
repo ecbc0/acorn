@@ -1888,24 +1888,7 @@ impl Normalizer {
     }
 
     pub fn atom_str(&self, atom: &Atom) -> String {
-        match atom {
-            Atom::True => "true".to_string(),
-            Atom::Symbol(Symbol::GlobalConstant(i)) => self
-                .kernel_context
-                .symbol_table
-                .name_for_global_id(*i)
-                .to_string(),
-            Atom::Symbol(Symbol::ScopedConstant(i)) => self
-                .kernel_context
-                .symbol_table
-                .name_for_local_id(*i)
-                .to_string(),
-            Atom::Symbol(Symbol::Monomorph(i)) => {
-                format!("{}", self.kernel_context.symbol_table.get_monomorph(*i))
-            }
-            Atom::Variable(i) => format!("x{}", i),
-            Atom::Symbol(Symbol::Synthetic(i)) => format!("s{}", i),
-        }
+        self.kernel_context.atom_str(atom)
     }
 
     /// When you denormalize and renormalize a clause, you should get the same thing.
@@ -1962,7 +1945,7 @@ impl Normalizer {
 
     #[cfg(test)]
     fn check_value(&mut self, value: &AcornValue, expected: &[&str]) {
-        use crate::display::DisplayClause;
+        use crate::kernel::display::DisplayClause;
 
         let actual = self
             .normalize_value(value, NewConstantType::Local, &Source::mock())
@@ -1976,7 +1959,7 @@ impl Normalizer {
                     .iter()
                     .map(|c| DisplayClause {
                         clause: c,
-                        normalizer: self,
+                        context: &self.kernel_context,
                     }
                     .to_string())
                     .collect::<Vec<String>>()
@@ -1987,7 +1970,7 @@ impl Normalizer {
             self.check_denormalize_renormalize(clause);
             let c = DisplayClause {
                 clause,
-                normalizer: self,
+                context: &self.kernel_context,
             };
             let a = c.to_string();
             if a != expected[i] {

@@ -6,7 +6,6 @@ pub mod clause_set;
 pub mod cleaner;
 pub mod code_generator;
 pub mod common;
-pub mod display;
 pub mod doc_generator;
 pub mod elaborator;
 pub mod generalization_set;
