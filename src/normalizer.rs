@@ -144,7 +144,10 @@ impl Normalizer {
     // before we actually have the definition.
     fn declare_synthetic_atom(&mut self, atom_type: AcornType) -> Result<AtomId, String> {
         let type_id = self.kernel_context.type_store.add_type(&atom_type);
-        let symbol = self.kernel_context.symbol_table.declare_synthetic(type_id);
+        let symbol = self
+            .kernel_context
+            .symbol_table
+            .declare_synthetic(type_id, &self.kernel_context.type_store);
         let id = match symbol {
             Symbol::Synthetic(id) => id,
             _ => panic!("declare_synthetic should return a Synthetic symbol"),
@@ -197,6 +200,7 @@ impl Normalizer {
             cname,
             NewConstantType::Local,
             type_id,
+            &self.kernel_context.type_store,
         ))
     }
 }

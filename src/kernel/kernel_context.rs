@@ -87,7 +87,7 @@ impl KernelContext {
         }
         // Also add synthetics for tests that use "s0", "s1", etc.
         for _ in 0..10 {
-            ctx.symbol_table.declare_synthetic(EMPTY);
+            ctx.symbol_table.declare_synthetic(EMPTY, &ctx.type_store);
         }
         ctx
     }
@@ -126,7 +126,7 @@ impl KernelContext {
 
         // Synthetics are Bool
         for _ in 0..10 {
-            ctx.symbol_table.declare_synthetic(BOOL);
+            ctx.symbol_table.declare_synthetic(BOOL, &ctx.type_store);
         }
         ctx
     }
@@ -168,7 +168,7 @@ impl KernelContext {
             ctx.symbol_table.add_monomorph_with_type(type_id);
         }
         for &type_id in synthetic_types {
-            ctx.symbol_table.declare_synthetic(type_id);
+            ctx.symbol_table.declare_synthetic(type_id, &ctx.type_store);
         }
         ctx
     }
@@ -268,7 +268,7 @@ impl KernelContext {
 
         // Add synthetics with BOOL type
         for _ in 0..10 {
-            ctx.symbol_table.declare_synthetic(BOOL);
+            ctx.symbol_table.declare_synthetic(BOOL, &ctx.type_store);
         }
 
         ctx
