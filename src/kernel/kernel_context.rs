@@ -240,17 +240,27 @@ impl KernelContext {
             ctx.symbol_table.add_global_constant_with_type(BOOL);
         }
 
-        // Add scoped constants with similar types
-        ctx.symbol_table
-            .add_scoped_constant_with_type(type_bool2_to_bool); // c0
-        ctx.symbol_table
-            .add_scoped_constant_with_type(type_bool_to_bool); // c1
-        ctx.symbol_table
-            .add_scoped_constant_with_type(type_bool3_to_bool); // c2
-        ctx.symbol_table
-            .add_scoped_constant_with_type(type_empty_to_bool); // c3
-        ctx.symbol_table
-            .add_scoped_constant_with_type(type_empty2_to_empty); // c4
+        // Add scoped constants with similar types (using proper ClosedTypes for functions)
+        ctx.symbol_table.add_scoped_constant_with_closed_type(
+            type_bool2_to_bool,
+            ctx.type_store.type_id_to_closed_type(type_bool2_to_bool),
+        ); // c0
+        ctx.symbol_table.add_scoped_constant_with_closed_type(
+            type_bool_to_bool,
+            ctx.type_store.type_id_to_closed_type(type_bool_to_bool),
+        ); // c1
+        ctx.symbol_table.add_scoped_constant_with_closed_type(
+            type_bool3_to_bool,
+            ctx.type_store.type_id_to_closed_type(type_bool3_to_bool),
+        ); // c2
+        ctx.symbol_table.add_scoped_constant_with_closed_type(
+            type_empty_to_bool,
+            ctx.type_store.type_id_to_closed_type(type_empty_to_bool),
+        ); // c3
+        ctx.symbol_table.add_scoped_constant_with_closed_type(
+            type_empty2_to_empty,
+            ctx.type_store.type_id_to_closed_type(type_empty2_to_empty),
+        ); // c4
         for _ in 5..10 {
             ctx.symbol_table.add_scoped_constant_with_type(BOOL);
         }

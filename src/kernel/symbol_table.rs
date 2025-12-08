@@ -131,6 +131,7 @@ impl SymbolTable {
     /// Add a scoped constant with the given type, without a name.
     /// Returns the Symbol for the new constant.
     /// Primarily for testing with parsed terms like "c0", "c1".
+    /// Note: Uses ground ClosedType, not suitable for function types.
     #[cfg(test)]
     pub fn add_scoped_constant_with_type(&mut self, type_id: TypeId) -> Symbol {
         let atom_id = self.scoped_constants.len() as AtomId;
@@ -139,6 +140,21 @@ impl SymbolTable {
         // For test-only methods, use a simple ground type representation
         self.scoped_constant_closed_types
             .push(ClosedType::ground(type_id));
+        Symbol::ScopedConstant(atom_id)
+    }
+
+    /// Add a scoped constant with both TypeId and ClosedType.
+    /// Use this for function types where the ClosedType needs to be properly structured.
+    #[cfg(test)]
+    pub fn add_scoped_constant_with_closed_type(
+        &mut self,
+        type_id: TypeId,
+        closed_type: ClosedType,
+    ) -> Symbol {
+        let atom_id = self.scoped_constants.len() as AtomId;
+        self.scoped_constants.push(None);
+        self.scoped_constant_types.push(type_id);
+        self.scoped_constant_closed_types.push(closed_type);
         Symbol::ScopedConstant(atom_id)
     }
 

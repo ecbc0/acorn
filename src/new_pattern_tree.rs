@@ -567,6 +567,103 @@ impl NewPatternTree<()> {
     }
 }
 
+/// Helper function to match curried application structure.
+/// This handles the case where we have a term f(a1, a2, ..., an) and need to match
+/// the curried encoding against patterns.
+///
+/// At this point, we've already matched:
+/// - The result type
+/// - The Application edge
+/// - The domain type of the last argument
+///
+/// Now we need to match the "function part" (f applied to all but the last arg)
+/// followed by the last argument, followed by rest.
+fn match_curried_application<'a, F>(
+    subtrie: &SubTrie<Vec<u8>, usize>,
+    key: &mut Vec<u8>,
+    term: TermRef<'a>,
+    num_args: usize,
+    rest: &[TermRef<'a>],
+    local_context: &LocalContext,
+    kernel_context: &KernelContext,
+    stack_limit: usize,
+    replacements: &mut Vec<TermRef<'a>>,
+    callback: &mut F,
+) -> bool
+where
+    F: FnMut(usize, &Vec<TermRef<'a>>) -> bool,
+{
+    if subtrie.is_empty() || stack_limit == 0 {
+        return true;
+    }
+
+    let args: Vec<TermRef<'a>> = term.iter_args().take(num_args).collect();
+    let last_arg = args[num_args - 1];
+    let head_atom = term.get_head_atom();
+
+    if num_args == 1 {
+        // Base case: just the head atom, then the argument
+        let atom = match head_atom {
+            KernelAtom::Variable(v) => Atom::Variable(*v),
+            KernelAtom::True => Atom::True,
+            KernelAtom::Symbol(s) => Atom::Symbol(*s),
+            KernelAtom::Type(t) => Atom::Type(*t),
+        };
+        Edge::Atom(atom).append_to(key);
+        let new_subtrie = subtrie.subtrie(key as &[u8]);
+
+        // Now match the last argument and rest
+        let mut next_terms: Vec<TermRef<'a>> = vec![last_arg];
+        next_terms.extend_from_slice(rest);
+
+        return find_term_matches_while(
+            &new_subtrie,
+            key,
+            &next_terms,
+            local_context,
+            kernel_context,
+            stack_limit - 1,
+            replacements,
+            callback,
+        );
+    }
+
+    // Recursive case: more than one argument
+    // Need to match: Application + domain_{n-1} + [f(a1,...,a_{n-2})] + [a_{n-1}] + [a_n] + rest
+    //
+    // But wait - we've already stripped off the last arg.
+    // So we need to match the "function" f(a1,...,a_{n-1}) structure,
+    // then put the last_arg and rest back on the terms list.
+
+    // Match Application edge for the inner application
+    Edge::Application.append_to(key);
+    let new_subtrie = subtrie.subtrie(key as &[u8]);
+
+    // Match domain type of argument n-1
+    let prev_arg = args[num_args - 2];
+    let prev_arg_type = prev_arg.get_closed_type_with_context(local_context, kernel_context);
+    key_from_closed_type(&prev_arg_type, key);
+    let new_subtrie2 = new_subtrie.subtrie(key as &[u8]);
+
+    // Recursively match the rest of the curried structure
+    // After matching all the way down, we'll have last_arg + rest to match
+    let mut next_rest: Vec<TermRef<'a>> = vec![last_arg];
+    next_rest.extend_from_slice(rest);
+
+    match_curried_application(
+        &new_subtrie2,
+        key,
+        term,
+        num_args - 1,
+        &next_rest,
+        local_context,
+        kernel_context,
+        stack_limit - 1,
+        replacements,
+        callback,
+    )
+}
+
 /// Matching implementation for the new pattern tree.
 /// Matches a sequence of terms against patterns in the trie.
 fn find_term_matches_while<'a, F>(
@@ -659,18 +756,18 @@ where
     key.truncate(initial_key_len);
 
     // Case 3: exact match - match the structure of the term
-    // For now, this is simplified - we only handle atomic terms and skip applications
-    // TODO: Implement full curried application matching
     let head_atom = first.get_head_atom();
     if head_atom.is_variable() {
         // Variables in the query term must match via Cases 1 or 2, not exact match
         return true;
     }
 
+    // Get the result type and match it
+    let term_type = first.get_closed_type_with_context(local_context, kernel_context);
+    key_from_closed_type(&term_type, key);
+
     if !first.has_args() {
-        // Atomic term: match the type encoding first, then the atom
-        let term_type = first.get_closed_type_with_context(local_context, kernel_context);
-        key_from_closed_type(&term_type, key);
+        // Atomic term: match the atom
         let atom = match head_atom {
             KernelAtom::Variable(v) => Atom::Variable(*v),
             KernelAtom::True => Atom::True,
@@ -692,22 +789,83 @@ where
             return false;
         }
     } else {
-        // Application term: need to match the curried structure
-        // This is more complex - we need to match the result type, then Application edges
-        // For now, just match the whole term encoding
-        key_from_term_helper(first, key, local_context, kernel_context);
+        // Application term: match the curried structure
+        // For f(a1, a2, ..., an), the encoding is:
+        // <result type> + Application + <domain_n> + [...f(a1,...,a_{n-1})...] + [...an...]
+        // We match: Application edge, domain type, then recurse with head-with-fewer-args and last-arg
+
+        // Collect arguments
+        let args: Vec<TermRef<'a>> = first.iter_args().collect();
+        let last_arg = args[args.len() - 1];
+        let last_arg_type = last_arg.get_closed_type_with_context(local_context, kernel_context);
+
+        // Match Application edge
+        Edge::Application.append_to(key);
         let new_subtrie = subtrie.subtrie(key as &[u8]);
-        if !find_term_matches_while(
-            &new_subtrie,
-            key,
-            rest,
-            local_context,
-            kernel_context,
-            stack_limit - 1,
-            replacements,
-            callback,
-        ) {
-            return false;
+
+        // Match domain type
+        key_from_closed_type(&last_arg_type, key);
+        let new_subtrie2 = new_subtrie.subtrie(key as &[u8]);
+
+        // Build the "function part" terms - head applied to all args except the last
+        // Plus the last argument, plus the rest
+        let mut next_terms: Vec<TermRef<'a>> = vec![];
+
+        if args.len() == 1 {
+            // Just the head atom, then the argument
+            // We need to match: Atom(head) + [last_arg encoding] + rest
+            // But wait - the head is atomic, so we match it directly
+            let atom = match head_atom {
+                KernelAtom::Variable(v) => Atom::Variable(*v),
+                KernelAtom::True => Atom::True,
+                KernelAtom::Symbol(s) => Atom::Symbol(*s),
+                KernelAtom::Type(t) => Atom::Type(*t),
+            };
+            Edge::Atom(atom).append_to(key);
+            let new_subtrie3 = new_subtrie2.subtrie(key as &[u8]);
+
+            // Now match the last argument and rest
+            next_terms.push(last_arg);
+            next_terms.extend_from_slice(rest);
+
+            if !find_term_matches_while(
+                &new_subtrie3,
+                key,
+                &next_terms,
+                local_context,
+                kernel_context,
+                stack_limit - 1,
+                replacements,
+                callback,
+            ) {
+                return false;
+            }
+        } else {
+            // Multiple args: we need to recursively match the partial application
+            // The "function" part is first.head applied to args[0..n-1]
+            // This is tricky because we don't have a TermRef for this partial application
+            //
+            // Instead, we recursively encode the partial application structure
+            // For f(a, b): type + App + domain_b + [f(a)] + [b]
+            // For f(a): type + App + domain_a + [f] + [a]
+            //
+            // We need to match the structure iteratively
+
+            // Match the curried structure iteratively from outermost to innermost
+            if !match_curried_application(
+                &new_subtrie2,
+                key,
+                first,
+                args.len(),
+                rest,
+                local_context,
+                kernel_context,
+                stack_limit - 1,
+                replacements,
+                callback,
+            ) {
+                return false;
+            }
         }
     }
 
@@ -907,5 +1065,34 @@ mod tests {
         let query_right = Term::parse("c0");
         let found = tree.find_pair(&query_left, &query_right, &local_context, &kernel_context);
         assert_eq!(found, Some(&7));
+    }
+
+    #[test]
+    fn test_new_pattern_tree_application_with_variable() {
+        // Test that patterns with function applications and variables match correctly
+        // c1 : Bool -> Bool, so c1(x0) : Bool when x0 : Bool
+        let local_context = LocalContext::new(vec![BOOL; 3]);
+        let kernel_context = KernelContext::test_with_function_types();
+
+        let mut tree: NewPatternTree<usize> = NewPatternTree::new();
+
+        // Insert pattern "c1(x0) = c5" - a function applied to a variable equals a constant
+        // c1 : Bool -> Bool, c5 : Bool
+        let pattern_left = Term::parse("c1(x0)");
+        let pattern_right = Term::parse("c5");
+        tree.insert_pair(
+            &pattern_left,
+            &pattern_right,
+            42,
+            &local_context,
+            &kernel_context,
+        );
+
+        // Query "c1(c6) = c5" should match (c6 : Bool can be matched by variable x0)
+        // c6 : Bool
+        let query_left = Term::parse("c1(c6)");
+        let query_right = Term::parse("c5");
+        let found = tree.find_pair(&query_left, &query_right, &local_context, &kernel_context);
+        assert_eq!(found, Some(&42));
     }
 }
