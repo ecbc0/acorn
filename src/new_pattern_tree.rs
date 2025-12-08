@@ -1,0 +1,911 @@
+// NewPatternTree: A pattern tree that uses curried representation and ClosedType for type matching.
+//
+// Unlike the original PatternTree which uses TypeId for type discrimination, this implementation
+// represents types as terms and traverses them during matching. This allows pattern matching
+// with type variables like List[T] without requiring every type to have a TypeId.
+//
+// Key design decisions:
+// 1. Everything is curried - applications are binary, no num_args
+// 2. Types are traversed like terms - same edges work for both
+// 3. Variables are numbered by first occurrence (not de Bruijn indices)
+// 4. Domain type appears before function/arg in application encoding
+
+use qp_trie::{Entry, SubTrie, Trie};
+
+use crate::kernel::aliases::{Literal, Term};
+use crate::kernel::atom::{Atom as KernelAtom, AtomId};
+use crate::kernel::closed_type::ClosedType;
+use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::local_context::LocalContext;
+use crate::kernel::symbol::Symbol;
+use crate::kernel::term::{TermComponent, TermRef};
+use crate::kernel::types::{TypeId, TypeclassId};
+
+/// Atoms are the leaf nodes in the pattern tree.
+/// Both term variables and type variables are represented as Variable(idx).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Atom {
+    /// Pattern variable, numbered by first occurrence in the path.
+    /// Used for both term variables and type variables.
+    Variable(AtomId),
+
+    /// Named constants and functions.
+    Symbol(Symbol),
+
+    /// Ground types like Bool, Int, Nat.
+    Type(TypeId),
+
+    /// The sort of types (kind *).
+    /// Used as the domain for type constructors like List.
+    Type0,
+
+    /// Typeclass constraints like Monoid, CommRing.
+    /// Used for constrained type variables.
+    Typeclass(TypeclassId),
+
+    /// Boolean constant true.
+    True,
+}
+
+/// Edges form the structure of paths through the pattern tree.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Edge {
+    // Structural edges (work for both terms and types)
+    /// Application: followed by domain type, function, argument.
+    /// For f(x) where f : T -> U, the path is: <U> Application <T> <f> <x>
+    Application,
+
+    /// Function type arrow: followed by domain, codomain.
+    /// For Int -> Bool, the path is: Arrow <Int> <Bool>
+    Arrow,
+
+    /// A leaf atom.
+    Atom(Atom),
+
+    // Form edges (category markers for top-level discrimination)
+    /// Indicates we're encoding a term.
+    TermForm,
+
+    /// Indicates we're encoding a pair of terms.
+    TermPairForm,
+
+    /// Indicates a literal with the given sign (true = positive).
+    LiteralForm(bool),
+}
+
+// Byte constants for serialization
+const APPLICATION: u8 = 0;
+const ARROW: u8 = 1;
+const TERM_FORM: u8 = 2;
+const TERM_PAIR_FORM: u8 = 3;
+const LITERAL_POSITIVE: u8 = 4;
+const LITERAL_NEGATIVE: u8 = 5;
+const ATOM_VARIABLE: u8 = 6;
+const ATOM_TRUE: u8 = 7;
+const ATOM_TYPE0: u8 = 8;
+const ATOM_TYPE: u8 = 9;
+const ATOM_TYPECLASS: u8 = 10;
+const ATOM_SYMBOL_GLOBAL: u8 = 11;
+const ATOM_SYMBOL_SCOPED: u8 = 12;
+const ATOM_SYMBOL_MONOMORPH: u8 = 13;
+const ATOM_SYMBOL_SYNTHETIC: u8 = 14;
+
+impl Edge {
+    /// Returns the discriminant byte for this edge.
+    fn discriminant(&self) -> u8 {
+        match self {
+            Edge::Application => APPLICATION,
+            Edge::Arrow => ARROW,
+            Edge::TermForm => TERM_FORM,
+            Edge::TermPairForm => TERM_PAIR_FORM,
+            Edge::LiteralForm(true) => LITERAL_POSITIVE,
+            Edge::LiteralForm(false) => LITERAL_NEGATIVE,
+            Edge::Atom(atom) => match atom {
+                Atom::Variable(_) => ATOM_VARIABLE,
+                Atom::True => ATOM_TRUE,
+                Atom::Type0 => ATOM_TYPE0,
+                Atom::Type(_) => ATOM_TYPE,
+                Atom::Typeclass(_) => ATOM_TYPECLASS,
+                Atom::Symbol(Symbol::GlobalConstant(_)) => ATOM_SYMBOL_GLOBAL,
+                Atom::Symbol(Symbol::ScopedConstant(_)) => ATOM_SYMBOL_SCOPED,
+                Atom::Symbol(Symbol::Monomorph(_)) => ATOM_SYMBOL_MONOMORPH,
+                Atom::Symbol(Symbol::Synthetic(_)) => ATOM_SYMBOL_SYNTHETIC,
+            },
+        }
+    }
+
+    /// Appends the byte representation of this edge to the vector.
+    /// Each edge is 3 bytes: discriminant + 2 bytes for ID (if applicable).
+    pub fn append_to(&self, v: &mut Vec<u8>) {
+        v.push(self.discriminant());
+        let id: u16 = match self {
+            Edge::Application | Edge::Arrow | Edge::TermForm | Edge::TermPairForm => 0,
+            Edge::LiteralForm(_) => 0,
+            Edge::Atom(atom) => match atom {
+                Atom::Variable(i) => *i,
+                Atom::True => 0,
+                Atom::Type0 => 0,
+                Atom::Type(t) => t.as_u16(),
+                Atom::Typeclass(tc) => tc.as_u16(),
+                Atom::Symbol(Symbol::GlobalConstant(c)) => *c,
+                Atom::Symbol(Symbol::ScopedConstant(c)) => *c,
+                Atom::Symbol(Symbol::Monomorph(m)) => *m,
+                Atom::Symbol(Symbol::Synthetic(s)) => *s,
+            },
+        };
+        v.extend_from_slice(&id.to_ne_bytes());
+    }
+
+    /// Parses an edge from 3 bytes.
+    pub fn from_bytes(byte1: u8, byte2: u8, byte3: u8) -> Edge {
+        let id = u16::from_ne_bytes([byte2, byte3]);
+        match byte1 {
+            APPLICATION => Edge::Application,
+            ARROW => Edge::Arrow,
+            TERM_FORM => Edge::TermForm,
+            TERM_PAIR_FORM => Edge::TermPairForm,
+            LITERAL_POSITIVE => Edge::LiteralForm(true),
+            LITERAL_NEGATIVE => Edge::LiteralForm(false),
+            ATOM_VARIABLE => Edge::Atom(Atom::Variable(id)),
+            ATOM_TRUE => Edge::Atom(Atom::True),
+            ATOM_TYPE0 => Edge::Atom(Atom::Type0),
+            ATOM_TYPE => Edge::Atom(Atom::Type(TypeId::new(id))),
+            ATOM_TYPECLASS => Edge::Atom(Atom::Typeclass(TypeclassId::new(id))),
+            ATOM_SYMBOL_GLOBAL => Edge::Atom(Atom::Symbol(Symbol::GlobalConstant(id))),
+            ATOM_SYMBOL_SCOPED => Edge::Atom(Atom::Symbol(Symbol::ScopedConstant(id))),
+            ATOM_SYMBOL_MONOMORPH => Edge::Atom(Atom::Symbol(Symbol::Monomorph(id))),
+            ATOM_SYMBOL_SYNTHETIC => Edge::Atom(Atom::Symbol(Symbol::Synthetic(id))),
+            _ => panic!("invalid edge discriminant: {}", byte1),
+        }
+    }
+
+    /// Debug helper to convert a byte sequence to a string of edges.
+    pub fn debug_bytes(bytes: &[u8]) -> String {
+        let mut i = 0;
+        let mut parts: Vec<String> = vec![];
+        while i < bytes.len() {
+            if i + 3 <= bytes.len() {
+                let edge = Edge::from_bytes(bytes[i], bytes[i + 1], bytes[i + 2]);
+                parts.push(format!("{:?}", edge));
+            } else {
+                parts.push(format!("plus extra bytes {:?}", &bytes[i..]));
+            }
+            i += 3;
+        }
+        parts.join(", ")
+    }
+}
+
+/// Encodes a ClosedType into the key buffer.
+/// Types are encoded as terms:
+/// - Ground types: Atom(Type(id))
+/// - Arrow types: Arrow + domain encoding + codomain encoding
+/// - Type applications: Application + sort + head encoding + arg encoding
+fn key_from_closed_type(closed_type: &ClosedType, key: &mut Vec<u8>) {
+    key_from_closed_type_at(closed_type.components(), 0, key)
+}
+
+/// Encodes a ClosedType starting at the given position.
+fn key_from_closed_type_at(components: &[TermComponent], pos: usize, key: &mut Vec<u8>) {
+    match &components[pos] {
+        TermComponent::Pi { span: _ } => {
+            // Arrow type: domain -> codomain
+            Edge::Arrow.append_to(key);
+            // Find where domain ends
+            let domain_end = find_subterm_end(components, pos + 1);
+            key_from_closed_type_at(components, pos + 1, key);
+            key_from_closed_type_at(components, domain_end, key);
+        }
+        TermComponent::Application { span } => {
+            // Type application like List[Int]
+            // Format: Application + <sort of result> + <head> + <args>
+            // For now, we assume type applications produce Type0 (kind *)
+            Edge::Application.append_to(key);
+            Edge::Atom(Atom::Type0).append_to(key);
+
+            // Encode head
+            let head_end = find_subterm_end(components, pos + 1);
+            key_from_closed_type_at(components, pos + 1, key);
+
+            // Encode arguments
+            let total_span = *span as usize;
+            let mut arg_pos = head_end;
+            while arg_pos < pos + total_span {
+                key_from_closed_type_at(components, arg_pos, key);
+                arg_pos = find_subterm_end(components, arg_pos);
+            }
+        }
+        TermComponent::Atom(atom) => {
+            let edge_atom = match atom {
+                KernelAtom::Type(t) => Atom::Type(*t),
+                KernelAtom::Variable(v) => Atom::Variable(*v),
+                KernelAtom::True => Atom::True,
+                KernelAtom::Symbol(s) => Atom::Symbol(*s),
+            };
+            Edge::Atom(edge_atom).append_to(key);
+        }
+    }
+}
+
+/// Find the end position of a subterm in components starting at `start`.
+fn find_subterm_end(components: &[TermComponent], start: usize) -> usize {
+    match components[start] {
+        TermComponent::Pi { span } | TermComponent::Application { span } => start + span as usize,
+        TermComponent::Atom(_) => start + 1,
+    }
+}
+
+/// Encodes a term into the key buffer (without the form prefix).
+/// This is a curried representation where applications are binary.
+///
+/// For atomic term `c : T`: type encoding + Atom(c)
+/// For application `f(x)` where `f : A -> B`, `x : A`, result `B`:
+///   type B encoding + Application + type A encoding + f encoding + x encoding
+fn key_from_term_helper(
+    term: TermRef,
+    key: &mut Vec<u8>,
+    local_context: &LocalContext,
+    kernel_context: &KernelContext,
+) {
+    // Get the closed type of the term
+    let term_closed_type = term.get_closed_type_with_context(local_context, kernel_context);
+
+    if !term.has_args() {
+        // Atomic term: type encoding + atom
+        key_from_closed_type(&term_closed_type, key);
+        let head = term.get_head_atom();
+        let atom = match head {
+            KernelAtom::Variable(v) => Atom::Variable(*v),
+            KernelAtom::True => Atom::True,
+            KernelAtom::Symbol(s) => Atom::Symbol(*s),
+            KernelAtom::Type(t) => Atom::Type(*t),
+        };
+        Edge::Atom(atom).append_to(key);
+    } else {
+        // Application term: encode as curried binary applications
+        // f(a, b, c) = ((f a) b) c
+        // We need to encode from the outermost result type inward
+
+        // First, emit the result type of the whole term
+        key_from_closed_type(&term_closed_type, key);
+
+        // Now encode the curried applications
+        // For f(a1, a2, ..., an), we need:
+        // Application + domain_n + [encoding of f(a1,...,a_{n-1})] + [encoding of an]
+        key_from_curried_application(term, key, local_context, kernel_context);
+    }
+}
+
+/// Helper to encode a term with arguments as curried applications.
+/// Assumes the result type has already been emitted.
+fn key_from_curried_application(
+    term: TermRef,
+    key: &mut Vec<u8>,
+    local_context: &LocalContext,
+    kernel_context: &KernelContext,
+) {
+    let args: Vec<TermRef> = term.iter_args().collect();
+    if args.is_empty() {
+        // Base case: just the head atom
+        let head = term.get_head_atom();
+        let atom = match head {
+            KernelAtom::Variable(v) => Atom::Variable(*v),
+            KernelAtom::True => Atom::True,
+            KernelAtom::Symbol(s) => Atom::Symbol(*s),
+            KernelAtom::Type(t) => Atom::Type(*t),
+        };
+        Edge::Atom(atom).append_to(key);
+    } else {
+        // Recursive case: Application + domain + func + arg
+        let last_arg = args[args.len() - 1];
+        let last_arg_type = last_arg.get_closed_type_with_context(local_context, kernel_context);
+
+        Edge::Application.append_to(key);
+        key_from_closed_type(&last_arg_type, key);
+
+        // Encode the function part (term without last argument)
+        if args.len() == 1 {
+            // Just the head
+            let head = term.get_head_atom();
+            let atom = match head {
+                KernelAtom::Variable(v) => Atom::Variable(*v),
+                KernelAtom::True => Atom::True,
+                KernelAtom::Symbol(s) => Atom::Symbol(*s),
+                KernelAtom::Type(t) => Atom::Type(*t),
+            };
+            Edge::Atom(atom).append_to(key);
+        } else {
+            // Recurse for f(a1, ..., a_{n-1})
+            // We need to create a virtual term with one fewer argument
+            // For now, we'll encode iteratively
+            key_from_partial_application(term, args.len() - 1, key, local_context, kernel_context);
+        }
+
+        // Encode the argument
+        key_from_term_helper(last_arg, key, local_context, kernel_context);
+    }
+}
+
+/// Encode a partial application of term, using only the first `num_args` arguments.
+fn key_from_partial_application(
+    term: TermRef,
+    num_args: usize,
+    key: &mut Vec<u8>,
+    local_context: &LocalContext,
+    kernel_context: &KernelContext,
+) {
+    if num_args == 0 {
+        // Just the head
+        let head = term.get_head_atom();
+        let atom = match head {
+            KernelAtom::Variable(v) => Atom::Variable(*v),
+            KernelAtom::True => Atom::True,
+            KernelAtom::Symbol(s) => Atom::Symbol(*s),
+            KernelAtom::Type(t) => Atom::Type(*t),
+        };
+        Edge::Atom(atom).append_to(key);
+    } else {
+        let args: Vec<TermRef> = term.iter_args().take(num_args).collect();
+        let last_arg = args[num_args - 1];
+        let last_arg_type = last_arg.get_closed_type_with_context(local_context, kernel_context);
+
+        Edge::Application.append_to(key);
+        key_from_closed_type(&last_arg_type, key);
+
+        // Recurse for the function part
+        key_from_partial_application(term, num_args - 1, key, local_context, kernel_context);
+
+        // Encode the argument
+        key_from_term_helper(last_arg, key, local_context, kernel_context);
+    }
+}
+
+/// Creates a key prefix for a term of the given type.
+pub fn term_key_prefix(closed_type: &ClosedType) -> Vec<u8> {
+    let mut key = Vec::new();
+    Edge::TermForm.append_to(&mut key);
+    key_from_closed_type(closed_type, &mut key);
+    key
+}
+
+/// Generates a complete key for a term.
+pub fn key_from_term(
+    term: &Term,
+    local_context: &LocalContext,
+    kernel_context: &KernelContext,
+) -> Vec<u8> {
+    let mut key = Vec::new();
+    Edge::TermForm.append_to(&mut key);
+    key_from_term_helper(term.as_ref(), &mut key, local_context, kernel_context);
+    key
+}
+
+/// Creates a key prefix for a term pair (like a literal).
+pub fn term_pair_key_prefix(closed_type: &ClosedType) -> Vec<u8> {
+    let mut key = Vec::new();
+    Edge::TermPairForm.append_to(&mut key);
+    key_from_closed_type(closed_type, &mut key);
+    key
+}
+
+/// Generates a complete key for a term pair.
+pub fn key_from_pair(
+    term1: &Term,
+    term2: &Term,
+    local_context: &LocalContext,
+    kernel_context: &KernelContext,
+) -> Vec<u8> {
+    let type1 = term1.get_closed_type_with_context(local_context, kernel_context);
+    let mut key = Vec::new();
+    Edge::TermPairForm.append_to(&mut key);
+    key_from_closed_type(&type1, &mut key);
+    key_from_term_helper(term1.as_ref(), &mut key, local_context, kernel_context);
+    key_from_term_helper(term2.as_ref(), &mut key, local_context, kernel_context);
+    key
+}
+
+/// Generates a key prefix for a literal (based on sign and type).
+pub fn literal_key_prefix(positive: bool, closed_type: &ClosedType) -> Vec<u8> {
+    let mut key = Vec::new();
+    Edge::LiteralForm(positive).append_to(&mut key);
+    key_from_closed_type(closed_type, &mut key);
+    key
+}
+
+/// Generates a complete key for a literal.
+pub fn key_from_literal(
+    literal: &Literal,
+    local_context: &LocalContext,
+    kernel_context: &KernelContext,
+) -> Vec<u8> {
+    let type_left = literal
+        .left
+        .get_closed_type_with_context(local_context, kernel_context);
+    let mut key = Vec::new();
+    Edge::LiteralForm(literal.positive).append_to(&mut key);
+    key_from_closed_type(&type_left, &mut key);
+    key_from_term_helper(
+        literal.left.as_ref(),
+        &mut key,
+        local_context,
+        kernel_context,
+    );
+    key_from_term_helper(
+        literal.right.as_ref(),
+        &mut key,
+        local_context,
+        kernel_context,
+    );
+    key
+}
+
+/// NewPatternTree: A pattern tree using curried representation and ClosedType for type matching.
+///
+/// This is designed to eventually replace PatternTree, supporting type variables in patterns.
+#[derive(Clone, Debug)]
+pub struct NewPatternTree<T> {
+    /// Maps byte keys to indices into the values vector.
+    trie: Trie<Vec<u8>, usize>,
+
+    /// Values stored in the tree.
+    pub values: Vec<T>,
+}
+
+impl<T> NewPatternTree<T> {
+    pub fn new() -> NewPatternTree<T> {
+        NewPatternTree {
+            trie: Trie::new(),
+            values: vec![],
+        }
+    }
+
+    /// Inserts a term with its associated value.
+    pub fn insert_term(
+        &mut self,
+        term: &Term,
+        value: T,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) {
+        let key = key_from_term(term, local_context, kernel_context);
+        let value_id = self.values.len();
+        self.values.push(value);
+        self.trie.insert(key, value_id);
+    }
+
+    /// Inserts a term pair (like a literal without sign) with its associated value.
+    pub fn insert_pair(
+        &mut self,
+        term1: &Term,
+        term2: &Term,
+        value: T,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) {
+        let key = key_from_pair(term1, term2, local_context, kernel_context);
+        let value_id = self.values.len();
+        self.values.push(value);
+        self.trie.insert(key, value_id);
+    }
+
+    /// Finds matches for a term, calling the callback for each match.
+    /// Returns false if callback returns false, otherwise true.
+    pub fn find_term_matches_while<'a, F>(
+        &self,
+        key: &mut Vec<u8>,
+        terms: &[TermRef<'a>],
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+        replacements: &mut Vec<TermRef<'a>>,
+        callback: &mut F,
+    ) -> bool
+    where
+        F: FnMut(usize, &Vec<TermRef<'a>>) -> bool,
+    {
+        let subtrie = self.trie.subtrie(key);
+        find_term_matches_while(
+            &subtrie,
+            key,
+            terms,
+            local_context,
+            kernel_context,
+            100, // stack limit
+            replacements,
+            callback,
+        )
+    }
+
+    /// Finds a pair (like a literal) in the tree.
+    pub fn find_pair<'a>(
+        &'a self,
+        left: &Term,
+        right: &Term,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> Option<&'a T> {
+        let type_left = left.get_closed_type_with_context(local_context, kernel_context);
+        let mut key = term_pair_key_prefix(&type_left);
+        let terms = [left.as_ref(), right.as_ref()];
+        let mut replacements: Vec<TermRef> = vec![];
+        let mut found_id = None;
+        self.find_term_matches_while(
+            &mut key,
+            &terms,
+            local_context,
+            kernel_context,
+            &mut replacements,
+            &mut |value_id, _| {
+                found_id = Some(value_id);
+                false // Stop after first match
+            },
+        );
+        found_id.map(|id| &self.values[id])
+    }
+}
+
+impl NewPatternTree<()> {
+    /// Appends to the existing value if possible. Otherwise, inserts a vec![U].
+    pub fn insert_or_append<U>(
+        pt: &mut NewPatternTree<Vec<U>>,
+        term: &Term,
+        value: U,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) {
+        let key = key_from_term(term, local_context, kernel_context);
+        match pt.trie.entry(key) {
+            Entry::Occupied(entry) => {
+                let value_id = entry.get();
+                pt.values[*value_id].push(value);
+            }
+            Entry::Vacant(entry) => {
+                let value_id = pt.values.len();
+                pt.values.push(vec![value]);
+                entry.insert(value_id);
+            }
+        }
+    }
+}
+
+/// Matching implementation for the new pattern tree.
+/// Matches a sequence of terms against patterns in the trie.
+fn find_term_matches_while<'a, F>(
+    subtrie: &SubTrie<Vec<u8>, usize>,
+    key: &mut Vec<u8>,
+    terms: &[TermRef<'a>],
+    local_context: &LocalContext,
+    kernel_context: &KernelContext,
+    stack_limit: usize,
+    replacements: &mut Vec<TermRef<'a>>,
+    callback: &mut F,
+) -> bool
+where
+    F: FnMut(usize, &Vec<TermRef<'a>>) -> bool,
+{
+    if subtrie.is_empty() {
+        return true;
+    }
+
+    if stack_limit == 0 {
+        return false;
+    }
+
+    if terms.is_empty() {
+        match subtrie.get(key as &[u8]) {
+            Some(value_id) => {
+                return callback(*value_id, replacements);
+            }
+            None => {
+                let (sample, _) = subtrie.iter().next().unwrap();
+                panic!(
+                    "\nkey mismatch.\nquerying: {}\nexisting: {}\n",
+                    Edge::debug_bytes(key),
+                    Edge::debug_bytes(sample)
+                );
+            }
+        }
+    }
+
+    let initial_key_len = key.len();
+    let first = terms[0];
+    let rest = &terms[1..];
+
+    // Case 1: the first term could match an existing replacement (backreference)
+    for i in 0..replacements.len() {
+        if first == replacements[i] {
+            // Need to emit type encoding first, then the variable
+            let term_type = first.get_closed_type_with_context(local_context, kernel_context);
+            key_from_closed_type(&term_type, key);
+            Edge::Atom(Atom::Variable(i as u16)).append_to(key);
+            let new_subtrie = subtrie.subtrie(key as &[u8]);
+            if !find_term_matches_while(
+                &new_subtrie,
+                key,
+                rest,
+                local_context,
+                kernel_context,
+                stack_limit - 1,
+                replacements,
+                callback,
+            ) {
+                return false;
+            }
+            key.truncate(initial_key_len);
+        }
+    }
+
+    // Case 2: the first term could match an entirely new variable
+    // We need to emit the type encoding first, then the variable
+    let term_type = first.get_closed_type_with_context(local_context, kernel_context);
+    key_from_closed_type(&term_type, key);
+    Edge::Atom(Atom::Variable(replacements.len() as u16)).append_to(key);
+    let new_subtrie = subtrie.subtrie(key as &[u8]);
+    if !new_subtrie.is_empty() {
+        replacements.push(first);
+        if !find_term_matches_while(
+            &new_subtrie,
+            key,
+            rest,
+            local_context,
+            kernel_context,
+            stack_limit - 1,
+            replacements,
+            callback,
+        ) {
+            return false;
+        }
+        replacements.pop();
+    }
+    key.truncate(initial_key_len);
+
+    // Case 3: exact match - match the structure of the term
+    // For now, this is simplified - we only handle atomic terms and skip applications
+    // TODO: Implement full curried application matching
+    let head_atom = first.get_head_atom();
+    if head_atom.is_variable() {
+        // Variables in the query term must match via Cases 1 or 2, not exact match
+        return true;
+    }
+
+    if !first.has_args() {
+        // Atomic term: match the type encoding first, then the atom
+        let term_type = first.get_closed_type_with_context(local_context, kernel_context);
+        key_from_closed_type(&term_type, key);
+        let atom = match head_atom {
+            KernelAtom::Variable(v) => Atom::Variable(*v),
+            KernelAtom::True => Atom::True,
+            KernelAtom::Symbol(s) => Atom::Symbol(*s),
+            KernelAtom::Type(t) => Atom::Type(*t),
+        };
+        Edge::Atom(atom).append_to(key);
+        let new_subtrie = subtrie.subtrie(key as &[u8]);
+        if !find_term_matches_while(
+            &new_subtrie,
+            key,
+            rest,
+            local_context,
+            kernel_context,
+            stack_limit - 1,
+            replacements,
+            callback,
+        ) {
+            return false;
+        }
+    } else {
+        // Application term: need to match the curried structure
+        // This is more complex - we need to match the result type, then Application edges
+        // For now, just match the whole term encoding
+        key_from_term_helper(first, key, local_context, kernel_context);
+        let new_subtrie = subtrie.subtrie(key as &[u8]);
+        if !find_term_matches_while(
+            &new_subtrie,
+            key,
+            rest,
+            local_context,
+            kernel_context,
+            stack_limit - 1,
+            replacements,
+            callback,
+        ) {
+            return false;
+        }
+    }
+
+    key.truncate(initial_key_len);
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kernel::types::BOOL;
+
+    #[test]
+    fn test_edge_roundtrip() {
+        let edges = vec![
+            Edge::Application,
+            Edge::Arrow,
+            Edge::TermForm,
+            Edge::TermPairForm,
+            Edge::LiteralForm(true),
+            Edge::LiteralForm(false),
+            Edge::Atom(Atom::Variable(0)),
+            Edge::Atom(Atom::Variable(42)),
+            Edge::Atom(Atom::True),
+            Edge::Atom(Atom::Type0),
+            Edge::Atom(Atom::Type(TypeId::new(1))),
+            Edge::Atom(Atom::Type(TypeId::new(100))),
+            Edge::Atom(Atom::Typeclass(TypeclassId::new(5))),
+            Edge::Atom(Atom::Symbol(Symbol::GlobalConstant(10))),
+            Edge::Atom(Atom::Symbol(Symbol::ScopedConstant(20))),
+            Edge::Atom(Atom::Symbol(Symbol::Monomorph(30))),
+            Edge::Atom(Atom::Symbol(Symbol::Synthetic(40))),
+        ];
+
+        for edge in edges {
+            let mut bytes = Vec::new();
+            edge.append_to(&mut bytes);
+            assert_eq!(bytes.len(), 3);
+            let parsed = Edge::from_bytes(bytes[0], bytes[1], bytes[2]);
+            assert_eq!(edge, parsed, "roundtrip failed for {:?}", edge);
+        }
+    }
+
+    #[test]
+    fn test_debug_bytes() {
+        let mut bytes = Vec::new();
+        Edge::TermForm.append_to(&mut bytes);
+        Edge::Atom(Atom::Type(TypeId::new(1))).append_to(&mut bytes);
+        Edge::Atom(Atom::Symbol(Symbol::ScopedConstant(5))).append_to(&mut bytes);
+
+        let debug = Edge::debug_bytes(&bytes);
+        assert!(debug.contains("TermForm"));
+        assert!(debug.contains("Type"));
+        assert!(debug.contains("ScopedConstant"));
+    }
+
+    #[test]
+    fn test_key_from_closed_type_ground() {
+        // Test encoding of a ground type like Bool
+        let bool_type = ClosedType::ground(BOOL);
+        let mut key = Vec::new();
+        key_from_closed_type(&bool_type, &mut key);
+
+        // Should be just Atom(Type(BOOL))
+        assert_eq!(key.len(), 3);
+        let edge = Edge::from_bytes(key[0], key[1], key[2]);
+        assert_eq!(edge, Edge::Atom(Atom::Type(BOOL)));
+    }
+
+    #[test]
+    fn test_key_from_closed_type_arrow() {
+        // Test encoding of Bool -> Bool
+        let bool_type = ClosedType::ground(BOOL);
+        let arrow_type = ClosedType::pi(bool_type.clone(), bool_type.clone());
+        let mut key = Vec::new();
+        key_from_closed_type(&arrow_type, &mut key);
+
+        // Should be: Arrow + Atom(Type(BOOL)) + Atom(Type(BOOL))
+        assert_eq!(key.len(), 9);
+
+        let edge1 = Edge::from_bytes(key[0], key[1], key[2]);
+        assert_eq!(edge1, Edge::Arrow);
+
+        let edge2 = Edge::from_bytes(key[3], key[4], key[5]);
+        assert_eq!(edge2, Edge::Atom(Atom::Type(BOOL)));
+
+        let edge3 = Edge::from_bytes(key[6], key[7], key[8]);
+        assert_eq!(edge3, Edge::Atom(Atom::Type(BOOL)));
+    }
+
+    #[test]
+    fn test_key_from_term_atomic() {
+        // Test encoding of an atomic term c0 : Bool
+        let local_context = LocalContext::new(vec![BOOL; 2]);
+        let kernel_context =
+            KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
+
+        let term = Term::parse("c0");
+        let key = key_from_term(&term, &local_context, &kernel_context);
+
+        // Should be: TermForm + Type(BOOL) + Type(BOOL) + Atom(ScopedConstant(0))
+        // Wait, I need to check the actual encoding...
+        // The key starts with TermForm, then the term's encoding
+        // For an atomic term: type + atom
+        // So: TermForm + Type(BOOL) + Atom(c0)
+        let debug = Edge::debug_bytes(&key);
+        assert!(debug.contains("TermForm"), "key: {}", debug);
+        assert!(debug.contains("Type"), "key: {}", debug);
+        assert!(debug.contains("ScopedConstant"), "key: {}", debug);
+    }
+
+    #[test]
+    fn test_key_from_literal() {
+        // Test encoding of x0 = c0
+        let local_context = LocalContext::new(vec![BOOL; 2]);
+        let kernel_context =
+            KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
+
+        let literal = Literal::parse("x0 = c0");
+        let key = key_from_literal(&literal, &local_context, &kernel_context);
+
+        // Should start with LiteralForm(true) since it's positive
+        let edge1 = Edge::from_bytes(key[0], key[1], key[2]);
+        assert_eq!(edge1, Edge::LiteralForm(true));
+
+        // Should contain the type and both terms
+        let debug = Edge::debug_bytes(&key);
+        assert!(debug.contains("LiteralForm(true)"), "key: {}", debug);
+    }
+
+    #[test]
+    fn test_new_pattern_tree_insert_term() {
+        // Test inserting and finding atomic terms
+        let local_context = LocalContext::new(vec![BOOL; 2]);
+        let kernel_context =
+            KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
+
+        let mut tree: NewPatternTree<usize> = NewPatternTree::new();
+
+        // Insert c0
+        let term = Term::parse("c0");
+        tree.insert_term(&term, 42, &local_context, &kernel_context);
+
+        assert_eq!(tree.values.len(), 1);
+        assert_eq!(tree.values[0], 42);
+    }
+
+    #[test]
+    fn test_new_pattern_tree_insert_pair() {
+        // Test inserting term pairs
+        let local_context = LocalContext::new(vec![BOOL; 2]);
+        let kernel_context =
+            KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
+
+        let mut tree: NewPatternTree<usize> = NewPatternTree::new();
+
+        // Insert (c0, c1)
+        let term1 = Term::parse("c0");
+        let term2 = Term::parse("c1");
+        tree.insert_pair(&term1, &term2, 99, &local_context, &kernel_context);
+
+        assert_eq!(tree.values.len(), 1);
+        assert_eq!(tree.values[0], 99);
+
+        // Should find the pair
+        let found = tree.find_pair(&term1, &term2, &local_context, &kernel_context);
+        assert_eq!(found, Some(&99));
+
+        // Should not find a different pair
+        let term3 = Term::parse("c2");
+        let not_found = tree.find_pair(&term1, &term3, &local_context, &kernel_context);
+        assert_eq!(not_found, None);
+    }
+
+    #[test]
+    fn test_new_pattern_tree_variable_matching() {
+        // Test that patterns with variables match concrete terms
+        let local_context = LocalContext::new(vec![BOOL; 2]);
+        let kernel_context =
+            KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
+
+        let mut tree: NewPatternTree<usize> = NewPatternTree::new();
+
+        // Insert pattern "x0 = c0" - a variable equals a constant
+        let pattern_left = Term::parse("x0");
+        let pattern_right = Term::parse("c0");
+        tree.insert_pair(
+            &pattern_left,
+            &pattern_right,
+            7,
+            &local_context,
+            &kernel_context,
+        );
+
+        // Query "c1 = c0" should match (c1 can be matched by variable x0)
+        let query_left = Term::parse("c1");
+        let query_right = Term::parse("c0");
+        let found = tree.find_pair(&query_left, &query_right, &local_context, &kernel_context);
+        assert_eq!(found, Some(&7));
+    }
+}
