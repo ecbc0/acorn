@@ -106,6 +106,13 @@ impl ClosedType {
         &self.components
     }
 
+    /// Apply a function type to get its codomain.
+    /// Returns None if this is not a Pi type.
+    /// Equivalent to TypeStore::apply_type() but works directly on ClosedType.
+    pub fn apply(&self) -> Option<ClosedType> {
+        self.as_pi().map(|(_, output)| output)
+    }
+
     fn format_at(&self, f: &mut fmt::Formatter, pos: usize) -> fmt::Result {
         match &self.components[pos] {
             TermComponent::Pi { span: _ } => {
@@ -206,5 +213,31 @@ mod tests {
         assert!(!list_bool.is_ground());
         assert!(!list_bool.is_pi());
         assert_eq!(format!("{}", list_bool), "T0[T1]");
+    }
+
+    #[test]
+    fn test_closed_type_apply() {
+        let bool_type = ClosedType::ground(BOOL);
+        let empty_type = ClosedType::ground(EMPTY);
+
+        // Ground types can't be applied
+        assert!(bool_type.apply().is_none());
+
+        // Pi type Bool -> Empty can be applied to get Empty
+        let pi_type = ClosedType::pi(bool_type.clone(), empty_type.clone());
+        let result = pi_type.apply().unwrap();
+        assert_eq!(result.as_ground(), Some(EMPTY));
+
+        // Nested Pi type: Bool -> (Bool -> Empty)
+        let inner_pi = ClosedType::pi(bool_type.clone(), empty_type.clone());
+        let outer_pi = ClosedType::pi(bool_type.clone(), inner_pi);
+
+        // First apply gives (Bool -> Empty)
+        let after_first = outer_pi.apply().unwrap();
+        assert!(after_first.is_pi());
+
+        // Second apply gives Empty
+        let after_second = after_first.apply().unwrap();
+        assert_eq!(after_second.as_ground(), Some(EMPTY));
     }
 }
