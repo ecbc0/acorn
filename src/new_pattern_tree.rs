@@ -12,7 +12,7 @@
 
 use qp_trie::{Entry, SubTrie, Trie};
 
-use crate::kernel::aliases::{Literal, Term};
+use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::{Atom as KernelAtom, AtomId};
 use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
@@ -439,6 +439,41 @@ pub fn key_from_literal(
     key
 }
 
+/// Creates a key prefix for a clause based on its literals' signs and types.
+fn clause_key_prefix(clause: &Clause, kernel_context: &KernelContext) -> Vec<u8> {
+    let local_context = clause.get_local_context();
+    let mut key = Vec::new();
+    for literal in &clause.literals {
+        let type_left = literal
+            .left
+            .get_closed_type_with_context(local_context, kernel_context);
+        Edge::LiteralForm(literal.positive).append_to(&mut key);
+        key_from_closed_type(&type_left, &mut key);
+    }
+    key
+}
+
+/// Generates a complete key for a clause.
+fn key_from_clause(clause: &Clause, kernel_context: &KernelContext) -> Vec<u8> {
+    let local_context = clause.get_local_context();
+    let mut key = clause_key_prefix(clause, kernel_context);
+    for literal in &clause.literals {
+        key_from_term_helper(
+            literal.left.as_ref(),
+            &mut key,
+            local_context,
+            kernel_context,
+        );
+        key_from_term_helper(
+            literal.right.as_ref(),
+            &mut key,
+            local_context,
+            kernel_context,
+        );
+    }
+    key
+}
+
 /// NewPatternTree: A pattern tree using curried representation and ClosedType for type matching.
 ///
 /// This is designed to eventually replace PatternTree, supporting type variables in patterns.
@@ -483,6 +518,14 @@ impl<T> NewPatternTree<T> {
         kernel_context: &KernelContext,
     ) {
         let key = key_from_pair(term1, term2, local_context, kernel_context);
+        let value_id = self.values.len();
+        self.values.push(value);
+        self.trie.insert(key, value_id);
+    }
+
+    /// Inserts a clause with its associated value.
+    pub fn insert_clause(&mut self, clause: &Clause, value: T, kernel_context: &KernelContext) {
+        let key = key_from_clause(clause, kernel_context);
         let value_id = self.values.len();
         self.values.push(value);
         self.trie.insert(key, value_id);
@@ -541,6 +584,38 @@ impl<T> NewPatternTree<T> {
         );
         found_id.map(|id| &self.values[id])
     }
+
+    /// Finds a clause in the tree.
+    pub fn find_clause<'a>(
+        &'a self,
+        clause: &Clause,
+        kernel_context: &KernelContext,
+    ) -> Option<&'a T> {
+        let local_context = clause.get_local_context();
+        let mut key = clause_key_prefix(clause, kernel_context);
+
+        // Build the terms array from all literals in the clause
+        let mut terms: Vec<TermRef> = vec![];
+        for literal in &clause.literals {
+            terms.push(literal.left.as_ref());
+            terms.push(literal.right.as_ref());
+        }
+
+        let mut replacements: Vec<TermRef> = vec![];
+        let mut found_id = None;
+        self.find_term_matches_while(
+            &mut key,
+            &terms,
+            local_context,
+            kernel_context,
+            &mut replacements,
+            &mut |value_id, _| {
+                found_id = Some(value_id);
+                false // Stop after first match
+            },
+        );
+        found_id.map(|id| &self.values[id])
+    }
 }
 
 impl NewPatternTree<()> {
@@ -563,6 +638,73 @@ impl NewPatternTree<()> {
                 pt.values.push(vec![value]);
                 entry.insert(value_id);
             }
+        }
+    }
+}
+
+/// The NewLiteralSet stores literals using the new curried pattern tree.
+/// It provides the same interface as LiteralSet but uses NewPatternTree internally.
+#[derive(Clone)]
+pub struct NewLiteralSet {
+    /// Stores (sign, id, flipped) for each literal.
+    tree: NewPatternTree<(bool, usize, bool)>,
+}
+
+impl NewLiteralSet {
+    pub fn new() -> NewLiteralSet {
+        NewLiteralSet {
+            tree: NewPatternTree::new(),
+        }
+    }
+
+    /// Inserts a literal along with its id.
+    /// This always inserts the left->right direction.
+    /// When the literal is strictly kbo ordered, it can't be reversed and unify with
+    /// another literal, so we don't need to insert the right->left direction.
+    /// Otherwise, we do insert the right->left direction.
+    pub fn insert(
+        &mut self,
+        literal: &Literal,
+        id: usize,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) {
+        self.tree.insert_pair(
+            &literal.left,
+            &literal.right,
+            (literal.positive, id, false),
+            local_context,
+            kernel_context,
+        );
+        if !literal.strict_kbo() {
+            let (right, left, reversed_context) = literal.normalized_reversed(local_context);
+            self.tree.insert_pair(
+                &right,
+                &left,
+                (literal.positive, id, true),
+                &reversed_context,
+                kernel_context,
+            );
+        }
+    }
+
+    /// Checks whether any literal in the tree is a generalization of the provided literal.
+    /// If so, returns a pair with:
+    ///   1. whether the sign of the generalization matches the literal
+    ///   2. the id of the generalization
+    ///   3. whether this is a flip-match, meaning we swapped left and right
+    pub fn find_generalization(
+        &self,
+        literal: &Literal,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> Option<(bool, usize, bool)> {
+        match self
+            .tree
+            .find_pair(&literal.left, &literal.right, local_context, kernel_context)
+        {
+            Some(&(sign, id, flipped)) => Some((sign == literal.positive, id, flipped)),
+            None => None,
         }
     }
 }

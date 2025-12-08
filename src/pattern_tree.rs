@@ -529,7 +529,7 @@ where
 }
 
 #[derive(Clone, Debug)]
-pub struct PatternTree<T> {
+pub struct OldPatternTree<T> {
     /// Maps to an index into values.
     /// The values are stored separately because subtrie lifetimes get weird.
     trie: Trie<Vec<u8>, usize>,
@@ -537,9 +537,9 @@ pub struct PatternTree<T> {
     pub values: Vec<T>,
 }
 
-impl<T> PatternTree<T> {
-    pub fn new() -> PatternTree<T> {
-        PatternTree {
+impl<T> OldPatternTree<T> {
+    pub fn new() -> OldPatternTree<T> {
+        OldPatternTree {
             trie: Trie::new(),
             values: vec![],
         }
@@ -665,10 +665,10 @@ impl<T> PatternTree<T> {
     }
 }
 
-impl PatternTree<()> {
+impl OldPatternTree<()> {
     /// Appends to the existing value if possible. Otherwises, inserts a vec![U].
     pub fn insert_or_append<U>(
-        pt: &mut PatternTree<Vec<U>>,
+        pt: &mut OldPatternTree<Vec<U>>,
         term: &Term,
         value: U,
         local_context: &LocalContext,
@@ -692,15 +692,15 @@ impl PatternTree<()> {
 /// The LiteralSet stores a bunch of literals in a way that makes it quick to check whether
 /// the set contains a generalization for a new literal.
 #[derive(Clone)]
-pub struct LiteralSet {
+pub struct OldLiteralSet {
     /// Stores (sign, id, flipped) for each literal.
-    tree: PatternTree<(bool, usize, bool)>,
+    tree: OldPatternTree<(bool, usize, bool)>,
 }
 
-impl LiteralSet {
-    pub fn new() -> LiteralSet {
-        LiteralSet {
-            tree: PatternTree::new(),
+impl OldLiteralSet {
+    pub fn new() -> OldLiteralSet {
+        OldLiteralSet {
+            tree: OldPatternTree::new(),
         }
     }
 
@@ -757,6 +757,22 @@ impl LiteralSet {
         }
     }
 }
+
+// Type aliases based on feature flag
+// When the new_pattern_tree feature is enabled, use the new curried implementation
+// Otherwise, use the original implementation
+
+#[cfg(feature = "new_pattern_tree")]
+pub use crate::new_pattern_tree::NewPatternTree as PatternTree;
+
+#[cfg(not(feature = "new_pattern_tree"))]
+pub type PatternTree<T> = OldPatternTree<T>;
+
+#[cfg(feature = "new_pattern_tree")]
+pub use crate::new_pattern_tree::NewLiteralSet as LiteralSet;
+
+#[cfg(not(feature = "new_pattern_tree"))]
+pub type LiteralSet = OldLiteralSet;
 
 #[cfg(test)]
 mod tests {
