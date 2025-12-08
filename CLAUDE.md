@@ -5,13 +5,23 @@
   `cargo check`
   `cargo fmt`
 
-- If we make changes to the normalizer or the checker, we should run a full reverify to ensure we didn't break anything.
-  `cargo run --profile release -- --reverify`
+- If we make changes to the normalizer or the kernel, we should run a full reverify to ensure we didn't
+  break anything.
+  `cargo run --profile release -- reverify`
 
   This verifies the code in `~/acornlib`, which you can inspect to figure out verification failures.
 
-- In no circumstances should you give up, stop, and just leave the code commented that you couldn't do what you were asked.
-  If you are struggling to complete your task, ask the user for further guidance.
+- To evaluate performance, we should do a release build:
+
+  `cargo build --profile release`
+
+  and then see how long it takes to run the commands:
+
+  `time cargo run --profile release -- reverify`
+  `time cargo run --profile release -- reprove real.double_sum`
+
+  This is important to do if we are doing something performance-sensitive, like altering the basic Term
+  structure, or changing how one of the key TermGraph / PatternTree / FingerprintX data structures work.
 
 ## Project Structure
 
