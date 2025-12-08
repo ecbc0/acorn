@@ -5,9 +5,10 @@ use crate::elaborator::proposition::MonomorphicProposition;
 use crate::elaborator::source::{Source, SourceType};
 use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::Atom;
+use crate::kernel::closed_type::ClosedType;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
-use crate::kernel::types::TypeId;
+use crate::kernel::types::EMPTY;
 
 /// The different sorts of proof steps.
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
@@ -595,15 +596,20 @@ impl ProofStep {
         // The rewritten literal's variables come from both the target and the new_subterm.
         let rewritten_context = {
             let target_context = target_step.clause.get_local_context();
-            let mut types = target_context.var_types.clone();
-            for (i, t) in new_subterm_context.var_types.iter().enumerate() {
-                if i >= types.len() {
-                    types.resize(i + 1, *t);
-                } else if types[i] == TypeId::default() {
-                    types[i] = *t;
+            let mut closed_types = target_context.get_var_closed_types().to_vec();
+            let empty_type = ClosedType::ground(EMPTY);
+            for (i, ct) in new_subterm_context
+                .get_var_closed_types()
+                .iter()
+                .enumerate()
+            {
+                if i >= closed_types.len() {
+                    closed_types.resize(i + 1, ct.clone());
+                } else if closed_types[i] == empty_type {
+                    closed_types[i] = ct.clone();
                 }
             }
-            LocalContext::new(types)
+            LocalContext::from_closed_types(closed_types)
         };
 
         // Use rewritten_context for normalization since it has the correct variable types

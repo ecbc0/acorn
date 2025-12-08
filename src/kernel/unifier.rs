@@ -238,7 +238,7 @@ impl<'a> Unifier<'a> {
                     let var_id = self.maps[Scope::OUTPUT.get()].len() as AtomId;
                     self.maps[Scope::OUTPUT.get()].push_none();
                     // Track the type in output_context
-                    self.output_context.var_types.push(term_head_type);
+                    self.output_context.push_var_type(term_head_type);
                     let new_var = Term::new(Atom::Variable(var_id), vec![]);
                     self.set_mapping(scope, *i, new_var);
                 }

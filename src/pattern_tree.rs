@@ -2,6 +2,7 @@ use qp_trie::{Entry, SubTrie, Trie};
 
 use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::{Atom, AtomId};
+use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
@@ -22,14 +23,17 @@ pub fn replace_term_variables(
     replacement_context: &LocalContext,
     shift: Option<AtomId>,
 ) -> (Term, LocalContext) {
-    let mut output_var_types: Vec<TypeId> = replacement_context.var_types.clone();
+    use crate::kernel::types::EMPTY;
+    let mut output_closed_types: Vec<ClosedType> =
+        replacement_context.get_var_closed_types().to_vec();
 
     fn replace_recursive(
         term: TermRef,
         term_context: &LocalContext,
         replacements: &[TermRef],
         shift: Option<AtomId>,
-        output_var_types: &mut Vec<TypeId>,
+        output_closed_types: &mut Vec<ClosedType>,
+        empty_type: ClosedType,
     ) -> Term {
         let head = term.get_head_atom();
 
@@ -50,7 +54,8 @@ pub fn replace_term_variables(
                                 term_context,
                                 replacements,
                                 shift,
-                                output_var_types,
+                                output_closed_types,
+                                empty_type.clone(),
                             )
                         })
                         .collect();
@@ -67,11 +72,14 @@ pub fn replace_term_variables(
                 };
                 // Track the type for the shifted variable
                 let new_idx = new_var_id as usize;
-                let var_type = term_context.get_var_type(idx).unwrap_or(TypeId::default());
-                if new_idx >= output_var_types.len() {
-                    output_var_types.resize(new_idx + 1, TypeId::default());
+                let var_closed_type = term_context
+                    .get_var_closed_type(idx)
+                    .cloned()
+                    .unwrap_or_else(|| empty_type.clone());
+                if new_idx >= output_closed_types.len() {
+                    output_closed_types.resize(new_idx + 1, empty_type.clone());
                 }
-                output_var_types[new_idx] = var_type;
+                output_closed_types[new_idx] = var_closed_type;
 
                 if term.has_args() {
                     let replaced_args: Vec<Term> = term
@@ -82,7 +90,8 @@ pub fn replace_term_variables(
                                 term_context,
                                 replacements,
                                 shift,
-                                output_var_types,
+                                output_closed_types,
+                                empty_type.clone(),
                             )
                         })
                         .collect();
@@ -97,7 +106,14 @@ pub fn replace_term_variables(
                 let replaced_args: Vec<Term> = term
                     .iter_args()
                     .map(|arg| {
-                        replace_recursive(arg, term_context, replacements, shift, output_var_types)
+                        replace_recursive(
+                            arg,
+                            term_context,
+                            replacements,
+                            shift,
+                            output_closed_types,
+                            empty_type.clone(),
+                        )
                     })
                     .collect();
                 Term::new(*head, replaced_args)
@@ -107,14 +123,16 @@ pub fn replace_term_variables(
         }
     }
 
+    let empty_type = ClosedType::ground(EMPTY);
     let result_term = replace_recursive(
         term.as_ref(),
         term_context,
         replacements,
         shift,
-        &mut output_var_types,
+        &mut output_closed_types,
+        empty_type,
     );
-    let result_context = LocalContext::new(output_var_types);
+    let result_context = LocalContext::from_closed_types(output_closed_types);
     (result_term, result_context)
 }
 

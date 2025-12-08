@@ -55,6 +55,21 @@ impl LocalContext {
         }
     }
 
+    /// Create a new LocalContext from ClosedTypes directly.
+    /// Note: This also populates var_types using the ground TypeId if available,
+    /// or EMPTY as a placeholder for non-ground types.
+    pub fn from_closed_types(var_closed_types: Vec<ClosedType>) -> LocalContext {
+        use crate::kernel::types::EMPTY;
+        let var_types = var_closed_types
+            .iter()
+            .map(|ct| ct.as_ground().unwrap_or(EMPTY))
+            .collect();
+        LocalContext {
+            var_types,
+            var_closed_types,
+        }
+    }
+
     /// Returns a reference to a static empty LocalContext.
     /// Use this when you need a &LocalContext but don't have actual variable types.
     pub fn empty_ref() -> &'static LocalContext {
@@ -69,6 +84,11 @@ impl LocalContext {
     /// Get the closed type of a variable by its id.
     pub fn get_var_closed_type(&self, var_id: usize) -> Option<&ClosedType> {
         self.var_closed_types.get(var_id)
+    }
+
+    /// Returns a slice of all closed types.
+    pub fn get_var_closed_types(&self) -> &[ClosedType] {
+        &self.var_closed_types
     }
 
     /// Push a new variable type to the context.
@@ -91,6 +111,20 @@ impl LocalContext {
         self.var_types.push(type_id);
         self.var_closed_types
             .push(type_store.type_id_to_closed_type(type_id));
+        var_id
+    }
+
+    /// Push a ClosedType directly to the context.
+    /// The variable ID will be the current length of the context.
+    /// Returns the assigned variable ID.
+    /// Note: This also updates var_types using the ground TypeId if available,
+    /// or EMPTY as a placeholder.
+    pub fn push_closed_type(&mut self, closed_type: ClosedType) -> usize {
+        use crate::kernel::types::EMPTY;
+        let var_id = self.var_types.len();
+        let type_id = closed_type.as_ground().unwrap_or(EMPTY);
+        self.var_types.push(type_id);
+        self.var_closed_types.push(closed_type);
         var_id
     }
 
@@ -126,6 +160,22 @@ impl LocalContext {
         }
         self.var_types[var_id] = type_id;
         self.var_closed_types[var_id] = type_store.type_id_to_closed_type(type_id);
+    }
+
+    /// Set the ClosedType for a variable at a specific index.
+    /// If the context is too short, it will be extended with EMPTY types.
+    /// Note: This also updates var_types using the ground TypeId if available,
+    /// or EMPTY as a placeholder.
+    pub fn set_closed_type(&mut self, var_id: usize, closed_type: ClosedType) {
+        use crate::kernel::types::EMPTY;
+        if var_id >= self.var_types.len() {
+            self.var_types.resize(var_id + 1, EMPTY);
+            self.var_closed_types
+                .resize(var_id + 1, ClosedType::ground(EMPTY));
+        }
+        let type_id = closed_type.as_ground().unwrap_or(EMPTY);
+        self.var_types[var_id] = type_id;
+        self.var_closed_types[var_id] = closed_type;
     }
 
     /// Returns the number of variables in this context.
