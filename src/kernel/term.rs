@@ -6,15 +6,22 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::types::{TypeId, BOOL};
 
-/// A component of a Term in its flattened representation.
-/// Either an Application node or an Atom leaf node.
+/// A component of a Term or ClosedType in its flattened representation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum TermComponent {
     /// Indicates a function application with the given span (total number of components).
     /// The span includes this Application marker itself, the head, and all arguments recursively.
     /// To skip over this entire subterm: index += span
     /// To enter this subterm (process the head): index += 1
+    /// Used in Term (open terms with free variables).
     Application { span: u16 },
+
+    /// A Pi type (dependent function type) with the given span.
+    /// The span includes this Pi marker, the binder type, and the body.
+    /// Pi always has exactly 2 sub-elements: binder type and body.
+    /// Used in ClosedType to represent types like `(T : Type<CommRing>) -> T -> T -> T`.
+    /// A non-dependent arrow `A -> B` is represented as `Pi(A, B)` where B doesn't use Var(0).
+    Pi { span: u16 },
 
     /// A leaf atom in the term tree.
     Atom(Atom),
@@ -59,6 +66,12 @@ impl<'a> TermRef<'a> {
             TermComponent::Application { span } => {
                 panic!(
                     "Term should not start with Application marker. Components: {:?}, span: {}",
+                    self.components, span
+                )
+            }
+            TermComponent::Pi { span } => {
+                panic!(
+                    "Term should not start with Pi marker. Components: {:?}, span: {}",
                     self.components, span
                 )
             }
@@ -132,6 +145,9 @@ impl<'a> TermRef<'a> {
             }),
             Atom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol),
             Atom::True => BOOL,
+            Atom::Type(_) => {
+                panic!("Atom::Type should not appear in Term, only in ClosedType")
+            }
         }
     }
 
@@ -301,6 +317,9 @@ impl<'a> TermRef<'a> {
                 TermComponent::Application { .. } => {
                     // Application markers don't contribute to weight
                 }
+                TermComponent::Pi { .. } => {
+                    panic!("Pi should not appear in Term, only in ClosedType")
+                }
                 TermComponent::Atom(Atom::True) => {
                     // True doesn't contribute to weight
                 }
@@ -325,6 +344,9 @@ impl<'a> TermRef<'a> {
                 TermComponent::Atom(Atom::Symbol(Symbol::Synthetic(i))) => {
                     weight1 += 1;
                     weight2 += 3 + 4 * (*i) as u32;
+                }
+                TermComponent::Atom(Atom::Type(_)) => {
+                    panic!("Atom::Type should not appear in Term, only in ClosedType")
                 }
             }
         }
@@ -484,6 +506,10 @@ fn format_term_at(f: &mut fmt::Formatter, components: &[TermComponent], pos: usi
             let end = pos + *span as usize;
             format_application_contents(f, components, pos + 1, end)
         }
+        TermComponent::Pi { .. } => {
+            // Pi shouldn't appear in regular Term formatting
+            Err(fmt::Error)
+        }
         TermComponent::Atom(atom) => {
             // Format the head atom
             match atom {
@@ -524,6 +550,10 @@ fn format_arg_at(
             format_application_contents(f, components, pos + 1, end)?;
             Ok(end)
         }
+        TermComponent::Pi { .. } => {
+            // Pi shouldn't appear in regular Term formatting
+            Err(fmt::Error)
+        }
         TermComponent::Atom(atom) => {
             // Simple atom argument
             match atom {
@@ -552,8 +582,8 @@ fn format_application_contents(
             Atom::Variable(i) => write!(f, "x{}", i)?,
             _ => write!(f, "{}", atom)?,
         },
-        TermComponent::Application { .. } => {
-            // Nested application as head - shouldn't normally happen
+        TermComponent::Application { .. } | TermComponent::Pi { .. } => {
+            // Nested application/Pi as head - shouldn't normally happen
             return Err(fmt::Error);
         }
     }
@@ -753,6 +783,12 @@ impl Term {
                     self.components, span
                 )
             }
+            TermComponent::Pi { span } => {
+                panic!(
+                    "Term should not start with Pi marker. Components: {:?}, span: {}",
+                    self.components, span
+                )
+            }
         }
     }
 
@@ -948,6 +984,7 @@ impl Term {
                     .expect("Variable not found in local context"),
                 Atom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol),
                 Atom::True => BOOL,
+                Atom::Type(_) => panic!("Atom::Type should not appear in open terms"),
             };
             result.push((type_id, *atom));
         }
@@ -1075,6 +1112,9 @@ impl Term {
                     }
 
                     i = subterm_end;
+                }
+                TermComponent::Pi { .. } => {
+                    panic!("Pi should not appear in open terms");
                 }
             }
         }
@@ -1320,6 +1360,9 @@ impl Term {
                 TermComponent::Atom(_) => {
                     current_pos += 1;
                 }
+                TermComponent::Pi { .. } => {
+                    panic!("Pi should not appear in open terms");
+                }
             }
             current_arg += 1;
         }
@@ -1338,6 +1381,9 @@ impl Term {
                 )
             }
             TermComponent::Atom(atom) => Term::from_components(vec![TermComponent::Atom(atom)]),
+            TermComponent::Pi { .. } => {
+                panic!("Pi should not appear in open terms");
+            }
         };
 
         // Recurse for the rest of the path
@@ -1364,6 +1410,7 @@ impl Term {
             let arg_end = match self.components[current_pos] {
                 TermComponent::Application { span } => current_pos + span as usize,
                 TermComponent::Atom(_) => current_pos + 1,
+                TermComponent::Pi { .. } => panic!("Pi should not appear in open terms"),
             };
 
             if current_arg == arg_index {
@@ -1375,6 +1422,7 @@ impl Term {
                     TermComponent::Atom(atom) => {
                         Term::from_components(vec![TermComponent::Atom(atom)])
                     }
+                    TermComponent::Pi { .. } => panic!("Pi should not appear in open terms"),
                 };
 
                 let new_arg = old_arg.replace_at_path(&path[1..], replacement.clone());
@@ -1499,6 +1547,9 @@ impl<'a> Iterator for TermRefArgsIterator<'a> {
                 let arg_slice = &self.components[self.position..self.position + 1];
                 self.position += 1;
                 Some(TermRef::new(arg_slice))
+            }
+            TermComponent::Pi { .. } => {
+                panic!("Pi should not appear in open terms");
             }
         }
     }

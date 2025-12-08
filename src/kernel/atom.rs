@@ -4,6 +4,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use super::symbol::Symbol;
+use super::types::TypeId;
 
 pub type AtomId = u16;
 
@@ -27,6 +28,10 @@ pub enum Atom {
 
     // A symbol representing a constant or function.
     Symbol(Symbol),
+
+    // A ground type, used in ClosedType to represent types like Int, Bool, Type<CommRing>.
+    // Ground types have no internal structure - they are atomic type constants.
+    Type(TypeId),
 }
 
 impl fmt::Display for Atom {
@@ -35,6 +40,7 @@ impl fmt::Display for Atom {
             Atom::True => write!(f, "true"),
             Atom::Variable(i) => write!(f, "x{}", i),
             Atom::Symbol(s) => write!(f, "{}", s),
+            Atom::Type(t) => write!(f, "T{}", t.as_u16()),
         }
     }
 }

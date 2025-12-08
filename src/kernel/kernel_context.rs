@@ -38,6 +38,7 @@ impl KernelContext {
             }
             Atom::Variable(i) => format!("x{}", i),
             Atom::Symbol(Symbol::Synthetic(i)) => format!("s{}", i),
+            Atom::Type(t) => format!("T{}", t.as_u16()),
         }
     }
 

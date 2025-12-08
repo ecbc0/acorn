@@ -1755,6 +1755,7 @@ impl Normalizer {
                 let name = ConstantName::Synthetic(*i);
                 AcornValue::constant(name, vec![], acorn_type)
             }
+            Atom::Type(_) => panic!("Atom::Type should not appear in open terms"),
         }
     }
 

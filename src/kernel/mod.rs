@@ -1,6 +1,7 @@
 pub mod aliases;
 pub mod atom;
 pub mod clause;
+pub mod closed_type;
 pub mod cnf;
 pub mod display;
 pub mod extended_term;
