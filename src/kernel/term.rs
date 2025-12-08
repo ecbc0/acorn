@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::kernel::atom::{Atom, AtomId};
+use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::types::{TypeId, BOOL};
@@ -145,6 +146,55 @@ impl<'a> TermRef<'a> {
             }),
             Atom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol),
             Atom::True => BOOL,
+            Atom::Type(_) => {
+                panic!("Atom::Type should not appear in Term, only in ClosedType")
+            }
+        }
+    }
+
+    /// Get the term's ClosedType with context.
+    /// Uses LocalContext for variable types and KernelContext for symbol types.
+    /// For function applications, applies the function type once per argument.
+    pub fn get_closed_type_with_context(
+        &self,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> ClosedType {
+        // Start with the head's closed type
+        let mut result_type = self.get_head_closed_type_with_context(local_context, kernel_context);
+
+        // Apply the type once per argument
+        for _ in self.iter_args() {
+            result_type = result_type
+                .apply()
+                .expect("Function type expected but not found during type application");
+        }
+
+        result_type
+    }
+
+    /// Get the head's ClosedType with context.
+    /// Uses LocalContext for variable types and KernelContext for symbol types.
+    pub fn get_head_closed_type_with_context(
+        &self,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> ClosedType {
+        let head = self.get_head_atom();
+        match head {
+            Atom::Variable(i) => local_context
+                .get_var_closed_type(*i as usize)
+                .cloned()
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Variable x{} not found in LocalContext (size={}). TermRef components: {:?}",
+                        i,
+                        local_context.len(),
+                        self.components
+                    )
+                }),
+            Atom::Symbol(symbol) => kernel_context.symbol_table.get_closed_type(*symbol).clone(),
+            Atom::True => ClosedType::ground(BOOL),
             Atom::Type(_) => {
                 panic!("Atom::Type should not appear in Term, only in ClosedType")
             }
@@ -815,6 +865,29 @@ impl Term {
             .get_head_type_with_context(local_context, kernel_context)
     }
 
+    /// Get the term's ClosedType with context.
+    /// Uses LocalContext for variable types and KernelContext for symbol types.
+    /// For function applications, applies the function type once per argument.
+    pub fn get_closed_type_with_context(
+        &self,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> ClosedType {
+        self.as_ref()
+            .get_closed_type_with_context(local_context, kernel_context)
+    }
+
+    /// Get the head's ClosedType with context.
+    /// Uses LocalContext for variable types and KernelContext for symbol types.
+    pub fn get_head_closed_type_with_context(
+        &self,
+        local_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> ClosedType {
+        self.as_ref()
+            .get_head_closed_type_with_context(local_context, kernel_context)
+    }
+
     /// Check if this term is atomic (no arguments).
     pub fn is_atomic(&self) -> bool {
         self.as_ref().is_atomic()
@@ -955,6 +1028,30 @@ impl Term {
                     )
                 });
                 result.push((*id, type_id));
+            }
+        }
+        result
+    }
+
+    /// Collects all variables in the term (recursively through arguments).
+    /// Returns (AtomId, ClosedType) pairs for each variable found.
+    /// Uses the local_context to look up variable types.
+    pub fn collect_vars_closed(&self, local_context: &LocalContext) -> Vec<(AtomId, ClosedType)> {
+        let mut result = Vec::new();
+        for atom in self.iter_atoms() {
+            if let Atom::Variable(id) = atom {
+                let closed_type = local_context
+                    .get_var_closed_type(*id as usize)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "Variable x{} not found in local context (context has {} types). Term: {}",
+                            id,
+                            local_context.len(),
+                            self
+                        )
+                    });
+                result.push((*id, closed_type));
             }
         }
         result
