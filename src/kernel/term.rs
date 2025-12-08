@@ -7,14 +7,14 @@ use crate::kernel::local_context::LocalContext;
 use crate::kernel::types::{TypeId, BOOL};
 
 /// A component of a Term in its flattened representation.
-/// Either a Composite node or an Atom leaf node.
+/// Either an Application node or an Atom leaf node.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum TermComponent {
-    /// Indicates a composite argument with the given span (total number of components).
-    /// The span includes this Composite marker itself, the head, and all arguments recursively.
+    /// Indicates a function application with the given span (total number of components).
+    /// The span includes this Application marker itself, the head, and all arguments recursively.
     /// To skip over this entire subterm: index += span
     /// To enter this subterm (process the head): index += 1
-    Composite { span: u16 },
+    Application { span: u16 },
 
     /// A leaf atom in the term tree.
     Atom(Atom),
@@ -40,9 +40,9 @@ impl<'a> TermRef<'a> {
         if self.components.is_empty() {
             panic!("Cannot convert empty TermRef to Term");
         }
-        if let TermComponent::Composite { span } = self.components[0] {
+        if let TermComponent::Application { span } = self.components[0] {
             panic!(
-                "TermRef starts with Composite (span={}) - cannot convert to Term. Components: {:?}",
+                "TermRef starts with Application (span={}) - cannot convert to Term. Components: {:?}",
                 span, self.components
             );
         }
@@ -52,13 +52,13 @@ impl<'a> TermRef<'a> {
     }
 
     /// Get the head atom of this term.
-    /// The head is always the first component (or first after Composite marker).
+    /// The head is always the first component (or first after Application marker).
     pub fn get_head_atom(&self) -> &Atom {
         match &self.components[0] {
             TermComponent::Atom(atom) => atom,
-            TermComponent::Composite { span } => {
+            TermComponent::Application { span } => {
                 panic!(
-                    "Term should not start with Composite marker. Components: {:?}, span: {}",
+                    "Term should not start with Application marker. Components: {:?}, span: {}",
                     self.components, span
                 )
             }
@@ -203,7 +203,7 @@ impl<'a> TermRef<'a> {
         false
     }
 
-    /// Count the number of atom components (excluding Composite markers).
+    /// Count the number of atom components (excluding Application markers).
     pub fn atom_count(&self) -> u32 {
         let mut count = 0;
         for component in self.components {
@@ -233,7 +233,7 @@ impl<'a> TermRef<'a> {
         let mut i = 1; // Skip the head
         while i < self.components.len() {
             arg_count += 1;
-            if let TermComponent::Composite { span } = self.components[i] {
+            if let TermComponent::Application { span } = self.components[i] {
                 i += span as usize;
             } else {
                 i += 1;
@@ -298,8 +298,8 @@ impl<'a> TermRef<'a> {
 
         for component in self.components {
             match component {
-                TermComponent::Composite { .. } => {
-                    // Composite markers don't contribute to weight
+                TermComponent::Application { .. } => {
+                    // Application markers don't contribute to weight
                 }
                 TermComponent::Atom(Atom::True) => {
                     // True doesn't contribute to weight
@@ -478,11 +478,11 @@ fn format_term_at(f: &mut fmt::Formatter, components: &[TermComponent], pos: usi
     }
 
     match &components[pos] {
-        TermComponent::Composite { span } => {
+        TermComponent::Application { span } => {
             // This shouldn't happen at the start of a term, but handle it
-            // by formatting the contents (skip the Composite marker)
+            // by formatting the contents (skip the Application marker)
             let end = pos + *span as usize;
-            format_composite_contents(f, components, pos + 1, end)
+            format_application_contents(f, components, pos + 1, end)
         }
         TermComponent::Atom(atom) => {
             // Format the head atom
@@ -518,10 +518,10 @@ fn format_arg_at(
     pos: usize,
 ) -> Result<usize, fmt::Error> {
     match &components[pos] {
-        TermComponent::Composite { span } => {
-            // Format the composite subterm
+        TermComponent::Application { span } => {
+            // Format the application subterm
             let end = pos + *span as usize;
-            format_composite_contents(f, components, pos + 1, end)?;
+            format_application_contents(f, components, pos + 1, end)?;
             Ok(end)
         }
         TermComponent::Atom(atom) => {
@@ -535,8 +535,8 @@ fn format_arg_at(
     }
 }
 
-/// Format the contents of a composite (head + args) from start to end.
-fn format_composite_contents(
+/// Format the contents of an application (head + args) from start to end.
+fn format_application_contents(
     f: &mut fmt::Formatter,
     components: &[TermComponent],
     start: usize,
@@ -546,14 +546,14 @@ fn format_composite_contents(
         return Ok(());
     }
 
-    // The first element after Composite marker is the head
+    // The first element after Application marker is the head
     match &components[start] {
         TermComponent::Atom(atom) => match atom {
             Atom::Variable(i) => write!(f, "x{}", i)?,
             _ => write!(f, "{}", atom)?,
         },
-        TermComponent::Composite { .. } => {
-            // Nested composite as head - shouldn't normally happen
+        TermComponent::Application { .. } => {
+            // Nested application as head - shouldn't normally happen
             return Err(fmt::Error);
         }
     }
@@ -584,8 +584,8 @@ fn format_composite_contents(
 /// Examples:
 /// - Simple atom "a": [Atom(a)]
 /// - Application "f(a)": [Atom(f), Atom(a)]
-/// - Nested "f(a, g(b))": [Atom(f), Atom(a), Composite{span: 3}, Atom(g), Atom(b)]
-///                                            ^--- this composite has span 3: the marker, g, and b
+/// - Nested "f(a, g(b))": [Atom(f), Atom(a), Application{span: 3}, Atom(g), Atom(b)]
+///                                            ^--- this application has span 3: the marker, g, and b
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Term {
     components: Vec<TermComponent>,
@@ -600,9 +600,9 @@ impl Term {
             if arg.components.is_empty() {
                 panic!("Term::new: arg {} is empty", i);
             }
-            if let TermComponent::Composite { span } = arg.components[0] {
+            if let TermComponent::Application { span } = arg.components[0] {
                 panic!(
-                    "Term::new: arg {} starts with Composite (span={}). Arg components: {:?}",
+                    "Term::new: arg {} starts with Application (span={}). Arg components: {:?}",
                     i, span, arg.components
                 );
             }
@@ -611,8 +611,8 @@ impl Term {
                 // Atomic argument - just add the atom
                 components.push(arg.components[0]);
             } else {
-                // Compound argument - add Composite marker with span
-                components.push(TermComponent::Composite {
+                // Compound argument - add Application marker with span
+                components.push(TermComponent::Application {
                     span: arg.components.len() as u16 + 1,
                 });
                 components.extend(arg.components.iter().copied());
@@ -623,28 +623,28 @@ impl Term {
 
     /// Create a new Term from a vector of components.
     pub fn from_components(components: Vec<TermComponent>) -> Term {
-        // Validate structure: must start with Atom, and after each Composite must come an Atom
+        // Validate structure: must start with Atom, and after each Application must come an Atom
         if components.is_empty() {
             panic!("from_components: empty components");
         }
-        if let TermComponent::Composite { span } = components[0] {
+        if let TermComponent::Application { span } = components[0] {
             panic!(
-                "from_components: starts with Composite (span={}). Components: {:?}",
+                "from_components: starts with Application (span={}). Components: {:?}",
                 span, components
             );
         }
-        // Validate that after each Composite comes an Atom
+        // Validate that after each Application comes an Atom
         for i in 0..components.len() {
-            if let TermComponent::Composite { .. } = components[i] {
+            if let TermComponent::Application { .. } = components[i] {
                 if i + 1 >= components.len() {
                     panic!(
-                        "from_components: Composite at {} has no following component. Components: {:?}",
+                        "from_components: Application at {} has no following component. Components: {:?}",
                         i, components
                     );
                 }
-                if let TermComponent::Composite { span: inner } = components[i + 1] {
+                if let TermComponent::Application { span: inner } = components[i + 1] {
                     panic!(
-                        "from_components: Composite at {} followed by Composite (span={}). Components: {:?}",
+                        "from_components: Application at {} followed by Application (span={}). Components: {:?}",
                         i, inner, components
                     );
                 }
@@ -716,8 +716,8 @@ impl Term {
                 // Atomic argument - just add the atom
                 components.push(arg.components[0]);
             } else {
-                // Compound argument - add Composite marker with span
-                components.push(TermComponent::Composite {
+                // Compound argument - add Application marker with span
+                components.push(TermComponent::Application {
                     span: arg.components.len() as u16 + 1,
                 });
                 components.extend(arg.components);
@@ -747,9 +747,9 @@ impl Term {
     pub fn get_head_atom(&self) -> &Atom {
         match &self.components[0] {
             TermComponent::Atom(atom) => atom,
-            TermComponent::Composite { span } => {
+            TermComponent::Application { span } => {
                 panic!(
-                    "Term should not start with Composite marker. Components: {:?}, span: {}",
+                    "Term should not start with Application marker. Components: {:?}, span: {}",
                     self.components, span
                 )
             }
@@ -852,7 +852,7 @@ impl Term {
         self.as_ref().has_synthetic()
     }
 
-    /// Count the number of atom components (excluding Composite markers).
+    /// Count the number of atom components (excluding Application markers).
     pub fn atom_count(&self) -> u32 {
         self.as_ref().atom_count()
     }
@@ -965,16 +965,16 @@ impl Term {
     }
 
     /// Replace all occurrences of a variable with a term.
-    /// This handles the complexity of updating Composite span markers when
+    /// This handles the complexity of updating Application span markers when
     /// the replacement term has a different size than the variable (1 component).
     pub fn replace_variable(&self, id: AtomId, value: &Term) -> Term {
         // Validate input term is well-formed
         for i in 0..self.components.len() {
-            if let TermComponent::Composite { .. } = self.components[i] {
+            if let TermComponent::Application { .. } = self.components[i] {
                 if i + 1 < self.components.len() {
-                    if let TermComponent::Composite { span } = self.components[i + 1] {
+                    if let TermComponent::Application { span } = self.components[i + 1] {
                         panic!(
-                            "replace_variable: input term has Composite followed by Composite at {}. \
+                            "replace_variable: input term has Application followed by Application at {}. \
                              span={}, components: {:?}",
                             i, span, self.components
                         );
@@ -1018,14 +1018,14 @@ impl Term {
                         result.push(value.components[0]);
                         added += 1;
                     } else if i == 0 {
-                        // Head position replacement - don't wrap in Composite
+                        // Head position replacement - don't wrap in Application
                         // The value's head becomes this term's head, and value's args
                         // are inserted before the remaining args
                         result.extend(value.components.iter().copied());
                         added += value.components.len();
                     } else {
-                        // Non-head position - need to wrap in Composite
-                        result.push(TermComponent::Composite {
+                        // Non-head position - need to wrap in Application
+                        result.push(TermComponent::Application {
                             span: value.components.len() as u16 + 1,
                         });
                         result.extend(value.components.iter().copied());
@@ -1039,12 +1039,12 @@ impl Term {
                     added += 1;
                     i += 1;
                 }
-                TermComponent::Composite { span } => {
+                TermComponent::Application { span } => {
                     // Process the composite subterm recursively
                     let subterm_start = i + 1;
                     let subterm_end = i + *span as usize;
 
-                    // Create a temporary Term for the subterm (excluding Composite marker)
+                    // Create a temporary Term for the subterm (excluding Application marker)
                     let subterm =
                         Term::from_components(self.components[subterm_start..subterm_end].to_vec());
 
@@ -1052,10 +1052,10 @@ impl Term {
                     let mut sub_result = Vec::new();
                     subterm.replace_variable_recursive(&mut sub_result, id, value);
 
-                    // Validate: sub_result must start with Atom, not Composite
-                    if let Some(TermComponent::Composite { span: sr_span }) = sub_result.first() {
+                    // Validate: sub_result must start with Atom, not Application
+                    if let Some(TermComponent::Application { span: sr_span }) = sub_result.first() {
                         panic!(
-                            "replace_variable_recursive: sub_result starts with Composite (span={}). \
+                            "replace_variable_recursive: sub_result starts with Application (span={}). \
                              Original subterm: {:?}, sub_result: {:?}",
                             sr_span, subterm.components, sub_result
                         );
@@ -1066,8 +1066,8 @@ impl Term {
                         result.push(sub_result[0]);
                         added += 1;
                     } else {
-                        // Add a new Composite marker with the correct span
-                        result.push(TermComponent::Composite {
+                        // Add a new Application marker with the correct span
+                        result.push(TermComponent::Application {
                             span: sub_result.len() as u16 + 1,
                         });
                         result.extend(sub_result.iter().copied());
@@ -1220,7 +1220,7 @@ impl Term {
                 if arg.components.len() == 1 {
                     components.push(arg.components[0]);
                 } else {
-                    components.push(TermComponent::Composite {
+                    components.push(TermComponent::Application {
                         span: arg.components.len() as u16 + 1,
                     });
                     components.extend(arg.components.iter().copied());
@@ -1242,7 +1242,7 @@ impl Term {
             if arg.components.len() == 1 {
                 components.push(arg.components[0]);
             } else {
-                components.push(TermComponent::Composite {
+                components.push(TermComponent::Application {
                     span: arg.components.len() as u16 + 1,
                 });
                 components.extend(arg.components.iter().copied());
@@ -1258,7 +1258,7 @@ impl Term {
             if arg.components.len() == 1 {
                 components.push(arg.components[0]);
             } else {
-                components.push(TermComponent::Composite {
+                components.push(TermComponent::Application {
                     span: arg.components.len() as u16 + 1,
                 });
                 components.extend(arg.components.iter().copied());
@@ -1314,7 +1314,7 @@ impl Term {
         while current_pos < self.components.len() && current_arg < arg_index {
             // Skip this argument
             match self.components[current_pos] {
-                TermComponent::Composite { span } => {
+                TermComponent::Application { span } => {
                     current_pos += span as usize;
                 }
                 TermComponent::Atom(_) => {
@@ -1330,9 +1330,9 @@ impl Term {
 
         // Extract the argument at current_pos
         let arg = match self.components[current_pos] {
-            TermComponent::Composite { span } => {
+            TermComponent::Application { span } => {
                 // The argument spans from current_pos to current_pos + span
-                // But the Composite marker isn't part of the term's components, so skip it
+                // But the Application marker isn't part of the term's components, so skip it
                 Term::from_components(
                     self.components[current_pos + 1..current_pos + span as usize].to_vec(),
                 )
@@ -1362,14 +1362,14 @@ impl Term {
         while current_pos < self.components.len() {
             let arg_start = current_pos;
             let arg_end = match self.components[current_pos] {
-                TermComponent::Composite { span } => current_pos + span as usize,
+                TermComponent::Application { span } => current_pos + span as usize,
                 TermComponent::Atom(_) => current_pos + 1,
             };
 
             if current_arg == arg_index {
                 // This is the argument to replace (or recurse into)
                 let old_arg = match self.components[arg_start] {
-                    TermComponent::Composite { span } => Term::from_components(
+                    TermComponent::Application { span } => Term::from_components(
                         self.components[arg_start + 1..arg_start + span as usize].to_vec(),
                     ),
                     TermComponent::Atom(atom) => {
@@ -1383,7 +1383,7 @@ impl Term {
                 if new_arg.components.len() == 1 {
                     new_components.push(new_arg.components[0]);
                 } else {
-                    new_components.push(TermComponent::Composite {
+                    new_components.push(TermComponent::Application {
                         span: new_arg.components.len() as u16 + 1,
                     });
                     new_components.extend(new_arg.components.iter().copied());
@@ -1469,9 +1469,9 @@ impl<'a> Iterator for TermRefArgsIterator<'a> {
         }
 
         match self.components[self.position] {
-            TermComponent::Composite { span } => {
+            TermComponent::Application { span } => {
                 // Extract the composite term as a slice reference.
-                // Skip the Composite marker itself - the term content starts after it.
+                // Skip the Application marker itself - the term content starts after it.
                 let start = self.position + 1;
                 let end = self.position + span as usize;
                 if end > self.components.len() {
@@ -1483,9 +1483,9 @@ impl<'a> Iterator for TermRefArgsIterator<'a> {
                 let arg_slice = &self.components[start..end];
                 // Validate the extracted slice starts with an Atom
                 if !arg_slice.is_empty() {
-                    if let TermComponent::Composite { span: inner_span } = arg_slice[0] {
+                    if let TermComponent::Application { span: inner_span } = arg_slice[0] {
                         panic!(
-                            "iter_args: extracted arg starts with Composite (inner_span={}). \
+                            "iter_args: extracted arg starts with Application (inner_span={}). \
                              Parent components: {:?}, position: {}, span: {}, arg_slice: {:?}",
                             inner_span, self.components, self.position, span, arg_slice
                         );
@@ -1512,12 +1512,12 @@ mod tests {
     #[test]
     fn test_replace_head_variable_with_compound_term() {
         // This tests the bug where replacing a variable at head position with a
-        // compound term incorrectly wrapped the result in a Composite marker.
+        // compound term incorrectly wrapped the result in a Application marker.
         //
         // Term: x0(x1) - variable x0 applied to x1
         // Replace x0 with m0(c0) - a compound term
         // Expected result: m0(c0, x1) - m0 applied to c0 and x1
-        // Bug would produce: [Composite, m0, c0, x1] which is invalid
+        // Bug would produce: [Application, m0, c0, x1] which is invalid
         let term = Term::parse("x0(x1)");
         let replacement = Term::parse("m0(c0)");
 
@@ -1561,7 +1561,7 @@ mod tests {
 
     #[test]
     fn test_replace_non_head_variable_with_compound() {
-        // Non-head position should still wrap in Composite
+        // Non-head position should still wrap in Application
         // Term: c0(x0) - c0 applied to variable x0
         // Replace x0 with m0(c1) - a compound term
         // Result: c0(m0(c1)) - c0 applied to m0(c1)

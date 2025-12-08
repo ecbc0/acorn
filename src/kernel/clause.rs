@@ -534,7 +534,7 @@ impl Clause {
                         *arg.get_head_atom(),
                     ));
                 } else {
-                    components.push(crate::kernel::term::TermComponent::Composite {
+                    components.push(crate::kernel::term::TermComponent::Application {
                         span: arg.components().len() as u16 + 1,
                     });
                     components.extend(arg.components().iter().copied());

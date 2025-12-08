@@ -457,7 +457,7 @@ where
     }
 
     if first.has_args() {
-        // Composite term: match Head edge, then head atom, then args + rest
+        // Application term: match Head edge, then head atom, then args + rest
         let edge = Edge::Head(
             first.num_args() as u8,
             first.get_head_type_with_context(local_context, kernel_context),
