@@ -494,9 +494,6 @@ fn key_from_partial_application(
 }
 
 /// Creates a key prefix for a term of the given type.
-/// Takes both TypeId and ClosedType for API compatibility between old and new pattern trees.
-/// The old implementation uses type_id, the new implementation uses closed_type.
-///
 /// Note: This only adds the TermForm marker, not the type encoding.
 /// The type encoding is added by find_term_matches_while when matching.
 pub fn term_key_prefix(_type_id: TypeId, _closed_type: &ClosedType) -> Vec<u8> {
@@ -612,8 +609,7 @@ fn key_from_clause(clause: &Clause, kernel_context: &KernelContext) -> Vec<u8> {
 }
 
 /// PatternTree: A pattern tree using curried representation and ClosedType for type matching.
-///
-/// This is designed to eventually replace PatternTree, supporting type variables in patterns.
+/// Supports type variables in patterns.
 #[derive(Clone, Debug)]
 pub struct PatternTree<T> {
     /// Maps byte keys to indices into the values vector.
@@ -779,8 +775,7 @@ impl PatternTree<()> {
     }
 }
 
-/// The LiteralSet stores literals using the new curried pattern tree.
-/// It provides the same interface as LiteralSet but uses PatternTree internally.
+/// The LiteralSet stores literals using a curried pattern tree.
 #[derive(Clone)]
 pub struct LiteralSet {
     /// Stores (sign, id, flipped) for each literal.
@@ -979,7 +974,6 @@ where
     )
 }
 
-/// Matching implementation for the new pattern tree.
 /// Matches a sequence of terms against patterns in the trie.
 fn find_term_matches_while<'a, F>(
     subtrie: &SubTrie<Vec<u8>, usize>,
@@ -1576,8 +1570,8 @@ mod tests {
 
     #[test]
     fn test_curried_variable_matches_partial_application() {
-        // Test that the new pattern tree can match a partial application against a function variable.
-        // This is a key capability of curried representation that the old pattern tree doesn't have.
+        // Test that the pattern tree can match a partial application against a function variable.
+        // This is a key capability of curried representation.
         //
         // Setup from test_with_function_types:
         // c0 : (Bool, Bool) -> Bool (2-arg function)
@@ -1633,7 +1627,7 @@ mod tests {
         let query_right = Term::parse("c5");
         let found = tree.find_pair(&query_left, &query_right, &local_context, &kernel_context);
 
-        // The new pattern tree should find this match because:
+        // The pattern tree should find this match because:
         // - c0(c5, c6) curries to Application(Application(c0, c5), c6)
         // - Pattern x0(c6) curries to Application(x0, c6)
         // - x0 (a variable of type Bool -> Bool) can match Application(c0, c5)
