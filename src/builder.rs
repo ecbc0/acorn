@@ -989,8 +989,8 @@ impl<'a> Builder<'a> {
                 continue;
             }
 
-            // Log module name when doing whole-project reprove (not reading cache, no single goal)
-            if self.single_goal.is_none() && !self.check_hashes {
+            // Log module name when doing whole-project reprove (not reverify, not reading cache, no single goal)
+            if self.single_goal.is_none() && !self.check_hashes && !self.reverify {
                 self.log_global(format!("reproving: {}", target));
             }
 
