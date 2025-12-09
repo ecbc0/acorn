@@ -4,11 +4,6 @@ version = "0.1.29"
 edition = "2021"
 default-run = "acorn"
 
-[features]
-default = []
-new_fingerprint = []
-hybrid_fingerprint = []
-
 [dependencies]
 async-trait = "0.1"
 blake3 = "1.5"
