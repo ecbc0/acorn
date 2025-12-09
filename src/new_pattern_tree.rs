@@ -749,6 +749,46 @@ where
 
     if num_args == 1 {
         // Base case: just the head atom, then the argument
+        // We need to handle two cases:
+        // 1. The pattern has a variable in function position (e.g., x0(c5))
+        //    - The head symbol can match against the pattern variable
+        // 2. The pattern has a specific atom in function position (e.g., c1(x0))
+        //    - We need exact match of the atom
+
+        let initial_key_len = key.len();
+        let mut next_terms: Vec<TermRef<'a>> = vec![last_arg];
+        next_terms.extend_from_slice(rest);
+
+        // Case A: Try matching the head against a new pattern variable
+        // This enables matching c1(c5) against pattern x0(c5) where x0 : Bool -> Bool
+        // In the pattern, x0 is just Variable(0) without type prefix in function position
+        if !head_atom.is_variable() {
+            Edge::Atom(Atom::Variable(replacements.len() as u16)).append_to(key);
+            let new_subtrie = subtrie.subtrie(key as &[u8]);
+            if !new_subtrie.is_empty() {
+                // The pattern has a variable at this position - push the head term
+                // We need to represent "just the head" as a term for the replacement
+                // Since the head is atomic, we can get a reference to it from the term
+                let head_term = term.get_head_subterm();
+                replacements.push(head_term);
+                if !find_term_matches_while(
+                    &new_subtrie,
+                    key,
+                    &next_terms,
+                    local_context,
+                    kernel_context,
+                    stack_limit - 1,
+                    replacements,
+                    callback,
+                ) {
+                    return false;
+                }
+                replacements.pop();
+            }
+            key.truncate(initial_key_len);
+        }
+
+        // Case B: Exact match - emit the specific atom
         let atom = match head_atom {
             KernelAtom::Variable(v) => Atom::Variable(*v),
             KernelAtom::True => Atom::True,
@@ -757,10 +797,6 @@ where
         };
         Edge::Atom(atom).append_to(key);
         let new_subtrie = subtrie.subtrie(key as &[u8]);
-
-        // Now match the last argument and rest
-        let mut next_terms: Vec<TermRef<'a>> = vec![last_arg];
-        next_terms.extend_from_slice(rest);
 
         return find_term_matches_while(
             &new_subtrie,
@@ -953,14 +989,46 @@ where
         key_from_closed_type(&last_arg_type, key);
         let new_subtrie2 = new_subtrie.subtrie(key as &[u8]);
 
-        // Build the "function part" terms - head applied to all args except the last
-        // Plus the last argument, plus the rest
-        let mut next_terms: Vec<TermRef<'a>> = vec![];
-
         if args.len() == 1 {
             // Just the head atom, then the argument
-            // We need to match: Atom(head) + [last_arg encoding] + rest
-            // But wait - the head is atomic, so we match it directly
+            // We need to handle two cases:
+            // Case A: The pattern has a variable in function position (e.g., x0(c5))
+            //         The head symbol can match against the pattern variable
+            // Case B: The pattern has a specific atom in function position (e.g., c1(x0))
+            //         We need exact match of the atom
+
+            let key_len_after_domain = key.len();
+            let mut next_terms: Vec<TermRef<'a>> = vec![last_arg];
+            next_terms.extend_from_slice(rest);
+
+            // Case A: Try matching the head against a new pattern variable
+            // This enables matching c1(c5) against pattern x0(c5) where x0 : Bool -> Bool
+            if !head_atom.is_variable() {
+                Edge::Atom(Atom::Variable(replacements.len() as u16)).append_to(key);
+                let var_subtrie = new_subtrie2.subtrie(key as &[u8]);
+                if !var_subtrie.is_empty() {
+                    // The pattern has a variable at this position
+                    // Push the head term as a replacement
+                    let head_term = first.get_head_subterm();
+                    replacements.push(head_term);
+                    if !find_term_matches_while(
+                        &var_subtrie,
+                        key,
+                        &next_terms,
+                        local_context,
+                        kernel_context,
+                        stack_limit - 1,
+                        replacements,
+                        callback,
+                    ) {
+                        return false;
+                    }
+                    replacements.pop();
+                }
+                key.truncate(key_len_after_domain);
+            }
+
+            // Case B: Exact match of the head atom
             let atom = match head_atom {
                 KernelAtom::Variable(v) => Atom::Variable(*v),
                 KernelAtom::True => Atom::True,
@@ -969,10 +1037,6 @@ where
             };
             Edge::Atom(atom).append_to(key);
             let new_subtrie3 = new_subtrie2.subtrie(key as &[u8]);
-
-            // Now match the last argument and rest
-            next_terms.push(last_arg);
-            next_terms.extend_from_slice(rest);
 
             if !find_term_matches_while(
                 &new_subtrie3,
@@ -987,17 +1051,45 @@ where
                 return false;
             }
         } else {
-            // Multiple args: we need to recursively match the partial application
-            // The "function" part is first.head applied to args[0..n-1]
-            // This is tricky because we don't have a TermRef for this partial application
-            //
-            // Instead, we recursively encode the partial application structure
-            // For f(a, b): type + App + domain_b + [f(a)] + [b]
-            // For f(a): type + App + domain_a + [f] + [a]
-            //
-            // We need to match the structure iteratively
+            // Multiple args: we need to handle two cases:
+            // Case A: The pattern has a variable at the function position.
+            //         The partial application (all args except the last) matches the variable.
+            // Case B: The pattern has a specific structure at the function position.
+            //         We recursively match the curried structure.
 
-            // Match the curried structure iteratively from outermost to innermost
+            let key_len_after_domain = key.len();
+            let mut remaining_terms: Vec<TermRef<'a>> = vec![last_arg];
+            remaining_terms.extend_from_slice(rest);
+
+            // Case A: Try matching the partial application against a new pattern variable
+            // This enables matching c0(c7, c5) against pattern x0(c5) where x0 : Bool -> Bool
+            // The partial application c0(c7) should match variable x0
+            if !head_atom.is_variable() {
+                Edge::Atom(Atom::Variable(replacements.len() as u16)).append_to(key);
+                let var_subtrie = new_subtrie2.subtrie(key as &[u8]);
+                if !var_subtrie.is_empty() {
+                    // The pattern has a variable at this position
+                    // Push the partial application as a replacement
+                    let partial_app = first.get_partial_application(args.len() - 1);
+                    replacements.push(partial_app);
+                    if !find_term_matches_while(
+                        &var_subtrie,
+                        key,
+                        &remaining_terms,
+                        local_context,
+                        kernel_context,
+                        stack_limit - 1,
+                        replacements,
+                        callback,
+                    ) {
+                        return false;
+                    }
+                    replacements.pop();
+                }
+                key.truncate(key_len_after_domain);
+            }
+
+            // Case B: Match the curried structure exactly
             if !match_curried_application(
                 &new_subtrie2,
                 key,
@@ -1347,5 +1439,147 @@ mod tests {
 
         assert!(found_id.is_some(), "Should find the inserted term");
         assert_eq!(tree.values[found_id.unwrap()], vec![42]);
+    }
+
+    #[test]
+    fn test_curried_variable_matches_partial_application() {
+        // Test that the new pattern tree can match a partial application against a function variable.
+        // This is a key capability of curried representation that the old pattern tree doesn't have.
+        //
+        // Setup from test_with_function_types:
+        // c0 : (Bool, Bool) -> Bool (2-arg function)
+        // c1 : Bool -> Bool (1-arg function)
+        // c5-c9 : Bool
+        //
+        // Pattern: x0(c6) where x0 : Bool -> Bool
+        // Query: c0(c5, c6) = ((Bool, Bool) -> Bool)(Bool, Bool) = Bool
+        //
+        // In curried form:
+        // - c0(c5, c6) becomes Application(Application(c0, c5), c6)
+        // - x0(c6) becomes Application(x0, c6)
+        //
+        // The match should succeed with x0 = c0(c5), which has type Bool -> Bool.
+        let kernel_context = KernelContext::test_with_function_types();
+
+        // Create local context where x0 has type Bool -> Bool
+        // c1 has type Bool -> Bool (scoped constant index 1)
+        use crate::kernel::symbol::Symbol;
+        let type_bool_to_bool = kernel_context
+            .symbol_table
+            .get_type(Symbol::ScopedConstant(1));
+        let local_context =
+            LocalContext::new_with_type_store(vec![type_bool_to_bool], &kernel_context.type_store);
+
+        let mut tree: NewPatternTree<usize> = NewPatternTree::new();
+
+        // Insert pattern: x0(c6) = c5
+        let pattern_left = Term::parse("x0(c6)");
+        let pattern_right = Term::parse("c5");
+        tree.insert_pair(
+            &pattern_left,
+            &pattern_right,
+            42,
+            &local_context,
+            &kernel_context,
+        );
+
+        // First verify that the partial application c0(c5) has type Bool -> Bool
+        let partial_app = Term::parse("c0(c5)");
+        let partial_type =
+            partial_app.get_closed_type_with_context(&local_context, &kernel_context);
+        let x0_type = local_context.get_var_closed_type(0);
+        assert_eq!(
+            partial_type,
+            *x0_type.unwrap(),
+            "c0(c5) should have the same type as x0 (Bool -> Bool)"
+        );
+
+        // Query: c0(c5, c6) = c5
+        // c0(c5) is a partial application of type Bool -> Bool, which should match x0
+        let query_left = Term::parse("c0(c5, c6)");
+        let query_right = Term::parse("c5");
+        let found = tree.find_pair(&query_left, &query_right, &local_context, &kernel_context);
+
+        // The new pattern tree should find this match because:
+        // - c0(c5, c6) curries to Application(Application(c0, c5), c6)
+        // - Pattern x0(c6) curries to Application(x0, c6)
+        // - x0 (a variable of type Bool -> Bool) can match Application(c0, c5)
+        assert_eq!(
+            found,
+            Some(&42),
+            "Curried matching should allow variable to match partial application"
+        );
+    }
+
+    #[test]
+    fn test_curried_variable_matches_different_arity() {
+        // Another test demonstrating curried matching with different arities.
+        //
+        // Pattern: x0(c5) = c6 where x0 : Bool -> Bool, c5 : Bool
+        // Query: c1(c5) = c6 where c1 : Bool -> Bool
+        //
+        // This should match with x0 = c1 (simple variable binding).
+        let kernel_context = KernelContext::test_with_function_types();
+
+        use crate::kernel::symbol::Symbol;
+        let type_bool_to_bool = kernel_context
+            .symbol_table
+            .get_type(Symbol::ScopedConstant(1));
+        let local_context =
+            LocalContext::new_with_type_store(vec![type_bool_to_bool], &kernel_context.type_store);
+
+        let mut tree: NewPatternTree<usize> = NewPatternTree::new();
+
+        // Insert pattern: x0(c5) = c6
+        let pattern_left = Term::parse("x0(c5)");
+        let pattern_right = Term::parse("c6");
+        tree.insert_pair(
+            &pattern_left,
+            &pattern_right,
+            100,
+            &local_context,
+            &kernel_context,
+        );
+
+        // First verify c1 has type Bool -> Bool
+        let c1_term = Term::parse("c1");
+        let c1_type = c1_term.get_closed_type_with_context(&local_context, &kernel_context);
+        let x0_type = local_context.get_var_closed_type(0);
+        assert_eq!(
+            c1_type,
+            *x0_type.unwrap(),
+            "c1 should have the same type as x0 (Bool -> Bool)"
+        );
+
+        // Debug: print what was inserted vs what we're querying
+        let pattern_key = key_from_pair(
+            &pattern_left,
+            &pattern_right,
+            &local_context,
+            &kernel_context,
+        );
+        eprintln!("Pattern key: {}", Edge::debug_bytes(&pattern_key));
+
+        // Query 1: c1(c5) = c6 - same arity, should match with x0 = c1
+        let query1_left = Term::parse("c1(c5)");
+        let query1_right = Term::parse("c6");
+        let query1_key =
+            key_from_pair(&query1_left, &query1_right, &local_context, &kernel_context);
+        eprintln!("Query1 key: {}", Edge::debug_bytes(&query1_key));
+
+        let found1 = tree.find_pair(&query1_left, &query1_right, &local_context, &kernel_context);
+        assert_eq!(found1, Some(&100), "Same-arity application should match");
+
+        // Query 2: c0(c7, c5) = c6 - different arity, but c0(c7) has type Bool -> Bool
+        // So c0(c7, c5) = Application(Application(c0, c7), c5) should match x0(c5)
+        // with x0 = c0(c7)
+        let query2_left = Term::parse("c0(c7, c5)");
+        let query2_right = Term::parse("c6");
+        let found2 = tree.find_pair(&query2_left, &query2_right, &local_context, &kernel_context);
+        assert_eq!(
+            found2,
+            Some(&100),
+            "Different-arity application should match via currying"
+        );
     }
 }

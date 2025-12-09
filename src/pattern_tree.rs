@@ -889,4 +889,53 @@ mod tests {
                 .0
         );
     }
+
+    #[test]
+    fn test_old_pattern_tree_does_not_match_different_arity() {
+        // Test that the old pattern tree does NOT match patterns with different arities.
+        // This contrasts with the new pattern tree which uses currying and CAN match them.
+        //
+        // Setup from test_with_function_types:
+        // c0 : (Bool, Bool) -> Bool (2-arg function)
+        // c1 : Bool -> Bool (1-arg function)
+        // c5-c9 : Bool
+        //
+        // Pattern: x0(c6) where x0 : Bool -> Bool (1-arg application)
+        // Query: c0(c5, c6) (2-arg application)
+        //
+        // In the old pattern tree, these have different Edge::Head(num_args, ...) so they won't match.
+        let kernel_context = KernelContext::test_with_function_types();
+
+        // Create local context where x0 has type Bool -> Bool
+        // c1 has type Bool -> Bool (scoped constant index 1)
+        use crate::kernel::symbol::Symbol;
+        let type_bool_to_bool = kernel_context
+            .symbol_table
+            .get_type(Symbol::ScopedConstant(1));
+        let local_context =
+            LocalContext::new_with_type_store(vec![type_bool_to_bool], &kernel_context.type_store);
+
+        let mut set = LiteralSet::new();
+
+        // Insert pattern: x0(c6) = c5
+        set.insert(
+            &Literal::parse("x0(c6) = c5"),
+            42,
+            &local_context,
+            &kernel_context,
+        );
+
+        // Query: c0(c5, c6) = c5 - this is a 2-arg application vs 1-arg pattern
+        // The old pattern tree should NOT match this because:
+        // - Pattern has Edge::Head(1, Bool) for x0(c6)
+        // - Query has Edge::Head(2, Bool) for c0(c5, c6)
+        let lit = Literal::parse("c0(c5, c6) = c5");
+        let result = set.find_generalization(&lit, &local_context, &kernel_context);
+
+        // The old pattern tree should NOT find a match
+        assert!(
+            result.is_none(),
+            "Old pattern tree should NOT match different arities"
+        );
+    }
 }

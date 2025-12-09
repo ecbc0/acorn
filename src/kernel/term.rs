@@ -84,6 +84,56 @@ impl<'a> TermRef<'a> {
         self.components.len() == 1
     }
 
+    /// Get a TermRef pointing to just the head atom of this term.
+    /// For atomic terms, returns self.
+    /// For applications, returns a single-component TermRef with just the head.
+    pub fn get_head_subterm(&self) -> TermRef<'a> {
+        // The head is always at index 0
+        TermRef::new(&self.components[0..1])
+    }
+
+    /// Get a TermRef for a partial application with only the first `num_args` arguments.
+    /// For f(a, b, c) with num_args=2, returns f(a, b).
+    /// For num_args=0, returns just the head atom.
+    ///
+    /// Term structure:
+    /// - Simple atomic args: [head, arg1, arg2, ...] - all are Atoms
+    /// - Complex args: [head, Application{span}, arg_content..., Atom, ...]
+    ///   where Application{span} wraps a complex argument
+    pub fn get_partial_application(&self, num_args: usize) -> TermRef<'a> {
+        if num_args == 0 {
+            return self.get_head_subterm();
+        }
+
+        // Start after the head atom
+        let mut position = 1;
+
+        for _ in 0..num_args {
+            if position >= self.components.len() {
+                panic!(
+                    "get_partial_application: not enough arguments. \
+                     Requested {} args but term has fewer. Components: {:?}",
+                    num_args, self.components
+                );
+            }
+            match self.components[position] {
+                TermComponent::Application { span } => {
+                    // Complex argument: skip the entire span
+                    position += span as usize;
+                }
+                TermComponent::Atom(_) => {
+                    // Simple atomic argument
+                    position += 1;
+                }
+                TermComponent::Pi { .. } => {
+                    panic!("Pi should not appear in term structure");
+                }
+            }
+        }
+
+        TermRef::new(&self.components[..position])
+    }
+
     /// Check if this term is the boolean constant "true".
     pub fn is_true(&self) -> bool {
         matches!(self.get_head_atom(), Atom::True)
@@ -1796,5 +1846,70 @@ mod tests {
         for arg in &args {
             let _ = arg.get_head_atom();
         }
+    }
+
+    #[test]
+    fn test_get_partial_application() {
+        // Test get_partial_application on c0(c1, c2)
+        // With num_args=0, should return just c0
+        // With num_args=1, should return c0(c1)
+        let term = Term::parse("c0(c1, c2)");
+
+        // Debug: print the term structure
+        eprintln!("Term c0(c1, c2) components: {:?}", term.components);
+
+        // num_args=0 should return just the head
+        let partial0 = term.as_ref().get_partial_application(0);
+        eprintln!("partial0 components: {:?}", partial0.components);
+        assert_eq!(partial0.components.len(), 1);
+        assert!(matches!(
+            partial0.get_head_atom(),
+            Atom::Symbol(Symbol::ScopedConstant(0))
+        ));
+
+        // num_args=1 should return c0(c1)
+        let partial1 = term.as_ref().get_partial_application(1);
+        eprintln!("partial1 components: {:?}", partial1.components);
+        // Should be able to convert to owned Term
+        let partial1_owned = partial1.to_owned();
+        assert!(matches!(
+            partial1_owned.get_head_atom(),
+            Atom::Symbol(Symbol::ScopedConstant(0))
+        ));
+        let args: Vec<_> = partial1_owned.iter_args().collect();
+        assert_eq!(args.len(), 1, "c0(c1) should have 1 arg");
+        assert!(matches!(
+            args[0].get_head_atom(),
+            Atom::Symbol(Symbol::ScopedConstant(1))
+        ));
+    }
+
+    #[test]
+    fn test_get_partial_application_with_complex_args() {
+        // Test with complex (nested) arguments
+        // c0(c1(c2), c3) - first arg is complex, second is simple
+        let term = Term::parse("c0(c1(c2), c3)");
+        eprintln!(
+            "Term c0(c1(c2), c3) components: {:?}",
+            term.components
+        );
+
+        // num_args=1 should return c0(c1(c2))
+        let partial1 = term.as_ref().get_partial_application(1);
+        eprintln!("partial1 components: {:?}", partial1.components);
+        let partial1_owned = partial1.to_owned();
+        assert!(matches!(
+            partial1_owned.get_head_atom(),
+            Atom::Symbol(Symbol::ScopedConstant(0))
+        ));
+        let args: Vec<_> = partial1_owned.iter_args().collect();
+        assert_eq!(args.len(), 1, "c0(c1(c2)) should have 1 arg");
+        // The arg should be c1(c2)
+        assert!(matches!(
+            args[0].get_head_atom(),
+            Atom::Symbol(Symbol::ScopedConstant(1))
+        ));
+        let nested_args: Vec<_> = args[0].iter_args().collect();
+        assert_eq!(nested_args.len(), 1, "c1(c2) should have 1 arg");
     }
 }

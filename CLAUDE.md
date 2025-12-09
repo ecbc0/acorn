@@ -30,6 +30,9 @@
 
   When you do a full reprove, it's okay if some propositions can't be verified. What indicates a real problem is if the prover crashes.
 
+- If we find errors during a "reverify" or "reprove" operation, we should add a unit test that catches
+  this case.
+
 ## Project Structure
 
 - `/src` - Core Rust implementation
