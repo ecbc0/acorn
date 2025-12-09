@@ -28,6 +28,8 @@
 
   `cargo run --profile release -- reprove`
 
+  When you do a full reprove, it's okay if some propositions can't be verified. What indicates a real problem is if the prover crashes.
+
 ## Project Structure
 
 - `/src` - Core Rust implementation
