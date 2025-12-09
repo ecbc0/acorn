@@ -37,23 +37,26 @@ impl VariableMap {
 
     /// Builds a LocalContext from all the variables in the replacement terms.
     /// We need the input_context to look up variable types.
-    ///
-    /// TODO: This uses EMPTY as a fallback ground type, which may not be correct for all contexts.
     pub fn build_output_context(&self, input_context: &LocalContext) -> LocalContext {
-        let empty_type = ClosedType::ground(GroundTypeId::new(EMPTY.as_u16()));
+        let empty_ground = GroundTypeId::new(EMPTY.as_u16());
+        let empty_type = ClosedType::ground(empty_ground);
+        let mut var_types: Vec<Option<TypeId>> = vec![];
         let mut var_closed_types: Vec<Option<ClosedType>> = vec![];
         for opt_term in &self.map {
             if let Some(term) = opt_term {
-                for (var_id, closed_type) in term.collect_vars_closed(input_context) {
+                for (var_id, type_id, closed_type) in term.collect_vars_full(input_context) {
                     let idx = var_id as usize;
                     if idx >= var_closed_types.len() {
+                        var_types.resize(idx + 1, None);
                         var_closed_types.resize(idx + 1, None);
                     }
+                    var_types[idx] = Some(type_id);
                     var_closed_types[idx] = Some(closed_type);
                 }
             }
         }
-        LocalContext::from_closed_types(
+        LocalContext::from_types_and_closed_types(
+            var_types.into_iter().map(|t| t.unwrap_or(EMPTY)).collect(),
             var_closed_types
                 .into_iter()
                 .map(|t| t.unwrap_or_else(|| empty_type.clone()))

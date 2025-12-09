@@ -596,21 +596,26 @@ impl ProofStep {
         // The rewritten literal's variables come from both the target and the new_subterm.
         let rewritten_context = {
             let target_context = target_step.clause.get_local_context();
+            let mut var_types = target_context.var_types.clone();
             let mut closed_types = target_context.get_var_closed_types().to_vec();
-            // TODO: This uses EMPTY as a fallback ground type, which may not be correct for all contexts.
             let empty_type = ClosedType::ground(GroundTypeId::new(EMPTY.as_u16()));
-            for (i, ct) in new_subterm_context
-                .get_var_closed_types()
+            for (i, (type_id, ct)) in new_subterm_context
+                .var_types
                 .iter()
+                .zip(new_subterm_context.get_var_closed_types().iter())
                 .enumerate()
             {
                 if i >= closed_types.len() {
+                    var_types.resize(i + 1, EMPTY);
                     closed_types.resize(i + 1, ct.clone());
+                    var_types[i] = *type_id;
+                    closed_types[i] = ct.clone();
                 } else if closed_types[i] == empty_type {
+                    var_types[i] = *type_id;
                     closed_types[i] = ct.clone();
                 }
             }
-            LocalContext::from_closed_types(closed_types)
+            LocalContext::from_types_and_closed_types(var_types, closed_types)
         };
 
         // Use rewritten_context for normalization since it has the correct variable types

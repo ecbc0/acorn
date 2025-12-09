@@ -5,7 +5,7 @@ use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::types::{GroundTypeId, TypeId, BOOL};
+use crate::kernel::types::{TypeId, BOOL};
 
 /// A component of a Term or ClosedType in its flattened representation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -194,9 +194,13 @@ impl<'a> TermRef<'a> {
                     )
                 }),
             Atom::Symbol(symbol) => kernel_context.symbol_table.get_closed_type(*symbol).clone(),
-            // TODO: This assumes BOOL is a ground type, which it should be, but we should
-            // get it from TypeStore for consistency.
-            Atom::True => ClosedType::ground(GroundTypeId::new(BOOL.as_u16())),
+            Atom::True => {
+                let bool_ground = kernel_context
+                    .type_store
+                    .get_ground_type_id(BOOL)
+                    .expect("BOOL should be a ground type");
+                ClosedType::ground(bool_ground)
+            }
             Atom::Type(_) => {
                 panic!("Atom::Type should not appear in Term, only in ClosedType")
             }
@@ -1054,6 +1058,41 @@ impl Term {
                         )
                     });
                 result.push((*id, closed_type));
+            }
+        }
+        result
+    }
+
+    /// Collects all variables in the term (recursively through arguments).
+    /// Returns (AtomId, TypeId, ClosedType) triples for each variable found.
+    /// Uses the local_context to look up variable types.
+    pub fn collect_vars_full(
+        &self,
+        local_context: &LocalContext,
+    ) -> Vec<(AtomId, TypeId, ClosedType)> {
+        let mut result = Vec::new();
+        for atom in self.iter_atoms() {
+            if let Atom::Variable(id) = atom {
+                let type_id = local_context.get_var_type(*id as usize).unwrap_or_else(|| {
+                    panic!(
+                        "Variable x{} type not found in local context (context has {} types). Term: {}",
+                        id,
+                        local_context.len(),
+                        self
+                    )
+                });
+                let closed_type = local_context
+                    .get_var_closed_type(*id as usize)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "Variable x{} closed type not found in local context (context has {} types). Term: {}",
+                            id,
+                            local_context.len(),
+                            self
+                        )
+                    });
+                result.push((*id, type_id, closed_type));
             }
         }
         result

@@ -231,11 +231,14 @@ impl TermBinding {
 
 /// Builds a LocalContext from the terms in the stack.
 /// Each stack position corresponds to a variable id, and we use the stored TypeId.
-fn build_context_from_stack(stack: &[TermBinding]) -> LocalContext {
+fn build_context_from_stack(
+    stack: &[TermBinding],
+    type_store: &crate::kernel::type_store::TypeStore,
+) -> LocalContext {
     // Each stack position i corresponds to variable x_i
     // We collect the types from the bindings directly
     let var_types: Vec<TypeId> = stack.iter().map(|b| b.type_id()).collect();
-    LocalContext::new(var_types)
+    LocalContext::new_with_type_store(var_types, type_store)
 }
 
 // A NormalizerView lets us share methods between mutable and non-mutable normalizers that
@@ -533,7 +536,7 @@ impl NormalizerView<'_> {
         for quant in quants {
             let type_id = self.type_store().get_type_id(quant)?;
             let var_id = *next_var_id;
-            context.set_var_type(var_id as usize, type_id);
+            context.set_var_type_with_store(var_id as usize, type_id, self.type_store());
             let var = Term::new_variable(var_id);
             *next_var_id += 1;
             stack.push(TermBinding::Free(var, type_id));
@@ -784,7 +787,7 @@ impl NormalizerView<'_> {
                 let mut args = vec![];
                 for arg_type in &arg_types {
                     let var_id = *next_var_id;
-                    context.set_var_type(var_id as usize, *arg_type);
+                    context.set_var_type_with_store(var_id as usize, *arg_type, self.type_store());
                     let var = Term::new_variable(var_id);
                     *next_var_id += 1;
                     args.push(ExtendedTerm::Term(var));
@@ -851,7 +854,7 @@ impl NormalizerView<'_> {
             let mut args = vec![];
             for arg_type in &arg_types {
                 let var_id = *next_var_id;
-                context.set_var_type(var_id as usize, *arg_type);
+                context.set_var_type_with_store(var_id as usize, *arg_type, self.type_store());
                 let var = Term::new_variable(var_id);
                 *next_var_id += 1;
                 args.push(var);
@@ -1115,7 +1118,7 @@ impl NormalizerView<'_> {
         synth: &mut Vec<AtomId>,
     ) -> Result<Term, String> {
         // Create the context from the stack to use for lookups
-        let stack_context = build_context_from_stack(stack);
+        let stack_context = build_context_from_stack(stack, self.type_store());
 
         // Create a tentative skolem term with the value's type
         let skolem_term = self.make_skolem_term(value_type, stack, synth, &stack_context)?;
@@ -1385,7 +1388,7 @@ impl NormalizerView<'_> {
         match value {
             AcornValue::IfThenElse(cond_val, then_value, else_value) => {
                 // Build context from stack for variable type lookups
-                let stack_context = build_context_from_stack(stack);
+                let stack_context = build_context_from_stack(stack, self.type_store());
 
                 // Convert the condition to CNF, tracking any new variables in cond_context
                 let mut cond_context = LocalContext::empty();
@@ -1461,7 +1464,7 @@ impl NormalizerView<'_> {
                     let var_id = *next_var_id;
                     *next_var_id += 1;
                     // Add the variable type to the context
-                    context.set_var_type(var_id as usize, type_id);
+                    context.set_var_type_with_store(var_id as usize, type_id, self.type_store());
                     let var = Term::new_variable(var_id);
                     args.push((var_id, type_id));
                     stack.push(TermBinding::Free(var, type_id));

@@ -82,6 +82,23 @@ impl LocalContext {
         }
     }
 
+    /// Create a new LocalContext from both TypeIds and ClosedTypes.
+    /// This preserves proper TypeIds for all types including function types.
+    pub fn from_types_and_closed_types(
+        var_types: Vec<TypeId>,
+        var_closed_types: Vec<ClosedType>,
+    ) -> LocalContext {
+        assert_eq!(
+            var_types.len(),
+            var_closed_types.len(),
+            "var_types and var_closed_types must have the same length"
+        );
+        LocalContext {
+            var_types,
+            var_closed_types,
+        }
+    }
+
     /// Creates a new LocalContext by remapping variables from this context.
     ///
     /// `var_ids` specifies which original variable IDs to include in the new context.
