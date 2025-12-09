@@ -9,6 +9,8 @@ pub mod inference;
 pub mod kernel_context;
 pub mod literal;
 pub mod local_context;
+pub mod new_fingerprint;
+pub mod old_fingerprint;
 pub mod pattern_tree;
 pub mod symbol;
 pub mod symbol_table;

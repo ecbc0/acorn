@@ -9,7 +9,7 @@ use crate::kernel::types::TypeId;
 // A fingerprint component describes the head of a term at a particular "path" from this term.
 // The path is the sequence of arg indices to get to that term
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum FingerprintComponent {
+enum OldFingerprintComponent {
     // The path to this term goes through a variable.
     Below,
 
@@ -22,21 +22,21 @@ enum FingerprintComponent {
     Something(TypeId, Atom),
 }
 
-impl FingerprintComponent {
+impl OldFingerprintComponent {
     fn new(
         term: &Term,
         path: &&[usize],
         local_context: &LocalContext,
         kernel_context: &KernelContext,
-    ) -> FingerprintComponent {
+    ) -> OldFingerprintComponent {
         // Use get_term_at_path to traverse to the subterm
         match term.get_term_at_path(*path) {
             Some(subterm) => match subterm.get_head_atom() {
-                Atom::Variable(_) => FingerprintComponent::Something(
+                Atom::Variable(_) => OldFingerprintComponent::Something(
                     subterm.get_term_type_with_context(local_context, kernel_context),
                     Atom::Variable(0),
                 ),
-                a => FingerprintComponent::Something(
+                a => OldFingerprintComponent::Something(
                     subterm.get_term_type_with_context(local_context, kernel_context),
                     *a,
                 ),
@@ -47,26 +47,29 @@ impl FingerprintComponent {
                 let mut current = term.clone();
                 for &i in *path {
                     if current.atomic_variable().is_some() {
-                        return FingerprintComponent::Below;
+                        return OldFingerprintComponent::Below;
                     }
                     match current.get_term_at_path(&[i]) {
                         Some(next) => current = next.clone(),
-                        None => return FingerprintComponent::Nothing,
+                        None => return OldFingerprintComponent::Nothing,
                     }
                 }
                 // Should not reach here since get_term_at_path returned None
-                FingerprintComponent::Nothing
+                OldFingerprintComponent::Nothing
             }
         }
     }
 
     // Whether a unification could combine paths with these fingerprint components
-    fn could_unify(&self, other: &FingerprintComponent) -> bool {
+    fn could_unify(&self, other: &OldFingerprintComponent) -> bool {
         match (self, other) {
-            (FingerprintComponent::Below, _) => true,
-            (_, FingerprintComponent::Below) => true,
-            (FingerprintComponent::Nothing, FingerprintComponent::Nothing) => true,
-            (FingerprintComponent::Something(t1, a1), FingerprintComponent::Something(t2, a2)) => {
+            (OldFingerprintComponent::Below, _) => true,
+            (_, OldFingerprintComponent::Below) => true,
+            (OldFingerprintComponent::Nothing, OldFingerprintComponent::Nothing) => true,
+            (
+                OldFingerprintComponent::Something(t1, a1),
+                OldFingerprintComponent::Something(t2, a2),
+            ) => {
                 if t1 != t2 {
                     return false;
                 }
@@ -80,12 +83,15 @@ impl FingerprintComponent {
     }
 
     // Whether a specialization could turn the 'self' component into the 'other' component
-    fn could_specialize(&self, other: &FingerprintComponent) -> bool {
+    fn could_specialize(&self, other: &OldFingerprintComponent) -> bool {
         match (self, other) {
-            (FingerprintComponent::Below, _) => true,
-            (_, FingerprintComponent::Below) => false,
-            (FingerprintComponent::Nothing, FingerprintComponent::Nothing) => true,
-            (FingerprintComponent::Something(t1, a1), FingerprintComponent::Something(t2, a2)) => {
+            (OldFingerprintComponent::Below, _) => true,
+            (_, OldFingerprintComponent::Below) => false,
+            (OldFingerprintComponent::Nothing, OldFingerprintComponent::Nothing) => true,
+            (
+                OldFingerprintComponent::Something(t1, a1),
+                OldFingerprintComponent::Something(t2, a2),
+            ) => {
                 if t1 != t2 {
                     return false;
                 }
@@ -103,24 +109,24 @@ const PATHS: &[&[usize]] = &[&[], &[0], &[1], &[0, 0], &[0, 1], &[1, 0], &[1, 1]
 
 // The fingerprints of a term, at a selection of paths.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct TermFingerprint {
-    components: [FingerprintComponent; PATHS.len()],
+struct OldTermFingerprint {
+    components: [OldFingerprintComponent; PATHS.len()],
 }
 
-impl TermFingerprint {
+impl OldTermFingerprint {
     fn new(
         term: &Term,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
-    ) -> TermFingerprint {
-        let mut components = [FingerprintComponent::Nothing; PATHS.len()];
+    ) -> OldTermFingerprint {
+        let mut components = [OldFingerprintComponent::Nothing; PATHS.len()];
         for (i, path) in PATHS.iter().enumerate() {
-            components[i] = FingerprintComponent::new(term, path, local_context, kernel_context);
+            components[i] = OldFingerprintComponent::new(term, path, local_context, kernel_context);
         }
-        TermFingerprint { components }
+        OldTermFingerprint { components }
     }
 
-    fn could_unify(&self, other: &TermFingerprint) -> bool {
+    fn could_unify(&self, other: &OldTermFingerprint) -> bool {
         for i in 0..PATHS.len() {
             if !self.components[i].could_unify(&other.components[i]) {
                 return false;
@@ -129,7 +135,7 @@ impl TermFingerprint {
         true
     }
 
-    fn could_specialize(&self, other: &TermFingerprint) -> bool {
+    fn could_specialize(&self, other: &OldTermFingerprint) -> bool {
         for i in 0..PATHS.len() {
             if !self.components[i].could_specialize(&other.components[i]) {
                 return false;
@@ -141,13 +147,13 @@ impl TermFingerprint {
 
 // A data structure designed to quickly find which terms unify with a query term.
 #[derive(Clone, Debug)]
-pub struct FingerprintUnifier<T> {
-    tree: BTreeMap<TermFingerprint, Vec<T>>,
+pub struct OldFingerprintUnifier<T> {
+    tree: BTreeMap<OldTermFingerprint, Vec<T>>,
 }
 
-impl<T> FingerprintUnifier<T> {
-    pub fn new() -> FingerprintUnifier<T> {
-        FingerprintUnifier {
+impl<T> OldFingerprintUnifier<T> {
+    pub fn new() -> OldFingerprintUnifier<T> {
+        OldFingerprintUnifier {
             tree: BTreeMap::new(),
         }
     }
@@ -159,7 +165,7 @@ impl<T> FingerprintUnifier<T> {
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) {
-        let fingerprint = TermFingerprint::new(term, local_context, kernel_context);
+        let fingerprint = OldTermFingerprint::new(term, local_context, kernel_context);
         self.tree.entry(fingerprint).or_insert(vec![]).push(value);
     }
 
@@ -170,7 +176,7 @@ impl<T> FingerprintUnifier<T> {
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> Vec<&T> {
-        let fingerprint = TermFingerprint::new(term, local_context, kernel_context);
+        let fingerprint = OldTermFingerprint::new(term, local_context, kernel_context);
         let mut result = vec![];
 
         // TODO: do smart tree things instead of this dumb exhaustive search
@@ -188,25 +194,25 @@ impl<T> FingerprintUnifier<T> {
 
 // The fingerprints of a literal, at a selection of paths.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct LiteralFingerprint {
-    left: TermFingerprint,
-    right: TermFingerprint,
+struct OldLiteralFingerprint {
+    left: OldTermFingerprint,
+    right: OldTermFingerprint,
 }
 
-impl LiteralFingerprint {
+impl OldLiteralFingerprint {
     fn new(
         left: &Term,
         right: &Term,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
-    ) -> LiteralFingerprint {
-        LiteralFingerprint {
-            left: TermFingerprint::new(left, local_context, kernel_context),
-            right: TermFingerprint::new(right, local_context, kernel_context),
+    ) -> OldLiteralFingerprint {
+        OldLiteralFingerprint {
+            left: OldTermFingerprint::new(left, local_context, kernel_context),
+            right: OldTermFingerprint::new(right, local_context, kernel_context),
         }
     }
 
-    fn could_specialize(&self, other: &LiteralFingerprint) -> bool {
+    fn could_specialize(&self, other: &OldLiteralFingerprint) -> bool {
         self.left.could_specialize(&other.left) && self.right.could_specialize(&other.right)
     }
 }
@@ -214,13 +220,13 @@ impl LiteralFingerprint {
 // A data structure designed to quickly find which literals are a specialization of a query literal.
 // Identifies literals by a usize id.
 #[derive(Clone)]
-pub struct FingerprintSpecializer<T> {
-    trees: HashMap<TypeId, BTreeMap<LiteralFingerprint, Vec<T>>>,
+pub struct OldFingerprintSpecializer<T> {
+    trees: HashMap<TypeId, BTreeMap<OldLiteralFingerprint, Vec<T>>>,
 }
 
-impl<T> FingerprintSpecializer<T> {
-    pub fn new() -> FingerprintSpecializer<T> {
-        FingerprintSpecializer {
+impl<T> OldFingerprintSpecializer<T> {
+    pub fn new() -> OldFingerprintSpecializer<T> {
+        OldFingerprintSpecializer {
             trees: HashMap::new(),
         }
     }
@@ -232,8 +238,12 @@ impl<T> FingerprintSpecializer<T> {
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) {
-        let fingerprint =
-            LiteralFingerprint::new(&literal.left, &literal.right, local_context, kernel_context);
+        let fingerprint = OldLiteralFingerprint::new(
+            &literal.left,
+            &literal.right,
+            local_context,
+            kernel_context,
+        );
         let tree = self
             .trees
             .entry(
@@ -254,7 +264,7 @@ impl<T> FingerprintSpecializer<T> {
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> Vec<&T> {
-        let fingerprint = LiteralFingerprint::new(left, right, local_context, kernel_context);
+        let fingerprint = OldLiteralFingerprint::new(left, right, local_context, kernel_context);
         let mut result = vec![];
 
         let tree = match self
@@ -292,8 +302,12 @@ mod tests {
         KernelContext::test_with_all_bool_types()
     }
 
-    fn make_fingerprint(term: &Term, lctx: &LocalContext, kctx: &KernelContext) -> TermFingerprint {
-        TermFingerprint::new(term, lctx, kctx)
+    fn make_fingerprint(
+        term: &Term,
+        lctx: &LocalContext,
+        kctx: &KernelContext,
+    ) -> OldTermFingerprint {
+        OldTermFingerprint::new(term, lctx, kctx)
     }
 
     #[test]
@@ -322,7 +336,7 @@ mod tests {
     fn test_fingerprint_tree() {
         let lctx = test_local_context();
         let kctx = test_kernel_context();
-        let mut tree = FingerprintUnifier::new();
+        let mut tree = OldFingerprintUnifier::new();
         // m2: (Bool, Bool) -> Bool
         let term1 = Term::parse_with_context("m2(x0, c0)", &lctx, &kctx);
         let term2 = Term::parse_with_context("m2(c1, c0)", &lctx, &kctx);

@@ -1,10 +1,10 @@
 use super::features::Features;
-use super::fingerprint::FingerprintSpecializer;
 use super::score::Score;
 use super::scorer::{default_scorer, Scorer};
 use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::old_fingerprint::OldFingerprintSpecializer;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::variable_map::VariableMap;
 use crate::proof_step::ProofStep;
@@ -30,7 +30,7 @@ pub struct PassiveSet {
     // Stores (clause id, literal index) for each literal in each passive clause.
     // We currently don't clean this up by removing old clause ids, so when we retrieve from
     // it we need to check that the clause is still in the passive set.
-    literals: FingerprintSpecializer<(usize, usize)>,
+    literals: OldFingerprintSpecializer<(usize, usize)>,
 
     // Stores every clause in clauses that is just a single literal, along with its index.
     // The format is
@@ -171,7 +171,7 @@ impl PassiveSet {
         PassiveSet {
             clauses: vec![],
             queue: BTreeSet::new(),
-            literals: FingerprintSpecializer::new(),
+            literals: OldFingerprintSpecializer::new(),
             singles: HashMap::new(),
             contradiction: None,
             all_shallow: true,

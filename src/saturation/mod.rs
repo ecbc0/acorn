@@ -1,8 +1,6 @@
 pub mod active_set;
 pub mod dataset;
 pub mod features;
-pub mod fingerprint;
-pub mod new_fingerprint;
 pub mod passive_set;
 pub mod proof;
 pub mod rewrite_tree;
