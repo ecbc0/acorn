@@ -195,13 +195,6 @@ pub enum Edge {
     /// A leaf atom.
     Atom(Atom),
 
-    // Form edges (category markers for top-level discrimination)
-    /// Indicates we're encoding a term.
-    TermForm,
-
-    /// Indicates we're encoding a pair of terms.
-    TermPairForm,
-
     /// Indicates a literal with the given sign (true = positive).
     LiteralForm(bool),
 }
@@ -209,19 +202,17 @@ pub enum Edge {
 // Byte constants for serialization
 const APPLICATION: u8 = 0;
 const ARROW: u8 = 1;
-const TERM_FORM: u8 = 2;
-const TERM_PAIR_FORM: u8 = 3;
-const LITERAL_POSITIVE: u8 = 4;
-const LITERAL_NEGATIVE: u8 = 5;
-const ATOM_VARIABLE: u8 = 6;
-const ATOM_TRUE: u8 = 7;
-const ATOM_TYPE0: u8 = 8;
-const ATOM_TYPE: u8 = 9;
-const ATOM_TYPECLASS: u8 = 10;
-const ATOM_SYMBOL_GLOBAL: u8 = 11;
-const ATOM_SYMBOL_SCOPED: u8 = 12;
-const ATOM_SYMBOL_MONOMORPH: u8 = 13;
-const ATOM_SYMBOL_SYNTHETIC: u8 = 14;
+const LITERAL_POSITIVE: u8 = 2;
+const LITERAL_NEGATIVE: u8 = 3;
+const ATOM_VARIABLE: u8 = 4;
+const ATOM_TRUE: u8 = 5;
+const ATOM_TYPE0: u8 = 6;
+const ATOM_TYPE: u8 = 7;
+const ATOM_TYPECLASS: u8 = 8;
+const ATOM_SYMBOL_GLOBAL: u8 = 9;
+const ATOM_SYMBOL_SCOPED: u8 = 10;
+const ATOM_SYMBOL_MONOMORPH: u8 = 11;
+const ATOM_SYMBOL_SYNTHETIC: u8 = 12;
 
 impl Edge {
     /// Returns the discriminant byte for this edge.
@@ -229,8 +220,6 @@ impl Edge {
         match self {
             Edge::Application => APPLICATION,
             Edge::Arrow => ARROW,
-            Edge::TermForm => TERM_FORM,
-            Edge::TermPairForm => TERM_PAIR_FORM,
             Edge::LiteralForm(true) => LITERAL_POSITIVE,
             Edge::LiteralForm(false) => LITERAL_NEGATIVE,
             Edge::Atom(atom) => match atom {
@@ -252,8 +241,7 @@ impl Edge {
     pub fn append_to(&self, v: &mut Vec<u8>) {
         v.push(self.discriminant());
         let id: u16 = match self {
-            Edge::Application | Edge::Arrow | Edge::TermForm | Edge::TermPairForm => 0,
-            Edge::LiteralForm(_) => 0,
+            Edge::Application | Edge::Arrow | Edge::LiteralForm(_) => 0,
             Edge::Atom(atom) => match atom {
                 Atom::Variable(i) => *i,
                 Atom::True => 0,
@@ -275,8 +263,6 @@ impl Edge {
         match byte1 {
             APPLICATION => Edge::Application,
             ARROW => Edge::Arrow,
-            TERM_FORM => Edge::TermForm,
-            TERM_PAIR_FORM => Edge::TermPairForm,
             LITERAL_POSITIVE => Edge::LiteralForm(true),
             LITERAL_NEGATIVE => Edge::LiteralForm(false),
             ATOM_VARIABLE => Edge::Atom(Atom::Variable(id)),
@@ -504,12 +490,9 @@ fn key_from_application(
     }
 }
 
-/// Creates a key prefix for a term.
-/// This only adds the TermForm marker; the type encoding is added during matching.
+/// Creates a key prefix for a term (currently empty).
 pub fn term_key_prefix() -> Vec<u8> {
-    let mut key = Vec::new();
-    Edge::TermForm.append_to(&mut key);
-    key
+    Vec::new()
 }
 
 /// Generates a complete key for a term.
@@ -519,7 +502,6 @@ pub fn key_from_term(
     kernel_context: &KernelContext,
 ) -> Vec<u8> {
     let mut key = Vec::new();
-    Edge::TermForm.append_to(&mut key);
     key_from_term_helper(term.as_ref(), &mut key, local_context, kernel_context);
     key
 }
@@ -532,7 +514,6 @@ pub fn key_from_pair(
     kernel_context: &KernelContext,
 ) -> Vec<u8> {
     let mut key = Vec::new();
-    Edge::TermPairForm.append_to(&mut key);
     key_from_term_type(term1.as_ref(), &mut key, local_context, kernel_context);
     key_from_term_helper(term1.as_ref(), &mut key, local_context, kernel_context);
     key_from_term_helper(term2.as_ref(), &mut key, local_context, kernel_context);
@@ -697,7 +678,6 @@ impl<T> PatternTree<T> {
         kernel_context: &KernelContext,
     ) -> Option<&'a T> {
         let mut key = Vec::new();
-        Edge::TermPairForm.append_to(&mut key);
         key_from_term_type(left.as_ref(), &mut key, local_context, kernel_context);
         let terms = [left.as_ref(), right.as_ref()];
         let mut replacements: Vec<TermRef> = vec![];
@@ -1240,8 +1220,6 @@ mod tests {
         let edges = vec![
             Edge::Application,
             Edge::Arrow,
-            Edge::TermForm,
-            Edge::TermPairForm,
             Edge::LiteralForm(true),
             Edge::LiteralForm(false),
             Edge::Atom(Atom::Variable(0)),
@@ -1269,12 +1247,12 @@ mod tests {
     #[test]
     fn test_debug_bytes() {
         let mut bytes = Vec::new();
-        Edge::TermForm.append_to(&mut bytes);
+        Edge::LiteralForm(true).append_to(&mut bytes);
         Edge::Atom(Atom::Type(GroundTypeId::new(1))).append_to(&mut bytes);
         Edge::Atom(Atom::Symbol(Symbol::ScopedConstant(5))).append_to(&mut bytes);
 
         let debug = Edge::debug_bytes(&bytes);
-        assert!(debug.contains("TermForm"));
+        assert!(debug.contains("LiteralForm"));
         assert!(debug.contains("Type"));
         assert!(debug.contains("ScopedConstant"));
     }
@@ -1329,13 +1307,9 @@ mod tests {
         let term = Term::parse("c0");
         let key = key_from_term(&term, &local_context, &kernel_context);
 
-        // Should be: TermForm + Type(BOOL) + Type(BOOL) + Atom(ScopedConstant(0))
-        // Wait, I need to check the actual encoding...
-        // The key starts with TermForm, then the term's encoding
         // For an atomic term: type + atom
-        // So: TermForm + Type(BOOL) + Atom(c0)
+        // So: Type(BOOL) + Atom(c0)
         let debug = Edge::debug_bytes(&key);
-        assert!(debug.contains("TermForm"), "key: {}", debug);
         assert!(debug.contains("Type"), "key: {}", debug);
         assert!(debug.contains("ScopedConstant"), "key: {}", debug);
     }
