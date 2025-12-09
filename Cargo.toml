@@ -6,6 +6,8 @@ default-run = "acorn"
 
 [features]
 default = []
+new_fingerprint = []
+hybrid_fingerprint = []
 
 [dependencies]
 async-trait = "0.1"

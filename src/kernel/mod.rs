@@ -5,6 +5,7 @@ pub mod closed_type;
 pub mod cnf;
 pub mod display;
 pub mod extended_term;
+pub mod fingerprint;
 pub mod hybrid_fingerprint;
 pub mod inference;
 pub mod kernel_context;

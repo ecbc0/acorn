@@ -3,10 +3,10 @@ use std::collections::{HashMap, HashSet};
 use super::rewrite_tree::{Rewrite, RewriteTree};
 use crate::clause_set::TermId;
 use crate::kernel::aliases::{Clause, Literal, Term};
+use crate::kernel::fingerprint::FingerprintUnifier;
 use crate::kernel::inference;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::old_fingerprint::OldFingerprintUnifier;
 use crate::kernel::pattern_tree::LiteralSet;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::unifier::{Scope, Unifier};
@@ -32,10 +32,10 @@ pub struct ActiveSet {
     literal_set: LiteralSet,
 
     // An index of all the positive literals that we can do resolution with.
-    positive_res_targets: OldFingerprintUnifier<ResolutionTarget>,
+    positive_res_targets: FingerprintUnifier<ResolutionTarget>,
 
     // An index of all the negative literals that we can do resolution with.
-    negative_res_targets: OldFingerprintUnifier<ResolutionTarget>,
+    negative_res_targets: FingerprintUnifier<ResolutionTarget>,
 
     // A graph that encodes equalities and inequalities between terms.
     pub graph: TermGraph,
@@ -48,14 +48,14 @@ pub struct ActiveSet {
     subterm_map: HashMap<Term, usize>,
 
     // An index to find the id of subterms for a pattern match.
-    subterm_unifier: OldFingerprintUnifier<usize>,
+    subterm_unifier: FingerprintUnifier<usize>,
 
     // A data structure to do the mechanical rewriting of subterms.
     rewrite_tree: RewriteTree,
 }
 
 /// A ResolutionTarget represents a literal that we could do resolution with.
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct ResolutionTarget {
     // Which proof step the resolution target is in.
     step_index: usize,
@@ -109,12 +109,12 @@ impl ActiveSet {
             steps: vec![],
             long_clauses: HashSet::new(),
             literal_set: LiteralSet::new(),
-            positive_res_targets: OldFingerprintUnifier::new(),
-            negative_res_targets: OldFingerprintUnifier::new(),
+            positive_res_targets: FingerprintUnifier::new(),
+            negative_res_targets: FingerprintUnifier::new(),
             graph: TermGraph::new(),
             subterms: vec![],
             subterm_map: HashMap::new(),
-            subterm_unifier: OldFingerprintUnifier::new(),
+            subterm_unifier: FingerprintUnifier::new(),
             rewrite_tree: RewriteTree::new(),
         }
     }
