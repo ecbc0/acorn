@@ -9,7 +9,7 @@ use crate::kernel::types::TypeId;
 // A fingerprint component describes the head of a term at a particular "path" from this term.
 // The path is the sequence of arg indices to get to that term
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum FingerprintComponent {
+enum FingerprintComponent {
     // The path to this term goes through a variable.
     Below,
 
@@ -23,7 +23,7 @@ pub enum FingerprintComponent {
 }
 
 impl FingerprintComponent {
-    pub fn new(
+    fn new(
         term: &Term,
         path: &&[usize],
         local_context: &LocalContext,
@@ -61,7 +61,7 @@ impl FingerprintComponent {
     }
 
     // Whether a unification could combine paths with these fingerprint components
-    pub fn could_unify(&self, other: &FingerprintComponent) -> bool {
+    fn could_unify(&self, other: &FingerprintComponent) -> bool {
         match (self, other) {
             (FingerprintComponent::Below, _) => true,
             (_, FingerprintComponent::Below) => true,
@@ -80,7 +80,7 @@ impl FingerprintComponent {
     }
 
     // Whether a specialization could turn the 'self' component into the 'other' component
-    pub fn could_specialize(&self, other: &FingerprintComponent) -> bool {
+    fn could_specialize(&self, other: &FingerprintComponent) -> bool {
         match (self, other) {
             (FingerprintComponent::Below, _) => true,
             (_, FingerprintComponent::Below) => false,
@@ -108,7 +108,7 @@ struct TermFingerprint {
 }
 
 impl TermFingerprint {
-    pub fn new(
+    fn new(
         term: &Term,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
@@ -120,7 +120,7 @@ impl TermFingerprint {
         TermFingerprint { components }
     }
 
-    pub fn could_unify(&self, other: &TermFingerprint) -> bool {
+    fn could_unify(&self, other: &TermFingerprint) -> bool {
         for i in 0..PATHS.len() {
             if !self.components[i].could_unify(&other.components[i]) {
                 return false;
@@ -129,7 +129,7 @@ impl TermFingerprint {
         true
     }
 
-    pub fn could_specialize(&self, other: &TermFingerprint) -> bool {
+    fn could_specialize(&self, other: &TermFingerprint) -> bool {
         for i in 0..PATHS.len() {
             if !self.components[i].could_specialize(&other.components[i]) {
                 return false;
@@ -194,7 +194,7 @@ struct LiteralFingerprint {
 }
 
 impl LiteralFingerprint {
-    pub fn new(
+    fn new(
         left: &Term,
         right: &Term,
         local_context: &LocalContext,
@@ -206,7 +206,7 @@ impl LiteralFingerprint {
         }
     }
 
-    pub fn could_specialize(&self, other: &LiteralFingerprint) -> bool {
+    fn could_specialize(&self, other: &LiteralFingerprint) -> bool {
         self.left.could_specialize(&other.left) && self.right.could_specialize(&other.right)
     }
 }
