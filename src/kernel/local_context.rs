@@ -148,20 +148,29 @@ impl LocalContext {
     }
 
     /// Set both TypeId and ClosedType for a variable at a specific index.
-    /// If the context is too short, it will be extended.
-    /// This should only be used when building contexts incrementally
-    /// where variable IDs may not be sequential starting from 0.
+    /// If the context is too short, it will be extended with EMPTY placeholders.
+    ///
+    /// This is used when merging variable types from different sources where
+    /// variable IDs may not be sequential. For example, when specializing a clause,
+    /// the output might have variables from both replacement terms (e.g., x3) and
+    /// unmapped input variables (e.g., x1), requiring entries at non-contiguous indices.
+    ///
+    /// The EMPTY placeholders for gap indices are safe because:
+    /// 1. They're only used in unnormalized clauses
+    /// 2. Normalization remaps variables to sequential IDs, discarding gaps
     pub fn set_type_and_closed_type(
         &mut self,
         var_id: usize,
         type_id: TypeId,
         closed_type: ClosedType,
     ) {
+        use crate::kernel::types::{GroundTypeId, EMPTY};
         if var_id >= self.var_types.len() {
-            // Extend with the values we're setting (they'll be overwritten anyway)
-            self.var_types.resize(var_id + 1, type_id);
-            self.var_closed_types
-                .resize(var_id + 1, closed_type.clone());
+            // Extend with EMPTY placeholders for gap indices
+            let empty_ground = GroundTypeId::new(EMPTY.as_u16());
+            let empty_closed = ClosedType::ground(empty_ground);
+            self.var_types.resize(var_id + 1, EMPTY);
+            self.var_closed_types.resize(var_id + 1, empty_closed);
         }
         self.var_types[var_id] = type_id;
         self.var_closed_types[var_id] = closed_type;
