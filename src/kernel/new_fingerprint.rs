@@ -144,6 +144,10 @@ impl NewFingerprintComponent {
     }
 
     /// Whether a specialization could turn the 'self' component into the 'other' component.
+    /// For specialization: query (self) is more general, stored (other) is more specific.
+    /// A query can specialize into a stored pattern if:
+    /// - The query has a variable (can become anything via substitution)
+    /// - Or both have the same concrete atom
     fn could_specialize(&self, other: &NewFingerprintComponent) -> bool {
         match (self, other) {
             (NewFingerprintComponent::Below, _) => true,
@@ -156,6 +160,7 @@ impl NewFingerprintComponent {
                 if t1 != t2 {
                     return false;
                 }
+                // If the query (self) has a variable, it can be specialized to match anything
                 if a1.is_variable() {
                     return true;
                 }
