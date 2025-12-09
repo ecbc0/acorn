@@ -6,8 +6,6 @@ default-run = "acorn"
 
 [features]
 default = []
-# Use old pattern tree implementation instead of the new curried one
-old_pattern_tree = []
 
 [dependencies]
 async-trait = "0.1"
