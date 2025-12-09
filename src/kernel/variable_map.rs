@@ -271,8 +271,11 @@ impl VariableMap {
         for i in 0..input_context.len() {
             if self.get_mapping(i as AtomId).is_none() {
                 // This variable is unmapped, so it will remain in the output
-                if let Some(closed_type) = input_context.get_var_closed_type(i) {
-                    output_context.set_closed_type(i, closed_type.clone());
+                if let (Some(type_id), Some(closed_type)) = (
+                    input_context.get_var_type(i),
+                    input_context.get_var_closed_type(i),
+                ) {
+                    output_context.set_type_and_closed_type(i, type_id, closed_type.clone());
                 }
             }
         }

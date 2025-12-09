@@ -536,7 +536,7 @@ impl NormalizerView<'_> {
         for quant in quants {
             let type_id = self.type_store().get_type_id(quant)?;
             let var_id = *next_var_id;
-            context.set_var_type_with_store(var_id as usize, type_id, self.type_store());
+            context.push_var_type_with_store(type_id, self.type_store());
             let var = Term::new_variable(var_id);
             *next_var_id += 1;
             stack.push(TermBinding::Free(var, type_id));
@@ -787,7 +787,7 @@ impl NormalizerView<'_> {
                 let mut args = vec![];
                 for arg_type in &arg_types {
                     let var_id = *next_var_id;
-                    context.set_var_type_with_store(var_id as usize, *arg_type, self.type_store());
+                    context.push_var_type_with_store(*arg_type, self.type_store());
                     let var = Term::new_variable(var_id);
                     *next_var_id += 1;
                     args.push(ExtendedTerm::Term(var));
@@ -854,7 +854,7 @@ impl NormalizerView<'_> {
             let mut args = vec![];
             for arg_type in &arg_types {
                 let var_id = *next_var_id;
-                context.set_var_type_with_store(var_id as usize, *arg_type, self.type_store());
+                context.push_var_type_with_store(*arg_type, self.type_store());
                 let var = Term::new_variable(var_id);
                 *next_var_id += 1;
                 args.push(var);
@@ -1116,12 +1116,10 @@ impl NormalizerView<'_> {
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
+        context: &mut LocalContext,
     ) -> Result<Term, String> {
-        // Create the context from the stack to use for lookups
-        let stack_context = build_context_from_stack(stack, self.type_store());
-
         // Create a tentative skolem term with the value's type
-        let skolem_term = self.make_skolem_term(value_type, stack, synth, &stack_context)?;
+        let skolem_term = self.make_skolem_term(value_type, stack, synth, context)?;
         let skolem_id = if let Atom::Symbol(Symbol::Synthetic(id)) = *skolem_term.get_head_atom() {
             id
         } else {
@@ -1129,11 +1127,7 @@ impl NormalizerView<'_> {
         };
 
         // Create the definition for this synthetic term
-        let skolem_value = self
-            .as_ref()
-            .denormalize_term(&skolem_term, &stack_context, None);
-        // Start with the stack context so we have types for existing variables
-        let mut local_context = stack_context.clone();
+        let skolem_value = self.as_ref().denormalize_term(&skolem_term, context, None);
         let definition_cnf = self.eq_to_cnf(
             &skolem_value,
             value,
@@ -1141,9 +1135,9 @@ impl NormalizerView<'_> {
             stack,
             next_var_id,
             synth,
-            &mut local_context,
+            context,
         )?;
-        let clauses = definition_cnf.clone().into_clauses(&local_context);
+        let clauses = definition_cnf.clone().into_clauses(context);
 
         // Check if an equivalent definition already exists
         let synthetic_key_form: Vec<_> = clauses
@@ -1186,7 +1180,7 @@ impl NormalizerView<'_> {
                 // Synthesize a term to represent this lambda
                 let lambda_type = value.get_type();
                 let skolem_term =
-                    self.synthesize_term(value, &lambda_type, stack, next_var_id, synth)?;
+                    self.synthesize_term(value, &lambda_type, stack, next_var_id, synth, context)?;
                 Ok(ExtendedTerm::Term(skolem_term))
             }
             _ => {
@@ -1464,7 +1458,7 @@ impl NormalizerView<'_> {
                     let var_id = *next_var_id;
                     *next_var_id += 1;
                     // Add the variable type to the context
-                    context.set_var_type_with_store(var_id as usize, type_id, self.type_store());
+                    context.push_var_type_with_store(type_id, self.type_store());
                     let var = Term::new_variable(var_id);
                     args.push((var_id, type_id));
                     stack.push(TermBinding::Free(var, type_id));
@@ -1491,8 +1485,14 @@ impl NormalizerView<'_> {
             }
             value if value.is_bool_type() => {
                 // Synthesize a term to represent this boolean value.
-                let skolem_term =
-                    self.synthesize_term(value, &AcornType::Bool, stack, next_var_id, synth)?;
+                let skolem_term = self.synthesize_term(
+                    value,
+                    &AcornType::Bool,
+                    stack,
+                    next_var_id,
+                    synth,
+                    context,
+                )?;
                 Ok(ExtendedTerm::Term(skolem_term))
             }
             _ => Err(format!("cannot convert '{}' to extended term", value)),

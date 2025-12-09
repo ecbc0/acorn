@@ -112,7 +112,7 @@ impl<'a> Proof<'a> {
                     *id,
                     step,
                     VariableMap::new(),
-                    &LocalContext::new(vec![]),
+                    &LocalContext::empty(),
                     &mut concrete_steps,
                 )?;
                 continue;
@@ -226,7 +226,7 @@ impl<'a> Proof<'a> {
                 for id in step.rule.premises() {
                     let map = VariableMap::new();
                     // Empty context is fine for empty maps
-                    self.add_var_map(id, map, LocalContext::new(vec![]), concrete_steps);
+                    self.add_var_map(id, map, LocalContext::empty(), concrete_steps);
                 }
                 return Ok(());
             }
@@ -342,7 +342,7 @@ impl<'a> Proof<'a> {
 
                 // The target is already concrete
                 let map = VariableMap::new();
-                self.add_var_map(target_id, map, LocalContext::new(vec![]), concrete_steps);
+                self.add_var_map(target_id, map, LocalContext::empty(), concrete_steps);
             }
             Rule::EqualityFactoring(info) => {
                 // For EF, the trace applies to the stored literals.
@@ -567,7 +567,7 @@ impl<'a> Proof<'a> {
                 // Since there are no variables in the output, we add an empty variable map.
                 let base_id = ProofStepId::Active(info.id);
                 let map = VariableMap::new();
-                self.add_var_map(base_id, map, LocalContext::new(vec![]), concrete_steps);
+                self.add_var_map(base_id, map, LocalContext::empty(), concrete_steps);
             }
             Rule::Resolution(info) => {
                 let long_id = ProofStepId::Active(info.long_id);
