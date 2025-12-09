@@ -15,7 +15,7 @@ use super::kernel_context::KernelContext;
 use super::local_context::LocalContext;
 use super::symbol::Symbol;
 use super::term::{TermComponent, TermRef};
-use super::types::{GroundTypeId, TypeId, TypeclassId, EMPTY};
+use super::types::{GroundTypeId, TypeId, TypeclassId, BOOL, EMPTY};
 
 /// Replaces variables in a term with corresponding replacement terms.
 /// Variables x_i are replaced with replacements[i].
@@ -314,6 +314,7 @@ impl Edge {
 /// - Ground types: Atom(Type(id))
 /// - Arrow types: Arrow + domain encoding + codomain encoding
 /// - Type applications: Application + sort + head encoding + arg encoding
+#[cfg(test)]
 fn key_from_closed_type(closed_type: &ClosedType, key: &mut Vec<u8>) {
     key_from_closed_type_at(closed_type.components(), 0, key)
 }
@@ -368,6 +369,67 @@ fn find_subterm_end(components: &[TermComponent], start: usize) -> usize {
     }
 }
 
+/// Writes the type of a term directly to the key buffer without allocating a ClosedType.
+/// This is equivalent to:
+///   let t = term.get_closed_type_with_context(local_context, kernel_context);
+///   key_from_closed_type(&t, key);
+/// But avoids the intermediate allocation.
+fn key_from_term_type(
+    term: TermRef,
+    key: &mut Vec<u8>,
+    local_context: &LocalContext,
+    kernel_context: &KernelContext,
+) {
+    // Get the head's closed type (as a reference, no allocation)
+    let head = term.get_head_atom();
+    let head_closed_type: &ClosedType = match head {
+        KernelAtom::Variable(i) => local_context
+            .get_var_closed_type(*i as usize)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Variable x{} not found in LocalContext (size={})",
+                    i,
+                    local_context.len()
+                )
+            }),
+        KernelAtom::Symbol(symbol) => kernel_context.symbol_table.get_closed_type(*symbol),
+        KernelAtom::True => {
+            // Special case: True has type Bool, encode it directly
+            let bool_ground = kernel_context
+                .type_store
+                .get_ground_type_id(BOOL)
+                .expect("BOOL should be a ground type");
+            Edge::Atom(Atom::Type(bool_ground)).append_to(key);
+            return;
+        }
+        KernelAtom::Type(_) => {
+            panic!("Atom::Type should not appear in Term, only in ClosedType")
+        }
+    };
+
+    // Count arguments to determine how many times to "apply" the type
+    let num_args = term.num_args();
+
+    // Find the position in the head's type components that represents the result type
+    // after applying num_args arguments (skip past num_args Pi domains)
+    let components = head_closed_type.components();
+    let mut pos = 0;
+    for _ in 0..num_args {
+        // Each application skips past one Pi: Pi + domain -> output
+        // The output starts at find_subterm_end(pos + 1) (skip Pi marker and domain)
+        match &components[pos] {
+            TermComponent::Pi { span: _ } => {
+                let domain_end = find_subterm_end(components, pos + 1);
+                pos = domain_end;
+            }
+            _ => panic!("Expected Pi type for function application"),
+        }
+    }
+
+    // Now encode the type starting at the computed position
+    key_from_closed_type_at(components, pos, key);
+}
+
 /// Encodes a term into the key buffer (without the form prefix).
 /// This is a curried representation where applications are binary.
 ///
@@ -380,12 +442,11 @@ fn key_from_term_helper(
     local_context: &LocalContext,
     kernel_context: &KernelContext,
 ) {
-    // Get the closed type of the term
-    let term_closed_type = term.get_closed_type_with_context(local_context, kernel_context);
+    // Emit the result type of the term
+    key_from_term_type(term, key, local_context, kernel_context);
 
     if !term.has_args() {
         // Atomic term: type encoding + atom
-        key_from_closed_type(&term_closed_type, key);
         let head = term.get_head_atom();
         let atom = match head {
             KernelAtom::Variable(v) => Atom::Variable(*v),
@@ -397,11 +458,6 @@ fn key_from_term_helper(
     } else {
         // Application term: encode as curried binary applications
         // f(a, b, c) = ((f a) b) c
-
-        // First, emit the result type of the whole term
-        key_from_closed_type(&term_closed_type, key);
-
-        // Now encode the curried applications
         let head = term.get_head_atom();
         let args: Vec<TermRef> = term.iter_args().collect();
         key_from_application(head, &args, key, local_context, kernel_context);
@@ -430,10 +486,9 @@ fn key_from_application(
     } else {
         // Recursive case: Application + domain + func + arg
         let last_arg = args[args.len() - 1];
-        let last_arg_type = last_arg.get_closed_type_with_context(local_context, kernel_context);
 
         Edge::Application.append_to(key);
-        key_from_closed_type(&last_arg_type, key);
+        key_from_term_type(last_arg, key, local_context, kernel_context);
 
         // Recurse for the function part (all but last arg)
         key_from_application(
@@ -469,14 +524,6 @@ pub fn key_from_term(
     key
 }
 
-/// Creates a key prefix for a term pair (like a literal).
-pub fn term_pair_key_prefix(closed_type: &ClosedType) -> Vec<u8> {
-    let mut key = Vec::new();
-    Edge::TermPairForm.append_to(&mut key);
-    key_from_closed_type(closed_type, &mut key);
-    key
-}
-
 /// Generates a complete key for a term pair.
 pub fn key_from_pair(
     term1: &Term,
@@ -484,20 +531,11 @@ pub fn key_from_pair(
     local_context: &LocalContext,
     kernel_context: &KernelContext,
 ) -> Vec<u8> {
-    let type1 = term1.get_closed_type_with_context(local_context, kernel_context);
     let mut key = Vec::new();
     Edge::TermPairForm.append_to(&mut key);
-    key_from_closed_type(&type1, &mut key);
+    key_from_term_type(term1.as_ref(), &mut key, local_context, kernel_context);
     key_from_term_helper(term1.as_ref(), &mut key, local_context, kernel_context);
     key_from_term_helper(term2.as_ref(), &mut key, local_context, kernel_context);
-    key
-}
-
-/// Generates a key prefix for a literal (based on sign and type).
-pub fn literal_key_prefix(positive: bool, closed_type: &ClosedType) -> Vec<u8> {
-    let mut key = Vec::new();
-    Edge::LiteralForm(positive).append_to(&mut key);
-    key_from_closed_type(closed_type, &mut key);
     key
 }
 
@@ -507,12 +545,14 @@ pub fn key_from_literal(
     local_context: &LocalContext,
     kernel_context: &KernelContext,
 ) -> Vec<u8> {
-    let type_left = literal
-        .left
-        .get_closed_type_with_context(local_context, kernel_context);
     let mut key = Vec::new();
     Edge::LiteralForm(literal.positive).append_to(&mut key);
-    key_from_closed_type(&type_left, &mut key);
+    key_from_term_type(
+        literal.left.as_ref(),
+        &mut key,
+        local_context,
+        kernel_context,
+    );
     key_from_term_helper(
         literal.left.as_ref(),
         &mut key,
@@ -533,11 +573,13 @@ fn clause_key_prefix(clause: &Clause, kernel_context: &KernelContext) -> Vec<u8>
     let local_context = clause.get_local_context();
     let mut key = Vec::new();
     for literal in &clause.literals {
-        let type_left = literal
-            .left
-            .get_closed_type_with_context(local_context, kernel_context);
         Edge::LiteralForm(literal.positive).append_to(&mut key);
-        key_from_closed_type(&type_left, &mut key);
+        key_from_term_type(
+            literal.left.as_ref(),
+            &mut key,
+            local_context,
+            kernel_context,
+        );
     }
     key
 }
@@ -654,8 +696,9 @@ impl<T> PatternTree<T> {
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> Option<&'a T> {
-        let type_left = left.get_closed_type_with_context(local_context, kernel_context);
-        let mut key = term_pair_key_prefix(&type_left);
+        let mut key = Vec::new();
+        Edge::TermPairForm.append_to(&mut key);
+        key_from_term_type(left.as_ref(), &mut key, local_context, kernel_context);
         let terms = [left.as_ref(), right.as_ref()];
         let mut replacements: Vec<TermRef> = vec![];
         let mut found_id = None;
@@ -903,8 +946,7 @@ where
 
     // Match domain type of the second-to-last argument
     let prev_arg = args[args.len() - 2];
-    let prev_arg_type = prev_arg.get_closed_type_with_context(local_context, kernel_context);
-    key_from_closed_type(&prev_arg_type, key);
+    key_from_term_type(prev_arg, key, local_context, kernel_context);
     let new_subtrie2 = new_subtrie.subtrie(key as &[u8]);
 
     // Recursively match with one fewer argument
@@ -972,8 +1014,7 @@ where
     for i in 0..replacements.len() {
         if first == replacements[i] {
             // Need to emit type encoding first, then the variable
-            let term_type = first.get_closed_type_with_context(local_context, kernel_context);
-            key_from_closed_type(&term_type, key);
+            key_from_term_type(first, key, local_context, kernel_context);
             Edge::Atom(Atom::Variable(i as u16)).append_to(key);
             let new_subtrie = subtrie.subtrie(key as &[u8]);
             if !find_term_matches_while(
@@ -994,8 +1035,7 @@ where
 
     // Case 2: the first term could match an entirely new variable
     // We need to emit the type encoding first, then the variable
-    let term_type = first.get_closed_type_with_context(local_context, kernel_context);
-    key_from_closed_type(&term_type, key);
+    key_from_term_type(first, key, local_context, kernel_context);
     Edge::Atom(Atom::Variable(replacements.len() as u16)).append_to(key);
     let new_subtrie = subtrie.subtrie(key as &[u8]);
     if !new_subtrie.is_empty() {
@@ -1024,8 +1064,7 @@ where
     }
 
     // Get the result type and match it
-    let term_type = first.get_closed_type_with_context(local_context, kernel_context);
-    key_from_closed_type(&term_type, key);
+    key_from_term_type(first, key, local_context, kernel_context);
 
     if !first.has_args() {
         // Atomic term: match the atom
@@ -1058,14 +1097,13 @@ where
         // Collect arguments
         let args: Vec<TermRef<'a>> = first.iter_args().collect();
         let last_arg = args[args.len() - 1];
-        let last_arg_type = last_arg.get_closed_type_with_context(local_context, kernel_context);
 
         // Match Application edge
         Edge::Application.append_to(key);
         let new_subtrie = subtrie.subtrie(key as &[u8]);
 
         // Match domain type
-        key_from_closed_type(&last_arg_type, key);
+        key_from_term_type(last_arg, key, local_context, kernel_context);
         let new_subtrie2 = new_subtrie.subtrie(key as &[u8]);
 
         if args.len() == 1 {
