@@ -293,7 +293,7 @@ impl Literal {
         right.normalize_var_ids_with_types(&mut var_ids, &mut var_types, input_context);
         let mut left = self.left.clone();
         left.normalize_var_ids_with_types(&mut var_ids, &mut var_types, input_context);
-        let output_context = LocalContext::new(var_types);
+        let output_context = input_context.remap(&var_ids);
         (right, left, output_context)
     }
 

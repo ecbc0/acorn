@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::kernel::atom::AtomId;
 use crate::kernel::closed_type::ClosedType;
 use crate::kernel::type_store::TypeStore;
 use crate::kernel::types::TypeId;
@@ -64,6 +65,56 @@ impl LocalContext {
             .iter()
             .map(|ct| ct.as_ground().unwrap_or(EMPTY))
             .collect();
+        LocalContext {
+            var_types,
+            var_closed_types,
+        }
+    }
+
+    /// Creates a new LocalContext by remapping variables from this context.
+    ///
+    /// `var_ids` specifies which original variable IDs to include in the new context.
+    /// The new context will have variables numbered 0, 1, 2, ... corresponding to
+    /// the original variable IDs in `var_ids`.
+    ///
+    /// For example, if `var_ids = [2, 0, 5]`, the new context will have:
+    /// - New variable 0 with the type of original variable 2
+    /// - New variable 1 with the type of original variable 0
+    /// - New variable 2 with the type of original variable 5
+    ///
+    /// This preserves both TypeId and ClosedType information for each variable.
+    ///
+    /// # Panics
+    /// Panics if any variable ID in `var_ids` is out of bounds for this context.
+    pub fn remap(&self, var_ids: &[AtomId]) -> LocalContext {
+        let var_types: Vec<TypeId> = var_ids
+            .iter()
+            .map(|&id| {
+                self.get_var_type(id as usize).unwrap_or_else(|| {
+                    panic!(
+                        "LocalContext::remap: variable x{} not found (context has {} variables)",
+                        id,
+                        self.len()
+                    )
+                })
+            })
+            .collect();
+
+        let var_closed_types: Vec<ClosedType> = var_ids
+            .iter()
+            .map(|&id| {
+                self.get_var_closed_type(id as usize)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "LocalContext::remap: variable x{} closed type not found (context has {} variables)",
+                            id,
+                            self.len()
+                        )
+                    })
+            })
+            .collect();
+
         LocalContext {
             var_types,
             var_closed_types,
@@ -212,5 +263,92 @@ impl LocalContext {
     #[cfg(test)]
     pub fn with_types(types: Vec<TypeId>) -> LocalContext {
         LocalContext::new(types)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kernel::closed_type::ClosedType;
+    use crate::kernel::types::{BOOL, EMPTY};
+
+    #[test]
+    fn test_remap_reorders_variables() {
+        // Create a context with 3 variables of different types
+        let ctx = LocalContext::new(vec![EMPTY, BOOL, TypeId::new(2)]);
+
+        // Remap to reorder: take vars [2, 0, 1]
+        let remapped = ctx.remap(&[2, 0, 1]);
+
+        assert_eq!(remapped.len(), 3);
+        assert_eq!(remapped.get_var_type(0), Some(TypeId::new(2)));
+        assert_eq!(remapped.get_var_type(1), Some(EMPTY));
+        assert_eq!(remapped.get_var_type(2), Some(BOOL));
+    }
+
+    #[test]
+    fn test_remap_subsets_variables() {
+        // Create a context with 4 variables
+        let ctx = LocalContext::new(vec![EMPTY, BOOL, TypeId::new(2), TypeId::new(3)]);
+
+        // Remap to take only vars [1, 3]
+        let remapped = ctx.remap(&[1, 3]);
+
+        assert_eq!(remapped.len(), 2);
+        assert_eq!(remapped.get_var_type(0), Some(BOOL));
+        assert_eq!(remapped.get_var_type(1), Some(TypeId::new(3)));
+    }
+
+    #[test]
+    fn test_remap_preserves_closed_types() {
+        // Create a context with a Pi type (function type)
+        let pi_type = ClosedType::pi(ClosedType::ground(BOOL), ClosedType::ground(BOOL));
+        let ground_type = ClosedType::ground(EMPTY);
+
+        let ctx = LocalContext {
+            var_types: vec![EMPTY, TypeId::new(2)],
+            var_closed_types: vec![ground_type.clone(), pi_type.clone()],
+        };
+
+        // Remap to reverse the order
+        let remapped = ctx.remap(&[1, 0]);
+
+        assert_eq!(remapped.len(), 2);
+        // Check that ClosedTypes are preserved correctly
+        assert_eq!(remapped.get_var_closed_type(0), Some(&pi_type));
+        assert_eq!(remapped.get_var_closed_type(1), Some(&ground_type));
+    }
+
+    #[test]
+    fn test_remap_empty() {
+        let ctx = LocalContext::new(vec![BOOL, EMPTY]);
+
+        // Remap to empty
+        let remapped = ctx.remap(&[]);
+
+        assert_eq!(remapped.len(), 0);
+    }
+
+    #[test]
+    fn test_remap_duplicates_variable() {
+        // It's valid to include the same variable ID multiple times
+        let ctx = LocalContext::new(vec![BOOL, EMPTY]);
+
+        let remapped = ctx.remap(&[0, 0, 1, 0]);
+
+        assert_eq!(remapped.len(), 4);
+        assert_eq!(remapped.get_var_type(0), Some(BOOL));
+        assert_eq!(remapped.get_var_type(1), Some(BOOL));
+        assert_eq!(remapped.get_var_type(2), Some(EMPTY));
+        assert_eq!(remapped.get_var_type(3), Some(BOOL));
+    }
+
+    #[test]
+    #[should_panic(expected = "variable x5 not found")]
+    fn test_remap_panics_on_out_of_bounds() {
+        let ctx = LocalContext::new(vec![BOOL, EMPTY]);
+
+        // Try to remap with an out-of-bounds variable ID
+        ctx.remap(&[0, 5]);
     }
 }

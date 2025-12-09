@@ -89,7 +89,8 @@ impl Clause {
             };
         }
 
-        // Normalize variable IDs and track flips, rebuilding the context
+        // Normalize variable IDs and track flips, rebuilding the context.
+        // var_ids will contain the original variable IDs in their new order.
         let mut var_ids = vec![];
         let mut var_types = vec![];
         for i in 0..output_literals.len() {
@@ -111,7 +112,7 @@ impl Clause {
 
         let clause = Clause {
             literals: output_literals,
-            context: LocalContext::new(var_types),
+            context: context.remap(&var_ids),
         };
         (clause, ClauseTrace::new(trace))
     }
@@ -177,7 +178,7 @@ impl Clause {
         for literal in &mut self.literals {
             literal.normalize_var_ids_with_types(&mut var_ids, &mut var_types, &input_context);
         }
-        self.context = LocalContext::new(var_types);
+        self.context = input_context.remap(&var_ids);
     }
 
     /// Create an impossible clause (empty clause, represents false).
@@ -299,7 +300,7 @@ impl Clause {
                 &input_context,
             );
         }
-        self.context = LocalContext::new(var_types);
+        self.context = input_context.remap(&var_ids);
     }
 
     /// Create a clause from literals without normalizing.
