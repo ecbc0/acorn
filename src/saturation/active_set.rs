@@ -7,9 +7,9 @@ use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::inference;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::pattern_tree::LiteralSet;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::unifier::{Scope, Unifier};
-use crate::pattern_tree::LiteralSet;
 use crate::proof_step::{
     BooleanReductionInfo, EqualityFactoringInfo, EqualityResolutionInfo, ExtensionalityInfo,
     InjectivityInfo, ProofStep, Rule, Truthiness,

@@ -1,8 +1,4 @@
-// NewPatternTree: A pattern tree that uses curried representation and ClosedType for type matching.
-//
-// Unlike the original PatternTree which uses TypeId for type discrimination, this implementation
-// represents types as terms and traverses them during matching. This allows pattern matching
-// with type variables like List[T] without requiring every type to have a TypeId.
+// PatternTree: A pattern tree that uses curried representation and ClosedType for type matching.
 //
 // Key design decisions:
 // 1. Everything is curried - applications are binary, no num_args
@@ -12,14 +8,151 @@
 
 use qp_trie::{Entry, SubTrie, Trie};
 
-use crate::kernel::aliases::{Clause, Literal, Term};
-use crate::kernel::atom::{Atom as KernelAtom, AtomId};
-use crate::kernel::closed_type::ClosedType;
-use crate::kernel::kernel_context::KernelContext;
-use crate::kernel::local_context::LocalContext;
-use crate::kernel::symbol::Symbol;
-use crate::kernel::term::{TermComponent, TermRef};
-use crate::kernel::types::{GroundTypeId, TypeId, TypeclassId};
+use super::aliases::{Clause, Literal, Term};
+use super::atom::{Atom as KernelAtom, AtomId};
+use super::closed_type::ClosedType;
+use super::kernel_context::KernelContext;
+use super::local_context::LocalContext;
+use super::symbol::Symbol;
+use super::term::{TermComponent, TermRef};
+use super::types::{GroundTypeId, TypeId, TypeclassId, EMPTY};
+
+/// Replaces variables in a term with corresponding replacement terms.
+/// Variables x_i are replaced with replacements[i].
+/// If a variable index >= replacements.len() and shift is Some, the variable is shifted.
+/// If a variable index >= replacements.len() and shift is None, panics.
+///
+/// Also builds the output context from:
+/// - The replacement_context (for variables in replacements)
+/// - The term_context (for shifted variables)
+pub fn replace_term_variables(
+    term: &Term,
+    term_context: &LocalContext,
+    replacements: &[TermRef],
+    replacement_context: &LocalContext,
+    shift: Option<AtomId>,
+) -> (Term, LocalContext) {
+    let mut output_var_types: Vec<TypeId> = replacement_context.var_types.clone();
+    let mut output_closed_types: Vec<ClosedType> =
+        replacement_context.get_var_closed_types().to_vec();
+
+    fn replace_recursive(
+        term: TermRef,
+        term_context: &LocalContext,
+        replacements: &[TermRef],
+        shift: Option<AtomId>,
+        output_var_types: &mut Vec<TypeId>,
+        output_closed_types: &mut Vec<ClosedType>,
+        empty_type: ClosedType,
+    ) -> Term {
+        let head = term.get_head_atom();
+
+        if let KernelAtom::Variable(var_id) = head {
+            let idx = *var_id as usize;
+            if idx < replacements.len() {
+                // Replace with the replacement term
+                let replacement = replacements[idx];
+                if term.has_args() {
+                    // f(args) where f is a variable being replaced
+                    // Result: replacement applied to args
+                    let replacement_term = replacement.to_owned();
+                    let replaced_args: Vec<Term> = term
+                        .iter_args()
+                        .map(|arg| {
+                            replace_recursive(
+                                arg,
+                                term_context,
+                                replacements,
+                                shift,
+                                output_var_types,
+                                output_closed_types,
+                                empty_type.clone(),
+                            )
+                        })
+                        .collect();
+                    replacement_term.apply(&replaced_args)
+                } else {
+                    // Just a variable, return the replacement
+                    replacement.to_owned()
+                }
+            } else {
+                // Shift the variable
+                let new_var_id = match shift {
+                    Some(s) => *var_id + s,
+                    None => panic!("no replacement for variable x{}", var_id),
+                };
+                // Track the type for the shifted variable
+                let new_idx = new_var_id as usize;
+                let var_type_id = term_context.get_var_type(idx).unwrap_or(EMPTY);
+                let var_closed_type = term_context
+                    .get_var_closed_type(idx)
+                    .cloned()
+                    .unwrap_or_else(|| empty_type.clone());
+                if new_idx >= output_closed_types.len() {
+                    output_var_types.resize(new_idx + 1, EMPTY);
+                    output_closed_types.resize(new_idx + 1, empty_type.clone());
+                }
+                output_var_types[new_idx] = var_type_id;
+                output_closed_types[new_idx] = var_closed_type;
+
+                if term.has_args() {
+                    let replaced_args: Vec<Term> = term
+                        .iter_args()
+                        .map(|arg| {
+                            replace_recursive(
+                                arg,
+                                term_context,
+                                replacements,
+                                shift,
+                                output_var_types,
+                                output_closed_types,
+                                empty_type.clone(),
+                            )
+                        })
+                        .collect();
+                    Term::new(KernelAtom::Variable(new_var_id), replaced_args)
+                } else {
+                    Term::atom(KernelAtom::Variable(new_var_id))
+                }
+            }
+        } else {
+            // Not a variable head - recurse into args if any
+            if term.has_args() {
+                let replaced_args: Vec<Term> = term
+                    .iter_args()
+                    .map(|arg| {
+                        replace_recursive(
+                            arg,
+                            term_context,
+                            replacements,
+                            shift,
+                            output_var_types,
+                            output_closed_types,
+                            empty_type.clone(),
+                        )
+                    })
+                    .collect();
+                Term::new(*head, replaced_args)
+            } else {
+                term.to_owned()
+            }
+        }
+    }
+
+    let empty_type = ClosedType::ground(GroundTypeId::new(EMPTY.as_u16()));
+    let result_term = replace_recursive(
+        term.as_ref(),
+        term_context,
+        replacements,
+        shift,
+        &mut output_var_types,
+        &mut output_closed_types,
+        empty_type,
+    );
+    let result_context =
+        LocalContext::from_types_and_closed_types(output_var_types, output_closed_types);
+    (result_term, result_context)
+}
 
 /// Atoms are the leaf nodes in the pattern tree.
 /// Both term variables and type variables are represented as Variable(idx).
@@ -478,11 +611,11 @@ fn key_from_clause(clause: &Clause, kernel_context: &KernelContext) -> Vec<u8> {
     key
 }
 
-/// NewPatternTree: A pattern tree using curried representation and ClosedType for type matching.
+/// PatternTree: A pattern tree using curried representation and ClosedType for type matching.
 ///
 /// This is designed to eventually replace PatternTree, supporting type variables in patterns.
 #[derive(Clone, Debug)]
-pub struct NewPatternTree<T> {
+pub struct PatternTree<T> {
     /// Maps byte keys to indices into the values vector.
     trie: Trie<Vec<u8>, usize>,
 
@@ -490,9 +623,9 @@ pub struct NewPatternTree<T> {
     pub values: Vec<T>,
 }
 
-impl<T> NewPatternTree<T> {
-    pub fn new() -> NewPatternTree<T> {
-        NewPatternTree {
+impl<T> PatternTree<T> {
+    pub fn new() -> PatternTree<T> {
+        PatternTree {
             trie: Trie::new(),
             values: vec![],
         }
@@ -622,10 +755,10 @@ impl<T> NewPatternTree<T> {
     }
 }
 
-impl NewPatternTree<()> {
+impl PatternTree<()> {
     /// Appends to the existing value if possible. Otherwise, inserts a vec![U].
     pub fn insert_or_append<U>(
-        pt: &mut NewPatternTree<Vec<U>>,
+        pt: &mut PatternTree<Vec<U>>,
         term: &Term,
         value: U,
         local_context: &LocalContext,
@@ -646,18 +779,18 @@ impl NewPatternTree<()> {
     }
 }
 
-/// The NewLiteralSet stores literals using the new curried pattern tree.
-/// It provides the same interface as LiteralSet but uses NewPatternTree internally.
+/// The LiteralSet stores literals using the new curried pattern tree.
+/// It provides the same interface as LiteralSet but uses PatternTree internally.
 #[derive(Clone)]
-pub struct NewLiteralSet {
+pub struct LiteralSet {
     /// Stores (sign, id, flipped) for each literal.
-    tree: NewPatternTree<(bool, usize, bool)>,
+    tree: PatternTree<(bool, usize, bool)>,
 }
 
-impl NewLiteralSet {
-    pub fn new() -> NewLiteralSet {
-        NewLiteralSet {
-            tree: NewPatternTree::new(),
+impl LiteralSet {
+    pub fn new() -> LiteralSet {
+        LiteralSet {
+            tree: PatternTree::new(),
         }
     }
 
@@ -1242,13 +1375,13 @@ mod tests {
     }
 
     #[test]
-    fn test_new_pattern_tree_insert_term() {
+    fn test_pattern_tree_insert_term() {
         // Test inserting and finding atomic terms
         let local_context = LocalContext::new(vec![BOOL; 2]);
         let kernel_context =
             KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
 
-        let mut tree: NewPatternTree<usize> = NewPatternTree::new();
+        let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Insert c0
         let term = Term::parse("c0");
@@ -1259,13 +1392,13 @@ mod tests {
     }
 
     #[test]
-    fn test_new_pattern_tree_insert_pair() {
+    fn test_pattern_tree_insert_pair() {
         // Test inserting term pairs
         let local_context = LocalContext::new(vec![BOOL; 2]);
         let kernel_context =
             KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
 
-        let mut tree: NewPatternTree<usize> = NewPatternTree::new();
+        let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Insert (c0, c1)
         let term1 = Term::parse("c0");
@@ -1286,13 +1419,13 @@ mod tests {
     }
 
     #[test]
-    fn test_new_pattern_tree_variable_matching() {
+    fn test_pattern_tree_variable_matching() {
         // Test that patterns with variables match concrete terms
         let local_context = LocalContext::new(vec![BOOL; 2]);
         let kernel_context =
             KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
 
-        let mut tree: NewPatternTree<usize> = NewPatternTree::new();
+        let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Insert pattern "x0 = c0" - a variable equals a constant
         let pattern_left = Term::parse("x0");
@@ -1313,13 +1446,13 @@ mod tests {
     }
 
     #[test]
-    fn test_new_pattern_tree_application_with_variable() {
+    fn test_pattern_tree_application_with_variable() {
         // Test that patterns with function applications and variables match correctly
         // c1 : Bool -> Bool, so c1(x0) : Bool when x0 : Bool
         let local_context = LocalContext::new(vec![BOOL; 3]);
         let kernel_context = KernelContext::test_with_function_types();
 
-        let mut tree: NewPatternTree<usize> = NewPatternTree::new();
+        let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Insert pattern "c1(x0) = c5" - a function applied to a variable equals a constant
         // c1 : Bool -> Bool, c5 : Bool
@@ -1342,13 +1475,13 @@ mod tests {
     }
 
     #[test]
-    fn test_new_pattern_tree_clause_with_function_application() {
+    fn test_pattern_tree_clause_with_function_application() {
         // Test that clauses with function applications can be inserted and found
         // when using test_with_function_types which properly stores Pi types.
         let local_context = LocalContext::new(vec![BOOL; 3]);
         let kernel_context = KernelContext::test_with_function_types();
 
-        let mut tree: NewPatternTree<usize> = NewPatternTree::new();
+        let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Create a clause with a function application: c1(x0) = c5
         // c1 : Bool -> Bool, c5 : Bool
@@ -1361,7 +1494,7 @@ mod tests {
     }
 
     #[test]
-    fn test_new_pattern_tree_clause_specialization() {
+    fn test_pattern_tree_clause_specialization() {
         // Test that find_clause can match a specialized clause against a pattern.
         // Note: find_clause does exact structural matching with variable substitution.
         // The clauses must have the same structure (same left/right order).
@@ -1371,7 +1504,7 @@ mod tests {
         let local_context = LocalContext::new(vec![BOOL; 3]);
         let kernel_context = KernelContext::test_with_function_types();
 
-        let mut tree: NewPatternTree<usize> = NewPatternTree::new();
+        let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Insert pattern: x0 = c5 (variable on left, constant on right)
         // After KBO normalization, x0 < c5 so this might get flipped.
@@ -1386,12 +1519,12 @@ mod tests {
     }
 
     #[test]
-    fn test_new_pattern_tree_clause_multi_literal() {
+    fn test_pattern_tree_clause_multi_literal() {
         // Test clause with multiple literals containing function applications
         let local_context = LocalContext::new(vec![BOOL; 3]);
         let kernel_context = KernelContext::test_with_function_types();
 
-        let mut tree: NewPatternTree<usize> = NewPatternTree::new();
+        let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Create a clause with two literals: c1(x0) = c5 or c0(x0, x1) = c6
         // c0 : (Bool, Bool) -> Bool, c1 : Bool -> Bool, c5, c6 : Bool
@@ -1410,11 +1543,11 @@ mod tests {
         let local_context = LocalContext::new(vec![BOOL; 10]);
         let kernel_context = KernelContext::test_with_all_bool_types();
 
-        let mut tree: NewPatternTree<Vec<usize>> = NewPatternTree::new();
+        let mut tree: PatternTree<Vec<usize>> = PatternTree::new();
 
         // Insert c1 using insert_or_append (like RewriteTree does)
         let term = Term::parse("c1");
-        NewPatternTree::insert_or_append(&mut tree, &term, 42, &local_context, &kernel_context);
+        PatternTree::insert_or_append(&mut tree, &term, 42, &local_context, &kernel_context);
 
         // Now try to find it using the pattern that RewriteTree uses
         let type_id = term.get_term_type_with_context(&local_context, &kernel_context);
@@ -1470,7 +1603,7 @@ mod tests {
         let local_context =
             LocalContext::new_with_type_store(vec![type_bool_to_bool], &kernel_context.type_store);
 
-        let mut tree: NewPatternTree<usize> = NewPatternTree::new();
+        let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Insert pattern: x0(c6) = c5
         let pattern_left = Term::parse("x0(c6)");
@@ -1528,7 +1661,7 @@ mod tests {
         let local_context =
             LocalContext::new_with_type_store(vec![type_bool_to_bool], &kernel_context.type_store);
 
-        let mut tree: NewPatternTree<usize> = NewPatternTree::new();
+        let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Insert pattern: x0(c5) = c6
         let pattern_left = Term::parse("x0(c5)");

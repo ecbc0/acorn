@@ -5,10 +5,10 @@ use std::vec;
 use crate::kernel::aliases::{Clause, Literal};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::pattern_tree::PatternTree;
 use crate::kernel::term::TermRef;
 use crate::kernel::types::TypeId;
 use crate::kernel::unifier::Unifier;
-use crate::pattern_tree::PatternTree;
 
 /// The GeneralizationSet stores general clauses in a way that allows us to quickly check whether
 /// a new clause is a specialization of an existing one.

@@ -6,9 +6,9 @@ use crate::kernel::atom::AtomId;
 use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::pattern_tree::{replace_term_variables, term_key_prefix, PatternTree};
 use crate::kernel::term::TermRef;
 use crate::kernel::types::TypeId;
-use crate::pattern_tree::{replace_term_variables, term_key_prefix, PatternTree};
 
 // Each term can correspond with multiple RewriteValues.
 // This is the internal representation of the pattern, before it has been applied to a term.
