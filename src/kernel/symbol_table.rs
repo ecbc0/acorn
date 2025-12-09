@@ -162,27 +162,29 @@ impl SymbolTable {
     /// Add a global constant with the given type, without a name.
     /// Returns the Symbol for the new constant.
     /// Primarily for testing with parsed terms like "g0", "g1".
-    /// Note: Only for ground types.
     #[cfg(test)]
-    pub fn add_global_constant_with_type(&mut self, type_id: TypeId) -> Symbol {
+    pub fn add_global_constant_with_type(
+        &mut self,
+        type_id: TypeId,
+        type_store: &TypeStore,
+    ) -> Symbol {
         let atom_id = self.global_constants.len() as AtomId;
         self.global_constants.push(None);
         self.global_constant_types.push(type_id);
         self.global_constant_closed_types
-            .push(ClosedType::ground(GroundTypeId::new(type_id.as_u16())));
+            .push(type_store.type_id_to_closed_type(type_id));
         Symbol::GlobalConstant(atom_id)
     }
 
     /// Add a monomorph with the given type, without the full ConstantInstance.
     /// Returns the Symbol for the new monomorph.
     /// Primarily for testing with parsed terms like "m0", "m1".
-    /// Note: Only for ground types.
     #[cfg(test)]
-    pub fn add_monomorph_with_type(&mut self, type_id: TypeId) -> Symbol {
+    pub fn add_monomorph_with_type(&mut self, type_id: TypeId, type_store: &TypeStore) -> Symbol {
         let atom_id = self.monomorph_types.len() as AtomId;
         self.monomorph_types.push(type_id);
         self.monomorph_closed_types
-            .push(ClosedType::ground(GroundTypeId::new(type_id.as_u16())));
+            .push(type_store.type_id_to_closed_type(type_id));
         Symbol::Monomorph(atom_id)
     }
 

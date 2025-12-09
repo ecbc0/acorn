@@ -79,11 +79,13 @@ impl KernelContext {
             ctx.symbol_table.add_scoped_constant_with_type(EMPTY);
         }
         for _ in 0..num_global {
-            ctx.symbol_table.add_global_constant_with_type(EMPTY);
+            ctx.symbol_table
+                .add_global_constant_with_type(EMPTY, &ctx.type_store);
         }
         // Also add monomorphs for tests that use "m0", "m1", etc.
         for _ in 0..10 {
-            ctx.symbol_table.add_monomorph_with_type(EMPTY);
+            ctx.symbol_table
+                .add_monomorph_with_type(EMPTY, &ctx.type_store);
         }
         // Also add synthetics for tests that use "s0", "s1", etc.
         for _ in 0..10 {
@@ -116,12 +118,14 @@ impl KernelContext {
             ctx.symbol_table.add_scoped_constant_with_type(BOOL);
         }
         for _ in 0..10 {
-            ctx.symbol_table.add_global_constant_with_type(BOOL);
+            ctx.symbol_table
+                .add_global_constant_with_type(BOOL, &ctx.type_store);
         }
 
         // Monomorphs are (Bool, Bool) -> Bool functions
         for _ in 0..10 {
-            ctx.symbol_table.add_monomorph_with_type(type_bool2_to_bool);
+            ctx.symbol_table
+                .add_monomorph_with_type(type_bool2_to_bool, &ctx.type_store);
         }
 
         // Synthetics are Bool
@@ -143,7 +147,8 @@ impl KernelContext {
             ctx.symbol_table.add_scoped_constant_with_type(type_id);
         }
         for &type_id in global_types {
-            ctx.symbol_table.add_global_constant_with_type(type_id);
+            ctx.symbol_table
+                .add_global_constant_with_type(type_id, &ctx.type_store);
         }
         ctx
     }
@@ -162,10 +167,12 @@ impl KernelContext {
             ctx.symbol_table.add_scoped_constant_with_type(type_id);
         }
         for &type_id in global_types {
-            ctx.symbol_table.add_global_constant_with_type(type_id);
+            ctx.symbol_table
+                .add_global_constant_with_type(type_id, &ctx.type_store);
         }
         for &type_id in monomorph_types {
-            ctx.symbol_table.add_monomorph_with_type(type_id);
+            ctx.symbol_table
+                .add_monomorph_with_type(type_id, &ctx.type_store);
         }
         for &type_id in synthetic_types {
             ctx.symbol_table.declare_synthetic(type_id, &ctx.type_store);
@@ -227,17 +234,18 @@ impl KernelContext {
 
         // Add global constants with function types
         ctx.symbol_table
-            .add_global_constant_with_type(type_bool2_to_bool); // g0
+            .add_global_constant_with_type(type_bool2_to_bool, &ctx.type_store); // g0
         ctx.symbol_table
-            .add_global_constant_with_type(type_bool_to_bool); // g1
+            .add_global_constant_with_type(type_bool_to_bool, &ctx.type_store); // g1
         ctx.symbol_table
-            .add_global_constant_with_type(type_bool3_to_bool); // g2
+            .add_global_constant_with_type(type_bool3_to_bool, &ctx.type_store); // g2
         ctx.symbol_table
-            .add_global_constant_with_type(type_empty_to_bool); // g3
+            .add_global_constant_with_type(type_empty_to_bool, &ctx.type_store); // g3
         ctx.symbol_table
-            .add_global_constant_with_type(type_empty2_to_empty); // g4
+            .add_global_constant_with_type(type_empty2_to_empty, &ctx.type_store); // g4
         for _ in 5..10 {
-            ctx.symbol_table.add_global_constant_with_type(BOOL);
+            ctx.symbol_table
+                .add_global_constant_with_type(BOOL, &ctx.type_store);
         }
 
         // Add scoped constants with similar types (using proper ClosedTypes for functions)
@@ -266,14 +274,19 @@ impl KernelContext {
         }
 
         // Add monomorphs with function types (m0-m4 are functions, m5-m9 are Bool)
-        ctx.symbol_table.add_monomorph_with_type(type_bool2_to_bool); // m0
-        ctx.symbol_table.add_monomorph_with_type(type_bool_to_bool); // m1
-        ctx.symbol_table.add_monomorph_with_type(type_bool3_to_bool); // m2
-        ctx.symbol_table.add_monomorph_with_type(type_empty_to_bool); // m3
         ctx.symbol_table
-            .add_monomorph_with_type(type_empty2_to_empty); // m4
+            .add_monomorph_with_type(type_bool2_to_bool, &ctx.type_store); // m0
+        ctx.symbol_table
+            .add_monomorph_with_type(type_bool_to_bool, &ctx.type_store); // m1
+        ctx.symbol_table
+            .add_monomorph_with_type(type_bool3_to_bool, &ctx.type_store); // m2
+        ctx.symbol_table
+            .add_monomorph_with_type(type_empty_to_bool, &ctx.type_store); // m3
+        ctx.symbol_table
+            .add_monomorph_with_type(type_empty2_to_empty, &ctx.type_store); // m4
         for _ in 5..10 {
-            ctx.symbol_table.add_monomorph_with_type(BOOL);
+            ctx.symbol_table
+                .add_monomorph_with_type(BOOL, &ctx.type_store);
         }
 
         // Add synthetics with BOOL type

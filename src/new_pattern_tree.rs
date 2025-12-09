@@ -19,7 +19,7 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::term::{TermComponent, TermRef};
-use crate::kernel::types::{GroundTypeId, TypeclassId};
+use crate::kernel::types::{GroundTypeId, TypeId, TypeclassId};
 
 /// Atoms are the leaf nodes in the pattern tree.
 /// Both term variables and type variables are represented as Variable(idx).
@@ -361,10 +361,14 @@ fn key_from_partial_application(
 }
 
 /// Creates a key prefix for a term of the given type.
-pub fn term_key_prefix(closed_type: &ClosedType) -> Vec<u8> {
+/// Takes both TypeId and ClosedType for API compatibility between old and new pattern trees.
+/// The old implementation uses type_id, the new implementation uses closed_type.
+///
+/// Note: This only adds the TermForm marker, not the type encoding.
+/// The type encoding is added by find_term_matches_while when matching.
+pub fn term_key_prefix(_type_id: TypeId, _closed_type: &ClosedType) -> Vec<u8> {
     let mut key = Vec::new();
     Edge::TermForm.append_to(&mut key);
-    key_from_closed_type(closed_type, &mut key);
     key
 }
 
@@ -1305,5 +1309,43 @@ mod tests {
         // Should be able to find the clause
         let found = tree.find_clause(&clause, &kernel_context);
         assert_eq!(found, Some(&99));
+    }
+
+    #[test]
+    fn test_insert_or_append_and_find() {
+        // Test the insert_or_append + find_term_matches_while pattern used by RewriteTree
+        // Use test_with_all_bool_types to match what rewrite_tree tests use
+        let local_context = LocalContext::new(vec![BOOL; 10]);
+        let kernel_context = KernelContext::test_with_all_bool_types();
+
+        let mut tree: NewPatternTree<Vec<usize>> = NewPatternTree::new();
+
+        // Insert c1 using insert_or_append (like RewriteTree does)
+        let term = Term::parse("c1");
+        NewPatternTree::insert_or_append(&mut tree, &term, 42, &local_context, &kernel_context);
+
+        // Now try to find it using the pattern that RewriteTree uses
+        let type_id = term.get_term_type_with_context(&local_context, &kernel_context);
+        let closed_type = term.get_closed_type_with_context(&local_context, &kernel_context);
+        let mut key = term_key_prefix(type_id, &closed_type);
+
+        let terms = [term.as_ref()];
+        let mut replacements: Vec<TermRef> = vec![];
+        let mut found_id = None;
+
+        tree.find_term_matches_while(
+            &mut key,
+            &terms,
+            &local_context,
+            &kernel_context,
+            &mut replacements,
+            &mut |value_id, _| {
+                found_id = Some(value_id);
+                false
+            },
+        );
+
+        assert!(found_id.is_some(), "Should find the inserted term");
+        assert_eq!(tree.values[found_id.unwrap()], vec![42]);
     }
 }

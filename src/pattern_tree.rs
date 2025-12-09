@@ -174,6 +174,7 @@ pub fn replace_term_variables(
 /// does contain enough type information to match against an existing term, as long as having
 /// an atomic variable at the root level is forbidden.
 #[derive(Debug)]
+#[allow(dead_code)] // TermCategory is only used when new_pattern_tree feature is disabled
 enum Edge {
     /// Number of args, and the type of the head atom.
     Head(u8, TypeId),
@@ -182,6 +183,7 @@ enum Edge {
     Atom(Atom),
 
     /// Category edge to indicate a term of a particular type.
+    /// Only used when new_pattern_tree feature is disabled.
     TermCategory(TypeId),
 
     /// Category edge, including the type of both left and right of the literal.
@@ -309,11 +311,18 @@ fn key_from_term_helper(
     }
 }
 
-pub fn term_key_prefix(type_id: TypeId) -> Vec<u8> {
+/// Creates a key prefix for a term of the given type.
+/// Takes both TypeId and ClosedType for API compatibility between old and new pattern trees.
+/// The old implementation uses type_id, the new implementation uses closed_type.
+#[cfg(not(feature = "new_pattern_tree"))]
+pub fn term_key_prefix(type_id: TypeId, _closed_type: &ClosedType) -> Vec<u8> {
     let mut key = Vec::new();
     Edge::TermCategory(type_id).append_to(&mut key);
     key
 }
+
+#[cfg(feature = "new_pattern_tree")]
+pub use crate::new_pattern_tree::term_key_prefix;
 
 /// Appends the key for this term, prefixing with the top-level type
 pub fn key_from_term(
@@ -321,7 +330,9 @@ pub fn key_from_term(
     local_context: &LocalContext,
     kernel_context: &KernelContext,
 ) -> Vec<u8> {
-    let mut key = term_key_prefix(term.get_term_type_with_context(local_context, kernel_context));
+    let type_id = term.get_term_type_with_context(local_context, kernel_context);
+    let closed_type = term.get_closed_type_with_context(local_context, kernel_context);
+    let mut key = term_key_prefix(type_id, &closed_type);
     key_from_term_helper(term.as_ref(), &mut key, local_context, kernel_context);
     key
 }

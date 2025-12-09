@@ -3,6 +3,7 @@
 
 use crate::kernel::aliases::{Literal, Term};
 use crate::kernel::atom::AtomId;
+use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::TermRef;
@@ -121,6 +122,7 @@ impl RewriteTree {
     fn find_rewrites_new<F>(
         &self,
         term_type: TypeId,
+        closed_type: &ClosedType,
         input_term: TermRef,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
@@ -129,7 +131,7 @@ impl RewriteTree {
     ) where
         F: FnMut(usize, bool, Term, LocalContext),
     {
-        let mut key = term_key_prefix(term_type);
+        let mut key = term_key_prefix(term_type, closed_type);
         let mut replacements: Vec<TermRef> = vec![];
         self.tree.find_term_matches_while(
             &mut key,
@@ -167,8 +169,11 @@ impl RewriteTree {
         kernel_context: &KernelContext,
     ) -> Vec<Rewrite> {
         let mut answer = vec![];
+        let type_id = input_term.get_term_type_with_context(local_context, kernel_context);
+        let closed_type = input_term.get_closed_type_with_context(local_context, kernel_context);
         self.find_rewrites_new(
-            input_term.get_term_type_with_context(local_context, kernel_context),
+            type_id,
+            &closed_type,
             input_term.as_ref(),
             local_context,
             kernel_context,
