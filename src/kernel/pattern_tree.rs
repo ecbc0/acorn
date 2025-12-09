@@ -493,10 +493,9 @@ fn key_from_partial_application(
     }
 }
 
-/// Creates a key prefix for a term of the given type.
-/// Note: This only adds the TermForm marker, not the type encoding.
-/// The type encoding is added by find_term_matches_while when matching.
-pub fn term_key_prefix(_type_id: TypeId, _closed_type: &ClosedType) -> Vec<u8> {
+/// Creates a key prefix for a term.
+/// This only adds the TermForm marker; the type encoding is added during matching.
+pub fn term_key_prefix() -> Vec<u8> {
     let mut key = Vec::new();
     Edge::TermForm.append_to(&mut key);
     key
@@ -1544,9 +1543,7 @@ mod tests {
         PatternTree::insert_or_append(&mut tree, &term, 42, &local_context, &kernel_context);
 
         // Now try to find it using the pattern that RewriteTree uses
-        let type_id = term.get_term_type_with_context(&local_context, &kernel_context);
-        let closed_type = term.get_closed_type_with_context(&local_context, &kernel_context);
-        let mut key = term_key_prefix(type_id, &closed_type);
+        let mut key = term_key_prefix();
 
         let terms = [term.as_ref()];
         let mut replacements: Vec<TermRef> = vec![];
