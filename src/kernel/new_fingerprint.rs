@@ -265,7 +265,8 @@ impl<T> NewFingerprintUnifier<T> {
             None => return result,
         };
 
-        // TODO: do smart tree things instead of this dumb exhaustive search
+        // At around 8000 goals in library, we tried doing smart tree things instead of
+        // dumb search, but the dumb search was faster.
         for (f, values) in tree {
             if fingerprint.could_unify(f) {
                 for v in values {
@@ -357,7 +358,8 @@ impl<T> NewFingerprintSpecializer<T> {
             None => return result,
         };
 
-        // TODO: do smart tree things instead of this dumb exhaustive search
+        // At around 8000 goals in library, we tried doing smart tree things instead of
+        // dumb search, but the dumb search was faster.
         for (f, values) in tree {
             if fingerprint.could_specialize(f) {
                 for v in values {
