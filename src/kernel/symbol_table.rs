@@ -8,6 +8,8 @@ use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::closed_type::ClosedType;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::type_store::TypeStore;
+#[cfg(test)]
+use crate::kernel::types::GroundTypeId;
 use crate::kernel::types::TypeId;
 
 #[derive(Clone, Copy, Debug)]
@@ -132,6 +134,7 @@ impl SymbolTable {
     /// Returns the Symbol for the new constant.
     /// Primarily for testing with parsed terms like "c0", "c1".
     /// Note: Uses ground ClosedType, not suitable for function types.
+    /// TODO: This function incorrectly assumes type_id is a ground type.
     #[cfg(test)]
     pub fn add_scoped_constant_with_type(&mut self, type_id: TypeId) -> Symbol {
         let atom_id = self.scoped_constants.len() as AtomId;
@@ -139,7 +142,7 @@ impl SymbolTable {
         self.scoped_constant_types.push(type_id);
         // For test-only methods, use a simple ground type representation
         self.scoped_constant_closed_types
-            .push(ClosedType::ground(type_id));
+            .push(ClosedType::ground(GroundTypeId::new(type_id.as_u16())));
         Symbol::ScopedConstant(atom_id)
     }
 
@@ -161,6 +164,7 @@ impl SymbolTable {
     /// Add a global constant with the given type, without a name.
     /// Returns the Symbol for the new constant.
     /// Primarily for testing with parsed terms like "g0", "g1".
+    /// TODO: This function incorrectly assumes type_id is a ground type.
     #[cfg(test)]
     pub fn add_global_constant_with_type(&mut self, type_id: TypeId) -> Symbol {
         let atom_id = self.global_constants.len() as AtomId;
@@ -168,20 +172,21 @@ impl SymbolTable {
         self.global_constant_types.push(type_id);
         // For test-only methods, use a simple ground type representation
         self.global_constant_closed_types
-            .push(ClosedType::ground(type_id));
+            .push(ClosedType::ground(GroundTypeId::new(type_id.as_u16())));
         Symbol::GlobalConstant(atom_id)
     }
 
     /// Add a monomorph with the given type, without the full ConstantInstance.
     /// Returns the Symbol for the new monomorph.
     /// Primarily for testing with parsed terms like "m0", "m1".
+    /// TODO: This function incorrectly assumes type_id is a ground type.
     #[cfg(test)]
     pub fn add_monomorph_with_type(&mut self, type_id: TypeId) -> Symbol {
         let atom_id = self.monomorph_types.len() as AtomId;
         self.monomorph_types.push(type_id);
         // For test-only methods, use a simple ground type representation
         self.monomorph_closed_types
-            .push(ClosedType::ground(type_id));
+            .push(ClosedType::ground(GroundTypeId::new(type_id.as_u16())));
         Symbol::Monomorph(atom_id)
     }
 

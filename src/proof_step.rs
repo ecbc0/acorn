@@ -8,7 +8,7 @@ use crate::kernel::atom::Atom;
 use crate::kernel::closed_type::ClosedType;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
-use crate::kernel::types::EMPTY;
+use crate::kernel::types::{GroundTypeId, EMPTY};
 
 /// The different sorts of proof steps.
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
@@ -597,7 +597,8 @@ impl ProofStep {
         let rewritten_context = {
             let target_context = target_step.clause.get_local_context();
             let mut closed_types = target_context.get_var_closed_types().to_vec();
-            let empty_type = ClosedType::ground(EMPTY);
+            // TODO: This uses EMPTY as a fallback ground type, which may not be correct for all contexts.
+            let empty_type = ClosedType::ground(GroundTypeId::new(EMPTY.as_u16()));
             for (i, ct) in new_subterm_context
                 .get_var_closed_types()
                 .iter()

@@ -4,7 +4,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use super::symbol::Symbol;
-use super::types::TypeId;
+use super::types::GroundTypeId;
 
 pub type AtomId = u16;
 
@@ -31,7 +31,8 @@ pub enum Atom {
 
     // A ground type, used in ClosedType to represent types like Int, Bool, Type<CommRing>.
     // Ground types have no internal structure - they are atomic type constants.
-    Type(TypeId),
+    // Uses GroundTypeId to ensure only ground types can be stored in atoms.
+    Type(GroundTypeId),
 }
 
 impl fmt::Display for Atom {

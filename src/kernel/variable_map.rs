@@ -4,7 +4,7 @@ use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::TermRef;
-use crate::kernel::types::{TypeId, EMPTY};
+use crate::kernel::types::{GroundTypeId, TypeId, EMPTY};
 use std::fmt;
 
 // A VariableMap maintains a mapping from variables to terms, allowing us to turn a more general term
@@ -37,8 +37,10 @@ impl VariableMap {
 
     /// Builds a LocalContext from all the variables in the replacement terms.
     /// We need the input_context to look up variable types.
+    ///
+    /// TODO: This uses EMPTY as a fallback ground type, which may not be correct for all contexts.
     pub fn build_output_context(&self, input_context: &LocalContext) -> LocalContext {
-        let empty_type = ClosedType::ground(EMPTY);
+        let empty_type = ClosedType::ground(GroundTypeId::new(EMPTY.as_u16()));
         let mut var_closed_types: Vec<Option<ClosedType>> = vec![];
         for opt_term in &self.map {
             if let Some(term) = opt_term {

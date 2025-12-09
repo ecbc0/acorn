@@ -7,7 +7,7 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::term::TermRef;
-use crate::kernel::types::TypeId;
+use crate::kernel::types::{GroundTypeId, TypeId};
 /// Replaces variables in a term with corresponding replacement terms.
 /// Variables x_i are replaced with replacements[i].
 /// If a variable index >= replacements.len() and shift is Some, the variable is shifted.
@@ -123,7 +123,8 @@ pub fn replace_term_variables(
         }
     }
 
-    let empty_type = ClosedType::ground(EMPTY);
+    // TODO: This uses EMPTY as a fallback ground type, which may not be correct for all contexts.
+    let empty_type = ClosedType::ground(GroundTypeId::new(EMPTY.as_u16()));
     let result_term = replace_recursive(
         term.as_ref(),
         term_context,

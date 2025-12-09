@@ -19,7 +19,7 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::term::{TermComponent, TermRef};
-use crate::kernel::types::{TypeId, TypeclassId};
+use crate::kernel::types::{GroundTypeId, TypeclassId};
 
 /// Atoms are the leaf nodes in the pattern tree.
 /// Both term variables and type variables are represented as Variable(idx).
@@ -33,7 +33,7 @@ pub enum Atom {
     Symbol(Symbol),
 
     /// Ground types like Bool, Int, Nat.
-    Type(TypeId),
+    Type(GroundTypeId),
 
     /// The sort of types (kind *).
     /// Used as the domain for type constructors like List.
@@ -149,7 +149,7 @@ impl Edge {
             ATOM_VARIABLE => Edge::Atom(Atom::Variable(id)),
             ATOM_TRUE => Edge::Atom(Atom::True),
             ATOM_TYPE0 => Edge::Atom(Atom::Type0),
-            ATOM_TYPE => Edge::Atom(Atom::Type(TypeId::new(id))),
+            ATOM_TYPE => Edge::Atom(Atom::Type(GroundTypeId::new(id))),
             ATOM_TYPECLASS => Edge::Atom(Atom::Typeclass(TypeclassId::new(id))),
             ATOM_SYMBOL_GLOBAL => Edge::Atom(Atom::Symbol(Symbol::GlobalConstant(id))),
             ATOM_SYMBOL_SCOPED => Edge::Atom(Atom::Symbol(Symbol::ScopedConstant(id))),
@@ -1018,6 +1018,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::type_store::TypeStore;
     use crate::kernel::types::BOOL;
 
     #[test]
@@ -1033,8 +1034,8 @@ mod tests {
             Edge::Atom(Atom::Variable(42)),
             Edge::Atom(Atom::True),
             Edge::Atom(Atom::Type0),
-            Edge::Atom(Atom::Type(TypeId::new(1))),
-            Edge::Atom(Atom::Type(TypeId::new(100))),
+            Edge::Atom(Atom::Type(GroundTypeId::new(1))),
+            Edge::Atom(Atom::Type(GroundTypeId::new(100))),
             Edge::Atom(Atom::Typeclass(TypeclassId::new(5))),
             Edge::Atom(Atom::Symbol(Symbol::GlobalConstant(10))),
             Edge::Atom(Atom::Symbol(Symbol::ScopedConstant(20))),
@@ -1055,7 +1056,7 @@ mod tests {
     fn test_debug_bytes() {
         let mut bytes = Vec::new();
         Edge::TermForm.append_to(&mut bytes);
-        Edge::Atom(Atom::Type(TypeId::new(1))).append_to(&mut bytes);
+        Edge::Atom(Atom::Type(GroundTypeId::new(1))).append_to(&mut bytes);
         Edge::Atom(Atom::Symbol(Symbol::ScopedConstant(5))).append_to(&mut bytes);
 
         let debug = Edge::debug_bytes(&bytes);
@@ -1066,36 +1067,42 @@ mod tests {
 
     #[test]
     fn test_key_from_closed_type_ground() {
+        let store = TypeStore::new();
+        let bool_ground = store.get_ground_type_id(BOOL).unwrap();
+
         // Test encoding of a ground type like Bool
-        let bool_type = ClosedType::ground(BOOL);
+        let bool_type = ClosedType::ground(bool_ground);
         let mut key = Vec::new();
         key_from_closed_type(&bool_type, &mut key);
 
-        // Should be just Atom(Type(BOOL))
+        // Should be just Atom(Type(bool_ground))
         assert_eq!(key.len(), 3);
         let edge = Edge::from_bytes(key[0], key[1], key[2]);
-        assert_eq!(edge, Edge::Atom(Atom::Type(BOOL)));
+        assert_eq!(edge, Edge::Atom(Atom::Type(bool_ground)));
     }
 
     #[test]
     fn test_key_from_closed_type_arrow() {
+        let store = TypeStore::new();
+        let bool_ground = store.get_ground_type_id(BOOL).unwrap();
+
         // Test encoding of Bool -> Bool
-        let bool_type = ClosedType::ground(BOOL);
+        let bool_type = ClosedType::ground(bool_ground);
         let arrow_type = ClosedType::pi(bool_type.clone(), bool_type.clone());
         let mut key = Vec::new();
         key_from_closed_type(&arrow_type, &mut key);
 
-        // Should be: Arrow + Atom(Type(BOOL)) + Atom(Type(BOOL))
+        // Should be: Arrow + Atom(Type(bool_ground)) + Atom(Type(bool_ground))
         assert_eq!(key.len(), 9);
 
         let edge1 = Edge::from_bytes(key[0], key[1], key[2]);
         assert_eq!(edge1, Edge::Arrow);
 
         let edge2 = Edge::from_bytes(key[3], key[4], key[5]);
-        assert_eq!(edge2, Edge::Atom(Atom::Type(BOOL)));
+        assert_eq!(edge2, Edge::Atom(Atom::Type(bool_ground)));
 
         let edge3 = Edge::from_bytes(key[6], key[7], key[8]);
-        assert_eq!(edge3, Edge::Atom(Atom::Type(BOOL)));
+        assert_eq!(edge3, Edge::Atom(Atom::Type(bool_ground)));
     }
 
     #[test]

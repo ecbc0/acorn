@@ -5,7 +5,7 @@ use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::types::{TypeId, BOOL};
+use crate::kernel::types::{GroundTypeId, TypeId, BOOL};
 
 /// A component of a Term or ClosedType in its flattened representation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -194,7 +194,9 @@ impl<'a> TermRef<'a> {
                     )
                 }),
             Atom::Symbol(symbol) => kernel_context.symbol_table.get_closed_type(*symbol).clone(),
-            Atom::True => ClosedType::ground(BOOL),
+            // TODO: This assumes BOOL is a ground type, which it should be, but we should
+            // get it from TypeStore for consistency.
+            Atom::True => ClosedType::ground(GroundTypeId::new(BOOL.as_u16())),
             Atom::Type(_) => {
                 panic!("Atom::Type should not appear in Term, only in ClosedType")
             }
