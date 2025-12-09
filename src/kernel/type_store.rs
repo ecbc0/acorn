@@ -231,9 +231,8 @@ impl TypeStore {
             }
 
             AcornType::Variable(_) | AcornType::Arbitrary(_) => {
-                // Type variables/arbitrary types are not fully closed.
-                // For now, represent them as a ground type using the TypeId.
-                // This is a temporary representation until all types are fully closed.
+                // Type variables and arbitrary types are ground types in the kernel.
+                // Each gets its own TypeId and is treated as an atomic type.
                 let ground_id = GroundTypeId::new(type_id.as_u16());
                 ClosedType::ground(ground_id)
             }
@@ -475,6 +474,77 @@ mod tests {
             ),
             "Argument should be Bool, got {:?}",
             closed.components().get(2)
+        );
+    }
+
+    #[test]
+    fn test_type_id_to_closed_type_nested_parameterized_data() {
+        use crate::elaborator::acorn_type::Datatype;
+        use crate::module::ModuleId;
+
+        let mut store = TypeStore::new();
+
+        // Create List[List[Bool]] - nested parameterized type
+        let list_datatype = Datatype {
+            module_id: ModuleId(0),
+            name: "List".to_string(),
+        };
+        let list_bool = AcornType::Data(list_datatype.clone(), vec![AcornType::Bool]);
+        let list_list_bool = AcornType::Data(list_datatype.clone(), vec![list_bool.clone()]);
+        let list_list_bool_id = store.add_type(&list_list_bool);
+
+        // Verify all the types were properly registered
+        let bare_list = AcornType::Data(list_datatype, vec![]);
+        let list_id = store.get_type_id(&bare_list).expect("List should exist");
+        let list_ground = store
+            .get_ground_type_id(list_id)
+            .expect("List should be ground");
+
+        let list_bool_id = store
+            .get_type_id(&list_bool)
+            .expect("List[Bool] should exist");
+
+        // Get the ClosedType for List[List[Bool]]
+        let closed = store.type_id_to_closed_type(list_list_bool_id);
+
+        // It should be an Application
+        assert!(
+            matches!(
+                closed.components().first(),
+                Some(TermComponent::Application { .. })
+            ),
+            "Expected Application, got {:?}",
+            closed
+        );
+
+        // The head should be the bare List constructor
+        assert!(
+            matches!(
+                closed.components().get(1),
+                Some(TermComponent::Atom(Atom::Type(t))) if *t == list_ground
+            ),
+            "Head should be List constructor, got {:?}",
+            closed.components().get(1)
+        );
+
+        // The argument should be List[Bool], which is also an Application
+        // Get the inner ClosedType for comparison
+        let inner_closed = store.type_id_to_closed_type(list_bool_id);
+
+        // The inner List[Bool] should also be an Application with List as head
+        assert!(
+            matches!(
+                inner_closed.components().first(),
+                Some(TermComponent::Application { .. })
+            ),
+            "Inner type should be Application"
+        );
+        assert!(
+            matches!(
+                inner_closed.components().get(1),
+                Some(TermComponent::Atom(Atom::Type(t))) if *t == list_ground
+            ),
+            "Inner head should also be List constructor"
         );
     }
 }
