@@ -1237,4 +1237,66 @@ mod tests {
         let found = tree.find_pair(&query_left, &query_right, &local_context, &kernel_context);
         assert_eq!(found, Some(&42));
     }
+
+    #[test]
+    fn test_new_pattern_tree_clause_with_function_application() {
+        // Test that clauses with function applications can be inserted and found
+        // when using test_with_function_types which properly stores Pi types.
+        let local_context = LocalContext::new(vec![BOOL; 3]);
+        let kernel_context = KernelContext::test_with_function_types();
+
+        let mut tree: NewPatternTree<usize> = NewPatternTree::new();
+
+        // Create a clause with a function application: c1(x0) = c5
+        // c1 : Bool -> Bool, c5 : Bool
+        let clause = Clause::parse("c1(x0) = c5", &local_context);
+        tree.insert_clause(&clause, 42, &kernel_context);
+
+        // Should be able to find the exact same clause
+        let found = tree.find_clause(&clause, &kernel_context);
+        assert_eq!(found, Some(&42));
+    }
+
+    #[test]
+    fn test_new_pattern_tree_clause_specialization() {
+        // Test that find_clause can match a specialized clause against a pattern.
+        // Note: find_clause does exact structural matching with variable substitution.
+        // The clauses must have the same structure (same left/right order).
+        //
+        // Clause parsing normalizes literals by KBO, which can flip left/right.
+        // So we use clauses where the structure is preserved.
+        let local_context = LocalContext::new(vec![BOOL; 3]);
+        let kernel_context = KernelContext::test_with_function_types();
+
+        let mut tree: NewPatternTree<usize> = NewPatternTree::new();
+
+        // Insert pattern: x0 = c5 (variable on left, constant on right)
+        // After KBO normalization, x0 < c5 so this might get flipped.
+        // Let's use a simpler case where structure is predictable.
+        let clause = Clause::parse("x0 = x0", &local_context);
+        tree.insert_clause(&clause, 42, &kernel_context);
+
+        // Query: c5 = c5 should match (c5 substituted for x0)
+        let special = Clause::parse("c5 = c5", &local_context);
+        let found_special = tree.find_clause(&special, &kernel_context);
+        assert_eq!(found_special, Some(&42));
+    }
+
+    #[test]
+    fn test_new_pattern_tree_clause_multi_literal() {
+        // Test clause with multiple literals containing function applications
+        let local_context = LocalContext::new(vec![BOOL; 3]);
+        let kernel_context = KernelContext::test_with_function_types();
+
+        let mut tree: NewPatternTree<usize> = NewPatternTree::new();
+
+        // Create a clause with two literals: c1(x0) = c5 or c0(x0, x1) = c6
+        // c0 : (Bool, Bool) -> Bool, c1 : Bool -> Bool, c5, c6 : Bool
+        let clause = Clause::parse("c1(x0) = c5 or c0(x0, x1) = c6", &local_context);
+        tree.insert_clause(&clause, 99, &kernel_context);
+
+        // Should be able to find the clause
+        let found = tree.find_clause(&clause, &kernel_context);
+        assert_eq!(found, Some(&99));
+    }
 }
