@@ -1855,12 +1855,8 @@ mod tests {
         // With num_args=1, should return c0(c1)
         let term = Term::parse("c0(c1, c2)");
 
-        // Debug: print the term structure
-        eprintln!("Term c0(c1, c2) components: {:?}", term.components);
-
         // num_args=0 should return just the head
         let partial0 = term.as_ref().get_partial_application(0);
-        eprintln!("partial0 components: {:?}", partial0.components);
         assert_eq!(partial0.components.len(), 1);
         assert!(matches!(
             partial0.get_head_atom(),
@@ -1869,7 +1865,6 @@ mod tests {
 
         // num_args=1 should return c0(c1)
         let partial1 = term.as_ref().get_partial_application(1);
-        eprintln!("partial1 components: {:?}", partial1.components);
         // Should be able to convert to owned Term
         let partial1_owned = partial1.to_owned();
         assert!(matches!(
@@ -1889,14 +1884,9 @@ mod tests {
         // Test with complex (nested) arguments
         // c0(c1(c2), c3) - first arg is complex, second is simple
         let term = Term::parse("c0(c1(c2), c3)");
-        eprintln!(
-            "Term c0(c1(c2), c3) components: {:?}",
-            term.components
-        );
 
         // num_args=1 should return c0(c1(c2))
         let partial1 = term.as_ref().get_partial_application(1);
-        eprintln!("partial1 components: {:?}", partial1.components);
         let partial1_owned = partial1.to_owned();
         assert!(matches!(
             partial1_owned.get_head_atom(),

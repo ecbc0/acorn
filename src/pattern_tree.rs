@@ -174,7 +174,7 @@ pub fn replace_term_variables(
 /// does contain enough type information to match against an existing term, as long as having
 /// an atomic variable at the root level is forbidden.
 #[derive(Debug)]
-#[allow(dead_code)] // TermCategory is only used when new_pattern_tree feature is disabled
+#[allow(dead_code)] // TermCategory is only used when old_pattern_tree feature is enabled
 enum Edge {
     /// Number of args, and the type of the head atom.
     Head(u8, TypeId),
@@ -183,7 +183,7 @@ enum Edge {
     Atom(Atom),
 
     /// Category edge to indicate a term of a particular type.
-    /// Only used when new_pattern_tree feature is disabled.
+    /// Only used when old_pattern_tree feature is enabled.
     TermCategory(TypeId),
 
     /// Category edge, including the type of both left and right of the literal.
@@ -314,14 +314,14 @@ fn key_from_term_helper(
 /// Creates a key prefix for a term of the given type.
 /// Takes both TypeId and ClosedType for API compatibility between old and new pattern trees.
 /// The old implementation uses type_id, the new implementation uses closed_type.
-#[cfg(not(feature = "new_pattern_tree"))]
+#[cfg(feature = "old_pattern_tree")]
 pub fn term_key_prefix(type_id: TypeId, _closed_type: &ClosedType) -> Vec<u8> {
     let mut key = Vec::new();
     Edge::TermCategory(type_id).append_to(&mut key);
     key
 }
 
-#[cfg(feature = "new_pattern_tree")]
+#[cfg(not(feature = "old_pattern_tree"))]
 pub use crate::new_pattern_tree::term_key_prefix;
 
 /// Appends the key for this term, prefixing with the top-level type
@@ -779,19 +779,19 @@ impl OldLiteralSet {
 }
 
 // Type aliases based on feature flag
-// When the new_pattern_tree feature is enabled, use the new curried implementation
-// Otherwise, use the original implementation
+// By default, use the new curried implementation
+// When the old_pattern_tree feature is enabled, use the original implementation
 
-#[cfg(feature = "new_pattern_tree")]
+#[cfg(not(feature = "old_pattern_tree"))]
 pub use crate::new_pattern_tree::NewPatternTree as PatternTree;
 
-#[cfg(not(feature = "new_pattern_tree"))]
+#[cfg(feature = "old_pattern_tree")]
 pub type PatternTree<T> = OldPatternTree<T>;
 
-#[cfg(feature = "new_pattern_tree")]
+#[cfg(not(feature = "old_pattern_tree"))]
 pub use crate::new_pattern_tree::NewLiteralSet as LiteralSet;
 
-#[cfg(not(feature = "new_pattern_tree"))]
+#[cfg(feature = "old_pattern_tree")]
 pub type LiteralSet = OldLiteralSet;
 
 #[cfg(test)]
@@ -891,6 +891,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "old_pattern_tree")]
     fn test_old_pattern_tree_does_not_match_different_arity() {
         // Test that the old pattern tree does NOT match patterns with different arities.
         // This contrasts with the new pattern tree which uses currying and CAN match them.

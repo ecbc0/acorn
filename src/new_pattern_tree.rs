@@ -1551,22 +1551,9 @@ mod tests {
             "c1 should have the same type as x0 (Bool -> Bool)"
         );
 
-        // Debug: print what was inserted vs what we're querying
-        let pattern_key = key_from_pair(
-            &pattern_left,
-            &pattern_right,
-            &local_context,
-            &kernel_context,
-        );
-        eprintln!("Pattern key: {}", Edge::debug_bytes(&pattern_key));
-
         // Query 1: c1(c5) = c6 - same arity, should match with x0 = c1
         let query1_left = Term::parse("c1(c5)");
         let query1_right = Term::parse("c6");
-        let query1_key =
-            key_from_pair(&query1_left, &query1_right, &local_context, &kernel_context);
-        eprintln!("Query1 key: {}", Edge::debug_bytes(&query1_key));
-
         let found1 = tree.find_pair(&query1_left, &query1_right, &local_context, &kernel_context);
         assert_eq!(found1, Some(&100), "Same-arity application should match");
 
