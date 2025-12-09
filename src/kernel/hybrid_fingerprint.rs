@@ -13,6 +13,7 @@ use crate::kernel::local_context::LocalContext;
 use crate::kernel::new_fingerprint::{NewFingerprintSpecializer, NewFingerprintUnifier};
 use crate::kernel::old_fingerprint::{OldFingerprintSpecializer, OldFingerprintUnifier};
 use crate::kernel::unifier::{Scope, Unifier};
+use crate::kernel::variable_map::VariableMap;
 
 /// Describe a ClosedType's category for debug output
 fn describe_type_category(ct: &ClosedType) -> &'static str {
@@ -152,9 +153,10 @@ impl<T: Clone + Debug + Eq + Hash> HybridFingerprintSpecializer<T> {
             .insert(literal, value, local_context, kernel_context);
     }
 
-    /// Check if a literal can be specialized to match the query.
-    /// The query (left, right) should be able to specialize into the stored literal.
-    fn can_specialize(
+    /// Check if the stored literal is a specialization of the query.
+    /// The query should be more general (have variables), stored should be more specific.
+    /// Uses one-way matching: only query variables can be bound, not stored variables.
+    fn pair_specializes(
         &self,
         query_left: &Term,
         query_right: &Term,
@@ -163,14 +165,27 @@ impl<T: Clone + Debug + Eq + Hash> HybridFingerprintSpecializer<T> {
         stored_local: &LocalContext,
         kernel_context: &KernelContext,
     ) -> bool {
-        // For specialization, the query should be more general than the stored literal.
-        // We check if we can unify with the query's variables being substituted.
-        let mut unifier = Unifier::new(3, kernel_context);
-        unifier.set_input_context(Scope::LEFT, query_local);
-        unifier.set_input_context(Scope::RIGHT, stored_local);
-        // Try to match query -> stored (query is pattern, stored is instance)
-        unifier.unify(Scope::LEFT, query_left, Scope::RIGHT, &stored_literal.left)
-            && unifier.unify(Scope::LEFT, query_right, Scope::RIGHT, &stored_literal.right)
+        if query_left.get_term_type_with_context(query_local, kernel_context)
+            != stored_literal
+                .left
+                .get_term_type_with_context(stored_local, kernel_context)
+        {
+            return false;
+        }
+        let mut var_map = VariableMap::new();
+        var_map.match_terms(
+            query_left.as_ref(),
+            stored_literal.left.as_ref(),
+            query_local,
+            stored_local,
+            kernel_context,
+        ) && var_map.match_terms(
+            query_right.as_ref(),
+            stored_literal.right.as_ref(),
+            query_local,
+            stored_local,
+            kernel_context,
+        )
     }
 
     /// Find all ids with a fingerprint that this literal could specialize into.
@@ -190,11 +205,11 @@ impl<T: Clone + Debug + Eq + Hash> HybridFingerprintSpecializer<T> {
             .new
             .find_specializing(left, right, local_context, kernel_context);
 
-        // For each result found by old but not new, check if it actually specializes
+        // For each result found by old but not new, check if it's a true specialization
         for old_item in &old_results {
             if !new_results.iter().any(|n| *n == *old_item) {
                 if let Some((stored_literal, stored_local)) = self.literals.get(*old_item) {
-                    if self.can_specialize(
+                    if self.pair_specializes(
                         left,
                         right,
                         local_context,
@@ -231,7 +246,7 @@ impl<T: Clone + Debug + Eq + Hash> HybridFingerprintSpecializer<T> {
         }
 
         // We don't check for items in new but not old - the new implementation
-        // is expected to find more matches. This is a known improvement.
+        // may find more matches (different paths checked). This is expected.
 
         // Return the new results
         new_results
