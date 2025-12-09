@@ -134,6 +134,58 @@ impl<'a> TermRef<'a> {
         TermRef::new(&self.components[..position])
     }
 
+    /// Split an application into (function, argument) in curried form.
+    /// For f(a, b, c), returns (f(a, b), c).
+    /// Returns None if the term is atomic (has no arguments).
+    ///
+    /// Both returned TermRefs are slices of the original - no allocation.
+    pub fn split_application(&self) -> Option<(TermRef<'a>, TermRef<'a>)> {
+        if self.components.len() <= 1 {
+            return None;
+        }
+
+        // Iterate through args, tracking where the previous arg started
+        let mut prev_position = 1;
+        let mut position = 1;
+
+        while position < self.components.len() {
+            prev_position = position;
+            match self.components[position] {
+                TermComponent::Application { span } => {
+                    position += span as usize;
+                }
+                TermComponent::Atom(_) => {
+                    position += 1;
+                }
+                TermComponent::Pi { .. } => {
+                    panic!("Pi should not appear in term structure");
+                }
+            }
+        }
+
+        // prev_position now points to the start of the last argument
+        let func_part = TermRef::new(&self.components[..prev_position]);
+
+        // Extract the last argument
+        let last_arg = match self.components[prev_position] {
+            TermComponent::Application { span } => {
+                // Complex argument: skip the Application marker
+                let start = prev_position + 1;
+                let end = prev_position + span as usize;
+                TermRef::new(&self.components[start..end])
+            }
+            TermComponent::Atom(_) => {
+                // Simple atomic argument
+                TermRef::new(&self.components[prev_position..prev_position + 1])
+            }
+            TermComponent::Pi { .. } => {
+                panic!("Pi should not appear in term structure");
+            }
+        };
+
+        Some((func_part, last_arg))
+    }
+
     /// Check if this term is the boolean constant "true".
     pub fn is_true(&self) -> bool {
         matches!(self.get_head_atom(), Atom::True)
