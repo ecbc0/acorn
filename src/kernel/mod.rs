@@ -1,6 +1,7 @@
 pub mod aliases;
 pub mod atom;
 pub mod clause;
+pub mod clause_set;
 pub mod closed_type;
 pub mod cnf;
 pub mod display;
@@ -14,6 +15,7 @@ pub mod pattern_tree;
 pub mod symbol;
 pub mod symbol_table;
 pub mod term;
+pub mod term_graph;
 pub mod trace;
 pub mod type_store;
 pub mod types;

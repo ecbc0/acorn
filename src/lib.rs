@@ -2,7 +2,6 @@ pub mod build_cache;
 pub mod builder;
 pub mod certificate;
 pub mod checker;
-pub mod clause_set;
 pub mod cleaner;
 pub mod code_generator;
 pub mod common;
@@ -24,7 +23,6 @@ pub mod prover;
 pub mod saturation;
 pub mod server;
 pub mod syntax;
-pub mod term_graph;
 pub mod verifier;
 
 #[cfg(test)]

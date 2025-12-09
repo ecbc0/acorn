@@ -2,9 +2,9 @@ use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 use std::hash::Hash;
 
-use crate::clause_set::{ClauseId, ClauseSet, GroupId, LiteralId, Normalization, TermId};
 use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::Atom;
+use crate::kernel::clause_set::{ClauseId, ClauseSet, GroupId, LiteralId, Normalization, TermId};
 use crate::kernel::kernel_context::KernelContext;
 
 /// Every time we set two terms equal or not equal, that action is tagged with a StepId.

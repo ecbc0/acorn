@@ -18,13 +18,13 @@ use crate::kernel::inference;
 use crate::kernel::kernel_context::KernelContext;
 #[cfg(test)]
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::term_graph::{StepId, TermGraph};
 #[cfg(test)]
 use crate::kernel::types::BOOL;
 use crate::normalizer::{Normalizer, NormalizerView};
 use crate::project::Project;
 use crate::syntax::expression::Declaration;
 use crate::syntax::statement::{Statement, StatementInfo};
-use crate::term_graph::{StepId, TermGraph};
 
 /// The reason why a certificate step was accepted.
 #[derive(Debug, Clone)]

@@ -1,20 +1,20 @@
 use std::collections::{HashMap, HashSet};
 
 use super::rewrite_tree::{Rewrite, RewriteTree};
-use crate::clause_set::TermId;
 use crate::kernel::aliases::{Clause, Literal, Term};
+use crate::kernel::clause_set::TermId;
 use crate::kernel::fingerprint::FingerprintUnifier;
 use crate::kernel::inference;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::pattern_tree::LiteralSet;
+use crate::kernel::term_graph::{StepId, TermGraph};
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::unifier::{Scope, Unifier};
 use crate::proof_step::{
     BooleanReductionInfo, EqualityFactoringInfo, EqualityResolutionInfo, ExtensionalityInfo,
     InjectivityInfo, ProofStep, Rule, Truthiness,
 };
-use crate::term_graph::{StepId, TermGraph};
 
 /// The ActiveSet stores a bunch of clauses that are indexed for various efficient lookups.
 /// The goal is that, given a new clause, it is efficient to determine what can be concluded
