@@ -397,30 +397,29 @@ fn key_from_term_helper(
     } else {
         // Application term: encode as curried binary applications
         // f(a, b, c) = ((f a) b) c
-        // We need to encode from the outermost result type inward
 
         // First, emit the result type of the whole term
         key_from_closed_type(&term_closed_type, key);
 
         // Now encode the curried applications
-        // For f(a1, a2, ..., an), we need:
-        // Application + domain_n + [encoding of f(a1,...,a_{n-1})] + [encoding of an]
-        key_from_curried_application(term, key, local_context, kernel_context);
+        let head = term.get_head_atom();
+        let args: Vec<TermRef> = term.iter_args().collect();
+        key_from_application(head, &args, key, local_context, kernel_context);
     }
 }
 
-/// Helper to encode a term with arguments as curried applications.
-/// Assumes the result type has already been emitted.
-fn key_from_curried_application(
-    term: TermRef,
+/// Encode an application as curried binary applications.
+/// Takes the head atom and a slice of arguments.
+/// For head(a1, a2, ..., an), encodes as: Application + domain_n + [head(a1,...,a_{n-1})] + [an]
+fn key_from_application(
+    head: &KernelAtom,
+    args: &[TermRef],
     key: &mut Vec<u8>,
     local_context: &LocalContext,
     kernel_context: &KernelContext,
 ) {
-    let args: Vec<TermRef> = term.iter_args().collect();
     if args.is_empty() {
         // Base case: just the head atom
-        let head = term.get_head_atom();
         let atom = match head {
             KernelAtom::Variable(v) => Atom::Variable(*v),
             KernelAtom::True => Atom::True,
@@ -436,57 +435,14 @@ fn key_from_curried_application(
         Edge::Application.append_to(key);
         key_from_closed_type(&last_arg_type, key);
 
-        // Encode the function part (term without last argument)
-        if args.len() == 1 {
-            // Just the head
-            let head = term.get_head_atom();
-            let atom = match head {
-                KernelAtom::Variable(v) => Atom::Variable(*v),
-                KernelAtom::True => Atom::True,
-                KernelAtom::Symbol(s) => Atom::Symbol(*s),
-                KernelAtom::Type(t) => Atom::Type(*t),
-            };
-            Edge::Atom(atom).append_to(key);
-        } else {
-            // Recurse for f(a1, ..., a_{n-1})
-            // We need to create a virtual term with one fewer argument
-            // For now, we'll encode iteratively
-            key_from_partial_application(term, args.len() - 1, key, local_context, kernel_context);
-        }
-
-        // Encode the argument
-        key_from_term_helper(last_arg, key, local_context, kernel_context);
-    }
-}
-
-/// Encode a partial application of term, using only the first `num_args` arguments.
-fn key_from_partial_application(
-    term: TermRef,
-    num_args: usize,
-    key: &mut Vec<u8>,
-    local_context: &LocalContext,
-    kernel_context: &KernelContext,
-) {
-    if num_args == 0 {
-        // Just the head
-        let head = term.get_head_atom();
-        let atom = match head {
-            KernelAtom::Variable(v) => Atom::Variable(*v),
-            KernelAtom::True => Atom::True,
-            KernelAtom::Symbol(s) => Atom::Symbol(*s),
-            KernelAtom::Type(t) => Atom::Type(*t),
-        };
-        Edge::Atom(atom).append_to(key);
-    } else {
-        let args: Vec<TermRef> = term.iter_args().take(num_args).collect();
-        let last_arg = args[num_args - 1];
-        let last_arg_type = last_arg.get_closed_type_with_context(local_context, kernel_context);
-
-        Edge::Application.append_to(key);
-        key_from_closed_type(&last_arg_type, key);
-
-        // Recurse for the function part
-        key_from_partial_application(term, num_args - 1, key, local_context, kernel_context);
+        // Recurse for the function part (all but last arg)
+        key_from_application(
+            head,
+            &args[..args.len() - 1],
+            key,
+            local_context,
+            kernel_context,
+        );
 
         // Encode the argument
         key_from_term_helper(last_arg, key, local_context, kernel_context);
