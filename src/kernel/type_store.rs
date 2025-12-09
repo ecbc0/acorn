@@ -96,7 +96,13 @@ impl TypeStore {
                     Some((domain_id, codomain_id))
                 }
             }
-            AcornType::Data(_, params) => {
+            AcornType::Data(datatype, params) => {
+                // For parameterized types, first ensure the bare constructor exists
+                // so it gets its own TypeId/GroundTypeId for use in ClosedType
+                if !params.is_empty() {
+                    let bare_constructor = AcornType::Data(datatype.clone(), vec![]);
+                    self.add_type(&bare_constructor);
+                }
                 // Add all type parameters
                 for param in params {
                     self.add_type(param);
@@ -180,18 +186,21 @@ impl TypeStore {
                 ClosedType::ground(ground_id)
             }
 
-            AcornType::Data(_, params) => {
+            AcornType::Data(datatype, params) => {
                 // Data type with parameters: build Application
                 // e.g., List[Int] -> [Application{span}, Atom(List), Atom(Int)]
-                // NOTE: The head type (e.g., List) is not a ground type when parameterized.
-                // We need to get the base type ID without parameters.
                 let mut components = Vec::new();
 
-                // Head is the base type - we need its GroundTypeId
-                // For now, we use the type_id directly since parameterized types
-                // store the base type as a ground type in ClosedType representation
-                let ground_id = GroundTypeId::new(type_id.as_u16());
-                components.push(TermComponent::Atom(Atom::Type(ground_id)));
+                // Head is the bare constructor (e.g., List without params)
+                // which was auto-registered in add_type()
+                let bare_constructor = AcornType::Data(datatype.clone(), vec![]);
+                let constructor_type_id = self
+                    .get_type_id(&bare_constructor)
+                    .expect("Bare constructor should have been added");
+                let constructor_ground_id = self
+                    .get_ground_type_id(constructor_type_id)
+                    .expect("Bare constructor should be a ground type");
+                components.push(TermComponent::Atom(Atom::Type(constructor_ground_id)));
 
                 // Add each parameter
                 for param in params {
@@ -410,5 +419,62 @@ mod tests {
         let (input2, output) = rest.as_pi().unwrap();
         assert_eq!(input2.as_ground(), Some(bool_ground));
         assert_eq!(output.as_ground(), Some(bool_ground));
+    }
+
+    #[test]
+    fn test_type_id_to_closed_type_parameterized_data() {
+        use crate::elaborator::acorn_type::Datatype;
+        use crate::module::ModuleId;
+
+        let mut store = TypeStore::new();
+
+        // Create a parameterized type like List[Bool]
+        let list_datatype = Datatype {
+            module_id: ModuleId(0),
+            name: "List".to_string(),
+        };
+        let list_bool = AcornType::Data(list_datatype.clone(), vec![AcornType::Bool]);
+        let list_bool_id = store.add_type(&list_bool);
+
+        // The bare constructor should have been auto-registered
+        let bare_list = AcornType::Data(list_datatype, vec![]);
+        let list_id = store.get_type_id(&bare_list).expect("List should exist");
+        let list_ground = store
+            .get_ground_type_id(list_id)
+            .expect("List should be ground");
+
+        // Get the ClosedType
+        let closed = store.type_id_to_closed_type(list_bool_id);
+
+        // It should be an Application
+        assert!(
+            matches!(
+                closed.components().first(),
+                Some(TermComponent::Application { .. })
+            ),
+            "Expected Application, got {:?}",
+            closed
+        );
+
+        // The head (second component) should be the bare List constructor's GroundTypeId
+        assert!(
+            matches!(
+                closed.components().get(1),
+                Some(TermComponent::Atom(Atom::Type(t))) if *t == list_ground
+            ),
+            "Head should be List constructor, got {:?}",
+            closed.components().get(1)
+        );
+
+        // The argument should be Bool
+        let bool_ground = store.get_ground_type_id(BOOL).unwrap();
+        assert!(
+            matches!(
+                closed.components().get(2),
+                Some(TermComponent::Atom(Atom::Type(t))) if *t == bool_ground
+            ),
+            "Argument should be Bool, got {:?}",
+            closed.components().get(2)
+        );
     }
 }
