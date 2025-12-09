@@ -189,6 +189,7 @@ impl TypeStore {
             AcornType::Data(datatype, params) => {
                 // Data type with parameters: build Application
                 // e.g., List[Int] -> [Application{span}, Atom(List), Atom(Int)]
+                // e.g., List[List[Bool]] -> [Application{span}, Atom(List), Application{span}, Atom(List), Atom(Bool)]
                 let mut components = Vec::new();
 
                 // Head is the bare constructor (e.g., List without params)
@@ -202,19 +203,15 @@ impl TypeStore {
                     .expect("Bare constructor should be a ground type");
                 components.push(TermComponent::Atom(Atom::Type(constructor_ground_id)));
 
-                // Add each parameter
+                // Add each parameter's components directly
+                // The param's ClosedType already has the right structure:
+                // - Simple types: [Atom(Type(X))]
+                // - Nested applications: [Application{span}, ...]
+                // - Arrow types: [Pi{span}, ...]
                 for param in params {
                     let param_id = self.get_type_id(param).expect("Parameter type not found");
                     let param_closed = self.type_id_to_closed_type(param_id);
-                    // If param is compound, wrap in Application
-                    if param_closed.components().len() == 1 {
-                        components.extend(param_closed.components().iter().copied());
-                    } else {
-                        components.push(TermComponent::Application {
-                            span: param_closed.components().len() as u16 + 1,
-                        });
-                        components.extend(param_closed.components().iter().copied());
-                    }
+                    components.extend(param_closed.components().iter().copied());
                 }
 
                 // Update span for the outer Application
@@ -545,6 +542,55 @@ mod tests {
                 Some(TermComponent::Atom(Atom::Type(t))) if *t == list_ground
             ),
             "Inner head should also be List constructor"
+        );
+
+        // Verify the structure of List[List[Bool]] matches expectations
+        // It should be: Application(List, List[Bool])
+        // where List[Bool] is Application(List, Bool)
+        // So the components should be:
+        // [App{5}, List, App{3}, List, Bool]
+        let components = closed.components();
+        assert_eq!(
+            components.len(),
+            5,
+            "List[List[Bool]] should have 5 components, got {:?}",
+            components
+        );
+
+        // First component: outer Application with span covering all 5 components
+        assert!(
+            matches!(components[0], TermComponent::Application { span: 5 }),
+            "Component 0 should be Application{{span: 5}}, got {:?}",
+            components[0]
+        );
+
+        // Second component: List (head of outer application)
+        assert!(
+            matches!(components[1], TermComponent::Atom(Atom::Type(t)) if t == list_ground),
+            "Component 1 should be List, got {:?}",
+            components[1]
+        );
+
+        // Third component: inner Application with span covering components 2-4
+        assert!(
+            matches!(components[2], TermComponent::Application { span: 3 }),
+            "Component 2 should be Application{{span: 3}}, got {:?}",
+            components[2]
+        );
+
+        // Fourth component: List (head of inner application)
+        assert!(
+            matches!(components[3], TermComponent::Atom(Atom::Type(t)) if t == list_ground),
+            "Component 3 should be List, got {:?}",
+            components[3]
+        );
+
+        // Fifth component: Bool (argument of inner application)
+        let bool_ground = store.get_ground_type_id(BOOL).unwrap();
+        assert!(
+            matches!(components[4], TermComponent::Atom(Atom::Type(t)) if t == bool_ground),
+            "Component 4 should be Bool, got {:?}",
+            components[4]
         );
     }
 }
