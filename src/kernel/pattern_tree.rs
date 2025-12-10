@@ -16,7 +16,7 @@ use super::literal::Literal;
 use super::local_context::LocalContext;
 use super::symbol::Symbol;
 use super::term::Term;
-use super::term::{TermComponent, TermRef};
+use super::term::{Decomposition, TermComponent, TermRef};
 use super::types::{GroundTypeId, TypeclassId, GROUND_BOOL, GROUND_EMPTY};
 
 /// Replaces variables in a term with corresponding replacement terms.
@@ -807,28 +807,21 @@ impl LiteralSet {
     }
 }
 
-/// Helper function to match curried application structure.
-/// This handles the case where we have head(args[0], args[1], ...) and need to match
-/// the curried encoding against patterns.
+/// Matches the function part of an application (without type prefix).
 ///
-/// At this point, we've already matched:
-/// - The result type
-/// - The Application edge
-/// - The domain type of the last argument
+/// In the encoding, the function part of an application does NOT have its type emitted.
+/// This function handles matching the function part:
+/// 1. Try backreference (without type prefix)
+/// 2. Try new variable (without type prefix)
+/// 3. Structural match using decomposition
 ///
-/// Now we need to match the "function part" (head applied to all but the last arg)
-/// followed by the last argument, followed by rest.
-///
-/// Parameters:
-/// - head: A TermRef to just the head atom (for pushing as replacement and getting the atom)
-/// - args: The arguments to match (slice allows efficient "partial application" via slicing)
-/// - rest: Additional terms to match after this application
-fn match_application<'a, F>(
+/// After matching func, it calls find_term_matches_while for the remaining terms
+/// which DO get type prefixes.
+fn match_func_part<'a, F>(
     subtrie: &SubTrie<Vec<u8>, usize>,
     key: &mut Vec<u8>,
-    head: TermRef<'a>,
-    args: &[TermRef<'a>],
-    rest: &[TermRef<'a>],
+    func: TermRef<'a>,
+    rest_terms: &[TermRef<'a>],
     local_context: &LocalContext,
     kernel_context: &KernelContext,
     stack_limit: usize,
@@ -842,128 +835,128 @@ where
         return true;
     }
 
-    assert!(!args.is_empty());
-    let head_atom = head.get_head_atom();
-    let last_arg = args[args.len() - 1];
+    let initial_key_len = key.len();
+    let head_atom = func.get_head_atom();
 
-    if args.len() == 1 {
-        // Base case: just the head atom, then the argument
-        // We need to handle three cases:
-        // 1. The head matches an existing replacement (backreference)
-        // 2. The pattern has a variable in function position (e.g., x0(c5))
-        //    - The head symbol can match against a new pattern variable
-        // 3. The pattern has a specific atom in function position (e.g., c1(x0))
-        //    - We need exact match of the atom
-
-        let initial_key_len = key.len();
-        let mut next_terms: Vec<TermRef<'a>> = vec![last_arg];
-        next_terms.extend_from_slice(rest);
-
-        // Case A0: Try matching the head against an existing replacement (backreference)
-        // This enables matching c1(c6) against pattern x0(x1) when x0 is already bound to c1
-        if !head_atom.is_variable() {
-            for i in 0..replacements.len() {
-                if head == replacements[i] {
-                    Edge::Atom(Atom::Variable(i as u16)).append_to(key);
-                    let new_subtrie = subtrie.subtrie(key as &[u8]);
-                    if !new_subtrie.is_empty() {
-                        if !find_term_matches_while(
-                            &new_subtrie,
-                            key,
-                            &next_terms,
-                            local_context,
-                            kernel_context,
-                            stack_limit - 1,
-                            replacements,
-                            callback,
-                        ) {
-                            return false;
-                        }
+    // Case 1: func matches an existing replacement (backreference) - NO type prefix
+    if !head_atom.is_variable() {
+        for i in 0..replacements.len() {
+            if func == replacements[i] {
+                Edge::Atom(Atom::Variable(i as u16)).append_to(key);
+                let new_subtrie = subtrie.subtrie(key as &[u8]);
+                if !new_subtrie.is_empty() {
+                    if !find_term_matches_while(
+                        &new_subtrie,
+                        key,
+                        rest_terms,
+                        local_context,
+                        kernel_context,
+                        stack_limit - 1,
+                        replacements,
+                        callback,
+                    ) {
+                        return false;
                     }
-                    key.truncate(initial_key_len);
                 }
+                key.truncate(initial_key_len);
             }
         }
-
-        // Case A: Try matching the head against a new pattern variable
-        // This enables matching c1(c5) against pattern x0(c5) where x0 : Bool -> Bool
-        if !head_atom.is_variable() {
-            Edge::Atom(Atom::Variable(replacements.len() as u16)).append_to(key);
-            let new_subtrie = subtrie.subtrie(key as &[u8]);
-            if !new_subtrie.is_empty() {
-                // The pattern has a variable at this position - push the head term
-                replacements.push(head);
-                if !find_term_matches_while(
-                    &new_subtrie,
-                    key,
-                    &next_terms,
-                    local_context,
-                    kernel_context,
-                    stack_limit - 1,
-                    replacements,
-                    callback,
-                ) {
-                    return false;
-                }
-                replacements.pop();
-            }
-            key.truncate(initial_key_len);
-        }
-
-        // Case B: Exact match - emit the specific atom
-        let atom = match head_atom {
-            KernelAtom::Variable(v) => Atom::Variable(*v),
-            KernelAtom::True => Atom::True,
-            KernelAtom::Symbol(s) => Atom::Symbol(*s),
-            KernelAtom::Type(t) => Atom::Type(*t),
-        };
-        Edge::Atom(atom).append_to(key);
-        let new_subtrie = subtrie.subtrie(key as &[u8]);
-
-        return find_term_matches_while(
-            &new_subtrie,
-            key,
-            &next_terms,
-            local_context,
-            kernel_context,
-            stack_limit - 1,
-            replacements,
-            callback,
-        );
     }
 
-    // Recursive case: more than one argument
-    // Match: Application + domain_{n-1} + [head(args[0],...,args[n-2])] + [args[n-1]] + rest
+    // Case 2: func matches a new variable - NO type prefix
+    if !head_atom.is_variable() {
+        Edge::Atom(Atom::Variable(replacements.len() as u16)).append_to(key);
+        let new_subtrie = subtrie.subtrie(key as &[u8]);
+        if !new_subtrie.is_empty() {
+            replacements.push(func);
+            if !find_term_matches_while(
+                &new_subtrie,
+                key,
+                rest_terms,
+                local_context,
+                kernel_context,
+                stack_limit - 1,
+                replacements,
+                callback,
+            ) {
+                return false;
+            }
+            replacements.pop();
+        }
+        key.truncate(initial_key_len);
+    }
 
-    // Match Application edge for the inner application
-    Edge::Application.append_to(key);
-    let new_subtrie = subtrie.subtrie(key as &[u8]);
+    // Case 3: structural match using decomposition - NO type prefix for func
+    match func.decompose() {
+        Decomposition::Atom(atom) => {
+            // Atomic function: emit the atom directly (no type prefix)
+            let edge_atom = match atom {
+                KernelAtom::Variable(v) => Atom::Variable(*v),
+                KernelAtom::True => Atom::True,
+                KernelAtom::Symbol(s) => Atom::Symbol(*s),
+                KernelAtom::Type(t) => Atom::Type(*t),
+            };
+            Edge::Atom(edge_atom).append_to(key);
+            let new_subtrie = subtrie.subtrie(key as &[u8]);
+            if !find_term_matches_while(
+                &new_subtrie,
+                key,
+                rest_terms,
+                local_context,
+                kernel_context,
+                stack_limit - 1,
+                replacements,
+                callback,
+            ) {
+                return false;
+            }
+        }
+        Decomposition::Application(inner_func, inner_arg) => {
+            // Nested application: func = inner_func(inner_arg)
+            // Encoding: Application + domain_type + inner_func_encoding + inner_arg_encoding
+            Edge::Application.append_to(key);
+            let new_subtrie = subtrie.subtrie(key as &[u8]);
 
-    // Match domain type of the second-to-last argument
-    let prev_arg = args[args.len() - 2];
-    key_from_term_type(prev_arg, key, local_context, kernel_context);
-    let new_subtrie2 = new_subtrie.subtrie(key as &[u8]);
+            key_from_term_type(inner_arg, key, local_context, kernel_context);
+            let new_subtrie2 = new_subtrie.subtrie(key as &[u8]);
 
-    // Recursively match with one fewer argument
-    // After matching all the way down, we'll have last_arg + rest to match
-    let mut next_rest: Vec<TermRef<'a>> = vec![last_arg];
-    next_rest.extend_from_slice(rest);
+            // Build rest: [inner_arg, ...rest_terms]
+            let mut arg_and_rest: Vec<TermRef<'a>> = Vec::with_capacity(1 + rest_terms.len());
+            arg_and_rest.push(inner_arg);
+            arg_and_rest.extend_from_slice(rest_terms);
 
-    match_application(
-        &new_subtrie2,
-        key,
-        head,
-        &args[..args.len() - 1],
-        &next_rest,
-        local_context,
-        kernel_context,
-        stack_limit - 1,
-        replacements,
-        callback,
-    )
+            // Match inner_func (without type) then arg_and_rest (with type)
+            if !match_func_part(
+                &new_subtrie2,
+                key,
+                inner_func,
+                &arg_and_rest,
+                local_context,
+                kernel_context,
+                stack_limit - 1,
+                replacements,
+                callback,
+            ) {
+                return false;
+            }
+        }
+    }
+
+    key.truncate(initial_key_len);
+    true
 }
 
 /// Matches a sequence of terms against patterns in the trie.
+///
+/// Uses decomposition to handle curried application structure uniformly.
+/// For any term, we try three cases:
+/// 1. Match the whole term against an existing replacement (backreference)
+/// 2. Match the whole term against a new pattern variable
+/// 3. Match the structure (atom or decomposed application)
+///
+/// The decomposition approach naturally handles partial applications because
+/// f(a, b) decomposes to (f(a), b), and when we recursively match f(a),
+/// it can be matched against a pattern variable or further decomposed.
 fn find_term_matches_while<'a, F>(
     subtrie: &SubTrie<Vec<u8>, usize>,
     key: &mut Vec<u8>,
@@ -1051,137 +1044,31 @@ where
     }
     key.truncate(initial_key_len);
 
-    // Case 3: exact match - match the structure of the term
+    // Case 3: structural match using decomposition
+    // Skip if head is a variable (variables in query must match via Cases 1 or 2)
     let head_atom = first.get_head_atom();
     if head_atom.is_variable() {
-        // Variables in the query term must match via Cases 1 or 2, not exact match
         return true;
     }
 
-    // Get the result type and match it
+    // Emit the result type
     key_from_term_type(first, key, local_context, kernel_context);
 
-    if !first.has_args() {
-        // Atomic term: match the atom
-        let atom = match head_atom {
-            KernelAtom::Variable(v) => Atom::Variable(*v),
-            KernelAtom::True => Atom::True,
-            KernelAtom::Symbol(s) => Atom::Symbol(*s),
-            KernelAtom::Type(t) => Atom::Type(*t),
-        };
-        Edge::Atom(atom).append_to(key);
-        let new_subtrie = subtrie.subtrie(key as &[u8]);
-        if !find_term_matches_while(
-            &new_subtrie,
-            key,
-            rest,
-            local_context,
-            kernel_context,
-            stack_limit - 1,
-            replacements,
-            callback,
-        ) {
-            return false;
-        }
-    } else {
-        // Application term: match the curried structure
-        // For f(a1, a2, ..., an), the encoding is:
-        // <result type> + Application + <domain_n> + [...f(a1,...,a_{n-1})...] + [...an...]
-        // We match: Application edge, domain type, then recurse with head-with-fewer-args and last-arg
-
-        // Collect arguments
-        let args: Vec<TermRef<'a>> = first.iter_args().collect();
-        let last_arg = args[args.len() - 1];
-
-        // Match Application edge
-        Edge::Application.append_to(key);
-        let new_subtrie = subtrie.subtrie(key as &[u8]);
-
-        // Match domain type
-        key_from_term_type(last_arg, key, local_context, kernel_context);
-        let new_subtrie2 = new_subtrie.subtrie(key as &[u8]);
-
-        if args.len() == 1 {
-            // Just the head atom, then the argument
-            // We need to handle three cases:
-            // Case A0: The head matches an existing replacement (backreference)
-            // Case A: The pattern has a variable in function position (e.g., x0(c5))
-            //         The head symbol can match against a new pattern variable
-            // Case B: The pattern has a specific atom in function position (e.g., c1(x0))
-            //         We need exact match of the atom
-
-            let key_len_after_domain = key.len();
-            let mut next_terms: Vec<TermRef<'a>> = vec![last_arg];
-            next_terms.extend_from_slice(rest);
-
-            // Case A0: Try matching the head against an existing replacement (backreference)
-            // This enables matching c1(c6) against pattern x0(x1) when x0 is already bound to c1
-            if !head_atom.is_variable() {
-                let head_term = first.get_head_subterm();
-                for i in 0..replacements.len() {
-                    if head_term == replacements[i] {
-                        Edge::Atom(Atom::Variable(i as u16)).append_to(key);
-                        let var_subtrie = new_subtrie2.subtrie(key as &[u8]);
-                        if !var_subtrie.is_empty() {
-                            if !find_term_matches_while(
-                                &var_subtrie,
-                                key,
-                                &next_terms,
-                                local_context,
-                                kernel_context,
-                                stack_limit - 1,
-                                replacements,
-                                callback,
-                            ) {
-                                return false;
-                            }
-                        }
-                        key.truncate(key_len_after_domain);
-                    }
-                }
-            }
-
-            // Case A: Try matching the head against a new pattern variable
-            // This enables matching c1(c5) against pattern x0(c5) where x0 : Bool -> Bool
-            if !head_atom.is_variable() {
-                Edge::Atom(Atom::Variable(replacements.len() as u16)).append_to(key);
-                let var_subtrie = new_subtrie2.subtrie(key as &[u8]);
-                if !var_subtrie.is_empty() {
-                    // The pattern has a variable at this position
-                    // Push the head term as a replacement
-                    let head_term = first.get_head_subterm();
-                    replacements.push(head_term);
-                    if !find_term_matches_while(
-                        &var_subtrie,
-                        key,
-                        &next_terms,
-                        local_context,
-                        kernel_context,
-                        stack_limit - 1,
-                        replacements,
-                        callback,
-                    ) {
-                        return false;
-                    }
-                    replacements.pop();
-                }
-                key.truncate(key_len_after_domain);
-            }
-
-            // Case B: Exact match of the head atom
-            let atom = match head_atom {
+    match first.decompose() {
+        Decomposition::Atom(atom) => {
+            // Atomic term: match the atom directly
+            let edge_atom = match atom {
                 KernelAtom::Variable(v) => Atom::Variable(*v),
                 KernelAtom::True => Atom::True,
                 KernelAtom::Symbol(s) => Atom::Symbol(*s),
                 KernelAtom::Type(t) => Atom::Type(*t),
             };
-            Edge::Atom(atom).append_to(key);
-            let new_subtrie3 = new_subtrie2.subtrie(key as &[u8]);
-
+            Edge::Atom(edge_atom).append_to(key);
+            let new_subtrie = subtrie.subtrie(key as &[u8]);
             if !find_term_matches_while(
-                &new_subtrie3,
+                &new_subtrie,
                 key,
-                &next_terms,
+                rest,
                 local_context,
                 kernel_context,
                 stack_limit - 1,
@@ -1190,81 +1077,31 @@ where
             ) {
                 return false;
             }
-        } else {
-            // Multiple args: we need to handle three cases:
-            // Case A0: The partial application matches an existing replacement (backreference)
-            // Case A: The pattern has a variable at the function position.
-            //         The partial application (all args except the last) matches a new variable.
-            // Case B: The pattern has a specific structure at the function position.
-            //         We recursively match the curried structure.
+        }
+        Decomposition::Application(func, arg) => {
+            // Application term: decompose into (func, arg)
+            // Encoding: result_type + Application + domain_type + func_encoding + arg_encoding
+            // Note: func_encoding has NO type prefix, arg_encoding HAS type prefix
 
-            let key_len_after_domain = key.len();
-            let mut remaining_terms: Vec<TermRef<'a>> = vec![last_arg];
-            remaining_terms.extend_from_slice(rest);
+            // Emit Application edge
+            Edge::Application.append_to(key);
+            let new_subtrie = subtrie.subtrie(key as &[u8]);
 
-            // Case A0: Try matching the partial application against an existing replacement
-            // This enables matching c0(c7, c6) against pattern x0(x1) when x0 is already bound to c0(c7)
-            if !head_atom.is_variable() {
-                let partial_app = first.get_partial_application(args.len() - 1);
-                for i in 0..replacements.len() {
-                    if partial_app == replacements[i] {
-                        Edge::Atom(Atom::Variable(i as u16)).append_to(key);
-                        let var_subtrie = new_subtrie2.subtrie(key as &[u8]);
-                        if !var_subtrie.is_empty() {
-                            if !find_term_matches_while(
-                                &var_subtrie,
-                                key,
-                                &remaining_terms,
-                                local_context,
-                                kernel_context,
-                                stack_limit - 1,
-                                replacements,
-                                callback,
-                            ) {
-                                return false;
-                            }
-                        }
-                        key.truncate(key_len_after_domain);
-                    }
-                }
-            }
+            // Emit domain type of the argument
+            key_from_term_type(arg, key, local_context, kernel_context);
+            let new_subtrie2 = new_subtrie.subtrie(key as &[u8]);
 
-            // Case A: Try matching the partial application against a new pattern variable
-            // This enables matching c0(c7, c5) against pattern x0(c5) where x0 : Bool -> Bool
-            // The partial application c0(c7) should match variable x0
-            if !head_atom.is_variable() {
-                Edge::Atom(Atom::Variable(replacements.len() as u16)).append_to(key);
-                let var_subtrie = new_subtrie2.subtrie(key as &[u8]);
-                if !var_subtrie.is_empty() {
-                    // The pattern has a variable at this position
-                    // Push the partial application as a replacement
-                    let partial_app = first.get_partial_application(args.len() - 1);
-                    replacements.push(partial_app);
-                    if !find_term_matches_while(
-                        &var_subtrie,
-                        key,
-                        &remaining_terms,
-                        local_context,
-                        kernel_context,
-                        stack_limit - 1,
-                        replacements,
-                        callback,
-                    ) {
-                        return false;
-                    }
-                    replacements.pop();
-                }
-                key.truncate(key_len_after_domain);
-            }
+            // Build rest terms: [arg, ...rest]
+            let mut arg_and_rest: Vec<TermRef<'a>> = Vec::with_capacity(1 + rest.len());
+            arg_and_rest.push(arg);
+            arg_and_rest.extend_from_slice(rest);
 
-            // Case B: Match the curried structure exactly
-            let head = first.get_head_subterm();
-            if !match_application(
+            // Match func (without type prefix) then arg_and_rest (with type prefix)
+            if !match_func_part(
                 &new_subtrie2,
                 key,
-                head,
-                &args,
-                rest,
+                func,
+                &arg_and_rest,
                 local_context,
                 kernel_context,
                 stack_limit - 1,
