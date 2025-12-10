@@ -19,7 +19,7 @@ use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::symbol_table::NewConstantType;
 use crate::kernel::term::Term;
-use crate::kernel::types::{TypeId, BOOL};
+use crate::kernel::types::BOOL;
 use crate::monomorphizer::Monomorphizer;
 use crate::proof_step::{ProofStep, Truthiness};
 
@@ -210,10 +210,10 @@ impl Normalizer {
 
 // Represents a binding for a variable on the stack during normalization.
 // Each binding corresponds to a variable in the output clause.
-// The TypeId tracks the type of the variable for building LocalContext.
+// The ClosedType tracks the type of the variable for building LocalContext.
 enum TermBinding {
-    Bound(Term, TypeId),
-    Free(Term, TypeId),
+    Bound(Term, ClosedType),
+    Free(Term, ClosedType),
 }
 
 impl TermBinding {
@@ -224,24 +224,21 @@ impl TermBinding {
         }
     }
 
-    /// Get the type of the variable this binding represents
-    fn type_id(&self) -> TypeId {
+    /// Get the closed type of the variable this binding represents
+    fn closed_type(&self) -> &ClosedType {
         match self {
-            TermBinding::Bound(_, t) | TermBinding::Free(_, t) => *t,
+            TermBinding::Bound(_, t) | TermBinding::Free(_, t) => t,
         }
     }
 }
 
 /// Builds a LocalContext from the terms in the stack.
-/// Each stack position corresponds to a variable id, and we use the stored TypeId.
-fn build_context_from_stack(
-    stack: &[TermBinding],
-    type_store: &crate::kernel::type_store::TypeStore,
-) -> LocalContext {
+/// Each stack position corresponds to a variable id, and we use the stored ClosedType.
+fn build_context_from_stack(stack: &[TermBinding]) -> LocalContext {
     // Each stack position i corresponds to variable x_i
     // We collect the types from the bindings directly
-    let var_types: Vec<TypeId> = stack.iter().map(|b| b.type_id()).collect();
-    LocalContext::new_with_type_store(var_types, type_store)
+    let var_closed_types: Vec<ClosedType> = stack.iter().map(|b| b.closed_type().clone()).collect();
+    LocalContext::from_closed_types(var_closed_types)
 }
 
 // A NormalizerView lets us share methods between mutable and non-mutable normalizers that
@@ -497,8 +494,8 @@ impl NormalizerView<'_> {
             let num_args = arg_terms.len();
             // Lambda arguments are bound variables
             for (arg, arg_type) in arg_terms.into_iter().zip(arg_types.iter()) {
-                let type_id = self.type_store().get_type_id(arg_type)?;
-                stack.push(TermBinding::Bound(arg, type_id));
+                let closed_type = self.type_store().get_closed_type(arg_type)?;
+                stack.push(TermBinding::Bound(arg, closed_type));
             }
             let answer = self.value_to_cnf(
                 &return_value,
@@ -537,12 +534,12 @@ impl NormalizerView<'_> {
         context: &mut LocalContext,
     ) -> Result<CNF, String> {
         for quant in quants {
-            let type_id = self.type_store().get_type_id(quant)?;
+            let closed_type = self.type_store().get_closed_type(quant)?;
             let var_id = *next_var_id;
-            context.push_var_type_with_store(type_id, self.type_store());
+            context.push_closed_type(closed_type.clone());
             let var = Term::new_variable(var_id);
             *next_var_id += 1;
-            stack.push(TermBinding::Free(var, type_id));
+            stack.push(TermBinding::Free(var, closed_type));
         }
         let result =
             self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized, context)?;
@@ -624,8 +621,8 @@ impl NormalizerView<'_> {
         let skolem_terms = self.make_skolem_terms(quants, stack, synthesized, context)?;
         let len = skolem_terms.len();
         for (skolem_term, quant) in skolem_terms.into_iter().zip(quants.iter()) {
-            let type_id = self.type_store().get_type_id(quant)?;
-            stack.push(TermBinding::Bound(skolem_term, type_id));
+            let closed_type = self.type_store().get_closed_type(quant)?;
+            stack.push(TermBinding::Bound(skolem_term, closed_type));
         }
         let result =
             self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized, context)?;
@@ -724,10 +721,10 @@ impl NormalizerView<'_> {
 
         if let AcornType::Function(app) = left.get_type() {
             // Comparing functions.
-            let arg_types: Vec<TypeId> = app
+            let arg_closed_types: Vec<ClosedType> = app
                 .arg_types
                 .iter()
-                .map(|t| self.type_store().get_type_id(t))
+                .map(|t| self.type_store().get_closed_type(t))
                 .collect::<Result<Vec<_>, _>>()?;
             let result_type = self.type_store().get_type_id(&app.return_type)?;
 
@@ -788,9 +785,9 @@ impl NormalizerView<'_> {
                 // Boolean functional equality.
                 // Create new free variables for each argument
                 let mut args = vec![];
-                for arg_type in &arg_types {
+                for arg_closed_type in &arg_closed_types {
                     let var_id = *next_var_id;
-                    context.push_var_type_with_store(*arg_type, self.type_store());
+                    context.push_closed_type(arg_closed_type.clone());
                     let var = Term::new_variable(var_id);
                     *next_var_id += 1;
                     args.push(ExtendedTerm::Term(var));
@@ -855,9 +852,9 @@ impl NormalizerView<'_> {
             // Functional equality.
             // Create new free variables for each argument
             let mut args = vec![];
-            for arg_type in &arg_types {
+            for arg_closed_type in &arg_closed_types {
                 let var_id = *next_var_id;
-                context.push_var_type_with_store(*arg_type, self.type_store());
+                context.push_closed_type(arg_closed_type.clone());
                 let var = Term::new_variable(var_id);
                 *next_var_id += 1;
                 args.push(var);
@@ -1022,8 +1019,8 @@ impl NormalizerView<'_> {
             let num_args = arg_terms.len();
             // Lambda arguments are bound variables
             for (arg, arg_type) in arg_terms.into_iter().zip(arg_types.iter()) {
-                let type_id = self.type_store().get_type_id(arg_type)?;
-                stack.push(TermBinding::Bound(arg, type_id));
+                let closed_type = self.type_store().get_closed_type(arg_type)?;
+                stack.push(TermBinding::Bound(arg, closed_type));
             }
             let answer =
                 self.value_to_extended_term(&return_value, stack, next_var_id, synth, context);
@@ -1387,7 +1384,7 @@ impl NormalizerView<'_> {
         match value {
             AcornValue::IfThenElse(cond_val, then_value, else_value) => {
                 // Build context from stack for variable type lookups
-                let stack_context = build_context_from_stack(stack, self.type_store());
+                let stack_context = build_context_from_stack(stack);
 
                 // Convert the condition to CNF, tracking any new variables in cond_context
                 let mut cond_context = LocalContext::empty();
@@ -1460,14 +1457,13 @@ impl NormalizerView<'_> {
                 let mut args = vec![];
                 for arg_type in arg_types {
                     let closed_type = self.type_store().get_closed_type(arg_type)?;
-                    let type_id = self.type_store().get_type_id(arg_type)?;
                     let var_id = *next_var_id;
                     *next_var_id += 1;
                     // Add the variable type to the context
-                    context.push_var_type_with_store(type_id, self.type_store());
+                    context.push_closed_type(closed_type.clone());
                     let var = Term::new_variable(var_id);
-                    args.push((var_id, closed_type));
-                    stack.push(TermBinding::Free(var, type_id));
+                    args.push((var_id, closed_type.clone()));
+                    stack.push(TermBinding::Free(var, closed_type));
                 }
 
                 // Evaluate the body with the lambda arguments on the stack

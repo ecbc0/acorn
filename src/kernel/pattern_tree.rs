@@ -17,8 +17,6 @@ use super::local_context::LocalContext;
 use super::symbol::Symbol;
 use super::term::Term;
 use super::term::{TermComponent, TermRef};
-#[cfg(test)]
-use super::types::TypeId;
 use super::types::{GroundTypeId, TypeclassId, BOOL, EMPTY};
 
 /// Replaces variables in a term with corresponding replacement terms.

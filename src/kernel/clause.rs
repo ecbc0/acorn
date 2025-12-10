@@ -342,13 +342,6 @@ impl Clause {
             .map(|lit| lit.instantiate_invalid_synthetics(num_to_replace))
             .collect();
         // The context needs to be adjusted - the first num_to_replace var types are removed
-        let new_var_types: Vec<_> = self
-            .context
-            .var_types
-            .iter()
-            .skip(num_to_replace)
-            .cloned()
-            .collect();
         let new_closed_types: Vec<_> = self
             .context
             .get_var_closed_types()
@@ -356,8 +349,7 @@ impl Clause {
             .skip(num_to_replace)
             .cloned()
             .collect();
-        let new_context =
-            LocalContext::from_types_and_closed_types(new_var_types, new_closed_types);
+        let new_context = LocalContext::from_closed_types(new_closed_types);
         Clause::new(new_literals, &new_context)
     }
 
