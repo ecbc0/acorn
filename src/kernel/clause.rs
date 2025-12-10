@@ -92,13 +92,8 @@ impl Clause {
         // Normalize variable IDs and track flips, rebuilding the context.
         // var_ids will contain the original variable IDs in their new order.
         let mut var_ids = vec![];
-        let mut var_types = vec![];
         for i in 0..output_literals.len() {
-            if output_literals[i].normalize_var_ids_with_types(
-                &mut var_ids,
-                &mut var_types,
-                context,
-            ) {
+            if output_literals[i].normalize_var_ids_into(&mut var_ids) {
                 // We flipped literal i. Update the trace.
                 for t in &mut trace {
                     if let LiteralTrace::Output { index, flipped } = t {
@@ -173,10 +168,9 @@ impl Clause {
     /// Also rebuilds the context to match the renumbered variables.
     pub fn normalize_var_ids(&mut self) {
         let mut var_ids = vec![];
-        let mut var_types = vec![];
         let input_context = self.context.clone();
         for literal in &mut self.literals {
-            literal.normalize_var_ids_with_types(&mut var_ids, &mut var_types, &input_context);
+            literal.normalize_var_ids_into(&mut var_ids);
         }
         self.context = input_context.remap(&var_ids);
     }
@@ -283,17 +277,10 @@ impl Clause {
     /// Also rebuilds the context to match the renumbered variables.
     pub fn normalize_var_ids_no_flip(&mut self) {
         let mut var_ids = vec![];
-        let mut var_types = vec![];
         let input_context = self.context.clone();
         for literal in &mut self.literals {
-            literal
-                .left
-                .normalize_var_ids_with_types(&mut var_ids, &mut var_types, &input_context);
-            literal.right.normalize_var_ids_with_types(
-                &mut var_ids,
-                &mut var_types,
-                &input_context,
-            );
+            literal.left.normalize_var_ids_into(&mut var_ids);
+            literal.right.normalize_var_ids_into(&mut var_ids);
         }
         self.context = input_context.remap(&var_ids);
     }

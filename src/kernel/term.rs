@@ -1347,14 +1347,10 @@ impl Term {
         Term::from_components(new_components)
     }
 
-    /// Normalize variable IDs in place, tracking types from the input context.
-    /// This is used when reversing literals to build a new context.
-    pub fn normalize_var_ids_with_types(
-        &mut self,
-        var_ids: &mut Vec<AtomId>,
-        var_types: &mut Vec<TypeId>,
-        input_context: &LocalContext,
-    ) {
+    /// Normalize variable IDs in place.
+    /// Renumbers variables to appear in order of first occurrence (0, 1, 2, ...).
+    /// The var_ids output tracks original variable IDs for use with LocalContext::remap.
+    pub fn normalize_var_ids_into(&mut self, var_ids: &mut Vec<AtomId>) {
         for component in &mut self.components {
             if let TermComponent::Atom(Atom::Variable(i)) = component {
                 let pos = var_ids.iter().position(|&x| x == *i);
@@ -1363,11 +1359,6 @@ impl Term {
                     None => {
                         let new_id = var_ids.len() as AtomId;
                         var_ids.push(*i);
-                        // Look up the type from the input context using the original variable ID
-                        let var_type = input_context
-                            .get_var_type(*i as usize)
-                            .expect("Variable not found in input context during renumbering");
-                        var_types.push(var_type);
                         *i = new_id;
                     }
                 }

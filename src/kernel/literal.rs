@@ -6,7 +6,6 @@ use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::Term;
-use crate::kernel::types::TypeId;
 
 /// A Literal stores an equation (or inequality) between two terms.
 /// Type information is stored separately in the TypeStore and SymbolTable.
@@ -175,19 +174,11 @@ impl Literal {
         }
     }
 
-    /// Normalize variable IDs in place so they appear in order of first occurrence,
-    /// tracking the types of variables in the output.
+    /// Normalize variable IDs in place so they appear in order of first occurrence.
     /// Returns true if the literal was flipped during normalization.
-    pub fn normalize_var_ids_with_types(
-        &mut self,
-        var_ids: &mut Vec<AtomId>,
-        var_types: &mut Vec<TypeId>,
-        input_context: &LocalContext,
-    ) -> bool {
-        self.left
-            .normalize_var_ids_with_types(var_ids, var_types, input_context);
-        self.right
-            .normalize_var_ids_with_types(var_ids, var_types, input_context);
+    pub fn normalize_var_ids_into(&mut self, var_ids: &mut Vec<AtomId>) -> bool {
+        self.left.normalize_var_ids_into(var_ids);
+        self.right.normalize_var_ids_into(var_ids);
         if needs_to_flip(&self.left, &self.right) {
             self.flip();
             true
@@ -259,11 +250,10 @@ impl Literal {
     /// The input_context provides the types of variables before renumbering.
     pub fn normalized_reversed(&self, input_context: &LocalContext) -> (Term, Term, LocalContext) {
         let mut var_ids: Vec<AtomId> = vec![];
-        let mut var_types: Vec<TypeId> = vec![];
         let mut right = self.right.clone();
-        right.normalize_var_ids_with_types(&mut var_ids, &mut var_types, input_context);
+        right.normalize_var_ids_into(&mut var_ids);
         let mut left = self.left.clone();
-        left.normalize_var_ids_with_types(&mut var_ids, &mut var_types, input_context);
+        left.normalize_var_ids_into(&mut var_ids);
         let output_context = input_context.remap(&var_ids);
         (right, left, output_context)
     }
