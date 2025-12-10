@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::elaborator::acorn_type::{AcornType, Datatype, FunctionType, Typeclass};
+use crate::elaborator::acorn_type::{AcornType, Datatype, FunctionType, TypeParam, Typeclass};
 use crate::kernel::atom::Atom;
 use crate::kernel::closed_type::ClosedType;
 use crate::kernel::term::TermComponent;
-use crate::kernel::types::{GroundTypeId, TypeId, TypeclassId};
+use crate::kernel::types::{GroundTypeId, TypeId, TypeclassId, GROUND_BOOL, GROUND_EMPTY};
 
 /// Manages the bidirectional mapping between AcornTypes and TypeIds,
 /// as well as typeclasses and their relationships to types.
@@ -19,6 +19,10 @@ pub struct TypeStore {
     /// Maps Datatype (bare data type with no params) to its GroundTypeId.
     /// This allows direct lookup without going through TypeId.
     datatype_to_ground_id: HashMap<Datatype, GroundTypeId>,
+
+    /// Maps Arbitrary type parameters to their GroundTypeId.
+    /// This allows direct lookup for type conversion without going through TypeId.
+    arbitrary_to_ground_id: HashMap<TypeParam, GroundTypeId>,
 
     /// typeclass_to_id[typeclass] is the TypeclassId
     typeclass_to_id: HashMap<Typeclass, TypeclassId>,
@@ -40,6 +44,7 @@ impl TypeStore {
             type_to_type_id: HashMap::new(),
             type_id_to_type: vec![],
             datatype_to_ground_id: HashMap::new(),
+            arbitrary_to_ground_id: HashMap::new(),
             typeclass_to_id: HashMap::new(),
             id_to_typeclass: vec![],
             typeclass_extends: vec![],
@@ -101,6 +106,13 @@ impl TypeStore {
             }
         }
 
+        // For Arbitrary types, populate the TypeParam -> GroundTypeId map
+        if let AcornType::Arbitrary(type_param) = acorn_type {
+            let ground_id = GroundTypeId::new(id.as_u16());
+            self.arbitrary_to_ground_id
+                .insert(type_param.clone(), ground_id);
+        }
+
         id
     }
 
@@ -121,15 +133,9 @@ impl TypeStore {
     /// Function types and parameterized data types are constructed on the fly.
     pub fn to_closed_type(&self, acorn_type: &AcornType) -> ClosedType {
         match acorn_type {
-            // Ground types: look up their GroundTypeId
-            AcornType::Empty | AcornType::Bool => {
-                let type_id = self
-                    .type_to_type_id
-                    .get(acorn_type)
-                    .expect("Empty/Bool should always be registered");
-                let ground_id = GroundTypeId::new(type_id.as_u16());
-                ClosedType::ground(ground_id)
-            }
+            // Ground types: use constants
+            AcornType::Empty => ClosedType::ground(GROUND_EMPTY),
+            AcornType::Bool => ClosedType::ground(GROUND_BOOL),
 
             AcornType::Data(datatype, params) if params.is_empty() => {
                 // Bare data type - use direct Datatype -> GroundTypeId lookup
@@ -177,14 +183,20 @@ impl TypeStore {
                 result
             }
 
-            AcornType::Variable(_) | AcornType::Arbitrary(_) => {
-                // Type variables must be registered
-                let type_id = self
-                    .type_to_type_id
-                    .get(acorn_type)
-                    .unwrap_or_else(|| panic!("Type variable {:?} not registered", acorn_type));
-                let ground_id = GroundTypeId::new(type_id.as_u16());
-                ClosedType::ground(ground_id)
+            AcornType::Variable(_) => {
+                panic!(
+                    "Variable types should not be converted to ClosedType: {:?}",
+                    acorn_type
+                );
+            }
+
+            AcornType::Arbitrary(type_param) => {
+                // Arbitrary types must be registered
+                let ground_id = self
+                    .arbitrary_to_ground_id
+                    .get(type_param)
+                    .unwrap_or_else(|| panic!("Arbitrary type {:?} not registered", type_param));
+                ClosedType::ground(*ground_id)
             }
         }
     }
