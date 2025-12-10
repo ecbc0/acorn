@@ -188,6 +188,17 @@ impl LocalContext {
 
     // Test-only methods below
 
+    /// Create a new LocalContext from ClosedTypes only.
+    /// This is the preferred constructor as it doesn't require TypeId.
+    pub fn from_closed_types(var_closed_types: Vec<ClosedType>) -> LocalContext {
+        // Create dummy TypeIds - these will be removed when we fully migrate away from TypeId
+        let var_types = vec![TypeId::default(); var_closed_types.len()];
+        LocalContext {
+            var_types,
+            var_closed_types,
+        }
+    }
+
     /// Create a new LocalContext with the given variable types.
     /// This creates ground ClosedTypes for each TypeId, assuming all types are ground.
     /// This is safe only when all TypeIds are known to be ground types (e.g., in tests).

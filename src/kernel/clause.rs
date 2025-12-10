@@ -622,11 +622,12 @@ impl std::fmt::Display for Clause {
 mod tests {
     use super::*;
     use crate::kernel::atom::Atom;
+    use crate::kernel::closed_type::ClosedType;
     use crate::kernel::kernel_context::KernelContext;
     use crate::kernel::literal::Literal;
     use crate::kernel::symbol::Symbol;
     use crate::kernel::term::Term;
-    use crate::kernel::types::TypeId;
+    use crate::kernel::types::GroundTypeId;
 
     /// Test that extensionality doesn't match clauses without function applications.
     /// This prevents infinite recursion when extensionality produces the same clause.
@@ -639,7 +640,8 @@ mod tests {
         let x0 = Term::atom(Atom::Variable(0));
         let literal = Literal::equals(g0, x0);
 
-        let context = LocalContext::new(vec![TypeId::new(2)]);
+        let some_type = ClosedType::ground(GroundTypeId::new(2));
+        let context = LocalContext::from_closed_types(vec![some_type]);
         let clause = Clause::from_literals_unnormalized(vec![literal], &context);
 
         // Extensionality should not match this clause since both terms are atomic
@@ -659,7 +661,8 @@ mod tests {
         let f_x0 = Term::new(Atom::Symbol(Symbol::GlobalConstant(0)), vec![x0.clone()]);
         let literal = Literal::equals(f_x0.clone(), f_x0);
 
-        let context = LocalContext::new(vec![TypeId::new(2)]);
+        let some_type = ClosedType::ground(GroundTypeId::new(2));
+        let context = LocalContext::from_closed_types(vec![some_type]);
         let clause = Clause::from_literals_unnormalized(vec![literal], &context);
 
         // Extensionality should not match this clause since both sides use the same function
@@ -676,13 +679,13 @@ mod tests {
     fn test_normalize_with_trace_preserves_types() {
         // Create a clause with mixed types:
         // not f(x0, x1, x2) or x2
-        // where x0: TypeId(2), x1: TypeId(2), x2: TypeId(1) (Bool)
+        // where x0: Foo, x1: Foo, x2: Bool
         //
         // After sorting, the literals may be reordered. The variable renumbering
         // should correctly track which type belongs to which new variable ID.
 
-        let type_foo = TypeId::new(2); // Some non-Bool type
-        let type_bool = TypeId::new(1); // Bool
+        let type_foo = ClosedType::ground(GroundTypeId::new(2)); // Some non-Bool type
+        let type_bool = ClosedType::ground(GroundTypeId::new(1)); // Bool
 
         // x0 and x1 are Foo, x2 is Bool
         let x0 = Term::atom(Atom::Variable(0));
@@ -702,13 +705,17 @@ mod tests {
         let lit2 = Literal::new(true, x2.clone(), Term::atom(Atom::True));
 
         // Context: x0:Foo, x1:Foo, x2:Bool
-        let context = LocalContext::new(vec![type_foo, type_foo, type_bool]);
+        let context = LocalContext::from_closed_types(vec![
+            type_foo.clone(),
+            type_foo.clone(),
+            type_bool.clone(),
+        ]);
 
         // Normalize the clause
         let (clause, _trace) = Clause::normalize_with_trace(vec![lit1, lit2], &context);
 
         // After normalization, check the output context:
-        // Should have 3 variables with types [TypeId(2), TypeId(2), TypeId(1)]
+        // Should have 3 variables with types Foo, Foo, Bool
         // The order may vary but the types should be consistent
         assert_eq!(clause.context.len(), 3);
 
@@ -716,9 +723,9 @@ mod tests {
         let mut foo_count = 0;
         let mut bool_count = 0;
         for i in 0..clause.context.len() {
-            match clause.context.get_var_type(i) {
-                Some(t) if t == type_foo => foo_count += 1,
-                Some(t) if t == type_bool => bool_count += 1,
+            match clause.context.get_var_closed_type(i) {
+                Some(t) if *t == type_foo => foo_count += 1,
+                Some(t) if *t == type_bool => bool_count += 1,
                 _ => panic!("Unexpected type in context"),
             }
         }
@@ -730,9 +737,12 @@ mod tests {
         for lit in &clause.literals {
             if lit.left.is_atomic() {
                 if let Atom::Variable(var_id) = lit.left.get_head_atom() {
-                    let var_type = clause.context.get_var_type(*var_id as usize).unwrap();
+                    let var_type = clause
+                        .context
+                        .get_var_closed_type(*var_id as usize)
+                        .unwrap();
                     assert_eq!(
-                        var_type, type_bool,
+                        *var_type, type_bool,
                         "Variable in atomic Bool literal should have Bool type, got {:?}",
                         var_type
                     );
