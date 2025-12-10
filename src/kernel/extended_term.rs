@@ -1,8 +1,8 @@
 use crate::kernel::atom::AtomId;
+use crate::kernel::closed_type::ClosedType;
 use crate::kernel::cnf::CNF;
 use crate::kernel::literal::Literal;
 use crate::kernel::term::Term;
-use crate::kernel::types::TypeId;
 
 // An ExtendedTerm is like a term in the sense that a comparison between two of them can be converted
 // into a CNF formula.
@@ -15,7 +15,7 @@ pub enum ExtendedTerm {
     If(Literal, Term, Term),
 
     // Lambda(args, body) represents the value f such that f(args) = body.
-    Lambda(Vec<(AtomId, TypeId)>, Term),
+    Lambda(Vec<(AtomId, ClosedType)>, Term),
 }
 
 impl std::fmt::Display for ExtendedTerm {

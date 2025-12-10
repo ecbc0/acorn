@@ -1457,12 +1457,13 @@ impl NormalizerView<'_> {
                 let mut args = vec![];
                 for arg_type in arg_types {
                     let type_id = self.type_store().get_type_id(arg_type)?;
+                    let closed_type = self.type_store().type_id_to_closed_type(type_id);
                     let var_id = *next_var_id;
                     *next_var_id += 1;
                     // Add the variable type to the context
                     context.push_var_type_with_store(type_id, self.type_store());
                     let var = Term::new_variable(var_id);
-                    args.push((var_id, type_id));
+                    args.push((var_id, closed_type));
                     stack.push(TermBinding::Free(var, type_id));
                 }
 
