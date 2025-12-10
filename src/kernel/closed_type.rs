@@ -14,7 +14,7 @@ use crate::kernel::types::GroundTypeId;
 /// The representation uses the same `Vec<TermComponent>` format as Term, but:
 /// - Can contain `TermComponent::Pi { span }` for dependent function types
 /// - Can contain `TermComponent::Application { span }` for type applications like `List[Int]`
-/// - Can contain `Atom::Type(TypeId)` for ground types like Int, Bool, Nat
+/// - Can contain `Atom::Type(GroundTypeId)` for ground types like Int, Bool, Nat
 /// - Cannot contain free variables (but can have bound variables from Pi)
 ///
 /// Examples:
@@ -65,7 +65,7 @@ impl ClosedType {
         ClosedType { components }
     }
 
-    /// Returns true if this is a ground type (just a TypeId).
+    /// Returns true if this is a ground type (just a GroundTypeId).
     pub fn is_ground(&self) -> bool {
         self.components.len() == 1
             && matches!(self.components[0], TermComponent::Atom(Atom::Type(_)))

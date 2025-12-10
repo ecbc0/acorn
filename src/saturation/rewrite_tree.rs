@@ -350,7 +350,7 @@ mod tests {
         let lctx = test_local_context();
         let mut tree = RewriteTree::new();
 
-        // Make a rule for BOOL variables (TypeId 1)
+        // Make a rule for Bool-typed variables
         let var_bool = Term::atom(Atom::Variable(0));
         tree.insert_terms(0, &var_bool, &var_bool, true, &lctx, &kctx);
 
