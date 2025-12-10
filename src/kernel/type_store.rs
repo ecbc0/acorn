@@ -14,11 +14,9 @@ pub struct TypeStore {
     ground_id_to_type: Vec<AcornType>,
 
     /// Maps Datatype (bare data type with no params) to its GroundTypeId.
-    /// This allows direct lookup without going through TypeId.
     datatype_to_ground_id: HashMap<Datatype, GroundTypeId>,
 
     /// Maps Arbitrary type parameters to their GroundTypeId.
-    /// This allows direct lookup for type conversion without going through TypeId.
     arbitrary_to_ground_id: HashMap<TypeParam, GroundTypeId>,
 
     /// typeclass_to_id[typeclass] is the TypeclassId
