@@ -19,7 +19,6 @@ use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::symbol_table::NewConstantType;
 use crate::kernel::term::Term;
-use crate::kernel::types::BOOL;
 use crate::monomorphizer::Monomorphizer;
 use crate::proof_step::{ProofStep, Truthiness};
 
@@ -720,9 +719,9 @@ impl NormalizerView<'_> {
             for t in &app.arg_types {
                 arg_closed_types.push(self.type_store().to_closed_type(t));
             }
-            let result_type = self.type_store().get_type_id(&app.return_type)?;
+            let result_closed_type = self.type_store().to_closed_type(&app.return_type);
 
-            if result_type == BOOL {
+            if result_closed_type == ClosedType::bool() {
                 // Boolean functional comparison.
                 if negate {
                     // Boolean functional inequality.
@@ -1788,13 +1787,8 @@ impl Normalizer {
                 .get_closed_type(*symbol)
                 .clone(),
             Atom::True => {
-                use crate::kernel::types::BOOL;
-                let bool_ground = self
-                    .kernel_context
-                    .type_store
-                    .get_ground_type_id(BOOL)
-                    .expect("BOOL should be a ground type");
-                ClosedType::ground(bool_ground)
+                use crate::kernel::types::GROUND_BOOL;
+                ClosedType::ground(GROUND_BOOL)
             }
             Atom::Type(_) => panic!("Atom::Type should not appear in Term"),
         };

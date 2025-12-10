@@ -28,6 +28,11 @@ impl fmt::Display for TypeId {
 pub const EMPTY: TypeId = TypeId(0);
 pub const BOOL: TypeId = TypeId(1);
 
+/// GroundTypeId for the Empty type.
+pub const GROUND_EMPTY: GroundTypeId = GroundTypeId(0);
+/// GroundTypeId for the Bool type.
+pub const GROUND_BOOL: GroundTypeId = GroundTypeId(1);
+
 /// A type ID that refers ONLY to a ground type (no internal structure).
 /// Examples: Bool, Nat, Int, user-defined data types without parameters.
 /// NOT for: function types, parameterized types like List[T].

@@ -6,7 +6,7 @@ use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::Term;
 use crate::kernel::term::TermRef;
-use crate::kernel::types::{GroundTypeId, EMPTY};
+use crate::kernel::types::GROUND_EMPTY;
 use std::fmt;
 
 // A VariableMap maintains a mapping from variables to terms, allowing us to turn a more general term
@@ -49,8 +49,7 @@ impl VariableMap {
     /// 2. When the clause is normalized, variable IDs become sequential
     /// 3. The remap operation only keeps entries for actual variables
     pub fn build_output_context(&self, input_context: &LocalContext) -> LocalContext {
-        let empty_ground = GroundTypeId::new(EMPTY.as_u16());
-        let empty_type = ClosedType::ground(empty_ground);
+        let empty_type = ClosedType::ground(GROUND_EMPTY);
         let mut var_closed_types: Vec<Option<ClosedType>> = vec![];
         for opt_term in &self.map {
             if let Some(term) = opt_term {

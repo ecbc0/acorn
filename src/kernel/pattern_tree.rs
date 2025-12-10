@@ -17,7 +17,7 @@ use super::local_context::LocalContext;
 use super::symbol::Symbol;
 use super::term::Term;
 use super::term::{TermComponent, TermRef};
-use super::types::{GroundTypeId, TypeclassId, BOOL, EMPTY};
+use super::types::{GroundTypeId, TypeclassId, GROUND_BOOL, GROUND_EMPTY};
 
 /// Replaces variables in a term with corresponding replacement terms.
 /// Variables x_i are replaced with replacements[i].
@@ -133,7 +133,7 @@ pub fn replace_term_variables(
         }
     }
 
-    let empty_type = ClosedType::ground(GroundTypeId::new(EMPTY.as_u16()));
+    let empty_type = ClosedType::ground(GROUND_EMPTY);
     let result_term = replace_recursive(
         term.as_ref(),
         term_context,
@@ -373,11 +373,7 @@ fn key_from_term_type(
         KernelAtom::Symbol(symbol) => kernel_context.symbol_table.get_closed_type(*symbol),
         KernelAtom::True => {
             // Special case: True has type Bool, encode it directly
-            let bool_ground = kernel_context
-                .type_store
-                .get_ground_type_id(BOOL)
-                .expect("BOOL should be a ground type");
-            Edge::Atom(Atom::Type(bool_ground)).append_to(key);
+            Edge::Atom(Atom::Type(GROUND_BOOL)).append_to(key);
             return;
         }
         KernelAtom::Type(_) => {
@@ -1204,7 +1200,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::type_store::TypeStore;
 
     #[test]
     fn test_edge_roundtrip() {
@@ -1250,42 +1245,36 @@ mod tests {
 
     #[test]
     fn test_key_from_closed_type_ground() {
-        let store = TypeStore::new();
-        let bool_ground = store.get_ground_type_id(BOOL).unwrap();
-
         // Test encoding of a ground type like Bool
-        let bool_type = ClosedType::ground(bool_ground);
+        let bool_type = ClosedType::ground(GROUND_BOOL);
         let mut key = Vec::new();
         key_from_closed_type(&bool_type, &mut key);
 
-        // Should be just Atom(Type(bool_ground))
+        // Should be just Atom(Type(GROUND_BOOL))
         assert_eq!(key.len(), 3);
         let edge = Edge::from_bytes(key[0], key[1], key[2]);
-        assert_eq!(edge, Edge::Atom(Atom::Type(bool_ground)));
+        assert_eq!(edge, Edge::Atom(Atom::Type(GROUND_BOOL)));
     }
 
     #[test]
     fn test_key_from_closed_type_arrow() {
-        let store = TypeStore::new();
-        let bool_ground = store.get_ground_type_id(BOOL).unwrap();
-
         // Test encoding of Bool -> Bool
-        let bool_type = ClosedType::ground(bool_ground);
+        let bool_type = ClosedType::ground(GROUND_BOOL);
         let arrow_type = ClosedType::pi(bool_type.clone(), bool_type.clone());
         let mut key = Vec::new();
         key_from_closed_type(&arrow_type, &mut key);
 
-        // Should be: Arrow + Atom(Type(bool_ground)) + Atom(Type(bool_ground))
+        // Should be: Arrow + Atom(Type(GROUND_BOOL)) + Atom(Type(GROUND_BOOL))
         assert_eq!(key.len(), 9);
 
         let edge1 = Edge::from_bytes(key[0], key[1], key[2]);
         assert_eq!(edge1, Edge::Arrow);
 
         let edge2 = Edge::from_bytes(key[3], key[4], key[5]);
-        assert_eq!(edge2, Edge::Atom(Atom::Type(bool_ground)));
+        assert_eq!(edge2, Edge::Atom(Atom::Type(GROUND_BOOL)));
 
         let edge3 = Edge::from_bytes(key[6], key[7], key[8]);
-        assert_eq!(edge3, Edge::Atom(Atom::Type(bool_ground)));
+        assert_eq!(edge3, Edge::Atom(Atom::Type(GROUND_BOOL)));
     }
 
     #[test]

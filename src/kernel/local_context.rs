@@ -2,10 +2,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::kernel::atom::AtomId;
 use crate::kernel::closed_type::ClosedType;
-#[cfg(test)]
-use crate::kernel::type_store::TypeStore;
-#[cfg(test)]
-use crate::kernel::types::TypeId;
 
 /// A context stores type information for variables.
 /// This is used with terms/literals/clauses to track variable types
@@ -89,11 +85,10 @@ impl LocalContext {
     /// Set ClosedType for a variable at a specific index.
     /// If the context is too short, it will be extended with EMPTY placeholders.
     pub fn set_closed_type(&mut self, var_id: usize, closed_type: ClosedType) {
-        use crate::kernel::types::{GroundTypeId, EMPTY};
+        use crate::kernel::types::GROUND_EMPTY;
         if var_id >= self.var_closed_types.len() {
             // Extend with EMPTY placeholders for gap indices
-            let empty_ground = GroundTypeId::new(EMPTY.as_u16());
-            let empty_closed = ClosedType::ground(empty_ground);
+            let empty_closed = ClosedType::ground(GROUND_EMPTY);
             self.var_closed_types.resize(var_id + 1, empty_closed);
         }
         self.var_closed_types[var_id] = closed_type;
@@ -136,34 +131,13 @@ impl LocalContext {
             LazyLock::new(|| LocalContext::from_closed_types(vec![ClosedType::empty(); 10]));
         &TEST_EMPTY_CONTEXT
     }
-
-    /// Creates a LocalContext with custom types for tests.
-    #[cfg(test)]
-    pub fn with_types(types: Vec<TypeId>, type_store: &TypeStore) -> LocalContext {
-        let var_closed_types = types
-            .iter()
-            .map(|&t| type_store.type_id_to_closed_type(t))
-            .collect();
-        LocalContext { var_closed_types }
-    }
-
-    /// Create a new LocalContext with proper ClosedTypes computed from the TypeStore.
-    #[cfg(test)]
-    pub fn new_with_type_store(var_types: Vec<TypeId>, type_store: &TypeStore) -> LocalContext {
-        let var_closed_types = var_types
-            .iter()
-            .map(|&t| type_store.type_id_to_closed_type(t))
-            .collect();
-        LocalContext { var_closed_types }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::kernel::closed_type::ClosedType;
-    use crate::kernel::type_store::TypeStore;
-    use crate::kernel::types::{GroundTypeId, BOOL, EMPTY};
+    use crate::kernel::types::{GroundTypeId, GROUND_BOOL, GROUND_EMPTY};
 
     fn ground(id: u16) -> ClosedType {
         ClosedType::ground(GroundTypeId::new(id))
@@ -198,16 +172,12 @@ mod tests {
 
     #[test]
     fn test_remap_preserves_closed_types() {
-        let store = TypeStore::new();
-        let bool_ground = store.get_ground_type_id(BOOL).unwrap();
-        let empty_ground = store.get_ground_type_id(EMPTY).unwrap();
-
         // Create a context with a Pi type (function type)
         let pi_type = ClosedType::pi(
-            ClosedType::ground(bool_ground),
-            ClosedType::ground(bool_ground),
+            ClosedType::ground(GROUND_BOOL),
+            ClosedType::ground(GROUND_BOOL),
         );
-        let ground_type = ClosedType::ground(empty_ground);
+        let ground_type = ClosedType::ground(GROUND_EMPTY);
 
         let ctx = LocalContext::from_closed_types(vec![ground_type.clone(), pi_type.clone()]);
 

@@ -545,14 +545,8 @@ impl Clause {
         kernel_context: &KernelContext,
     ) -> Vec<(usize, Vec<Literal>)> {
         use crate::kernel::closed_type::ClosedType;
-        use crate::kernel::types::BOOL;
 
-        let bool_closed = ClosedType::ground(
-            kernel_context
-                .type_store
-                .get_ground_type_id(BOOL)
-                .expect("BOOL should be a ground type"),
-        );
+        let bool_closed = ClosedType::bool();
 
         let mut answer = vec![];
 
