@@ -307,6 +307,7 @@ impl Default for KernelContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::closed_type::ClosedType;
     use crate::kernel::symbol::Symbol;
 
     #[test]
@@ -315,14 +316,14 @@ mod tests {
         // Verify we can look up the types for scoped constants c0-c9
         for i in 0..10 {
             let symbol = Symbol::ScopedConstant(i);
-            let type_id = ctx.symbol_table.get_type(symbol);
-            assert_eq!(type_id, EMPTY);
+            let closed_type = ctx.symbol_table.get_closed_type(symbol);
+            assert_eq!(*closed_type, ClosedType::empty());
         }
         // Verify we can look up the types for global constants g0-g9
         for i in 0..10 {
             let symbol = Symbol::GlobalConstant(i);
-            let type_id = ctx.symbol_table.get_type(symbol);
-            assert_eq!(type_id, EMPTY);
+            let closed_type = ctx.symbol_table.get_closed_type(symbol);
+            assert_eq!(*closed_type, ClosedType::empty());
         }
     }
 }

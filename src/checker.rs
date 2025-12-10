@@ -18,8 +18,6 @@ use crate::kernel::inference;
 use crate::kernel::kernel_context::KernelContext;
 #[cfg(test)]
 use crate::kernel::local_context::LocalContext;
-#[cfg(test)]
-use crate::kernel::types::BOOL;
 use crate::kernel::{StepId, TermGraph};
 use crate::normalizer::{Normalizer, NormalizerView};
 use crate::project::Project;
@@ -650,7 +648,7 @@ impl TestChecker {
     /// Uses test_with_all_bool_types which gives all symbols Bool type.
     fn with_clauses(clauses: &[&str]) -> TestChecker {
         let context = KernelContext::test_with_all_bool_types();
-        let local_context = LocalContext::new(vec![BOOL; 10]);
+        let local_context = LocalContext::new_with_bools(10);
         let mut checker = Checker::new(None);
         for clause_str in clauses {
             let clause = Clause::parse(clause_str, &local_context);

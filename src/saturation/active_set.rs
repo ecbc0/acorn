@@ -1045,14 +1045,13 @@ impl ActiveSet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::types::BOOL;
 
     fn test_context() -> KernelContext {
         KernelContext::test_with_all_bool_types()
     }
 
     fn test_local() -> LocalContext {
-        LocalContext::new(vec![BOOL; 10])
+        LocalContext::new_with_bools(10)
     }
 
     #[test]

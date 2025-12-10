@@ -1,5 +1,7 @@
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::clause::Clause;
+#[cfg(test)]
+use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
@@ -7,8 +9,6 @@ use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::term::Term;
 use crate::kernel::term::TermRef;
-#[cfg(test)]
-use crate::kernel::types::TypeId;
 use crate::kernel::variable_map::VariableMap;
 use std::fmt;
 
@@ -101,8 +101,8 @@ impl<'a> Unifier<'a> {
     /// Pre-populates the output context with variable types for testing.
     /// This allows tests to directly use output variables without going through unification.
     #[cfg(test)]
-    fn set_output_var_types(&mut self, types: Vec<TypeId>) {
-        self.output_context = LocalContext::with_types(types, &self.kernel_context.type_store);
+    fn set_output_var_closed_types(&mut self, types: Vec<ClosedType>) {
+        self.output_context = LocalContext::from_closed_types(types);
     }
 
     /// Returns the LocalContext for a given scope.
@@ -706,8 +706,6 @@ impl fmt::Display for Unifier<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::kernel::types::{BOOL, EMPTY};
-
     use super::*;
 
     fn bool_fn(head: Atom, args: Vec<Term>) -> Term {
@@ -725,11 +723,12 @@ mod tests {
     /// Creates a test unifier with BOOL types for variables.
     /// Use this for tests that explicitly construct terms with BOOL types.
     fn test_unifier_bool<'a>(kernel_context: &'a KernelContext) -> Unifier<'a> {
+        use crate::kernel::closed_type::ClosedType;
         use crate::kernel::local_context::LocalContext;
         let mut u = Unifier::new(3, kernel_context);
         u.set_input_context(Scope::LEFT, LocalContext::test_bool_ref());
         u.set_input_context(Scope::RIGHT, LocalContext::test_bool_ref());
-        u.set_output_var_types(vec![BOOL; 10]);
+        u.set_output_var_closed_types(vec![ClosedType::bool(); 10]);
         u
     }
 
@@ -800,11 +799,15 @@ mod tests {
 
     #[test]
     fn test_unifying_functional_variable() {
+        use crate::kernel::closed_type::ClosedType;
         // This test checks that a variable can unify with a constant in functional position.
         // Variable(1) should unify with GlobalConstant(3), both with type Empty -> Bool.
         let ctx = test_ctx();
         // g3 has type Empty -> Bool
-        let empty_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(3));
+        let empty_to_bool = ctx
+            .symbol_table
+            .get_closed_type(Symbol::GlobalConstant(3))
+            .clone();
 
         let empty0 = Term::atom(Atom::Variable(0));
         let const_f_term = Term::new(
@@ -816,16 +819,17 @@ mod tests {
         // Set up a unifier where Variable(0) has EMPTY type and Variable(1) has Empty -> Bool type
         let mut u = Unifier::new(3, &ctx);
         // x0: EMPTY, x1: Empty -> Bool
-        let local_ctx = LocalContext::with_types(vec![EMPTY, empty_to_bool], &ctx.type_store);
+        let local_ctx = LocalContext::from_closed_types(vec![ClosedType::empty(), empty_to_bool]);
         let local_ctx_ref: &'static LocalContext = Box::leak(Box::new(local_ctx));
         u.set_input_context(Scope::LEFT, local_ctx_ref);
         u.set_input_context(Scope::RIGHT, local_ctx_ref);
-        u.set_output_var_types(vec![EMPTY; 10]);
+        u.set_output_var_closed_types(vec![ClosedType::empty(); 10]);
         u.assert_unify(Scope::LEFT, &const_f_term, Scope::RIGHT, &var_f_term);
     }
 
     #[test]
     fn test_nested_functional_unify() {
+        use crate::kernel::closed_type::ClosedType;
         use crate::kernel::local_context::LocalContext;
 
         // Test: unify x0(x0(c5)) with c1(x0(x1))
@@ -833,10 +837,14 @@ mod tests {
         // x0 has type Bool -> Bool, x1 has type Bool
         // c1 is Bool -> Bool, c5 is Bool
         let ctx = test_ctx();
-        let bool_to_bool = ctx.symbol_table.get_type(Symbol::ScopedConstant(1));
+        let bool_to_bool = ctx
+            .symbol_table
+            .get_closed_type(Symbol::ScopedConstant(1))
+            .clone();
 
         // Create local context where x0: Bool -> Bool, x1: Bool
-        let local_ctx = LocalContext::with_types(vec![bool_to_bool, BOOL], &ctx.type_store);
+        let local_ctx =
+            LocalContext::from_closed_types(vec![bool_to_bool.clone(), ClosedType::bool()]);
         let local_ctx_ref: &'static LocalContext = Box::leak(Box::new(local_ctx));
 
         let c5 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(5)));
@@ -853,7 +861,13 @@ mod tests {
         let mut u = Unifier::new(3, &ctx);
         u.set_input_context(Scope::LEFT, local_ctx_ref);
         u.set_input_context(Scope::RIGHT, local_ctx_ref);
-        u.set_output_var_types(vec![bool_to_bool, BOOL, BOOL, BOOL, BOOL]);
+        u.set_output_var_closed_types(vec![
+            bool_to_bool,
+            ClosedType::bool(),
+            ClosedType::bool(),
+            ClosedType::bool(),
+            ClosedType::bool(),
+        ]);
 
         u.assert_unify(Scope::LEFT, &left_term, Scope::RIGHT, &right_term);
         u.print();
@@ -867,11 +881,15 @@ mod tests {
     // We construct terms where x0 has type Bool -> Bool so x0(x0(x1)) is valid.
     #[test]
     fn test_nested_functional_superpose() {
+        use crate::kernel::closed_type::ClosedType;
         let ctx = test_ctx();
-        let bool_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(1)); // g1: Bool -> Bool
+        let bool_to_bool = ctx
+            .symbol_table
+            .get_closed_type(Symbol::GlobalConstant(1))
+            .clone(); // g1: Bool -> Bool
 
         // Create local context where x0 has type Bool -> Bool, x1 has type Bool
-        let lctx = LocalContext::with_types(vec![bool_to_bool, BOOL], &ctx.type_store);
+        let lctx = LocalContext::from_closed_types(vec![bool_to_bool.clone(), ClosedType::bool()]);
 
         // Build terms: s = x0(x0(x1)) where x0: Bool -> Bool, x1: Bool
         // x0(x1) : Bool, x0(x0(x1)) : Bool
@@ -887,7 +905,12 @@ mod tests {
         let mut u = Unifier::new(3, &ctx);
         u.set_input_context(Scope::LEFT, Box::leak(Box::new(lctx.clone())));
         u.set_input_context(Scope::RIGHT, Box::leak(Box::new(lctx.clone())));
-        u.set_output_var_types(vec![bool_to_bool, BOOL, BOOL, BOOL]);
+        u.set_output_var_closed_types(vec![
+            bool_to_bool,
+            ClosedType::bool(),
+            ClosedType::bool(),
+            ClosedType::bool(),
+        ]);
 
         u.assert_unify(Scope::LEFT, &s, Scope::RIGHT, &u_subterm);
         u.print();
@@ -905,6 +928,7 @@ mod tests {
     // - c5-c9: Bool
     #[test]
     fn test_higher_order_partial_application_unification() {
+        use crate::kernel::closed_type::ClosedType;
         // We want to test unifying terms where a function variable gets bound to a partial application.
         // Using test_with_function_types:
         // - g0: (Bool, Bool) -> Bool
@@ -914,14 +938,17 @@ mod tests {
         // where x0 should map to g0(c5) (a partial application)
 
         let ctx = test_ctx();
-        let bool_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(1)); // g1: Bool -> Bool
+        let bool_to_bool = ctx
+            .symbol_table
+            .get_closed_type(Symbol::GlobalConstant(1))
+            .clone(); // g1: Bool -> Bool
 
         // c5, c6 are Bool constants
         let c5 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(5)));
         let c6 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(6)));
 
         // Left side: x0(c6) where x0: Bool -> Bool
-        let left_local = LocalContext::with_types(vec![bool_to_bool], &ctx.type_store);
+        let left_local = LocalContext::from_closed_types(vec![bool_to_bool.clone()]);
         let left_term = Term::new(Atom::Variable(0), vec![c6.clone()]);
 
         // Right side: g0(c5, c6) : Bool
@@ -937,7 +964,7 @@ mod tests {
         let mut u = Unifier::new(3, &ctx);
         u.set_input_context(Scope::LEFT, Box::leak(Box::new(left_local)));
         u.set_input_context(Scope::RIGHT, Box::leak(Box::new(right_local)));
-        u.set_output_var_types(vec![bool_to_bool, BOOL, BOOL]);
+        u.set_output_var_closed_types(vec![bool_to_bool, ClosedType::bool(), ClosedType::bool()]);
 
         let result = u.unify(Scope::LEFT, &left_term, Scope::RIGHT, &right_term);
 
@@ -958,11 +985,15 @@ mod tests {
     // Uses test_with_function_types where g1: Bool -> Bool.
     #[test]
     fn test_original_superpose() {
+        use crate::kernel::closed_type::ClosedType;
         let ctx = test_ctx();
-        let bool_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(1)); // g1: Bool -> Bool
+        let bool_to_bool = ctx
+            .symbol_table
+            .get_closed_type(Symbol::GlobalConstant(1))
+            .clone(); // g1: Bool -> Bool
 
         // Create local context where x0 has type Bool -> Bool, x1 has type Bool
-        let lctx = LocalContext::with_types(vec![bool_to_bool, BOOL], &ctx.type_store);
+        let lctx = LocalContext::from_closed_types(vec![bool_to_bool.clone(), ClosedType::bool()]);
 
         // Build terms: s = x0(x0(x1)) where x0: Bool -> Bool, x1: Bool
         let x0_x1 = Term::new(Atom::Variable(0), vec![Term::atom(Atom::Variable(1))]);
@@ -975,7 +1006,12 @@ mod tests {
         let mut u = Unifier::new(3, &ctx);
         u.set_input_context(Scope::LEFT, Box::leak(Box::new(lctx.clone())));
         u.set_input_context(Scope::RIGHT, Box::leak(Box::new(lctx.clone())));
-        u.set_output_var_types(vec![bool_to_bool, BOOL, BOOL, BOOL]);
+        u.set_output_var_closed_types(vec![
+            bool_to_bool,
+            ClosedType::bool(),
+            ClosedType::bool(),
+            ClosedType::bool(),
+        ]);
 
         u.assert_unify(Scope::LEFT, &s, Scope::RIGHT, &u_subterm);
         u.print();
@@ -1115,6 +1151,7 @@ mod tests {
 
     #[test]
     fn test_initializing_with_variables_in_map() {
+        use crate::kernel::closed_type::ClosedType;
         use crate::kernel::local_context::LocalContext;
 
         // Test initializing a unifier with pre-existing variable mappings
@@ -1133,8 +1170,7 @@ mod tests {
         let mut initial_map = VariableMap::new();
         initial_map.set(0, g2_term);
 
-        let local_ctx = LocalContext::with_types(vec![BOOL; 10], &ctx.type_store);
-        let local_ctx_ref: &'static LocalContext = Box::leak(Box::new(local_ctx));
+        let local_ctx_ref: &'static LocalContext = LocalContext::test_bool_ref();
         let output_context = initial_map.build_output_context(local_ctx_ref);
         let (mut unifier, scope1) = Unifier::with_map(initial_map, &ctx, output_context);
         unifier.set_input_context(scope1, local_ctx_ref);
@@ -1142,7 +1178,7 @@ mod tests {
         unifier.set_input_context(scope2, local_ctx_ref);
         let scope3 = unifier.add_scope();
         unifier.set_input_context(scope3, local_ctx_ref);
-        unifier.set_output_var_types(vec![BOOL; 10]);
+        unifier.set_output_var_closed_types(vec![ClosedType::bool(); 10]);
 
         // Unify g0(x0, x1) with g0(c5, x0)
         let c5 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(5)));

@@ -189,12 +189,11 @@ impl RewriteTree {
 #[cfg(test)]
 mod tests {
     use crate::kernel::atom::Atom;
-    use crate::kernel::types::BOOL;
 
     use super::*;
 
     fn test_local_context() -> LocalContext {
-        LocalContext::new(vec![BOOL; 10])
+        LocalContext::new_with_bools(10)
     }
 
     fn test_kernel_context() -> KernelContext {

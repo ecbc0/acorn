@@ -114,33 +114,26 @@ impl LocalContext {
         LocalContext { var_closed_types }
     }
 
-    /// Create a new LocalContext with the given variable types (test only).
-    /// This creates ground ClosedTypes for each TypeId, assuming all types are ground.
-    #[cfg(test)]
-    pub fn new(var_types: Vec<TypeId>) -> LocalContext {
-        use crate::kernel::types::GroundTypeId;
-        let var_closed_types = var_types
-            .iter()
-            .map(|&t| ClosedType::ground(GroundTypeId::new(t.as_u16())))
-            .collect();
-        LocalContext { var_closed_types }
+    /// Create a new LocalContext with n variables all of type Bool.
+    pub fn new_with_bools(n: usize) -> LocalContext {
+        LocalContext {
+            var_closed_types: vec![ClosedType::bool(); n],
+        }
     }
 
     /// Returns a reference to a LocalContext with BOOL types for tests.
     #[cfg(test)]
     pub fn test_bool_ref() -> &'static LocalContext {
-        use crate::kernel::types::BOOL;
         static TEST_BOOL_CONTEXT: LazyLock<LocalContext> =
-            LazyLock::new(|| LocalContext::new(vec![BOOL; 10]));
+            LazyLock::new(|| LocalContext::new_with_bools(10));
         &TEST_BOOL_CONTEXT
     }
 
     /// Returns a reference to a LocalContext with EMPTY types for tests.
     #[cfg(test)]
     pub fn test_empty_ref() -> &'static LocalContext {
-        use crate::kernel::types::EMPTY;
         static TEST_EMPTY_CONTEXT: LazyLock<LocalContext> =
-            LazyLock::new(|| LocalContext::new(vec![EMPTY; 10]));
+            LazyLock::new(|| LocalContext::from_closed_types(vec![ClosedType::empty(); 10]));
         &TEST_EMPTY_CONTEXT
     }
 
@@ -172,41 +165,35 @@ mod tests {
     use crate::kernel::type_store::TypeStore;
     use crate::kernel::types::{GroundTypeId, BOOL, EMPTY};
 
-    fn ground(type_id: TypeId) -> ClosedType {
-        ClosedType::ground(GroundTypeId::new(type_id.as_u16()))
+    fn ground(id: u16) -> ClosedType {
+        ClosedType::ground(GroundTypeId::new(id))
     }
 
     #[test]
     fn test_remap_reorders_variables() {
         // Create a context with 3 variables of different types
-        let ctx = LocalContext::new(vec![EMPTY, BOOL, TypeId::new(2)]);
+        let ctx = LocalContext::from_closed_types(vec![ground(0), ground(1), ground(2)]);
 
         // Remap to reorder: take vars [2, 0, 1]
         let remapped = ctx.remap(&[2, 0, 1]);
 
         assert_eq!(remapped.len(), 3);
-        assert_eq!(
-            remapped.get_var_closed_type(0),
-            Some(&ground(TypeId::new(2)))
-        );
-        assert_eq!(remapped.get_var_closed_type(1), Some(&ground(EMPTY)));
-        assert_eq!(remapped.get_var_closed_type(2), Some(&ground(BOOL)));
+        assert_eq!(remapped.get_var_closed_type(0), Some(&ground(2)));
+        assert_eq!(remapped.get_var_closed_type(1), Some(&ground(0)));
+        assert_eq!(remapped.get_var_closed_type(2), Some(&ground(1)));
     }
 
     #[test]
     fn test_remap_subsets_variables() {
         // Create a context with 4 variables
-        let ctx = LocalContext::new(vec![EMPTY, BOOL, TypeId::new(2), TypeId::new(3)]);
+        let ctx = LocalContext::from_closed_types(vec![ground(0), ground(1), ground(2), ground(3)]);
 
         // Remap to take only vars [1, 3]
         let remapped = ctx.remap(&[1, 3]);
 
         assert_eq!(remapped.len(), 2);
-        assert_eq!(remapped.get_var_closed_type(0), Some(&ground(BOOL)));
-        assert_eq!(
-            remapped.get_var_closed_type(1),
-            Some(&ground(TypeId::new(3)))
-        );
+        assert_eq!(remapped.get_var_closed_type(0), Some(&ground(1)));
+        assert_eq!(remapped.get_var_closed_type(1), Some(&ground(3)));
     }
 
     #[test]
@@ -235,7 +222,7 @@ mod tests {
 
     #[test]
     fn test_remap_empty() {
-        let ctx = LocalContext::new(vec![BOOL, EMPTY]);
+        let ctx = LocalContext::from_closed_types(vec![ClosedType::bool(), ClosedType::empty()]);
 
         // Remap to empty
         let remapped = ctx.remap(&[]);
@@ -246,21 +233,21 @@ mod tests {
     #[test]
     fn test_remap_duplicates_variable() {
         // It's valid to include the same variable ID multiple times
-        let ctx = LocalContext::new(vec![BOOL, EMPTY]);
+        let ctx = LocalContext::from_closed_types(vec![ClosedType::bool(), ClosedType::empty()]);
 
         let remapped = ctx.remap(&[0, 0, 1, 0]);
 
         assert_eq!(remapped.len(), 4);
-        assert_eq!(remapped.get_var_closed_type(0), Some(&ground(BOOL)));
-        assert_eq!(remapped.get_var_closed_type(1), Some(&ground(BOOL)));
-        assert_eq!(remapped.get_var_closed_type(2), Some(&ground(EMPTY)));
-        assert_eq!(remapped.get_var_closed_type(3), Some(&ground(BOOL)));
+        assert_eq!(remapped.get_var_closed_type(0), Some(&ClosedType::bool()));
+        assert_eq!(remapped.get_var_closed_type(1), Some(&ClosedType::bool()));
+        assert_eq!(remapped.get_var_closed_type(2), Some(&ClosedType::empty()));
+        assert_eq!(remapped.get_var_closed_type(3), Some(&ClosedType::bool()));
     }
 
     #[test]
     #[should_panic(expected = "variable x5 not found")]
     fn test_remap_panics_on_out_of_bounds() {
-        let ctx = LocalContext::new(vec![BOOL, EMPTY]);
+        let ctx = LocalContext::from_closed_types(vec![ClosedType::bool(), ClosedType::empty()]);
 
         // Try to remap with an out-of-bounds variable ID
         ctx.remap(&[0, 5]);

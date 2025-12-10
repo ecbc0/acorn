@@ -95,7 +95,8 @@ impl SymbolTable {
         self.name_to_symbol.get(name).cloned()
     }
 
-    /// Get the type of a symbol.
+    /// Get the type of a symbol as TypeId (deprecated, use get_closed_type instead).
+    #[cfg(test)]
     pub fn get_type(&self, symbol: Symbol) -> TypeId {
         match symbol {
             Symbol::Synthetic(i) => self.synthetic_types[i as usize],

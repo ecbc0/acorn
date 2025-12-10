@@ -38,6 +38,16 @@ impl ClosedType {
         }
     }
 
+    /// Returns a ClosedType for the Bool type.
+    pub fn bool() -> ClosedType {
+        ClosedType::ground(GroundTypeId::new(1))
+    }
+
+    /// Returns a ClosedType for the Empty type.
+    pub fn empty() -> ClosedType {
+        ClosedType::ground(GroundTypeId::new(0))
+    }
+
     /// Create a ClosedType from raw components.
     /// Caller is responsible for ensuring validity.
     pub fn from_components(components: Vec<TermComponent>) -> ClosedType {

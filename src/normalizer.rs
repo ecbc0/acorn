@@ -104,10 +104,12 @@ impl Normalizer {
         }
     }
 
-    pub fn get_synthetic_type(&self, id: AtomId) -> &AcornType {
+    pub fn get_synthetic_type(&self, id: AtomId) -> AcornType {
         let symbol = Symbol::Synthetic(id);
-        let type_id = self.kernel_context.symbol_table.get_type(symbol);
-        self.kernel_context.type_store.get_type(type_id)
+        let closed_type = self.kernel_context.symbol_table.get_closed_type(symbol);
+        self.kernel_context
+            .type_store
+            .closed_type_to_acorn_type(closed_type)
     }
 
     pub fn kernel_context(&self) -> &KernelContext {
@@ -1762,8 +1764,11 @@ impl Normalizer {
             }
             Atom::Symbol(Symbol::Synthetic(i)) => {
                 let symbol = Symbol::Synthetic(*i);
-                let type_id = self.kernel_context.symbol_table.get_type(symbol);
-                let acorn_type = self.kernel_context.type_store.get_type(type_id).clone();
+                let closed_type = self.kernel_context.symbol_table.get_closed_type(symbol);
+                let acorn_type = self
+                    .kernel_context
+                    .type_store
+                    .closed_type_to_acorn_type(closed_type);
                 let name = ConstantName::Synthetic(*i);
                 AcornValue::constant(name, vec![], acorn_type)
             }

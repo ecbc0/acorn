@@ -795,7 +795,6 @@ mod tests {
     use super::*;
     use crate::kernel::kernel_context::KernelContext;
     use crate::kernel::local_context::LocalContext;
-    use crate::kernel::types::BOOL;
 
     /// Test that the rewritten clause has correct variable types in its context.
     ///
@@ -813,11 +812,11 @@ mod tests {
 
         // Pattern: m0(x0, x1) = x1
         // Context: [Bool, Bool]
-        let pattern_context = LocalContext::new(vec![BOOL, BOOL]);
+        let pattern_context = LocalContext::new_with_bools(2);
         let pattern_step = ProofStep::mock_with_context("m0(x0, x1) = x1", &pattern_context);
 
         // Target: m1(c0) = c0 (no variables)
-        let target_context = LocalContext::new(vec![]);
+        let target_context = LocalContext::empty();
         let target_step = ProofStep::mock_with_context("m1(c0) = c0", &target_context);
 
         // new_subterm: m0(x0, c0)

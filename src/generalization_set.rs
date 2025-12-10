@@ -338,11 +338,10 @@ fn specialized_form(mut clause: Clause, kernel_context: &KernelContext) -> Claus
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::types::BOOL;
 
     /// Creates a LocalContext with enough Bool-typed variables for tests.
     fn test_context() -> LocalContext {
-        LocalContext::new(vec![BOOL; 10])
+        LocalContext::new_with_bools(10)
     }
 
     #[test]

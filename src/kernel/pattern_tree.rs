@@ -1292,7 +1292,7 @@ mod tests {
     #[test]
     fn test_key_from_term_atomic() {
         // Test encoding of an atomic term c0 : Bool
-        let local_context = LocalContext::new(vec![BOOL; 2]);
+        let local_context = LocalContext::new_with_bools(2);
         let kernel_context =
             KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
 
@@ -1309,7 +1309,7 @@ mod tests {
     #[test]
     fn test_key_from_literal() {
         // Test encoding of x0 = c0
-        let local_context = LocalContext::new(vec![BOOL; 2]);
+        let local_context = LocalContext::new_with_bools(2);
         let kernel_context =
             KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
 
@@ -1328,7 +1328,7 @@ mod tests {
     #[test]
     fn test_pattern_tree_insert_term() {
         // Test inserting and finding atomic terms
-        let local_context = LocalContext::new(vec![BOOL; 2]);
+        let local_context = LocalContext::new_with_bools(2);
         let kernel_context =
             KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
 
@@ -1345,7 +1345,7 @@ mod tests {
     #[test]
     fn test_pattern_tree_insert_pair() {
         // Test inserting term pairs
-        let local_context = LocalContext::new(vec![BOOL; 2]);
+        let local_context = LocalContext::new_with_bools(2);
         let kernel_context =
             KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
 
@@ -1372,7 +1372,7 @@ mod tests {
     #[test]
     fn test_pattern_tree_variable_matching() {
         // Test that patterns with variables match concrete terms
-        let local_context = LocalContext::new(vec![BOOL; 2]);
+        let local_context = LocalContext::new_with_bools(2);
         let kernel_context =
             KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
 
@@ -1400,7 +1400,7 @@ mod tests {
     fn test_pattern_tree_application_with_variable() {
         // Test that patterns with function applications and variables match correctly
         // c1 : Bool -> Bool, so c1(x0) : Bool when x0 : Bool
-        let local_context = LocalContext::new(vec![BOOL; 3]);
+        let local_context = LocalContext::new_with_bools(3);
         let kernel_context = KernelContext::test_with_function_types();
 
         let mut tree: PatternTree<usize> = PatternTree::new();
@@ -1429,7 +1429,7 @@ mod tests {
     fn test_pattern_tree_clause_with_function_application() {
         // Test that clauses with function applications can be inserted and found
         // when using test_with_function_types which properly stores Pi types.
-        let local_context = LocalContext::new(vec![BOOL; 3]);
+        let local_context = LocalContext::new_with_bools(3);
         let kernel_context = KernelContext::test_with_function_types();
 
         let mut tree: PatternTree<usize> = PatternTree::new();
@@ -1452,7 +1452,7 @@ mod tests {
         //
         // Clause parsing normalizes literals by KBO, which can flip left/right.
         // So we use clauses where the structure is preserved.
-        let local_context = LocalContext::new(vec![BOOL; 3]);
+        let local_context = LocalContext::new_with_bools(3);
         let kernel_context = KernelContext::test_with_function_types();
 
         let mut tree: PatternTree<usize> = PatternTree::new();
@@ -1472,7 +1472,7 @@ mod tests {
     #[test]
     fn test_pattern_tree_clause_multi_literal() {
         // Test clause with multiple literals containing function applications
-        let local_context = LocalContext::new(vec![BOOL; 3]);
+        let local_context = LocalContext::new_with_bools(3);
         let kernel_context = KernelContext::test_with_function_types();
 
         let mut tree: PatternTree<usize> = PatternTree::new();
@@ -1491,7 +1491,7 @@ mod tests {
     fn test_insert_or_append_and_find() {
         // Test the insert_or_append + find_term_matches_while pattern used by RewriteTree
         // Use test_with_all_bool_types to match what rewrite_tree tests use
-        let local_context = LocalContext::new(vec![BOOL; 10]);
+        let local_context = LocalContext::new_with_bools(10);
         let kernel_context = KernelContext::test_with_all_bool_types();
 
         let mut tree: PatternTree<Vec<usize>> = PatternTree::new();
@@ -1548,9 +1548,9 @@ mod tests {
         use crate::kernel::symbol::Symbol;
         let type_bool_to_bool = kernel_context
             .symbol_table
-            .get_type(Symbol::ScopedConstant(1));
-        let local_context =
-            LocalContext::new_with_type_store(vec![type_bool_to_bool], &kernel_context.type_store);
+            .get_closed_type(Symbol::ScopedConstant(1))
+            .clone();
+        let local_context = LocalContext::from_closed_types(vec![type_bool_to_bool]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
@@ -1606,9 +1606,9 @@ mod tests {
         use crate::kernel::symbol::Symbol;
         let type_bool_to_bool = kernel_context
             .symbol_table
-            .get_type(Symbol::ScopedConstant(1));
-        let local_context =
-            LocalContext::new_with_type_store(vec![type_bool_to_bool], &kernel_context.type_store);
+            .get_closed_type(Symbol::ScopedConstant(1))
+            .clone();
+        let local_context = LocalContext::from_closed_types(vec![type_bool_to_bool]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 

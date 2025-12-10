@@ -223,7 +223,7 @@ impl CodeGenerator<'_> {
                 }
                 let name = self.bindings.next_indexed_var('s', &mut self.next_s);
                 self.synthetic_names.insert(*id, name.clone());
-                decl.push((name, normalizer.get_synthetic_type(*id).clone()));
+                decl.push((name, normalizer.get_synthetic_type(*id)));
             }
             if decl.is_empty() {
                 continue;

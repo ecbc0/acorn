@@ -367,10 +367,9 @@ impl<T> FingerprintSpecializer<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::types::BOOL;
 
     fn test_local_context() -> LocalContext {
-        LocalContext::new(vec![BOOL; 10])
+        LocalContext::new_with_bools(10)
     }
 
     fn test_kernel_context() -> KernelContext {
