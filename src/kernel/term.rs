@@ -1242,28 +1242,6 @@ impl Term {
         }
     }
 
-    /// Returns all (TypeId, Atom) pairs in this term.
-    /// Does not deduplicate.
-    pub fn typed_atoms(
-        &self,
-        local_context: &LocalContext,
-        kernel_context: &KernelContext,
-    ) -> Vec<(TypeId, Atom)> {
-        let mut result = Vec::new();
-        for atom in self.iter_atoms() {
-            let type_id = match atom {
-                Atom::Variable(id) => local_context
-                    .get_var_type(*id as usize)
-                    .expect("Variable not found in local context"),
-                Atom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol),
-                Atom::True => BOOL,
-                Atom::Type(_) => panic!("Atom::Type should not appear in open terms"),
-            };
-            result.push((type_id, *atom));
-        }
-        result
-    }
-
     /// Get the maximum variable index in this term, or None if there are no variables.
     pub fn max_variable(&self) -> Option<AtomId> {
         self.as_ref().max_variable()

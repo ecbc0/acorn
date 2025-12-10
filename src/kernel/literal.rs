@@ -297,19 +297,6 @@ impl Literal {
         (right, left, output_context)
     }
 
-    /// Deduplicates
-    pub fn typed_atoms(
-        &self,
-        local_context: &LocalContext,
-        kernel_context: &KernelContext,
-    ) -> Vec<(TypeId, Atom)> {
-        let mut answer = self.left.typed_atoms(local_context, kernel_context);
-        answer.extend(self.right.typed_atoms(local_context, kernel_context));
-        answer.sort();
-        answer.dedup();
-        answer
-    }
-
     /// Validate that both sides of the literal have the same type.
     pub fn validate_type(&self, local_context: &LocalContext, kernel_context: &KernelContext) {
         let left_type = self
