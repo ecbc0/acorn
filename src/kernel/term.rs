@@ -326,11 +326,6 @@ impl<'a> TermRef<'a> {
         false
     }
 
-    /// A higher order term is one that has a variable as its head.
-    pub fn is_higher_order(&self) -> bool {
-        matches!(self.get_head_atom(), Atom::Variable(_))
-    }
-
     /// Recursively checks if any term has a variable as its head with arguments applied to it.
     /// Returns true for terms like x0(a, b) but false for plain variables like x0.
     pub fn has_any_applied_variable(&self) -> bool {
@@ -928,11 +923,6 @@ impl Term {
         Term {
             components: vec![TermComponent::Atom(Atom::Variable(index))],
         }
-    }
-
-    /// A higher order term is one that has a variable as its head.
-    pub fn is_higher_order(&self) -> bool {
-        matches!(self.get_head_atom(), Atom::Variable(_))
     }
 
     /// Recursively checks if any term has a variable as its head with arguments applied to it.

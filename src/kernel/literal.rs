@@ -216,11 +216,6 @@ impl Literal {
         Literal::new(positive, term, Term::new_true())
     }
 
-    /// A higher order literal contains a higher order term.
-    pub fn is_higher_order(&self) -> bool {
-        self.left.is_higher_order() || self.right.is_higher_order()
-    }
-
     /// Check if this literal contains any applied variables.
     pub fn has_any_applied_variable(&self) -> bool {
         self.left.has_any_applied_variable() || self.right.has_any_applied_variable()
