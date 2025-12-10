@@ -22,3 +22,17 @@ pub mod type_store;
 pub mod types;
 pub mod unifier;
 pub mod variable_map;
+
+// Re-export the appropriate TermGraph implementation based on feature flag.
+// StepId, RewriteSource, and RewriteStep are shared between both implementations.
+#[cfg(not(feature = "new_term_graph"))]
+pub use term_graph::{
+    OldTermGraph as TermGraph, OldTermGraphContradiction as TermGraphContradiction, RewriteSource,
+    RewriteStep, StepId,
+};
+
+#[cfg(feature = "new_term_graph")]
+pub use new_term_graph::{
+    NewTermGraph as TermGraph, NewTermGraphContradiction as TermGraphContradiction, RewriteSource,
+    RewriteStep, StepId,
+};

@@ -12,7 +12,7 @@ use crate::elaborator::goal::Goal;
 use crate::kernel::aliases::{Clause, Literal};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::term_graph::TermGraphContradiction;
+use crate::kernel::TermGraphContradiction;
 use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::project::Project;
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};

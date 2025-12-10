@@ -18,9 +18,9 @@ use crate::kernel::inference;
 use crate::kernel::kernel_context::KernelContext;
 #[cfg(test)]
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::term_graph::{StepId, TermGraph};
 #[cfg(test)]
 use crate::kernel::types::BOOL;
+use crate::kernel::{StepId, TermGraph};
 use crate::normalizer::{Normalizer, NormalizerView};
 use crate::project::Project;
 use crate::syntax::expression::Declaration;

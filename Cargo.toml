@@ -4,6 +4,11 @@ version = "0.1.29"
 edition = "2021"
 default-run = "acorn"
 
+[features]
+default = []
+# Use the new term graph implementation (lambda calculus style with binary application)
+new_term_graph = []
+
 [dependencies]
 async-trait = "0.1"
 blake3 = "1.5"
