@@ -1878,4 +1878,36 @@ mod tests {
         ]);
         g.check_clause_str("m1(c1, c0)");
     }
+
+    // Test that partial application congruence does NOT work in OldTermGraph.
+    // If we set f(a) = g(c), this does NOT make f(a, b) = g(c, b) in the old graph.
+    // This is because OldTermGraph represents f(a, b) as Compound(f, [a, b]),
+    // not as Application(Application(f, a), b). So there's no intermediate node
+    // for f(a) that would trigger congruence with g(c).
+    //
+    // Note: This test documents the limitation. NewTermGraph handles this case.
+    #[test]
+    fn test_partial_application_does_not_work_in_old_graph() {
+        let mut g = TestGraph::new();
+
+        // Create n1 = f(a, b) and n2 = g(c, b)
+        let n1 = g.insert_term_str("c1(c2, c3)"); // f(a, b)
+        let n2 = g.insert_term_str("c4(c5, c3)"); // g(c, b) - note same second arg c3
+
+        // Initially they are not equal
+        g.assert_ne(n1, n2);
+
+        // Create the partial applications f(a) and g(c)
+        let fa = g.insert_term_str("c1(c2)"); // f(a)
+        let gc = g.insert_term_str("c4(c5)"); // g(c)
+
+        // Set f(a) = g(c)
+        g.set_eq(fa, gc, StepId(0));
+
+        // In OldTermGraph, f(a, b) should still NOT equal g(c, b)
+        // because f(a, b) is Compound(c1, [c2, c3]) and g(c, b) is Compound(c4, [c5, c3])
+        // These have different heads (c1 vs c4) and different first args (c2 vs c5)
+        // Setting c1(c2) = c4(c5) doesn't propagate to the 2-arg forms.
+        g.assert_ne(n1, n2);
+    }
 }

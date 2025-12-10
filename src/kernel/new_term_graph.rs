@@ -1874,4 +1874,87 @@ mod tests {
         ]);
         g.check_clause_str("m1(c1, c0)");
     }
+
+    // Test partial application congruence: if f(a) = g(c), then f(a, b) = g(c, b).
+    // This works in NewTermGraph because f(a, b) is represented as ((f a) b),
+    // and g(c, b) is represented as ((g c) b). When we set (f a) = (g c),
+    // congruence closure propagates this to make ((f a) b) = ((g c) b).
+    #[test]
+    fn test_partial_application_congruence() {
+        let mut g = TestGraph::new();
+
+        // Create n1 = f(a, b) and n2 = g(c, b)
+        let n1 = g.insert_term_str("c1(c2, c3)"); // f(a, b)
+        let n2 = g.insert_term_str("c4(c5, c3)"); // g(c, b) - note same second arg c3
+
+        // Initially they are not equal
+        g.assert_ne(n1, n2);
+
+        // Create the partial applications f(a) and g(c)
+        let fa = g.insert_term_str("c1(c2)"); // f(a)
+        let gc = g.insert_term_str("c4(c5)"); // g(c)
+
+        // Set f(a) = g(c)
+        g.set_eq(fa, gc, StepId(0));
+
+        // Now f(a, b) should equal g(c, b) due to congruence on partial applications
+        // In lambda calculus style: ((f a) b) = ((g c) b) because (f a) = (g c)
+        g.assert_eq(n1, n2);
+
+        // The step ids should show the connection
+        let steps = g.get_step_ids(n1, n2);
+        assert_eq!(steps, vec![0]);
+    }
+
+    // Test that partial application congruence works transitively
+    #[test]
+    fn test_partial_application_congruence_transitive() {
+        let mut g = TestGraph::new();
+
+        // Create three terms: f(a, b), g(c, b), h(d, b)
+        let n1 = g.insert_term_str("c1(c2, c3)"); // f(a, b)
+        let n2 = g.insert_term_str("c4(c5, c3)"); // g(c, b)
+        let n3 = g.insert_term_str("c6(c7, c3)"); // h(d, b)
+
+        // Create partial applications
+        let fa = g.insert_term_str("c1(c2)"); // f(a)
+        let gc = g.insert_term_str("c4(c5)"); // g(c)
+        let hd = g.insert_term_str("c6(c7)"); // h(d)
+
+        // Set f(a) = g(c) and g(c) = h(d)
+        g.set_eq(fa, gc, StepId(0));
+        g.set_eq(gc, hd, StepId(1));
+
+        // Now all three full applications should be equal
+        g.assert_eq(n1, n2);
+        g.assert_eq(n2, n3);
+        g.assert_eq(n1, n3);
+    }
+
+    // Test partial application with different final arguments (should NOT be equal)
+    #[test]
+    fn test_partial_application_different_args() {
+        let mut g = TestGraph::new();
+
+        // Create n1 = f(a, b) and n2 = g(c, d) where b != d
+        let n1 = g.insert_term_str("c1(c2, c3)"); // f(a, b)
+        let n2 = g.insert_term_str("c4(c5, c6)"); // g(c, d) - different second arg!
+
+        // Create partial applications
+        let fa = g.insert_term_str("c1(c2)"); // f(a)
+        let gc = g.insert_term_str("c4(c5)"); // g(c)
+
+        // Set f(a) = g(c)
+        g.set_eq(fa, gc, StepId(0));
+
+        // n1 and n2 should still NOT be equal because b != d
+        g.assert_ne(n1, n2);
+
+        // But if we also set b = d, then they should become equal
+        let b = g.get_str("c3");
+        let d = g.get_str("c6");
+        g.set_eq(b, d, StepId(1));
+
+        g.assert_eq(n1, n2);
+    }
 }
