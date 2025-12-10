@@ -1634,4 +1634,54 @@ mod tests {
             "Different-arity application should match via currying"
         );
     }
+
+    #[test]
+    #[ignore] // TODO: Fix PatternTree to handle this case
+    fn test_clause_with_repeated_applied_variable() {
+        // This test demonstrates a case where the PatternTree fails but GeneralizationSet's
+        // fallback catches it. The pattern has a variable x0 used in function position
+        // appearing in multiple literals.
+        //
+        // Pattern: not x0(c5) or x0(x1)
+        //   where x0: Bool -> Bool, x1: Bool, c5: Bool
+        //
+        // Query: not c1(c5) or c1(c6)
+        //   where c1: Bool -> Bool, c5, c6: Bool
+        //
+        // This should match with x0 -> c1, x1 -> c6
+        //
+        // Currently fails because when matching c1 against the pattern variable x0,
+        // the PatternTree correctly binds x0 -> c1 for the first literal. But when
+        // matching the second literal, it doesn't recognize that c1 should match
+        // the already-bound x0.
+        let kernel_context = KernelContext::test_with_function_types();
+
+        // Create local context where x0 has type Bool -> Bool and x1 has type Bool
+        use crate::kernel::symbol::Symbol;
+        let type_bool_to_bool = kernel_context
+            .symbol_table
+            .get_closed_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
+            .clone();
+        let local_context =
+            LocalContext::from_closed_types(vec![type_bool_to_bool, ClosedType::bool()]);
+
+        let mut tree: PatternTree<usize> = PatternTree::new();
+
+        // Insert pattern: not x0(c5) or x0(x1)
+        let pattern = Clause::parse("not x0(c5) or x0(x1)", &local_context);
+        tree.insert_clause(&pattern, 42, &kernel_context);
+
+        // Query: not c1(c5) or c1(c6)
+        // Create a local context for the query (no variables needed)
+        let query_local = LocalContext::empty();
+        let query = Clause::parse("not c1(c5) or c1(c6)", &query_local);
+
+        // This should find the pattern with x0 -> c1, x1 -> c6
+        let found = tree.find_clause(&query, &kernel_context);
+        assert_eq!(
+            found,
+            Some(&42),
+            "Should match clause with repeated applied variable"
+        );
+    }
 }
