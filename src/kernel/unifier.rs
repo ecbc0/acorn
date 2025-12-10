@@ -101,7 +101,7 @@ impl<'a> Unifier<'a> {
     /// This allows tests to directly use output variables without going through unification.
     #[cfg(test)]
     fn set_output_var_types(&mut self, types: Vec<TypeId>) {
-        self.output_context = LocalContext::new(types);
+        self.output_context = LocalContext::with_types(types, &self.kernel_context.type_store);
     }
 
     /// Returns the LocalContext for a given scope.
@@ -467,8 +467,8 @@ impl<'a> Unifier<'a> {
         let local2 = self.get_local_context(scope2);
         let kc = self.kernel_context;
 
-        if term1.get_term_type_with_context(local1, kc)
-            != term2.get_term_type_with_context(local2, kc)
+        if term1.get_closed_type_with_context(local1, kc)
+            != term2.get_closed_type_with_context(local2, kc)
         {
             return false;
         }
@@ -831,7 +831,7 @@ mod tests {
         // Set up a unifier where Variable(0) has EMPTY type and Variable(1) has Empty -> Bool type
         let mut u = Unifier::new(3, &ctx);
         // x0: EMPTY, x1: Empty -> Bool
-        let local_ctx = LocalContext::with_types(vec![EMPTY, empty_to_bool]);
+        let local_ctx = LocalContext::with_types(vec![EMPTY, empty_to_bool], &ctx.type_store);
         let local_ctx_ref: &'static LocalContext = Box::leak(Box::new(local_ctx));
         u.set_input_context(Scope::LEFT, local_ctx_ref);
         u.set_input_context(Scope::RIGHT, local_ctx_ref);
@@ -851,7 +851,7 @@ mod tests {
         let bool_to_bool = ctx.symbol_table.get_type(Symbol::ScopedConstant(1));
 
         // Create local context where x0: Bool -> Bool, x1: Bool
-        let local_ctx = LocalContext::with_types(vec![bool_to_bool, BOOL]);
+        let local_ctx = LocalContext::with_types(vec![bool_to_bool, BOOL], &ctx.type_store);
         let local_ctx_ref: &'static LocalContext = Box::leak(Box::new(local_ctx));
 
         let c5 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(5)));
@@ -886,7 +886,7 @@ mod tests {
         let bool_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(1)); // g1: Bool -> Bool
 
         // Create local context where x0 has type Bool -> Bool, x1 has type Bool
-        let lctx = LocalContext::with_types(vec![bool_to_bool, BOOL]);
+        let lctx = LocalContext::with_types(vec![bool_to_bool, BOOL], &ctx.type_store);
 
         // Build terms: s = x0(x0(x1)) where x0: Bool -> Bool, x1: Bool
         // x0(x1) : Bool, x0(x0(x1)) : Bool
@@ -936,7 +936,7 @@ mod tests {
         let c6 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(6)));
 
         // Left side: x0(c6) where x0: Bool -> Bool
-        let left_local = LocalContext::with_types(vec![bool_to_bool]);
+        let left_local = LocalContext::with_types(vec![bool_to_bool], &ctx.type_store);
         let left_term = Term::new(Atom::Variable(0), vec![c6.clone()]);
 
         // Right side: g0(c5, c6) : Bool
@@ -977,7 +977,7 @@ mod tests {
         let bool_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(1)); // g1: Bool -> Bool
 
         // Create local context where x0 has type Bool -> Bool, x1 has type Bool
-        let lctx = LocalContext::with_types(vec![bool_to_bool, BOOL]);
+        let lctx = LocalContext::with_types(vec![bool_to_bool, BOOL], &ctx.type_store);
 
         // Build terms: s = x0(x0(x1)) where x0: Bool -> Bool, x1: Bool
         let x0_x1 = Term::new(Atom::Variable(0), vec![Term::atom(Atom::Variable(1))]);
@@ -1148,7 +1148,7 @@ mod tests {
         let mut initial_map = VariableMap::new();
         initial_map.set(0, g2_term);
 
-        let local_ctx = LocalContext::with_types(vec![BOOL; 10]);
+        let local_ctx = LocalContext::with_types(vec![BOOL; 10], &ctx.type_store);
         let local_ctx_ref: &'static LocalContext = Box::leak(Box::new(local_ctx));
         let output_context = initial_map.build_output_context(local_ctx_ref);
         let (mut unifier, scope1) = Unifier::with_map(initial_map, &ctx, output_context);

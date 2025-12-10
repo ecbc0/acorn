@@ -24,7 +24,7 @@ use crate::kernel::types::GroundTypeId;
 ///
 /// Note: Within ClosedType, `Atom::Variable` represents de Bruijn indices for bound variables
 /// introduced by Pi, not free variables.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct ClosedType {
     components: Vec<TermComponent>,
 }

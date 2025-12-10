@@ -3,12 +3,12 @@ use std::collections::HashMap;
 use std::vec;
 
 use crate::kernel::clause::Clause;
+use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::pattern_tree::PatternTree;
 use crate::kernel::term::TermRef;
-use crate::kernel::types::TypeId;
 use crate::kernel::unifier::Unifier;
 
 /// The GeneralizationSet stores general clauses in a way that allows us to quickly check whether
@@ -75,7 +75,7 @@ impl GeneralizationSet {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct ClauseTypeKey {
     // The types for each literal in the clause.
-    types: Vec<TypeId>,
+    types: Vec<ClosedType>,
 }
 
 impl ClauseTypeKey {
@@ -86,7 +86,7 @@ impl ClauseTypeKey {
             .iter()
             .map(|lit| {
                 lit.left
-                    .get_term_type_with_context(local_context, kernel_context)
+                    .get_closed_type_with_context(local_context, kernel_context)
             })
             .collect();
         ClauseTypeKey { types }
@@ -146,8 +146,8 @@ pub fn sub_invariant_term_cmp(
 ) -> Option<Ordering> {
     // Compare the types, because these won't be changed by substitution.
     let type_cmp = left
-        .get_term_type_with_context(local_context, kernel_context)
-        .cmp(&right.get_term_type_with_context(local_context, kernel_context));
+        .get_closed_type_with_context(local_context, kernel_context)
+        .cmp(&right.get_closed_type_with_context(local_context, kernel_context));
     if type_cmp != Ordering::Equal {
         return Some(type_cmp);
     }

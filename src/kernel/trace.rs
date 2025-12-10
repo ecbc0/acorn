@@ -165,7 +165,7 @@ mod tests {
     fn test_clause_normalization_with_variable_equality() {
         // "x0 = x1" - equality between two BOOL variables
         let kernel_context = KernelContext::test_with_constant_types(&[BOOL; 10], &[BOOL; 10]);
-        let context = LocalContext::with_types(vec![BOOL, BOOL]);
+        let context = LocalContext::with_types(vec![BOOL, BOOL], &kernel_context.type_store);
         check_clause_normalization("x0 = x1", &context, &kernel_context);
     }
 }

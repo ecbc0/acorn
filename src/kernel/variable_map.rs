@@ -98,7 +98,7 @@ impl VariableMap {
         }
     }
 
-    fn match_atoms(&mut self, _atom_type: TypeId, general: &Atom, special: &Atom) -> bool {
+    fn match_atoms(&mut self, general: &Atom, special: &Atom) -> bool {
         if let Atom::Variable(i) = general {
             self.match_var(*i, Term::atom(*special).as_ref())
         } else {
@@ -114,8 +114,8 @@ impl VariableMap {
         special_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> bool {
-        if general.get_term_type_with_context(general_context, kernel_context)
-            != special.get_term_type_with_context(special_context, kernel_context)
+        if general.get_closed_type_with_context(general_context, kernel_context)
+            != special.get_closed_type_with_context(special_context, kernel_context)
         {
             return false;
         }
@@ -125,21 +125,11 @@ impl VariableMap {
             return self.match_var(i, special);
         }
 
-        // These checks mean we won't catch higher-order functions whose head types don't match.
-        if general.get_head_type_with_context(general_context, kernel_context)
-            != special.get_head_type_with_context(special_context, kernel_context)
-        {
-            return false;
-        }
         if general.num_args() != special.num_args() {
             return false;
         }
 
-        if !self.match_atoms(
-            general.get_head_type_with_context(general_context, kernel_context),
-            general.get_head_atom(),
-            special.get_head_atom(),
-        ) {
+        if !self.match_atoms(general.get_head_atom(), special.get_head_atom()) {
             return false;
         }
 

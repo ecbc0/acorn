@@ -532,8 +532,8 @@ impl Clause {
         let new_shorter = shorter.get_head_term();
 
         // Check the types are compatible
-        let longer_type = new_longer.get_term_type_with_context(&self.context, kernel_context);
-        let shorter_type = new_shorter.get_term_type_with_context(&self.context, kernel_context);
+        let longer_type = new_longer.get_closed_type_with_context(&self.context, kernel_context);
+        let shorter_type = new_shorter.get_closed_type_with_context(&self.context, kernel_context);
         if longer_type != shorter_type {
             return None;
         }
@@ -552,7 +552,15 @@ impl Clause {
         &self,
         kernel_context: &KernelContext,
     ) -> Vec<(usize, Vec<Literal>)> {
+        use crate::kernel::closed_type::ClosedType;
         use crate::kernel::types::BOOL;
+
+        let bool_closed = ClosedType::ground(
+            kernel_context
+                .type_store
+                .get_ground_type_id(BOOL)
+                .expect("BOOL should be a ground type"),
+        );
 
         let mut answer = vec![];
 
@@ -560,8 +568,8 @@ impl Clause {
             let literal = &self.literals[i];
             if literal
                 .left
-                .get_term_type_with_context(&self.context, kernel_context)
-                != BOOL
+                .get_closed_type_with_context(&self.context, kernel_context)
+                != bool_closed
             {
                 continue;
             }

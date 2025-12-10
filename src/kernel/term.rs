@@ -8,7 +8,7 @@ use crate::kernel::local_context::LocalContext;
 use crate::kernel::types::{TypeId, BOOL};
 
 /// A component of a Term or ClosedType in its flattened representation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum TermComponent {
     /// Indicates a function application with the given span (total number of components).
     /// The span includes this Application marker itself, the head, and all arguments recursively.

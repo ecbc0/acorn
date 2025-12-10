@@ -236,9 +236,17 @@ impl LocalContext {
     }
 
     /// Creates a LocalContext with custom types for tests.
+    /// Uses TypeStore to properly convert TypeIds to ClosedTypes.
     #[cfg(test)]
-    pub fn with_types(types: Vec<TypeId>) -> LocalContext {
-        LocalContext::new(types)
+    pub fn with_types(types: Vec<TypeId>, type_store: &TypeStore) -> LocalContext {
+        let var_closed_types = types
+            .iter()
+            .map(|&t| type_store.type_id_to_closed_type(t))
+            .collect();
+        LocalContext {
+            var_types: types,
+            var_closed_types,
+        }
     }
 }
 
