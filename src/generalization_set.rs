@@ -18,8 +18,7 @@ pub struct GeneralizationSet {
     /// Stores an id for each clause.
     tree: PatternTree<usize>,
 
-    /// The pattern tree doesn't work right for clauses with applied variables.
-    /// We store them here as a fallback.
+    /// Temporary fallback for debugging - should be removable once PatternTree is fully fixed
     with_applied_variables: HashMap<ClauseTypeKey, Vec<(Clause, usize)>>,
 }
 

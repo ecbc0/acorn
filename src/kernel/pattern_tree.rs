@@ -848,15 +848,42 @@ where
 
     if args.len() == 1 {
         // Base case: just the head atom, then the argument
-        // We need to handle two cases:
-        // 1. The pattern has a variable in function position (e.g., x0(c5))
-        //    - The head symbol can match against the pattern variable
-        // 2. The pattern has a specific atom in function position (e.g., c1(x0))
+        // We need to handle three cases:
+        // 1. The head matches an existing replacement (backreference)
+        // 2. The pattern has a variable in function position (e.g., x0(c5))
+        //    - The head symbol can match against a new pattern variable
+        // 3. The pattern has a specific atom in function position (e.g., c1(x0))
         //    - We need exact match of the atom
 
         let initial_key_len = key.len();
         let mut next_terms: Vec<TermRef<'a>> = vec![last_arg];
         next_terms.extend_from_slice(rest);
+
+        // Case A0: Try matching the head against an existing replacement (backreference)
+        // This enables matching c1(c6) against pattern x0(x1) when x0 is already bound to c1
+        if !head_atom.is_variable() {
+            for i in 0..replacements.len() {
+                if head == replacements[i] {
+                    Edge::Atom(Atom::Variable(i as u16)).append_to(key);
+                    let new_subtrie = subtrie.subtrie(key as &[u8]);
+                    if !new_subtrie.is_empty() {
+                        if !find_term_matches_while(
+                            &new_subtrie,
+                            key,
+                            &next_terms,
+                            local_context,
+                            kernel_context,
+                            stack_limit - 1,
+                            replacements,
+                            callback,
+                        ) {
+                            return false;
+                        }
+                    }
+                    key.truncate(initial_key_len);
+                }
+            }
+        }
 
         // Case A: Try matching the head against a new pattern variable
         // This enables matching c1(c5) against pattern x0(c5) where x0 : Bool -> Bool
@@ -1076,15 +1103,43 @@ where
 
         if args.len() == 1 {
             // Just the head atom, then the argument
-            // We need to handle two cases:
+            // We need to handle three cases:
+            // Case A0: The head matches an existing replacement (backreference)
             // Case A: The pattern has a variable in function position (e.g., x0(c5))
-            //         The head symbol can match against the pattern variable
+            //         The head symbol can match against a new pattern variable
             // Case B: The pattern has a specific atom in function position (e.g., c1(x0))
             //         We need exact match of the atom
 
             let key_len_after_domain = key.len();
             let mut next_terms: Vec<TermRef<'a>> = vec![last_arg];
             next_terms.extend_from_slice(rest);
+
+            // Case A0: Try matching the head against an existing replacement (backreference)
+            // This enables matching c1(c6) against pattern x0(x1) when x0 is already bound to c1
+            if !head_atom.is_variable() {
+                let head_term = first.get_head_subterm();
+                for i in 0..replacements.len() {
+                    if head_term == replacements[i] {
+                        Edge::Atom(Atom::Variable(i as u16)).append_to(key);
+                        let var_subtrie = new_subtrie2.subtrie(key as &[u8]);
+                        if !var_subtrie.is_empty() {
+                            if !find_term_matches_while(
+                                &var_subtrie,
+                                key,
+                                &next_terms,
+                                local_context,
+                                kernel_context,
+                                stack_limit - 1,
+                                replacements,
+                                callback,
+                            ) {
+                                return false;
+                            }
+                        }
+                        key.truncate(key_len_after_domain);
+                    }
+                }
+            }
 
             // Case A: Try matching the head against a new pattern variable
             // This enables matching c1(c5) against pattern x0(c5) where x0 : Bool -> Bool
@@ -1136,15 +1191,43 @@ where
                 return false;
             }
         } else {
-            // Multiple args: we need to handle two cases:
+            // Multiple args: we need to handle three cases:
+            // Case A0: The partial application matches an existing replacement (backreference)
             // Case A: The pattern has a variable at the function position.
-            //         The partial application (all args except the last) matches the variable.
+            //         The partial application (all args except the last) matches a new variable.
             // Case B: The pattern has a specific structure at the function position.
             //         We recursively match the curried structure.
 
             let key_len_after_domain = key.len();
             let mut remaining_terms: Vec<TermRef<'a>> = vec![last_arg];
             remaining_terms.extend_from_slice(rest);
+
+            // Case A0: Try matching the partial application against an existing replacement
+            // This enables matching c0(c7, c6) against pattern x0(x1) when x0 is already bound to c0(c7)
+            if !head_atom.is_variable() {
+                let partial_app = first.get_partial_application(args.len() - 1);
+                for i in 0..replacements.len() {
+                    if partial_app == replacements[i] {
+                        Edge::Atom(Atom::Variable(i as u16)).append_to(key);
+                        let var_subtrie = new_subtrie2.subtrie(key as &[u8]);
+                        if !var_subtrie.is_empty() {
+                            if !find_term_matches_while(
+                                &var_subtrie,
+                                key,
+                                &remaining_terms,
+                                local_context,
+                                kernel_context,
+                                stack_limit - 1,
+                                replacements,
+                                callback,
+                            ) {
+                                return false;
+                            }
+                        }
+                        key.truncate(key_len_after_domain);
+                    }
+                }
+            }
 
             // Case A: Try matching the partial application against a new pattern variable
             // This enables matching c0(c7, c5) against pattern x0(c5) where x0 : Bool -> Bool
@@ -1636,11 +1719,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix PatternTree to handle this case
     fn test_clause_with_repeated_applied_variable() {
-        // This test demonstrates a case where the PatternTree fails but GeneralizationSet's
-        // fallback catches it. The pattern has a variable x0 used in function position
-        // appearing in multiple literals.
+        // Test that a variable used in function position appearing in multiple literals
+        // is correctly matched via backreference.
         //
         // Pattern: not x0(c5) or x0(x1)
         //   where x0: Bool -> Bool, x1: Bool, c5: Bool
@@ -1649,11 +1730,6 @@ mod tests {
         //   where c1: Bool -> Bool, c5, c6: Bool
         //
         // This should match with x0 -> c1, x1 -> c6
-        //
-        // Currently fails because when matching c1 against the pattern variable x0,
-        // the PatternTree correctly binds x0 -> c1 for the first literal. But when
-        // matching the second literal, it doesn't recognize that c1 should match
-        // the already-bound x0.
         let kernel_context = KernelContext::test_with_function_types();
 
         // Create local context where x0 has type Bool -> Bool and x1 has type Bool
@@ -1682,6 +1758,53 @@ mod tests {
             found,
             Some(&42),
             "Should match clause with repeated applied variable"
+        );
+    }
+
+    #[test]
+    fn test_pair_with_applied_variable_in_args() {
+        // Simpler test: just a term pair (single literal), not a full clause
+        //
+        // Pattern: x0(c1(x0)) = c5
+        //   where x0: Bool -> Bool, c1: Bool -> Bool, c5: Bool
+        //
+        // Query: c0(c6, c1(c0(c6))) = c5
+        //   where c0: (Bool, Bool) -> Bool, c6: Bool
+        //
+        // This should match with x0 -> c0(c6)
+        let kernel_context = KernelContext::test_with_function_types();
+
+        // Create local context where x0 has type Bool -> Bool
+        use crate::kernel::symbol::Symbol;
+        let type_bool_to_bool = kernel_context
+            .symbol_table
+            .get_closed_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
+            .clone();
+        let local_context = LocalContext::from_closed_types(vec![type_bool_to_bool]);
+
+        let mut tree: PatternTree<usize> = PatternTree::new();
+
+        // Insert pattern: x0(c1(x0)) = c5
+        let pattern_left = Term::parse("x0(c1(x0))");
+        let pattern_right = Term::parse("c5");
+        tree.insert_pair(
+            &pattern_left,
+            &pattern_right,
+            42,
+            &local_context,
+            &kernel_context,
+        );
+
+        // Query: c0(c6, c1(c0(c6))) = c5
+        let query_local = LocalContext::empty();
+        let query_left = Term::parse("c0(c6, c1(c0(c6)))");
+        let query_right = Term::parse("c5");
+        let found = tree.find_pair(&query_left, &query_right, &query_local, &kernel_context);
+
+        assert_eq!(
+            found,
+            Some(&42),
+            "Should match pair where applied variable also appears as argument"
         );
     }
 }
