@@ -133,9 +133,9 @@ struct GroupInfo {
     // All of the terms that belong to this group, in the order they were added.
     terms: Vec<TermId>,
 
-    // Each way to create a term of this group by composing subterms from other groups.
-    // This might include references to deleted compounds. They are only cleaned up lazily.
-    compounds: Vec<CompoundId>,
+    // Each way to create a term of this group by applying subterms from other groups.
+    // This might include references to deleted applications. They are only cleaned up lazily.
+    applications: Vec<ApplicationId>,
 
     // The other groups that we know are not equal to this one.
     // For each inequality, we store the two terms that we know are not equal,
@@ -145,7 +145,7 @@ struct GroupInfo {
 
 impl GroupInfo {
     fn heuristic_size(&self) -> usize {
-        self.terms.len() + self.compounds.len()
+        self.terms.len() + self.applications.len()
     }
 }
 
@@ -153,28 +153,28 @@ impl GroupInfo {
 // The composition relations between groups each get their own id, so we can update them when
 // we combine groups.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-struct CompoundId(u32);
+struct ApplicationId(u32);
 
-impl CompoundId {
+impl ApplicationId {
     fn get(&self) -> u32 {
         self.0
     }
 }
 
-impl fmt::Display for CompoundId {
+impl fmt::Display for ApplicationId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.get())
     }
 }
 
-// Simplified CompoundKey for binary application: just (func_group, arg_group)
+// Simplified ApplicationKey for binary application: just (func_group, arg_group)
 #[derive(Debug, Eq, Hash, PartialEq, Clone)]
-struct CompoundKey {
+struct ApplicationKey {
     func: GroupId,
     arg: GroupId,
 }
 
-impl CompoundKey {
+impl ApplicationKey {
     fn remap_group(&mut self, old_group: GroupId, new_group: GroupId) {
         if self.func == old_group {
             self.func = new_group;
@@ -200,19 +200,19 @@ impl CompoundKey {
     }
 }
 
-impl fmt::Display for CompoundKey {
+impl fmt::Display for ApplicationKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "({} {})", self.func, self.arg)
     }
 }
 
 #[derive(Clone)]
-struct CompoundInfo {
-    key: CompoundKey,
+struct ApplicationInfo {
+    key: ApplicationKey,
     result_term: TermId,
 }
 
-impl fmt::Display for CompoundInfo {
+impl fmt::Display for ApplicationInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "key {} -> term {}", self.key, self.result_term)
     }
@@ -261,15 +261,15 @@ pub struct TermGraph {
     // groups maps GroupId to PossibleGroupInfo.
     groups: Vec<PossibleGroupInfo>,
 
-    // compounds maps CompoundId to CompoundInfo.
-    // When a compound is deleted, we replace it with None.
-    compounds: Vec<Option<CompoundInfo>>,
+    // applications maps ApplicationId to ApplicationInfo.
+    // When an application is deleted, we replace it with None.
+    applications: Vec<Option<ApplicationInfo>>,
 
     // The set of clauses in the graph
     clause_set: ClauseSet,
 
-    // Keying the compounds so that we can check if a composition belongs to an existing group.
-    compound_map: HashMap<CompoundKey, TermId>,
+    // Keying the applications so that we can check if an application belongs to an existing group.
+    application_map: HashMap<ApplicationKey, TermId>,
 
     // Each term has its decomposition stored so that we can look it back up again
     decompositions: HashMap<Decomposition, TermId>,
@@ -299,9 +299,9 @@ impl TermGraph {
         TermGraph {
             terms: Vec::new(),
             groups: Vec::new(),
-            compounds: Vec::new(),
+            applications: Vec::new(),
             clause_set: ClauseSet::new(),
-            compound_map: HashMap::new(),
+            application_map: HashMap::new(),
             decompositions: HashMap::new(),
             pending: Vec::new(),
             has_contradiction: false,
@@ -393,7 +393,7 @@ impl TermGraph {
         self.terms.push(term_info);
         let group_info = PossibleGroupInfo::Info(GroupInfo {
             terms: vec![term_id],
-            compounds: vec![],
+            applications: vec![],
             inequalities: HashMap::new(),
         });
         self.groups.push(group_info);
@@ -430,26 +430,26 @@ impl TermGraph {
         self.terms.push(term_info);
         let group_info = PossibleGroupInfo::Info(GroupInfo {
             terms: vec![term_id],
-            compounds: vec![],
+            applications: vec![],
             inequalities: HashMap::new(),
         });
         self.groups.push(group_info);
         self.decompositions.insert(key, term_id);
 
-        // Insert the group compound
+        // Insert the group application
         let func_group = self.get_group_id(func);
         let arg_group = self.get_group_id(arg);
-        self.insert_group_compound(func_group, arg_group, term_id);
+        self.insert_group_application(func_group, arg_group, term_id);
 
         term_id
     }
 
-    // Adds a group composition relationship.
+    // Adds a application relationship.
     // If we should combine groups, add them to the pending list.
-    fn insert_group_compound(&mut self, func: GroupId, arg: GroupId, result_term: TermId) {
+    fn insert_group_application(&mut self, func: GroupId, arg: GroupId, result_term: TermId) {
         let result_group = self.get_group_id(result_term);
-        let key = CompoundKey { func, arg };
-        if let Some(&existing_result_term) = self.compound_map.get(&key) {
+        let key = ApplicationKey { func, arg };
+        if let Some(&existing_result_term) = self.application_map.get(&key) {
             let existing_result_group = self.get_group_id(existing_result_term);
             if existing_result_group != result_group {
                 self.pending.push(SemanticOperation::TermEquality(
@@ -461,7 +461,7 @@ impl TermGraph {
         }
 
         // We need to make a new relationship
-        let compound_info = CompoundInfo {
+        let app_info = ApplicationInfo {
             key: key.clone(),
             result_term,
         };
@@ -469,21 +469,22 @@ impl TermGraph {
             match &mut self.groups[group.get() as usize] {
                 PossibleGroupInfo::Remapped(id) => {
                     panic!(
-                        "compound info refers to a remapped group {} -> {}",
+                        "application info refers to a remapped group {} -> {}",
                         group, id
                     );
                 }
                 PossibleGroupInfo::Info(info) => {
-                    info.compounds.push(CompoundId(self.compounds.len() as u32));
+                    info.applications
+                        .push(ApplicationId(self.applications.len() as u32));
                 }
             }
         }
-        self.compounds.push(Some(compound_info));
-        self.compound_map.insert(key, result_term);
+        self.applications.push(Some(app_info));
+        self.application_map.insert(key, result_term);
     }
 
     /// Inserts a term.
-    /// Makes a new term, group, and compound if necessary.
+    /// Makes a new term, group, and application if necessary.
     /// Uses curried application: f(a, b, c) becomes (((f a) b) c)
     pub fn insert_term(&mut self, term: &Term, kernel_context: &KernelContext) -> TermId {
         let head_term_id = self.insert_head(term, kernel_context);
@@ -570,37 +571,37 @@ impl TermGraph {
             self.terms[term_id.get() as usize].group = new_group;
         }
 
-        let mut keep_compounds = vec![];
-        for compound_id in old_info.compounds {
+        let mut keep_applications = vec![];
+        for application_id in old_info.applications {
             {
-                let compound = match &mut self.compounds[compound_id.get() as usize] {
-                    Some(compound) => compound,
+                let app = match &mut self.applications[application_id.get() as usize] {
+                    Some(app) => app,
                     None => {
-                        // This compound has already been deleted.
+                        // This application has already been deleted.
                         // Time to lazily delete the reference to it.
                         continue;
                     }
                 };
-                self.compound_map.remove(&compound.key);
-                compound.key.remap_group(old_group, new_group);
+                self.application_map.remove(&app.key);
+                app.key.remap_group(old_group, new_group);
             }
-            let compound = self.compounds[compound_id.get() as usize]
+            let app = self.applications[application_id.get() as usize]
                 .as_ref()
                 .expect("how does this happen?");
 
-            if let Some(&existing_result_term) = self.compound_map.get(&compound.key) {
-                // A compound for the new relationship already exists.
-                // Instead of inserting compound.result, we need to delete this compound, and merge the
+            if let Some(&existing_result_term) = self.application_map.get(&app.key) {
+                // An application for the new relationship already exists.
+                // Instead of inserting app.result, we need to delete this application, and merge the
                 // intended result with result_group.
                 self.pending.push(SemanticOperation::TermEquality(
-                    compound.result_term,
+                    app.result_term,
                     existing_result_term,
                 ));
-                self.compounds[compound_id.get() as usize] = None;
+                self.applications[application_id.get() as usize] = None;
             } else {
-                self.compound_map
-                    .insert(compound.key.clone(), compound.result_term);
-                keep_compounds.push(compound_id);
+                self.application_map
+                    .insert(app.key.clone(), app.result_term);
+                keep_applications.push(application_id);
             }
         }
 
@@ -643,7 +644,7 @@ impl TermGraph {
                 PossibleGroupInfo::Info(info) => info,
             };
             new_info.terms.extend(old_info.terms);
-            new_info.compounds.extend(keep_compounds);
+            new_info.applications.extend(keep_applications);
             for (group, value) in old_info.inequalities {
                 if !new_info.inequalities.contains_key(&group) {
                     new_info.inequalities.insert(group, value);
@@ -1177,9 +1178,9 @@ impl TermGraph {
 
     // For every step from term1 to term2, show the rewritten subterms, as well as the
     // id of the rule that enabled it, if there is one.
-    // This is "postorder" in the sense that we show a rewritten compound term after showing
+    // This is "postorder" in the sense that we show a rewritten application term after showing
     // the rewrites for the subterms.
-    // The compound rewrites have a step id of None.
+    // The application rewrites have a step id of None.
     // The rewritten subterms have a step id with the rule that they are based on.
     fn expand_steps(&self, term1: TermId, term2: TermId, output: &mut Vec<RewriteStep>) {
         if term1 == term2 {
@@ -1253,10 +1254,10 @@ impl TermGraph {
         for (i, term_info) in self.terms.iter().enumerate() {
             println!("term {}, group {}: {}", i, term_info.group, term_info.term);
         }
-        println!("compounds:");
-        for compound in &self.compounds {
-            if let Some(compound) = compound {
-                println!("{}", compound);
+        println!("applications:");
+        for app in &self.applications {
+            if let Some(app) = app {
+                println!("{}", app);
             }
         }
     }
@@ -1350,25 +1351,27 @@ impl TermGraph {
                 let term_group = self.terms[term_id.get() as usize].group;
                 assert_eq!(term_group, group_id);
             }
-            for compound_id in &group_info.compounds {
-                let compound = &self.compounds[compound_id.get() as usize];
-                let compound = match compound {
-                    Some(compound) => compound,
+            for application_id in &group_info.applications {
+                let app = &self.applications[application_id.get() as usize];
+                let app = match app {
+                    Some(app) => app,
                     None => continue,
                 };
-                assert!(compound.key.touches_group(group_id));
+                assert!(app.key.touches_group(group_id));
             }
         }
 
-        for (compound_id, compound) in self.compounds.iter().enumerate() {
-            let compound = match compound {
-                Some(compound) => compound,
+        for (application_id, app) in self.applications.iter().enumerate() {
+            let app = match app {
+                Some(app) => app,
                 None => continue,
             };
-            let groups = compound.key.groups();
+            let groups = app.key.groups();
             for group in groups {
                 let info = self.validate_group_id(group);
-                assert!(info.compounds.contains(&CompoundId(compound_id as u32)));
+                assert!(info
+                    .applications
+                    .contains(&ApplicationId(application_id as u32)));
             }
         }
 
