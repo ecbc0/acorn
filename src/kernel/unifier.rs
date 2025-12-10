@@ -7,6 +7,7 @@ use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::term::Term;
 use crate::kernel::term::TermRef;
+#[cfg(test)]
 use crate::kernel::types::TypeId;
 use crate::kernel::variable_map::VariableMap;
 use std::fmt;
@@ -233,12 +234,12 @@ impl<'a> Unifier<'a> {
                     let var_id = self.maps[Scope::OUTPUT.get()].len() as AtomId;
                     self.maps[Scope::OUTPUT.get()].push_none();
                     // Track the type in output_context - get the variable's type directly from LocalContext
-                    let var_type_id = self
+                    let var_closed_type = self
                         .get_local_context(scope)
-                        .get_var_type(*i as usize)
+                        .get_var_closed_type(*i as usize)
+                        .cloned()
                         .expect("Variable should have type in LocalContext");
-                    self.output_context
-                        .push_var_type_with_store(var_type_id, &self.kernel_context.type_store);
+                    self.output_context.push_closed_type(var_closed_type);
                     let new_var = Term::new(Atom::Variable(var_id), vec![]);
                     self.set_mapping(scope, *i, new_var);
                 }

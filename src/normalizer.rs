@@ -568,11 +568,11 @@ impl NormalizerView<'_> {
 
         for binding in stack.iter() {
             // Use collect_vars with the context to get variable types
-            for (var_id, type_id) in binding.term().collect_vars(context) {
+            for (var_id, closed_type) in binding.term().collect_vars(context) {
                 if seen_vars.insert(var_id) {
                     let var_term = Term::new_variable(var_id);
                     args.push(var_term);
-                    arg_types.push(self.type_store().get_type(type_id).clone());
+                    arg_types.push(self.type_store().closed_type_to_acorn_type(&closed_type));
                 }
             }
         }
@@ -1215,11 +1215,11 @@ impl NormalizerView<'_> {
 
         for binding in stack.iter() {
             // Use collect_vars with the context to get variable types
-            for (var_id, type_id) in binding.term().collect_vars(context) {
+            for (var_id, closed_type) in binding.term().collect_vars(context) {
                 if seen_vars.insert(var_id) {
                     let var_term = Term::new_variable(var_id);
                     args.push(var_term);
-                    arg_types.push(self.type_store().get_type(type_id).clone());
+                    arg_types.push(self.type_store().closed_type_to_acorn_type(&closed_type));
                 }
             }
         }
@@ -1307,36 +1307,36 @@ impl NormalizerView<'_> {
                 let mut seen_vars = std::collections::HashSet::new();
 
                 // Collect free variables from the condition literal
-                for (var_id, type_id) in cond_lit.left.collect_vars(local_context) {
+                for (var_id, closed_type) in cond_lit.left.collect_vars(local_context) {
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(var_id);
                         args.push(var_term);
-                        arg_types.push(self.type_store().get_type(type_id).clone());
+                        arg_types.push(self.type_store().closed_type_to_acorn_type(&closed_type));
                     }
                 }
-                for (var_id, type_id) in cond_lit.right.collect_vars(local_context) {
+                for (var_id, closed_type) in cond_lit.right.collect_vars(local_context) {
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(var_id);
                         args.push(var_term);
-                        arg_types.push(self.type_store().get_type(type_id).clone());
+                        arg_types.push(self.type_store().closed_type_to_acorn_type(&closed_type));
                     }
                 }
 
                 // Collect free variables from the then branch
-                for (var_id, type_id) in then_term.collect_vars(local_context) {
+                for (var_id, closed_type) in then_term.collect_vars(local_context) {
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(var_id);
                         args.push(var_term);
-                        arg_types.push(self.type_store().get_type(type_id).clone());
+                        arg_types.push(self.type_store().closed_type_to_acorn_type(&closed_type));
                     }
                 }
 
                 // Collect free variables from the else branch
-                for (var_id, type_id) in else_term.collect_vars(local_context) {
+                for (var_id, closed_type) in else_term.collect_vars(local_context) {
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(var_id);
                         args.push(var_term);
-                        arg_types.push(self.type_store().get_type(type_id).clone());
+                        arg_types.push(self.type_store().closed_type_to_acorn_type(&closed_type));
                     }
                 }
 

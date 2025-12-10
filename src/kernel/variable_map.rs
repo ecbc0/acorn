@@ -6,7 +6,7 @@ use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::Term;
 use crate::kernel::term::TermRef;
-use crate::kernel::types::{GroundTypeId, TypeId, EMPTY};
+use crate::kernel::types::{GroundTypeId, EMPTY};
 use std::fmt;
 
 // A VariableMap maintains a mapping from variables to terms, allowing us to turn a more general term
@@ -51,23 +51,19 @@ impl VariableMap {
     pub fn build_output_context(&self, input_context: &LocalContext) -> LocalContext {
         let empty_ground = GroundTypeId::new(EMPTY.as_u16());
         let empty_type = ClosedType::ground(empty_ground);
-        let mut var_types: Vec<Option<TypeId>> = vec![];
         let mut var_closed_types: Vec<Option<ClosedType>> = vec![];
         for opt_term in &self.map {
             if let Some(term) = opt_term {
-                for (var_id, type_id, closed_type) in term.collect_vars_full(input_context) {
+                for (var_id, closed_type) in term.collect_vars(input_context) {
                     let idx = var_id as usize;
                     if idx >= var_closed_types.len() {
-                        var_types.resize(idx + 1, None);
                         var_closed_types.resize(idx + 1, None);
                     }
-                    var_types[idx] = Some(type_id);
                     var_closed_types[idx] = Some(closed_type);
                 }
             }
         }
-        LocalContext::from_types_and_closed_types(
-            var_types.into_iter().map(|t| t.unwrap_or(EMPTY)).collect(),
+        LocalContext::from_closed_types(
             var_closed_types
                 .into_iter()
                 .map(|t| t.unwrap_or_else(|| empty_type.clone()))
@@ -272,11 +268,8 @@ impl VariableMap {
         for i in 0..input_context.len() {
             if self.get_mapping(i as AtomId).is_none() {
                 // This variable is unmapped, so it will remain in the output
-                if let (Some(type_id), Some(closed_type)) = (
-                    input_context.get_var_type(i),
-                    input_context.get_var_closed_type(i),
-                ) {
-                    output_context.set_type_and_closed_type(i, type_id, closed_type.clone());
+                if let Some(closed_type) = input_context.get_var_closed_type(i) {
+                    output_context.set_closed_type(i, closed_type.clone());
                 }
             }
         }

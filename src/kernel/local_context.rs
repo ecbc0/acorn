@@ -11,16 +11,33 @@ use crate::kernel::types::TypeId;
 ///
 /// Invariant: var_types and var_closed_types always have the same length,
 /// and var_types[i] corresponds to var_closed_types[i] for all i.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LocalContext {
     /// The types of variables, indexed by variable id.
     /// var_types[i] is the type of variable x_i.
+    /// NOTE: This field is being deprecated. Use var_closed_types instead.
     pub var_types: Vec<TypeId>,
 
     /// The closed types of variables, indexed by variable id.
     /// Parallel to var_types - var_closed_types[i] is the ClosedType for x_i.
     #[serde(skip)]
     var_closed_types: Vec<ClosedType>,
+}
+
+// Custom PartialEq that compares only var_closed_types (not deprecated var_types)
+impl PartialEq for LocalContext {
+    fn eq(&self, other: &Self) -> bool {
+        self.var_closed_types == other.var_closed_types
+    }
+}
+
+impl Eq for LocalContext {}
+
+// Custom Hash that hashes only var_closed_types (must be consistent with PartialEq)
+impl std::hash::Hash for LocalContext {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.var_closed_types.hash(state);
+    }
 }
 
 use std::sync::LazyLock;
@@ -147,6 +164,17 @@ impl LocalContext {
         var_id
     }
 
+    /// Push a new ClosedType to the context.
+    /// The variable ID will be the current length of the context.
+    /// Returns the assigned variable ID.
+    /// Uses a dummy TypeId since we're transitioning away from TypeId.
+    pub fn push_closed_type(&mut self, closed_type: ClosedType) -> usize {
+        let var_id = self.var_types.len();
+        self.var_types.push(TypeId::default());
+        self.var_closed_types.push(closed_type);
+        var_id
+    }
+
     /// Set both TypeId and ClosedType for a variable at a specific index.
     /// If the context is too short, it will be extended with EMPTY placeholders.
     ///
@@ -173,6 +201,23 @@ impl LocalContext {
             self.var_closed_types.resize(var_id + 1, empty_closed);
         }
         self.var_types[var_id] = type_id;
+        self.var_closed_types[var_id] = closed_type;
+    }
+
+    /// Set ClosedType for a variable at a specific index.
+    /// If the context is too short, it will be extended with EMPTY placeholders.
+    /// Uses a dummy TypeId since we're transitioning away from TypeId.
+    pub fn set_closed_type(&mut self, var_id: usize, closed_type: ClosedType) {
+        use crate::kernel::types::{GroundTypeId, EMPTY};
+        if var_id >= self.var_types.len() {
+            // Extend with EMPTY placeholders for gap indices
+            let empty_ground = GroundTypeId::new(EMPTY.as_u16());
+            let empty_closed = ClosedType::ground(empty_ground);
+            self.var_types.resize(var_id + 1, EMPTY);
+            self.var_closed_types.resize(var_id + 1, empty_closed);
+        }
+        // Use dummy TypeId since we're transitioning away from it
+        self.var_types[var_id] = TypeId::default();
         self.var_closed_types[var_id] = closed_type;
     }
 

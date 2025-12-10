@@ -17,7 +17,9 @@ use super::local_context::LocalContext;
 use super::symbol::Symbol;
 use super::term::Term;
 use super::term::{TermComponent, TermRef};
-use super::types::{GroundTypeId, TypeId, TypeclassId, BOOL, EMPTY};
+#[cfg(test)]
+use super::types::TypeId;
+use super::types::{GroundTypeId, TypeclassId, BOOL, EMPTY};
 
 /// Replaces variables in a term with corresponding replacement terms.
 /// Variables x_i are replaced with replacements[i].
@@ -34,7 +36,6 @@ pub fn replace_term_variables(
     replacement_context: &LocalContext,
     shift: Option<AtomId>,
 ) -> (Term, LocalContext) {
-    let mut output_var_types: Vec<TypeId> = replacement_context.var_types.clone();
     let mut output_closed_types: Vec<ClosedType> =
         replacement_context.get_var_closed_types().to_vec();
 
@@ -43,7 +44,6 @@ pub fn replace_term_variables(
         term_context: &LocalContext,
         replacements: &[TermRef],
         shift: Option<AtomId>,
-        output_var_types: &mut Vec<TypeId>,
         output_closed_types: &mut Vec<ClosedType>,
         empty_type: ClosedType,
     ) -> Term {
@@ -66,7 +66,6 @@ pub fn replace_term_variables(
                                 term_context,
                                 replacements,
                                 shift,
-                                output_var_types,
                                 output_closed_types,
                                 empty_type.clone(),
                             )
@@ -85,16 +84,13 @@ pub fn replace_term_variables(
                 };
                 // Track the type for the shifted variable
                 let new_idx = new_var_id as usize;
-                let var_type_id = term_context.get_var_type(idx).unwrap_or(EMPTY);
                 let var_closed_type = term_context
                     .get_var_closed_type(idx)
                     .cloned()
                     .unwrap_or_else(|| empty_type.clone());
                 if new_idx >= output_closed_types.len() {
-                    output_var_types.resize(new_idx + 1, EMPTY);
                     output_closed_types.resize(new_idx + 1, empty_type.clone());
                 }
-                output_var_types[new_idx] = var_type_id;
                 output_closed_types[new_idx] = var_closed_type;
 
                 if term.has_args() {
@@ -106,7 +102,6 @@ pub fn replace_term_variables(
                                 term_context,
                                 replacements,
                                 shift,
-                                output_var_types,
                                 output_closed_types,
                                 empty_type.clone(),
                             )
@@ -128,7 +123,6 @@ pub fn replace_term_variables(
                             term_context,
                             replacements,
                             shift,
-                            output_var_types,
                             output_closed_types,
                             empty_type.clone(),
                         )
@@ -147,12 +141,10 @@ pub fn replace_term_variables(
         term_context,
         replacements,
         shift,
-        &mut output_var_types,
         &mut output_closed_types,
         empty_type,
     );
-    let result_context =
-        LocalContext::from_types_and_closed_types(output_var_types, output_closed_types);
+    let result_context = LocalContext::from_closed_types(output_closed_types);
     (result_term, result_context)
 }
 
