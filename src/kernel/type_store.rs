@@ -34,8 +34,8 @@ pub struct TypeStore {
     /// This is the transitive closure, so if A extends B and B extends C, then A's set contains both B and C.
     typeclass_extends: Vec<HashSet<TypeclassId>>,
 
-    /// typeclass_instances[typeclass_id] is the set of TypeIds that are instances of this typeclass.
-    typeclass_instances: Vec<HashSet<TypeId>>,
+    /// typeclass_instances[typeclass_id] is the set of GroundTypeIds that are instances of this typeclass.
+    typeclass_instances: Vec<HashSet<GroundTypeId>>,
 }
 
 impl TypeStore {
@@ -337,15 +337,30 @@ impl TypeStore {
         }
     }
 
-    /// Register that a type is an instance of a typeclass.
-    fn add_instance(&mut self, type_id: TypeId, typeclass_id: TypeclassId) {
-        self.typeclass_instances[typeclass_id.as_u16() as usize].insert(type_id);
+    /// Register that a ground type is an instance of a typeclass.
+    fn add_instance(&mut self, ground_id: GroundTypeId, typeclass_id: TypeclassId) {
+        self.typeclass_instances[typeclass_id.as_u16() as usize].insert(ground_id);
     }
 
     /// Register that a type (given as AcornType) is an instance of a typeclass.
+    /// The type must be a ground type (bare data type with no params).
     pub fn add_type_instance(&mut self, acorn_type: &AcornType, typeclass_id: TypeclassId) {
-        let type_id = self.add_type_internal(acorn_type);
-        self.add_instance(type_id, typeclass_id);
+        // Ensure the type is registered
+        self.add_type_internal(acorn_type);
+
+        // Get the GroundTypeId - only ground types can be typeclass instances
+        let ground_id = match acorn_type {
+            AcornType::Data(datatype, params) if params.is_empty() => self
+                .datatype_to_ground_id
+                .get(datatype)
+                .copied()
+                .expect("Data type should have been registered"),
+            _ => panic!(
+                "Only bare data types can be typeclass instances, got {:?}",
+                acorn_type
+            ),
+        };
+        self.add_instance(ground_id, typeclass_id);
     }
 
     /// Check if one typeclass extends another (directly or transitively).
