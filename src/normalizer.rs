@@ -1605,11 +1605,10 @@ impl Normalizer {
         match &fact {
             Fact::Instance(datatype, typeclass, _) => {
                 let acorn_type = AcornType::Data(datatype.clone(), vec![]);
-                let type_id = self.kernel_context.type_store.add_type(&acorn_type);
                 let typeclass_id = self.kernel_context.type_store.add_typeclass(typeclass);
                 self.kernel_context
                     .type_store
-                    .add_instance(type_id, typeclass_id);
+                    .add_type_instance(&acorn_type, typeclass_id);
             }
             Fact::Extends(typeclass, base_set, _) => {
                 let tc_id = self.kernel_context.type_store.add_typeclass(typeclass);

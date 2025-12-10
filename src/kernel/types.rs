@@ -49,7 +49,6 @@ pub struct GroundTypeId(u16);
 impl GroundTypeId {
     /// Create a new GroundTypeId.
     /// NOTE: This should generally only be called by TypeStore when registering ground types.
-    /// Use TypeStore::get_ground_type_id() to safely get a GroundTypeId from a TypeId.
     pub const fn new(id: u16) -> GroundTypeId {
         GroundTypeId(id)
     }

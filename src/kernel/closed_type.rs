@@ -167,37 +167,29 @@ impl fmt::Display for ClosedType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::type_store::TypeStore;
-    use crate::kernel::types::{BOOL, EMPTY};
+    use crate::kernel::types::{GROUND_BOOL, GROUND_EMPTY};
 
     #[test]
     fn test_closed_type_ground() {
-        let store = TypeStore::new();
-        let bool_ground = store.get_ground_type_id(BOOL).unwrap();
-
-        let ct = ClosedType::ground(bool_ground);
+        let ct = ClosedType::ground(GROUND_BOOL);
         assert!(ct.is_ground());
-        assert_eq!(ct.as_ground(), Some(bool_ground));
+        assert_eq!(ct.as_ground(), Some(GROUND_BOOL));
         assert!(!ct.is_pi());
         assert_eq!(format!("{}", ct), "T1");
     }
 
     #[test]
     fn test_closed_type_pi() {
-        let store = TypeStore::new();
-        let bool_ground = store.get_ground_type_id(BOOL).unwrap();
-        let empty_ground = store.get_ground_type_id(EMPTY).unwrap();
-
-        let bool_type = ClosedType::ground(bool_ground);
-        let empty_type = ClosedType::ground(empty_ground);
+        let bool_type = ClosedType::ground(GROUND_BOOL);
+        let empty_type = ClosedType::ground(GROUND_EMPTY);
         let pi_type = ClosedType::pi(bool_type.clone(), empty_type.clone());
 
         assert!(!pi_type.is_ground());
         assert!(pi_type.is_pi());
 
         let (input, output) = pi_type.as_pi().unwrap();
-        assert_eq!(input.as_ground(), Some(bool_ground));
-        assert_eq!(output.as_ground(), Some(empty_ground));
+        assert_eq!(input.as_ground(), Some(GROUND_BOOL));
+        assert_eq!(output.as_ground(), Some(GROUND_EMPTY));
 
         // Display should show (Bool -> Empty)
         assert_eq!(format!("{}", pi_type), "(T1 -> T0)");
@@ -205,17 +197,14 @@ mod tests {
 
     #[test]
     fn test_closed_type_nested_pi() {
-        let store = TypeStore::new();
-        let bool_ground = store.get_ground_type_id(BOOL).unwrap();
-
         // Bool -> Bool -> Bool
-        let bool_type = ClosedType::ground(bool_ground);
+        let bool_type = ClosedType::ground(GROUND_BOOL);
         let inner = ClosedType::pi(bool_type.clone(), bool_type.clone());
         let outer = ClosedType::pi(bool_type.clone(), inner);
 
         assert!(outer.is_pi());
         let (input, output) = outer.as_pi().unwrap();
-        assert_eq!(input.as_ground(), Some(bool_ground));
+        assert_eq!(input.as_ground(), Some(GROUND_BOOL));
         assert!(output.is_pi());
 
         assert_eq!(format!("{}", outer), "(T1 -> (T1 -> T1))");
@@ -223,16 +212,12 @@ mod tests {
 
     #[test]
     fn test_closed_type_application() {
-        let store = TypeStore::new();
-        let bool_ground = store.get_ground_type_id(BOOL).unwrap();
-        let empty_ground = store.get_ground_type_id(EMPTY).unwrap();
-
         // Simulate List[Bool] - a type constructor applied to Bool
-        // We use empty_ground as a stand-in for "List" type constructor
+        // We use GROUND_EMPTY as a stand-in for "List" type constructor
         let list_bool = ClosedType::from_components(vec![
             TermComponent::Application { span: 3 },
-            TermComponent::Atom(Atom::Type(empty_ground)),
-            TermComponent::Atom(Atom::Type(bool_ground)),
+            TermComponent::Atom(Atom::Type(GROUND_EMPTY)),
+            TermComponent::Atom(Atom::Type(GROUND_BOOL)),
         ]);
 
         assert!(!list_bool.is_ground());
@@ -242,12 +227,8 @@ mod tests {
 
     #[test]
     fn test_closed_type_apply() {
-        let store = TypeStore::new();
-        let bool_ground = store.get_ground_type_id(BOOL).unwrap();
-        let empty_ground = store.get_ground_type_id(EMPTY).unwrap();
-
-        let bool_type = ClosedType::ground(bool_ground);
-        let empty_type = ClosedType::ground(empty_ground);
+        let bool_type = ClosedType::ground(GROUND_BOOL);
+        let empty_type = ClosedType::ground(GROUND_EMPTY);
 
         // Ground types can't be applied
         assert!(bool_type.apply().is_none());
@@ -255,7 +236,7 @@ mod tests {
         // Pi type Bool -> Empty can be applied to get Empty
         let pi_type = ClosedType::pi(bool_type.clone(), empty_type.clone());
         let result = pi_type.apply().unwrap();
-        assert_eq!(result.as_ground(), Some(empty_ground));
+        assert_eq!(result.as_ground(), Some(GROUND_EMPTY));
 
         // Nested Pi type: Bool -> (Bool -> Empty)
         let inner_pi = ClosedType::pi(bool_type.clone(), empty_type.clone());
@@ -267,6 +248,6 @@ mod tests {
 
         // Second apply gives Empty
         let after_second = after_first.apply().unwrap();
-        assert_eq!(after_second.as_ground(), Some(empty_ground));
+        assert_eq!(after_second.as_ground(), Some(GROUND_EMPTY));
     }
 }

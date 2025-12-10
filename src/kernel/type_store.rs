@@ -46,21 +46,27 @@ impl TypeStore {
             typeclass_extends: vec![],
             typeclass_instances: vec![],
         };
-        store.add_type(&AcornType::Empty);
-        store.add_type(&AcornType::Bool);
+        store.add_type_internal(&AcornType::Empty);
+        store.add_type_internal(&AcornType::Bool);
         store
     }
 
     /// Get the id for a type if it exists, otherwise return an error.
-    pub fn get_type_id(&self, acorn_type: &AcornType) -> Result<TypeId, String> {
+    fn get_type_id(&self, acorn_type: &AcornType) -> Result<TypeId, String> {
         self.type_to_type_id
             .get(acorn_type)
             .copied()
             .ok_or_else(|| format!("Type {} not registered in type store", acorn_type))
     }
 
-    /// Returns the id for the new type.
-    pub fn add_type(&mut self, acorn_type: &AcornType) -> TypeId {
+    /// Register a type in the type store. Call this before using to_closed_type()
+    /// to ensure ground types are registered.
+    pub fn add_type(&mut self, acorn_type: &AcornType) {
+        self.add_type_internal(acorn_type);
+    }
+
+    /// Internal implementation that returns the TypeId.
+    fn add_type_internal(&mut self, acorn_type: &AcornType) -> TypeId {
         if let Some(type_id) = self.type_to_type_id.get(acorn_type) {
             return *type_id;
         }
@@ -70,10 +76,10 @@ impl TypeStore {
             AcornType::Function(ft) => {
                 // Add all argument types
                 for arg_type in &ft.arg_types {
-                    self.add_type(arg_type);
+                    self.add_type_internal(arg_type);
                 }
                 // Add the return type
-                self.add_type(&ft.return_type);
+                self.add_type_internal(&ft.return_type);
 
                 // Compute curried function info: (A, B, C) -> R becomes A -> (B -> (C -> R))
                 // So domain is first arg, codomain is the rest curried
@@ -91,7 +97,7 @@ impl TypeStore {
                             arg_types: ft.arg_types[1..].to_vec(),
                             return_type: ft.return_type.clone(),
                         });
-                        self.add_type(&rest_ft)
+                        self.add_type_internal(&rest_ft)
                     };
                     Some((domain_id, codomain_id))
                 }
@@ -101,11 +107,11 @@ impl TypeStore {
                 // so it gets its own TypeId/GroundTypeId for use in ClosedType
                 if !params.is_empty() {
                     let bare_constructor = AcornType::Data(datatype.clone(), vec![]);
-                    self.add_type(&bare_constructor);
+                    self.add_type_internal(&bare_constructor);
                 }
                 // Add all type parameters
                 for param in params {
-                    self.add_type(param);
+                    self.add_type_internal(param);
                 }
                 None
             }
@@ -120,31 +126,24 @@ impl TypeStore {
         id
     }
 
-    pub fn get_type(&self, type_id: TypeId) -> &AcornType {
+    fn get_type(&self, type_id: TypeId) -> &AcornType {
         &self.type_id_to_type[type_id.as_u16() as usize]
     }
 
     /// For function types, returns (domain, codomain) as TypeIds.
     /// For non-function types, returns None.
     /// Function types are treated as curried, so (A, B) -> C has domain A and codomain (B -> C).
-    pub fn get_function_info(&self, type_id: TypeId) -> Option<(TypeId, TypeId)> {
+    fn get_function_info(&self, type_id: TypeId) -> Option<(TypeId, TypeId)> {
         self.function_info
             .get(type_id.as_u16() as usize)
             .copied()
             .flatten()
     }
 
-    /// Apply a function type to get its codomain.
-    /// Returns None if the type is not a function type.
-    pub fn apply_type(&self, type_id: TypeId) -> Option<TypeId> {
-        self.get_function_info(type_id)
-            .map(|(_, codomain)| codomain)
-    }
-
     /// Get the GroundTypeId for a TypeId if it refers to a ground type.
     /// Returns None if the type is a function type or parameterized type.
     /// Ground types are those with no internal structure: Empty, Bool, and data types without parameters.
-    pub fn get_ground_type_id(&self, type_id: TypeId) -> Option<GroundTypeId> {
+    fn get_ground_type_id(&self, type_id: TypeId) -> Option<GroundTypeId> {
         // A type is ground if it has no function info (not a function type)
         // and is not a parameterized data type
         if self.get_function_info(type_id).is_some() {
@@ -161,7 +160,7 @@ impl TypeStore {
 
     /// Convert a TypeId to a ClosedType.
     /// This converts the AcornType representation to the flattened ClosedType format.
-    pub fn type_id_to_closed_type(&self, type_id: TypeId) -> ClosedType {
+    fn type_id_to_closed_type(&self, type_id: TypeId) -> ClosedType {
         let acorn_type = self.get_type(type_id);
         self.acorn_type_to_closed_type(acorn_type, type_id)
     }
@@ -473,15 +472,14 @@ impl TypeStore {
     }
 
     /// Register that a type is an instance of a typeclass.
-    pub fn add_instance(&mut self, type_id: TypeId, typeclass_id: TypeclassId) {
+    fn add_instance(&mut self, type_id: TypeId, typeclass_id: TypeclassId) {
         self.typeclass_instances[typeclass_id.as_u16() as usize].insert(type_id);
     }
 
-    /// Check if a type is an instance of a typeclass.
-    pub fn is_instance_of(&self, type_id: TypeId, typeclass_id: TypeclassId) -> bool {
-        self.typeclass_instances
-            .get(typeclass_id.as_u16() as usize)
-            .map_or(false, |instances| instances.contains(&type_id))
+    /// Register that a type (given as AcornType) is an instance of a typeclass.
+    pub fn add_type_instance(&mut self, acorn_type: &AcornType, typeclass_id: TypeclassId) {
+        let type_id = self.add_type_internal(acorn_type);
+        self.add_instance(type_id, typeclass_id);
     }
 
     /// Check if one typeclass extends another (directly or transitively).
@@ -524,7 +522,7 @@ mod tests {
             arg_types: vec![AcornType::Bool],
             return_type: Box::new(AcornType::Bool),
         });
-        let func_id = store.add_type(&bool_to_bool);
+        let func_id = store.add_type_internal(&bool_to_bool);
         assert!(store.get_ground_type_id(func_id).is_none());
     }
 
@@ -553,7 +551,7 @@ mod tests {
             arg_types: vec![AcornType::Bool],
             return_type: Box::new(AcornType::Bool),
         });
-        let type_id = store.add_type(&bool_to_bool);
+        let type_id = store.add_type_internal(&bool_to_bool);
 
         let closed = store.type_id_to_closed_type(type_id);
         assert!(closed.is_pi());
@@ -574,7 +572,7 @@ mod tests {
             arg_types: vec![AcornType::Bool, AcornType::Bool],
             return_type: Box::new(AcornType::Bool),
         });
-        let type_id = store.add_type(&bool2_to_bool);
+        let type_id = store.add_type_internal(&bool2_to_bool);
 
         let closed = store.type_id_to_closed_type(type_id);
         assert!(closed.is_pi());
@@ -605,7 +603,7 @@ mod tests {
             name: "List".to_string(),
         };
         let list_bool = AcornType::Data(list_datatype.clone(), vec![AcornType::Bool]);
-        let list_bool_id = store.add_type(&list_bool);
+        let list_bool_id = store.add_type_internal(&list_bool);
 
         // The bare constructor should have been auto-registered
         let bare_list = AcornType::Data(list_datatype, vec![]);
@@ -663,7 +661,7 @@ mod tests {
         };
         let list_bool = AcornType::Data(list_datatype.clone(), vec![AcornType::Bool]);
         let list_list_bool = AcornType::Data(list_datatype.clone(), vec![list_bool.clone()]);
-        let list_list_bool_id = store.add_type(&list_list_bool);
+        let list_list_bool_id = store.add_type_internal(&list_list_bool);
 
         // Verify all the types were properly registered
         let bare_list = AcornType::Data(list_datatype, vec![]);
