@@ -16,11 +16,6 @@ pub struct TypeStore {
     /// type_id_to_type[type_id] is the AcornType
     type_id_to_type: Vec<AcornType>,
 
-    /// For function types, stores (domain, codomain) as TypeIds.
-    /// For non-function types, stores None.
-    /// Indexed by TypeId.
-    function_info: Vec<Option<(TypeId, TypeId)>>,
-
     /// Maps Datatype (bare data type with no params) to its GroundTypeId.
     /// This allows direct lookup without going through TypeId.
     datatype_to_ground_id: HashMap<Datatype, GroundTypeId>,
@@ -44,7 +39,6 @@ impl TypeStore {
         let mut store = TypeStore {
             type_to_type_id: HashMap::new(),
             type_id_to_type: vec![],
-            function_info: vec![],
             datatype_to_ground_id: HashMap::new(),
             typeclass_to_id: HashMap::new(),
             id_to_typeclass: vec![],
@@ -54,14 +48,6 @@ impl TypeStore {
         store.add_type_internal(&AcornType::Empty);
         store.add_type_internal(&AcornType::Bool);
         store
-    }
-
-    /// Get the id for a type if it exists, otherwise return an error.
-    fn get_type_id(&self, acorn_type: &AcornType) -> Result<TypeId, String> {
-        self.type_to_type_id
-            .get(acorn_type)
-            .copied()
-            .ok_or_else(|| format!("Type {} not registered in type store", acorn_type))
     }
 
     /// Register a type in the type store. Call this before using to_closed_type()
@@ -76,8 +62,8 @@ impl TypeStore {
             return *type_id;
         }
 
-        // First, recursively add all component types and compute function_info
-        let func_info = match acorn_type {
+        // First, recursively add all component types
+        match acorn_type {
             AcornType::Function(ft) => {
                 // Add all argument types
                 for arg_type in &ft.arg_types {
@@ -85,27 +71,6 @@ impl TypeStore {
                 }
                 // Add the return type
                 self.add_type_internal(&ft.return_type);
-
-                // Compute curried function info: (A, B, C) -> R becomes A -> (B -> (C -> R))
-                // So domain is first arg, codomain is the rest curried
-                if ft.arg_types.is_empty() {
-                    // Degenerate case - no args means it's just the return type
-                    None
-                } else {
-                    let domain_id = self.get_type_id(&ft.arg_types[0]).unwrap();
-                    let codomain_id = if ft.arg_types.len() == 1 {
-                        // Single arg: codomain is just the return type
-                        self.get_type_id(&ft.return_type).unwrap()
-                    } else {
-                        // Multiple args: codomain is the curried remainder
-                        let rest_ft = AcornType::Function(FunctionType {
-                            arg_types: ft.arg_types[1..].to_vec(),
-                            return_type: ft.return_type.clone(),
-                        });
-                        self.add_type_internal(&rest_ft)
-                    };
-                    Some((domain_id, codomain_id))
-                }
             }
             AcornType::Data(datatype, params) => {
                 // For parameterized types, first ensure the bare constructor exists
@@ -118,14 +83,12 @@ impl TypeStore {
                 for param in params {
                     self.add_type_internal(param);
                 }
-                None
             }
-            _ => None,
+            _ => {}
         };
 
         // Now add the type itself
         self.type_id_to_type.push(acorn_type.clone());
-        self.function_info.push(func_info);
         let id = TypeId::new((self.type_id_to_type.len() - 1) as u16);
         self.type_to_type_id.insert(acorn_type.clone(), id);
 
@@ -141,56 +104,16 @@ impl TypeStore {
         id
     }
 
-    fn get_type(&self, type_id: TypeId) -> &AcornType {
-        &self.type_id_to_type[type_id.as_u16() as usize]
-    }
-
-    /// For function types, returns (domain, codomain) as TypeIds.
-    /// For non-function types, returns None.
-    /// Function types are treated as curried, so (A, B) -> C has domain A and codomain (B -> C).
-    fn get_function_info(&self, type_id: TypeId) -> Option<(TypeId, TypeId)> {
-        self.function_info
-            .get(type_id.as_u16() as usize)
-            .copied()
-            .flatten()
-    }
-
-    /// Get the GroundTypeId for a TypeId if it refers to a ground type.
-    /// Returns None if the type is a function type or parameterized type.
-    /// Ground types are those with no internal structure: Empty, Bool, and data types without parameters.
-    fn get_ground_type_id(&self, type_id: TypeId) -> Option<GroundTypeId> {
-        // A type is ground if it has no function info (not a function type)
-        // and is not a parameterized data type
-        if self.get_function_info(type_id).is_some() {
-            return None;
-        }
-
-        // Check if it's a parameterized data type
-        let acorn_type = self.get_type(type_id);
-        match acorn_type {
-            AcornType::Data(_, params) if !params.is_empty() => None,
-            _ => Some(GroundTypeId::new(type_id.as_u16())),
-        }
-    }
-
     /// Get the GroundTypeId for a bare Datatype (no type parameters).
     /// Returns None if the datatype hasn't been registered.
     pub fn get_datatype_ground_id(&self, datatype: &Datatype) -> Option<GroundTypeId> {
         self.datatype_to_ground_id.get(datatype).copied()
     }
 
-    /// Convert a TypeId to a ClosedType.
-    /// This converts the AcornType representation to the flattened ClosedType format.
-    fn type_id_to_closed_type(&self, type_id: TypeId) -> ClosedType {
-        let acorn_type = self.get_type(type_id);
-        self.acorn_type_to_closed_type(acorn_type, type_id)
-    }
-
     /// Get the ClosedType for an AcornType.
-    /// Returns an error if the type hasn't been registered.
+    /// Ground types must be registered first via add_type().
     pub fn get_closed_type(&self, acorn_type: &AcornType) -> Result<ClosedType, String> {
-        let type_id = self.get_type_id(acorn_type)?;
-        Ok(self.type_id_to_closed_type(type_id))
+        Ok(self.to_closed_type(acorn_type))
     }
 
     /// Convert an AcornType to a ClosedType.
@@ -264,94 +187,6 @@ impl TypeStore {
                 ClosedType::ground(ground_id)
             }
         }
-    }
-
-    /// Convert an AcornType to a ClosedType, given the TypeId for this type.
-    /// The type_id is passed so ground types can embed it directly.
-    fn acorn_type_to_closed_type(&self, acorn_type: &AcornType, type_id: TypeId) -> ClosedType {
-        match acorn_type {
-            // Ground types: Empty, Bool, and Data types with no params
-            AcornType::Empty | AcornType::Bool => {
-                let ground_id = self
-                    .get_ground_type_id(type_id)
-                    .expect("Empty/Bool should be ground types");
-                ClosedType::ground(ground_id)
-            }
-
-            AcornType::Data(_, params) if params.is_empty() => {
-                // Data type with no parameters is a ground type
-                let ground_id = self
-                    .get_ground_type_id(type_id)
-                    .expect("Data type with no params should be ground");
-                ClosedType::ground(ground_id)
-            }
-
-            AcornType::Data(datatype, params) => {
-                // Data type with parameters: build Application
-                // e.g., List[Int] -> [Application{span}, Atom(List), Atom(Int)]
-                // e.g., List[List[Bool]] -> [Application{span}, Atom(List), Application{span}, Atom(List), Atom(Bool)]
-                let mut components = Vec::new();
-
-                // Head is the bare constructor (e.g., List without params)
-                // which was auto-registered in add_type()
-                let bare_constructor = AcornType::Data(datatype.clone(), vec![]);
-                let constructor_type_id = self
-                    .get_type_id(&bare_constructor)
-                    .expect("Bare constructor should have been added");
-                let constructor_ground_id = self
-                    .get_ground_type_id(constructor_type_id)
-                    .expect("Bare constructor should be a ground type");
-                components.push(TermComponent::Atom(Atom::Type(constructor_ground_id)));
-
-                // Add each parameter's components directly
-                // The param's ClosedType already has the right structure:
-                // - Simple types: [Atom(Type(X))]
-                // - Nested applications: [Application{span}, ...]
-                // - Arrow types: [Pi{span}, ...]
-                for param in params {
-                    let param_id = self.get_type_id(param).expect("Parameter type not found");
-                    let param_closed = self.type_id_to_closed_type(param_id);
-                    components.extend(param_closed.components().iter().copied());
-                }
-
-                // Update span for the outer Application
-                let total_span = components.len() as u16 + 1;
-                let mut result = vec![TermComponent::Application { span: total_span }];
-                result.extend(components);
-                ClosedType::from_components(result)
-            }
-
-            AcornType::Function(ft) => {
-                // Function type: build nested Pi types (curried)
-                // (A, B) -> C becomes Pi(A, Pi(B, C))
-                self.function_type_to_closed_type(ft)
-            }
-
-            AcornType::Variable(_) | AcornType::Arbitrary(_) => {
-                // Type variables and arbitrary types are ground types in the kernel.
-                // Each gets its own TypeId and is treated as an atomic type.
-                let ground_id = GroundTypeId::new(type_id.as_u16());
-                ClosedType::ground(ground_id)
-            }
-        }
-    }
-
-    /// Convert a FunctionType to a ClosedType with nested Pi types.
-    fn function_type_to_closed_type(&self, ft: &FunctionType) -> ClosedType {
-        // Get return type as ClosedType
-        let return_id = self
-            .get_type_id(&ft.return_type)
-            .expect("Return type not found");
-        let mut result = self.type_id_to_closed_type(return_id);
-
-        // Build Pi types from right to left: (A, B, C) -> R becomes Pi(A, Pi(B, Pi(C, R)))
-        for arg_type in ft.arg_types.iter().rev() {
-            let arg_id = self.get_type_id(arg_type).expect("Arg type not found");
-            let arg_closed = self.type_id_to_closed_type(arg_id);
-            result = ClosedType::pi(arg_closed, result);
-        }
-
-        result
     }
 
     /// Convert a ClosedType back to an AcornType.
@@ -517,52 +352,36 @@ impl Default for TypeStore {
 
 #[cfg(test)]
 mod tests {
-    use crate::kernel::types::{BOOL, EMPTY};
+    use crate::kernel::types::{GROUND_BOOL, GROUND_EMPTY};
 
     use super::*;
 
     #[test]
     fn test_type_store_defaults() {
         let store = TypeStore::new();
-        assert_eq!(store.get_type(EMPTY), &AcornType::Empty);
-        assert_eq!(store.get_type(BOOL), &AcornType::Bool);
+        // EMPTY and BOOL are pre-registered - verify via to_closed_type
+        let empty_closed = store.to_closed_type(&AcornType::Empty);
+        assert_eq!(empty_closed.as_ground(), Some(GROUND_EMPTY));
+        let bool_closed = store.to_closed_type(&AcornType::Bool);
+        assert_eq!(bool_closed.as_ground(), Some(GROUND_BOOL));
     }
 
     #[test]
-    fn test_get_ground_type_id() {
-        let mut store = TypeStore::new();
-
-        // EMPTY and BOOL should be ground types
-        assert!(store.get_ground_type_id(EMPTY).is_some());
-        assert!(store.get_ground_type_id(BOOL).is_some());
-
-        // Function type should not be ground
-        let bool_to_bool = AcornType::Function(FunctionType {
-            arg_types: vec![AcornType::Bool],
-            return_type: Box::new(AcornType::Bool),
-        });
-        let func_id = store.add_type_internal(&bool_to_bool);
-        assert!(store.get_ground_type_id(func_id).is_none());
-    }
-
-    #[test]
-    fn test_type_id_to_closed_type_ground() {
+    fn test_to_closed_type_ground() {
         let store = TypeStore::new();
 
         // Ground types should convert to simple ClosedType::ground()
-        let bool_closed = store.type_id_to_closed_type(BOOL);
+        let bool_closed = store.to_closed_type(&AcornType::Bool);
         assert!(bool_closed.is_ground());
-        let bool_ground = store.get_ground_type_id(BOOL).unwrap();
-        assert_eq!(bool_closed.as_ground(), Some(bool_ground));
+        assert_eq!(bool_closed.as_ground(), Some(GROUND_BOOL));
 
-        let empty_closed = store.type_id_to_closed_type(EMPTY);
+        let empty_closed = store.to_closed_type(&AcornType::Empty);
         assert!(empty_closed.is_ground());
-        let empty_ground = store.get_ground_type_id(EMPTY).unwrap();
-        assert_eq!(empty_closed.as_ground(), Some(empty_ground));
+        assert_eq!(empty_closed.as_ground(), Some(GROUND_EMPTY));
     }
 
     #[test]
-    fn test_type_id_to_closed_type_function() {
+    fn test_to_closed_type_function() {
         let mut store = TypeStore::new();
 
         // Create Bool -> Bool function type
@@ -570,19 +389,18 @@ mod tests {
             arg_types: vec![AcornType::Bool],
             return_type: Box::new(AcornType::Bool),
         });
-        let type_id = store.add_type_internal(&bool_to_bool);
+        store.add_type(&bool_to_bool);
 
-        let closed = store.type_id_to_closed_type(type_id);
+        let closed = store.to_closed_type(&bool_to_bool);
         assert!(closed.is_pi());
 
-        let bool_ground = store.get_ground_type_id(BOOL).unwrap();
         let (input, output) = closed.as_pi().unwrap();
-        assert_eq!(input.as_ground(), Some(bool_ground));
-        assert_eq!(output.as_ground(), Some(bool_ground));
+        assert_eq!(input.as_ground(), Some(GROUND_BOOL));
+        assert_eq!(output.as_ground(), Some(GROUND_BOOL));
     }
 
     #[test]
-    fn test_type_id_to_closed_type_curried_function() {
+    fn test_to_closed_type_curried_function() {
         let mut store = TypeStore::new();
 
         // Create (Bool, Bool) -> Bool function type
@@ -591,26 +409,24 @@ mod tests {
             arg_types: vec![AcornType::Bool, AcornType::Bool],
             return_type: Box::new(AcornType::Bool),
         });
-        let type_id = store.add_type_internal(&bool2_to_bool);
+        store.add_type(&bool2_to_bool);
 
-        let closed = store.type_id_to_closed_type(type_id);
+        let closed = store.to_closed_type(&bool2_to_bool);
         assert!(closed.is_pi());
-
-        let bool_ground = store.get_ground_type_id(BOOL).unwrap();
 
         // First Pi: Bool -> (Bool -> Bool)
         let (input1, rest) = closed.as_pi().unwrap();
-        assert_eq!(input1.as_ground(), Some(bool_ground));
+        assert_eq!(input1.as_ground(), Some(GROUND_BOOL));
         assert!(rest.is_pi());
 
         // Second Pi: Bool -> Bool
         let (input2, output) = rest.as_pi().unwrap();
-        assert_eq!(input2.as_ground(), Some(bool_ground));
-        assert_eq!(output.as_ground(), Some(bool_ground));
+        assert_eq!(input2.as_ground(), Some(GROUND_BOOL));
+        assert_eq!(output.as_ground(), Some(GROUND_BOOL));
     }
 
     #[test]
-    fn test_type_id_to_closed_type_parameterized_data() {
+    fn test_to_closed_type_parameterized_data() {
         use crate::elaborator::acorn_type::Datatype;
         use crate::module::ModuleId;
 
@@ -622,17 +438,15 @@ mod tests {
             name: "List".to_string(),
         };
         let list_bool = AcornType::Data(list_datatype.clone(), vec![AcornType::Bool]);
-        let list_bool_id = store.add_type_internal(&list_bool);
+        store.add_type(&list_bool);
 
         // The bare constructor should have been auto-registered
-        let bare_list = AcornType::Data(list_datatype, vec![]);
-        let list_id = store.get_type_id(&bare_list).expect("List should exist");
         let list_ground = store
-            .get_ground_type_id(list_id)
-            .expect("List should be ground");
+            .get_datatype_ground_id(&list_datatype)
+            .expect("List should be registered");
 
         // Get the ClosedType
-        let closed = store.type_id_to_closed_type(list_bool_id);
+        let closed = store.to_closed_type(&list_bool);
 
         // It should be an Application
         assert!(
@@ -655,11 +469,10 @@ mod tests {
         );
 
         // The argument should be Bool
-        let bool_ground = store.get_ground_type_id(BOOL).unwrap();
         assert!(
             matches!(
                 closed.components().get(2),
-                Some(TermComponent::Atom(Atom::Type(t))) if *t == bool_ground
+                Some(TermComponent::Atom(Atom::Type(t))) if *t == GROUND_BOOL
             ),
             "Argument should be Bool, got {:?}",
             closed.components().get(2)
@@ -667,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn test_type_id_to_closed_type_nested_parameterized_data() {
+    fn test_to_closed_type_nested_parameterized_data() {
         use crate::elaborator::acorn_type::Datatype;
         use crate::module::ModuleId;
 
@@ -680,21 +493,15 @@ mod tests {
         };
         let list_bool = AcornType::Data(list_datatype.clone(), vec![AcornType::Bool]);
         let list_list_bool = AcornType::Data(list_datatype.clone(), vec![list_bool.clone()]);
-        let list_list_bool_id = store.add_type_internal(&list_list_bool);
+        store.add_type(&list_list_bool);
 
-        // Verify all the types were properly registered
-        let bare_list = AcornType::Data(list_datatype, vec![]);
-        let list_id = store.get_type_id(&bare_list).expect("List should exist");
+        // Get GroundTypeId for List constructor
         let list_ground = store
-            .get_ground_type_id(list_id)
-            .expect("List should be ground");
-
-        let list_bool_id = store
-            .get_type_id(&list_bool)
-            .expect("List[Bool] should exist");
+            .get_datatype_ground_id(&list_datatype)
+            .expect("List should be registered");
 
         // Get the ClosedType for List[List[Bool]]
-        let closed = store.type_id_to_closed_type(list_list_bool_id);
+        let closed = store.to_closed_type(&list_list_bool);
 
         // It should be an Application
         assert!(
@@ -716,9 +523,8 @@ mod tests {
             closed.components().get(1)
         );
 
-        // The argument should be List[Bool], which is also an Application
         // Get the inner ClosedType for comparison
-        let inner_closed = store.type_id_to_closed_type(list_bool_id);
+        let inner_closed = store.to_closed_type(&list_bool);
 
         // The inner List[Bool] should also be an Application with List as head
         assert!(
@@ -778,9 +584,8 @@ mod tests {
         );
 
         // Fifth component: Bool (argument of inner application)
-        let bool_ground = store.get_ground_type_id(BOOL).unwrap();
         assert!(
-            matches!(components[4], TermComponent::Atom(Atom::Type(t)) if t == bool_ground),
+            matches!(components[4], TermComponent::Atom(Atom::Type(t)) if t == GROUND_BOOL),
             "Component 4 should be Bool, got {:?}",
             components[4]
         );
