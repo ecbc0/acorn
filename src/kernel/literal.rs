@@ -129,30 +129,6 @@ impl Literal {
         self.left.atom_count() + self.right.atom_count()
     }
 
-    /// Get the type of a variable if it appears in this literal.
-    pub fn var_type(&self, i: AtomId, context: &LocalContext) -> Option<TypeId> {
-        // Check if the variable appears in left or right term
-        if self.left.has_variable(i) || self.right.has_variable(i) {
-            context.get_var_type(i as usize)
-        } else {
-            None
-        }
-    }
-
-    /// Apply a function to both terms in this literal.
-    pub fn map(&self, f: &mut impl FnMut(&Term) -> Term) -> Literal {
-        Literal::new(self.positive, f(&self.left), f(&self.right))
-    }
-
-    /// Replace an atom with another atom in both terms.
-    pub fn replace_atom(&self, atom: &Atom, replacement: &Atom) -> Literal {
-        Literal {
-            positive: self.positive,
-            left: self.left.replace_atom(atom, replacement),
-            right: self.right.replace_atom(atom, replacement),
-        }
-    }
-
     /// Get the least unused variable index across both terms.
     pub fn least_unused_variable(&self) -> AtomId {
         self.left
@@ -163,11 +139,6 @@ impl Literal {
     /// Iterate over all atoms in both terms.
     pub fn iter_atoms(&self) -> impl Iterator<Item = &Atom> + '_ {
         self.left.iter_atoms().chain(self.right.iter_atoms())
-    }
-
-    /// Check if these two literals are negations of each other.
-    pub fn equals_negated(&self, other: &Literal) -> bool {
-        self.positive != other.positive && self.left == other.left && self.right == other.right
     }
 
     /// Get both term pairs for matching (for use in equality reasoning).

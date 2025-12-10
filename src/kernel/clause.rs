@@ -238,11 +238,6 @@ impl Clause {
         self.literals.iter().map(|x| x.atom_count()).sum()
     }
 
-    /// Count the number of positive literals.
-    pub fn num_positive_literals(&self) -> usize {
-        self.literals.iter().filter(|x| x.positive).count()
-    }
-
     /// Get the least unused variable index.
     pub fn least_unused_variable(&self) -> AtomId {
         self.literals
@@ -323,11 +318,6 @@ impl Clause {
             literals,
             context: context.clone(),
         }
-    }
-
-    /// Create a clause from a single literal.
-    pub fn from_literal(literal: Literal, context: &LocalContext) -> Clause {
-        Clause::new(vec![literal], context)
     }
 
     /// Validate that all literals have consistent types.
