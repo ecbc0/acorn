@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::elaborator::acorn_type::{AcornType, FunctionType, Typeclass};
+use crate::elaborator::acorn_type::{AcornType, Datatype, FunctionType, Typeclass};
 use crate::kernel::atom::Atom;
 use crate::kernel::closed_type::ClosedType;
 use crate::kernel::term::TermComponent;
@@ -20,6 +20,10 @@ pub struct TypeStore {
     /// For non-function types, stores None.
     /// Indexed by TypeId.
     function_info: Vec<Option<(TypeId, TypeId)>>,
+
+    /// Maps Datatype (bare data type with no params) to its GroundTypeId.
+    /// This allows direct lookup without going through TypeId.
+    datatype_to_ground_id: HashMap<Datatype, GroundTypeId>,
 
     /// typeclass_to_id[typeclass] is the TypeclassId
     typeclass_to_id: HashMap<Typeclass, TypeclassId>,
@@ -41,6 +45,7 @@ impl TypeStore {
             type_to_type_id: HashMap::new(),
             type_id_to_type: vec![],
             function_info: vec![],
+            datatype_to_ground_id: HashMap::new(),
             typeclass_to_id: HashMap::new(),
             id_to_typeclass: vec![],
             typeclass_extends: vec![],
@@ -123,6 +128,16 @@ impl TypeStore {
         self.function_info.push(func_info);
         let id = TypeId::new((self.type_id_to_type.len() - 1) as u16);
         self.type_to_type_id.insert(acorn_type.clone(), id);
+
+        // For bare data types (no params), also populate the Datatype -> GroundTypeId map
+        if let AcornType::Data(datatype, params) = acorn_type {
+            if params.is_empty() {
+                let ground_id = GroundTypeId::new(id.as_u16());
+                self.datatype_to_ground_id
+                    .insert(datatype.clone(), ground_id);
+            }
+        }
+
         id
     }
 
@@ -158,6 +173,12 @@ impl TypeStore {
         }
     }
 
+    /// Get the GroundTypeId for a bare Datatype (no type parameters).
+    /// Returns None if the datatype hasn't been registered.
+    pub fn get_datatype_ground_id(&self, datatype: &Datatype) -> Option<GroundTypeId> {
+        self.datatype_to_ground_id.get(datatype).copied()
+    }
+
     /// Convert a TypeId to a ClosedType.
     /// This converts the AcornType representation to the flattened ClosedType format.
     fn type_id_to_closed_type(&self, type_id: TypeId) -> ClosedType {
@@ -188,26 +209,24 @@ impl TypeStore {
             }
 
             AcornType::Data(datatype, params) if params.is_empty() => {
-                // Bare data type - must be registered
-                let type_id = self
-                    .type_to_type_id
-                    .get(acorn_type)
+                // Bare data type - use direct Datatype -> GroundTypeId lookup
+                let ground_id = self
+                    .datatype_to_ground_id
+                    .get(datatype)
                     .unwrap_or_else(|| panic!("Data type {} not registered", datatype.name));
-                let ground_id = GroundTypeId::new(type_id.as_u16());
-                ClosedType::ground(ground_id)
+                ClosedType::ground(*ground_id)
             }
 
             AcornType::Data(datatype, params) => {
                 // Parameterized data type: build Application
                 let mut components = Vec::new();
 
-                // Head is the bare constructor
-                let bare_constructor = AcornType::Data(datatype.clone(), vec![]);
-                let constructor_closed = self.to_closed_type(&bare_constructor);
-                let constructor_ground = constructor_closed
-                    .as_ground()
-                    .expect("Bare constructor should be ground");
-                components.push(TermComponent::Atom(Atom::Type(constructor_ground)));
+                // Head is the bare constructor - use direct Datatype -> GroundTypeId lookup
+                let constructor_ground = self
+                    .datatype_to_ground_id
+                    .get(datatype)
+                    .unwrap_or_else(|| panic!("Data type {} not registered", datatype.name));
+                components.push(TermComponent::Atom(Atom::Type(*constructor_ground)));
 
                 // Add each parameter's components
                 for param in params {
