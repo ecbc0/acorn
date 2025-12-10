@@ -295,28 +295,9 @@ impl<'a> TermRef<'a> {
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> ClosedType {
-        // Start with the head's closed type
-        let mut result_type = self.get_head_closed_type_with_context(local_context, kernel_context);
-
-        // Apply the type once per argument
-        for _ in self.iter_args() {
-            result_type = result_type
-                .apply()
-                .expect("Function type expected but not found during type application");
-        }
-
-        result_type
-    }
-
-    /// Get the head's ClosedType with context.
-    /// Uses LocalContext for variable types and KernelContext for symbol types.
-    pub fn get_head_closed_type_with_context(
-        &self,
-        local_context: &LocalContext,
-        kernel_context: &KernelContext,
-    ) -> ClosedType {
+        // Get the head's closed type
         let head = self.get_head_atom();
-        match head {
+        let mut result_type = match head {
             Atom::Variable(i) => local_context
                 .get_var_closed_type(*i as usize)
                 .cloned()
@@ -339,7 +320,16 @@ impl<'a> TermRef<'a> {
             Atom::Type(_) => {
                 panic!("Atom::Type should not appear in Term, only in ClosedType")
             }
+        };
+
+        // Apply the type once per argument
+        for _ in self.iter_args() {
+            result_type = result_type
+                .apply()
+                .expect("Function type expected but not found during type application");
         }
+
+        result_type
     }
 
     /// Check if this term contains a variable with the given index anywhere.
@@ -649,30 +639,6 @@ impl<'a> TermRef<'a> {
         }
 
         self.total_tiebreak(other)
-    }
-
-    /// Find atoms whose term (not just head) has a specific type.
-    /// Returns the head atom of each subterm that has the matching type.
-    pub fn atoms_for_type(
-        &self,
-        type_id: TypeId,
-        local_context: &LocalContext,
-        kernel_context: &KernelContext,
-    ) -> Vec<Atom> {
-        let mut result = Vec::new();
-
-        // Check if this term's type matches
-        let my_type = self.get_term_type_with_context(local_context, kernel_context);
-        if my_type == type_id {
-            result.push(*self.get_head_atom());
-        }
-
-        // Recursively check arguments
-        for arg in self.iter_args() {
-            result.append(&mut arg.atoms_for_type(type_id, local_context, kernel_context));
-        }
-
-        result
     }
 }
 
@@ -1018,17 +984,6 @@ impl Term {
             .get_closed_type_with_context(local_context, kernel_context)
     }
 
-    /// Get the head's ClosedType with context.
-    /// Uses LocalContext for variable types and KernelContext for symbol types.
-    pub fn get_head_closed_type_with_context(
-        &self,
-        local_context: &LocalContext,
-        kernel_context: &KernelContext,
-    ) -> ClosedType {
-        self.as_ref()
-            .get_head_closed_type_with_context(local_context, kernel_context)
-    }
-
     /// Check if this term is atomic (no arguments).
     pub fn is_atomic(&self) -> bool {
         self.as_ref().is_atomic()
@@ -1130,11 +1085,6 @@ impl Term {
         self.iter_args().map(|arg| arg.to_owned()).collect()
     }
 
-    /// Get a specific argument by index.
-    pub fn get_arg(&self, index: usize) -> Option<Term> {
-        self.iter_args().nth(index).map(|arg| arg.to_owned())
-    }
-
     /// Iterate over all atoms in the term.
     pub fn iter_atoms(&self) -> impl Iterator<Item = &Atom> + '_ {
         self.components.iter().filter_map(|component| {
@@ -1175,30 +1125,6 @@ impl Term {
     }
 
     /// Collects all variables in the term (recursively through arguments).
-    /// Returns (AtomId, ClosedType) pairs for each variable found.
-    /// Uses the local_context to look up variable types.
-    pub fn collect_vars_closed(&self, local_context: &LocalContext) -> Vec<(AtomId, ClosedType)> {
-        let mut result = Vec::new();
-        for atom in self.iter_atoms() {
-            if let Atom::Variable(id) = atom {
-                let closed_type = local_context
-                    .get_var_closed_type(*id as usize)
-                    .cloned()
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "Variable x{} not found in local context (context has {} types). Term: {}",
-                            id,
-                            local_context.len(),
-                            self
-                        )
-                    });
-                result.push((*id, closed_type));
-            }
-        }
-        result
-    }
-
-    /// Collects all variables in the term (recursively through arguments).
     /// Returns (AtomId, TypeId, ClosedType) triples for each variable found.
     /// Uses the local_context to look up variable types.
     pub fn collect_vars_full(
@@ -1231,15 +1157,6 @@ impl Term {
             }
         }
         result
-    }
-
-    /// Get the type of a variable if it appears in this term.
-    pub fn var_type(&self, index: AtomId, local_context: &LocalContext) -> Option<TypeId> {
-        if self.has_variable(index) {
-            local_context.get_var_type(index as usize)
-        } else {
-            None
-        }
     }
 
     /// Get the maximum variable index in this term, or None if there are no variables.
@@ -1458,69 +1375,6 @@ impl Term {
         }
     }
 
-    /// Find atoms whose term (not just head) has a specific type.
-    /// Returns the head atom of each subterm that has the matching type.
-    pub fn atoms_for_type(
-        &self,
-        type_id: TypeId,
-        local_context: &LocalContext,
-        kernel_context: &KernelContext,
-    ) -> Vec<Atom> {
-        self.as_ref()
-            .atoms_for_type(type_id, local_context, kernel_context)
-    }
-
-    /// Remap variables according to a mapping.
-    /// Replaces x_i with x_{var_map[i]}.
-    pub fn remap_variables(&self, var_map: &[AtomId]) -> Term {
-        let new_components = self
-            .components
-            .iter()
-            .map(|component| match component {
-                TermComponent::Atom(atom) => TermComponent::Atom(atom.remap_variables(var_map)),
-                c => *c,
-            })
-            .collect();
-        Term::from_components(new_components)
-    }
-
-    /// Build a term from a spine (function + arguments).
-    /// If the spine has one element, returns just that element.
-    /// Otherwise, treats the first element as the function and the rest as arguments.
-    /// Create a Term from a spine (head followed by arguments).
-    pub fn from_spine(mut spine: Vec<Term>) -> Term {
-        if spine.is_empty() {
-            panic!("from_spine called with empty spine");
-        }
-
-        if spine.len() == 1 {
-            // Just the function, no arguments
-            spine.pop().unwrap()
-        } else {
-            // Take the function (first element)
-            let func = spine.remove(0);
-            let func_args = func.args();
-
-            // Combine the function's existing args with the new ones
-            let mut all_args = func_args;
-            all_args.extend(spine);
-
-            // Build the new term
-            let mut components = vec![TermComponent::Atom(*func.get_head_atom())];
-            for arg in all_args {
-                if arg.components.len() == 1 {
-                    components.push(arg.components[0]);
-                } else {
-                    components.push(TermComponent::Application {
-                        span: arg.components.len() as u16 + 1,
-                    });
-                    components.extend(arg.components.iter().copied());
-                }
-            }
-            Term::from_components(components)
-        }
-    }
-
     /// Apply additional arguments to this term.
     /// Apply this term to a slice of arguments.
     pub fn apply(&self, args: &[Term]) -> Term {
@@ -1542,20 +1396,35 @@ impl Term {
         Term::from_components(components)
     }
 
-    /// Replace all arguments with new arguments.
-    pub fn replace_args(&self, new_args: Vec<Term>) -> Term {
-        let mut components = vec![TermComponent::Atom(*self.get_head_atom())];
-        for arg in new_args {
-            if arg.components.len() == 1 {
-                components.push(arg.components[0]);
-            } else {
-                components.push(TermComponent::Application {
-                    span: arg.components.len() as u16 + 1,
-                });
-                components.extend(arg.components.iter().copied());
-            }
+    /// Build a term from a spine (function + arguments).
+    /// If the spine has one element, returns just that element.
+    /// Otherwise, treats the first element as the function and the rest as arguments.
+    pub fn from_spine(mut spine: Vec<Term>) -> Term {
+        if spine.is_empty() {
+            panic!("from_spine called with empty spine");
         }
-        Term::from_components(components)
+
+        if spine.len() == 1 {
+            spine.pop().unwrap()
+        } else {
+            let func = spine.remove(0);
+            let func_args = func.args();
+            let mut all_args = func_args;
+            all_args.extend(spine);
+
+            let mut components = vec![TermComponent::Atom(*func.get_head_atom())];
+            for arg in all_args {
+                if arg.components.len() == 1 {
+                    components.push(arg.components[0]);
+                } else {
+                    components.push(TermComponent::Application {
+                        span: arg.components.len() as u16 + 1,
+                    });
+                    components.extend(arg.components.iter().copied());
+                }
+            }
+            Term::from_components(components)
+        }
     }
 
     /// Knuth-Bendix partial reduction ordering.
