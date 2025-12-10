@@ -8,12 +8,14 @@
 
 use qp_trie::{Entry, SubTrie, Trie};
 
-use super::aliases::{Clause, Literal, Term};
 use super::atom::{Atom as KernelAtom, AtomId};
+use super::clause::Clause;
 use super::closed_type::ClosedType;
 use super::kernel_context::KernelContext;
+use super::literal::Literal;
 use super::local_context::LocalContext;
 use super::symbol::Symbol;
+use super::term::Term;
 use super::term::{TermComponent, TermRef};
 use super::types::{GroundTypeId, TypeId, TypeclassId, BOOL, EMPTY};
 

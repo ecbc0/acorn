@@ -1,4 +1,3 @@
-pub mod aliases;
 pub mod atom;
 pub mod clause;
 pub mod clause_set;

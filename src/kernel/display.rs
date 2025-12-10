@@ -1,8 +1,10 @@
 use std::fmt;
 
-use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::Atom;
+use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::literal::Literal;
+use crate::kernel::term::Term;
 use crate::kernel::term::TermRef;
 
 struct DisplayAtom<'a> {

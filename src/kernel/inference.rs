@@ -2,8 +2,9 @@
 //! - Equality Resolution (ER)
 //! - Equality Factoring (EF)
 
-use crate::kernel::aliases::{Clause, Literal};
+use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::unifier::{Scope, Unifier};
 use crate::proof_step::{EFLiteralTrace, EFTermTrace};

@@ -1,5 +1,6 @@
-use crate::kernel::aliases::{Clause, Literal};
+use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::variable_map::VariableMap;
 
@@ -133,7 +134,7 @@ impl ClauseTrace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::aliases::Clause;
+    use crate::kernel::clause::Clause;
     use crate::kernel::types::BOOL;
 
     /// Check clause normalization with trace validation.

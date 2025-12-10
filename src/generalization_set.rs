@@ -2,8 +2,9 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::vec;
 
-use crate::kernel::aliases::{Clause, Literal};
+use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::pattern_tree::PatternTree;
 use crate::kernel::term::TermRef;

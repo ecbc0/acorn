@@ -1,10 +1,11 @@
 use std::collections::{BTreeMap, HashMap};
 
-use crate::kernel::aliases::{Literal, Term};
 use crate::kernel::atom::Atom;
 use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::term::Term;
 use crate::kernel::term::TermRef;
 use crate::kernel::types::GroundTypeId;
 

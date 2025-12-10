@@ -1,13 +1,15 @@
 use std::collections::{HashMap, HashSet};
 
 use super::rewrite_tree::{Rewrite, RewriteTree};
-use crate::kernel::aliases::{Clause, Literal, Term};
+use crate::kernel::clause::Clause;
 use crate::kernel::clause_set::TermId;
 use crate::kernel::fingerprint::FingerprintUnifier;
 use crate::kernel::inference;
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::pattern_tree::LiteralSet;
+use crate::kernel::term::Term;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::unifier::{Scope, Unifier};
 use crate::kernel::{StepId, TermGraph};

@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use crate::elaborator::acorn_type::AcornType;
 use crate::elaborator::acorn_value::{AcornValue, ConstantInstance};
 use crate::elaborator::names::ConstantName;
-use crate::kernel::aliases::Term;
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::closed_type::ClosedType;
 use crate::kernel::symbol::Symbol;
+use crate::kernel::term::Term;
 use crate::kernel::type_store::TypeStore;
 #[cfg(test)]
 use crate::kernel::types::GroundTypeId;

@@ -3,10 +3,12 @@ use std::fmt;
 
 use crate::elaborator::proposition::MonomorphicProposition;
 use crate::elaborator::source::{Source, SourceType};
-use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::Atom;
+use crate::kernel::clause::Clause;
 use crate::kernel::closed_type::ClosedType;
+use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::term::Term;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::types::{GroundTypeId, EMPTY};
 

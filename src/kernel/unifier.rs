@@ -1,9 +1,11 @@
-use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::{Atom, AtomId};
+use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 #[cfg(test)]
 use crate::kernel::symbol::Symbol;
+use crate::kernel::term::Term;
 use crate::kernel::term::TermRef;
 use crate::kernel::types::TypeId;
 use crate::kernel::variable_map::VariableMap;

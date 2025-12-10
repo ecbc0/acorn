@@ -1,10 +1,12 @@
 use super::features::Features;
 use super::score::Score;
 use super::scorer::{default_scorer, Scorer};
-use crate::kernel::aliases::{Clause, Literal, Term};
+use crate::kernel::clause::Clause;
 use crate::kernel::fingerprint::FingerprintSpecializer;
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::term::Term;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::variable_map::VariableMap;
 use crate::proof_step::ProofStep;

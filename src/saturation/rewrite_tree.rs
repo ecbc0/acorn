@@ -1,11 +1,12 @@
 // The RewriteTree stores a set of potential rewrites.
 // A given pattern can be rewritten to multiple different output terms.
 
-use crate::kernel::aliases::{Literal, Term};
 use crate::kernel::atom::AtomId;
 use crate::kernel::kernel_context::KernelContext;
+use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::pattern_tree::{replace_term_variables, term_key_prefix, PatternTree};
+use crate::kernel::term::Term;
 use crate::kernel::term::TermRef;
 
 // Each term can correspond with multiple RewriteValues.

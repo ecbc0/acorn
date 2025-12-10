@@ -13,7 +13,7 @@ use crate::elaborator::potential_value::PotentialValue;
 use crate::elaborator::source::Source;
 use crate::elaborator::stack::Stack;
 use crate::generalization_set::GeneralizationSet;
-use crate::kernel::aliases::Clause;
+use crate::kernel::clause::Clause;
 use crate::kernel::inference;
 use crate::kernel::kernel_context::KernelContext;
 #[cfg(test)]
