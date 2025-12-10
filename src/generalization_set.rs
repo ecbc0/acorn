@@ -163,12 +163,12 @@ pub fn sub_invariant_term_cmp(
         return None;
     }
 
-    // Compare the head types.
-    let head_type_cmp = left
-        .get_head_type_with_context(local_context, kernel_context)
-        .cmp(&right.get_head_type_with_context(local_context, kernel_context));
-    if head_type_cmp != Ordering::Equal {
-        return Some(head_type_cmp);
+    // Compare the term types.
+    let type_cmp = left
+        .get_closed_type_with_context(local_context, kernel_context)
+        .cmp(&right.get_closed_type_with_context(local_context, kernel_context));
+    if type_cmp != Ordering::Equal {
+        return Some(type_cmp);
     }
 
     // If heads are different atoms, we can compare them

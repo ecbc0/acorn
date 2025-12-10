@@ -261,6 +261,99 @@ impl TypeStore {
         result
     }
 
+    /// Convert a ClosedType back to an AcornType.
+    /// This is the inverse of `acorn_type_to_closed_type`.
+    pub fn closed_type_to_acorn_type(&self, closed_type: &ClosedType) -> AcornType {
+        self.closed_type_to_acorn_type_impl(closed_type.components(), 0)
+            .0
+    }
+
+    /// Implementation of closed_type_to_acorn_type that tracks position in components.
+    /// Returns the AcornType and the end position.
+    fn closed_type_to_acorn_type_impl(
+        &self,
+        components: &[TermComponent],
+        start: usize,
+    ) -> (AcornType, usize) {
+        match &components[start] {
+            TermComponent::Atom(Atom::Type(ground_id)) => {
+                // Ground type - look up in type_id_to_type
+                let type_id = TypeId::new(ground_id.as_u16());
+                (
+                    self.type_id_to_type[type_id.as_u16() as usize].clone(),
+                    start + 1,
+                )
+            }
+            TermComponent::Pi { span } => {
+                // Pi type: convert to function type
+                // Pi(A, Pi(B, C)) becomes (A, B) -> C
+                let span = *span as usize;
+                let mut arg_types = vec![];
+                let mut pos = start + 1;
+
+                // Parse argument types, uncurrying nested Pi types
+                loop {
+                    let (arg_type, next_pos) = self.closed_type_to_acorn_type_impl(components, pos);
+                    arg_types.push(arg_type);
+                    pos = next_pos;
+
+                    // Check if the output is another Pi (to uncurry) or the final return type
+                    if pos < start + span {
+                        if let TermComponent::Pi { .. } = components[pos] {
+                            // Continue uncurrying
+                            pos += 1; // Skip the nested Pi marker
+                            continue;
+                        }
+                    }
+                    break;
+                }
+
+                // The remaining part is the return type
+                let (return_type, end_pos) = self.closed_type_to_acorn_type_impl(components, pos);
+
+                let ft = FunctionType {
+                    arg_types,
+                    return_type: Box::new(return_type),
+                };
+                (AcornType::Function(ft), end_pos)
+            }
+            TermComponent::Application { span } => {
+                // Type application like List[Int]
+                // [Application{span}, Atom(Type(List)), ...]
+                let span = *span as usize;
+                let mut pos = start + 1;
+
+                // First component is the base type (must be a ground type)
+                let (base_type, next_pos) = self.closed_type_to_acorn_type_impl(components, pos);
+                pos = next_pos;
+
+                // Extract the datatype from base_type
+                let datatype = match &base_type {
+                    AcornType::Data(dt, params) if params.is_empty() => dt.clone(),
+                    _ => panic!(
+                        "Expected ground data type in type application, got {:?}",
+                        base_type
+                    ),
+                };
+
+                // Collect parameter types
+                let mut params = vec![];
+                while pos < start + span {
+                    let (param_type, next_pos) =
+                        self.closed_type_to_acorn_type_impl(components, pos);
+                    params.push(param_type);
+                    pos = next_pos;
+                }
+
+                (AcornType::Data(datatype, params), start + span)
+            }
+            other => panic!(
+                "Unexpected component in ClosedType: {:?} at position {}",
+                other, start
+            ),
+        }
+    }
+
     /// Get the id for a typeclass if it exists, otherwise return an error.
     pub fn get_typeclass_id(&self, typeclass: &Typeclass) -> Result<TypeclassId, String> {
         self.typeclass_to_id

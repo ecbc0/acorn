@@ -29,7 +29,7 @@ impl Clause {
         for (i, lit) in literals.iter().enumerate() {
             for atom in lit.iter_atoms() {
                 if let crate::kernel::atom::Atom::Variable(var_id) = atom {
-                    if context.get_var_type(*var_id as usize).is_none() {
+                    if context.get_var_closed_type(*var_id as usize).is_none() {
                         panic!(
                             "Clause::new: literal {} has variable x{} but context has no type for it. Context len: {}",
                             i, var_id, context.len()
@@ -292,7 +292,7 @@ impl Clause {
         for (i, lit) in literals.iter().enumerate() {
             for atom in lit.iter_atoms() {
                 if let crate::kernel::atom::Atom::Variable(var_id) = atom {
-                    if context.get_var_type(*var_id as usize).is_none() {
+                    if context.get_var_closed_type(*var_id as usize).is_none() {
                         panic!(
                             "Clause::from_literals_unnormalized: literal {} has variable x{} but context has no type for it. Context len: {}",
                             i, var_id, context.len()

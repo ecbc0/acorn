@@ -849,9 +849,9 @@ mod tests {
         for lit in &rewrite_step.clause.literals {
             for atom in lit.iter_atoms() {
                 if let Atom::Variable(var_id) = atom {
-                    let var_type = clause_context.get_var_type(*var_id as usize);
+                    let var_closed_type = clause_context.get_var_closed_type(*var_id as usize);
                     assert!(
-                        var_type.is_some(),
+                        var_closed_type.is_some(),
                         "Variable x{} in clause has no type in context (context len: {}). \
                          This indicates that from_literal_traced was called with the wrong context.",
                         var_id,

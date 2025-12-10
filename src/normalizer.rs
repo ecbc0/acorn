@@ -10,6 +10,7 @@ use crate::elaborator::names::ConstantName;
 use crate::elaborator::source::{Source, SourceType};
 use crate::kernel::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
 use crate::kernel::clause::Clause;
+use crate::kernel::closed_type::ClosedType;
 use crate::kernel::cnf::CNF;
 use crate::kernel::extended_term::ExtendedTerm;
 use crate::kernel::kernel_context::KernelContext;
@@ -1293,9 +1294,11 @@ impl NormalizerView<'_> {
                 use crate::kernel::atom::Atom;
 
                 // Determine the type of the result (should be same as then_term and else_term)
-                let result_type_id =
-                    then_term.get_term_type_with_context(local_context, self.kernel_context());
-                let result_type = self.type_store().get_type(result_type_id).clone();
+                let result_closed_type =
+                    then_term.get_closed_type_with_context(local_context, self.kernel_context());
+                let result_type = self
+                    .type_store()
+                    .closed_type_to_acorn_type(&result_closed_type);
 
                 // Create a new synthetic atom with the appropriate function type
                 // based on free variables in the if-expression
@@ -1724,11 +1727,14 @@ impl Normalizer {
     /// to constants.
     fn denormalize_atom(
         &self,
-        atom_type: TypeId,
+        atom_closed_type: &ClosedType,
         atom: &Atom,
-        arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
+        arbitrary_names: Option<&HashMap<ClosedType, ConstantName>>,
     ) -> AcornValue {
-        let acorn_type = self.kernel_context.type_store.get_type(atom_type).clone();
+        let acorn_type = self
+            .kernel_context
+            .type_store
+            .closed_type_to_acorn_type(atom_closed_type);
         match atom {
             Atom::True => AcornValue::Bool(true),
             Atom::Symbol(Symbol::GlobalConstant(i)) => {
@@ -1752,7 +1758,7 @@ impl Normalizer {
             }
             Atom::Variable(i) => {
                 if let Some(map) = arbitrary_names {
-                    if let Some(name) = map.get(&atom_type) {
+                    if let Some(name) = map.get(atom_closed_type) {
                         return AcornValue::constant(name.clone(), vec![], acorn_type);
                     }
                 }
@@ -1775,13 +1781,31 @@ impl Normalizer {
         &self,
         term: &Term,
         local_context: &LocalContext,
-        arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
+        arbitrary_names: Option<&HashMap<ClosedType, ConstantName>>,
     ) -> AcornValue {
-        let head = self.denormalize_atom(
-            term.get_head_type_with_context(local_context, self.kernel_context()),
-            &term.get_head_atom(),
-            arbitrary_names,
-        );
+        // Get the closed type of the head atom
+        let head_closed_type = match term.get_head_atom() {
+            Atom::Variable(i) => local_context
+                .get_var_closed_type(*i as usize)
+                .cloned()
+                .expect("Variable should have type in LocalContext"),
+            Atom::Symbol(symbol) => self
+                .kernel_context
+                .symbol_table
+                .get_closed_type(*symbol)
+                .clone(),
+            Atom::True => {
+                use crate::kernel::types::BOOL;
+                let bool_ground = self
+                    .kernel_context
+                    .type_store
+                    .get_ground_type_id(BOOL)
+                    .expect("BOOL should be a ground type");
+                ClosedType::ground(bool_ground)
+            }
+            Atom::Type(_) => panic!("Atom::Type should not appear in Term"),
+        };
+        let head = self.denormalize_atom(&head_closed_type, &term.get_head_atom(), arbitrary_names);
         let args: Vec<_> = term
             .args()
             .iter()
@@ -1796,7 +1820,7 @@ impl Normalizer {
         &self,
         literal: &Literal,
         local_context: &LocalContext,
-        arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
+        arbitrary_names: Option<&HashMap<ClosedType, ConstantName>>,
     ) -> AcornValue {
         let left = self.denormalize_term(&literal.left, local_context, arbitrary_names);
         if literal.right.is_true() {
@@ -1822,7 +1846,7 @@ impl Normalizer {
     pub fn denormalize(
         &self,
         clause: &Clause,
-        arbitrary_names: Option<&HashMap<TypeId, ConstantName>>,
+        arbitrary_names: Option<&HashMap<ClosedType, ConstantName>>,
     ) -> AcornValue {
         if clause.literals.is_empty() {
             return AcornValue::Bool(false);
@@ -1860,22 +1884,28 @@ impl Normalizer {
         // Build var_types for the forall quantifier, but exclude any variables that
         // were converted to arbitrary constants (their types are in arbitrary_names).
         let var_types: Vec<AcornType> = local_context
-            .var_types
+            .get_var_closed_types()
             .iter()
             .take(num_vars)
-            .filter(|type_id| {
+            .filter(|closed_type| {
                 // Keep this variable if its type is NOT in arbitrary_names
                 arbitrary_names
-                    .map(|names| !names.contains_key(type_id))
+                    .map(|names| !names.contains_key(*closed_type))
                     .unwrap_or(true)
             })
-            .map(|type_id| self.kernel_context.type_store.get_type(*type_id).clone())
+            .map(|closed_type| {
+                self.kernel_context
+                    .type_store
+                    .closed_type_to_acorn_type(closed_type)
+            })
             .collect();
         AcornValue::forall(var_types, disjunction)
     }
 
-    pub fn denormalize_type(&self, type_id: TypeId) -> AcornType {
-        self.kernel_context.type_store.get_type(type_id).clone()
+    pub fn denormalize_type(&self, closed_type: ClosedType) -> AcornType {
+        self.kernel_context
+            .type_store
+            .closed_type_to_acorn_type(&closed_type)
     }
 
     /// Given a list of atom ids for synthetic atoms that we need to define, find a set

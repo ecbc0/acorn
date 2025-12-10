@@ -224,13 +224,6 @@ impl<'a> Unifier<'a> {
             }
         }
 
-        // Extract term's head type upfront before any mutations
-        let kernel_context = self.kernel_context;
-        let term_head_type = {
-            let local_context = self.get_local_context(scope);
-            term.get_head_type_with_context(local_context, kernel_context)
-        };
-
         // First figure out what the head expands to, if it's a variable.
         // We track the head atom and any args from the expansion separately.
         let (head, mut args) = match term.get_head_atom() {
@@ -239,9 +232,13 @@ impl<'a> Unifier<'a> {
                     // We need to create a new variable to send this one to.
                     let var_id = self.maps[Scope::OUTPUT.get()].len() as AtomId;
                     self.maps[Scope::OUTPUT.get()].push_none();
-                    // Track the type in output_context
+                    // Track the type in output_context - get the variable's type directly from LocalContext
+                    let var_type_id = self
+                        .get_local_context(scope)
+                        .get_var_type(*i as usize)
+                        .expect("Variable should have type in LocalContext");
                     self.output_context
-                        .push_var_type_with_store(term_head_type, &self.kernel_context.type_store);
+                        .push_var_type_with_store(var_type_id, &self.kernel_context.type_store);
                     let new_var = Term::new(Atom::Variable(var_id), vec![]);
                     self.set_mapping(scope, *i, new_var);
                 }
@@ -371,14 +368,7 @@ impl<'a> Unifier<'a> {
     }
 
     // Returns whether they can be unified.
-    fn unify_atoms(
-        &mut self,
-        _atom_type: TypeId,
-        scope1: Scope,
-        atom1: &Atom,
-        scope2: Scope,
-        atom2: &Atom,
-    ) -> bool {
+    fn unify_atoms(&mut self, scope1: Scope, atom1: &Atom, scope2: Scope, atom2: &Atom) -> bool {
         if let Atom::Variable(i) = atom1 {
             return self.unify_variable(scope1, *i, scope2, &Term::atom(*atom2));
         }
@@ -495,9 +485,9 @@ impl<'a> Unifier<'a> {
         let local1 = self.get_local_context(scope1);
         let local2 = self.get_local_context(scope2);
 
-        // These checks mean we won't unify higher-order functions whose head types don't match.
-        if term1.get_head_type_with_context(local1, kc)
-            != term2.get_head_type_with_context(local2, kc)
+        // These checks mean we won't unify higher-order functions whose types don't match.
+        if term1.get_closed_type_with_context(local1, kc)
+            != term2.get_closed_type_with_context(local2, kc)
         {
             return false;
         }
@@ -505,13 +495,7 @@ impl<'a> Unifier<'a> {
             return false;
         }
 
-        if !self.unify_atoms(
-            term1.get_head_type_with_context(local1, kc),
-            scope1,
-            term1.get_head_atom(),
-            scope2,
-            term2.get_head_atom(),
-        ) {
+        if !self.unify_atoms(scope1, term1.get_head_atom(), scope2, term2.get_head_atom()) {
             return false;
         }
 

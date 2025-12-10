@@ -10,10 +10,10 @@ use crate::elaborator::names::{ConstantName, DefinedName};
 use crate::elaborator::type_unifier::TypeclassRegistry;
 use crate::kernel::atom::AtomId;
 use crate::kernel::clause::Clause;
+use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::Term;
-use crate::kernel::types::TypeId;
 use crate::kernel::variable_map::VariableMap;
 use crate::module::ModuleId;
 use crate::normalizer::Normalizer;
@@ -43,7 +43,7 @@ pub struct CodeGenerator<'a> {
     synthetic_names: HashMap<AtomId, String>,
 
     /// The names for whenever we need an arbitrary member of a type.
-    arbitrary_names: HashMap<TypeId, ConstantName>,
+    arbitrary_names: HashMap<ClosedType, ConstantName>,
 }
 
 impl CodeGenerator<'_> {
@@ -352,20 +352,24 @@ impl CodeGenerator<'_> {
         &mut self,
         term: &Term,
         local_context: &LocalContext,
-        kernel_context: &KernelContext,
+        _kernel_context: &KernelContext,
     ) {
-        if term.is_variable() {
-            // For a variable term, the head_type is the type of that variable.
-            let type_id = term.get_head_type_with_context(local_context, kernel_context);
-            if !self.arbitrary_names.contains_key(&type_id) {
+        use crate::kernel::atom::Atom;
+        if let Atom::Variable(var_id) = term.get_head_atom() {
+            // For a variable term, get its type from the local context.
+            let closed_type = local_context
+                .get_var_closed_type(*var_id as usize)
+                .cloned()
+                .expect("Variable should have type in LocalContext");
+            if !self.arbitrary_names.contains_key(&closed_type) {
                 // Generate a name for this arbitrary value
                 let name = self.bindings.next_indexed_var('s', &mut self.next_s);
                 let cname = ConstantName::Unqualified(self.bindings.module_id(), name);
-                self.arbitrary_names.insert(type_id, cname);
+                self.arbitrary_names.insert(closed_type, cname);
             }
         }
         for arg in term.args() {
-            self.add_arbitrary_for_term(&arg, local_context, kernel_context);
+            self.add_arbitrary_for_term(&arg, local_context, _kernel_context);
         }
     }
 
