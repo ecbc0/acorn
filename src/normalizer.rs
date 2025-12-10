@@ -1456,8 +1456,8 @@ impl NormalizerView<'_> {
                 // Use next_var_id to assign unique variable IDs
                 let mut args = vec![];
                 for arg_type in arg_types {
+                    let closed_type = self.type_store().get_closed_type(arg_type)?;
                     let type_id = self.type_store().get_type_id(arg_type)?;
-                    let closed_type = self.type_store().type_id_to_closed_type(type_id);
                     let var_id = *next_var_id;
                     *next_var_id += 1;
                     // Add the variable type to the context

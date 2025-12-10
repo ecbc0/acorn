@@ -166,6 +166,13 @@ impl TypeStore {
         self.acorn_type_to_closed_type(acorn_type, type_id)
     }
 
+    /// Get the ClosedType for an AcornType.
+    /// Returns an error if the type hasn't been registered.
+    pub fn get_closed_type(&self, acorn_type: &AcornType) -> Result<ClosedType, String> {
+        let type_id = self.get_type_id(acorn_type)?;
+        Ok(self.type_id_to_closed_type(type_id))
+    }
+
     /// Convert an AcornType to a ClosedType, given the TypeId for this type.
     /// The type_id is passed so ground types can embed it directly.
     fn acorn_type_to_closed_type(&self, acorn_type: &AcornType, type_id: TypeId) -> ClosedType {
