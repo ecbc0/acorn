@@ -1205,7 +1205,6 @@ where
 mod tests {
     use super::*;
     use crate::kernel::type_store::TypeStore;
-    use crate::kernel::types::BOOL;
 
     #[test]
     fn test_edge_roundtrip() {
@@ -1293,8 +1292,7 @@ mod tests {
     fn test_key_from_term_atomic() {
         // Test encoding of an atomic term c0 : Bool
         let local_context = LocalContext::new_with_bools(2);
-        let kernel_context =
-            KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
+        let kernel_context = KernelContext::test_with_bool_scoped_constants(5);
 
         let term = Term::parse("c0");
         let key = key_from_term(&term, &local_context, &kernel_context);
@@ -1310,8 +1308,7 @@ mod tests {
     fn test_key_from_literal() {
         // Test encoding of x0 = c0
         let local_context = LocalContext::new_with_bools(2);
-        let kernel_context =
-            KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
+        let kernel_context = KernelContext::test_with_bool_scoped_constants(5);
 
         let literal = Literal::parse("x0 = c0");
         let key = key_from_literal(&literal, &local_context, &kernel_context);
@@ -1329,8 +1326,7 @@ mod tests {
     fn test_pattern_tree_insert_term() {
         // Test inserting and finding atomic terms
         let local_context = LocalContext::new_with_bools(2);
-        let kernel_context =
-            KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
+        let kernel_context = KernelContext::test_with_bool_scoped_constants(5);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
@@ -1346,8 +1342,7 @@ mod tests {
     fn test_pattern_tree_insert_pair() {
         // Test inserting term pairs
         let local_context = LocalContext::new_with_bools(2);
-        let kernel_context =
-            KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
+        let kernel_context = KernelContext::test_with_bool_scoped_constants(5);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
@@ -1373,8 +1368,7 @@ mod tests {
     fn test_pattern_tree_variable_matching() {
         // Test that patterns with variables match concrete terms
         let local_context = LocalContext::new_with_bools(2);
-        let kernel_context =
-            KernelContext::test_with_scoped_constant_types(&[BOOL, BOOL, BOOL, BOOL, BOOL]);
+        let kernel_context = KernelContext::test_with_bool_scoped_constants(5);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 

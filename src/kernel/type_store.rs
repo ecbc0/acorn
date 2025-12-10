@@ -173,6 +173,81 @@ impl TypeStore {
         Ok(self.type_id_to_closed_type(type_id))
     }
 
+    /// Convert an AcornType to a ClosedType.
+    /// Only ground types (Bool, Empty, bare data types, type variables) need to be registered.
+    /// Function types and parameterized data types are constructed on the fly.
+    pub fn to_closed_type(&self, acorn_type: &AcornType) -> ClosedType {
+        match acorn_type {
+            // Ground types: look up their GroundTypeId
+            AcornType::Empty | AcornType::Bool => {
+                let type_id = self
+                    .type_to_type_id
+                    .get(acorn_type)
+                    .expect("Empty/Bool should always be registered");
+                let ground_id = GroundTypeId::new(type_id.as_u16());
+                ClosedType::ground(ground_id)
+            }
+
+            AcornType::Data(datatype, params) if params.is_empty() => {
+                // Bare data type - must be registered
+                let type_id = self
+                    .type_to_type_id
+                    .get(acorn_type)
+                    .unwrap_or_else(|| panic!("Data type {} not registered", datatype.name));
+                let ground_id = GroundTypeId::new(type_id.as_u16());
+                ClosedType::ground(ground_id)
+            }
+
+            AcornType::Data(datatype, params) => {
+                // Parameterized data type: build Application
+                let mut components = Vec::new();
+
+                // Head is the bare constructor
+                let bare_constructor = AcornType::Data(datatype.clone(), vec![]);
+                let constructor_closed = self.to_closed_type(&bare_constructor);
+                let constructor_ground = constructor_closed
+                    .as_ground()
+                    .expect("Bare constructor should be ground");
+                components.push(TermComponent::Atom(Atom::Type(constructor_ground)));
+
+                // Add each parameter's components
+                for param in params {
+                    let param_closed = self.to_closed_type(param);
+                    components.extend(param_closed.components().iter().copied());
+                }
+
+                // Build Application with correct span
+                let total_span = components.len() as u16 + 1;
+                let mut result = vec![TermComponent::Application { span: total_span }];
+                result.extend(components);
+                ClosedType::from_components(result)
+            }
+
+            AcornType::Function(ft) => {
+                // Function type: build nested Pi types (curried)
+                let mut result = self.to_closed_type(&ft.return_type);
+
+                // Build Pi types from right to left
+                for arg_type in ft.arg_types.iter().rev() {
+                    let arg_closed = self.to_closed_type(arg_type);
+                    result = ClosedType::pi(arg_closed, result);
+                }
+
+                result
+            }
+
+            AcornType::Variable(_) | AcornType::Arbitrary(_) => {
+                // Type variables must be registered
+                let type_id = self
+                    .type_to_type_id
+                    .get(acorn_type)
+                    .unwrap_or_else(|| panic!("Type variable {:?} not registered", acorn_type));
+                let ground_id = GroundTypeId::new(type_id.as_u16());
+                ClosedType::ground(ground_id)
+            }
+        }
+    }
+
     /// Convert an AcornType to a ClosedType, given the TypeId for this type.
     /// The type_id is passed so ground types can embed it directly.
     fn acorn_type_to_closed_type(&self, acorn_type: &AcornType, type_id: TypeId) -> ClosedType {

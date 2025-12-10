@@ -135,7 +135,7 @@ impl ClauseTrace {
 mod tests {
     use super::*;
     use crate::kernel::clause::Clause;
-    use crate::kernel::types::BOOL;
+    use crate::kernel::closed_type::ClosedType;
 
     /// Check clause normalization with trace validation.
     /// context provides the types of variables in the clause.
@@ -157,15 +157,17 @@ mod tests {
     #[test]
     fn test_clause_normalization_with_equality() {
         // "c0 = c1" - equality between two constants of type BOOL
-        let kernel_context = KernelContext::test_with_constant_types(&[BOOL; 10], &[BOOL; 10]);
+        let bool_types: Vec<_> = (0..10).map(|_| ClosedType::bool()).collect();
+        let kernel_context = KernelContext::test_with_constant_types(&bool_types, &bool_types);
         check_clause_normalization("c0 = c1", LocalContext::empty_ref(), &kernel_context);
     }
 
     #[test]
     fn test_clause_normalization_with_variable_equality() {
         // "x0 = x1" - equality between two BOOL variables
-        let kernel_context = KernelContext::test_with_constant_types(&[BOOL; 10], &[BOOL; 10]);
-        let context = LocalContext::with_types(vec![BOOL, BOOL], &kernel_context.type_store);
+        let bool_types: Vec<_> = (0..10).map(|_| ClosedType::bool()).collect();
+        let kernel_context = KernelContext::test_with_constant_types(&bool_types, &bool_types);
+        let context = LocalContext::new_with_bools(2);
         check_clause_normalization("x0 = x1", &context, &kernel_context);
     }
 }
