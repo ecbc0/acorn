@@ -1,4 +1,6 @@
-use std::collections::{BTreeSet, HashMap};
+#[cfg(test)]
+use std::collections::BTreeSet;
+use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
 
@@ -188,6 +190,7 @@ impl CompoundKey {
         answer
     }
 
+    #[cfg(test)]
     fn touches_group(&self, group: GroupId) -> bool {
         if self.head == group {
             return true;
@@ -314,7 +317,8 @@ impl TermGraph {
     }
 
     /// Returns None if this term isn't in the graph.
-    pub fn get_term_id(&self, term: &Term) -> Option<TermId> {
+    #[cfg(test)]
+    fn get_term_id(&self, term: &Term) -> Option<TermId> {
         // Look up the head
         let head_key = Decomposition::Atomic(term.get_head_atom().clone());
         let head_id = *self.decompositions.get(&head_key)?;
@@ -333,7 +337,7 @@ impl TermGraph {
         self.decompositions.get(&compound_key).copied()
     }
 
-    pub fn get_term(&self, term_id: TermId) -> &Term {
+    fn get_term(&self, term_id: TermId) -> &Term {
         &self.terms[term_id.get() as usize].term
     }
 
@@ -347,7 +351,8 @@ impl TermGraph {
     }
 
     /// Whether there is a contradiction with trace information.
-    pub fn has_contradiction_trace(&self) -> bool {
+    #[cfg(test)]
+    fn has_contradiction_trace(&self) -> bool {
         self.contradiction_info.is_some()
     }
 
@@ -1213,6 +1218,7 @@ impl TermGraph {
         }
     }
 
+    #[cfg(test)]
     fn get_step_ids_helper(&self, term1: TermId, term2: TermId, output: &mut BTreeSet<StepId>) {
         if term1 == term2 {
             return;
@@ -1238,13 +1244,15 @@ impl TermGraph {
 
     /// Extract a list of steps ids that we used to prove that these two terms are equal.
     /// This does deduplicate.
-    pub fn get_step_ids(&self, term1: TermId, term2: TermId) -> Vec<usize> {
+    #[cfg(test)]
+    fn get_step_ids(&self, term1: TermId, term2: TermId) -> Vec<usize> {
         let mut answer = BTreeSet::new();
         self.get_step_ids_helper(term1, term2, &mut answer);
         answer.into_iter().map(|id| id.get()).collect()
     }
 
-    pub fn show_graph(&self) {
+    #[cfg(test)]
+    fn show_graph(&self) {
         println!("terms:");
         for (i, term_info) in self.terms.iter().enumerate() {
             println!("term {}, group {}: {}", i, term_info.group, term_info.term);
@@ -1259,7 +1267,7 @@ impl TermGraph {
 
     /// Follows remapping chains to find the current group id.
     /// Updates intermediate remaps to point directly to the final destination for efficiency.
-    pub fn update_group_id(&mut self, group_id: GroupId) -> GroupId {
+    fn update_group_id(&mut self, group_id: GroupId) -> GroupId {
         // First, follow the chain to find the final destination
         let mut current = group_id;
         let mut chain = Vec::new();
@@ -1291,7 +1299,8 @@ impl TermGraph {
     /// Normalizes a ClauseId by updating all group IDs to their current values.
     /// Takes a ClauseId (from clause_set) which contains LiteralIds.
     /// Returns a Normalization which can be True (tautology), False (contradiction), or Clause.
-    pub fn normalize(&mut self, clause_id: ClauseId) -> Normalization {
+    #[cfg(test)]
+    fn normalize(&mut self, clause_id: ClauseId) -> Normalization {
         // Get the literals from the ClauseId
         let literals = clause_id.literals();
 
@@ -1309,6 +1318,7 @@ impl TermGraph {
     }
 
     // Checks that the group id has not been remapped
+    #[cfg(test)]
     fn validate_group_id(&self, group_id: GroupId) -> &GroupInfo {
         assert!(group_id < GroupId(self.groups.len() as u32));
         match &self.groups[group_id.get() as usize] {
@@ -1322,7 +1332,8 @@ impl TermGraph {
     // Checks that this clause contains a term from this group.
     // It's also okay if the clause has ceased to exist, because we clean up lazily.
     /// Panics if it finds a consistency problem.
-    pub fn validate(&self) {
+    #[cfg(test)]
+    fn validate(&self) {
         if !self.has_contradiction {
             assert!(self.pending.is_empty());
         }
