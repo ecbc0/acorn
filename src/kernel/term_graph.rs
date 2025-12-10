@@ -8,7 +8,7 @@ use crate::kernel::clause::Clause;
 use crate::kernel::clause_set::{ClauseId, ClauseSet, GroupId, LiteralId, Normalization, TermId};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
-use crate::kernel::term::Term;
+use crate::kernel::term::{Decomposition as TermDecomposition, Term};
 
 /// Every time we set two terms equal or not equal, that action is tagged with a StepId.
 /// The term graph uses it to provide a history of the reasoning that led to a conclusion.
@@ -314,22 +314,18 @@ impl TermGraph {
     /// Returns None if this term isn't in the graph.
     #[cfg(test)]
     fn get_term_id(&self, term: &Term) -> Option<TermId> {
-        // Look up the head
-        let head_key = Decomposition::Atomic(term.get_head_atom().clone());
-        let head_id = *self.decompositions.get(&head_key)?;
-
-        if !term.has_args() {
-            return Some(head_id);
+        match term.as_ref().decompose() {
+            TermDecomposition::Atom(atom) => {
+                let key = Decomposition::Atomic(atom.clone());
+                self.decompositions.get(&key).copied()
+            }
+            TermDecomposition::Application(func, arg) => {
+                let func_id = self.get_term_id(&func.to_owned())?;
+                let arg_id = self.get_term_id(&arg.to_owned())?;
+                let key = Decomposition::Application(func_id, arg_id);
+                self.decompositions.get(&key).copied()
+            }
         }
-
-        // For curried application, we need to fold left through the args
-        let mut current = head_id;
-        for arg in term.args() {
-            let arg_id = self.get_term_id(&arg)?;
-            let app_key = Decomposition::Application(current, arg_id);
-            current = *self.decompositions.get(&app_key)?;
-        }
-        Some(current)
     }
 
     fn get_term(&self, term_id: TermId) -> &Term {
@@ -372,11 +368,11 @@ impl TermGraph {
         }
     }
 
-    // Inserts the head of the provided term as an atom.
+    // Inserts an atom into the graph.
     // If it's already in the graph, return the existing term id.
     // Otherwise, make a new term id and give it a new group.
-    fn insert_head(&mut self, term: &Term, _kernel_context: &KernelContext) -> TermId {
-        let key = Decomposition::Atomic(term.get_head_atom().clone());
+    fn insert_atom(&mut self, atom: &Atom) -> TermId {
+        let key = Decomposition::Atomic(atom.clone());
         if let Some(&id) = self.decompositions.get(&key) {
             return id;
         }
@@ -385,9 +381,9 @@ impl TermGraph {
         let term_id = TermId(self.terms.len() as u32);
         let group_id = GroupId(self.groups.len() as u32);
 
-        let head = Term::new(*term.get_head_atom(), vec![]);
+        let term = Term::new(*atom, vec![]);
         let term_info = TermInfo {
-            term: head,
+            term,
             group: group_id,
             decomp: key.clone(),
             adjacent: vec![],
@@ -489,20 +485,16 @@ impl TermGraph {
     /// Makes a new term, group, and application if necessary.
     /// Uses curried application: f(a, b, c) becomes (((f a) b) c)
     pub fn insert_term(&mut self, term: &Term, kernel_context: &KernelContext) -> TermId {
-        let head_term_id = self.insert_head(term, kernel_context);
-        if !term.has_args() {
-            return head_term_id;
-        }
-
-        // Curried application: fold left over arguments
-        let mut current = head_term_id;
-        for arg in term.args() {
-            let arg_id = self.insert_term(&arg, kernel_context);
-            current = self.insert_application(current, arg_id);
-        }
-
+        let term_id = match term.as_ref().decompose() {
+            TermDecomposition::Atom(atom) => self.insert_atom(atom),
+            TermDecomposition::Application(func, arg) => {
+                let func_id = self.insert_term(&func.to_owned(), kernel_context);
+                let arg_id = self.insert_term(&arg.to_owned(), kernel_context);
+                self.insert_application(func_id, arg_id)
+            }
+        };
         self.process_pending();
-        current
+        term_id
     }
 
     /// Inserts a clause into the graph.
