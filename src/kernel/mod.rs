@@ -11,7 +11,6 @@ pub mod inference;
 pub mod kernel_context;
 pub mod literal;
 pub mod local_context;
-pub mod new_term_graph;
 pub mod pattern_tree;
 pub mod symbol;
 pub mod symbol_table;
@@ -23,16 +22,4 @@ pub mod types;
 pub mod unifier;
 pub mod variable_map;
 
-// Re-export the appropriate TermGraph implementation based on feature flag.
-// StepId, RewriteSource, and RewriteStep are shared between both implementations.
-#[cfg(not(feature = "new_term_graph"))]
-pub use term_graph::{
-    OldTermGraph as TermGraph, OldTermGraphContradiction as TermGraphContradiction, RewriteSource,
-    RewriteStep, StepId,
-};
-
-#[cfg(feature = "new_term_graph")]
-pub use new_term_graph::{
-    NewTermGraph as TermGraph, NewTermGraphContradiction as TermGraphContradiction, RewriteSource,
-    RewriteStep, StepId,
-};
+pub use term_graph::{RewriteSource, RewriteStep, StepId, TermGraph, TermGraphContradiction};

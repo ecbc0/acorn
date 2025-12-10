@@ -2,7 +2,6 @@
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::fmt;
-use std::hash::Hash;
 
 use crate::kernel::aliases::{Clause, Literal, Term};
 use crate::kernel::atom::Atom;
@@ -78,16 +77,16 @@ impl RewriteStep {
     }
 }
 
-/// The goal of the OldTermGraph is to find a contradiction.
+/// The goal of the TermGraph is to find a contradiction.
 /// When we do, we need to explain to the outside world why this is actually a contradiction.
-/// The OldTermGraphContradiction encodes this.
+/// The TermGraphContradiction encodes this.
 ///
 /// Warning!
 /// Currently this can only represent contradictions that come from a series of rewrites.
 /// In particular, it can't represent contradictions that use clause reduction.
 /// So, beware.
 #[derive(Debug, Eq, PartialEq)]
-pub struct OldTermGraphContradiction {
+pub struct TermGraphContradiction {
     /// Every contradiction is based on one inequality, plus a set of rewrites that turn
     /// one site of the inequality into the other.
     pub inequality_id: usize,
@@ -97,17 +96,21 @@ pub struct OldTermGraphContradiction {
 }
 
 // Each term has a Decomposition that describes how it is created.
+// This version uses binary application (lambda calculus style) instead of head+args.
 #[derive(Debug, Eq, Hash, PartialEq, Clone)]
 enum Decomposition {
     // The term is just equal to an atom
     Atomic(Atom),
 
-    // Head and args
-    Compound(TermId, Vec<TermId>),
+    // Binary application: (func arg)
+    // For f(a, b, c), this is stored as ((((f) a) b) c)
+    Application(TermId, TermId),
 }
 
 #[derive(Clone)]
 struct TermInfo {
+    // The full uncurried term that this node represents.
+    // For an application node representing ((f a) b), this stores f(a, b).
     term: Term,
     group: GroupId,
     decomp: Decomposition,
@@ -164,55 +167,42 @@ impl fmt::Display for CompoundId {
     }
 }
 
+// Simplified CompoundKey for binary application: just (func_group, arg_group)
 #[derive(Debug, Eq, Hash, PartialEq, Clone)]
 struct CompoundKey {
-    head: GroupId,
-    args: Vec<GroupId>,
+    func: GroupId,
+    arg: GroupId,
 }
 
 impl CompoundKey {
-    fn remap_group(&mut self, small_group: GroupId, large_group: GroupId) {
-        if self.head == small_group {
-            self.head = large_group;
+    fn remap_group(&mut self, old_group: GroupId, new_group: GroupId) {
+        if self.func == old_group {
+            self.func = new_group;
         }
-        for arg in &mut self.args {
-            if *arg == small_group {
-                *arg = large_group;
-            }
+        if self.arg == old_group {
+            self.arg = new_group;
         }
     }
 
     fn groups(&self) -> Vec<GroupId> {
-        let mut answer = vec![self.head];
-        answer.extend(self.args.iter().copied());
-        answer.sort();
-        answer.dedup();
-        answer
+        if self.func == self.arg {
+            vec![self.func]
+        } else {
+            let mut answer = vec![self.func, self.arg];
+            answer.sort();
+            answer
+        }
     }
 
     #[cfg(test)]
     fn touches_group(&self, group: GroupId) -> bool {
-        if self.head == group {
-            return true;
-        }
-        self.args.contains(&group)
+        self.func == group || self.arg == group
     }
 }
 
 impl fmt::Display for CompoundKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.head)?;
-        if !self.args.is_empty() {
-            write!(f, "(")?;
-            for (i, arg) in self.args.iter().enumerate() {
-                if i > 0 {
-                    write!(f, ", ")?;
-                }
-                write!(f, "{}", arg)?;
-            }
-            write!(f, ")")?;
-        }
-        Ok(())
+        write!(f, "({} {})", self.func, self.arg)
     }
 }
 
@@ -258,10 +248,13 @@ enum SemanticOperation {
     InsertClause(ClauseId),
 }
 
-/// The OldTermGraph stores concrete terms, along with relationships between them that represent
+/// The TermGraph stores concrete terms, along with relationships between them that represent
 /// equality, inequality, and subterm relationships.
+///
+/// This version uses binary application (lambda calculus style) internally:
+/// f(a, b, c) is represented as (((f a) b) c)
 #[derive(Clone)]
-pub struct OldTermGraph {
+pub struct TermGraph {
     // terms maps TermId to TermInfo.
     terms: Vec<TermInfo>,
 
@@ -295,15 +288,15 @@ pub struct OldTermGraph {
     contradiction_info: Option<(TermId, TermId, StepId)>,
 }
 
-impl Default for OldTermGraph {
+impl Default for TermGraph {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl OldTermGraph {
-    pub fn new() -> OldTermGraph {
-        OldTermGraph {
+impl TermGraph {
+    pub fn new() -> TermGraph {
+        TermGraph {
             terms: Vec::new(),
             groups: Vec::new(),
             compounds: Vec::new(),
@@ -327,14 +320,14 @@ impl OldTermGraph {
             return Some(head_id);
         }
 
-        // Look up the args
-        let mut arg_ids = Vec::new();
+        // For curried application, we need to fold left through the args
+        let mut current = head_id;
         for arg in term.args() {
-            arg_ids.push(self.get_term_id(&arg)?);
+            let arg_id = self.get_term_id(&arg)?;
+            let app_key = Decomposition::Application(current, arg_id);
+            current = *self.decompositions.get(&app_key)?;
         }
-
-        let compound_key = Decomposition::Compound(head_id, arg_ids);
-        self.decompositions.get(&compound_key).copied()
+        Some(current)
     }
 
     fn get_term(&self, term_id: TermId) -> &Term {
@@ -358,11 +351,11 @@ impl OldTermGraph {
 
     /// Used to explain which steps lead to a contradiction.
     /// Returns None if there is no contradiction trace.
-    pub fn get_contradiction_trace(&self) -> Option<OldTermGraphContradiction> {
+    pub fn get_contradiction_trace(&self) -> Option<TermGraphContradiction> {
         let (term1, term2, inequality_id) = self.contradiction_info?;
         let mut rewrite_chain = vec![];
         self.expand_steps(term1, term2, &mut rewrite_chain);
-        Some(OldTermGraphContradiction {
+        Some(TermGraphContradiction {
             inequality_id: inequality_id.get(),
             rewrite_chain,
         })
@@ -408,20 +401,28 @@ impl OldTermGraph {
         term_id
     }
 
-    // Inserts a term composition relationship.
+    // Inserts a binary application relationship.
     // If it's already in the graph, return the existing term id.
     // Otherwise, make a new term and group.
-    fn insert_term_compound(&mut self, term: &Term, head: TermId, args: Vec<TermId>) -> TermId {
-        let key = Decomposition::Compound(head, args);
+    fn insert_application(&mut self, func: TermId, arg: TermId) -> TermId {
+        let key = Decomposition::Application(func, arg);
         if let Some(&id) = self.decompositions.get(&key) {
             return id;
         }
+
+        // Build the full uncurried term by appending arg to func's args
+        let func_term = self.get_term(func);
+        let arg_term = self.get_term(arg);
+        let head = func_term.get_head_atom();
+        let mut args: Vec<Term> = func_term.args();
+        args.push(arg_term.clone());
+        let combined_term = Term::new(*head, args);
 
         // Make a new term and group
         let term_id = TermId(self.terms.len() as u32);
         let group_id = GroupId(self.groups.len() as u32);
         let term_info = TermInfo {
-            term: term.clone(),
+            term: combined_term,
             group: group_id,
             decomp: key.clone(),
             adjacent: vec![],
@@ -434,14 +435,20 @@ impl OldTermGraph {
         });
         self.groups.push(group_info);
         self.decompositions.insert(key, term_id);
+
+        // Insert the group compound
+        let func_group = self.get_group_id(func);
+        let arg_group = self.get_group_id(arg);
+        self.insert_group_compound(func_group, arg_group, term_id);
+
         term_id
     }
 
     // Adds a group composition relationship.
     // If we should combine groups, add them to the pending list.
-    fn insert_group_compound(&mut self, head: GroupId, args: Vec<GroupId>, result_term: TermId) {
+    fn insert_group_compound(&mut self, func: GroupId, arg: GroupId, result_term: TermId) {
         let result_group = self.get_group_id(result_term);
-        let key = CompoundKey { head, args };
+        let key = CompoundKey { func, arg };
         if let Some(&existing_result_term) = self.compound_map.get(&key) {
             let existing_result_group = self.get_group_id(existing_result_term);
             if existing_result_group != result_group {
@@ -453,7 +460,7 @@ impl OldTermGraph {
             return;
         }
 
-        // We need to make a new relatinoship
+        // We need to make a new relationship
         let compound_info = CompoundInfo {
             key: key.clone(),
             result_term,
@@ -473,31 +480,26 @@ impl OldTermGraph {
         }
         self.compounds.push(Some(compound_info));
         self.compound_map.insert(key, result_term);
-        return;
     }
 
     /// Inserts a term.
     /// Makes a new term, group, and compound if necessary.
+    /// Uses curried application: f(a, b, c) becomes (((f a) b) c)
     pub fn insert_term(&mut self, term: &Term, kernel_context: &KernelContext) -> TermId {
         let head_term_id = self.insert_head(term, kernel_context);
         if !term.has_args() {
             return head_term_id;
         }
-        let head_group_id = self.get_group_id(head_term_id);
 
-        let mut arg_term_ids = vec![];
-        let mut arg_group_ids = vec![];
+        // Curried application: fold left over arguments
+        let mut current = head_term_id;
         for arg in term.args() {
-            let arg_term_id = self.insert_term(&arg, kernel_context);
-            arg_term_ids.push(arg_term_id);
-            let arg_group_id = self.get_group_id(arg_term_id);
-            arg_group_ids.push(arg_group_id);
+            let arg_id = self.insert_term(&arg, kernel_context);
+            current = self.insert_application(current, arg_id);
         }
 
-        let result_term_id = self.insert_term_compound(term, head_term_id, arg_term_ids);
-        self.insert_group_compound(head_group_id, arg_group_ids, result_term_id);
         self.process_pending();
-        result_term_id
+        current
     }
 
     /// Inserts a clause into the graph.
@@ -587,7 +589,7 @@ impl OldTermGraph {
                 .expect("how does this happen?");
 
             if let Some(&existing_result_term) = self.compound_map.get(&compound.key) {
-                // An compound for the new relationship already exists.
+                // A compound for the new relationship already exists.
                 // Instead of inserting compound.result, we need to delete this compound, and merge the
                 // intended result with result_group.
                 self.pending.push(SemanticOperation::TermEquality(
@@ -1028,10 +1030,10 @@ impl OldTermGraph {
         }
     }
 
-    fn as_compound(&self, term: TermId) -> (TermId, &Vec<TermId>) {
+    fn as_application(&self, term: TermId) -> (TermId, TermId) {
         match &self.terms[term.get() as usize].decomp {
-            Decomposition::Compound(head, args) => (*head, args),
-            _ => panic!("not a compound"),
+            Decomposition::Application(func, arg) => (*func, *arg),
+            _ => panic!("not an application"),
         }
     }
 
@@ -1186,14 +1188,11 @@ impl OldTermGraph {
         let path = self.get_path(term1, term2);
         for (a_id, b_id, source) in path {
             if source.is_none() {
-                // We have a compound relationship between a_id and b_id
-                let (head_a, args_a) = self.as_compound(a_id);
-                let (head_b, args_b) = self.as_compound(b_id);
-                assert_eq!(args_a.len(), args_b.len());
-                self.expand_steps(head_a, head_b, output);
-                for (arg_a, arg_b) in args_a.iter().zip(args_b.iter()) {
-                    self.expand_steps(*arg_a, *arg_b, output);
-                }
+                // We have an application relationship between a_id and b_id
+                let (func_a, arg_a) = self.as_application(a_id);
+                let (func_b, arg_b) = self.as_application(b_id);
+                self.expand_steps(func_a, func_b, output);
+                self.expand_steps(arg_a, arg_b, output);
             }
 
             let term_a = self.get_term(a_id);
@@ -1230,13 +1229,10 @@ impl OldTermGraph {
                     output.insert(source.pattern_id);
                 }
                 None => {
-                    let (head_a, args_a) = self.as_compound(term_a);
-                    let (head_b, args_b) = self.as_compound(term_b);
-                    assert_eq!(args_a.len(), args_b.len());
-                    self.get_step_ids_helper(head_a, head_b, output);
-                    for (arg_a, arg_b) in args_a.iter().zip(args_b.iter()) {
-                        self.get_step_ids_helper(*arg_a, *arg_b, output);
-                    }
+                    let (func_a, arg_a) = self.as_application(term_a);
+                    let (func_b, arg_b) = self.as_application(term_b);
+                    self.get_step_ids_helper(func_a, func_b, output);
+                    self.get_step_ids_helper(arg_a, arg_b, output);
                 }
             }
         }
@@ -1381,13 +1377,13 @@ impl OldTermGraph {
     }
 }
 
-/// A test wrapper that combines an OldTermGraph with its KernelContext.
+/// A test wrapper that combines a TermGraph with its KernelContext.
 #[cfg(test)]
 use crate::kernel::local_context::LocalContext;
 
 #[cfg(test)]
 struct TestGraph {
-    graph: OldTermGraph,
+    graph: TermGraph,
     context: KernelContext,
 }
 
@@ -1395,7 +1391,7 @@ struct TestGraph {
 impl TestGraph {
     fn new() -> TestGraph {
         TestGraph {
-            graph: OldTermGraph::new(),
+            graph: TermGraph::new(),
             context: KernelContext::test_with_constants(10, 10),
         }
     }
@@ -1461,6 +1457,7 @@ impl TestGraph {
         self.graph.has_contradiction()
     }
 
+    #[allow(dead_code)]
     fn show_graph(&self) {
         self.graph.show_graph();
     }
@@ -1537,7 +1534,6 @@ mod tests {
         g.set_eq(c0, c1, StepId(2));
         g.set_eq(c3, c4, StepId(3));
         g.set_eq(c0, c3, StepId(4));
-        g.show_graph();
         assert_eq!(g.get_step_ids(c0, c3), vec![4]);
     }
 
@@ -1879,15 +1875,12 @@ mod tests {
         g.check_clause_str("m1(c1, c0)");
     }
 
-    // Test that partial application congruence does NOT work in OldTermGraph.
-    // If we set f(a) = g(c), this does NOT make f(a, b) = g(c, b) in the old graph.
-    // This is because OldTermGraph represents f(a, b) as Compound(f, [a, b]),
-    // not as Application(Application(f, a), b). So there's no intermediate node
-    // for f(a) that would trigger congruence with g(c).
-    //
-    // Note: This test documents the limitation. NewTermGraph handles this case.
+    // Test partial application congruence: if f(a) = g(c), then f(a, b) = g(c, b).
+    // This works in TermGraph because f(a, b) is represented as ((f a) b),
+    // and g(c, b) is represented as ((g c) b). When we set (f a) = (g c),
+    // congruence closure propagates this to make ((f a) b) = ((g c) b).
     #[test]
-    fn test_partial_application_does_not_work_in_old_graph() {
+    fn test_partial_application_congruence() {
         let mut g = TestGraph::new();
 
         // Create n1 = f(a, b) and n2 = g(c, b)
@@ -1904,10 +1897,64 @@ mod tests {
         // Set f(a) = g(c)
         g.set_eq(fa, gc, StepId(0));
 
-        // In OldTermGraph, f(a, b) should still NOT equal g(c, b)
-        // because f(a, b) is Compound(c1, [c2, c3]) and g(c, b) is Compound(c4, [c5, c3])
-        // These have different heads (c1 vs c4) and different first args (c2 vs c5)
-        // Setting c1(c2) = c4(c5) doesn't propagate to the 2-arg forms.
+        // Now f(a, b) should equal g(c, b) due to congruence on partial applications
+        // In lambda calculus style: ((f a) b) = ((g c) b) because (f a) = (g c)
+        g.assert_eq(n1, n2);
+
+        // The step ids should show the connection
+        let steps = g.get_step_ids(n1, n2);
+        assert_eq!(steps, vec![0]);
+    }
+
+    // Test that partial application congruence works transitively
+    #[test]
+    fn test_partial_application_congruence_transitive() {
+        let mut g = TestGraph::new();
+
+        // Create three terms: f(a, b), g(c, b), h(d, b)
+        let n1 = g.insert_term_str("c1(c2, c3)"); // f(a, b)
+        let n2 = g.insert_term_str("c4(c5, c3)"); // g(c, b)
+        let n3 = g.insert_term_str("c6(c7, c3)"); // h(d, b)
+
+        // Create partial applications
+        let fa = g.insert_term_str("c1(c2)"); // f(a)
+        let gc = g.insert_term_str("c4(c5)"); // g(c)
+        let hd = g.insert_term_str("c6(c7)"); // h(d)
+
+        // Set f(a) = g(c) and g(c) = h(d)
+        g.set_eq(fa, gc, StepId(0));
+        g.set_eq(gc, hd, StepId(1));
+
+        // Now all three full applications should be equal
+        g.assert_eq(n1, n2);
+        g.assert_eq(n2, n3);
+        g.assert_eq(n1, n3);
+    }
+
+    // Test partial application with different final arguments (should NOT be equal)
+    #[test]
+    fn test_partial_application_different_args() {
+        let mut g = TestGraph::new();
+
+        // Create n1 = f(a, b) and n2 = g(c, d) where b != d
+        let n1 = g.insert_term_str("c1(c2, c3)"); // f(a, b)
+        let n2 = g.insert_term_str("c4(c5, c6)"); // g(c, d) - different second arg!
+
+        // Create partial applications
+        let fa = g.insert_term_str("c1(c2)"); // f(a)
+        let gc = g.insert_term_str("c4(c5)"); // g(c)
+
+        // Set f(a) = g(c)
+        g.set_eq(fa, gc, StepId(0));
+
+        // n1 and n2 should still NOT be equal because b != d
         g.assert_ne(n1, n2);
+
+        // But if we also set b = d, then they should become equal
+        let b = g.get_str("c3");
+        let d = g.get_str("c6");
+        g.set_eq(b, d, StepId(1));
+
+        g.assert_eq(n1, n2);
     }
 }
