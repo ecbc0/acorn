@@ -4,17 +4,14 @@ use crate::elaborator::acorn_type::{AcornType, Datatype, FunctionType, TypeParam
 use crate::kernel::atom::Atom;
 use crate::kernel::closed_type::ClosedType;
 use crate::kernel::term::TermComponent;
-use crate::kernel::types::{GroundTypeId, TypeId, TypeclassId, GROUND_BOOL, GROUND_EMPTY};
+use crate::kernel::types::{GroundTypeId, TypeclassId, GROUND_BOOL, GROUND_EMPTY};
 
-/// Manages the bidirectional mapping between AcornTypes and TypeIds,
-/// as well as typeclasses and their relationships to types.
+/// Manages ground type registration and typeclass relationships.
 #[derive(Clone)]
 pub struct TypeStore {
-    /// type_to_type_id[acorn_type] is the TypeId
-    type_to_type_id: HashMap<AcornType, TypeId>,
-
-    /// type_id_to_type[type_id] is the AcornType
-    type_id_to_type: Vec<AcornType>,
+    /// ground_id_to_type[ground_id] is the AcornType for that ground type.
+    /// Only ground types are stored here.
+    ground_id_to_type: Vec<AcornType>,
 
     /// Maps Datatype (bare data type with no params) to its GroundTypeId.
     /// This allows direct lookup without going through TypeId.
@@ -41,8 +38,7 @@ pub struct TypeStore {
 impl TypeStore {
     pub fn new() -> TypeStore {
         let mut store = TypeStore {
-            type_to_type_id: HashMap::new(),
-            type_id_to_type: vec![],
+            ground_id_to_type: vec![],
             datatype_to_ground_id: HashMap::new(),
             arbitrary_to_ground_id: HashMap::new(),
             typeclass_to_id: HashMap::new(),
@@ -61,59 +57,70 @@ impl TypeStore {
         self.add_type_internal(acorn_type);
     }
 
-    /// Internal implementation that returns the TypeId.
-    fn add_type_internal(&mut self, acorn_type: &AcornType) -> TypeId {
-        if let Some(type_id) = self.type_to_type_id.get(acorn_type) {
-            return *type_id;
-        }
-
-        // First, recursively add all component types
+    /// Internal implementation that registers ground types.
+    /// Only ground types (Empty, Bool, bare Data types, Arbitrary) get GroundTypeIds.
+    /// Non-ground types (Function, parameterized Data) are just recursively processed.
+    fn add_type_internal(&mut self, acorn_type: &AcornType) {
         match acorn_type {
-            AcornType::Function(ft) => {
-                // Add all argument types
-                for arg_type in &ft.arg_types {
-                    self.add_type_internal(arg_type);
+            // Empty and Bool: register if not already (they get GROUND_EMPTY and GROUND_BOOL)
+            AcornType::Empty | AcornType::Bool => {
+                // These are registered once in new() - the ground_id_to_type index matches the constants
+                if self.ground_id_to_type.is_empty()
+                    || (self.ground_id_to_type.len() == 1 && *acorn_type == AcornType::Bool)
+                {
+                    self.ground_id_to_type.push(acorn_type.clone());
                 }
-                // Add the return type
-                self.add_type_internal(&ft.return_type);
             }
-            AcornType::Data(datatype, params) => {
-                // For parameterized types, first ensure the bare constructor exists
-                // so it gets its own TypeId/GroundTypeId for use in ClosedType
-                if !params.is_empty() {
-                    let bare_constructor = AcornType::Data(datatype.clone(), vec![]);
-                    self.add_type_internal(&bare_constructor);
+
+            // Bare data type: assign a new GroundTypeId
+            AcornType::Data(datatype, params) if params.is_empty() => {
+                if self.datatype_to_ground_id.contains_key(datatype) {
+                    return; // Already registered
                 }
-                // Add all type parameters
+                let ground_id = self.next_ground_id();
+                self.ground_id_to_type.push(acorn_type.clone());
+                self.datatype_to_ground_id
+                    .insert(datatype.clone(), ground_id);
+            }
+
+            // Parameterized data type: ensure bare constructor exists, then process params
+            AcornType::Data(datatype, params) => {
+                let bare_constructor = AcornType::Data(datatype.clone(), vec![]);
+                self.add_type_internal(&bare_constructor);
                 for param in params {
                     self.add_type_internal(param);
                 }
             }
-            _ => {}
-        };
 
-        // Now add the type itself
-        self.type_id_to_type.push(acorn_type.clone());
-        let id = TypeId::new((self.type_id_to_type.len() - 1) as u16);
-        self.type_to_type_id.insert(acorn_type.clone(), id);
+            // Function type: recursively process component types (no GroundTypeId needed)
+            AcornType::Function(ft) => {
+                for arg_type in &ft.arg_types {
+                    self.add_type_internal(arg_type);
+                }
+                self.add_type_internal(&ft.return_type);
+            }
 
-        // For bare data types (no params), also populate the Datatype -> GroundTypeId map
-        if let AcornType::Data(datatype, params) = acorn_type {
-            if params.is_empty() {
-                let ground_id = GroundTypeId::new(id.as_u16());
-                self.datatype_to_ground_id
-                    .insert(datatype.clone(), ground_id);
+            // Arbitrary type: assign a new GroundTypeId
+            AcornType::Arbitrary(type_param) => {
+                if self.arbitrary_to_ground_id.contains_key(type_param) {
+                    return; // Already registered
+                }
+                let ground_id = self.next_ground_id();
+                self.ground_id_to_type.push(acorn_type.clone());
+                self.arbitrary_to_ground_id
+                    .insert(type_param.clone(), ground_id);
+            }
+
+            // Variable types should not be registered
+            AcornType::Variable(_) => {
+                panic!("Variable types should not be registered: {:?}", acorn_type);
             }
         }
+    }
 
-        // For Arbitrary types, populate the TypeParam -> GroundTypeId map
-        if let AcornType::Arbitrary(type_param) = acorn_type {
-            let ground_id = GroundTypeId::new(id.as_u16());
-            self.arbitrary_to_ground_id
-                .insert(type_param.clone(), ground_id);
-        }
-
-        id
+    /// Allocate the next GroundTypeId.
+    fn next_ground_id(&self) -> GroundTypeId {
+        GroundTypeId::new(self.ground_id_to_type.len() as u16)
     }
 
     /// Get the GroundTypeId for a bare Datatype (no type parameters).
@@ -217,10 +224,9 @@ impl TypeStore {
     ) -> (AcornType, usize) {
         match &components[start] {
             TermComponent::Atom(Atom::Type(ground_id)) => {
-                // Ground type - look up in type_id_to_type
-                let type_id = TypeId::new(ground_id.as_u16());
+                // Ground type - look up in ground_id_to_type
                 (
-                    self.type_id_to_type[type_id.as_u16() as usize].clone(),
+                    self.ground_id_to_type[ground_id.as_u16() as usize].clone(),
                     start + 1,
                 )
             }
