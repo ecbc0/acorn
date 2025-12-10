@@ -28,6 +28,19 @@ pub enum TermComponent {
     Atom(Atom),
 }
 
+/// Decomposition of a term into its lambda-calculus structure.
+/// This provides a cleaner way to pattern match on terms without dealing with
+/// "head + N arguments" representations.
+#[derive(Clone, Copy, Debug)]
+pub enum Decomposition<'a> {
+    /// An atomic term with no arguments.
+    Atom(&'a Atom),
+
+    /// A curried application: (func arg).
+    /// For f(a, b, c), decomposes into (f(a, b), c).
+    Application(TermRef<'a>, TermRef<'a>),
+}
+
 /// A borrowed reference to a term - wraps a slice of components.
 /// This is the borrowed equivalent of Term, similar to how &str relates to String.
 /// Most operations work on TermRef to avoid unnecessary allocations.
@@ -134,14 +147,22 @@ impl<'a> TermRef<'a> {
         TermRef::new(&self.components[..position])
     }
 
-    /// Split an application into (function, argument) in curried form.
-    /// For f(a, b, c), returns (f(a, b), c).
-    /// Returns None if the term is atomic (has no arguments).
+    /// Decompose this term into its fundamental lambda-calculus structure.
     ///
-    /// Both returned TermRefs are slices of the original - no allocation.
-    pub fn split_application(&self) -> Option<(TermRef<'a>, TermRef<'a>)> {
+    /// Returns either:
+    /// - `Decomposition::Atom(&atom)` if the term is atomic
+    /// - `Decomposition::Application(func, arg)` if the term is an application
+    ///
+    /// This provides a cleaner way to write recursive algorithms on terms
+    /// by pattern matching on the structure rather than checking multiple conditions.
+    pub fn decompose(&self) -> Decomposition<'a> {
         if self.components.len() <= 1 {
-            return None;
+            // Access the atom directly from components to preserve the 'a lifetime
+            let atom = match &self.components[0] {
+                TermComponent::Atom(atom) => atom,
+                _ => panic!("atomic term should have Atom component"),
+            };
+            return Decomposition::Atom(atom);
         }
 
         // Iterate through args, tracking where the previous arg started
@@ -183,7 +204,19 @@ impl<'a> TermRef<'a> {
             }
         };
 
-        Some((func_part, last_arg))
+        Decomposition::Application(func_part, last_arg)
+    }
+
+    /// Split an application into (function, argument) in curried form.
+    /// For f(a, b, c), returns (f(a, b), c).
+    /// Returns None if the term is atomic (has no arguments).
+    ///
+    /// Both returned TermRefs are slices of the original - no allocation.
+    pub fn split_application(&self) -> Option<(TermRef<'a>, TermRef<'a>)> {
+        match self.decompose() {
+            Decomposition::Atom(_) => None,
+            Decomposition::Application(func, arg) => Some((func, arg)),
+        }
     }
 
     /// Check if this term is the boolean constant "true".
