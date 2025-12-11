@@ -336,19 +336,9 @@ impl<T> FingerprintSpecializer<T> {
     }
 }
 
-// Tests for fingerprint matching.
-// Using test_with_all_bool_types: c0-c9 are Bool; m0-m9 are (Bool, Bool) -> Bool.
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn test_local_context() -> LocalContext {
-        LocalContext::new_with_bools(10)
-    }
-
-    fn test_kernel_context() -> KernelContext {
-        KernelContext::test_with_all_bool_types()
-    }
 
     #[test]
     fn test_split_application() {
@@ -403,8 +393,10 @@ mod tests {
 
     #[test]
     fn test_fingerprint() {
-        let lctx = test_local_context();
-        let kctx = test_kernel_context();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("m0", "(Bool, Bool) -> Bool");
+        let lctx = kctx.make_local(&["Bool", "Bool"]);
+
         // m0: (Bool, Bool) -> Bool, x0 and x1 are Bool
         let term = Term::parse("m0(x0, x1)");
         TermFingerprint::new(&term, &lctx, &kctx);
@@ -412,21 +404,29 @@ mod tests {
 
     #[test]
     fn test_fingerprint_matching() {
-        let lctx = test_local_context();
-        let kctx = test_kernel_context();
-        let term1 = Term::parse("m2(x0, c0)");
-        let term2 = Term::parse("m2(c1, c0)");
+        let mut kctx = KernelContext::new();
+        // c0, c1 are Bool; c2 is (Bool, Bool) -> Bool
+        kctx.add_constants(&["c0", "c1"], "Bool")
+            .add_constant("c2", "(Bool, Bool) -> Bool");
+        let lctx = kctx.make_local(&["Bool"]);
+
+        let term1 = Term::parse("c2(x0, c0)");
+        let term2 = Term::parse("c2(c1, c0)");
         assert!(TermFingerprint::new(&term1, &lctx, &kctx)
             .could_unify(&TermFingerprint::new(&term2, &lctx, &kctx)));
     }
 
     #[test]
     fn test_fingerprint_tree() {
-        let lctx = test_local_context();
-        let kctx = test_kernel_context();
+        let mut kctx = KernelContext::new();
+        // c0, c1 are Bool; c2 is (Bool, Bool) -> Bool
+        kctx.add_constants(&["c0", "c1"], "Bool")
+            .add_constant("c2", "(Bool, Bool) -> Bool");
+        let lctx = kctx.make_local(&["Bool"]);
+
         let mut tree = FingerprintUnifier::new();
-        let term1 = Term::parse("m2(x0, c0)");
-        let term2 = Term::parse("m2(c1, c0)");
+        let term1 = Term::parse("c2(x0, c0)");
+        let term2 = Term::parse("c2(c1, c0)");
         tree.insert(&term1, 1, &lctx, &kctx);
         assert!(tree.find_unifying(&term1, &lctx, &kctx).len() > 0);
         assert!(tree.find_unifying(&term2, &lctx, &kctx).len() > 0);

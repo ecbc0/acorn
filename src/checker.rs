@@ -16,8 +16,6 @@ use crate::kernel::clause::Clause;
 use crate::kernel::generalization_set::GeneralizationSet;
 use crate::kernel::inference;
 use crate::kernel::kernel_context::KernelContext;
-#[cfg(test)]
-use crate::kernel::local_context::LocalContext;
 use crate::kernel::{StepId, TermGraph};
 use crate::normalizer::{Normalizer, NormalizerView};
 use crate::project::Project;
@@ -639,30 +637,31 @@ impl Checker {
 struct TestChecker {
     checker: Checker,
     context: KernelContext,
-    local_context: LocalContext,
 }
 
 #[cfg(test)]
 impl TestChecker {
     /// Creates a TestChecker with properly typed symbols.
-    /// Uses test_with_all_bool_types which gives all symbols Bool type.
     fn with_clauses(clauses: &[&str]) -> TestChecker {
-        let context = KernelContext::test_with_all_bool_types();
-        let local_context = LocalContext::new_with_bools(10);
+        let mut context = KernelContext::new();
+        // c0-c5: Bool constants
+        context.add_constants(&["c0", "c1", "c2", "c3", "c4", "c5"], "Bool");
+        // m0, m1, m3, m4: (Bool, Bool) -> Bool functions
+        context.add_constants(&["m0", "m1"], "(Bool, Bool) -> Bool");
+        // m2 placeholder to get to m3 and m4
+        context.add_constant("m2", "(Bool, Bool) -> Bool");
+        context.add_constants(&["m3", "m4"], "(Bool, Bool) -> Bool");
+
         let mut checker = Checker::new(None);
         for clause_str in clauses {
-            let clause = Clause::old_parse(clause_str, local_context.clone(), &context);
+            let clause = context.make_clause(clause_str, &[]);
             checker.insert_clause(&clause, StepReason::Testing, &context);
         }
-        TestChecker {
-            checker,
-            context,
-            local_context,
-        }
+        TestChecker { checker, context }
     }
 
     fn check_clause_str(&mut self, s: &str) {
-        let clause = Clause::old_parse(s, self.local_context.clone(), &self.context);
+        let clause = self.context.make_clause(s, &[]);
         if !self.checker.check_clause(&clause, &self.context).is_some() {
             panic!("check_clause_str(\"{}\") failed", s);
         }

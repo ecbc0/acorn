@@ -1373,9 +1373,6 @@ impl TermGraph {
 
 /// A test wrapper that combines a TermGraph with its KernelContext.
 #[cfg(test)]
-use crate::kernel::local_context::LocalContext;
-
-#[cfg(test)]
 struct TestGraph {
     graph: TermGraph,
     context: KernelContext,
@@ -1384,9 +1381,19 @@ struct TestGraph {
 #[cfg(test)]
 impl TestGraph {
     fn new() -> TestGraph {
+        let mut context = KernelContext::new();
+        // c0-c7: Bool constants
+        context.add_constants(&["c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7"], "Bool");
+        // g1-g4: Bool -> Bool functions
+        context.add_constants(&["g1", "g2", "g3", "g4"], "Bool -> Bool");
+        // m0-m5: (Bool, Bool) -> Bool functions
+        context.add_constants(
+            &["m0", "m1", "m2", "m3", "m4", "m5"],
+            "(Bool, Bool) -> Bool",
+        );
         TestGraph {
             graph: TermGraph::new(),
-            context: KernelContext::test_with_all_bool_types(),
+            context,
         }
     }
 
@@ -1405,8 +1412,7 @@ impl TestGraph {
     }
 
     fn insert_clause_str(&mut self, s: &str, step: StepId) {
-        let lctx = LocalContext::empty();
-        let clause = Clause::old_parse(s, lctx, &self.context);
+        let clause = self.context.make_clause(s, &[]);
         self.graph.insert_clause(&clause, step, &self.context);
         self.graph.validate();
     }
@@ -1430,8 +1436,7 @@ impl TestGraph {
     }
 
     fn check_clause_str(&mut self, s: &str) {
-        let lctx = LocalContext::empty();
-        let clause = Clause::old_parse(s, lctx, &self.context);
+        let clause = self.context.make_clause(s, &[]);
         if !self.graph.check_clause(&clause, &self.context) {
             panic!("check_clause_str(\"{}\") failed", s);
         }

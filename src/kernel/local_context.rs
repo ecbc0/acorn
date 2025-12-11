@@ -109,18 +109,11 @@ impl LocalContext {
         LocalContext { var_closed_types }
     }
 
-    /// Create a new LocalContext with n variables all of type Bool.
-    pub fn new_with_bools(n: usize) -> LocalContext {
-        LocalContext {
-            var_closed_types: vec![ClosedType::bool(); n],
-        }
-    }
-
     /// Returns a reference to a LocalContext with BOOL types for tests.
     #[cfg(test)]
     pub fn test_bool_ref() -> &'static LocalContext {
         static TEST_BOOL_CONTEXT: LazyLock<LocalContext> =
-            LazyLock::new(|| LocalContext::new_with_bools(10));
+            LazyLock::new(|| LocalContext::from_closed_types(vec![ClosedType::bool(); 10]));
         &TEST_BOOL_CONTEXT
     }
 

@@ -135,12 +135,9 @@ impl ClauseTrace {
 mod tests {
     use super::*;
     use crate::kernel::clause::Clause;
-    use crate::kernel::closed_type::ClosedType;
 
     /// Check clause normalization with trace validation.
-    /// context provides the types of variables in the clause.
-    fn check_clause_normalization(s: &str, context: &LocalContext, kernel_context: &KernelContext) {
-        let clause = Clause::old_parse(s, context.clone(), kernel_context);
+    fn check_clause_normalization(s: &str, clause: &Clause, kernel_context: &KernelContext) {
         clause.validate(kernel_context);
 
         // Parse literals separately and normalize with trace
@@ -149,25 +146,25 @@ mod tests {
 
         let (alt_clause, trace) = Clause::normalize_with_trace(literals.clone(), &literals_context);
 
-        assert_eq!(clause, alt_clause);
+        assert_eq!(clause, &alt_clause);
 
-        trace.validate(&literals, &literals_context, &clause, kernel_context);
+        trace.validate(&literals, &literals_context, clause, kernel_context);
     }
 
     #[test]
     fn test_clause_normalization_with_equality() {
         // "c0 = c1" - equality between two constants of type BOOL
-        let bool_types: Vec<_> = (0..10).map(|_| ClosedType::bool()).collect();
-        let kernel_context = KernelContext::test_with_constant_types(&bool_types, &bool_types);
-        check_clause_normalization("c0 = c1", LocalContext::empty_ref(), &kernel_context);
+        let mut kctx = KernelContext::new();
+        kctx.add_constants(&["c0", "c1"], "Bool");
+        let clause = kctx.make_clause("c0 = c1", &[]);
+        check_clause_normalization("c0 = c1", &clause, &kctx);
     }
 
     #[test]
     fn test_clause_normalization_with_variable_equality() {
         // "x0 = x1" - equality between two BOOL variables
-        let bool_types: Vec<_> = (0..10).map(|_| ClosedType::bool()).collect();
-        let kernel_context = KernelContext::test_with_constant_types(&bool_types, &bool_types);
-        let context = LocalContext::new_with_bools(2);
-        check_clause_normalization("x0 = x1", &context, &kernel_context);
+        let kctx = KernelContext::new();
+        let clause = kctx.make_clause("x0 = x1", &["Bool", "Bool"]);
+        check_clause_normalization("x0 = x1", &clause, &kctx);
     }
 }
