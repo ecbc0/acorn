@@ -202,41 +202,39 @@ impl<'a> TermRef<'a> {
 
     /// Get the term's ClosedType with context.
     /// Uses LocalContext for variable types and KernelContext for symbol types.
-    /// For function applications, applies the function type once per argument.
+    /// For function applications, recursively gets the function's type and applies it.
     pub fn get_closed_type_with_context(
         &self,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> ClosedType {
-        // Get the head's closed type
-        let head = self.get_head_atom();
-        let mut result_type = match head {
-            Atom::Variable(i) => local_context
-                .get_var_closed_type(*i as usize)
-                .cloned()
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Variable x{} not found in LocalContext (size={}). TermRef components: {:?}",
-                        i,
-                        local_context.len(),
-                        self.components
-                    )
-                }),
-            Atom::Symbol(symbol) => kernel_context.symbol_table.get_closed_type(*symbol).clone(),
-            Atom::True => ClosedType::ground(GROUND_BOOL),
-            Atom::Type(_) => {
-                panic!("Atom::Type should not appear in Term, only in ClosedType")
+        match self.decompose() {
+            Decomposition::Atom(atom) => match atom {
+                Atom::Variable(i) => local_context
+                    .get_var_closed_type(*i as usize)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "Variable x{} not found in LocalContext (size={}). TermRef components: {:?}",
+                            i,
+                            local_context.len(),
+                            self.components
+                        )
+                    }),
+                Atom::Symbol(symbol) => kernel_context.symbol_table.get_closed_type(*symbol).clone(),
+                Atom::True => ClosedType::ground(GROUND_BOOL),
+                Atom::Type(_) => {
+                    panic!("Atom::Type should not appear in Term, only in ClosedType")
+                }
+            },
+            Decomposition::Application(func, _arg) => {
+                // The function has type A -> B, so the application has type B
+                let func_type = func.get_closed_type_with_context(local_context, kernel_context);
+                func_type
+                    .apply()
+                    .expect("Function type expected but not found during type application")
             }
-        };
-
-        // Apply the type once per argument
-        for _ in self.iter_args() {
-            result_type = result_type
-                .apply()
-                .expect("Function type expected but not found during type application");
         }
-
-        result_type
     }
 
     /// Check if this term contains a variable with the given index anywhere.
