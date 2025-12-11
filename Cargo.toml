@@ -37,6 +37,11 @@ walkdir = "2.4.0"
 [dev-dependencies]
 assert_fs = "1.1.2"
 
+[features]
+# Enable thorough type validation. This is always on in tests, but can be
+# enabled in release builds with --features validate for debugging.
+validate = []
+
 [lib]
 doctest = false
 

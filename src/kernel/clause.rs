@@ -303,7 +303,17 @@ impl Clause {
     }
 
     /// Validate that all literals have consistent types.
+    ///
+    /// This validation only runs in test builds or when the "validate" feature is enabled.
+    /// It's skipped in production for performance reasons.
     pub fn validate(&self, kernel_context: &KernelContext) {
+        #[cfg(not(any(test, feature = "validate")))]
+        {
+            let _ = kernel_context;
+            return;
+        }
+
+        #[cfg(any(test, feature = "validate"))]
         for literal in &self.literals {
             literal.validate_type(&self.context, kernel_context);
         }
@@ -311,7 +321,7 @@ impl Clause {
 
     /// Parse a clause from a string.
     /// Format: "lit1 or lit2 or lit3" where each literal is parsed by Literal::parse.
-    /// Takes ownership of the local context and validates the result.
+    /// Takes ownership of the local context and validates the result (in test/validate builds).
     pub fn parse(s: &str, local: LocalContext, kernel: &KernelContext) -> Clause {
         let literals: Vec<Literal> = s
             .split(" or ")

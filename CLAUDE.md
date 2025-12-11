@@ -7,7 +7,7 @@
 
 - If we make changes to the normalizer or the kernel, we should run a full reverify to ensure we didn't
   break anything.
-  `cargo run --profile release -- reverify`
+  `cargo run --profile release --features validate -- reverify`
 
   This verifies the code in `~/acornlib`, which you can inspect to figure out verification failures.
 
@@ -26,7 +26,7 @@
 - A "full reprove" is slow, but sometimes finds obscure bugs that nothing else finds. We generally
   only want to do this when the user asks for it:
 
-  `cargo run --profile release -- reprove`
+  `cargo run --profile release --features validate -- reprove`
 
   When you do a full reprove, it's okay if some propositions can't be verified. What indicates a real problem is if the prover crashes.
 

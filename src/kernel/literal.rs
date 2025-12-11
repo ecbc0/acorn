@@ -249,18 +249,30 @@ impl Literal {
     }
 
     /// Validate that both sides of the literal have the same type.
+    ///
+    /// This validation only runs in test builds or when the "validate" feature is enabled.
+    /// It's skipped in production for performance reasons.
     pub fn validate_type(&self, local_context: &LocalContext, kernel_context: &KernelContext) {
-        let left_type = self
-            .left
-            .get_closed_type_with_context(local_context, kernel_context);
-        let right_type = self
-            .right
-            .get_closed_type_with_context(local_context, kernel_context);
-        if left_type != right_type {
-            panic!(
-                "Literal type mismatch: {} has type {:?} but {} has type {:?}",
-                self.left, left_type, self.right, right_type
-            );
+        #[cfg(not(any(test, feature = "validate")))]
+        {
+            let _ = (local_context, kernel_context);
+            return;
+        }
+
+        #[cfg(any(test, feature = "validate"))]
+        {
+            let left_type = self
+                .left
+                .get_closed_type_with_context(local_context, kernel_context);
+            let right_type = self
+                .right
+                .get_closed_type_with_context(local_context, kernel_context);
+            if left_type != right_type {
+                panic!(
+                    "Literal type mismatch: {} has type {:?} but {} has type {:?}",
+                    self.left, left_type, self.right, right_type
+                );
+            }
         }
     }
 

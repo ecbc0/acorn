@@ -1436,8 +1436,6 @@ impl<'a> Iterator for TermRefArgsIterator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::kernel_context::KernelContext;
-    use crate::kernel::local_context::LocalContext;
     use crate::kernel::symbol::Symbol;
 
     #[test]
