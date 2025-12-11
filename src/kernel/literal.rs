@@ -5,7 +5,7 @@ use std::fmt;
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::term::Term;
+use crate::kernel::term::{PathStep, Term};
 
 /// A Literal stores an equation (or inequality) between two terms.
 /// Type information is stored separately in the TypeStore and SymbolTable.
@@ -301,36 +301,36 @@ impl Literal {
         lit
     }
 
-    /// Get the subterm at the given "old path".
+    /// Get the subterm at the given "new path".
     /// If `left` is true, navigate into the left term, otherwise the right term.
-    /// An old path is a Vec<usize> representing argument indices.
-    pub fn get_term_at_old_path(&self, left: bool, old_path: &[usize]) -> Option<Term> {
+    /// A new path uses PathStep::Function/Argument to navigate the curried term structure.
+    pub fn get_term_at_new_path(&self, left: bool, new_path: &[PathStep]) -> Option<Term> {
         if left {
-            self.left.get_term_at_old_path(old_path)
+            self.left.get_term_at_new_path(new_path)
         } else {
-            self.right.get_term_at_old_path(old_path)
+            self.right.get_term_at_new_path(new_path)
         }
     }
 
-    /// Replace the subterm at the given "old path" with a new term.
+    /// Replace the subterm at the given "new path" with a new term.
     /// If `left` is true, replace in the left term, otherwise the right term.
-    /// An old path is a Vec<usize> representing argument indices.
+    /// A new path uses PathStep::Function/Argument to navigate the curried term structure.
     /// Returns a new literal (may be flipped for normalization) and whether it was flipped.
-    pub fn replace_at_old_path(
+    pub fn replace_at_new_path(
         &self,
         left: bool,
-        old_path: &[usize],
+        new_path: &[PathStep],
         new_subterm: Term,
     ) -> (Literal, bool) {
         let (new_left, new_right) = if left {
             (
-                self.left.replace_at_old_path(old_path, new_subterm),
+                self.left.replace_at_new_path(new_path, new_subterm),
                 self.right.clone(),
             )
         } else {
             (
                 self.left.clone(),
-                self.right.replace_at_old_path(old_path, new_subterm),
+                self.right.replace_at_new_path(new_path, new_subterm),
             )
         };
 

@@ -8,7 +8,7 @@ use crate::kernel::clause::Clause;
 use crate::kernel::closed_type::ClosedType;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::term::Term;
+use crate::kernel::term::{PathStep, Term};
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::types::GROUND_EMPTY;
 
@@ -101,8 +101,9 @@ pub struct RewriteInfo {
     /// Whether we rewrite the term on the left of the target literal. (As opposed to the right.)
     pub target_left: bool,
 
-    /// The path within the target term that we rewrite.
-    pub path: Vec<usize>,
+    /// The "new path" within the target term that we rewrite.
+    /// Uses PathStep::Function/Argument to navigate the curried term structure.
+    pub path: Vec<PathStep>,
 
     /// Whether this is a forwards or backwards rewrite.
     /// A forwards rewrite rewrites the left side of the pattern into the right.
@@ -579,7 +580,7 @@ impl ProofStep {
         target_id: usize,
         target_step: &ProofStep,
         target_left: bool,
-        path: &[usize],
+        path: &[PathStep],
         forwards: bool,
         new_subterm: &Term,
         new_subterm_context: &LocalContext,
@@ -588,7 +589,7 @@ impl ProofStep {
 
         let target_literal = &target_step.clause.literals[0];
         let (new_literal, flipped) =
-            target_literal.replace_at_old_path(target_left, path, new_subterm.clone());
+            target_literal.replace_at_new_path(target_left, path, new_subterm.clone());
         let rewritten = new_literal.clone();
 
         let simplifying = new_literal.extended_kbo_cmp(&target_literal) == Ordering::Less;

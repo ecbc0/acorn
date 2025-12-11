@@ -1317,132 +1317,67 @@ impl Term {
         }
     }
 
-    /// Get the subterm at the given "old path".
-    /// An old path is a sequence of argument indices to follow.
+    /// Get the subterm at the given "new path".
+    /// A new path uses PathStep::Function/Argument to navigate the curried term structure.
     /// An empty path returns the whole term.
-    pub fn get_term_at_old_path(&self, old_path: &[usize]) -> Option<Term> {
-        if old_path.is_empty() {
-            return Some(self.clone());
-        }
-
-        // Navigate to the argument at old_path[0]
-        let arg_index = old_path[0];
-        let mut current_pos = 1; // Skip the head
-        let mut current_arg = 0;
-
-        while current_pos < self.components.len() && current_arg < arg_index {
-            // Skip this argument
-            match self.components[current_pos] {
-                TermComponent::Application { span } => {
-                    current_pos += span as usize;
-                }
-                TermComponent::Atom(_) => {
-                    current_pos += 1;
-                }
-                TermComponent::Pi { .. } => {
-                    panic!("Pi should not appear in open terms");
-                }
-            }
-            current_arg += 1;
-        }
-
-        if current_arg != arg_index || current_pos >= self.components.len() {
-            return None;
-        }
-
-        // Extract the argument at current_pos
-        let arg = match self.components[current_pos] {
-            TermComponent::Application { span } => {
-                // The argument spans from current_pos to current_pos + span
-                // But the Application marker isn't part of the term's components, so skip it
-                Term::from_components(
-                    self.components[current_pos + 1..current_pos + span as usize].to_vec(),
-                )
-            }
-            TermComponent::Atom(atom) => Term::from_components(vec![TermComponent::Atom(atom)]),
-            TermComponent::Pi { .. } => {
-                panic!("Pi should not appear in open terms");
-            }
-        };
-
-        // Recurse for the rest of the old path
-        arg.get_term_at_old_path(&old_path[1..])
+    pub fn get_term_at_new_path(&self, new_path: &[PathStep]) -> Option<Term> {
+        self.as_ref()
+            .get_term_at_new_path(new_path)
+            .map(|r| r.to_owned())
     }
 
-    /// Replace the subterm at the given "old path" with a replacement.
-    /// An old path is a sequence of argument indices to follow.
+    /// Replace the subterm at the given "new path" with a replacement.
+    /// A new path uses PathStep::Function/Argument to navigate the curried term structure.
     /// An empty path replaces the whole term.
-    pub fn replace_at_old_path(&self, old_path: &[usize], replacement: Term) -> Term {
-        if old_path.is_empty() {
+    pub fn replace_at_new_path(&self, new_path: &[PathStep], replacement: Term) -> Term {
+        if new_path.is_empty() {
             return replacement;
         }
 
-        // We need to rebuild the term with the replacement at the old path
-        let mut new_components = vec![self.components[0]]; // Keep the head
-
-        let arg_index = old_path[0];
-        let mut current_pos = 1; // Skip the head
-        let mut current_arg = 0;
-
-        while current_pos < self.components.len() {
-            let arg_start = current_pos;
-            let arg_end = match self.components[current_pos] {
-                TermComponent::Application { span } => current_pos + span as usize,
-                TermComponent::Atom(_) => current_pos + 1,
-                TermComponent::Pi { .. } => panic!("Pi should not appear in open terms"),
-            };
-
-            if current_arg == arg_index {
-                // This is the argument to replace (or recurse into)
-                let old_arg = match self.components[arg_start] {
-                    TermComponent::Application { span } => Term::from_components(
-                        self.components[arg_start + 1..arg_start + span as usize].to_vec(),
-                    ),
-                    TermComponent::Atom(atom) => {
-                        Term::from_components(vec![TermComponent::Atom(atom)])
+        match new_path[0] {
+            PathStep::Argument => {
+                // Replace in the last argument
+                match self.as_ref().split_application() {
+                    Some((func, arg)) => {
+                        let new_arg = arg
+                            .to_owned()
+                            .replace_at_new_path(&new_path[1..], replacement);
+                        func.to_owned().apply(&[new_arg])
                     }
-                    TermComponent::Pi { .. } => panic!("Pi should not appear in open terms"),
-                };
-
-                let new_arg = old_arg.replace_at_old_path(&old_path[1..], replacement.clone());
-
-                // Add the new argument to components
-                if new_arg.components.len() == 1 {
-                    new_components.push(new_arg.components[0]);
-                } else {
-                    new_components.push(TermComponent::Application {
-                        span: new_arg.components.len() as u16 + 1,
-                    });
-                    new_components.extend(new_arg.components.iter().copied());
+                    None => panic!("Cannot follow Argument path on atomic term"),
                 }
-            } else {
-                // Copy this argument unchanged
-                new_components.extend(self.components[arg_start..arg_end].iter().copied());
             }
-
-            current_pos = arg_end;
-            current_arg += 1;
+            PathStep::Function => {
+                // Replace in the function part (all but last arg)
+                match self.as_ref().split_application() {
+                    Some((func, arg)) => {
+                        let new_func = func
+                            .to_owned()
+                            .replace_at_new_path(&new_path[1..], replacement);
+                        new_func.apply(&[arg.to_owned()])
+                    }
+                    None => panic!("Cannot follow Function path on atomic term"),
+                }
+            }
         }
-
-        Term::from_components(new_components)
     }
 
-    /// Find all rewritable subterms with their "old paths".
-    /// An old path is a Vec<usize> representing argument indices.
+    /// Find all rewritable subterms with their "new paths".
+    /// A new path uses Vec<PathStep> to navigate the curried term structure.
     /// It is an error to call this on any variables.
     /// Any term is rewritable except for "true".
-    pub fn rewritable_subterms_with_old_paths(&self) -> Vec<(Vec<usize>, Term)> {
+    pub fn rewritable_subterms_with_new_paths(&self) -> Vec<(Vec<PathStep>, Term)> {
         let mut answer = vec![];
         let mut prefix = vec![];
-        self.push_rewritable_subterms_with_old_paths(&mut prefix, &mut answer);
+        self.push_rewritable_subterms_with_new_paths(&mut prefix, &mut answer);
         answer
     }
 
-    /// Helper for rewritable_subterms_with_old_paths.
-    fn push_rewritable_subterms_with_old_paths(
+    /// Helper for rewritable_subterms_with_new_paths.
+    fn push_rewritable_subterms_with_new_paths(
         &self,
-        prefix: &mut Vec<usize>,
-        answer: &mut Vec<(Vec<usize>, Term)>,
+        prefix: &mut Vec<PathStep>,
+        answer: &mut Vec<(Vec<PathStep>, Term)>,
     ) {
         if self.is_true() {
             return;
@@ -1451,11 +1386,29 @@ impl Term {
             panic!("expected no variables");
         }
 
-        // Process arguments first (prefix order)
-        for (i, arg) in self.iter_args().enumerate() {
-            prefix.push(i);
+        // In the curried view, we navigate using Function/Argument.
+        // For a term f(a, b, c) = ((f a) b) c:
+        // - Argument goes to c
+        // - Function, Argument goes to b
+        // - Function, Function, Argument goes to a
+        // - Function, Function, Function goes to f
+        //
+        // We want to enumerate all subterms, so we recursively process:
+        // 1. The function part (if this is an application)
+        // 2. The argument part (if this is an application)
+        // 3. This term itself
+
+        if let Some((func, arg)) = self.as_ref().split_application() {
+            // Process function part
+            prefix.push(PathStep::Function);
+            func.to_owned()
+                .push_rewritable_subterms_with_new_paths(prefix, answer);
+            prefix.pop();
+
+            // Process argument part
+            prefix.push(PathStep::Argument);
             arg.to_owned()
-                .push_rewritable_subterms_with_old_paths(prefix, answer);
+                .push_rewritable_subterms_with_new_paths(prefix, answer);
             prefix.pop();
         }
 
