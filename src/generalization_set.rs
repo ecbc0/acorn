@@ -1,15 +1,12 @@
 use std::cmp::Ordering;
-use std::collections::HashMap;
 use std::vec;
 
 use crate::kernel::clause::Clause;
-use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::pattern_tree::PatternTree;
 use crate::kernel::term::TermRef;
-use crate::kernel::unifier::Unifier;
 
 /// The GeneralizationSet stores general clauses in a way that allows us to quickly check whether
 /// a new clause is a specialization of an existing one.
@@ -17,89 +14,25 @@ use crate::kernel::unifier::Unifier;
 pub struct GeneralizationSet {
     /// Stores an id for each clause.
     tree: PatternTree<usize>,
-
-    /// Fallback for clauses with applied variables - PatternTree has a bug with these.
-    with_applied_variables: HashMap<ClauseTypeKey, Vec<(Clause, usize)>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct ClauseTypeKey {
-    // The types for each literal in the clause.
-    types: Vec<ClosedType>,
-}
-
-impl ClauseTypeKey {
-    pub fn new(clause: &Clause, kernel_context: &KernelContext) -> ClauseTypeKey {
-        let local_context = clause.get_local_context();
-        let types = clause
-            .literals
-            .iter()
-            .map(|lit| {
-                lit.left
-                    .get_closed_type_with_context(local_context, kernel_context)
-            })
-            .collect();
-        ClauseTypeKey { types }
-    }
 }
 
 impl GeneralizationSet {
     pub fn new() -> GeneralizationSet {
         GeneralizationSet {
             tree: PatternTree::new(),
-            with_applied_variables: HashMap::new(),
         }
     }
 
     /// Inserts a clause into the set, reordering it in every way that is KBO-nonincreasing.
     pub fn insert(&mut self, mut clause: Clause, id: usize, kernel_context: &KernelContext) {
-        let has_av = clause.has_any_applied_variable();
         let mut generalized = vec![];
         all_generalized_forms(&mut clause, 0, &mut generalized, kernel_context);
         for c in generalized {
             self.tree.insert_clause(&c, id, kernel_context);
-
-            if has_av {
-                let key = ClauseTypeKey::new(&c, kernel_context);
-                self.with_applied_variables
-                    .entry(key)
-                    .or_default()
-                    .push((c, id));
-            }
         }
     }
 
     pub fn find_generalization(
-        &self,
-        clause: Clause,
-        kernel_context: &KernelContext,
-    ) -> Option<usize> {
-        let special = specialized_form(clause.clone(), kernel_context);
-        if let Some(id) = self.tree.find_clause(&special, kernel_context) {
-            return Some(*id);
-        }
-
-        // Fall back to checking with_applied_variables
-        let key = ClauseTypeKey::new(&special, kernel_context);
-        if let Some(candidates) = self.with_applied_variables.get(&key) {
-            for (general, id) in candidates {
-                // Check that signs match before attempting unification
-                let signs_match = general
-                    .literals
-                    .iter()
-                    .zip(special.literals.iter())
-                    .all(|(g, s)| g.positive == s.positive);
-                if signs_match && Unifier::unify_clauses(general, &special, kernel_context) {
-                    return Some(*id);
-                }
-            }
-        }
-        None
-    }
-
-    /// Same as find_generalization but without the fallback - for testing.
-    #[cfg(test)]
-    pub fn find_generalization_no_fallback(
         &self,
         clause: Clause,
         kernel_context: &KernelContext,
@@ -803,9 +736,8 @@ mod tests {
     }
 
     #[test]
-    fn test_pattern_tree_bug_with_higher_order_types() {
-        // This test exposes the bug in PatternTree with higher-order function types.
-        // It uses find_generalization_no_fallback to skip the workaround.
+    fn test_pattern_tree_with_higher_order_types() {
+        // Test PatternTree with higher-order function types.
         //
         // Pattern: not g10(x0, x1) or x0(x1)
         //   where g10: (Bool -> Bool, Bool) -> Bool (like true_below)
@@ -814,7 +746,7 @@ mod tests {
         //
         // Query: not g10(c1, c5) or c1(c5)
         //
-        // The bug is that PatternTree fails to find this match when x0 appears
+        // Tests that PatternTree correctly matches when x0 appears
         // both as an argument (to g10) and as a function (in x0(x1)).
         use crate::kernel::symbol::Symbol;
 
@@ -839,20 +771,17 @@ mod tests {
         let query_local = LocalContext::empty();
         let query = Clause::parse("not g10(c1, c5) or c1(c5)", &query_local);
 
-        // This should work without the fallback once the PatternTree bug is fixed
-        let found = clause_set.find_generalization_no_fallback(query, &kernel_context);
+        let found = clause_set.find_generalization(query, &kernel_context);
         assert_eq!(
             found,
             Some(42),
-            "PatternTree should match strong_induction pattern without fallback"
+            "PatternTree should match strong_induction pattern"
         );
     }
 
     #[test]
-    fn test_pattern_tree_bug_with_nested_arg() {
-        // This test matches the real failure case from has_prime_divisor.
-        // The query has: not true_below(f, s0(f)) or f(s0(f))
-        // where s0(f) is a term that contains f.
+    fn test_pattern_tree_with_nested_arg() {
+        // Test with nested argument structure (like strong_induction with skolem).
         //
         // Pattern: not g10(x0, x1) or x0(x1)
         //   where g10: (Bool -> Bool, Bool) -> Bool (like true_below)
@@ -887,19 +816,17 @@ mod tests {
         let query_local = LocalContext::empty();
         let query = Clause::parse("not g10(c1, g11(c1)) or c1(g11(c1))", &query_local);
 
-        // This should work without the fallback once the PatternTree bug is fixed
-        let found = clause_set.find_generalization_no_fallback(query, &kernel_context);
+        let found = clause_set.find_generalization(query, &kernel_context);
         assert_eq!(
             found,
             Some(42),
-            "PatternTree should match pattern with nested arg without fallback"
+            "PatternTree should match pattern with nested arg"
         );
     }
 
     #[test]
-    fn test_fallback_rejects_sign_mismatch() {
-        // This test verifies that the fallback correctly rejects clauses with mismatched signs.
-        // The old buggy implementation would match these because Unifier::unify_clauses ignores signs.
+    fn test_pattern_tree_rejects_sign_mismatch() {
+        // Test that PatternTree correctly rejects clauses with mismatched literal signs.
         //
         // Pattern: g10(x0, x1) or x0(x1)  -- signs [true, true] (both positive)
         // Query: not g10(c1, c5) or c1(c5)  -- signs [false, true] (first negative)
@@ -929,7 +856,6 @@ mod tests {
         let query = Clause::parse("not g10(c1, c5) or c1(c5)", &query_local);
 
         // This should NOT match because the signs are different
-        // The old buggy implementation would return Some(42) here
         let found = clause_set.find_generalization(query, &kernel_context);
         assert_eq!(
             found, None,
