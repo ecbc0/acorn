@@ -1662,6 +1662,7 @@ impl Normalizer {
                 _ => None,
             };
             for clause in clauses {
+                clause.validate(&self.kernel_context);
                 let step = ProofStep::assumption(&proposition, clause, defined);
                 steps.push(step);
             }
