@@ -381,60 +381,6 @@ impl<'a> Unifier<'a> {
         false
     }
 
-    // Helper method to try unifying a variable head term with a partial application
-    // Returns true if successful, false otherwise
-    fn try_unify_partial_application(
-        &mut self,
-        var_term: TermRef,
-        var_scope: Scope,
-        full_term: TermRef,
-        full_scope: Scope,
-    ) -> Option<bool> {
-        // Check if var_term has a variable head with arguments
-        if let Atom::Variable(var_id) = *var_term.get_head_atom() {
-            let var_args_len = var_term.num_args();
-            let full_args_len = full_term.num_args();
-
-            if var_args_len >= 1 && full_args_len > var_args_len {
-                // We want to unify x0(arg1, ..., argN) with f(a1, ..., aM) where M > N
-                // This means x0 should map to f(a1, ..., a(M-N))
-                // and each argi should unify with a(M-N+i)
-
-                // Build the partial application: first (M-N) args of full_term
-                let num_partial_args = full_args_len - var_args_len;
-                let full_args: Vec<_> = full_term.iter_args().collect();
-                let partial_args: Vec<Term> = full_args[0..num_partial_args]
-                    .iter()
-                    .map(|arg| arg.to_owned())
-                    .collect();
-
-                // Create the partial application term
-                let partial = Term::new(*full_term.get_head_atom(), partial_args);
-
-                // Unify the variable with the partial application
-                if !self.unify_variable(var_scope, var_id, full_scope, &partial) {
-                    return Some(false);
-                }
-
-                // Unify each var_term argument with the corresponding full_term argument
-                let var_args: Vec<_> = var_term.iter_args().collect();
-                for i in 0..var_args_len {
-                    if !self.unify_internal(
-                        var_scope,
-                        var_args[i],
-                        full_scope,
-                        full_args[num_partial_args + i],
-                    ) {
-                        return Some(false);
-                    }
-                }
-
-                return Some(true);
-            }
-        }
-        None
-    }
-
     // Public interface for unification
     // Does not allow unification with the output scope - callers should not directly
     // provide terms in the output scope as the unifier manages output variables internally
@@ -463,33 +409,12 @@ impl<'a> Unifier<'a> {
             return false;
         }
 
-        // Handle the case where we're unifying something with a variable
+        // Handle the case where we're unifying something with an atomic variable
         if let Some(i) = term1.atomic_variable() {
             return self.unify_variable(scope1, i, scope2, &term2.to_owned());
         }
         if let Some(i) = term2.atomic_variable() {
             return self.unify_variable(scope2, i, scope1, &term1.to_owned());
-        }
-
-        // Try to unify term1 (if it has a variable head) with a partial application of term2
-        if let Some(result) = self.try_unify_partial_application(term1, scope1, term2, scope2) {
-            return result;
-        }
-
-        // Try the symmetric case: term2 with a partial application of term1
-        if let Some(result) = self.try_unify_partial_application(term2, scope2, term1, scope1) {
-            return result;
-        }
-
-        // Re-get local contexts since we may have modified them above
-        let local1 = self.get_local_context(scope1);
-        let local2 = self.get_local_context(scope2);
-
-        // These checks mean we won't unify higher-order functions whose types don't match.
-        if term1.get_closed_type_with_context(local1, kc)
-            != term2.get_closed_type_with_context(local2, kc)
-        {
-            return false;
         }
 
         match (term1.decompose(), term2.decompose()) {
