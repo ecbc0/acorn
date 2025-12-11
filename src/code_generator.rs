@@ -13,7 +13,7 @@ use crate::kernel::clause::Clause;
 use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::term::Term;
+use crate::kernel::term::{Decomposition, Term};
 use crate::kernel::variable_map::VariableMap;
 use crate::module::ModuleId;
 use crate::normalizer::Normalizer;
@@ -355,21 +355,25 @@ impl CodeGenerator<'_> {
         _kernel_context: &KernelContext,
     ) {
         use crate::kernel::atom::Atom;
-        if let Atom::Variable(var_id) = term.get_head_atom() {
-            // For a variable term, get its type from the local context.
-            let closed_type = local_context
-                .get_var_closed_type(*var_id as usize)
-                .cloned()
-                .expect("Variable should have type in LocalContext");
-            if !self.arbitrary_names.contains_key(&closed_type) {
-                // Generate a name for this arbitrary value
-                let name = self.bindings.next_indexed_var('s', &mut self.next_s);
-                let cname = ConstantName::Unqualified(self.bindings.module_id(), name);
-                self.arbitrary_names.insert(closed_type, cname);
+        match term.as_ref().decompose() {
+            Decomposition::Atom(Atom::Variable(var_id)) => {
+                // For a variable term, get its type from the local context.
+                let closed_type = local_context
+                    .get_var_closed_type(*var_id as usize)
+                    .cloned()
+                    .expect("Variable should have type in LocalContext");
+                if !self.arbitrary_names.contains_key(&closed_type) {
+                    // Generate a name for this arbitrary value
+                    let name = self.bindings.next_indexed_var('s', &mut self.next_s);
+                    let cname = ConstantName::Unqualified(self.bindings.module_id(), name);
+                    self.arbitrary_names.insert(closed_type, cname);
+                }
             }
-        }
-        for arg in term.args() {
-            self.add_arbitrary_for_term(&arg, local_context, _kernel_context);
+            Decomposition::Atom(_) => {}
+            Decomposition::Application(func, arg) => {
+                self.add_arbitrary_for_term(&func.to_owned(), local_context, _kernel_context);
+                self.add_arbitrary_for_term(&arg.to_owned(), local_context, _kernel_context);
+            }
         }
     }
 

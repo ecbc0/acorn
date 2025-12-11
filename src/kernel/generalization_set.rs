@@ -6,7 +6,7 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::pattern_tree::PatternTree;
-use crate::kernel::term::TermRef;
+use crate::kernel::term::{Decomposition, TermRef};
 
 /// The GeneralizationSet stores general clauses in a way that allows us to quickly check whether
 /// a new clause is a specialization of an existing one.
@@ -123,21 +123,37 @@ pub fn sub_invariant_term_cmp(
         return Some(type_cmp);
     }
 
-    // If heads are different atoms, we can compare them
-    if left.get_head_atom() != right.get_head_atom() {
-        return Some(left.get_head_atom().cmp(&right.get_head_atom()));
+    // Use decompose to recursively compare
+    match (left.decompose(), right.decompose()) {
+        (Decomposition::Atom(l_atom), Decomposition::Atom(r_atom)) => Some(l_atom.cmp(r_atom)),
+        (Decomposition::Application(l_func, l_arg), Decomposition::Application(r_func, r_arg)) => {
+            // Need to check for variables in function and argument parts
+            // Since we already checked that top-level heads aren't variables,
+            // but we still need to recurse properly
+            match sub_invariant_term_cmp(
+                l_func,
+                false,
+                r_func,
+                false,
+                local_context,
+                kernel_context,
+            ) {
+                Some(Ordering::Equal) => sub_invariant_term_cmp(
+                    l_arg,
+                    false,
+                    r_arg,
+                    false,
+                    local_context,
+                    kernel_context,
+                ),
+                x => x,
+            }
+        }
+        // Atom vs Application mismatch - shouldn't happen with equal heads and same num_args
+        // But could happen with different structure, return based on which is simpler
+        (Decomposition::Atom(_), Decomposition::Application(_, _)) => Some(Ordering::Less),
+        (Decomposition::Application(_, _), Decomposition::Atom(_)) => Some(Ordering::Greater),
     }
-
-    // Heads are the same, so recurse on arguments
-    assert!(left.num_args() == right.num_args());
-    for (l, r) in left.iter_args().zip(right.iter_args()) {
-        match sub_invariant_term_cmp(l, false, r, false, local_context, kernel_context) {
-            Some(Ordering::Equal) => continue,
-            x => return x,
-        };
-    }
-
-    Some(Ordering::Equal)
 }
 
 /// The generalized and specialized forms relate to each other.

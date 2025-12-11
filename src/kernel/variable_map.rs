@@ -4,8 +4,7 @@ use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::term::Term;
-use crate::kernel::term::TermRef;
+use crate::kernel::term::{Decomposition, Term, TermRef};
 use crate::kernel::types::GROUND_EMPTY;
 use std::fmt;
 
@@ -115,25 +114,32 @@ impl VariableMap {
             return false;
         }
 
-        // Handle the case where a general variable is being mapped to the whole term
-        if let Some(i) = general.atomic_variable() {
-            return self.match_var(i, special);
-        }
-
-        if general.num_args() != special.num_args() {
-            return false;
-        }
-
-        if !self.match_atoms(general.get_head_atom(), special.get_head_atom()) {
-            return false;
-        }
-
-        for (g, s) in general.iter_args().zip(special.iter_args()) {
-            if !self.match_terms(g, s, general_context, special_context, kernel_context) {
-                return false;
+        match (general.decompose(), special.decompose()) {
+            (Decomposition::Atom(Atom::Variable(i)), _) => self.match_var(*i, special),
+            (Decomposition::Atom(g_atom), Decomposition::Atom(s_atom)) => {
+                self.match_atoms(g_atom, s_atom)
             }
+            (
+                Decomposition::Application(g_func, g_arg),
+                Decomposition::Application(s_func, s_arg),
+            ) => {
+                self.match_terms(
+                    g_func,
+                    s_func,
+                    general_context,
+                    special_context,
+                    kernel_context,
+                ) && self.match_terms(
+                    g_arg,
+                    s_arg,
+                    general_context,
+                    special_context,
+                    kernel_context,
+                )
+            }
+            // Atom vs Application mismatch
+            _ => false,
         }
-        true
     }
 
     pub fn len(&self) -> usize {
@@ -189,25 +195,25 @@ impl VariableMap {
         output_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> Term {
-        let (head, mut args) = match *term.get_head_atom() {
-            Atom::Variable(i) => {
+        match term.decompose() {
+            Decomposition::Atom(Atom::Variable(i)) => {
                 // Check if we have a mapping for this variable
-                if let Some(replacement) = self.get_mapping(i) {
-                    (*replacement.get_head_atom(), replacement.args())
+                if let Some(replacement) = self.get_mapping(*i) {
+                    replacement.clone()
                 } else {
                     // Keep the variable as-is if unmapped
-                    (*term.get_head_atom(), vec![])
+                    term.to_owned()
                 }
             }
-            head => (head, vec![]),
-        };
-
-        // Recurse on the arguments
-        for arg in term.iter_args() {
-            args.push(self.specialize_term(arg, input_context, output_context, kernel_context));
+            Decomposition::Atom(_) => term.to_owned(),
+            Decomposition::Application(func, arg) => {
+                let specialized_func =
+                    self.specialize_term(func, input_context, output_context, kernel_context);
+                let specialized_arg =
+                    self.specialize_term(arg, input_context, output_context, kernel_context);
+                specialized_func.apply(&[specialized_arg])
+            }
         }
-
-        Term::new(head, args)
     }
 
     /// This does not normalize.

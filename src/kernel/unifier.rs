@@ -7,8 +7,7 @@ use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 #[cfg(test)]
 use crate::kernel::symbol::Symbol;
-use crate::kernel::term::Term;
-use crate::kernel::term::TermRef;
+use crate::kernel::term::{Decomposition, Term, TermRef};
 use crate::kernel::variable_map::VariableMap;
 use std::fmt;
 
@@ -492,21 +491,18 @@ impl<'a> Unifier<'a> {
         {
             return false;
         }
-        if term1.num_args() != term2.num_args() {
-            return false;
-        }
 
-        if !self.unify_atoms(scope1, term1.get_head_atom(), scope2, term2.get_head_atom()) {
-            return false;
-        }
-
-        for (a1, a2) in term1.iter_args().zip(term2.iter_args()) {
-            if !self.unify_internal(scope1, a1, scope2, a2) {
-                return false;
+        match (term1.decompose(), term2.decompose()) {
+            (Decomposition::Atom(a1), Decomposition::Atom(a2)) => {
+                self.unify_atoms(scope1, a1, scope2, a2)
             }
+            (Decomposition::Application(f1, a1), Decomposition::Application(f2, a2)) => {
+                self.unify_internal(scope1, f1, scope2, f2)
+                    && self.unify_internal(scope1, a1, scope2, a2)
+            }
+            // Atom vs Application mismatch
+            _ => false,
         }
-
-        true
     }
 
     /// Doesn't worry about literal sign.
