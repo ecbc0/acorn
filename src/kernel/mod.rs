@@ -6,6 +6,7 @@ pub mod cnf;
 pub mod display;
 pub mod extended_term;
 pub mod fingerprint;
+pub mod generalization_set;
 pub mod inference;
 pub mod kernel_context;
 pub mod literal;

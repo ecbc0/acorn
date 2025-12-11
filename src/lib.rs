@@ -7,7 +7,6 @@ pub mod code_generator;
 pub mod common;
 pub mod doc_generator;
 pub mod elaborator;
-pub mod generalization_set;
 pub mod generative;
 pub mod interfaces;
 pub mod kernel;
