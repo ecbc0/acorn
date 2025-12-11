@@ -7,6 +7,18 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::types::GROUND_BOOL;
 
+/// A step in a "new path" through a term.
+/// Treats applications in curried form: f(a, b) becomes ((f a) b).
+/// This is called a "new path" because we are transitioning from the old
+/// Vec<usize> path representation to this more explicit one.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum PathStep {
+    /// Go to the function part of an application
+    Function,
+    /// Go to the argument part of an application
+    Argument,
+}
+
 /// A component of a Term or ClosedType in its flattened representation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum TermComponent {
@@ -539,6 +551,22 @@ impl<'a> TermRef<'a> {
         }
 
         self.total_tiebreak(other)
+    }
+
+    /// Navigate to a subterm using a "new path".
+    /// Returns None if the path doesn't exist or we hit an atomic term.
+    pub fn get_term_at_new_path(&self, path: &[PathStep]) -> Option<TermRef<'a>> {
+        if path.is_empty() {
+            return Some(*self);
+        }
+
+        // Try to split the application
+        let (func, arg) = self.split_application()?;
+
+        match path[0] {
+            PathStep::Argument => arg.get_term_at_new_path(&path[1..]),
+            PathStep::Function => func.get_term_at_new_path(&path[1..]),
+        }
     }
 }
 
@@ -1289,16 +1317,16 @@ impl Term {
         }
     }
 
-    /// Get the subterm at the given path.
-    /// A path is a sequence of argument indices to follow.
+    /// Get the subterm at the given "old path".
+    /// An old path is a sequence of argument indices to follow.
     /// An empty path returns the whole term.
-    pub fn get_term_at_path(&self, path: &[usize]) -> Option<Term> {
-        if path.is_empty() {
+    pub fn get_term_at_old_path(&self, old_path: &[usize]) -> Option<Term> {
+        if old_path.is_empty() {
             return Some(self.clone());
         }
 
-        // Navigate to the argument at path[0]
-        let arg_index = path[0];
+        // Navigate to the argument at old_path[0]
+        let arg_index = old_path[0];
         let mut current_pos = 1; // Skip the head
         let mut current_arg = 0;
 
@@ -1337,22 +1365,22 @@ impl Term {
             }
         };
 
-        // Recurse for the rest of the path
-        arg.get_term_at_path(&path[1..])
+        // Recurse for the rest of the old path
+        arg.get_term_at_old_path(&old_path[1..])
     }
 
-    /// Replace the subterm at the given path with a replacement.
-    /// A path is a sequence of argument indices to follow.
+    /// Replace the subterm at the given "old path" with a replacement.
+    /// An old path is a sequence of argument indices to follow.
     /// An empty path replaces the whole term.
-    pub fn replace_at_path(&self, path: &[usize], replacement: Term) -> Term {
-        if path.is_empty() {
+    pub fn replace_at_old_path(&self, old_path: &[usize], replacement: Term) -> Term {
+        if old_path.is_empty() {
             return replacement;
         }
 
-        // We need to rebuild the term with the replacement at the path
+        // We need to rebuild the term with the replacement at the old path
         let mut new_components = vec![self.components[0]]; // Keep the head
 
-        let arg_index = path[0];
+        let arg_index = old_path[0];
         let mut current_pos = 1; // Skip the head
         let mut current_arg = 0;
 
@@ -1376,7 +1404,7 @@ impl Term {
                     TermComponent::Pi { .. } => panic!("Pi should not appear in open terms"),
                 };
 
-                let new_arg = old_arg.replace_at_path(&path[1..], replacement.clone());
+                let new_arg = old_arg.replace_at_old_path(&old_path[1..], replacement.clone());
 
                 // Add the new argument to components
                 if new_arg.components.len() == 1 {
@@ -1399,18 +1427,19 @@ impl Term {
         Term::from_components(new_components)
     }
 
-    /// Find all rewritable subterms with their paths.
+    /// Find all rewritable subterms with their "old paths".
+    /// An old path is a Vec<usize> representing argument indices.
     /// It is an error to call this on any variables.
     /// Any term is rewritable except for "true".
-    pub fn rewritable_subterms(&self) -> Vec<(Vec<usize>, Term)> {
+    pub fn rewritable_subterms_with_old_paths(&self) -> Vec<(Vec<usize>, Term)> {
         let mut answer = vec![];
         let mut prefix = vec![];
-        self.push_rewritable_subterms(&mut prefix, &mut answer);
+        self.push_rewritable_subterms_with_old_paths(&mut prefix, &mut answer);
         answer
     }
 
-    /// Helper for rewritable_subterms.
-    fn push_rewritable_subterms(
+    /// Helper for rewritable_subterms_with_old_paths.
+    fn push_rewritable_subterms_with_old_paths(
         &self,
         prefix: &mut Vec<usize>,
         answer: &mut Vec<(Vec<usize>, Term)>,
@@ -1425,7 +1454,8 @@ impl Term {
         // Process arguments first (prefix order)
         for (i, arg) in self.iter_args().enumerate() {
             prefix.push(i);
-            arg.to_owned().push_rewritable_subterms(prefix, answer);
+            arg.to_owned()
+                .push_rewritable_subterms_with_old_paths(prefix, answer);
             prefix.pop();
         }
 

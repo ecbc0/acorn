@@ -310,13 +310,13 @@ impl<'a> Proof<'a> {
                 } else {
                     &target.right
                 };
-                let target_subterm = target_term.get_term_at_path(&info.path).unwrap();
+                let target_subterm = target_term.get_term_at_old_path(&info.path).unwrap();
                 let rewritten_term = if info.target_left ^ info.flipped {
                     &info.rewritten.left
                 } else {
                     &info.rewritten.right
                 };
-                let rewritten_subterm = rewritten_term.get_term_at_path(&info.path).unwrap();
+                let rewritten_subterm = rewritten_term.get_term_at_old_path(&info.path).unwrap();
                 for conc_map in var_maps {
                     // Use the unifier's output context from reconstruct_trace, not the step context.
                     // The conc_map's replacement terms reference variables in the unifier's output context.

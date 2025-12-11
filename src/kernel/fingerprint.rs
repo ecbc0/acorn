@@ -5,19 +5,9 @@ use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::term::PathStep;
 use crate::kernel::term::Term;
-use crate::kernel::term::TermRef;
 use crate::kernel::types::GroundTypeId;
-
-/// A step in a binary path through a term.
-/// Treats applications in curried form: f(a, b) becomes ((f a) b).
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum BinaryStep {
-    /// Go to the function part of an application
-    Function,
-    /// Go to the argument part of an application
-    Argument,
-}
 
 /// A coarse categorization of types for fingerprint indexing.
 /// Ground types are distinguished by their ID, while all arrow types
@@ -62,30 +52,14 @@ enum FingerprintComponent {
     Something(TypeCategory, Atom),
 }
 
-/// Navigate to a subterm using a binary path.
-/// Returns None if the path doesn't exist or we hit an atomic term.
-fn get_term_at_binary_path<'a>(term: TermRef<'a>, path: &[BinaryStep]) -> Option<TermRef<'a>> {
-    if path.is_empty() {
-        return Some(term);
-    }
-
-    // Try to split the application
-    let (func, arg) = term.split_application()?;
-
-    match path[0] {
-        BinaryStep::Argument => get_term_at_binary_path(arg, &path[1..]),
-        BinaryStep::Function => get_term_at_binary_path(func, &path[1..]),
-    }
-}
-
 impl FingerprintComponent {
     fn new(
         term: &Term,
-        path: &[BinaryStep],
+        path: &[PathStep],
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> FingerprintComponent {
-        match get_term_at_binary_path(term.as_ref(), path) {
+        match term.as_ref().get_term_at_new_path(path) {
             Some(subterm) => {
                 let closed_type =
                     subterm.get_closed_type_with_context(local_context, kernel_context);
@@ -109,14 +83,14 @@ impl FingerprintComponent {
                     match current.split_application() {
                         Some((func, arg)) => {
                             current = match step {
-                                BinaryStep::Function => func,
-                                BinaryStep::Argument => arg,
+                                PathStep::Function => func,
+                                PathStep::Argument => arg,
                             };
                         }
                         None => return FingerprintComponent::Nothing,
                     }
                 }
-                // Should not reach here since get_term_at_binary_path returned None
+                // Should not reach here since get_term_at_new_path returned None
                 FingerprintComponent::Nothing
             }
         }
@@ -166,15 +140,15 @@ impl FingerprintComponent {
     }
 }
 
-/// Binary paths to sample for fingerprinting.
-const BINARY_PATHS: [&[BinaryStep]; 7] = [
-    &[],                                           // root
-    &[BinaryStep::Function],                       // function part
-    &[BinaryStep::Argument],                       // argument part
-    &[BinaryStep::Function, BinaryStep::Function], // function's function
-    &[BinaryStep::Function, BinaryStep::Argument], // function's argument
-    &[BinaryStep::Argument, BinaryStep::Function], // arg's function (if arg is application)
-    &[BinaryStep::Argument, BinaryStep::Argument], // arg's argument
+/// New paths to sample for fingerprinting.
+const NEW_PATHS: [&[PathStep]; 7] = [
+    &[],                                       // root
+    &[PathStep::Function],                     // function part
+    &[PathStep::Argument],                     // argument part
+    &[PathStep::Function, PathStep::Function], // function's function
+    &[PathStep::Function, PathStep::Argument], // function's argument
+    &[PathStep::Argument, PathStep::Function], // arg's function (if arg is application)
+    &[PathStep::Argument, PathStep::Argument], // arg's argument
 ];
 
 /// The fingerprints of a term at a selection of binary paths.
@@ -190,14 +164,14 @@ impl TermFingerprint {
         kernel_context: &KernelContext,
     ) -> TermFingerprint {
         let mut components = [FingerprintComponent::Nothing; 7];
-        for (i, path) in BINARY_PATHS.iter().enumerate() {
+        for (i, path) in NEW_PATHS.iter().enumerate() {
             components[i] = FingerprintComponent::new(term, path, local_context, kernel_context);
         }
         TermFingerprint { components }
     }
 
     fn could_unify(&self, other: &TermFingerprint) -> bool {
-        for i in 0..BINARY_PATHS.len() {
+        for i in 0..NEW_PATHS.len() {
             if !self.components[i].could_unify(&other.components[i]) {
                 return false;
             }
@@ -206,7 +180,7 @@ impl TermFingerprint {
     }
 
     fn could_specialize(&self, other: &TermFingerprint) -> bool {
-        for i in 0..BINARY_PATHS.len() {
+        for i in 0..NEW_PATHS.len() {
             if !self.components[i].could_specialize(&other.components[i]) {
                 return false;
             }
@@ -392,34 +366,42 @@ mod tests {
     }
 
     #[test]
-    fn test_binary_path_navigation() {
+    fn test_new_path_navigation() {
         let lctx = test_local_context();
         let kctx = test_kernel_context();
         // m0: (Bool, Bool) -> Bool
         let term = Term::parse_with_context("m0(c0, c1)", &lctx, &kctx);
 
         // [] should return the whole term
-        let root = get_term_at_binary_path(term.as_ref(), &[]).unwrap();
+        let root = term.as_ref().get_term_at_new_path(&[]).unwrap();
         assert_eq!(root.num_args(), 2);
 
         // [Argument] should return c1 (the last arg)
-        let last_arg = get_term_at_binary_path(term.as_ref(), &[BinaryStep::Argument]).unwrap();
+        let last_arg = term
+            .as_ref()
+            .get_term_at_new_path(&[PathStep::Argument])
+            .unwrap();
         assert!(last_arg.is_atomic());
 
         // [Function] should return m0(c0)
-        let func = get_term_at_binary_path(term.as_ref(), &[BinaryStep::Function]).unwrap();
+        let func = term
+            .as_ref()
+            .get_term_at_new_path(&[PathStep::Function])
+            .unwrap();
         assert_eq!(func.num_args(), 1);
 
         // [Function, Argument] should return c0
-        let first_arg =
-            get_term_at_binary_path(term.as_ref(), &[BinaryStep::Function, BinaryStep::Argument])
-                .unwrap();
+        let first_arg = term
+            .as_ref()
+            .get_term_at_new_path(&[PathStep::Function, PathStep::Argument])
+            .unwrap();
         assert!(first_arg.is_atomic());
 
         // [Function, Function] should return m0 (the head)
-        let head =
-            get_term_at_binary_path(term.as_ref(), &[BinaryStep::Function, BinaryStep::Function])
-                .unwrap();
+        let head = term
+            .as_ref()
+            .get_term_at_new_path(&[PathStep::Function, PathStep::Function])
+            .unwrap();
         assert!(head.is_atomic());
     }
 

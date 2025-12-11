@@ -336,7 +336,7 @@ impl ActiveSet {
         let target_literal = &target_step.clause.literals[0];
 
         for (target_left, u, _) in target_literal.both_term_pairs() {
-            let u_subterms = u.rewritable_subterms();
+            let u_subterms = u.rewritable_subterms_with_old_paths();
 
             for (path, u_subterm) in u_subterms {
                 let u_subterm_id = if let Some(id) = self.subterm_map.get(&u_subterm) {

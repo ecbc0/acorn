@@ -588,7 +588,7 @@ impl ProofStep {
 
         let target_literal = &target_step.clause.literals[0];
         let (new_literal, flipped) =
-            target_literal.replace_at_path(target_left, path, new_subterm.clone());
+            target_literal.replace_at_old_path(target_left, path, new_subterm.clone());
         let rewritten = new_literal.clone();
 
         let simplifying = new_literal.extended_kbo_cmp(&target_literal) == Ordering::Less;

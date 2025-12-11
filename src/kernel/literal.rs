@@ -301,34 +301,36 @@ impl Literal {
         lit
     }
 
-    /// Get the subterm at the given path.
+    /// Get the subterm at the given "old path".
     /// If `left` is true, navigate into the left term, otherwise the right term.
-    pub fn get_term_at_path(&self, left: bool, path: &[usize]) -> Option<Term> {
+    /// An old path is a Vec<usize> representing argument indices.
+    pub fn get_term_at_old_path(&self, left: bool, old_path: &[usize]) -> Option<Term> {
         if left {
-            self.left.get_term_at_path(path)
+            self.left.get_term_at_old_path(old_path)
         } else {
-            self.right.get_term_at_path(path)
+            self.right.get_term_at_old_path(old_path)
         }
     }
 
-    /// Replace the subterm at the given path with a new term.
+    /// Replace the subterm at the given "old path" with a new term.
     /// If `left` is true, replace in the left term, otherwise the right term.
+    /// An old path is a Vec<usize> representing argument indices.
     /// Returns a new literal (may be flipped for normalization) and whether it was flipped.
-    pub fn replace_at_path(
+    pub fn replace_at_old_path(
         &self,
         left: bool,
-        path: &[usize],
+        old_path: &[usize],
         new_subterm: Term,
     ) -> (Literal, bool) {
         let (new_left, new_right) = if left {
             (
-                self.left.replace_at_path(path, new_subterm),
+                self.left.replace_at_old_path(old_path, new_subterm),
                 self.right.clone(),
             )
         } else {
             (
                 self.left.clone(),
-                self.right.replace_at_path(path, new_subterm),
+                self.right.replace_at_old_path(old_path, new_subterm),
             )
         };
 
