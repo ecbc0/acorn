@@ -268,11 +268,6 @@ impl Clause {
         false
     }
 
-    /// Check if this clause contains any applied variables.
-    pub fn has_any_applied_variable(&self) -> bool {
-        self.literals.iter().any(|x| x.has_any_applied_variable())
-    }
-
     /// Normalize variable IDs without flipping literals.
     /// Also rebuilds the context to match the renumbered variables.
     pub fn normalize_var_ids_no_flip(&mut self) {

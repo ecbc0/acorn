@@ -286,22 +286,6 @@ impl<'a> TermRef<'a> {
         false
     }
 
-    /// Recursively checks if any term has a variable as its head with arguments applied to it.
-    /// Returns true for terms like x0(a, b) but false for plain variables like x0.
-    pub fn has_any_applied_variable(&self) -> bool {
-        match self.decompose() {
-            Decomposition::Atom(_) => false,
-            Decomposition::Application(func, arg) => {
-                // Check if the head is a variable (meaning this term has an applied variable)
-                if matches!(func.get_head_atom(), Atom::Variable(_)) {
-                    return true;
-                }
-                // Recursively check both parts
-                func.has_any_applied_variable() || arg.has_any_applied_variable()
-            }
-        }
-    }
-
     /// Count the number of atom components (excluding Application markers).
     pub fn atom_count(&self) -> u32 {
         let mut count = 0;
@@ -899,12 +883,6 @@ impl Term {
         Term {
             components: vec![TermComponent::Atom(Atom::Variable(index))],
         }
-    }
-
-    /// Recursively checks if any term has a variable as its head with arguments applied to it.
-    /// Returns true for terms like x0(a, b) but false for plain variables like x0.
-    pub fn has_any_applied_variable(&self) -> bool {
-        self.as_ref().has_any_applied_variable()
     }
 
     /// Check if this term is a variable (atomic and head is a variable).

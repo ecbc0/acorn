@@ -216,11 +216,6 @@ impl Literal {
         Literal::new(positive, term, Term::new_true())
     }
 
-    /// Check if this literal contains any applied variables.
-    pub fn has_any_applied_variable(&self) -> bool {
-        self.left.has_any_applied_variable() || self.right.has_any_applied_variable()
-    }
-
     /// Whether the components of this literal are strictly ordered according to the KBO.
     pub fn strict_kbo(&self) -> bool {
         match self.left.kbo_cmp(&self.right) {

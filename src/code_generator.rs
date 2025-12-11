@@ -348,12 +348,7 @@ impl CodeGenerator<'_> {
         Ok(expr.to_string())
     }
 
-    fn add_arbitrary_for_term(
-        &mut self,
-        term: &Term,
-        local_context: &LocalContext,
-        _kernel_context: &KernelContext,
-    ) {
+    fn add_arbitrary_for_term(&mut self, term: &Term, local_context: &LocalContext) {
         use crate::kernel::atom::Atom;
         match term.as_ref().decompose() {
             Decomposition::Atom(Atom::Variable(var_id)) => {
@@ -371,18 +366,18 @@ impl CodeGenerator<'_> {
             }
             Decomposition::Atom(_) => {}
             Decomposition::Application(func, arg) => {
-                self.add_arbitrary_for_term(&func.to_owned(), local_context, _kernel_context);
-                self.add_arbitrary_for_term(&arg.to_owned(), local_context, _kernel_context);
+                self.add_arbitrary_for_term(&func.to_owned(), local_context);
+                self.add_arbitrary_for_term(&arg.to_owned(), local_context);
             }
         }
     }
 
     /// For any variables in this clause, add an arbitrary variable.
-    fn add_arbitrary_for_clause(&mut self, clause: &Clause, kernel_context: &KernelContext) {
+    fn add_arbitrary_for_clause(&mut self, clause: &Clause, _kernel_context: &KernelContext) {
         let local_context = clause.get_local_context();
         for literal in &clause.literals {
             for term in [&literal.left, &literal.right] {
-                self.add_arbitrary_for_term(term, local_context, kernel_context);
+                self.add_arbitrary_for_term(term, local_context);
             }
         }
     }
