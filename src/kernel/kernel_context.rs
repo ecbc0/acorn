@@ -225,6 +225,16 @@ impl KernelContext {
             arg_types: vec![AcornType::Empty, AcornType::Empty],
             return_type: Box::new(AcornType::Empty),
         });
+        // Higher-order type like true_below: (Bool -> Bool, Bool) -> Bool
+        let func_bool_to_bool = AcornType::Function(FunctionType {
+            arg_types: vec![bool_to_bool.clone(), AcornType::Bool],
+            return_type: Box::new(AcornType::Bool),
+        });
+        // Type like (Bool -> Bool) -> Bool
+        let func_to_bool = AcornType::Function(FunctionType {
+            arg_types: vec![bool_to_bool.clone()],
+            return_type: Box::new(AcornType::Bool),
+        });
 
         // Register types in the type store first
         ctx.type_store.add_type(&bool_to_bool);
@@ -232,6 +242,8 @@ impl KernelContext {
         ctx.type_store.add_type(&bool3_to_bool);
         ctx.type_store.add_type(&empty_to_bool);
         ctx.type_store.add_type(&empty2_to_empty);
+        ctx.type_store.add_type(&func_bool_to_bool);
+        ctx.type_store.add_type(&func_to_bool);
 
         let closed_bool_to_bool = ctx
             .type_store
@@ -253,6 +265,14 @@ impl KernelContext {
             .type_store
             .get_closed_type(&empty2_to_empty)
             .expect("type should be valid");
+        let closed_func_bool_to_bool = ctx
+            .type_store
+            .get_closed_type(&func_bool_to_bool)
+            .expect("type should be valid");
+        let closed_func_to_bool = ctx
+            .type_store
+            .get_closed_type(&func_to_bool)
+            .expect("type should be valid");
 
         // Add global constants with function types
         ctx.symbol_table
@@ -268,6 +288,12 @@ impl KernelContext {
         for _ in 5..10 {
             ctx.symbol_table.add_global_constant(ClosedType::bool());
         }
+        // h0: (Bool -> Bool, Bool) -> Bool (like true_below)
+        ctx.symbol_table
+            .add_global_constant(closed_func_bool_to_bool.clone());
+        // h1: (Bool -> Bool) -> Bool
+        ctx.symbol_table
+            .add_global_constant(closed_func_to_bool.clone());
 
         // Add scoped constants with similar types
         ctx.symbol_table

@@ -18,8 +18,29 @@ pub struct GeneralizationSet {
     /// Stores an id for each clause.
     tree: PatternTree<usize>,
 
-    /// Temporary fallback for debugging - should be removable once PatternTree is fully fixed
+    /// Fallback for clauses with applied variables - PatternTree has a bug with these.
     with_applied_variables: HashMap<ClauseTypeKey, Vec<(Clause, usize)>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ClauseTypeKey {
+    // The types for each literal in the clause.
+    types: Vec<ClosedType>,
+}
+
+impl ClauseTypeKey {
+    pub fn new(clause: &Clause, kernel_context: &KernelContext) -> ClauseTypeKey {
+        let local_context = clause.get_local_context();
+        let types = clause
+            .literals
+            .iter()
+            .map(|lit| {
+                lit.left
+                    .get_closed_type_with_context(local_context, kernel_context)
+            })
+            .collect();
+        ClauseTypeKey { types }
+    }
 }
 
 impl GeneralizationSet {
@@ -53,7 +74,7 @@ impl GeneralizationSet {
         clause: Clause,
         kernel_context: &KernelContext,
     ) -> Option<usize> {
-        let special = specialized_form(clause, kernel_context);
+        let special = specialized_form(clause.clone(), kernel_context);
         if let Some(id) = self.tree.find_clause(&special, kernel_context) {
             return Some(*id);
         }
@@ -62,33 +83,32 @@ impl GeneralizationSet {
         let key = ClauseTypeKey::new(&special, kernel_context);
         if let Some(candidates) = self.with_applied_variables.get(&key) {
             for (general, id) in candidates {
-                if Unifier::unify_clauses(general, &special, kernel_context) {
+                // Check that signs match before attempting unification
+                let signs_match = general
+                    .literals
+                    .iter()
+                    .zip(special.literals.iter())
+                    .all(|(g, s)| g.positive == s.positive);
+                if signs_match && Unifier::unify_clauses(general, &special, kernel_context) {
                     return Some(*id);
                 }
             }
         }
         None
     }
-}
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct ClauseTypeKey {
-    // The types for each literal in the clause.
-    types: Vec<ClosedType>,
-}
-
-impl ClauseTypeKey {
-    pub fn new(clause: &Clause, kernel_context: &KernelContext) -> ClauseTypeKey {
-        let local_context = clause.get_local_context();
-        let types = clause
-            .literals
-            .iter()
-            .map(|lit| {
-                lit.left
-                    .get_closed_type_with_context(local_context, kernel_context)
-            })
-            .collect();
-        ClauseTypeKey { types }
+    /// Same as find_generalization but without the fallback - for testing.
+    #[cfg(test)]
+    pub fn find_generalization_no_fallback(
+        &self,
+        clause: Clause,
+        kernel_context: &KernelContext,
+    ) -> Option<usize> {
+        let special = specialized_form(clause, kernel_context);
+        if let Some(id) = self.tree.find_clause(&special, kernel_context) {
+            return Some(*id);
+        }
+        None
     }
 }
 
@@ -337,6 +357,7 @@ fn specialized_form(mut clause: Clause, kernel_context: &KernelContext) -> Claus
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::closed_type::ClosedType;
 
     /// Creates a LocalContext with enough Bool-typed variables for tests.
     fn test_context() -> LocalContext {
@@ -649,5 +670,270 @@ mod tests {
         // Specialization: g0(c5, g0(c6, c7)) = g0(c6, c7)
         let special = Clause::parse("g0(c5, g0(c6, c7)) = g0(c6, c7)", &local);
         assert_eq!(clause_set.find_generalization(special, &ctx), Some(1));
+    }
+
+    #[test]
+    fn test_clause_set_with_applied_variable() {
+        // Test GeneralizationSet with applied variables (variables in function position).
+        // This exercises the PatternTree's ability to handle applied variables.
+        //
+        // Pattern: not x0(c5) or x0(x1)
+        //   where x0: Bool -> Bool, x1: Bool
+        //
+        // Query: not c1(c5) or c1(c6)
+        //   where c1: Bool -> Bool, c5, c6: Bool
+        //
+        // This should match with x0 -> c1, x1 -> c6
+        use crate::kernel::symbol::Symbol;
+
+        let kernel_context = KernelContext::test_with_function_types();
+
+        // Create local context where x0 has type Bool -> Bool and x1 has type Bool
+        let type_bool_to_bool = kernel_context
+            .symbol_table
+            .get_closed_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
+            .clone();
+        let local_context =
+            LocalContext::from_closed_types(vec![type_bool_to_bool, ClosedType::bool()]);
+
+        let mut clause_set = GeneralizationSet::new();
+
+        // Insert pattern: not x0(c5) or x0(x1)
+        let pattern = Clause::parse("not x0(c5) or x0(x1)", &local_context);
+        clause_set.insert(pattern, 42, &kernel_context);
+
+        // Query: not c1(c5) or c1(c6)
+        let query_local = LocalContext::empty();
+        let query = Clause::parse("not c1(c5) or c1(c6)", &query_local);
+
+        // This should find the pattern with x0 -> c1, x1 -> c6
+        let found = clause_set.find_generalization(query, &kernel_context);
+        assert_eq!(found, Some(42), "Should match clause with applied variable");
+    }
+
+    #[test]
+    fn test_clause_set_with_applied_variable_nested_arg() {
+        // Test case mirroring strong_induction usage:
+        // Pattern: not g0(x0, x1) or x0(x1)
+        //   where g0: (Bool -> Bool, Bool) -> Bool (like true_below)
+        //         x0: Bool -> Bool
+        //         x1: Bool
+        //
+        // Query: not g0(c1, c1(c5)) or c1(c1(c5))
+        //   where c1: Bool -> Bool, c5: Bool
+        //
+        // This should match with x0 -> c1, x1 -> c1(c5)
+        // This is the pattern from strong_induction: true_below(f, k) implies f(k)
+        use crate::kernel::symbol::Symbol;
+
+        let kernel_context = KernelContext::test_with_function_types();
+
+        // Create local context where x0 has type Bool -> Bool and x1 has type Bool
+        let type_bool_to_bool = kernel_context
+            .symbol_table
+            .get_closed_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
+            .clone();
+        let local_context =
+            LocalContext::from_closed_types(vec![type_bool_to_bool, ClosedType::bool()]);
+
+        let mut clause_set = GeneralizationSet::new();
+
+        // Insert pattern: not g0(x0, x1) or x0(x1)
+        // g0: (Bool -> Bool, Bool) -> Bool takes two args
+        // x0: Bool -> Bool (function variable)
+        // x1: Bool (value variable)
+        let pattern = Clause::parse("not g0(x0, x1) or x0(x1)", &local_context);
+        clause_set.insert(pattern, 42, &kernel_context);
+
+        // Query: not g0(c1, c1(c5)) or c1(c1(c5))
+        // Here x0 -> c1, x1 -> c1(c5)
+        let query_local = LocalContext::empty();
+        let query = Clause::parse("not g0(c1, c1(c5)) or c1(c1(c5))", &query_local);
+
+        // This should match with x0 -> c1, x1 -> c1(c5)
+        let found = clause_set.find_generalization(query, &kernel_context);
+        assert_eq!(
+            found,
+            Some(42),
+            "Should match clause with applied variable and nested arg"
+        );
+    }
+
+    #[test]
+    fn test_clause_set_strong_induction_pattern() {
+        // Exact pattern from strong_induction that's failing:
+        // Pattern: not g10(x0, x1) or x0(x1)
+        //   where g10: (Bool -> Bool, Bool) -> Bool (like true_below)
+        //         x0: Bool -> Bool (function variable appearing as arg in first lit, func in second)
+        //         x1: Bool
+        //
+        // Query: not g10(c1, c5) or c1(c5)
+        //   where c1: Bool -> Bool, c5: Bool
+        //
+        // This should match with x0 -> c1, x1 -> c5
+        use crate::kernel::symbol::Symbol;
+
+        let kernel_context = KernelContext::test_with_function_types();
+
+        // Create local context where x0 has type Bool -> Bool and x1 has type Bool
+        let type_bool_to_bool = kernel_context
+            .symbol_table
+            .get_closed_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
+            .clone();
+        let local_context =
+            LocalContext::from_closed_types(vec![type_bool_to_bool, ClosedType::bool()]);
+
+        let mut clause_set = GeneralizationSet::new();
+
+        // Insert pattern: not g10(x0, x1) or x0(x1)
+        // g10 has type (Bool -> Bool, Bool) -> Bool
+        let pattern = Clause::parse("not g10(x0, x1) or x0(x1)", &local_context);
+        clause_set.insert(pattern, 42, &kernel_context);
+
+        // Query: not g10(c1, c5) or c1(c5) - simpler case first
+        let query_local = LocalContext::empty();
+        let query = Clause::parse("not g10(c1, c5) or c1(c5)", &query_local);
+
+        let found = clause_set.find_generalization(query, &kernel_context);
+        assert_eq!(
+            found,
+            Some(42),
+            "Should match strong_induction pattern with x0 -> c1, x1 -> c5"
+        );
+    }
+
+    #[test]
+    fn test_pattern_tree_bug_with_higher_order_types() {
+        // This test exposes the bug in PatternTree with higher-order function types.
+        // It uses find_generalization_no_fallback to skip the workaround.
+        //
+        // Pattern: not g10(x0, x1) or x0(x1)
+        //   where g10: (Bool -> Bool, Bool) -> Bool (like true_below)
+        //         x0: Bool -> Bool
+        //         x1: Bool
+        //
+        // Query: not g10(c1, c5) or c1(c5)
+        //
+        // The bug is that PatternTree fails to find this match when x0 appears
+        // both as an argument (to g10) and as a function (in x0(x1)).
+        use crate::kernel::symbol::Symbol;
+
+        let kernel_context = KernelContext::test_with_function_types();
+
+        // Create local context where x0 has type Bool -> Bool and x1 has type Bool
+        let type_bool_to_bool = kernel_context
+            .symbol_table
+            .get_closed_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
+            .clone();
+        let local_context =
+            LocalContext::from_closed_types(vec![type_bool_to_bool, ClosedType::bool()]);
+
+        let mut clause_set = GeneralizationSet::new();
+
+        // Insert pattern: not g10(x0, x1) or x0(x1)
+        // g10 has type (Bool -> Bool, Bool) -> Bool
+        let pattern = Clause::parse("not g10(x0, x1) or x0(x1)", &local_context);
+        clause_set.insert(pattern, 42, &kernel_context);
+
+        // Query: not g10(c1, c5) or c1(c5)
+        let query_local = LocalContext::empty();
+        let query = Clause::parse("not g10(c1, c5) or c1(c5)", &query_local);
+
+        // This should work without the fallback once the PatternTree bug is fixed
+        let found = clause_set.find_generalization_no_fallback(query, &kernel_context);
+        assert_eq!(
+            found,
+            Some(42),
+            "PatternTree should match strong_induction pattern without fallback"
+        );
+    }
+
+    #[test]
+    fn test_pattern_tree_bug_with_nested_arg() {
+        // This test matches the real failure case from has_prime_divisor.
+        // The query has: not true_below(f, s0(f)) or f(s0(f))
+        // where s0(f) is a term that contains f.
+        //
+        // Pattern: not g10(x0, x1) or x0(x1)
+        //   where g10: (Bool -> Bool, Bool) -> Bool (like true_below)
+        //         x0: Bool -> Bool
+        //         x1: Bool
+        //
+        // Query: not g10(c1, g11(c1)) or c1(g11(c1))
+        //   where g11: (Bool -> Bool) -> Bool (like a skolem s0)
+        //
+        // The match should be: x0 -> c1, x1 -> g11(c1)
+        use crate::kernel::symbol::Symbol;
+
+        let kernel_context = KernelContext::test_with_function_types();
+
+        // Create local context where x0 has type Bool -> Bool and x1 has type Bool
+        let type_bool_to_bool = kernel_context
+            .symbol_table
+            .get_closed_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
+            .clone();
+        let local_context =
+            LocalContext::from_closed_types(vec![type_bool_to_bool, ClosedType::bool()]);
+
+        let mut clause_set = GeneralizationSet::new();
+
+        // Insert pattern: not g10(x0, x1) or x0(x1)
+        // g10 has type (Bool -> Bool, Bool) -> Bool
+        let pattern = Clause::parse("not g10(x0, x1) or x0(x1)", &local_context);
+        clause_set.insert(pattern, 42, &kernel_context);
+
+        // Query: not g10(c1, g11(c1)) or c1(g11(c1))
+        // g11 has type (Bool -> Bool) -> Bool
+        let query_local = LocalContext::empty();
+        let query = Clause::parse("not g10(c1, g11(c1)) or c1(g11(c1))", &query_local);
+
+        // This should work without the fallback once the PatternTree bug is fixed
+        let found = clause_set.find_generalization_no_fallback(query, &kernel_context);
+        assert_eq!(
+            found,
+            Some(42),
+            "PatternTree should match pattern with nested arg without fallback"
+        );
+    }
+
+    #[test]
+    fn test_fallback_rejects_sign_mismatch() {
+        // This test verifies that the fallback correctly rejects clauses with mismatched signs.
+        // The old buggy implementation would match these because Unifier::unify_clauses ignores signs.
+        //
+        // Pattern: g10(x0, x1) or x0(x1)  -- signs [true, true] (both positive)
+        // Query: not g10(c1, c5) or c1(c5)  -- signs [false, true] (first negative)
+        //
+        // These should NOT match because the first literal has opposite signs.
+        use crate::kernel::symbol::Symbol;
+
+        let kernel_context = KernelContext::test_with_function_types();
+
+        // Create local context where x0 has type Bool -> Bool and x1 has type Bool
+        let type_bool_to_bool = kernel_context
+            .symbol_table
+            .get_closed_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
+            .clone();
+        let local_context =
+            LocalContext::from_closed_types(vec![type_bool_to_bool, ClosedType::bool()]);
+
+        let mut clause_set = GeneralizationSet::new();
+
+        // Insert pattern with POSITIVE first literal: g10(x0, x1) or x0(x1)
+        // Note: no "not" on the first literal
+        let pattern = Clause::parse("g10(x0, x1) or x0(x1)", &local_context);
+        clause_set.insert(pattern, 42, &kernel_context);
+
+        // Query with NEGATIVE first literal: not g10(c1, c5) or c1(c5)
+        let query_local = LocalContext::empty();
+        let query = Clause::parse("not g10(c1, c5) or c1(c5)", &query_local);
+
+        // This should NOT match because the signs are different
+        // The old buggy implementation would return Some(42) here
+        let found = clause_set.find_generalization(query, &kernel_context);
+        assert_eq!(
+            found, None,
+            "Should NOT match when signs are different (first literal positive vs negative)"
+        );
     }
 }
