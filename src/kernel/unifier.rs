@@ -49,13 +49,6 @@ pub struct Unifier<'a> {
     output_context: LocalContext,
 }
 
-// Information for how to replace a subterm
-struct Replacement<'a> {
-    path: &'a [usize],
-    scope: Scope,
-    term: &'a Term,
-}
-
 impl<'a> Unifier<'a> {
     /// Creates a new unifier with the given number of scopes.
     pub fn new(num_scopes: usize, kernel_context: &'a KernelContext) -> Unifier<'a> {
@@ -209,82 +202,51 @@ impl<'a> Unifier<'a> {
         }
     }
 
-    // Applies the unification to a term, possibly replacing a subterm with the
-    // unification of the data provided in replacement.
-    // This is weird because the replacement can have a different scope from the main term.
-    fn apply_replace(
-        &mut self,
-        scope: Scope,
-        term: TermRef,
-        replacement: Option<Replacement>,
-    ) -> Term {
-        if let Some(ref replacement) = replacement {
-            if replacement.path.is_empty() {
-                return self.apply(replacement.scope, replacement.term);
-            }
-        }
+    /// Applies the unifier substitution to a term.
+    /// Variables are replaced with their mapped values, and unmapped variables
+    /// in non-output scopes get fresh output variables created for them.
+    pub fn apply(&mut self, scope: Scope, term: &Term) -> Term {
+        self.apply_internal(scope, term.as_ref())
+    }
 
-        // First figure out what the head expands to, if it's a variable.
-        // We track the head atom and any args from the expansion separately.
-        let (head, mut args) = match term.get_head_atom() {
-            Atom::Variable(i) => {
+    fn apply_internal(&mut self, scope: Scope, term: TermRef) -> Term {
+        match term.decompose() {
+            Decomposition::Atom(Atom::Variable(i)) => {
+                // Handle variable: either use existing mapping or create fresh output variable
                 if !self.has_mapping(scope, *i) && scope != Scope::OUTPUT {
-                    // We need to create a new variable to send this one to.
+                    // Create a new output variable for this unmapped input variable
                     let var_id = self.maps[Scope::OUTPUT.get()].len() as AtomId;
                     self.maps[Scope::OUTPUT.get()].push_none();
-                    // Track the type in output_context - get the variable's type directly from LocalContext
                     let var_closed_type = self
                         .get_local_context(scope)
                         .get_var_closed_type(*i as usize)
                         .cloned()
                         .expect("Variable should have type in LocalContext");
                     self.output_context.push_closed_type(var_closed_type);
-                    let new_var = Term::new(Atom::Variable(var_id), vec![]);
+                    let new_var = Term::new_variable(var_id);
                     self.set_mapping(scope, *i, new_var);
                 }
 
                 match self.get_mapping(scope, *i) {
-                    Some(mapped_head) => {
-                        // The head of our initial term expands to a full term.
-                        // mapped_head is in OUTPUT scope since mappings produce output terms.
-                        (mapped_head.get_head_atom().clone(), mapped_head.args())
-                    }
+                    Some(mapped) => mapped.clone(),
                     None => {
-                        // The head is an output variable with no mapping.
-                        // Just leave it as it is.
+                        // Output variable with no mapping - leave as is
                         assert!(scope == Scope::OUTPUT);
-                        (term.get_head_atom().clone(), vec![])
+                        term.to_owned()
                     }
                 }
             }
-            _head => (term.get_head_atom().clone(), vec![]),
-        };
-
-        // Recurse on the arguments and append them.
-        for (i, arg) in term.iter_args().enumerate() {
-            // Figure out what replacement to pass recursively
-            let new_replacement = if let Some(ref replacement) = replacement {
-                if replacement.path[0] == i {
-                    // We do want to pass this down
-                    Some(Replacement {
-                        path: &replacement.path[1..],
-                        scope: replacement.scope,
-                        term: replacement.term,
-                    })
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-            args.push(self.apply_replace(scope, arg, new_replacement))
+            Decomposition::Atom(_) => {
+                // Non-variable atom: return as-is
+                term.to_owned()
+            }
+            Decomposition::Application(func, arg) => {
+                // Recursively apply to both function and argument
+                let applied_func = self.apply_internal(scope, func);
+                let applied_arg = self.apply_internal(scope, arg);
+                applied_func.apply(&[applied_arg])
+            }
         }
-
-        Term::new(head, args)
-    }
-
-    pub fn apply(&mut self, scope: Scope, term: &Term) -> Term {
-        self.apply_replace(scope, term.as_ref(), None)
     }
 
     /// Returns the resulting literal, and whether it was flipped.
@@ -500,103 +462,6 @@ impl<'a> Unifier<'a> {
             "Unification of {} and {} produced different results: {} and {}",
             term1, term2, out1, out2
         );
-    }
-
-    /// Handle superposition into either positive or negative literals. The "SP" and "SN" rules.
-    ///
-    /// The superposition rule is, given:
-    /// s = t   (pm_clause, the paramodulator's clause)
-    /// u ?= v  (res_clause, the resolver's clause)
-    ///
-    /// If 'res_forward' is false, the u ?= v literal is swapped to be v ?= u.
-    ///
-    /// If s matches a subterm of u, superposition lets you replace the s with t to infer that:
-    ///
-    /// u[s -> t] ?= v
-    /// (after the unifier has been applied to the whole thing)
-    ///
-    /// Sometimes we refer to s = t as the "paramodulator" and u ?= v as the "resolver".
-    /// path describes which subterm of u we're replacing.
-    /// s/t and u/v must be in the "right" scope.
-    ///
-    /// If ?= is =, it's "superposition into positive literals".
-    /// If ?= is !=, it's "superposition into negative literals".
-    ///
-    /// Refer to page 3 of "E: A Brainiac Theorem Prover" for more detail.
-    pub fn superpose_literals(
-        &mut self,
-        t: &Term,
-        path: &[usize],
-        res_literal: &Literal,
-        res_forwards: bool,
-    ) -> Literal {
-        let (u, v) = if res_forwards {
-            (&res_literal.left, &res_literal.right)
-        } else {
-            (&res_literal.right, &res_literal.left)
-        };
-        let unified_u = self.apply_replace(
-            Scope::RIGHT,
-            u.as_ref(),
-            Some(Replacement {
-                path: &path,
-                scope: Scope::LEFT,
-                term: t,
-            }),
-        );
-        let unified_v = self.apply(Scope::RIGHT, &v);
-        Literal::new(res_literal.positive, unified_u, unified_v)
-    }
-
-    // Handle superposition between two entire clauses.
-    //
-    // The superposition rule between clauses is, given:
-    // s = t | S   (pm_clause, the paramodulator's clause)
-    // u ?= v | R  (res_clause, the resolver's clause)
-    //
-    // It's like superposition between literals except we add '| S | R' to the result literal.
-    //
-    // pm_clause.literals[pm_literal_index] is the paramodulator.
-    // res_clause.literals[res_literal_index] is the resolver.
-    // These literals both get dropped in favor of the combined one, in the inferred clause.
-    //
-    // Refer to page 3 of "E: A Brainiac Theorem Prover" for more detail.
-    pub fn superpose_clauses(
-        &mut self,
-        t: &Term,
-        pm_clause: &Clause,
-        pm_literal_index: usize,
-        path: &[usize],
-        res_clause: &Clause,
-        res_literal_index: usize,
-        res_forwards: bool,
-    ) -> Vec<Literal> {
-        let resolution_literal = &res_clause.literals[res_literal_index];
-        let new_literal = self.superpose_literals(t, path, resolution_literal, res_forwards);
-
-        // The new clause contains three types of literals.
-        // Type 1: the new literal created by superposition
-        let mut literals = vec![new_literal];
-
-        // Type 2: the literals from unifying "R"
-        for (i, literal) in res_clause.literals.iter().enumerate() {
-            if i == res_literal_index {
-                continue;
-            }
-            let (unified_literal, _) = self.apply_to_literal(Scope::RIGHT, literal);
-            literals.push(unified_literal);
-        }
-
-        // Type 3: the literals from unifying "S"
-        for (i, literal) in pm_clause.literals.iter().enumerate() {
-            if i == pm_literal_index {
-                continue;
-            }
-            let (unified_literal, _) = self.apply_to_literal(Scope::LEFT, literal);
-            literals.push(unified_literal);
-        }
-
-        literals
     }
 
     pub fn into_one_map(self, scope: Scope) -> VariableMap {
