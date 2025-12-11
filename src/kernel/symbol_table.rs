@@ -92,6 +92,54 @@ impl SymbolTable {
         self.scoped_constant_types.len()
     }
 
+    /// Get the number of scoped constants.
+    #[cfg(test)]
+    pub fn num_scoped_constants(&self) -> u32 {
+        self.scoped_constant_types.len() as u32
+    }
+
+    /// Set the type for a scoped constant at a given index.
+    #[cfg(test)]
+    pub fn set_scoped_constant_type(&mut self, id: u32, closed_type: ClosedType) {
+        self.scoped_constant_types[id as usize] = closed_type;
+    }
+
+    /// Get the number of global constants.
+    #[cfg(test)]
+    pub fn num_global_constants(&self) -> u32 {
+        self.global_constant_types.len() as u32
+    }
+
+    /// Set the type for a global constant at a given index.
+    #[cfg(test)]
+    pub fn set_global_constant_type(&mut self, id: u32, closed_type: ClosedType) {
+        self.global_constant_types[id as usize] = closed_type;
+    }
+
+    /// Get the number of monomorphs.
+    #[cfg(test)]
+    pub fn num_monomorphs(&self) -> u32 {
+        self.monomorph_types.len() as u32
+    }
+
+    /// Set the type for a monomorph at a given index.
+    #[cfg(test)]
+    pub fn set_monomorph_type(&mut self, id: u32, closed_type: ClosedType) {
+        self.monomorph_types[id as usize] = closed_type;
+    }
+
+    /// Get the number of synthetics.
+    #[cfg(test)]
+    pub fn num_synthetics(&self) -> u32 {
+        self.synthetic_types.len() as u32
+    }
+
+    /// Set the type for a synthetic at a given index.
+    #[cfg(test)]
+    pub fn set_synthetic_type(&mut self, id: u32, closed_type: ClosedType) {
+        self.synthetic_types[id as usize] = closed_type;
+    }
+
     /// Declare a new synthetic atom with the given type.
     pub fn declare_synthetic(&mut self, closed_type: ClosedType) -> Symbol {
         let atom_id = self.synthetic_types.len() as AtomId;

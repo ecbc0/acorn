@@ -76,13 +76,15 @@ impl Scorer for ScoringModel {
 
 #[cfg(test)]
 mod tests {
+    use crate::kernel::kernel_context::KernelContext;
     use crate::proof_step::ProofStep;
 
     use super::*;
 
     #[test]
     fn test_ort_model_score() {
-        let step = ProofStep::mock("c0(c3) = c2");
+        let kctx = KernelContext::test_with_all_bool_types();
+        let step = ProofStep::mock("g0(c3) = c2", &kctx);
         let features = Features::new(&step);
 
         // First ort
@@ -93,9 +95,10 @@ mod tests {
 
     #[test]
     fn test_ort_model_batch_score() {
-        let step1 = ProofStep::mock("c0(c3) = c2");
+        let kctx = KernelContext::test_with_all_bool_types();
+        let step1 = ProofStep::mock("g0(c3) = c2", &kctx);
         let features1 = Features::new(&step1);
-        let step2 = ProofStep::mock("c4(c1, c1) = c4(c2, c2)");
+        let step2 = ProofStep::mock("m4(c1, c1) = m4(c2, c2)", &kctx);
         let features2 = Features::new(&step2);
         let scoring_model = ScoringModel::load().unwrap();
 

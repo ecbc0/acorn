@@ -1386,7 +1386,7 @@ impl TestGraph {
     fn new() -> TestGraph {
         TestGraph {
             graph: TermGraph::new(),
-            context: KernelContext::test_with_constants(10, 10),
+            context: KernelContext::test_with_all_bool_types(),
         }
     }
 
@@ -1405,7 +1405,8 @@ impl TestGraph {
     }
 
     fn insert_clause_str(&mut self, s: &str, step: StepId) {
-        let clause = Clause::parse(s, LocalContext::empty_ref());
+        let lctx = LocalContext::empty();
+        let clause = Clause::parse(s, lctx, &self.context);
         self.graph.insert_clause(&clause, step, &self.context);
         self.graph.validate();
     }
@@ -1429,7 +1430,8 @@ impl TestGraph {
     }
 
     fn check_clause_str(&mut self, s: &str) {
-        let clause = Clause::parse(s, LocalContext::empty_ref());
+        let lctx = LocalContext::empty();
+        let clause = Clause::parse(s, lctx, &self.context);
         if !self.graph.check_clause(&clause, &self.context) {
             panic!("check_clause_str(\"{}\") failed", s);
         }
@@ -1581,7 +1583,8 @@ mod tests {
     #[test]
     fn test_subterm_triggering_clause() {
         let mut g = TestGraph::new();
-        g.insert_clause_str("c1(c2) != c1(c3) or c4(c2) != c4(c3)", StepId(0));
+        // Use g1, g4 (Bool -> Bool) for single-arg predicates
+        g.insert_clause_str("g1(c2) != g1(c3) or g4(c2) != g4(c3)", StepId(0));
         assert!(!g.has_contradiction());
         g.insert_clause_str("c2 = c3", StepId(1));
         assert!(g.has_contradiction());
@@ -1603,44 +1606,46 @@ mod tests {
 
     #[test]
     fn test_term_graph_rewriting_equality() {
+        // Use m1, m2 ((Bool, Bool) -> Bool) for two-arg functions
         let mut g =
-            TestGraph::with_clauses(&["g1(c1, g2(c2, c3)) = c4", "g2(c2, c3) = g2(c3, c2)"]);
-        g.check_clause_str("g1(c1, g2(c3, c2)) = c4");
+            TestGraph::with_clauses(&["m1(c1, m2(c2, c3)) = c4", "m2(c2, c3) = m2(c3, c2)"]);
+        g.check_clause_str("m1(c1, m2(c3, c2)) = c4");
     }
 
     #[test]
     fn test_term_graph_rewriting_inequality() {
+        // Use m1, m2 ((Bool, Bool) -> Bool) for two-arg functions
         let mut g =
-            TestGraph::with_clauses(&["g1(c1, g2(c2, c3)) != c4", "g2(c2, c3) = g2(c3, c2)"]);
-        g.check_clause_str("g1(c1, g2(c3, c2)) != c4");
+            TestGraph::with_clauses(&["m1(c1, m2(c2, c3)) != c4", "m2(c2, c3) = m2(c3, c2)"]);
+        g.check_clause_str("m1(c1, m2(c3, c2)) != c4");
     }
 
     #[test]
     fn test_term_graph_concluding_opposing_literals() {
         let mut g = TestGraph::with_clauses(&[
-            "not g4(g6, g5(c1, g0))",
-            "g4(g6, g6) or g3(g6, g6)",
-            "not g3(g6, g6) or g4(g6, g6)",
-            "g5(c1, g0) = g6",
-            "not g4(g6, g6)",
+            "not m4(c6, m5(c1, c0))",
+            "m4(c6, c6) or m3(c6, c6)",
+            "not m3(c6, c6) or m4(c6, c6)",
+            "m5(c1, c0) = c6",
+            "not m4(c6, c6)",
         ]);
 
-        g.check_clause_str("g3(g6, g6)");
+        g.check_clause_str("m3(c6, c6)");
     }
 
     #[test]
     fn test_term_graph_checking_long_clause() {
-        let mut g = TestGraph::with_clauses(&["g0 = g1 or g2 = g3"]);
+        let mut g = TestGraph::with_clauses(&["c0 = c1 or c2 = c3"]);
 
-        g.check_clause_str("g0 = g1 or g2 = g3");
+        g.check_clause_str("c0 = c1 or c2 = c3");
     }
 
     #[test]
     fn test_term_graph_shortening_long_clause() {
         let mut g =
-            TestGraph::with_clauses(&["not g0(c2, c3)", "not g1(c2, c3) or g0(c2, c3) or c3 = c2"]);
+            TestGraph::with_clauses(&["not m0(c2, c3)", "not m1(c2, c3) or m0(c2, c3) or c3 = c2"]);
 
-        g.check_clause_str("not g1(c2, c3) or c3 = c2");
+        g.check_clause_str("not m1(c2, c3) or c3 = c2");
     }
 
     #[test]
@@ -1672,14 +1677,14 @@ mod tests {
     #[test]
     fn test_term_graph_eight_case_reduction() {
         let g = TestGraph::with_clauses(&[
-            "g0 or g1 or g2",
-            "g0 or g1 or not g2",
-            "g0 or not g1 or g2",
-            "not g0 or g1 or g2",
-            "not g0 or not g1 or g2",
-            "not g0 or g1 or not g2",
-            "g0 or not g1 or not g2",
-            "not g0 or not g1 or not g2",
+            "c0 or c1 or c2",
+            "c0 or c1 or not c2",
+            "c0 or not c1 or c2",
+            "not c0 or c1 or c2",
+            "not c0 or not c1 or c2",
+            "not c0 or c1 or not c2",
+            "c0 or not c1 or not c2",
+            "not c0 or not c1 or not c2",
         ]);
         assert!(g.has_contradiction());
     }

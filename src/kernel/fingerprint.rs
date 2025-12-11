@@ -352,10 +352,8 @@ mod tests {
 
     #[test]
     fn test_split_application() {
-        let lctx = test_local_context();
-        let kctx = test_kernel_context();
         // m0: (Bool, Bool) -> Bool
-        let term = Term::parse_with_context("m0(c0, c1)", &lctx, &kctx);
+        let term = Term::parse("m0(c0, c1)");
         let (func, arg) = term.as_ref().split_application().unwrap();
 
         // func should be m0(c0)
@@ -367,10 +365,8 @@ mod tests {
 
     #[test]
     fn test_path_navigation() {
-        let lctx = test_local_context();
-        let kctx = test_kernel_context();
         // m0: (Bool, Bool) -> Bool
-        let term = Term::parse_with_context("m0(c0, c1)", &lctx, &kctx);
+        let term = Term::parse("m0(c0, c1)");
 
         // [] should return the whole term
         let root = term.as_ref().get_term_at_path(&[]).unwrap();
@@ -410,7 +406,7 @@ mod tests {
         let lctx = test_local_context();
         let kctx = test_kernel_context();
         // m0: (Bool, Bool) -> Bool, x0 and x1 are Bool
-        let term = Term::parse_with_context("m0(x0, x1)", &lctx, &kctx);
+        let term = Term::parse("m0(x0, x1)");
         TermFingerprint::new(&term, &lctx, &kctx);
     }
 
@@ -418,8 +414,8 @@ mod tests {
     fn test_fingerprint_matching() {
         let lctx = test_local_context();
         let kctx = test_kernel_context();
-        let term1 = Term::parse_with_context("m2(x0, c0)", &lctx, &kctx);
-        let term2 = Term::parse_with_context("m2(c1, c0)", &lctx, &kctx);
+        let term1 = Term::parse("m2(x0, c0)");
+        let term2 = Term::parse("m2(c1, c0)");
         assert!(TermFingerprint::new(&term1, &lctx, &kctx)
             .could_unify(&TermFingerprint::new(&term2, &lctx, &kctx)));
     }
@@ -429,8 +425,8 @@ mod tests {
         let lctx = test_local_context();
         let kctx = test_kernel_context();
         let mut tree = FingerprintUnifier::new();
-        let term1 = Term::parse_with_context("m2(x0, c0)", &lctx, &kctx);
-        let term2 = Term::parse_with_context("m2(c1, c0)", &lctx, &kctx);
+        let term1 = Term::parse("m2(x0, c0)");
+        let term2 = Term::parse("m2(c1, c0)");
         tree.insert(&term1, 1, &lctx, &kctx);
         assert!(tree.find_unifying(&term1, &lctx, &kctx).len() > 0);
         assert!(tree.find_unifying(&term2, &lctx, &kctx).len() > 0);

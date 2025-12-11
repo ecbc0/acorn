@@ -218,24 +218,15 @@ mod tests {
         // c0, c1 are Bool constants
         tree.insert_terms(
             0,
-            &Term::parse_with_context("c1", &lctx, &kctx),
-            &Term::parse_with_context("c0", &lctx, &kctx),
+            &Term::parse("c1"),
+            &Term::parse("c0"),
             true,
             &lctx,
             &kctx,
         );
-        let rewrites = get_test_rewrites(
-            &tree,
-            &Term::parse_with_context("c1", &lctx, &kctx),
-            0,
-            &lctx,
-            &kctx,
-        );
+        let rewrites = get_test_rewrites(&tree, &Term::parse("c1"), 0, &lctx, &kctx);
         assert_eq!(rewrites.len(), 1);
-        assert_eq!(
-            rewrites[0].term,
-            Term::parse_with_context("c0", &lctx, &kctx)
-        );
+        assert_eq!(rewrites[0].term, Term::parse("c0"));
     }
 
     #[test]
@@ -247,25 +238,16 @@ mod tests {
         // Rewrite rule: m1(x0, c0) -> m0(x0, c0)
         tree.insert_terms(
             0,
-            &Term::parse_with_context("m1(x0, c0)", &lctx, &kctx),
-            &Term::parse_with_context("m0(x0, c0)", &lctx, &kctx),
+            &Term::parse("m1(x0, c0)"),
+            &Term::parse("m0(x0, c0)"),
             true,
             &lctx,
             &kctx,
         );
         // Query: m1(c2, c0) should rewrite to m0(c2, c0)
-        let rewrites = get_test_rewrites(
-            &tree,
-            &Term::parse_with_context("m1(c2, c0)", &lctx, &kctx),
-            0,
-            &lctx,
-            &kctx,
-        );
+        let rewrites = get_test_rewrites(&tree, &Term::parse("m1(c2, c0)"), 0, &lctx, &kctx);
         assert_eq!(rewrites.len(), 1);
-        assert_eq!(
-            rewrites[0].term,
-            Term::parse_with_context("m0(c2, c0)", &lctx, &kctx)
-        );
+        assert_eq!(rewrites[0].term, Term::parse("m0(c2, c0)"));
     }
 
     #[test]
@@ -278,8 +260,8 @@ mod tests {
         // Rule 1: m1(x0, c2) -> m3(x0, c0)
         tree.insert_terms(
             0,
-            &Term::parse_with_context("m1(x0, c2)", &lctx, &kctx),
-            &Term::parse_with_context("m3(x0, c0)", &lctx, &kctx),
+            &Term::parse("m1(x0, c2)"),
+            &Term::parse("m3(x0, c0)"),
             true,
             &lctx,
             &kctx,
@@ -287,29 +269,17 @@ mod tests {
         // Rule 2: m1(c2, x0) -> m4(x0, c0)
         tree.insert_terms(
             1,
-            &Term::parse_with_context("m1(c2, x0)", &lctx, &kctx),
-            &Term::parse_with_context("m4(x0, c0)", &lctx, &kctx),
+            &Term::parse("m1(c2, x0)"),
+            &Term::parse("m4(x0, c0)"),
             true,
             &lctx,
             &kctx,
         );
         // Query: m1(c2, c2) should match both rules
-        let rewrites = get_test_rewrites(
-            &tree,
-            &Term::parse_with_context("m1(c2, c2)", &lctx, &kctx),
-            0,
-            &lctx,
-            &kctx,
-        );
+        let rewrites = get_test_rewrites(&tree, &Term::parse("m1(c2, c2)"), 0, &lctx, &kctx);
         assert_eq!(rewrites.len(), 2);
-        assert_eq!(
-            rewrites[0].term,
-            Term::parse_with_context("m3(c2, c0)", &lctx, &kctx)
-        );
-        assert_eq!(
-            rewrites[1].term,
-            Term::parse_with_context("m4(c2, c0)", &lctx, &kctx)
-        );
+        assert_eq!(rewrites[0].term, Term::parse("m3(c2, c0)"));
+        assert_eq!(rewrites[1].term, Term::parse("m4(c2, c0)"));
     }
 
     #[test]
@@ -330,18 +300,9 @@ mod tests {
         let mut tree = RewriteTree::new();
         // m1(x0, c1) = c0 means c0 rewrites to m1(x1, c1) with a new variable x1
         tree.insert_literal(0, &Literal::parse("m1(x0, c1) = c0"), &lctx, &kctx);
-        let rewrites = get_test_rewrites(
-            &tree,
-            &Term::parse_with_context("c0", &lctx, &kctx),
-            1,
-            &lctx,
-            &kctx,
-        );
+        let rewrites = get_test_rewrites(&tree, &Term::parse("c0"), 1, &lctx, &kctx);
         assert_eq!(rewrites.len(), 1);
-        assert_eq!(
-            rewrites[0].term,
-            Term::parse_with_context("m1(x1, c1)", &lctx, &kctx)
-        );
+        assert_eq!(rewrites[0].term, Term::parse("m1(x1, c1)"));
     }
 
     #[test]
@@ -355,13 +316,13 @@ mod tests {
         tree.insert_terms(0, &var_bool, &var_bool, true, &lctx, &kctx);
 
         // A BOOL constant should match it - use c0 which is Bool
-        let const_bool = Term::parse_with_context("c0", &lctx, &kctx);
+        let const_bool = Term::parse("c0");
         let rewrites = get_test_rewrites(&tree, &const_bool, 0, &lctx, &kctx);
         assert_eq!(rewrites.len(), 1);
 
         // A different type term should not match
         // m0 has type (Bool, Bool) -> Bool which is different from Bool
-        let func_term = Term::parse_with_context("m0", &lctx, &kctx);
+        let func_term = Term::parse("m0");
         let rewrites = get_test_rewrites(&tree, &func_term, 0, &lctx, &kctx);
         assert_eq!(rewrites.len(), 0);
     }

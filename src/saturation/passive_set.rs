@@ -439,6 +439,7 @@ mod tests {
             vec![ProofStep::mock_with_context(
                 "m0(c0, c1) or m0(c0, c2)",
                 &lctx,
+                &kctx,
             )],
             &kctx,
         );
@@ -446,7 +447,7 @@ mod tests {
         // x0 is a Bool variable that matches both c1 and c2
         passive_set.simplify(
             3,
-            &ProofStep::mock_with_context("not m0(c0, x0)", &lctx),
+            &ProofStep::mock_with_context("not m0(c0, x0)", &lctx, &kctx),
             &kctx,
         );
         let step = passive_set.pop().unwrap();

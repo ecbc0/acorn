@@ -311,12 +311,15 @@ impl Clause {
 
     /// Parse a clause from a string.
     /// Format: "lit1 or lit2 or lit3" where each literal is parsed by Literal::parse.
-    pub fn parse(s: &str, context: &LocalContext) -> Clause {
+    /// Takes ownership of the local context and validates the result.
+    pub fn parse(s: &str, local: LocalContext, kernel: &KernelContext) -> Clause {
         let literals: Vec<Literal> = s
             .split(" or ")
             .map(|part| Literal::parse(part.trim()))
             .collect();
-        Clause::new(literals, context)
+        let clause = Clause::new(literals, &local);
+        clause.validate(kernel);
+        clause
     }
 
     /// Renumbers synthetic atoms from the provided list into the invalid range.

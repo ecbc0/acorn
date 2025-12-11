@@ -5,6 +5,7 @@
 //   cargo build --bin=profile_scorer --profile=fastdev
 //   samply record target/fastdev/profile_scorer
 
+use acorn::kernel::kernel_context::KernelContext;
 use acorn::proof_step::ProofStep;
 use acorn::saturation::features::Features;
 use acorn::saturation::scorer::Scorer;
@@ -18,19 +19,20 @@ fn main() {
     let m = 10;
     let n = 10000;
     let mut total_seconds = 0.0;
+    let kctx = KernelContext::new();
     for i in 1..(m + 1) {
         let scorer = ScoringModel::load().unwrap();
 
-        let step1 = ProofStep::mock("c0(c3) = c2");
-        let step2 = ProofStep::mock("c4(c1, c1) = c4(c2, c2)");
-        let step3 = ProofStep::mock("c4(c1, c1) = c4(c2)");
-        let step4 = ProofStep::mock("c4(c1, c1) = c4(c2, c2)");
-        let step5 = ProofStep::mock("c4(c1, c1) = c5(c2)");
-        let step6 = ProofStep::mock("c4(c1, c1) = c5(c2, c2)");
-        let step7 = ProofStep::mock("c4(c1, c1) = c5(c2)");
-        let step8 = ProofStep::mock("c4(c1, c1) = c5(c2, c2)");
-        let step9 = ProofStep::mock("c4(c1, c1) = c5(c2)");
-        let step10 = ProofStep::mock("c4(c1, c1) = c5(c2, c2)");
+        let step1 = ProofStep::mock("c0(c3) = c2", &kctx);
+        let step2 = ProofStep::mock("c4(c1, c1) = c4(c2, c2)", &kctx);
+        let step3 = ProofStep::mock("c4(c1, c1) = c4(c2)", &kctx);
+        let step4 = ProofStep::mock("c4(c1, c1) = c4(c2, c2)", &kctx);
+        let step5 = ProofStep::mock("c4(c1, c1) = c5(c2)", &kctx);
+        let step6 = ProofStep::mock("c4(c1, c1) = c5(c2, c2)", &kctx);
+        let step7 = ProofStep::mock("c4(c1, c1) = c5(c2)", &kctx);
+        let step8 = ProofStep::mock("c4(c1, c1) = c5(c2, c2)", &kctx);
+        let step9 = ProofStep::mock("c4(c1, c1) = c5(c2)", &kctx);
+        let step10 = ProofStep::mock("c4(c1, c1) = c5(c2, c2)", &kctx);
         let steps = vec![
             step1, step2, step3, step4, step5, step6, step7, step8, step9, step10,
         ];

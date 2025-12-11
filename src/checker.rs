@@ -651,7 +651,7 @@ impl TestChecker {
         let local_context = LocalContext::new_with_bools(10);
         let mut checker = Checker::new(None);
         for clause_str in clauses {
-            let clause = Clause::parse(clause_str, &local_context);
+            let clause = Clause::parse(clause_str, local_context.clone(), &context);
             checker.insert_clause(&clause, StepReason::Testing, &context);
         }
         TestChecker {
@@ -662,7 +662,7 @@ impl TestChecker {
     }
 
     fn check_clause_str(&mut self, s: &str) {
-        let clause = Clause::parse(s, &self.local_context);
+        let clause = Clause::parse(s, self.local_context.clone(), &self.context);
         if !self.checker.check_clause(&clause, &self.context).is_some() {
             panic!("check_clause_str(\"{}\") failed", s);
         }

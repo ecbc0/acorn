@@ -114,32 +114,43 @@ impl KernelContext {
 
         let mut ctx = KernelContext::new();
 
-        // Create a (Bool, Bool) -> Bool function type for monomorphs
+        // Create function types
+        let bool_to_bool = AcornType::Function(FunctionType {
+            arg_types: vec![AcornType::Bool],
+            return_type: Box::new(AcornType::Bool),
+        });
         let bool2_to_bool = AcornType::Function(FunctionType {
             arg_types: vec![AcornType::Bool, AcornType::Bool],
             return_type: Box::new(AcornType::Bool),
         });
-        // Register the type first
+        // Register the types first
+        ctx.type_store.add_type(&bool_to_bool);
         ctx.type_store.add_type(&bool2_to_bool);
+        let closed_bool_to_bool = ctx
+            .type_store
+            .get_closed_type(&bool_to_bool)
+            .expect("type should be valid");
         let closed_bool2_to_bool = ctx
             .type_store
             .get_closed_type(&bool2_to_bool)
             .expect("type should be valid");
 
-        // Scoped and global constants are Bool
+        // Scoped constants are Bool (c0-c9)
         for _ in 0..10 {
             ctx.symbol_table.add_scoped_constant(ClosedType::bool());
         }
+        // Global constants are Bool -> Bool (g0-g9) for use as predicates
         for _ in 0..10 {
-            ctx.symbol_table.add_global_constant(ClosedType::bool());
+            ctx.symbol_table
+                .add_global_constant(closed_bool_to_bool.clone());
         }
 
-        // Monomorphs are (Bool, Bool) -> Bool functions
+        // Monomorphs are (Bool, Bool) -> Bool functions (m0-m9)
         for _ in 0..10 {
             ctx.symbol_table.add_monomorph(closed_bool2_to_bool.clone());
         }
 
-        // Synthetics are Bool
+        // Synthetics are Bool (s0-s9)
         for _ in 0..10 {
             ctx.symbol_table.declare_synthetic(ClosedType::bool());
         }

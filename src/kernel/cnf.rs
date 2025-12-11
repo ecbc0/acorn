@@ -220,7 +220,7 @@ impl CNF {
     /// Parse a CNF formula from a string.
     /// The string should be in the format "clause1 and clause2 and ..."
     /// where each clause is "literal1 or literal2 or ...".
-    pub fn parse(s: &str) -> Self {
+    pub fn parse(s: &str, _local: &LocalContext, _kernel: &KernelContext) -> Self {
         let clauses: Vec<Vec<Literal>> = s
             .split(" and ")
             .map(|clause_str| {
@@ -263,7 +263,10 @@ mod tests {
 
     #[test]
     fn test_cnf_negate() {
-        let cnf = CNF::parse("x0 or x1 and x2 or x3");
+        let lctx = LocalContext::new_with_bools(10);
+        let kctx = KernelContext::test_with_all_bool_types();
+
+        let cnf = CNF::parse("x0 or x1 and x2 or x3", &lctx, &kctx);
 
         let negated = cnf.negate();
 
@@ -273,6 +276,8 @@ mod tests {
         not x0 or not x3 and \
         not x1 or not x2 and \
         not x1 or not x3",
+            &lctx,
+            &kctx,
         );
 
         assert_eq!(negated, expected);
@@ -280,28 +285,31 @@ mod tests {
 
     #[test]
     fn test_as_signed_term() {
+        let lctx = LocalContext::new_with_bools(10);
+        let kctx = KernelContext::test_with_all_bool_types();
+
         // Positive boolean literal
-        let cnf = CNF::parse("x0");
+        let cnf = CNF::parse("x0", &lctx, &kctx);
         let (term, positive) = cnf.as_signed_term().unwrap();
         assert_eq!(term, &Term::parse("x0"));
         assert_eq!(positive, true);
 
         // Negative boolean literal
-        let cnf = CNF::parse("not x0");
+        let cnf = CNF::parse("not x0", &lctx, &kctx);
         let (term, positive) = cnf.as_signed_term().unwrap();
         assert_eq!(term, &Term::parse("x0"));
         assert_eq!(positive, false);
 
         // Equality - should return None
-        let cnf = CNF::parse("x0 = x1");
+        let cnf = CNF::parse("x0 = x1", &lctx, &kctx);
         assert_eq!(cnf.as_signed_term(), None);
 
         // Multiple clauses - should return None
-        let cnf = CNF::parse("x0 and x1");
+        let cnf = CNF::parse("x0 and x1", &lctx, &kctx);
         assert_eq!(cnf.as_signed_term(), None);
 
         // Disjunction - should return None
-        let cnf = CNF::parse("x0 or x1");
+        let cnf = CNF::parse("x0 or x1", &lctx, &kctx);
         assert_eq!(cnf.as_signed_term(), None);
     }
 }

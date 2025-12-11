@@ -814,12 +814,6 @@ impl Term {
         Term { components }
     }
 
-    /// Parse a term string. Kept for test compatibility.
-    #[cfg(test)]
-    pub fn parse_with_context(s: &str, _: &LocalContext, _: &KernelContext) -> Term {
-        Term::parse(s)
-    }
-
     /// Get the components of this term.
     pub fn components(&self) -> &[TermComponent] {
         &self.components
@@ -1442,6 +1436,8 @@ impl<'a> Iterator for TermRefArgsIterator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::kernel_context::KernelContext;
+    use crate::kernel::local_context::LocalContext;
     use crate::kernel::symbol::Symbol;
 
     #[test]

@@ -140,7 +140,7 @@ mod tests {
     /// Check clause normalization with trace validation.
     /// context provides the types of variables in the clause.
     fn check_clause_normalization(s: &str, context: &LocalContext, kernel_context: &KernelContext) {
-        let clause = Clause::parse(s, context);
+        let clause = Clause::parse(s, context.clone(), kernel_context);
         clause.validate(kernel_context);
 
         // Parse literals separately and normalize with trace

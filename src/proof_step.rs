@@ -6,6 +6,7 @@ use crate::elaborator::source::{Source, SourceType};
 use crate::kernel::atom::Atom;
 use crate::kernel::clause::Clause;
 use crate::kernel::closed_type::ClosedType;
+use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::{PathStep, Term};
@@ -703,15 +704,19 @@ impl ProofStep {
     }
 
     /// Construct a ProofStep with fake heuristic data for testing
-    pub fn mock(s: &str) -> ProofStep {
-        let clause = Clause::parse(s, LocalContext::empty_ref());
+    pub fn mock(s: &str, kernel: &KernelContext) -> ProofStep {
+        let clause = Clause::parse(s, LocalContext::empty(), kernel);
         Self::mock_from_clause(clause)
     }
 
     /// Construct a ProofStep with properly typed terms for testing
     #[cfg(test)]
-    pub fn mock_with_context(s: &str, local_context: &LocalContext) -> ProofStep {
-        let clause = Clause::parse(s, local_context);
+    pub fn mock_with_context(
+        s: &str,
+        local_context: &LocalContext,
+        kernel: &KernelContext,
+    ) -> ProofStep {
+        let clause = Clause::parse(s, local_context.clone(), kernel);
         Self::mock_from_clause(clause)
     }
 
@@ -814,23 +819,23 @@ mod tests {
         // Pattern: m0(x0, x1) = x1
         // Context: [Bool, Bool]
         let pattern_context = LocalContext::new_with_bools(2);
-        let pattern_step = ProofStep::mock_with_context("m0(x0, x1) = x1", &pattern_context);
+        let pattern_step = ProofStep::mock_with_context("m0(x0, x1) = x1", &pattern_context, &kctx);
 
-        // Target: m1(c0) = c0 (no variables)
+        // Target: g1(c0) = c0 (no variables)
         let target_context = LocalContext::empty();
-        let target_step = ProofStep::mock_with_context("m1(c0) = c0", &target_context);
+        let target_step = ProofStep::mock_with_context("g1(c0) = c0", &target_context, &kctx);
 
         // new_subterm: m0(x0, c0)
         // This introduces a variable x0 that's NOT in the pattern_step's context
         // (well, it is in this case, but in general it might have different types)
-        let new_subterm = Term::parse_with_context("m0(x0, c0)", &pattern_context, &kctx);
+        let new_subterm = Term::parse("m0(x0, c0)");
 
         let rewrite_step = ProofStep::rewrite(
             0,
             &pattern_step,
             1,
             &target_step,
-            true,  // target_left - replace m1(c0)
+            true,  // target_left - replace g1(c0)
             &[],   // path - at root
             false, // forwards=false (backwards rewrite)
             &new_subterm,
