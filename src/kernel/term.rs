@@ -107,14 +107,6 @@ impl<'a> TermRef<'a> {
         self.components.len() == 1
     }
 
-    /// Get a TermRef pointing to just the head atom of this term.
-    /// For atomic terms, returns self.
-    /// For applications, returns a single-component TermRef with just the head.
-    pub fn get_head_subterm(&self) -> TermRef<'a> {
-        // The head is always at index 0
-        TermRef::new(&self.components[0..1])
-    }
-
     /// Decompose this term into its fundamental lambda-calculus structure.
     ///
     /// Returns either:
