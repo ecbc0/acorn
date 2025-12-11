@@ -221,7 +221,7 @@ impl BuildMetrics {
         }
         match status {
             BuildStatus::Error => {
-                println!("Elaboration failed.");
+                println!("Build failed.");
             }
             BuildStatus::Warning => {
                 println!("Verification failed.");
