@@ -127,6 +127,19 @@ impl TypeStore {
         self.datatype_to_ground_id.get(datatype).copied()
     }
 
+    /// Look up a GroundTypeId by datatype name string.
+    /// Only works for types created by `KernelContext::add_datatype` (assumes ModuleId(0)).
+    #[cfg(test)]
+    pub fn get_ground_id_by_name(&self, name: &str) -> Option<GroundTypeId> {
+        use crate::module::ModuleId;
+
+        let datatype = Datatype {
+            module_id: ModuleId(0),
+            name: name.to_string(),
+        };
+        self.datatype_to_ground_id.get(&datatype).copied()
+    }
+
     /// Get the ClosedType for an AcornType.
     /// Ground types must be registered first via add_type().
     pub fn get_closed_type(&self, acorn_type: &AcornType) -> Result<ClosedType, String> {

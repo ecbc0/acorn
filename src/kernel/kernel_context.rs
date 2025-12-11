@@ -330,6 +330,147 @@ impl KernelContext {
 
         ctx
     }
+
+    /// Add a datatype by name for testing.
+    /// Returns self for chaining.
+    ///
+    /// Example: `ctx.add_datatype("Int").add_datatype("Nat")`
+    #[cfg(test)]
+    pub fn add_datatype(&mut self, name: &str) -> &mut Self {
+        use crate::elaborator::acorn_type::{AcornType, Datatype};
+        use crate::module::ModuleId;
+
+        let datatype = Datatype {
+            module_id: ModuleId(0),
+            name: name.to_string(),
+        };
+        let acorn_type = AcornType::Data(datatype, vec![]);
+        self.type_store.add_type(&acorn_type);
+        self
+    }
+
+    /// Parse a type string like "Bool", "Int", "Int -> Bool", or "(Int, Int) -> Bool".
+    /// Looks up datatype names in the TypeStore.
+    #[cfg(test)]
+    fn parse_type(&self, type_str: &str) -> ClosedType {
+        use crate::kernel::types::{GROUND_BOOL, GROUND_EMPTY};
+
+        let s = type_str.trim();
+
+        // Check for arrow type: "A -> B"
+        if let Some(arrow_pos) = Self::find_top_level_arrow(s) {
+            let input_str = s[..arrow_pos].trim();
+            let output_str = s[arrow_pos + 2..].trim();
+
+            let output = self.parse_type(output_str);
+
+            if input_str.starts_with('(') && input_str.ends_with(')') {
+                // Multi-argument: "(A, B, C)" -> curried Pi
+                let inner = &input_str[1..input_str.len() - 1];
+                let args: Vec<&str> = Self::split_by_comma(inner);
+                let mut result = output;
+                for arg in args.iter().rev() {
+                    let arg_type = self.parse_type(arg.trim());
+                    result = ClosedType::pi(arg_type, result);
+                }
+                result
+            } else {
+                let input = self.parse_type(input_str);
+                ClosedType::pi(input, output)
+            }
+        } else {
+            // Simple type name
+            match s {
+                "Bool" => ClosedType::ground(GROUND_BOOL),
+                "Empty" => ClosedType::ground(GROUND_EMPTY),
+                _ => {
+                    // Look up in TypeStore by name
+                    self.type_store
+                        .get_ground_id_by_name(s)
+                        .map(ClosedType::ground)
+                        .unwrap_or_else(|| panic!("Unknown type name: {}", s))
+                }
+            }
+        }
+    }
+
+    /// Find the position of a top-level "->" (not inside parentheses).
+    #[cfg(test)]
+    fn find_top_level_arrow(s: &str) -> Option<usize> {
+        let mut depth = 0;
+        let bytes = s.as_bytes();
+        for i in 0..bytes.len().saturating_sub(1) {
+            match bytes[i] {
+                b'(' => depth += 1,
+                b')' => depth -= 1,
+                b'-' if depth == 0 && bytes.get(i + 1) == Some(&b'>') => return Some(i),
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// Split a string by commas, respecting parentheses.
+    #[cfg(test)]
+    fn split_by_comma(s: &str) -> Vec<&str> {
+        let mut result = Vec::new();
+        let mut depth = 0;
+        let mut start = 0;
+        for (i, c) in s.char_indices() {
+            match c {
+                '(' => depth += 1,
+                ')' => depth -= 1,
+                ',' if depth == 0 => {
+                    result.push(&s[start..i]);
+                    start = i + 1;
+                }
+                _ => {}
+            }
+        }
+        result.push(&s[start..]);
+        result
+    }
+
+    /// Add a constant with a given name and type string for testing.
+    /// The name should be like "c0", "g0", "m0", or "s0".
+    /// Returns self for chaining.
+    ///
+    /// Example: `ctx.add_constant("c0", "Int").add_constant("g0", "Int -> Bool")`
+    #[cfg(test)]
+    pub fn add_constant(&mut self, name: &str, type_str: &str) -> &mut Self {
+        let closed_type = self.parse_type(type_str);
+        let first_char = name.chars().next().expect("empty constant name");
+        let id: u32 = name[1..].parse().expect("invalid constant id");
+
+        match first_char {
+            'c' => {
+                while self.symbol_table.num_scoped_constants() <= id {
+                    self.symbol_table.add_scoped_constant(ClosedType::empty());
+                }
+                self.symbol_table.set_scoped_constant_type(id, closed_type);
+            }
+            'g' => {
+                while self.symbol_table.num_global_constants() <= id {
+                    self.symbol_table.add_global_constant(ClosedType::empty());
+                }
+                self.symbol_table.set_global_constant_type(id, closed_type);
+            }
+            'm' => {
+                while self.symbol_table.num_monomorphs() <= id {
+                    self.symbol_table.add_monomorph(ClosedType::empty());
+                }
+                self.symbol_table.set_monomorph_type(id, closed_type);
+            }
+            's' => {
+                while self.symbol_table.num_synthetics() <= id {
+                    self.symbol_table.declare_synthetic(ClosedType::empty());
+                }
+                self.symbol_table.set_synthetic_type(id, closed_type);
+            }
+            _ => panic!("Unknown constant prefix: {}", first_char),
+        }
+        self
+    }
 }
 
 impl Default for KernelContext {
@@ -359,5 +500,28 @@ mod tests {
             let closed_type = ctx.symbol_table.get_closed_type(symbol);
             assert_eq!(*closed_type, ClosedType::empty());
         }
+    }
+
+    #[test]
+    fn test_add_datatype_and_constant() {
+        let mut ctx = KernelContext::new();
+        ctx.add_datatype("Int")
+            .add_constant("c0", "Int")
+            .add_constant("c1", "Int -> Bool")
+            .add_constant("c2", "(Int, Int) -> Bool");
+
+        // Verify c0 has type Int
+        let c0_type = ctx.symbol_table.get_closed_type(Symbol::ScopedConstant(0));
+        let int_id = ctx.type_store.get_ground_id_by_name("Int").unwrap();
+        assert_eq!(*c0_type, ClosedType::ground(int_id));
+
+        // Verify c1 has type Int -> Bool
+        let c1_type = ctx.symbol_table.get_closed_type(Symbol::ScopedConstant(1));
+        assert!(c1_type.as_pi().is_some());
+
+        // Verify c2 has type (Int, Int) -> Bool (curried as Int -> Int -> Bool)
+        let c2_type = ctx.symbol_table.get_closed_type(Symbol::ScopedConstant(2));
+        let (_, inner) = c2_type.as_pi().unwrap();
+        assert!(inner.as_pi().is_some()); // Should be another arrow type
     }
 }
