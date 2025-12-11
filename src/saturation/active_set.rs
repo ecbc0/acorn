@@ -1041,71 +1041,64 @@ impl ActiveSet {
     }
 }
 
-// Tests for ActiveSet.
-// Using test_with_all_bool_types: c0-c9, g0-g9 are Bool; m0-m9 are (Bool, Bool) -> Bool.
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn test_context() -> KernelContext {
-        KernelContext::test_with_all_bool_types()
-    }
-
-    fn test_local() -> LocalContext {
-        LocalContext::new_with_bools(10)
-    }
-
     #[test]
     fn test_activate_rewrite_pattern() {
-        let ctx = test_context();
-        let local = test_local();
-        // Create an active set that knows m0(c3, c4) = c2
-        // m0: (Bool, Bool) -> Bool, c2, c3, c4: Bool
-        let mut set = ActiveSet::new();
-        let mut step = ProofStep::mock_with_context("m0(c3, c4) = c2", &local, &ctx);
-        step.truthiness = Truthiness::Hypothetical;
-        set.activate(step, &ctx);
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("m0", "(Bool, Bool) -> Bool")
+            .add_constants(&["c1", "c2", "c3", "c4"], "Bool");
 
-        // We should be able replace c1 with c3 in "m0(c3, c4) = c2"
-        let pattern_step = ProofStep::mock_with_context("c1 = c3", &local, &ctx);
+        // Create an active set that knows m0(c3, c4) = c2
+        let mut set = ActiveSet::new();
+        let clause = kctx.make_clause("m0(c3, c4) = c2", &[]);
+        let mut step = ProofStep::mock_from_clause(clause);
+        step.truthiness = Truthiness::Hypothetical;
+        set.activate(step, &kctx);
+
+        // We should be able to replace c3 with c1 in "m0(c3, c4) = c2"
+        let pattern_clause = kctx.make_clause("c1 = c3", &[]);
+        let pattern_step = ProofStep::mock_from_clause(pattern_clause);
         let mut result = vec![];
-        set.activate_rewrite_pattern(1, &pattern_step, &mut result, &ctx);
+        set.activate_rewrite_pattern(1, &pattern_step, &mut result, &kctx);
 
         assert_eq!(result.len(), 1);
-        let expected = Clause::old_parse("m0(c1, c4) = c2", local.clone(), &ctx);
+        let expected = kctx.make_clause("m0(c1, c4) = c2", &[]);
         assert_eq!(result[0].clause, expected);
     }
 
     #[test]
     fn test_activate_rewrite_target() {
-        let ctx = test_context();
-        let local = test_local();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("m0", "(Bool, Bool) -> Bool")
+            .add_constants(&["c1", "c2", "c3", "c4"], "Bool");
+
         // Create an active set that knows c1 = c3
         let mut set = ActiveSet::new();
-        let step = ProofStep::mock_with_context("c1 = c3", &local, &ctx);
-        set.activate(step, &ctx);
+        let clause = kctx.make_clause("c1 = c3", &[]);
+        set.activate(ProofStep::mock_from_clause(clause), &kctx);
 
         // We want to use m0(c3, c4) = c2 to get m0(c1, c4) = c2.
-        let mut target_step = ProofStep::mock_with_context("m0(c3, c4) = c2", &local, &ctx);
+        let target_clause = kctx.make_clause("m0(c3, c4) = c2", &[]);
+        let mut target_step = ProofStep::mock_from_clause(target_clause);
         target_step.truthiness = Truthiness::Hypothetical;
         let mut result = vec![];
-        set.activate_rewrite_target(1, &target_step, &mut result, &ctx);
+        set.activate_rewrite_target(1, &target_step, &mut result, &kctx);
         assert_eq!(result.len(), 1);
     }
 
     #[test]
     fn test_equality_resolution() {
-        let ctx = test_context();
-        let local = test_local();
-        let old_clause = Clause::new(
-            vec![
-                Literal::not_equals(Term::parse("x0"), Term::parse("c0")),
-                Literal::equals(Term::parse("x0"), Term::parse("c1")),
-            ],
-            &local,
-        );
-        let mock_step = ProofStep::mock_from_clause(old_clause);
-        let proof_steps = ActiveSet::equality_resolution(0, &mock_step, &ctx);
+        let mut kctx = KernelContext::new();
+        kctx.add_constants(&["c0", "c1"], "Bool");
+
+        // x0 != c0 or x0 = c1
+        // When x0 unifies with itself, the first literal is eliminated and we get c1 = c0
+        let clause = kctx.make_clause("x0 != c0 or x0 = c1", &["Bool"]);
+        let mock_step = ProofStep::mock_from_clause(clause);
+        let proof_steps = ActiveSet::equality_resolution(0, &mock_step, &kctx);
         assert_eq!(proof_steps.len(), 1);
         assert!(proof_steps[0].clause.len() == 1);
         assert_eq!(format!("{}", proof_steps[0].clause), "c1 = c0".to_string());
@@ -1114,32 +1107,30 @@ mod tests {
     #[test]
     fn test_mutually_recursive_equality_resolution() {
         // This is a bug we ran into. It shouldn't work
-        let ctx = test_context();
-        let local = test_local();
-        // m0: (Bool, Bool) -> Bool, m1: (Bool, Bool) -> Bool
-        let clause = Clause::old_parse(
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("m0", "(Bool, Bool) -> Bool")
+            .add_constant("m1", "(Bool, Bool) -> Bool")
+            .add_constant("c0", "Bool");
+
+        let clause = kctx.make_clause(
             "m0(x0, m0(x1, m1(x2, c0))) != m0(m0(x2, x1), x0)",
-            local.clone(),
-            &ctx,
+            &["Bool", "Bool", "Bool"],
         );
         let mock_step = ProofStep::mock_from_clause(clause);
-        assert!(ActiveSet::equality_resolution(0, &mock_step, &ctx).is_empty());
+        assert!(ActiveSet::equality_resolution(0, &mock_step, &kctx).is_empty());
     }
 
     #[test]
     fn test_equality_factoring_basic() {
-        let ctx = test_context();
-        let local = test_local();
-        let old_clause = Clause::new(
-            vec![
-                Literal::equals(Term::parse("x0"), Term::parse("c0")),
-                Literal::equals(Term::parse("x1"), Term::parse("c0")),
-            ],
-            &local,
-        );
-        let mock_step = ProofStep::mock_from_clause(old_clause);
-        let proof_steps = ActiveSet::equality_factoring(0, &mock_step, &ctx);
-        let expected = Clause::old_parse("c0 = x0", local.clone(), &ctx);
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("c0", "Bool");
+
+        // x0 = c0 or x1 = c0
+        // Equality factoring gives us c0 = x0
+        let clause = kctx.make_clause("x0 = c0 or x1 = c0", &["Bool", "Bool"]);
+        let mock_step = ProofStep::mock_from_clause(clause);
+        let proof_steps = ActiveSet::equality_factoring(0, &mock_step, &kctx);
+        let expected = kctx.make_clause("c0 = x0", &["Bool"]);
         for ps in &proof_steps {
             if ps.clause == expected {
                 return;
@@ -1150,23 +1141,28 @@ mod tests {
 
     #[test]
     fn test_matching_entire_literal() {
-        let ctx = test_context();
-        let local = test_local();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("m0", "(Bool, Bool) -> Bool")
+            .add_constant("m2", "(Bool, Bool) -> Bool")
+            .add_constants(&["c3", "c4", "c5", "c6", "c7"], "Bool");
+
         let mut set = ActiveSet::new();
         // Test that we can match an entire literal against a rewrite rule.
-        // Original used c2(c0(c0(x0))) or c1(x0) != x0, but our functions take 2 args.
         // Use m2(m0(m0(x0, c4), c5), c6) or m0(x0, c7) != x0
         // When we have m0(c3, c7) = c3, this should resolve to just not m2(...).
-        let mut step = ProofStep::mock_with_context(
+        let clause1 = kctx.make_clause(
             "not m2(m0(m0(x0, c4), c5), c6) or m0(x0, c7) != x0",
-            &local,
-            &ctx,
+            &["Bool"],
         );
+        let mut step = ProofStep::mock_from_clause(clause1);
         step.truthiness = Truthiness::Factual;
-        set.activate(step, &ctx);
-        let mut step = ProofStep::mock_with_context("m0(c3, c7) = c3", &local, &ctx);
+        set.activate(step, &kctx);
+
+        let clause2 = kctx.make_clause("m0(c3, c7) = c3", &[]);
+        let mut step = ProofStep::mock_from_clause(clause2);
         step.truthiness = Truthiness::Counterfactual;
-        let (_, new_clauses) = set.activate(step, &ctx);
+        let (_, new_clauses) = set.activate(step, &kctx);
+
         // Find the expected clause in results
         let expected = "not m2(m0(m0(c3, c4), c5), c6)";
         assert!(
@@ -1185,36 +1181,42 @@ mod tests {
     #[test]
     fn test_equality_factoring_variable_numbering() {
         // This is a bug we ran into
-        let ctx = test_context();
-        let local = test_local();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("m1", "(Bool, Bool) -> Bool");
+
         let mut set = ActiveSet::new();
 
         // Nonreflexive rule of less-than
-        let step = ProofStep::mock_with_context("not m1(x0, x0)", &local, &ctx);
-        set.activate(step, &ctx);
+        let clause1 = kctx.make_clause("not m1(x0, x0)", &["Bool"]);
+        set.activate(ProofStep::mock_from_clause(clause1), &kctx);
 
         // Trichotomy
-        let clause = Clause::old_parse("m1(x0, x1) or m1(x1, x0) or x0 = x1", local.clone(), &ctx);
-        let mock_step = ProofStep::mock_from_clause(clause);
-        let output = ActiveSet::equality_factoring(0, &mock_step, &ctx);
+        let clause2 = kctx.make_clause("m1(x0, x1) or m1(x1, x0) or x0 = x1", &["Bool", "Bool"]);
+        let mock_step = ProofStep::mock_from_clause(clause2);
+        let output = ActiveSet::equality_factoring(0, &mock_step, &kctx);
         assert_eq!(output[0].clause.to_string(), "m1(x0, x0) or x0 = x0");
     }
 
     #[test]
     fn test_self_referential_resolution() {
         // This is a bug we ran into. These things should not unify
-        let ctx = test_context();
-        let local = test_local();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("m1", "(Bool, Bool) -> Bool")
+            .add_constant("m2", "(Bool, Bool) -> Bool")
+            .add_constant("c0", "Bool");
+
         let mut set = ActiveSet::new();
-        set.activate(
-            ProofStep::mock_with_context("m2(x0, x0) = c0", &local, &ctx),
-            &ctx,
+        let clause1 = kctx.make_clause("m2(x0, x0) = c0", &["Bool"]);
+        set.activate(ProofStep::mock_from_clause(clause1), &kctx);
+
+        let clause2 = kctx.make_clause(
+            "m2(m2(m1(c0, x0), x0), m2(x1, x1)) != c0",
+            &["Bool", "Bool"],
         );
-        let mut step =
-            ProofStep::mock_with_context("m2(m2(m1(c0, x0), x0), m2(x1, x1)) != c0", &local, &ctx);
+        let mut step = ProofStep::mock_from_clause(clause2);
         step.truthiness = Truthiness::Counterfactual;
         let mut results = vec![];
-        set.find_resolutions(&step, &mut results, &ctx);
+        set.find_resolutions(&step, &mut results, &kctx);
         assert_eq!(results.len(), 0);
     }
 }

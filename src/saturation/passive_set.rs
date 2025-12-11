@@ -414,42 +414,25 @@ impl PassiveSet {
     }
 }
 
-// Tests for passive set.
-// Using test_with_all_bool_types: c0-c9 are Bool; m0-m9 are (Bool, Bool) -> Bool.
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::local_context::LocalContext;
-
-    fn test_local_context() -> LocalContext {
-        LocalContext::new_with_bools(10)
-    }
-
-    fn test_kernel_context() -> KernelContext {
-        KernelContext::test_with_all_bool_types()
-    }
 
     #[test]
     fn test_passive_set_simplification() {
-        let lctx = test_local_context();
-        let kctx = test_kernel_context();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("m0", "(Bool, Bool) -> Bool")
+            .add_constants(&["c0", "c1", "c2"], "Bool");
+
         let mut passive_set = PassiveSet::new();
-        // m0 is (Bool, Bool) -> Bool; c0, c1, c2 are Bool
-        passive_set.push_batch(
-            vec![ProofStep::mock_with_context(
-                "m0(c0, c1) or m0(c0, c2)",
-                &lctx,
-                &kctx,
-            )],
-            &kctx,
-        );
-        // This should match *both* the literals in our existing clause
-        // x0 is a Bool variable that matches both c1 and c2
-        passive_set.simplify(
-            3,
-            &ProofStep::mock_with_context("not m0(c0, x0)", &lctx, &kctx),
-            &kctx,
-        );
+        let clause1 = kctx.make_clause("m0(c0, c1) or m0(c0, c2)", &[]);
+        passive_set.push_batch(vec![ProofStep::mock_from_clause(clause1)], &kctx);
+
+        // This should match *both* the literals in our existing clause.
+        // x0 is a Bool variable that matches both c1 and c2.
+        let clause2 = kctx.make_clause("not m0(c0, x0)", &["Bool"]);
+        passive_set.simplify(3, &ProofStep::mock_from_clause(clause2), &kctx);
+
         let step = passive_set.pop().unwrap();
         assert_eq!(step.clause.to_string(), "<empty>");
     }

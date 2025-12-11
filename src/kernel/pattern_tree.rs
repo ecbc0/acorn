@@ -1135,11 +1135,12 @@ mod tests {
     #[test]
     fn test_key_from_term_atomic() {
         // Test encoding of an atomic term c0 : Bool
-        let local_context = LocalContext::new_with_bools(2);
-        let kernel_context = KernelContext::test_with_bool_scoped_constants(5);
+        let mut kctx = KernelContext::new();
+        kctx.add_constants(&["c0", "c1", "c2", "c3", "c4"], "Bool");
+        let lctx = kctx.make_local(&["Bool", "Bool"]);
 
         let term = Term::parse("c0");
-        let key = key_from_term(&term, &local_context, &kernel_context);
+        let key = key_from_term(&term, &lctx, &kctx);
 
         // For an atomic term: type + atom
         // So: Type(BOOL) + Atom(c0)
@@ -1151,11 +1152,12 @@ mod tests {
     #[test]
     fn test_key_from_literal() {
         // Test encoding of x0 = c0
-        let local_context = LocalContext::new_with_bools(2);
-        let kernel_context = KernelContext::test_with_bool_scoped_constants(5);
+        let mut kctx = KernelContext::new();
+        kctx.add_constants(&["c0", "c1", "c2", "c3", "c4"], "Bool");
 
-        let literal = Literal::parse("x0 = c0");
-        let key = key_from_literal(&literal, &local_context, &kernel_context);
+        let clause = kctx.make_clause("x0 = c0", &["Bool"]);
+        let literal = &clause.literals[0];
+        let key = key_from_literal(literal, clause.get_local_context(), &kctx);
 
         // Should start with LiteralForm(true) since it's positive
         let edge1 = Edge::from_bytes(key[0], key[1], key[2]);
@@ -1169,14 +1171,15 @@ mod tests {
     #[test]
     fn test_pattern_tree_insert_term() {
         // Test inserting and finding atomic terms
-        let local_context = LocalContext::new_with_bools(2);
-        let kernel_context = KernelContext::test_with_bool_scoped_constants(5);
+        let mut kctx = KernelContext::new();
+        kctx.add_constants(&["c0", "c1", "c2", "c3", "c4"], "Bool");
+        let lctx = kctx.make_local(&[]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Insert c0
         let term = Term::parse("c0");
-        tree.insert_term(&term, 42, &local_context, &kernel_context);
+        tree.insert_term(&term, 42, &lctx, &kctx);
 
         assert_eq!(tree.values.len(), 1);
         assert_eq!(tree.values[0], 42);
@@ -1185,52 +1188,49 @@ mod tests {
     #[test]
     fn test_pattern_tree_insert_pair() {
         // Test inserting term pairs
-        let local_context = LocalContext::new_with_bools(2);
-        let kernel_context = KernelContext::test_with_bool_scoped_constants(5);
+        let mut kctx = KernelContext::new();
+        kctx.add_constants(&["c0", "c1", "c2", "c3", "c4"], "Bool");
+        let lctx = kctx.make_local(&[]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Insert (c0, c1)
         let term1 = Term::parse("c0");
         let term2 = Term::parse("c1");
-        tree.insert_pair(&term1, &term2, 99, &local_context, &kernel_context);
+        tree.insert_pair(&term1, &term2, 99, &lctx, &kctx);
 
         assert_eq!(tree.values.len(), 1);
         assert_eq!(tree.values[0], 99);
 
         // Should find the pair
-        let found = tree.find_pair(&term1, &term2, &local_context, &kernel_context);
+        let found = tree.find_pair(&term1, &term2, &lctx, &kctx);
         assert_eq!(found, Some(&99));
 
         // Should not find a different pair
         let term3 = Term::parse("c2");
-        let not_found = tree.find_pair(&term1, &term3, &local_context, &kernel_context);
+        let not_found = tree.find_pair(&term1, &term3, &lctx, &kctx);
         assert_eq!(not_found, None);
     }
 
     #[test]
     fn test_pattern_tree_variable_matching() {
         // Test that patterns with variables match concrete terms
-        let local_context = LocalContext::new_with_bools(2);
-        let kernel_context = KernelContext::test_with_bool_scoped_constants(5);
+        let mut kctx = KernelContext::new();
+        kctx.add_constants(&["c0", "c1", "c2", "c3", "c4"], "Bool");
+        let lctx = kctx.make_local(&["Bool"]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Insert pattern "x0 = c0" - a variable equals a constant
         let pattern_left = Term::parse("x0");
         let pattern_right = Term::parse("c0");
-        tree.insert_pair(
-            &pattern_left,
-            &pattern_right,
-            7,
-            &local_context,
-            &kernel_context,
-        );
+        tree.insert_pair(&pattern_left, &pattern_right, 7, &lctx, &kctx);
 
         // Query "c1 = c0" should match (c1 can be matched by variable x0)
+        let query_lctx = kctx.make_local(&[]);
         let query_left = Term::parse("c1");
         let query_right = Term::parse("c0");
-        let found = tree.find_pair(&query_left, &query_right, &local_context, &kernel_context);
+        let found = tree.find_pair(&query_left, &query_right, &query_lctx, &kctx);
         assert_eq!(found, Some(&7));
     }
 
@@ -1238,109 +1238,93 @@ mod tests {
     fn test_pattern_tree_application_with_variable() {
         // Test that patterns with function applications and variables match correctly
         // c1 : Bool -> Bool, so c1(x0) : Bool when x0 : Bool
-        let local_context = LocalContext::new_with_bools(3);
-        let kernel_context = KernelContext::test_with_function_types();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("c1", "Bool -> Bool")
+            .add_constants(&["c5", "c6"], "Bool");
+        let lctx = kctx.make_local(&["Bool"]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Insert pattern "c1(x0) = c5" - a function applied to a variable equals a constant
-        // c1 : Bool -> Bool, c5 : Bool
         let pattern_left = Term::parse("c1(x0)");
         let pattern_right = Term::parse("c5");
-        tree.insert_pair(
-            &pattern_left,
-            &pattern_right,
-            42,
-            &local_context,
-            &kernel_context,
-        );
+        tree.insert_pair(&pattern_left, &pattern_right, 42, &lctx, &kctx);
 
         // Query "c1(c6) = c5" should match (c6 : Bool can be matched by variable x0)
-        // c6 : Bool
+        let query_lctx = kctx.make_local(&[]);
         let query_left = Term::parse("c1(c6)");
         let query_right = Term::parse("c5");
-        let found = tree.find_pair(&query_left, &query_right, &local_context, &kernel_context);
+        let found = tree.find_pair(&query_left, &query_right, &query_lctx, &kctx);
         assert_eq!(found, Some(&42));
     }
 
     #[test]
     fn test_pattern_tree_clause_with_function_application() {
         // Test that clauses with function applications can be inserted and found
-        // when using test_with_function_types which properly stores Pi types.
-        let local_context = LocalContext::new_with_bools(3);
-        let kernel_context = KernelContext::test_with_function_types();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("c1", "Bool -> Bool")
+            .add_constant("c5", "Bool");
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Create a clause with a function application: c1(x0) = c5
-        // c1 : Bool -> Bool, c5 : Bool
-        let clause = Clause::old_parse("c1(x0) = c5", local_context.clone(), &kernel_context);
-        tree.insert_clause(&clause, 42, &kernel_context);
+        let clause = kctx.make_clause("c1(x0) = c5", &["Bool"]);
+        tree.insert_clause(&clause, 42, &kctx);
 
         // Should be able to find the exact same clause
-        let found = tree.find_clause(&clause, &kernel_context);
+        let found = tree.find_clause(&clause, &kctx);
         assert_eq!(found, Some(&42));
     }
 
     #[test]
     fn test_pattern_tree_clause_specialization() {
         // Test that find_clause can match a specialized clause against a pattern.
-        // Note: find_clause does exact structural matching with variable substitution.
-        // The clauses must have the same structure (same left/right order).
-        //
-        // Clause parsing normalizes literals by KBO, which can flip left/right.
-        // So we use clauses where the structure is preserved.
-        let local_context = LocalContext::new_with_bools(3);
-        let kernel_context = KernelContext::test_with_function_types();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("c5", "Bool");
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
-        // Insert pattern: x0 = c5 (variable on left, constant on right)
-        // After KBO normalization, x0 < c5 so this might get flipped.
-        // Let's use a simpler case where structure is predictable.
-        let clause = Clause::old_parse("x0 = x0", local_context.clone(), &kernel_context);
-        tree.insert_clause(&clause, 42, &kernel_context);
+        // Insert pattern: x0 = x0
+        let clause = kctx.make_clause("x0 = x0", &["Bool"]);
+        tree.insert_clause(&clause, 42, &kctx);
 
         // Query: c5 = c5 should match (c5 substituted for x0)
-        let special = Clause::old_parse("c5 = c5", local_context.clone(), &kernel_context);
-        let found_special = tree.find_clause(&special, &kernel_context);
+        let special = kctx.make_clause("c5 = c5", &[]);
+        let found_special = tree.find_clause(&special, &kctx);
         assert_eq!(found_special, Some(&42));
     }
 
     #[test]
     fn test_pattern_tree_clause_multi_literal() {
         // Test clause with multiple literals containing function applications
-        let local_context = LocalContext::new_with_bools(3);
-        let kernel_context = KernelContext::test_with_function_types();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("c0", "(Bool, Bool) -> Bool")
+            .add_constant("c1", "Bool -> Bool")
+            .add_constants(&["c5", "c6"], "Bool");
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Create a clause with two literals: c1(x0) = c5 or c0(x0, x1) = c6
-        // c0 : (Bool, Bool) -> Bool, c1 : Bool -> Bool, c5, c6 : Bool
-        let clause = Clause::old_parse(
-            "c1(x0) = c5 or c0(x0, x1) = c6",
-            local_context.clone(),
-            &kernel_context,
-        );
-        tree.insert_clause(&clause, 99, &kernel_context);
+        let clause = kctx.make_clause("c1(x0) = c5 or c0(x0, x1) = c6", &["Bool", "Bool"]);
+        tree.insert_clause(&clause, 99, &kctx);
 
         // Should be able to find the clause
-        let found = tree.find_clause(&clause, &kernel_context);
+        let found = tree.find_clause(&clause, &kctx);
         assert_eq!(found, Some(&99));
     }
 
     #[test]
     fn test_insert_or_append_and_find() {
         // Test the insert_or_append + find_term_matches_while pattern used by RewriteTree
-        // Use test_with_all_bool_types to match what rewrite_tree tests use
-        let local_context = LocalContext::new_with_bools(10);
-        let kernel_context = KernelContext::test_with_all_bool_types();
+        let mut kctx = KernelContext::new();
+        kctx.add_constants(&["c0", "c1", "c2"], "Bool");
+        let lctx = kctx.make_local(&[]);
 
         let mut tree: PatternTree<Vec<usize>> = PatternTree::new();
 
         // Insert c1 using insert_or_append (like RewriteTree does)
         let term = Term::parse("c1");
-        PatternTree::insert_or_append(&mut tree, &term, 42, &local_context, &kernel_context);
+        PatternTree::insert_or_append(&mut tree, &term, 42, &lctx, &kctx);
 
         // Now try to find it using the pattern that RewriteTree uses
         let mut key = term_key_prefix();
@@ -1352,8 +1336,8 @@ mod tests {
         tree.find_term_matches_while(
             &mut key,
             &terms,
-            &local_context,
-            &kernel_context,
+            &lctx,
+            &kctx,
             &mut replacements,
             &mut |value_id, _| {
                 found_id = Some(value_id);
@@ -1370,10 +1354,9 @@ mod tests {
         // Test that the pattern tree can match a partial application against a function variable.
         // This is a key capability of curried representation.
         //
-        // Setup from test_with_function_types:
         // c0 : (Bool, Bool) -> Bool (2-arg function)
         // c1 : Bool -> Bool (1-arg function)
-        // c5-c9 : Bool
+        // c5, c6 : Bool
         //
         // Pattern: x0(c6) where x0 : Bool -> Bool
         // Query: c0(c5, c6) = ((Bool, Bool) -> Bool)(Bool, Bool) = Bool
@@ -1383,35 +1366,30 @@ mod tests {
         // - x0(c6) becomes Application(x0, c6)
         //
         // The match should succeed with x0 = c0(c5), which has type Bool -> Bool.
-        let kernel_context = KernelContext::test_with_function_types();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("c0", "(Bool, Bool) -> Bool")
+            .add_constant("c1", "Bool -> Bool")
+            .add_constants(&["c5", "c6"], "Bool");
 
         // Create local context where x0 has type Bool -> Bool
-        // c1 has type Bool -> Bool (scoped constant index 1)
         use crate::kernel::symbol::Symbol;
-        let type_bool_to_bool = kernel_context
+        let type_bool_to_bool = kctx
             .symbol_table
-            .get_closed_type(Symbol::ScopedConstant(1))
+            .get_closed_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
             .clone();
-        let local_context = LocalContext::from_closed_types(vec![type_bool_to_bool]);
+        let lctx = LocalContext::from_closed_types(vec![type_bool_to_bool]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Insert pattern: x0(c6) = c5
         let pattern_left = Term::parse("x0(c6)");
         let pattern_right = Term::parse("c5");
-        tree.insert_pair(
-            &pattern_left,
-            &pattern_right,
-            42,
-            &local_context,
-            &kernel_context,
-        );
+        tree.insert_pair(&pattern_left, &pattern_right, 42, &lctx, &kctx);
 
         // First verify that the partial application c0(c5) has type Bool -> Bool
         let partial_app = Term::parse("c0(c5)");
-        let partial_type =
-            partial_app.get_closed_type_with_context(&local_context, &kernel_context);
-        let x0_type = local_context.get_var_closed_type(0);
+        let partial_type = partial_app.get_closed_type_with_context(&lctx, &kctx);
+        let x0_type = lctx.get_var_closed_type(0);
         assert_eq!(
             partial_type,
             *x0_type.unwrap(),
@@ -1422,7 +1400,7 @@ mod tests {
         // c0(c5) is a partial application of type Bool -> Bool, which should match x0
         let query_left = Term::parse("c0(c5, c6)");
         let query_right = Term::parse("c5");
-        let found = tree.find_pair(&query_left, &query_right, &local_context, &kernel_context);
+        let found = tree.find_pair(&query_left, &query_right, &lctx, &kctx);
 
         // The pattern tree should find this match because:
         // - c0(c5, c6) curries to Application(Application(c0, c5), c6)
@@ -1443,32 +1421,29 @@ mod tests {
         // Query: c1(c5) = c6 where c1 : Bool -> Bool
         //
         // This should match with x0 = c1 (simple variable binding).
-        let kernel_context = KernelContext::test_with_function_types();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("c0", "(Bool, Bool) -> Bool")
+            .add_constant("c1", "Bool -> Bool")
+            .add_constants(&["c5", "c6", "c7"], "Bool");
 
         use crate::kernel::symbol::Symbol;
-        let type_bool_to_bool = kernel_context
+        let type_bool_to_bool = kctx
             .symbol_table
-            .get_closed_type(Symbol::ScopedConstant(1))
+            .get_closed_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
             .clone();
-        let local_context = LocalContext::from_closed_types(vec![type_bool_to_bool]);
+        let lctx = LocalContext::from_closed_types(vec![type_bool_to_bool]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Insert pattern: x0(c5) = c6
         let pattern_left = Term::parse("x0(c5)");
         let pattern_right = Term::parse("c6");
-        tree.insert_pair(
-            &pattern_left,
-            &pattern_right,
-            100,
-            &local_context,
-            &kernel_context,
-        );
+        tree.insert_pair(&pattern_left, &pattern_right, 100, &lctx, &kctx);
 
         // First verify c1 has type Bool -> Bool
         let c1_term = Term::parse("c1");
-        let c1_type = c1_term.get_closed_type_with_context(&local_context, &kernel_context);
-        let x0_type = local_context.get_var_closed_type(0);
+        let c1_type = c1_term.get_closed_type_with_context(&lctx, &kctx);
+        let x0_type = lctx.get_var_closed_type(0);
         assert_eq!(
             c1_type,
             *x0_type.unwrap(),
@@ -1478,7 +1453,7 @@ mod tests {
         // Query 1: c1(c5) = c6 - same arity, should match with x0 = c1
         let query1_left = Term::parse("c1(c5)");
         let query1_right = Term::parse("c6");
-        let found1 = tree.find_pair(&query1_left, &query1_right, &local_context, &kernel_context);
+        let found1 = tree.find_pair(&query1_left, &query1_right, &lctx, &kctx);
         assert_eq!(found1, Some(&100), "Same-arity application should match");
 
         // Query 2: c0(c7, c5) = c6 - different arity, but c0(c7) has type Bool -> Bool
@@ -1486,7 +1461,7 @@ mod tests {
         // with x0 = c0(c7)
         let query2_left = Term::parse("c0(c7, c5)");
         let query2_right = Term::parse("c6");
-        let found2 = tree.find_pair(&query2_left, &query2_right, &local_context, &kernel_context);
+        let found2 = tree.find_pair(&query2_left, &query2_right, &lctx, &kctx);
         assert_eq!(
             found2,
             Some(&100),
@@ -1506,34 +1481,32 @@ mod tests {
         //   where c1: Bool -> Bool, c5, c6: Bool
         //
         // This should match with x0 -> c1, x1 -> c6
-        let kernel_context = KernelContext::test_with_function_types();
+        let mut kctx = KernelContext::new();
+        // Add constants in order so Term::parse indices match
+        kctx.add_constant("c0", "Bool") // placeholder
+            .add_constant("c1", "Bool -> Bool")
+            .add_constants(&["c2", "c3", "c4"], "Bool") // placeholders
+            .add_constants(&["c5", "c6"], "Bool");
 
         // Create local context where x0 has type Bool -> Bool and x1 has type Bool
         use crate::kernel::symbol::Symbol;
-        let type_bool_to_bool = kernel_context
+        let type_bool_to_bool = kctx
             .symbol_table
             .get_closed_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
             .clone();
-        let local_context =
-            LocalContext::from_closed_types(vec![type_bool_to_bool, ClosedType::bool()]);
+        let lctx = LocalContext::from_closed_types(vec![type_bool_to_bool, ClosedType::bool()]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Insert pattern: not x0(c5) or x0(x1)
-        let pattern = Clause::old_parse(
-            "not x0(c5) or x0(x1)",
-            local_context.clone(),
-            &kernel_context,
-        );
-        tree.insert_clause(&pattern, 42, &kernel_context);
+        let pattern = Clause::old_parse("not x0(c5) or x0(x1)", lctx.clone(), &kctx);
+        tree.insert_clause(&pattern, 42, &kctx);
 
         // Query: not c1(c5) or c1(c6)
-        // Create a local context for the query (no variables needed)
-        let query_local = LocalContext::empty();
-        let query = Clause::old_parse("not c1(c5) or c1(c6)", query_local.clone(), &kernel_context);
+        let query = kctx.make_clause("not c1(c5) or c1(c6)", &[]);
 
         // This should find the pattern with x0 -> c1, x1 -> c6
-        let found = tree.find_clause(&query, &kernel_context);
+        let found = tree.find_clause(&query, &kctx);
         assert_eq!(
             found,
             Some(&42),
@@ -1552,34 +1525,31 @@ mod tests {
         //   where c0: (Bool, Bool) -> Bool, c6: Bool
         //
         // This should match with x0 -> c0(c6)
-        let kernel_context = KernelContext::test_with_function_types();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("c0", "(Bool, Bool) -> Bool")
+            .add_constant("c1", "Bool -> Bool")
+            .add_constants(&["c5", "c6"], "Bool");
 
         // Create local context where x0 has type Bool -> Bool
         use crate::kernel::symbol::Symbol;
-        let type_bool_to_bool = kernel_context
+        let type_bool_to_bool = kctx
             .symbol_table
             .get_closed_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
             .clone();
-        let local_context = LocalContext::from_closed_types(vec![type_bool_to_bool]);
+        let lctx = LocalContext::from_closed_types(vec![type_bool_to_bool]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Insert pattern: x0(c1(x0)) = c5
         let pattern_left = Term::parse("x0(c1(x0))");
         let pattern_right = Term::parse("c5");
-        tree.insert_pair(
-            &pattern_left,
-            &pattern_right,
-            42,
-            &local_context,
-            &kernel_context,
-        );
+        tree.insert_pair(&pattern_left, &pattern_right, 42, &lctx, &kctx);
 
         // Query: c0(c6, c1(c0(c6))) = c5
-        let query_local = LocalContext::empty();
+        let query_lctx = kctx.make_local(&[]);
         let query_left = Term::parse("c0(c6, c1(c0(c6)))");
         let query_right = Term::parse("c5");
-        let found = tree.find_pair(&query_left, &query_right, &query_local, &kernel_context);
+        let found = tree.find_pair(&query_left, &query_right, &query_lctx, &kctx);
 
         assert_eq!(
             found,

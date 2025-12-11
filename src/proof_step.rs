@@ -800,7 +800,6 @@ impl ProofStep {
 mod tests {
     use super::*;
     use crate::kernel::kernel_context::KernelContext;
-    use crate::kernel::local_context::LocalContext;
 
     /// Test that the rewritten clause has correct variable types in its context.
     ///
@@ -814,16 +813,20 @@ mod tests {
     /// because the clause's context didn't match the literal's variables.
     #[test]
     fn test_rewrite_clause_context_matches_variables() {
-        let kctx = KernelContext::test_with_all_bool_types();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("m0", "(Bool, Bool) -> Bool")
+            .add_constant("g1", "Bool -> Bool")
+            .add_constant("c0", "Bool");
 
         // Pattern: m0(x0, x1) = x1
         // Context: [Bool, Bool]
-        let pattern_context = LocalContext::new_with_bools(2);
-        let pattern_step = ProofStep::mock_with_context("m0(x0, x1) = x1", &pattern_context, &kctx);
+        let pattern_clause = kctx.make_clause("m0(x0, x1) = x1", &["Bool", "Bool"]);
+        let pattern_context = pattern_clause.get_local_context().clone();
+        let pattern_step = ProofStep::mock_from_clause(pattern_clause);
 
         // Target: g1(c0) = c0 (no variables)
-        let target_context = LocalContext::empty();
-        let target_step = ProofStep::mock_with_context("g1(c0) = c0", &target_context, &kctx);
+        let target_clause = kctx.make_clause("g1(c0) = c0", &[]);
+        let target_step = ProofStep::mock_from_clause(target_clause);
 
         // new_subterm: m0(x0, c0)
         // This introduces a variable x0 that's NOT in the pattern_step's context

@@ -757,35 +757,41 @@ mod tests {
     #[test]
     #[should_panic(expected = "Function type expected")]
     fn test_validation_catches_bool_applied_to_bool() {
-        let kctx = KernelContext::test_with_all_bool_types();
-        // c0 and c1 are both Bool in test_with_all_bool_types, so c0(c1) is invalid
-        Clause::old_parse("c0(c1)", LocalContext::empty(), &kctx);
+        let mut kctx = KernelContext::new();
+        kctx.add_constants(&["c0", "c1"], "Bool");
+        // c0 and c1 are both Bool, so c0(c1) is invalid - can't apply Bool to Bool
+        kctx.make_clause("c0(c1)", &[]);
     }
 
     /// Test that validation catches type mismatches in literals (left and right have different types).
     #[test]
     #[should_panic(expected = "Literal type mismatch")]
     fn test_validation_catches_literal_type_mismatch() {
-        let kctx = KernelContext::test_with_all_bool_types();
-        // g0 is Bool -> Bool, c0 is Bool, so g0 != c0 is a type mismatch
-        Clause::old_parse("g0 = c0", LocalContext::empty(), &kctx);
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("g0", "Bool -> Bool")
+            .add_constant("c0", "Bool");
+        // g0 is Bool -> Bool, c0 is Bool, so g0 = c0 is a type mismatch
+        kctx.make_clause("g0 = c0", &[]);
     }
 
     /// Test that validation catches missing variable types in context.
     #[test]
     #[should_panic(expected = "context has no type for it")]
     fn test_validation_catches_missing_variable_type() {
-        let kctx = KernelContext::test_with_all_bool_types();
-        // x0 is used but LocalContext is empty
-        Clause::old_parse("x0 = c0", LocalContext::empty(), &kctx);
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("c0", "Bool");
+        // x0 is used but no variable types provided
+        kctx.make_clause("x0 = c0", &[]);
     }
 
     /// Test that valid clauses pass validation.
     #[test]
     fn test_valid_clause_passes_validation() {
-        let kctx = KernelContext::test_with_all_bool_types();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("g0", "Bool -> Bool")
+            .add_constants(&["c0", "c1"], "Bool");
         // g0(c0) is Bool -> Bool applied to Bool = Bool, c1 is Bool, so this is valid
-        let clause = Clause::old_parse("g0(c0) = c1", LocalContext::empty(), &kctx);
+        let clause = kctx.make_clause("g0(c0) = c1", &[]);
         assert_eq!(clause.literals.len(), 1);
     }
 }

@@ -184,38 +184,19 @@ impl RewriteTree {
     }
 }
 
-// Tests for rewrite tree.
-// Using test_with_all_bool_types: c0-c9 are Bool; m0-m9 are (Bool, Bool) -> Bool.
 #[cfg(test)]
 mod tests {
     use crate::kernel::atom::Atom;
 
     use super::*;
 
-    fn test_local_context() -> LocalContext {
-        LocalContext::new_with_bools(10)
-    }
-
-    fn test_kernel_context() -> KernelContext {
-        KernelContext::test_with_all_bool_types()
-    }
-
-    fn get_test_rewrites(
-        tree: &RewriteTree,
-        input_term: &Term,
-        next_var: AtomId,
-        lctx: &LocalContext,
-        kctx: &KernelContext,
-    ) -> Vec<Rewrite> {
-        tree.get_rewrites(input_term, next_var, lctx, kctx)
-    }
-
     #[test]
     fn test_rewrite_tree_atoms() {
-        let kctx = test_kernel_context();
-        let lctx = test_local_context();
+        let mut kctx = KernelContext::new();
+        kctx.add_constants(&["c0", "c1"], "Bool");
+        let lctx = kctx.make_local(&[]);
+
         let mut tree = RewriteTree::new();
-        // c0, c1 are Bool constants
         tree.insert_terms(
             0,
             &Term::parse("c1"),
@@ -224,17 +205,20 @@ mod tests {
             &lctx,
             &kctx,
         );
-        let rewrites = get_test_rewrites(&tree, &Term::parse("c1"), 0, &lctx, &kctx);
+        let rewrites = tree.get_rewrites(&Term::parse("c1"), 0, &lctx, &kctx);
         assert_eq!(rewrites.len(), 1);
         assert_eq!(rewrites[0].term, Term::parse("c0"));
     }
 
     #[test]
     fn test_rewrite_tree_functions() {
-        let kctx = test_kernel_context();
-        let lctx = test_local_context();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("m0", "(Bool, Bool) -> Bool")
+            .add_constant("m1", "(Bool, Bool) -> Bool")
+            .add_constants(&["c0", "c2"], "Bool");
+        let lctx = kctx.make_local(&["Bool"]);
+
         let mut tree = RewriteTree::new();
-        // m0, m1 are (Bool, Bool) -> Bool; x0 is Bool variable; c2 is Bool constant
         // Rewrite rule: m1(x0, c0) -> m0(x0, c0)
         tree.insert_terms(
             0,
@@ -244,19 +228,24 @@ mod tests {
             &lctx,
             &kctx,
         );
+
         // Query: m1(c2, c0) should rewrite to m0(c2, c0)
-        let rewrites = get_test_rewrites(&tree, &Term::parse("m1(c2, c0)"), 0, &lctx, &kctx);
+        let query_lctx = kctx.make_local(&[]);
+        let rewrites = tree.get_rewrites(&Term::parse("m1(c2, c0)"), 0, &query_lctx, &kctx);
         assert_eq!(rewrites.len(), 1);
         assert_eq!(rewrites[0].term, Term::parse("m0(c2, c0)"));
     }
 
     #[test]
     fn test_rewrite_tree_multiple_rewrites() {
-        let kctx = test_kernel_context();
-        let lctx = test_local_context();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("m1", "(Bool, Bool) -> Bool")
+            .add_constant("m3", "(Bool, Bool) -> Bool")
+            .add_constant("m4", "(Bool, Bool) -> Bool")
+            .add_constants(&["c0", "c2"], "Bool");
+        let lctx = kctx.make_local(&["Bool"]);
+
         let mut tree = RewriteTree::new();
-        // m1 is (Bool, Bool) -> Bool; m3, m4 are also (Bool, Bool) -> Bool
-        // We'll use m3 and m4 to produce results
         // Rule 1: m1(x0, c2) -> m3(x0, c0)
         tree.insert_terms(
             0,
@@ -275,8 +264,10 @@ mod tests {
             &lctx,
             &kctx,
         );
+
         // Query: m1(c2, c2) should match both rules
-        let rewrites = get_test_rewrites(&tree, &Term::parse("m1(c2, c2)"), 0, &lctx, &kctx);
+        let query_lctx = kctx.make_local(&[]);
+        let rewrites = tree.get_rewrites(&Term::parse("m1(c2, c2)"), 0, &query_lctx, &kctx);
         assert_eq!(rewrites.len(), 2);
         assert_eq!(rewrites[0].term, Term::parse("m3(c2, c0)"));
         assert_eq!(rewrites[1].term, Term::parse("m4(c2, c0)"));
@@ -284,46 +275,57 @@ mod tests {
 
     #[test]
     fn test_rewrite_tree_inserting_edge_literals() {
-        let kctx = test_kernel_context();
-        let lctx = test_local_context();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("c0", "Bool");
+
         let mut tree = RewriteTree::new();
         // x0 = c0 where both are Bool
-        tree.insert_literal(0, &Literal::parse("x0 = c0"), &lctx, &kctx);
+        let clause1 = kctx.make_clause("x0 = c0", &["Bool"]);
+        tree.insert_literal(0, &clause1.literals[0], clause1.get_local_context(), &kctx);
         // c0 alone as literal (Bool = true)
-        tree.insert_literal(1, &Literal::parse("c0"), &lctx, &kctx);
+        let clause2 = kctx.make_clause("c0", &[]);
+        tree.insert_literal(1, &clause2.literals[0], clause2.get_local_context(), &kctx);
     }
 
     #[test]
     fn test_new_variable_created_during_rewrite() {
-        let kctx = test_kernel_context();
-        let lctx = test_local_context();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("m1", "(Bool, Bool) -> Bool")
+            .add_constants(&["c0", "c1"], "Bool");
+
         let mut tree = RewriteTree::new();
         // m1(x0, c1) = c0 means c0 rewrites to m1(x1, c1) with a new variable x1
-        tree.insert_literal(0, &Literal::parse("m1(x0, c1) = c0"), &lctx, &kctx);
-        let rewrites = get_test_rewrites(&tree, &Term::parse("c0"), 1, &lctx, &kctx);
+        let clause = kctx.make_clause("m1(x0, c1) = c0", &["Bool"]);
+        tree.insert_literal(0, &clause.literals[0], clause.get_local_context(), &kctx);
+
+        let query_lctx = kctx.make_local(&[]);
+        let rewrites = tree.get_rewrites(&Term::parse("c0"), 1, &query_lctx, &kctx);
         assert_eq!(rewrites.len(), 1);
         assert_eq!(rewrites[0].term, Term::parse("m1(x1, c1)"));
     }
 
     #[test]
     fn test_rewrite_tree_checks_type() {
-        let kctx = test_kernel_context();
-        let lctx = test_local_context();
-        let mut tree = RewriteTree::new();
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("m0", "(Bool, Bool) -> Bool")
+            .add_constant("c0", "Bool");
+        let lctx = kctx.make_local(&["Bool"]);
 
+        let mut tree = RewriteTree::new();
         // Make a rule for Bool-typed variables
         let var_bool = Term::atom(Atom::Variable(0));
         tree.insert_terms(0, &var_bool, &var_bool, true, &lctx, &kctx);
 
-        // A BOOL constant should match it - use c0 which is Bool
+        // A Bool constant should match it
+        let query_lctx = kctx.make_local(&[]);
         let const_bool = Term::parse("c0");
-        let rewrites = get_test_rewrites(&tree, &const_bool, 0, &lctx, &kctx);
+        let rewrites = tree.get_rewrites(&const_bool, 0, &query_lctx, &kctx);
         assert_eq!(rewrites.len(), 1);
 
         // A different type term should not match
         // m0 has type (Bool, Bool) -> Bool which is different from Bool
         let func_term = Term::parse("m0");
-        let rewrites = get_test_rewrites(&tree, &func_term, 0, &lctx, &kctx);
+        let rewrites = tree.get_rewrites(&func_term, 0, &query_lctx, &kctx);
         assert_eq!(rewrites.len(), 0);
     }
 }

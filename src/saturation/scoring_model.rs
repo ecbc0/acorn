@@ -83,11 +83,13 @@ mod tests {
 
     #[test]
     fn test_ort_model_score() {
-        let kctx = KernelContext::test_with_all_bool_types();
-        let step = ProofStep::mock("g0(c3) = c2", &kctx);
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("g0", "Bool -> Bool")
+            .add_constants(&["c2", "c3"], "Bool");
+        let clause = kctx.make_clause("g0(c3) = c2", &[]);
+        let step = ProofStep::mock_from_clause(clause);
         let features = Features::new(&step);
 
-        // First ort
         let scoring_model = ScoringModel::load().unwrap();
         let ort_score = scoring_model.score(&features).unwrap();
         assert!(ort_score.is_finite());
@@ -95,10 +97,15 @@ mod tests {
 
     #[test]
     fn test_ort_model_batch_score() {
-        let kctx = KernelContext::test_with_all_bool_types();
-        let step1 = ProofStep::mock("g0(c3) = c2", &kctx);
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("m4", "(Bool, Bool) -> Bool")
+            .add_constants(&["c1", "c2"], "Bool");
+
+        let clause1 = kctx.make_clause("m4(c1, c1) = c2", &[]);
+        let clause2 = kctx.make_clause("m4(c1, c1) = m4(c2, c2)", &[]);
+        let step1 = ProofStep::mock_from_clause(clause1);
+        let step2 = ProofStep::mock_from_clause(clause2);
         let features1 = Features::new(&step1);
-        let step2 = ProofStep::mock("m4(c1, c1) = m4(c2, c2)", &kctx);
         let features2 = Features::new(&step2);
         let scoring_model = ScoringModel::load().unwrap();
 
