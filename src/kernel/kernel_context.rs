@@ -1,5 +1,3 @@
-use std::sync::LazyLock;
-
 use crate::kernel::atom::Atom;
 #[cfg(test)]
 use crate::kernel::closed_type::ClosedType;
@@ -40,12 +38,6 @@ impl KernelContext {
             Atom::Symbol(Symbol::Synthetic(i)) => format!("s{}", i),
             Atom::Type(t) => format!("T{}", t.as_u16()),
         }
-    }
-
-    /// Returns a reference to a fake empty KernelContext.
-    pub fn fake() -> &'static KernelContext {
-        static FAKE_KERNEL_CONTEXT: LazyLock<KernelContext> = LazyLock::new(KernelContext::new);
-        &FAKE_KERNEL_CONTEXT
     }
 
     /// Creates a test KernelContext with pre-populated scoped constants (c0, c1, ..., c{n-1})
