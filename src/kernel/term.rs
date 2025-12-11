@@ -7,10 +7,8 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::types::GROUND_BOOL;
 
-/// A step in a "new path" through a term.
+/// A step in a path through a term.
 /// Treats applications in curried form: f(a, b) becomes ((f a) b).
-/// This is called a "new path" because we are transitioning from the old
-/// Vec<usize> path representation to this more explicit one.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum PathStep {
     /// Go to the function part of an application
@@ -553,9 +551,9 @@ impl<'a> TermRef<'a> {
         self.total_tiebreak(other)
     }
 
-    /// Navigate to a subterm using a "new path".
+    /// Navigate to a subterm using a path.
     /// Returns None if the path doesn't exist or we hit an atomic term.
-    pub fn get_term_at_new_path(&self, path: &[PathStep]) -> Option<TermRef<'a>> {
+    pub fn get_term_at_path(&self, path: &[PathStep]) -> Option<TermRef<'a>> {
         if path.is_empty() {
             return Some(*self);
         }
@@ -564,8 +562,8 @@ impl<'a> TermRef<'a> {
         let (func, arg) = self.split_application()?;
 
         match path[0] {
-            PathStep::Argument => arg.get_term_at_new_path(&path[1..]),
-            PathStep::Function => func.get_term_at_new_path(&path[1..]),
+            PathStep::Argument => arg.get_term_at_path(&path[1..]),
+            PathStep::Function => func.get_term_at_path(&path[1..]),
         }
     }
 }
@@ -1317,31 +1315,27 @@ impl Term {
         }
     }
 
-    /// Get the subterm at the given "new path".
-    /// A new path uses PathStep::Function/Argument to navigate the curried term structure.
+    /// Get the subterm at the given path.
+    /// A path uses PathStep::Function/Argument to navigate the curried term structure.
     /// An empty path returns the whole term.
-    pub fn get_term_at_new_path(&self, new_path: &[PathStep]) -> Option<Term> {
-        self.as_ref()
-            .get_term_at_new_path(new_path)
-            .map(|r| r.to_owned())
+    pub fn get_term_at_path(&self, path: &[PathStep]) -> Option<Term> {
+        self.as_ref().get_term_at_path(path).map(|r| r.to_owned())
     }
 
-    /// Replace the subterm at the given "new path" with a replacement.
-    /// A new path uses PathStep::Function/Argument to navigate the curried term structure.
+    /// Replace the subterm at the given path with a replacement.
+    /// A path uses PathStep::Function/Argument to navigate the curried term structure.
     /// An empty path replaces the whole term.
-    pub fn replace_at_new_path(&self, new_path: &[PathStep], replacement: Term) -> Term {
-        if new_path.is_empty() {
+    pub fn replace_at_path(&self, path: &[PathStep], replacement: Term) -> Term {
+        if path.is_empty() {
             return replacement;
         }
 
-        match new_path[0] {
+        match path[0] {
             PathStep::Argument => {
                 // Replace in the last argument
                 match self.as_ref().split_application() {
                     Some((func, arg)) => {
-                        let new_arg = arg
-                            .to_owned()
-                            .replace_at_new_path(&new_path[1..], replacement);
+                        let new_arg = arg.to_owned().replace_at_path(&path[1..], replacement);
                         func.to_owned().apply(&[new_arg])
                     }
                     None => panic!("Cannot follow Argument path on atomic term"),
@@ -1351,9 +1345,7 @@ impl Term {
                 // Replace in the function part (all but last arg)
                 match self.as_ref().split_application() {
                     Some((func, arg)) => {
-                        let new_func = func
-                            .to_owned()
-                            .replace_at_new_path(&new_path[1..], replacement);
+                        let new_func = func.to_owned().replace_at_path(&path[1..], replacement);
                         new_func.apply(&[arg.to_owned()])
                     }
                     None => panic!("Cannot follow Function path on atomic term"),
@@ -1362,19 +1354,19 @@ impl Term {
         }
     }
 
-    /// Find all rewritable subterms with their "new paths".
-    /// A new path uses Vec<PathStep> to navigate the curried term structure.
+    /// Find all rewritable subterms with their paths.
+    /// A path uses Vec<PathStep> to navigate the curried term structure.
     /// It is an error to call this on any variables.
     /// Any term is rewritable except for "true".
-    pub fn rewritable_subterms_with_new_paths(&self) -> Vec<(Vec<PathStep>, Term)> {
+    pub fn rewritable_subterms_with_paths(&self) -> Vec<(Vec<PathStep>, Term)> {
         let mut answer = vec![];
         let mut prefix = vec![];
-        self.push_rewritable_subterms_with_new_paths(&mut prefix, &mut answer);
+        self.push_rewritable_subterms_with_paths(&mut prefix, &mut answer);
         answer
     }
 
-    /// Helper for rewritable_subterms_with_new_paths.
-    fn push_rewritable_subterms_with_new_paths(
+    /// Helper for rewritable_subterms_with_paths.
+    fn push_rewritable_subterms_with_paths(
         &self,
         prefix: &mut Vec<PathStep>,
         answer: &mut Vec<(Vec<PathStep>, Term)>,
@@ -1402,13 +1394,13 @@ impl Term {
             // Process function part
             prefix.push(PathStep::Function);
             func.to_owned()
-                .push_rewritable_subterms_with_new_paths(prefix, answer);
+                .push_rewritable_subterms_with_paths(prefix, answer);
             prefix.pop();
 
             // Process argument part
             prefix.push(PathStep::Argument);
             arg.to_owned()
-                .push_rewritable_subterms_with_new_paths(prefix, answer);
+                .push_rewritable_subterms_with_paths(prefix, answer);
             prefix.pop();
         }
 

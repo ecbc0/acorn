@@ -301,36 +301,36 @@ impl Literal {
         lit
     }
 
-    /// Get the subterm at the given "new path".
+    /// Get the subterm at the given path.
     /// If `left` is true, navigate into the left term, otherwise the right term.
-    /// A new path uses PathStep::Function/Argument to navigate the curried term structure.
-    pub fn get_term_at_new_path(&self, left: bool, new_path: &[PathStep]) -> Option<Term> {
+    /// A path uses PathStep::Function/Argument to navigate the curried term structure.
+    pub fn get_term_at_path(&self, left: bool, path: &[PathStep]) -> Option<Term> {
         if left {
-            self.left.get_term_at_new_path(new_path)
+            self.left.get_term_at_path(path)
         } else {
-            self.right.get_term_at_new_path(new_path)
+            self.right.get_term_at_path(path)
         }
     }
 
-    /// Replace the subterm at the given "new path" with a new term.
+    /// Replace the subterm at the given path with a new term.
     /// If `left` is true, replace in the left term, otherwise the right term.
-    /// A new path uses PathStep::Function/Argument to navigate the curried term structure.
+    /// A path uses PathStep::Function/Argument to navigate the curried term structure.
     /// Returns a new literal (may be flipped for normalization) and whether it was flipped.
-    pub fn replace_at_new_path(
+    pub fn replace_at_path(
         &self,
         left: bool,
-        new_path: &[PathStep],
+        path: &[PathStep],
         new_subterm: Term,
     ) -> (Literal, bool) {
         let (new_left, new_right) = if left {
             (
-                self.left.replace_at_new_path(new_path, new_subterm),
+                self.left.replace_at_path(path, new_subterm),
                 self.right.clone(),
             )
         } else {
             (
                 self.left.clone(),
-                self.right.replace_at_new_path(new_path, new_subterm),
+                self.right.replace_at_path(path, new_subterm),
             )
         };
 

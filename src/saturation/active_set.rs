@@ -100,7 +100,7 @@ struct SubtermLocation {
     // (As opposed to the right one.)
     left: bool,
 
-    // This is the "new path" from the root term to the subterm.
+    // The path from the root term to the subterm.
     // Uses PathStep::Function/Argument to navigate the curried term structure.
     // An empty path means the root, so the whole term is the relevant subterm.
     path: Vec<PathStep>,
@@ -337,7 +337,7 @@ impl ActiveSet {
         let target_literal = &target_step.clause.literals[0];
 
         for (target_left, u, _) in target_literal.both_term_pairs() {
-            let u_subterms = u.rewritable_subterms_with_new_paths();
+            let u_subterms = u.rewritable_subterms_with_paths();
 
             for (path, u_subterm) in u_subterms {
                 let u_subterm_id = if let Some(id) = self.subterm_map.get(&u_subterm) {

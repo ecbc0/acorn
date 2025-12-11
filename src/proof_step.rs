@@ -101,7 +101,7 @@ pub struct RewriteInfo {
     /// Whether we rewrite the term on the left of the target literal. (As opposed to the right.)
     pub target_left: bool,
 
-    /// The "new path" within the target term that we rewrite.
+    /// The path within the target term that we rewrite.
     /// Uses PathStep::Function/Argument to navigate the curried term structure.
     pub path: Vec<PathStep>,
 
@@ -589,7 +589,7 @@ impl ProofStep {
 
         let target_literal = &target_step.clause.literals[0];
         let (new_literal, flipped) =
-            target_literal.replace_at_new_path(target_left, path, new_subterm.clone());
+            target_literal.replace_at_path(target_left, path, new_subterm.clone());
         let rewritten = new_literal.clone();
 
         let simplifying = new_literal.extended_kbo_cmp(&target_literal) == Ordering::Less;

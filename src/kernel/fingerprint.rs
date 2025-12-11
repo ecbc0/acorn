@@ -59,7 +59,7 @@ impl FingerprintComponent {
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> FingerprintComponent {
-        match term.as_ref().get_term_at_new_path(path) {
+        match term.as_ref().get_term_at_path(path) {
             Some(subterm) => {
                 let closed_type =
                     subterm.get_closed_type_with_context(local_context, kernel_context);
@@ -90,7 +90,7 @@ impl FingerprintComponent {
                         None => return FingerprintComponent::Nothing,
                     }
                 }
-                // Should not reach here since get_term_at_new_path returned None
+                // Should not reach here since get_term_at_path returned None
                 FingerprintComponent::Nothing
             }
         }
@@ -140,8 +140,8 @@ impl FingerprintComponent {
     }
 }
 
-/// New paths to sample for fingerprinting.
-const NEW_PATHS: [&[PathStep]; 7] = [
+/// Paths to sample for fingerprinting.
+const PATHS: [&[PathStep]; 7] = [
     &[],                                       // root
     &[PathStep::Function],                     // function part
     &[PathStep::Argument],                     // argument part
@@ -164,14 +164,14 @@ impl TermFingerprint {
         kernel_context: &KernelContext,
     ) -> TermFingerprint {
         let mut components = [FingerprintComponent::Nothing; 7];
-        for (i, path) in NEW_PATHS.iter().enumerate() {
+        for (i, path) in PATHS.iter().enumerate() {
             components[i] = FingerprintComponent::new(term, path, local_context, kernel_context);
         }
         TermFingerprint { components }
     }
 
     fn could_unify(&self, other: &TermFingerprint) -> bool {
-        for i in 0..NEW_PATHS.len() {
+        for i in 0..PATHS.len() {
             if !self.components[i].could_unify(&other.components[i]) {
                 return false;
             }
@@ -180,7 +180,7 @@ impl TermFingerprint {
     }
 
     fn could_specialize(&self, other: &TermFingerprint) -> bool {
-        for i in 0..NEW_PATHS.len() {
+        for i in 0..PATHS.len() {
             if !self.components[i].could_specialize(&other.components[i]) {
                 return false;
             }
@@ -366,41 +366,41 @@ mod tests {
     }
 
     #[test]
-    fn test_new_path_navigation() {
+    fn test_path_navigation() {
         let lctx = test_local_context();
         let kctx = test_kernel_context();
         // m0: (Bool, Bool) -> Bool
         let term = Term::parse_with_context("m0(c0, c1)", &lctx, &kctx);
 
         // [] should return the whole term
-        let root = term.as_ref().get_term_at_new_path(&[]).unwrap();
+        let root = term.as_ref().get_term_at_path(&[]).unwrap();
         assert_eq!(root.num_args(), 2);
 
         // [Argument] should return c1 (the last arg)
         let last_arg = term
             .as_ref()
-            .get_term_at_new_path(&[PathStep::Argument])
+            .get_term_at_path(&[PathStep::Argument])
             .unwrap();
         assert!(last_arg.is_atomic());
 
         // [Function] should return m0(c0)
         let func = term
             .as_ref()
-            .get_term_at_new_path(&[PathStep::Function])
+            .get_term_at_path(&[PathStep::Function])
             .unwrap();
         assert_eq!(func.num_args(), 1);
 
         // [Function, Argument] should return c0
         let first_arg = term
             .as_ref()
-            .get_term_at_new_path(&[PathStep::Function, PathStep::Argument])
+            .get_term_at_path(&[PathStep::Function, PathStep::Argument])
             .unwrap();
         assert!(first_arg.is_atomic());
 
         // [Function, Function] should return m0 (the head)
         let head = term
             .as_ref()
-            .get_term_at_new_path(&[PathStep::Function, PathStep::Function])
+            .get_term_at_path(&[PathStep::Function, PathStep::Function])
             .unwrap();
         assert!(head.is_atomic());
     }
