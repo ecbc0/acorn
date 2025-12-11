@@ -45,90 +45,50 @@ pub fn replace_term_variables(
         output_closed_types: &mut Vec<ClosedType>,
         empty_type: ClosedType,
     ) -> Term {
-        let head = term.get_head_atom();
-
-        if let KernelAtom::Variable(var_id) = head {
-            let idx = *var_id as usize;
-            if idx < replacements.len() {
-                // Replace with the replacement term
-                let replacement = replacements[idx];
-                if term.has_args() {
-                    // f(args) where f is a variable being replaced
-                    // Result: replacement applied to args
-                    let replacement_term = replacement.to_owned();
-                    let replaced_args: Vec<Term> = term
-                        .iter_args()
-                        .map(|arg| {
-                            replace_recursive(
-                                arg,
-                                term_context,
-                                replacements,
-                                shift,
-                                output_closed_types,
-                                empty_type.clone(),
-                            )
-                        })
-                        .collect();
-                    replacement_term.apply(&replaced_args)
+        match term.decompose() {
+            Decomposition::Atom(KernelAtom::Variable(var_id)) => {
+                let idx = *var_id as usize;
+                if idx < replacements.len() {
+                    // Replace with the replacement term
+                    replacements[idx].to_owned()
                 } else {
-                    // Just a variable, return the replacement
-                    replacement.to_owned()
-                }
-            } else {
-                // Shift the variable
-                let new_var_id = match shift {
-                    Some(s) => *var_id + s,
-                    None => panic!("no replacement for variable x{}", var_id),
-                };
-                // Track the type for the shifted variable
-                let new_idx = new_var_id as usize;
-                let var_closed_type = term_context
-                    .get_var_closed_type(idx)
-                    .cloned()
-                    .unwrap_or_else(|| empty_type.clone());
-                if new_idx >= output_closed_types.len() {
-                    output_closed_types.resize(new_idx + 1, empty_type.clone());
-                }
-                output_closed_types[new_idx] = var_closed_type;
-
-                if term.has_args() {
-                    let replaced_args: Vec<Term> = term
-                        .iter_args()
-                        .map(|arg| {
-                            replace_recursive(
-                                arg,
-                                term_context,
-                                replacements,
-                                shift,
-                                output_closed_types,
-                                empty_type.clone(),
-                            )
-                        })
-                        .collect();
-                    Term::new(KernelAtom::Variable(new_var_id), replaced_args)
-                } else {
+                    // Shift the variable
+                    let new_var_id = match shift {
+                        Some(s) => *var_id + s,
+                        None => panic!("no replacement for variable x{}", var_id),
+                    };
+                    // Track the type for the shifted variable
+                    let new_idx = new_var_id as usize;
+                    let var_closed_type = term_context
+                        .get_var_closed_type(idx)
+                        .cloned()
+                        .unwrap_or_else(|| empty_type.clone());
+                    if new_idx >= output_closed_types.len() {
+                        output_closed_types.resize(new_idx + 1, empty_type.clone());
+                    }
+                    output_closed_types[new_idx] = var_closed_type;
                     Term::atom(KernelAtom::Variable(new_var_id))
                 }
             }
-        } else {
-            // Not a variable head - recurse into args if any
-            if term.has_args() {
-                let replaced_args: Vec<Term> = term
-                    .iter_args()
-                    .map(|arg| {
-                        replace_recursive(
-                            arg,
-                            term_context,
-                            replacements,
-                            shift,
-                            output_closed_types,
-                            empty_type.clone(),
-                        )
-                    })
-                    .collect();
-                Term::new(*head, replaced_args)
-            } else {
-                term.to_owned()
+            Decomposition::Atom(_) => term.to_owned(),
+            Decomposition::Application(func, arg) => {
+                let replaced_func = replace_recursive(
+                    func,
+                    term_context,
+                    replacements,
+                    shift,
+                    output_closed_types,
+                    empty_type.clone(),
+                );
+                let replaced_arg = replace_recursive(
+                    arg,
+                    term_context,
+                    replacements,
+                    shift,
+                    output_closed_types,
+                    empty_type,
+                );
+                replaced_func.apply(&[replaced_arg])
             }
         }
     }
@@ -419,62 +379,37 @@ fn key_from_term_helper(
     // Emit the result type of the term
     key_from_term_type(term, key, local_context, kernel_context);
 
-    if !term.has_args() {
-        // Atomic term: type encoding + atom
-        let head = term.get_head_atom();
-        let atom = match head {
-            KernelAtom::Variable(v) => Atom::Variable(*v),
-            KernelAtom::True => Atom::True,
-            KernelAtom::Symbol(s) => Atom::Symbol(*s),
-            KernelAtom::Type(t) => Atom::Type(*t),
-        };
-        Edge::Atom(atom).append_to(key);
-    } else {
-        // Application term: encode as curried binary applications
-        // f(a, b, c) = ((f a) b) c
-        let head = term.get_head_atom();
-        let args: Vec<TermRef> = term.iter_args().collect();
-        key_from_application(head, &args, key, local_context, kernel_context);
-    }
+    // Emit the structure of the term
+    key_from_term_structure(term, key, local_context, kernel_context);
 }
 
-/// Encode an application as curried binary applications.
-/// Takes the head atom and a slice of arguments.
-/// For head(a1, a2, ..., an), encodes as: Application + domain_n + [head(a1,...,a_{n-1})] + [an]
-fn key_from_application(
-    head: &KernelAtom,
-    args: &[TermRef],
+/// Encodes the structure of a term (without the result type prefix).
+/// Used for recursive encoding of applications where the type is implicit.
+fn key_from_term_structure(
+    term: TermRef,
     key: &mut Vec<u8>,
     local_context: &LocalContext,
     kernel_context: &KernelContext,
 ) {
-    if args.is_empty() {
-        // Base case: just the head atom
-        let atom = match head {
-            KernelAtom::Variable(v) => Atom::Variable(*v),
-            KernelAtom::True => Atom::True,
-            KernelAtom::Symbol(s) => Atom::Symbol(*s),
-            KernelAtom::Type(t) => Atom::Type(*t),
-        };
-        Edge::Atom(atom).append_to(key);
-    } else {
-        // Recursive case: Application + domain + func + arg
-        let last_arg = args[args.len() - 1];
-
-        Edge::Application.append_to(key);
-        key_from_term_type(last_arg, key, local_context, kernel_context);
-
-        // Recurse for the function part (all but last arg)
-        key_from_application(
-            head,
-            &args[..args.len() - 1],
-            key,
-            local_context,
-            kernel_context,
-        );
-
-        // Encode the argument
-        key_from_term_helper(last_arg, key, local_context, kernel_context);
+    match term.decompose() {
+        Decomposition::Atom(head) => {
+            let atom = match head {
+                KernelAtom::Variable(v) => Atom::Variable(*v),
+                KernelAtom::True => Atom::True,
+                KernelAtom::Symbol(s) => Atom::Symbol(*s),
+                KernelAtom::Type(t) => Atom::Type(*t),
+            };
+            Edge::Atom(atom).append_to(key);
+        }
+        Decomposition::Application(func, arg) => {
+            // Binary application: Application + domain type + func structure + arg full encoding
+            Edge::Application.append_to(key);
+            key_from_term_type(arg, key, local_context, kernel_context);
+            // For func, we only emit structure (type is implicit from the Application)
+            key_from_term_structure(func, key, local_context, kernel_context);
+            // For arg, we emit the full encoding (type + structure)
+            key_from_term_helper(arg, key, local_context, kernel_context);
+        }
     }
 }
 
