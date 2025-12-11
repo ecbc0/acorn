@@ -1072,7 +1072,7 @@ mod tests {
         set.activate_rewrite_pattern(1, &pattern_step, &mut result, &ctx);
 
         assert_eq!(result.len(), 1);
-        let expected = Clause::parse("m0(c1, c4) = c2", local.clone(), &ctx);
+        let expected = Clause::old_parse("m0(c1, c4) = c2", local.clone(), &ctx);
         assert_eq!(result[0].clause, expected);
     }
 
@@ -1117,7 +1117,7 @@ mod tests {
         let ctx = test_context();
         let local = test_local();
         // m0: (Bool, Bool) -> Bool, m1: (Bool, Bool) -> Bool
-        let clause = Clause::parse(
+        let clause = Clause::old_parse(
             "m0(x0, m0(x1, m1(x2, c0))) != m0(m0(x2, x1), x0)",
             local.clone(),
             &ctx,
@@ -1139,7 +1139,7 @@ mod tests {
         );
         let mock_step = ProofStep::mock_from_clause(old_clause);
         let proof_steps = ActiveSet::equality_factoring(0, &mock_step, &ctx);
-        let expected = Clause::parse("c0 = x0", local.clone(), &ctx);
+        let expected = Clause::old_parse("c0 = x0", local.clone(), &ctx);
         for ps in &proof_steps {
             if ps.clause == expected {
                 return;
@@ -1194,7 +1194,7 @@ mod tests {
         set.activate(step, &ctx);
 
         // Trichotomy
-        let clause = Clause::parse("m1(x0, x1) or m1(x1, x0) or x0 = x1", local.clone(), &ctx);
+        let clause = Clause::old_parse("m1(x0, x1) or m1(x1, x0) or x0 = x1", local.clone(), &ctx);
         let mock_step = ProofStep::mock_from_clause(clause);
         let output = ActiveSet::equality_factoring(0, &mock_step, &ctx);
         assert_eq!(output[0].clause.to_string(), "m1(x0, x0) or x0 = x0");

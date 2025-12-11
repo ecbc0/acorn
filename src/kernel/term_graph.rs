@@ -1406,7 +1406,7 @@ impl TestGraph {
 
     fn insert_clause_str(&mut self, s: &str, step: StepId) {
         let lctx = LocalContext::empty();
-        let clause = Clause::parse(s, lctx, &self.context);
+        let clause = Clause::old_parse(s, lctx, &self.context);
         self.graph.insert_clause(&clause, step, &self.context);
         self.graph.validate();
     }
@@ -1431,7 +1431,7 @@ impl TestGraph {
 
     fn check_clause_str(&mut self, s: &str) {
         let lctx = LocalContext::empty();
-        let clause = Clause::parse(s, lctx, &self.context);
+        let clause = Clause::old_parse(s, lctx, &self.context);
         if !self.graph.check_clause(&clause, &self.context) {
             panic!("check_clause_str(\"{}\") failed", s);
         }

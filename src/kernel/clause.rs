@@ -322,7 +322,7 @@ impl Clause {
     /// Parse a clause from a string.
     /// Format: "lit1 or lit2 or lit3" where each literal is parsed by Literal::parse.
     /// Takes ownership of the local context and validates the result (in test/validate builds).
-    pub fn parse(s: &str, local: LocalContext, kernel: &KernelContext) -> Clause {
+    pub fn old_parse(s: &str, local: LocalContext, kernel: &KernelContext) -> Clause {
         let literals: Vec<Literal> = s
             .split(" or ")
             .map(|part| Literal::parse(part.trim()))
@@ -759,7 +759,7 @@ mod tests {
     fn test_validation_catches_bool_applied_to_bool() {
         let kctx = KernelContext::test_with_all_bool_types();
         // c0 and c1 are both Bool in test_with_all_bool_types, so c0(c1) is invalid
-        Clause::parse("c0(c1)", LocalContext::empty(), &kctx);
+        Clause::old_parse("c0(c1)", LocalContext::empty(), &kctx);
     }
 
     /// Test that validation catches type mismatches in literals (left and right have different types).
@@ -768,7 +768,7 @@ mod tests {
     fn test_validation_catches_literal_type_mismatch() {
         let kctx = KernelContext::test_with_all_bool_types();
         // g0 is Bool -> Bool, c0 is Bool, so g0 != c0 is a type mismatch
-        Clause::parse("g0 = c0", LocalContext::empty(), &kctx);
+        Clause::old_parse("g0 = c0", LocalContext::empty(), &kctx);
     }
 
     /// Test that validation catches missing variable types in context.
@@ -777,7 +777,7 @@ mod tests {
     fn test_validation_catches_missing_variable_type() {
         let kctx = KernelContext::test_with_all_bool_types();
         // x0 is used but LocalContext is empty
-        Clause::parse("x0 = c0", LocalContext::empty(), &kctx);
+        Clause::old_parse("x0 = c0", LocalContext::empty(), &kctx);
     }
 
     /// Test that valid clauses pass validation.
@@ -785,7 +785,7 @@ mod tests {
     fn test_valid_clause_passes_validation() {
         let kctx = KernelContext::test_with_all_bool_types();
         // g0(c0) is Bool -> Bool applied to Bool = Bool, c1 is Bool, so this is valid
-        let clause = Clause::parse("g0(c0) = c1", LocalContext::empty(), &kctx);
+        let clause = Clause::old_parse("g0(c0) = c1", LocalContext::empty(), &kctx);
         assert_eq!(clause.literals.len(), 1);
     }
 }

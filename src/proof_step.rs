@@ -705,7 +705,7 @@ impl ProofStep {
 
     /// Construct a ProofStep with fake heuristic data for testing
     pub fn mock(s: &str, kernel: &KernelContext) -> ProofStep {
-        let clause = Clause::parse(s, LocalContext::empty(), kernel);
+        let clause = Clause::old_parse(s, LocalContext::empty(), kernel);
         Self::mock_from_clause(clause)
     }
 
@@ -716,7 +716,7 @@ impl ProofStep {
         local_context: &LocalContext,
         kernel: &KernelContext,
     ) -> ProofStep {
-        let clause = Clause::parse(s, local_context.clone(), kernel);
+        let clause = Clause::old_parse(s, local_context.clone(), kernel);
         Self::mock_from_clause(clause)
     }
 

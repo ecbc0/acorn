@@ -1274,7 +1274,7 @@ mod tests {
 
         // Create a clause with a function application: c1(x0) = c5
         // c1 : Bool -> Bool, c5 : Bool
-        let clause = Clause::parse("c1(x0) = c5", local_context.clone(), &kernel_context);
+        let clause = Clause::old_parse("c1(x0) = c5", local_context.clone(), &kernel_context);
         tree.insert_clause(&clause, 42, &kernel_context);
 
         // Should be able to find the exact same clause
@@ -1298,11 +1298,11 @@ mod tests {
         // Insert pattern: x0 = c5 (variable on left, constant on right)
         // After KBO normalization, x0 < c5 so this might get flipped.
         // Let's use a simpler case where structure is predictable.
-        let clause = Clause::parse("x0 = x0", local_context.clone(), &kernel_context);
+        let clause = Clause::old_parse("x0 = x0", local_context.clone(), &kernel_context);
         tree.insert_clause(&clause, 42, &kernel_context);
 
         // Query: c5 = c5 should match (c5 substituted for x0)
-        let special = Clause::parse("c5 = c5", local_context.clone(), &kernel_context);
+        let special = Clause::old_parse("c5 = c5", local_context.clone(), &kernel_context);
         let found_special = tree.find_clause(&special, &kernel_context);
         assert_eq!(found_special, Some(&42));
     }
@@ -1317,7 +1317,7 @@ mod tests {
 
         // Create a clause with two literals: c1(x0) = c5 or c0(x0, x1) = c6
         // c0 : (Bool, Bool) -> Bool, c1 : Bool -> Bool, c5, c6 : Bool
-        let clause = Clause::parse(
+        let clause = Clause::old_parse(
             "c1(x0) = c5 or c0(x0, x1) = c6",
             local_context.clone(),
             &kernel_context,
@@ -1520,7 +1520,7 @@ mod tests {
         let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Insert pattern: not x0(c5) or x0(x1)
-        let pattern = Clause::parse(
+        let pattern = Clause::old_parse(
             "not x0(c5) or x0(x1)",
             local_context.clone(),
             &kernel_context,
@@ -1530,7 +1530,7 @@ mod tests {
         // Query: not c1(c5) or c1(c6)
         // Create a local context for the query (no variables needed)
         let query_local = LocalContext::empty();
-        let query = Clause::parse("not c1(c5) or c1(c6)", query_local.clone(), &kernel_context);
+        let query = Clause::old_parse("not c1(c5) or c1(c6)", query_local.clone(), &kernel_context);
 
         // This should find the pattern with x0 -> c1, x1 -> c6
         let found = tree.find_clause(&query, &kernel_context);
