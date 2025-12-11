@@ -408,13 +408,10 @@ impl TermGraph {
             return id;
         }
 
-        // Build the full uncurried term by appending arg to func's args
-        let func_term = self.get_term(func);
-        let arg_term = self.get_term(arg);
-        let head = func_term.get_head_atom();
-        let mut args: Vec<Term> = func_term.args();
-        args.push(arg_term.clone());
-        let combined_term = Term::new(*head, args);
+        // Build the full uncurried term by applying arg to func
+        let func_term = self.get_term(func).clone();
+        let arg_term = self.get_term(arg).clone();
+        let combined_term = func_term.apply(&[arg_term]);
 
         // Make a new term and group
         let term_id = TermId(self.terms.len() as u32);
