@@ -334,7 +334,7 @@ impl KernelContext {
     /// Add a datatype by name for testing.
     /// Returns self for chaining.
     ///
-    /// Example: `ctx.add_datatype("Int").add_datatype("Nat")`
+    /// Example: `ctx.add_datatype("Int")`
     #[cfg(test)]
     pub fn add_datatype(&mut self, name: &str) -> &mut Self {
         use crate::elaborator::acorn_type::{AcornType, Datatype};
@@ -346,6 +346,18 @@ impl KernelContext {
         };
         let acorn_type = AcornType::Data(datatype, vec![]);
         self.type_store.add_type(&acorn_type);
+        self
+    }
+
+    /// Add multiple datatypes by name for testing.
+    /// Returns self for chaining.
+    ///
+    /// Example: `ctx.add_datatypes(&["Int", "Nat", "Real"])`
+    #[cfg(test)]
+    pub fn add_datatypes(&mut self, names: &[&str]) -> &mut Self {
+        for name in names {
+            self.add_datatype(name);
+        }
         self
     }
 
@@ -470,6 +482,49 @@ impl KernelContext {
             _ => panic!("Unknown constant prefix: {}", first_char),
         }
         self
+    }
+
+    /// Add multiple constants with the same type for testing.
+    /// Returns self for chaining.
+    ///
+    /// Example: `ctx.add_constants(&["c0", "c1", "c2"], "Int")`
+    #[cfg(test)]
+    pub fn add_constants(&mut self, names: &[&str], type_str: &str) -> &mut Self {
+        for name in names {
+            self.add_constant(name, type_str);
+        }
+        self
+    }
+
+    /// Create a LocalContext with variables of the given types.
+    /// var_types[i] is the type string for variable x_i.
+    ///
+    /// Example: `ctx.make_local(&["Int", "Bool"])` creates context where x0: Int, x1: Bool
+    #[cfg(test)]
+    pub fn make_local(&self, var_types: &[&str]) -> crate::kernel::local_context::LocalContext {
+        use crate::kernel::local_context::LocalContext;
+
+        let closed_types: Vec<ClosedType> = var_types
+            .iter()
+            .map(|type_str| self.parse_type(type_str))
+            .collect();
+        LocalContext::from_closed_types(closed_types)
+    }
+
+    /// Parse a clause string with the given variable types.
+    /// var_types[i] is the type string for variable x_i.
+    ///
+    /// Example: `ctx.make_clause("x0 = c0", &["Int"])` parses clause with x0: Int
+    #[cfg(test)]
+    pub fn make_clause(
+        &self,
+        clause_str: &str,
+        var_types: &[&str],
+    ) -> crate::kernel::clause::Clause {
+        use crate::kernel::clause::Clause;
+
+        let local = self.make_local(var_types);
+        Clause::old_parse(clause_str, local, self)
     }
 }
 
