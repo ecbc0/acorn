@@ -6,7 +6,7 @@ use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::PathStep;
 use crate::kernel::term::Term;
-use crate::kernel::types::GroundTypeId;
+use crate::kernel::types::{GroundTypeId, TypeclassId};
 
 /// A coarse categorization of types for fingerprint indexing.
 /// Ground types are distinguished by their ID, while all arrow types
@@ -25,6 +25,10 @@ enum TypeCategory {
 
     /// A type variable that could match any type
     Variable,
+
+    /// A typeclass constraint on a type variable
+    /// Similar to Variable in that it can match multiple ground types (those that are instances)
+    Typeclass(TypeclassId),
 }
 
 impl TypeCategory {
@@ -32,6 +36,8 @@ impl TypeCategory {
     fn from_type_term(type_term: &Term) -> TypeCategory {
         if type_term.atomic_variable().is_some() {
             TypeCategory::Variable
+        } else if let Some(tc_id) = type_term.as_ref().as_typeclass() {
+            TypeCategory::Typeclass(tc_id)
         } else if let Some(gid) = type_term.as_ref().as_type_atom() {
             TypeCategory::Ground(gid)
         } else if type_term.as_ref().is_pi() {
@@ -43,9 +49,18 @@ impl TypeCategory {
 
     /// Whether this category could potentially match another category.
     /// Type variables can match any category.
+    /// Typeclasses can match ground types (that might be instances) and other typeclasses.
+    /// For efficiency, we don't have TypeStore access here to check actual instance relationships,
+    /// so we're conservative: typeclasses can potentially match any ground type.
     fn could_match(&self, other: &TypeCategory) -> bool {
         match (self, other) {
+            // Variables match anything
             (TypeCategory::Variable, _) | (_, TypeCategory::Variable) => true,
+            // Typeclasses can match ground types (possibly instances) or other typeclasses
+            (TypeCategory::Typeclass(_), TypeCategory::Ground(_))
+            | (TypeCategory::Ground(_), TypeCategory::Typeclass(_))
+            | (TypeCategory::Typeclass(_), TypeCategory::Typeclass(_)) => true,
+            // Other cases require exact match
             _ => self == other,
         }
     }
@@ -241,12 +256,27 @@ impl<T> FingerprintUnifier<T> {
 
         let mut result = vec![];
 
-        // If the query has a type variable, it could match any type category,
-        // so we need to search all trees.
-        // Otherwise, search the matching category tree plus the Variable tree
-        // (since stored type variables can match any concrete type).
-        let trees_to_search: Vec<_> = if type_category == TypeCategory::Variable {
+        // Determine which trees to search based on the query's type category.
+        // - Variable queries can match anything, so search all trees
+        // - Typeclass queries can match any ground type (instances), so search all trees
+        // - Ground type queries should also search Typeclass trees (since the ground type
+        //   might be an instance of those typeclasses)
+        // - Other queries search their category tree + Variable tree
+        let trees_to_search: Vec<_> = if type_category == TypeCategory::Variable
+            || matches!(type_category, TypeCategory::Typeclass(_))
+        {
             self.trees.values().collect()
+        } else if matches!(type_category, TypeCategory::Ground(_)) {
+            // Ground types need to search: own tree + Variable tree + all Typeclass trees
+            self.trees
+                .iter()
+                .filter(|(k, _)| {
+                    **k == type_category
+                        || **k == TypeCategory::Variable
+                        || matches!(k, TypeCategory::Typeclass(_))
+                })
+                .map(|(_, v)| v)
+                .collect()
         } else {
             self.trees
                 .get(&type_category)
@@ -341,12 +371,27 @@ impl<T> FingerprintSpecializer<T> {
 
         let mut result = vec![];
 
-        // If the query has a type variable, it could match any type category,
-        // so we need to search all trees.
-        // Otherwise, search the matching category tree plus the Variable tree
-        // (since stored type variables can match any concrete type).
-        let trees_to_search: Vec<_> = if type_category == TypeCategory::Variable {
+        // Determine which trees to search based on the query's type category.
+        // - Variable queries can match anything, so search all trees
+        // - Typeclass queries can match any ground type (instances), so search all trees
+        // - Ground type queries should also search Typeclass trees (since the ground type
+        //   might be an instance of those typeclasses)
+        // - Other queries search their category tree + Variable tree
+        let trees_to_search: Vec<_> = if type_category == TypeCategory::Variable
+            || matches!(type_category, TypeCategory::Typeclass(_))
+        {
             self.trees.values().collect()
+        } else if matches!(type_category, TypeCategory::Ground(_)) {
+            // Ground types need to search: own tree + Variable tree + all Typeclass trees
+            self.trees
+                .iter()
+                .filter(|(k, _)| {
+                    **k == type_category
+                        || **k == TypeCategory::Variable
+                        || matches!(k, TypeCategory::Typeclass(_))
+                })
+                .map(|(_, v)| v)
+                .collect()
         } else {
             self.trees
                 .get(&type_category)
@@ -631,6 +676,156 @@ mod tests {
             results.len(),
             1,
             "Type variable query should find concrete literals"
+        );
+    }
+
+    #[test]
+    fn test_type_category_typeclass() {
+        use crate::elaborator::acorn_type::Typeclass;
+        use crate::module::ModuleId;
+
+        let mut kctx = KernelContext::new();
+
+        // Register a typeclass
+        let monoid = Typeclass {
+            module_id: ModuleId(0),
+            name: "Monoid".to_string(),
+        };
+        let monoid_id = kctx.type_store.add_typeclass(&monoid);
+
+        // Create a type term for the typeclass
+        let typeclass_type = Term::typeclass(monoid_id);
+        let category = TypeCategory::from_type_term(&typeclass_type);
+
+        // Should be categorized as Typeclass
+        assert!(
+            matches!(category, TypeCategory::Typeclass(tc) if tc == monoid_id),
+            "Typeclass type term should produce TypeCategory::Typeclass"
+        );
+
+        // Typeclass should match Ground types (conservatively, for potential instances)
+        let bool_type = Term::type_bool();
+        let ground_cat = TypeCategory::from_type_term(&bool_type);
+        assert!(
+            category.could_match(&ground_cat),
+            "Typeclass should potentially match Ground types"
+        );
+        assert!(
+            ground_cat.could_match(&category),
+            "Ground types should potentially match Typeclass"
+        );
+
+        // Typeclass should match other typeclasses
+        let group = Typeclass {
+            module_id: ModuleId(0),
+            name: "Group".to_string(),
+        };
+        let group_id = kctx.type_store.add_typeclass(&group);
+        let group_type = Term::typeclass(group_id);
+        let group_cat = TypeCategory::from_type_term(&group_type);
+        assert!(
+            category.could_match(&group_cat),
+            "Typeclass should match other Typeclass"
+        );
+
+        // Typeclass should match Variable
+        assert!(
+            category.could_match(&TypeCategory::Variable),
+            "Typeclass should match Variable"
+        );
+    }
+
+    #[test]
+    fn test_fingerprint_unifier_with_typeclass_query() {
+        // Test that a typeclass-constrained variable can find terms of concrete types
+        use crate::elaborator::acorn_type::Typeclass;
+        use crate::module::ModuleId;
+
+        let mut kctx = KernelContext::new();
+        kctx.add_datatype("Int");
+
+        let int_id = kctx.type_store.get_ground_id_by_name("Int").unwrap();
+        let int_type = Term::type_ground(int_id);
+
+        // Register a typeclass
+        let monoid = Typeclass {
+            module_id: ModuleId(0),
+            name: "Monoid".to_string(),
+        };
+        let monoid_id = kctx.type_store.add_typeclass(&monoid);
+
+        // c0 has type Int
+        kctx.symbol_table.add_scoped_constant(int_type.clone());
+
+        // Local context with typeclass constraint: x0 has type Monoid (the typeclass)
+        let typeclass_type = Term::typeclass(monoid_id);
+        let lctx_typeclass = LocalContext::from_types(vec![typeclass_type.clone()]);
+
+        // Local context for concrete type
+        let lctx_int = LocalContext::from_types(vec![int_type.clone()]);
+
+        let mut tree = FingerprintUnifier::new();
+
+        // Insert c0 (Int) into the tree
+        let c0 = Term::parse("c0");
+        tree.insert(&c0, "int_term", &lctx_int, &kctx);
+
+        // Query with x0 which has typeclass constraint Monoid
+        let x0 = Term::parse("x0");
+        let results = tree.find_unifying(&x0, &lctx_typeclass, &kctx);
+
+        // Should find the Int term since typeclass queries search all trees
+        assert_eq!(
+            results.len(),
+            1,
+            "Typeclass query should find terms of any type (conservatively)"
+        );
+    }
+
+    #[test]
+    fn test_fingerprint_unifier_ground_finds_typeclass_stored() {
+        // Test that a concrete query can find stored terms with typeclass constraints
+        use crate::elaborator::acorn_type::Typeclass;
+        use crate::module::ModuleId;
+
+        let mut kctx = KernelContext::new();
+        kctx.add_datatype("Int");
+
+        let int_id = kctx.type_store.get_ground_id_by_name("Int").unwrap();
+        let int_type = Term::type_ground(int_id);
+
+        // Register a typeclass
+        let monoid = Typeclass {
+            module_id: ModuleId(0),
+            name: "Monoid".to_string(),
+        };
+        let monoid_id = kctx.type_store.add_typeclass(&monoid);
+
+        // c0 has type Int
+        kctx.symbol_table.add_scoped_constant(int_type.clone());
+
+        // Local context with typeclass constraint
+        let typeclass_type = Term::typeclass(monoid_id);
+        let lctx_typeclass = LocalContext::from_types(vec![typeclass_type.clone()]);
+
+        // Local context for concrete type
+        let lctx_int = LocalContext::from_types(vec![int_type.clone()]);
+
+        let mut tree = FingerprintUnifier::new();
+
+        // Insert x0 which has typeclass constraint Monoid
+        let x0 = Term::parse("x0");
+        tree.insert(&x0, "typeclass_term", &lctx_typeclass, &kctx);
+
+        // Query with c0 which has concrete type Int
+        let c0 = Term::parse("c0");
+        let results = tree.find_unifying(&c0, &lctx_int, &kctx);
+
+        // Should find the typeclass term since Ground queries also search Typeclass trees
+        assert_eq!(
+            results.len(),
+            1,
+            "Ground type query should find terms with typeclass constraints"
         );
     }
 }

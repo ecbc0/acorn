@@ -5,7 +5,7 @@ use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
-use crate::kernel::types::GroundTypeId;
+use crate::kernel::types::{GroundTypeId, TypeclassId};
 
 /// A step in a path through a term.
 /// Treats applications in curried form: f(a, b) becomes ((f a) b).
@@ -269,6 +269,18 @@ impl<'a> TermRef<'a> {
         }
     }
 
+    /// If this is an atomic Typeclass, return its TypeclassId.
+    /// This is used when a type variable is constrained to a typeclass.
+    pub fn as_typeclass(&self) -> Option<TypeclassId> {
+        if !self.is_atomic() {
+            return None;
+        }
+        match self.get_head_atom() {
+            Atom::Typeclass(tc) => Some(*tc),
+            _ => None,
+        }
+    }
+
     /// Get the term's type as a Term with context.
     /// Uses LocalContext for variable types and KernelContext for symbol types.
     /// For function applications, recursively gets the function's type and applies it.
@@ -293,6 +305,9 @@ impl<'a> TermRef<'a> {
                 Atom::Symbol(symbol) => kernel_context
                     .symbol_table
                     .get_symbol_type(*symbol, &kernel_context.type_store),
+                // A typeclass atom represents a typeclass-as-type constraint.
+                // Its kind is Type (typeclasses categorize types).
+                Atom::Typeclass(_) => Term::type_type(),
             },
             Decomposition::Application(func, _arg) => {
                 // The function has type A -> B, so the application has type B
@@ -519,6 +534,11 @@ impl<'a> TermRef<'a> {
                     // Type atoms contribute to weight
                     weight1 += 1;
                     weight2 += 4 * t.as_u16() as u32;
+                }
+                TermComponent::Atom(Atom::Typeclass(tc)) => {
+                    // Typeclass atoms contribute to weight similarly to types
+                    weight1 += 1;
+                    weight2 += 4 * tc.as_u16() as u32;
                 }
             }
         }
@@ -1057,6 +1077,11 @@ impl Term {
     /// Create a Term representing a ground type.
     pub fn type_ground(type_id: GroundTypeId) -> Term {
         Term::atom(Atom::Symbol(Symbol::Type(type_id)))
+    }
+
+    /// Create a Term representing a typeclass (used as a type constraint).
+    pub fn typeclass(typeclass_id: TypeclassId) -> Term {
+        Term::atom(Atom::Typeclass(typeclass_id))
     }
 
     /// Returns a Term for the Bool type.

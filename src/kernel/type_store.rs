@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::elaborator::acorn_type::{AcornType, Datatype, FunctionType, TypeParam, Typeclass};
+use crate::kernel::atom::Atom;
 use crate::kernel::term::Term;
 use crate::kernel::types::{GroundTypeId, TypeclassId, BOOL, EMPTY, TYPE};
 
@@ -402,6 +403,19 @@ impl TypeStore {
             .get(typeclass_id.as_u16() as usize)
             .map_or(false, |extends| extends.contains(&base_id))
     }
+
+    /// Creates a Term representing a typeclass.
+    /// This is used when a type variable is constrained to a typeclass.
+    pub fn typeclass_to_term(&self, typeclass_id: TypeclassId) -> Term {
+        Term::atom(Atom::Typeclass(typeclass_id))
+    }
+
+    /// Checks if a ground type is an instance of a typeclass.
+    pub fn is_instance_of(&self, ground_id: GroundTypeId, typeclass_id: TypeclassId) -> bool {
+        self.typeclass_instances
+            .get(typeclass_id.as_u16() as usize)
+            .map_or(false, |instances| instances.contains(&ground_id))
+    }
 }
 
 impl Default for TypeStore {
@@ -600,5 +614,63 @@ mod tests {
             Some(BOOL),
             "Innermost argument should be Bool"
         );
+    }
+
+    #[test]
+    fn test_typeclass_to_term() {
+        use crate::elaborator::acorn_type::Typeclass;
+        use crate::module::ModuleId;
+
+        let mut store = TypeStore::new();
+
+        // Register a typeclass
+        let monoid = Typeclass {
+            module_id: ModuleId(0),
+            name: "Monoid".to_string(),
+        };
+        let monoid_id = store.add_typeclass(&monoid);
+
+        // Create a term for the typeclass
+        let term = store.typeclass_to_term(monoid_id);
+
+        // Verify it's an atomic term with Typeclass atom
+        assert!(term.as_ref().is_atomic());
+        assert_eq!(term.as_ref().as_typeclass(), Some(monoid_id));
+    }
+
+    #[test]
+    fn test_is_instance_of() {
+        use crate::elaborator::acorn_type::{Datatype, Typeclass};
+        use crate::module::ModuleId;
+
+        let mut store = TypeStore::new();
+
+        // Register a typeclass
+        let monoid = Typeclass {
+            module_id: ModuleId(0),
+            name: "Monoid".to_string(),
+        };
+        let monoid_id = store.add_typeclass(&monoid);
+
+        // Register a data type
+        let int_type = Datatype {
+            module_id: ModuleId(0),
+            name: "Int".to_string(),
+        };
+        let int_acorn = AcornType::Data(int_type.clone(), vec![]);
+        store.add_type(&int_acorn);
+        let int_id = store.get_datatype_ground_id(&int_type).unwrap();
+
+        // Before adding as instance, should return false
+        assert!(!store.is_instance_of(int_id, monoid_id));
+
+        // Add Int as instance of Monoid
+        store.add_type_instance(&int_acorn, monoid_id);
+
+        // Now should return true
+        assert!(store.is_instance_of(int_id, monoid_id));
+
+        // Bool should not be an instance (we didn't add it)
+        assert!(!store.is_instance_of(BOOL, monoid_id));
     }
 }

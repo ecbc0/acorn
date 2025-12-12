@@ -335,14 +335,51 @@ impl<'a> Unifier<'a> {
             .get_var_type(var_id as usize)
             .cloned()
             .expect("Variable should have type in LocalContext");
-        let term_type = term.get_type_with_context(&self.output_context, self.kernel_context);
-        if !self.unify_internal(
-            var_scope,
-            var_type.as_ref(),
-            Scope::OUTPUT,
-            term_type.as_ref(),
-        ) {
-            return false;
+
+        // Check if this variable has a typeclass constraint.
+        // If its type is a typeclass (e.g., Monoid), the term must be of a type
+        // that is an instance of that typeclass.
+        if let Some(typeclass_id) = var_type.as_ref().as_typeclass() {
+            let term_type = term.get_type_with_context(&self.output_context, self.kernel_context);
+
+            // If term's type is a ground type, check if it's an instance of the typeclass
+            if let Some(ground_id) = term_type.as_ref().as_type_atom() {
+                if !self
+                    .kernel_context
+                    .type_store
+                    .is_instance_of(ground_id, typeclass_id)
+                {
+                    return false; // Not an instance of the required typeclass
+                }
+            } else if let Some(other_tc) = term_type.as_ref().as_typeclass() {
+                // Both are typeclasses - check compatibility
+                // They should be the same or one should extend the other
+                if typeclass_id != other_tc
+                    && !self
+                        .kernel_context
+                        .type_store
+                        .typeclass_extends(other_tc, typeclass_id)
+                {
+                    return false;
+                }
+            } else if term_type.atomic_variable().is_some() {
+                // term's type is a type variable - for now, allow it
+                // (more sophisticated checking would propagate constraints)
+            } else {
+                // term's type is something complex (function, application) - not compatible
+                return false;
+            }
+        } else {
+            // Normal type unification (no typeclass constraint)
+            let term_type = term.get_type_with_context(&self.output_context, self.kernel_context);
+            if !self.unify_internal(
+                var_scope,
+                var_type.as_ref(),
+                Scope::OUTPUT,
+                term_type.as_ref(),
+            ) {
+                return false;
+            }
         }
 
         self.set_mapping(var_scope, var_id, term.clone());
@@ -1140,5 +1177,135 @@ mod tests {
             vec![s4.clone(), x0.clone()],
         );
         assert!(unifier.unify(scope2, &g0_x2_x1, scope1, &g0_s4_x0));
+    }
+
+    #[test]
+    fn test_unify_typeclass_variable_with_instance() {
+        // Test: x0 with type Monoid unifies with c0 when c0's type is an instance of Monoid
+        use crate::elaborator::acorn_type::Typeclass;
+        use crate::module::ModuleId;
+
+        let mut ctx = KernelContext::new();
+        ctx.add_datatype("Int");
+
+        let int_id = ctx.type_store.get_ground_id_by_name("Int").unwrap();
+        let int_type = Term::type_ground(int_id);
+
+        // Register a Monoid typeclass
+        let monoid = Typeclass {
+            module_id: ModuleId(0),
+            name: "Monoid".to_string(),
+        };
+        let monoid_id = ctx.type_store.add_typeclass(&monoid);
+
+        // Make Int an instance of Monoid
+        use crate::elaborator::acorn_type::{AcornType, Datatype};
+        let int_acorn = AcornType::Data(
+            Datatype {
+                module_id: ModuleId(0),
+                name: "Int".to_string(),
+            },
+            vec![],
+        );
+        ctx.type_store.add_type_instance(&int_acorn, monoid_id);
+
+        // c0 has type Int
+        ctx.symbol_table.add_scoped_constant(int_type.clone());
+
+        // x0 has typeclass constraint Monoid (its "type" is the typeclass)
+        let typeclass_type = Term::typeclass(monoid_id);
+        let local_ctx = LocalContext::from_types(vec![typeclass_type.clone()]);
+
+        let c0 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(0)));
+        let x0 = Term::atom(Atom::Variable(0));
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(local_ctx.clone())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+        u.set_output_var_types(vec![int_type.clone()]);
+
+        // x0: Monoid should unify with c0: Int (since Int is a Monoid instance)
+        let result = u.unify(Scope::LEFT, &x0, Scope::RIGHT, &c0);
+        assert!(
+            result,
+            "x0: Monoid should unify with c0: Int when Int is an instance of Monoid"
+        );
+    }
+
+    #[test]
+    fn test_unify_typeclass_variable_with_non_instance() {
+        // Test: x0 with type Monoid should NOT unify with c0 when c0's type is NOT an instance
+        use crate::elaborator::acorn_type::Typeclass;
+        use crate::module::ModuleId;
+
+        let mut ctx = KernelContext::new();
+        ctx.add_datatype("String");
+
+        let string_id = ctx.type_store.get_ground_id_by_name("String").unwrap();
+        let string_type = Term::type_ground(string_id);
+
+        // Register a Monoid typeclass but don't add String as an instance
+        let monoid = Typeclass {
+            module_id: ModuleId(0),
+            name: "Monoid".to_string(),
+        };
+        let monoid_id = ctx.type_store.add_typeclass(&monoid);
+
+        // c0 has type String
+        ctx.symbol_table.add_scoped_constant(string_type.clone());
+
+        // x0 has typeclass constraint Monoid
+        let typeclass_type = Term::typeclass(monoid_id);
+        let local_ctx = LocalContext::from_types(vec![typeclass_type.clone()]);
+
+        let c0 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(0)));
+        let x0 = Term::atom(Atom::Variable(0));
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(local_ctx.clone())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+        u.set_output_var_types(vec![string_type.clone()]);
+
+        // x0: Monoid should NOT unify with c0: String (String is not a Monoid instance)
+        let result = u.unify(Scope::LEFT, &x0, Scope::RIGHT, &c0);
+        assert!(
+            !result,
+            "x0: Monoid should NOT unify with c0: String when String is not an instance of Monoid"
+        );
+    }
+
+    #[test]
+    fn test_unify_typeclass_variables_compatible() {
+        // Test: two variables with the same typeclass constraint can unify
+        use crate::elaborator::acorn_type::Typeclass;
+        use crate::module::ModuleId;
+
+        let mut ctx = KernelContext::new();
+
+        let monoid = Typeclass {
+            module_id: ModuleId(0),
+            name: "Monoid".to_string(),
+        };
+        let monoid_id = ctx.type_store.add_typeclass(&monoid);
+        let typeclass_type = Term::typeclass(monoid_id);
+
+        // Both x0 and x1 have typeclass constraint Monoid
+        let left_ctx = LocalContext::from_types(vec![typeclass_type.clone()]);
+        let right_ctx = LocalContext::from_types(vec![typeclass_type.clone()]);
+
+        let x0_left = Term::atom(Atom::Variable(0));
+        let x0_right = Term::atom(Atom::Variable(0));
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(left_ctx)));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(right_ctx)));
+        u.set_output_var_types(vec![typeclass_type.clone()]);
+
+        // x0: Monoid (LEFT) should unify with x0: Monoid (RIGHT)
+        let result = u.unify(Scope::LEFT, &x0_left, Scope::RIGHT, &x0_right);
+        assert!(
+            result,
+            "Two variables with the same typeclass constraint should unify"
+        );
     }
 }

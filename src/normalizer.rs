@@ -1766,6 +1766,9 @@ impl Normalizer {
             Atom::Symbol(Symbol::Type(_)) => {
                 panic!("Symbol::Type should not appear in open terms")
             }
+            Atom::Typeclass(_) => {
+                panic!("Typeclass atoms should not appear in open terms")
+            }
         }
     }
 
@@ -1787,6 +1790,9 @@ impl Normalizer {
                 .kernel_context
                 .symbol_table
                 .get_symbol_type(*symbol, &self.kernel_context.type_store),
+            Atom::Typeclass(_) => {
+                panic!("Typeclass atoms should not appear as head of terms")
+            }
         };
         let head = self.denormalize_atom(&head_type, &term.get_head_atom(), arbitrary_names);
         let args: Vec<_> = term

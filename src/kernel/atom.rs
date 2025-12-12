@@ -4,6 +4,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use super::symbol::Symbol;
+use super::types::TypeclassId;
 
 pub type AtomId = u16;
 
@@ -25,6 +26,11 @@ pub enum Atom {
 
     // A symbol representing a constant, function, type, or boolean.
     Symbol(Symbol),
+
+    // A typeclass used as a type constraint for type variables.
+    // When a type variable x has type Typeclass(Monoid), it means x is constrained to
+    // types that implement Monoid.
+    Typeclass(TypeclassId),
 }
 
 impl fmt::Display for Atom {
@@ -32,6 +38,7 @@ impl fmt::Display for Atom {
         match self {
             Atom::Variable(i) => write!(f, "x{}", i),
             Atom::Symbol(s) => write!(f, "{}", s),
+            Atom::Typeclass(tc) => write!(f, "tc{}", tc.as_u16()),
         }
     }
 }
@@ -64,6 +71,14 @@ impl Atom {
 
     pub fn is_variable(&self) -> bool {
         matches!(self, Atom::Variable(_))
+    }
+
+    /// Returns the TypeclassId if this is a Typeclass atom.
+    pub fn as_typeclass(&self) -> Option<TypeclassId> {
+        match self {
+            Atom::Typeclass(id) => Some(*id),
+            _ => None,
+        }
     }
 
     // Orders two atoms, but considers all references the same, so that the ordering

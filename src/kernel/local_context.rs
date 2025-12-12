@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::kernel::atom::AtomId;
 use crate::kernel::term::Term;
+use crate::kernel::types::TypeclassId;
 
 /// A context stores type information for variables.
 /// This is used with terms/literals/clauses to track variable types
@@ -62,6 +63,15 @@ impl LocalContext {
     /// Get the type of a variable by its id.
     pub fn get_var_type(&self, var_id: usize) -> Option<&Term> {
         self.var_types.get(var_id)
+    }
+
+    /// Returns the typeclass constraint if the variable's type is a typeclass.
+    /// When a type variable is constrained to a typeclass (e.g., `M: Monoid`),
+    /// its type in the context is stored as `Atom::Typeclass(monoid_id)`.
+    pub fn get_typeclass_constraint(&self, var_id: usize) -> Option<TypeclassId> {
+        self.var_types
+            .get(var_id)
+            .and_then(|t| t.as_ref().as_typeclass())
     }
 
     /// Returns a slice of all variable types.
@@ -265,5 +275,24 @@ mod tests {
         // Valid: x0 : Type, x1 : x0 -> x0
         let ctx = LocalContext::from_types(vec![type_type, arrow_type]);
         assert!(ctx.validate_variable_ordering());
+    }
+
+    #[test]
+    fn test_get_typeclass_constraint() {
+        use crate::kernel::types::TypeclassId;
+
+        // Create a context with a typeclass-constrained type variable
+        let monoid_id = TypeclassId::new(0);
+        let typeclass_type = Term::typeclass(monoid_id);
+        let ctx = LocalContext::from_types(vec![typeclass_type, Term::type_bool()]);
+
+        // x0 has typeclass constraint
+        assert_eq!(ctx.get_typeclass_constraint(0), Some(monoid_id));
+
+        // x1 has no typeclass constraint (it's Bool, not a typeclass)
+        assert_eq!(ctx.get_typeclass_constraint(1), None);
+
+        // x2 doesn't exist
+        assert_eq!(ctx.get_typeclass_constraint(2), None);
     }
 }

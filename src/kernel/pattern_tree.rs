@@ -253,6 +253,7 @@ impl Edge {
 /// Encodes a type Term into the key buffer.
 /// Types are encoded as:
 /// - Type variables: Atom(Variable(id))
+/// - Typeclass constraints: Atom(Typeclass(id))
 /// - Ground types: Atom(Type(id))
 /// - Arrow types: Arrow + domain encoding + codomain encoding
 /// - Type applications: Application + sort + head encoding + arg encoding
@@ -260,6 +261,12 @@ fn key_from_type(type_term: &Term, key: &mut Vec<u8>) {
     // Check for type variable first
     if let Some(var_id) = type_term.atomic_variable() {
         Edge::Atom(Atom::Variable(var_id)).append_to(key);
+        return;
+    }
+
+    // Check for typeclass constraint (used for constrained type variables)
+    if let Some(tc_id) = type_term.as_ref().as_typeclass() {
+        Edge::Atom(Atom::Typeclass(tc_id)).append_to(key);
         return;
     }
 
@@ -326,6 +333,9 @@ fn key_from_term_type(
         KernelAtom::Symbol(Symbol::Type(_)) => {
             panic!("Symbol::Type should not appear in terms")
         }
+        KernelAtom::Typeclass(_) => {
+            panic!("Typeclass should not appear as term head in key_from_term_type")
+        }
         KernelAtom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol),
     };
 
@@ -382,6 +392,7 @@ fn key_from_term_structure(
                 KernelAtom::Symbol(Symbol::True) => Atom::True,
                 KernelAtom::Symbol(Symbol::False) => Atom::False,
                 KernelAtom::Symbol(Symbol::Type(t)) => Atom::Type(*t),
+                KernelAtom::Typeclass(tc) => Atom::Typeclass(*tc),
                 KernelAtom::Symbol(s) => Atom::Symbol(*s),
             };
             Edge::Atom(atom).append_to(key);
@@ -819,6 +830,7 @@ where
                 KernelAtom::Symbol(Symbol::True) => Atom::True,
                 KernelAtom::Symbol(Symbol::False) => Atom::False,
                 KernelAtom::Symbol(Symbol::Type(t)) => Atom::Type(*t),
+                KernelAtom::Typeclass(tc) => Atom::Typeclass(*tc),
                 KernelAtom::Symbol(s) => Atom::Symbol(*s),
             };
             Edge::Atom(edge_atom).append_to(key);
@@ -991,6 +1003,7 @@ where
                 KernelAtom::Symbol(Symbol::True) => Atom::True,
                 KernelAtom::Symbol(Symbol::False) => Atom::False,
                 KernelAtom::Symbol(Symbol::Type(t)) => Atom::Type(*t),
+                KernelAtom::Typeclass(tc) => Atom::Typeclass(*tc),
                 KernelAtom::Symbol(s) => Atom::Symbol(*s),
             };
             Edge::Atom(edge_atom).append_to(key);
@@ -1649,6 +1662,69 @@ mod tests {
         );
         assert!(
             debug.contains("Variable(1)"),
+            "Key should contain term variable: {}",
+            debug
+        );
+    }
+
+    #[test]
+    fn test_key_from_type_typeclass() {
+        // Typeclass constraint should encode as Atom(Typeclass(id))
+        use crate::elaborator::acorn_type::Typeclass;
+        use crate::module::ModuleId;
+
+        let mut kctx = KernelContext::new();
+
+        // Register a typeclass
+        let monoid = Typeclass {
+            module_id: ModuleId(0),
+            name: "Monoid".to_string(),
+        };
+        let monoid_id = kctx.type_store.add_typeclass(&monoid);
+
+        // Create a type term for the typeclass
+        let typeclass_type = Term::typeclass(monoid_id);
+        let mut key = Vec::new();
+        key_from_type(&typeclass_type, &mut key);
+
+        // Should be Atom(Typeclass(monoid_id))
+        assert_eq!(key.len(), 3);
+        let edge = Edge::from_bytes(key[0], key[1], key[2]);
+        assert_eq!(edge, Edge::Atom(Atom::Typeclass(monoid_id)));
+    }
+
+    #[test]
+    fn test_pattern_tree_with_typeclass_constraint() {
+        // Test that a term with typeclass-constrained type encodes correctly
+        use crate::elaborator::acorn_type::Typeclass;
+        use crate::module::ModuleId;
+
+        let mut kctx = KernelContext::new();
+
+        // Register a typeclass
+        let monoid = Typeclass {
+            module_id: ModuleId(0),
+            name: "Monoid".to_string(),
+        };
+        let monoid_id = kctx.type_store.add_typeclass(&monoid);
+
+        // Create LocalContext: x0 has type Monoid (typeclass constraint)
+        let typeclass_type = Term::typeclass(monoid_id);
+        let lctx = LocalContext::from_types(vec![typeclass_type.clone()]);
+
+        // Generate key for x0 which has typeclass constraint
+        let x0 = Term::atom(KernelAtom::Variable(0));
+        let key = key_from_term(&x0, &lctx, &kctx);
+
+        // Verify the key contains the typeclass encoding
+        let debug = Edge::debug_bytes(&key);
+        assert!(
+            debug.contains("Typeclass"),
+            "Key should contain typeclass type: {}",
+            debug
+        );
+        assert!(
+            debug.contains("Variable(0)"),
             "Key should contain term variable: {}",
             debug
         );

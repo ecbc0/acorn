@@ -38,6 +38,10 @@ impl KernelContext {
             Atom::Variable(i) => format!("x{}", i),
             Atom::Symbol(Symbol::Synthetic(i)) => format!("s{}", i),
             Atom::Symbol(Symbol::Type(t)) => format!("T{}", t.as_u16()),
+            Atom::Typeclass(tc) => {
+                let typeclass = self.type_store.get_typeclass(*tc);
+                typeclass.name.clone()
+            }
         }
     }
 
