@@ -1383,13 +1383,8 @@ mod tests {
             .add_constant("c1", "Bool -> Bool")
             .add_constants(&["c5", "c6"], "Bool");
 
-        // Create local context where x0 has type Bool -> Bool
-        use crate::kernel::symbol::Symbol;
-        let type_bool_to_bool = kctx
-            .symbol_table
-            .get_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
-            .clone();
-        let lctx = LocalContext::from_types(vec![type_bool_to_bool]);
+        // x0: Bool -> Bool
+        let lctx = kctx.make_local(&["Bool -> Bool"]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
@@ -1438,12 +1433,7 @@ mod tests {
             .add_constant("c1", "Bool -> Bool")
             .add_constants(&["c5", "c6", "c7"], "Bool");
 
-        use crate::kernel::symbol::Symbol;
-        let type_bool_to_bool = kctx
-            .symbol_table
-            .get_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
-            .clone();
-        let lctx = LocalContext::from_types(vec![type_bool_to_bool]);
+        let lctx = kctx.make_local(&["Bool -> Bool"]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
@@ -1500,18 +1490,10 @@ mod tests {
             .add_constants(&["c2", "c3", "c4"], "Bool") // placeholders
             .add_constants(&["c5", "c6"], "Bool");
 
-        // Create local context where x0 has type Bool -> Bool and x1 has type Bool
-        use crate::kernel::symbol::Symbol;
-        let type_bool_to_bool = kctx
-            .symbol_table
-            .get_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
-            .clone();
-        let lctx = LocalContext::from_types(vec![type_bool_to_bool, Term::bool_type()]);
-
         let mut tree: PatternTree<usize> = PatternTree::new();
 
-        // Insert pattern: not x0(c5) or x0(x1)
-        let pattern = Clause::old_parse("not x0(c5) or x0(x1)", lctx.clone(), &kctx);
+        // Insert pattern: not x0(c5) or x0(x1), where x0: Bool -> Bool, x1: Bool
+        let pattern = kctx.make_clause("not x0(c5) or x0(x1)", &["Bool -> Bool", "Bool"]);
         tree.insert_clause(&pattern, 42, &kctx);
 
         // Query: not c1(c5) or c1(c6)
@@ -1542,13 +1524,8 @@ mod tests {
             .add_constant("c1", "Bool -> Bool")
             .add_constants(&["c5", "c6"], "Bool");
 
-        // Create local context where x0 has type Bool -> Bool
-        use crate::kernel::symbol::Symbol;
-        let type_bool_to_bool = kctx
-            .symbol_table
-            .get_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
-            .clone();
-        let lctx = LocalContext::from_types(vec![type_bool_to_bool]);
+        // x0: Bool -> Bool
+        let lctx = kctx.make_local(&["Bool -> Bool"]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 

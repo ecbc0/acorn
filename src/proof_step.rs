@@ -697,20 +697,28 @@ impl ProofStep {
         }
     }
 
-    /// Construct a ProofStep with fake heuristic data for testing
+    /// Construct a ProofStep with fake heuristic data for testing/profiling.
+    /// Uses an empty context (no variables).
     pub fn mock(s: &str, kernel: &KernelContext) -> ProofStep {
-        let clause = Clause::old_parse(s, LocalContext::empty(), kernel);
+        use crate::kernel::clause::Clause;
+        use crate::kernel::literal::Literal;
+        use crate::kernel::local_context::LocalContext;
+
+        let local = LocalContext::empty();
+        let literals: Vec<Literal> = s
+            .split(" or ")
+            .map(|part| Literal::parse(part.trim()))
+            .collect();
+        let clause = Clause::new(literals, &local);
+        clause.validate(kernel);
         Self::mock_from_clause(clause)
     }
 
-    /// Construct a ProofStep with properly typed terms for testing
+    /// Construct a ProofStep with properly typed terms for testing.
+    /// var_types[i] is the type string for variable x_i.
     #[cfg(test)]
-    pub fn mock_with_context(
-        s: &str,
-        local_context: &LocalContext,
-        kernel: &KernelContext,
-    ) -> ProofStep {
-        let clause = Clause::old_parse(s, local_context.clone(), kernel);
+    pub fn mock_with_types(s: &str, var_types: &[&str], kernel: &KernelContext) -> ProofStep {
+        let clause = kernel.make_clause(s, var_types);
         Self::mock_from_clause(clause)
     }
 

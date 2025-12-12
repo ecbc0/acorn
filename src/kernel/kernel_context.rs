@@ -494,9 +494,25 @@ impl KernelContext {
         var_types: &[&str],
     ) -> crate::kernel::clause::Clause {
         use crate::kernel::clause::Clause;
+        use crate::kernel::literal::Literal;
 
         let local = self.make_local(var_types);
-        Clause::old_parse(clause_str, local, self)
+        let literals: Vec<Literal> = clause_str
+            .split(" or ")
+            .map(|part| Literal::parse(part.trim()))
+            .collect();
+        let clause = Clause::new(literals, &local);
+        clause.validate(self);
+        clause
+    }
+
+    /// Create a LocalContext with `count` variables all of type Bool.
+    /// Useful for tests that need multiple boolean variables.
+    #[cfg(test)]
+    pub fn bool_local(&self, count: usize) -> crate::kernel::local_context::LocalContext {
+        use crate::kernel::local_context::LocalContext;
+        use crate::kernel::term::Term;
+        LocalContext::from_types(vec![Term::bool_type(); count])
     }
 }
 

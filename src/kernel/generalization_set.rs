@@ -6,8 +6,6 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::pattern_tree::PatternTree;
-#[cfg(test)]
-use crate::kernel::term::Term;
 use crate::kernel::term::{Decomposition, TermRef};
 
 /// The GeneralizationSet stores general clauses in a way that allows us to quickly check whether
@@ -625,23 +623,15 @@ mod tests {
         // Test GeneralizationSet with applied variables (variables in function position).
         // Pattern: not x0(c5) or x0(x1) where x0: Bool -> Bool, x1: Bool
         // Query: not c1(c5) or c1(c6) where c1: Bool -> Bool
-        use crate::kernel::symbol::Symbol;
-
         let mut kctx = KernelContext::new();
         kctx.add_constant("c0", "Bool") // placeholder
             .add_constant("c1", "Bool -> Bool")
             .add_constants(&["c2", "c3", "c4", "c5", "c6"], "Bool");
 
-        // Create local context where x0 has type Bool -> Bool and x1 has type Bool
-        let type_bool_to_bool = kctx
-            .symbol_table
-            .get_type(Symbol::ScopedConstant(1))
-            .clone();
-        let lctx = LocalContext::from_types(vec![type_bool_to_bool, Term::bool_type()]);
-
         let mut clause_set = GeneralizationSet::new();
 
-        let pattern = Clause::old_parse("not x0(c5) or x0(x1)", lctx.clone(), &kctx);
+        // x0: Bool -> Bool, x1: Bool
+        let pattern = kctx.make_clause("not x0(c5) or x0(x1)", &["Bool -> Bool", "Bool"]);
         clause_set.insert(pattern, 42, &kctx);
 
         let query = kctx.make_clause("not c1(c5) or c1(c6)", &[]);
@@ -654,24 +644,16 @@ mod tests {
         // Test with higher-order function type (Bool -> Bool, Bool) -> Bool
         // Pattern: not f(x0, x1) or x0(x1) where f: (Bool -> Bool, Bool) -> Bool
         // Query: not f(c1, c5) or c1(c5)
-        use crate::kernel::symbol::Symbol;
-
         let mut kctx = KernelContext::new();
         // c0: (Bool -> Bool, Bool) -> Bool (higher order function)
         kctx.add_constant("c0", "(Bool -> Bool, Bool) -> Bool")
             .add_constant("c1", "Bool -> Bool")
             .add_constants(&["c2", "c3", "c4", "c5", "c6"], "Bool");
 
-        // Create local context where x0 has type Bool -> Bool and x1 has type Bool
-        let type_bool_to_bool = kctx
-            .symbol_table
-            .get_type(Symbol::ScopedConstant(1))
-            .clone();
-        let lctx = LocalContext::from_types(vec![type_bool_to_bool, Term::bool_type()]);
-
         let mut clause_set = GeneralizationSet::new();
 
-        let pattern = Clause::old_parse("not c0(x0, x1) or x0(x1)", lctx.clone(), &kctx);
+        // x0: Bool -> Bool, x1: Bool
+        let pattern = kctx.make_clause("not c0(x0, x1) or x0(x1)", &["Bool -> Bool", "Bool"]);
         clause_set.insert(pattern, 42, &kctx);
 
         let query = kctx.make_clause("not c0(c1, c5) or c1(c5)", &[]);
@@ -686,23 +668,15 @@ mod tests {
     #[test]
     fn test_clause_set_rejects_sign_mismatch() {
         // Test that signs are properly checked
-        use crate::kernel::symbol::Symbol;
-
         let mut kctx = KernelContext::new();
         kctx.add_constant("c0", "(Bool -> Bool, Bool) -> Bool")
             .add_constant("c1", "Bool -> Bool")
             .add_constant("c5", "Bool");
 
-        let type_bool_to_bool = kctx
-            .symbol_table
-            .get_type(Symbol::ScopedConstant(1))
-            .clone();
-        let lctx = LocalContext::from_types(vec![type_bool_to_bool, Term::bool_type()]);
-
         let mut clause_set = GeneralizationSet::new();
 
-        // Insert pattern with POSITIVE first literal
-        let pattern = Clause::old_parse("c0(x0, x1) or x0(x1)", lctx.clone(), &kctx);
+        // Insert pattern with POSITIVE first literal, x0: Bool -> Bool, x1: Bool
+        let pattern = kctx.make_clause("c0(x0, x1) or x0(x1)", &["Bool -> Bool", "Bool"]);
         clause_set.insert(pattern, 42, &kctx);
 
         // Query with NEGATIVE first literal
