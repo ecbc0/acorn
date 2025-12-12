@@ -369,8 +369,13 @@ impl<'a> Unifier<'a> {
         let local2 = self.get_local_context(scope2);
         let kc = self.kernel_context;
 
-        if term1.get_type_with_context(local1, kc) != term2.get_type_with_context(local2, kc) {
-            return false;
+        let type1 = term1.get_type_with_context(local1, kc);
+        let type2 = term2.get_type_with_context(local2, kc);
+        if type1 != type2 {
+            // Types differ - try to unify them (handles type variables like List[x0])
+            if !self.unify_internal(scope1, type1.as_ref(), scope2, type2.as_ref()) {
+                return false;
+            }
         }
 
         // Handle the case where we're unifying something with an atomic variable
@@ -389,7 +394,11 @@ impl<'a> Unifier<'a> {
                 self.unify_internal(scope1, f1, scope2, f2)
                     && self.unify_internal(scope1, a1, scope2, a2)
             }
-            // Atom vs Application mismatch
+            (Decomposition::Pi(i1, o1), Decomposition::Pi(i2, o2)) => {
+                self.unify_internal(scope1, i1, scope2, i2)
+                    && self.unify_internal(scope1, o1, scope2, o2)
+            }
+            // Structural mismatch (e.g., Atom vs Application, Application vs Pi)
             _ => false,
         }
     }
@@ -920,6 +929,59 @@ mod tests {
         let mut u = test_unifier_bool(&ctx);
         let result = u.unify(Scope::LEFT, &left_term, Scope::RIGHT, &right_term);
         assert!(!result, "Recursive reference should not unify");
+    }
+
+    #[test]
+    fn test_parameterized_type_unification() {
+        // Test unifying a constant of type List[Int] with a variable of type List[x0]
+        // where x0 is a type variable. This tests that polymorphic types work in unification.
+        use crate::kernel::types::TYPE;
+
+        let mut ctx = KernelContext::new();
+        ctx.add_type_constructor("List", 1).add_datatype("Int");
+
+        let list_id = ctx.type_store.get_ground_id_by_name("List").unwrap();
+        let int_id = ctx.type_store.get_ground_id_by_name("Int").unwrap();
+
+        // c0 has type List[Int]
+        let list_int = Term::new(
+            Atom::Symbol(Symbol::Type(list_id)),
+            vec![Term::type_ground(int_id)],
+        );
+        ctx.symbol_table.add_scoped_constant(list_int.clone());
+
+        // Create LocalContext where:
+        // x0 : Type (a type variable)
+        // x1 : List[x0] (a list parameterized by x0)
+        let type_type = Term::type_ground(TYPE);
+        let list_x0 = Term::new(
+            Atom::Symbol(Symbol::Type(list_id)),
+            vec![Term::atom(Atom::Variable(0))],
+        );
+        let local_ctx = LocalContext::from_types(vec![type_type.clone(), list_x0.clone()]);
+
+        // c0 : List[Int]
+        let c0 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(0)));
+        // x1 : List[x0]
+        let x1 = Term::atom(Atom::Variable(1));
+
+        // Try to unify c0 with x1
+        // c0 has type List[Int], x1 has type List[x0]
+        // These should unify with x0 -> Int
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(local_ctx.clone())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(local_ctx.clone())));
+        u.set_output_var_types(vec![type_type.clone(), list_int.clone()]);
+
+        let result = u.unify(Scope::LEFT, &c0, Scope::RIGHT, &x1);
+        assert!(
+            result,
+            "Should unify c0 : List[Int] with x1 : List[x0], binding x0 to Int"
+        );
+
+        // After unification, x1 should map to c0
+        let x1_mapping = u.get_mapping(Scope::RIGHT, 1);
+        assert!(x1_mapping.is_some(), "x1 should have a mapping");
     }
 
     #[test]
