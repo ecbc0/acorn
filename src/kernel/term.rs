@@ -71,46 +71,33 @@ impl<'a> TermRef<'a> {
         self.components
     }
 
-    /// Convert this reference to an owned Term by cloning the components.
-    /// Always produces new-format Terms (with Application wrapper for non-atomic terms).
+    /// Convert this borrowed TermRef to an owned Term.
     pub fn to_owned(&self) -> Term {
         if self.components.is_empty() {
             panic!("Cannot convert empty TermRef to Term");
         }
 
-        // If atomic or already new format, just copy
-        if self.components.len() == 1 {
-            return Term {
-                components: self.components.to_vec(),
-            };
+        // Verify format is correct
+        if self.components.len() > 1 {
+            match self.components[0] {
+                TermComponent::Application { span } => {
+                    debug_assert_eq!(
+                        span as usize,
+                        self.components.len(),
+                        "to_owned: Application span {} doesn't match len {}",
+                        span,
+                        self.components.len()
+                    );
+                }
+                _ => panic!(
+                    "to_owned: non-atomic term should start with Application, got: {:?}",
+                    self.components
+                ),
+            }
         }
 
-        match self.components[0] {
-            TermComponent::Application { span } => {
-                // Already new format - verify span is correct
-                debug_assert_eq!(
-                    span as usize,
-                    self.components.len(),
-                    "to_owned: Application span {} doesn't match len {}",
-                    span,
-                    self.components.len()
-                );
-                Term {
-                    components: self.components.to_vec(),
-                }
-            }
-            TermComponent::Atom(_) => {
-                // Old format - wrap in Application
-                let mut components = Vec::with_capacity(self.components.len() + 1);
-                components.push(TermComponent::Application {
-                    span: (self.components.len() + 1) as u16,
-                });
-                components.extend(self.components.iter().copied());
-                Term { components }
-            }
-            TermComponent::Pi { .. } => {
-                panic!("to_owned: Term should not start with Pi");
-            }
+        Term {
+            components: self.components.to_vec(),
         }
     }
 
@@ -147,7 +134,7 @@ impl<'a> TermRef<'a> {
     /// - `Decomposition::Atom(&atom)` if the term is atomic
     /// - `Decomposition::Application(func, arg)` if the term is an application
     ///
-    /// The func is an owned Term (always in new format), arg is a borrowed slice.
+    /// Both func and arg are borrowed slices - no allocation needed.
     /// This provides a cleaner way to write recursive algorithms on terms
     /// by pattern matching on the structure rather than checking multiple conditions.
     pub fn decompose(&self) -> Decomposition<'a> {
@@ -160,10 +147,9 @@ impl<'a> TermRef<'a> {
             return Decomposition::Atom(atom);
         }
 
-        // Check if this is new format (nested applications) or old format
+        // Non-atomic terms have nested Application structure: [Application{outer}, func_part..., arg_part...]
         match self.components[0] {
             TermComponent::Application { span: outer_span } => {
-                // New format: [Application{outer}, func_part..., arg_part...]
                 // Position 1 is where func starts
                 let func_end = match self.components[1] {
                     TermComponent::Application { span } => 1 + span as usize,
@@ -180,63 +166,10 @@ impl<'a> TermRef<'a> {
 
                 Decomposition::Application(func, arg)
             }
-            TermComponent::Atom(_) => {
-                // Old format: [head, arg1, arg2, ...]
-                // Find the start of the last argument
-                let mut prev_position = 1;
-                let mut position = 1;
-
-                while position < self.components.len() {
-                    prev_position = position;
-                    match self.components[position] {
-                        TermComponent::Application { span } => {
-                            position += span as usize;
-                        }
-                        TermComponent::Atom(_) => {
-                            position += 1;
-                        }
-                        TermComponent::Pi { .. } => {
-                            panic!("Pi in term");
-                        }
-                    }
-                }
-
-                // Build func_part - this still needs allocation for old format
-                let func_term = if prev_position == 1 {
-                    // Only one argument - func_part is just the head atom
-                    Term {
-                        components: vec![self.components[0]],
-                    }
-                } else {
-                    // Multiple arguments - need to build [Application{span}, head, args_except_last]
-                    let mut components = Vec::with_capacity(1 + prev_position);
-                    components.push(TermComponent::Application { span: 0 }); // Placeholder
-                    components.extend(self.components[0..prev_position].iter().copied());
-                    components[0] = TermComponent::Application {
-                        span: components.len() as u16,
-                    };
-                    Term { components }
-                };
-
-                // Extract the last argument
-                let last_arg = match self.components[prev_position] {
-                    TermComponent::Application { span } => {
-                        let end = prev_position + span as usize;
-                        TermRef::new(&self.components[prev_position..end])
-                    }
-                    TermComponent::Atom(_) => {
-                        TermRef::new(&self.components[prev_position..prev_position + 1])
-                    }
-                    TermComponent::Pi { .. } => panic!("Pi in term"),
-                };
-
-                // For old format, we need to return owned Term, but Decomposition uses TermRef.
-                // This is a problem - old format can't return zero-copy func.
-                // Let's leak the allocation for now (or panic to force new format usage)
-                let func_ref = func_term.components.leak();
-                Decomposition::Application(TermRef::new(func_ref), last_arg)
-            }
-            TermComponent::Pi { .. } => panic!("Pi should not appear in term structure"),
+            _ => panic!(
+                "non-atomic term should start with Application, got: {:?}",
+                self.components
+            ),
         }
     }
 
@@ -375,17 +308,12 @@ impl<'a> TermRef<'a> {
     /// Returns true if this term has any arguments.
     /// This is O(1) unlike num_args() which must iterate.
     pub fn has_args(&self) -> bool {
-        // A term has args if it starts with Application, or if it's old format with len > 1
-        match self.components[0] {
-            TermComponent::Application { .. } => true,
-            TermComponent::Atom(_) => self.components.len() > 1,
-            TermComponent::Pi { .. } => panic!("Pi should not appear in Term"),
-        }
+        // A term has args if it starts with Application (non-atomic terms always start with Application)
+        matches!(self.components[0], TermComponent::Application { .. })
     }
 
     /// Get the number of arguments this term has.
     pub fn num_args(&self) -> usize {
-        // Use decomposition to count args - this handles both old and new format
         let mut count = 0;
         let mut current = *self;
         while !current.is_atomic() {
@@ -402,72 +330,42 @@ impl<'a> TermRef<'a> {
     /// Each argument is returned as a TermRef.
     /// For f(a, b), this yields [a, b] in order.
     pub fn iter_args(&self) -> TermRefArgsIterator<'a> {
-        // With the new nested format, we need to collect args by repeated decomposition.
-        // But for efficiency, we use a different approach: identify args directly.
-        //
-        // For new format: [Application{5}, Application{3}, f, a, b]
-        //   - Args are collected by walking the func structure
-        //   - The last position before func ends is the first arg, etc.
-        //
-        // For old format: [f, a, b]
-        //   - Args are simply positions 1 onwards
+        // For nested format [Application{5}, Application{3}, f, a, b]:
+        // Collect args by walking the nested applications via split_application.
+        // This collects innermost first, so we reverse at the end.
 
-        match self.components[0] {
-            TermComponent::Application { span: _ } => {
-                // New format - collect arg positions by walking nested applications
-                let mut arg_positions = Vec::new();
-                let mut current = *self;
+        if self.is_atomic() {
+            return TermRefArgsIterator {
+                components: self.components,
+                arg_positions: Vec::new(),
+                current_index: 0,
+            };
+        }
 
-                while !current.is_atomic() {
-                    match current.split_application() {
-                        Some((func, arg)) => {
-                            // Record arg bounds
-                            let arg_offset = arg.components.as_ptr() as usize
-                                - self.components.as_ptr() as usize;
-                            let arg_start = arg_offset / std::mem::size_of::<TermComponent>();
-                            arg_positions.push((arg_start, arg_start + arg.components.len()));
-                            current = func;
-                        }
-                        None => break,
-                    }
+        let mut arg_positions = Vec::new();
+        let mut current = *self;
+
+        while !current.is_atomic() {
+            match current.split_application() {
+                Some((func, arg)) => {
+                    // Record arg bounds relative to original term
+                    let arg_offset =
+                        arg.components.as_ptr() as usize - self.components.as_ptr() as usize;
+                    let arg_start = arg_offset / std::mem::size_of::<TermComponent>();
+                    arg_positions.push((arg_start, arg_start + arg.components.len()));
+                    current = func;
                 }
-
-                // Reverse since we collected innermost first
-                arg_positions.reverse();
-
-                TermRefArgsIterator {
-                    components: self.components,
-                    arg_positions,
-                    current_index: 0,
-                }
+                None => break,
             }
-            TermComponent::Atom(_) => {
-                if self.components.len() <= 1 {
-                    return TermRefArgsIterator {
-                        components: self.components,
-                        arg_positions: Vec::new(),
-                        current_index: 0,
-                    };
-                }
-                // Old format - collect arg positions linearly
-                let mut arg_positions = Vec::new();
-                let mut pos = 1;
-                while pos < self.components.len() {
-                    let (start, end) = match self.components[pos] {
-                        TermComponent::Application { span } => (pos, pos + span as usize),
-                        TermComponent::Atom(_) => (pos, pos + 1),
-                        TermComponent::Pi { .. } => panic!("Pi in term"),
-                    };
-                    arg_positions.push((start, end));
-                    pos = end;
-                }
-                TermRefArgsIterator {
-                    components: self.components,
-                    arg_positions,
-                    current_index: 0,
-                }
-            }
-            TermComponent::Pi { .. } => panic!("Pi should not appear in Term"),
+        }
+
+        // Reverse since we collected innermost first
+        arg_positions.reverse();
+
+        TermRefArgsIterator {
+            components: self.components,
+            arg_positions,
+            current_index: 0,
         }
     }
 
@@ -692,74 +590,26 @@ fn format_term_at(f: &mut fmt::Formatter, components: &[TermComponent], pos: usi
 
     match &components[pos] {
         TermComponent::Application { span } => {
-            // Term starts with Application marker (new format)
-            // Format the contents (skip the Application marker)
+            // Non-atomic term: format the contents (skip the Application marker)
             let end = pos + *span as usize;
             format_application_contents(f, components, pos + 1, end)
         }
-        TermComponent::Pi { .. } => {
-            // Pi shouldn't appear in regular Term formatting
-            Err(fmt::Error)
-        }
         TermComponent::Atom(atom) => {
-            // Format the head atom (old format or atomic term)
+            // Atomic term - just format the atom
             match atom {
                 Atom::Variable(i) => write!(f, "x{}", i)?,
                 _ => write!(f, "{}", atom)?,
-            }
-            // Check if there are arguments following (old format)
-            if pos + 1 < components.len() {
-                // Format the arguments
-                write!(f, "(")?;
-                let mut arg_pos = pos + 1;
-                let mut first = true;
-                while arg_pos < components.len() {
-                    if !first {
-                        write!(f, ", ")?;
-                    }
-                    first = false;
-                    arg_pos = format_arg_at(f, components, arg_pos)?;
-                }
-                write!(f, ")")?;
             }
             Ok(())
         }
-    }
-}
-
-/// Format an argument at the given position (old format support).
-/// Returns the position after the argument.
-fn format_arg_at(
-    f: &mut fmt::Formatter,
-    components: &[TermComponent],
-    pos: usize,
-) -> Result<usize, fmt::Error> {
-    match &components[pos] {
-        TermComponent::Application { span } => {
-            // Format the application subterm
-            let end = pos + *span as usize;
-            format_term_slice(f, components, pos, end)?;
-            Ok(end)
-        }
-        TermComponent::Pi { .. } => {
-            // Pi shouldn't appear in regular Term formatting
-            Err(fmt::Error)
-        }
-        TermComponent::Atom(atom) => {
-            // Simple atom argument
-            match atom {
-                Atom::Variable(i) => write!(f, "x{}", i)?,
-                _ => write!(f, "{}", atom)?,
-            }
-            Ok(pos + 1)
-        }
+        TermComponent::Pi { .. } => Err(fmt::Error),
     }
 }
 
 /// Format the contents of an application (func + arg) from start to end.
-/// In the nested format:
-///   - For f(a, b): [App{5}, App{3}, f, a, b] - func is another App, arg is last
-///   - For f(g(x)): [App{4}, f, App{3}, g, x] - func is atomic, arg is compound
+/// Terms use nested Application markers:
+///   - f(a, b): [App{5}, App{3}, f, a, b] - func is another App, arg is last
+///   - f(g(x)): [App{4}, f, App{3}, g, x] - func is atomic, arg is compound
 /// We collect all args by walking the curried structure.
 fn format_application_contents(
     f: &mut fmt::Formatter,
@@ -955,25 +805,19 @@ impl Term {
                 // Atomic func - just add it directly
                 new_components.extend(func_components.iter().copied());
             } else {
-                // Non-atomic func - check if already wrapped in Application
+                // Non-atomic func - must be wrapped in Application
                 match func_components[0] {
                     TermComponent::Application { span } => {
-                        // Already wrapped - just copy as-is
                         debug_assert_eq!(
                             span as usize, func_len,
                             "Term::new: func has Application with wrong span"
                         );
                         new_components.extend(func_components.iter().copied());
                     }
-                    TermComponent::Atom(_) => {
-                        // Old format (shouldn't happen in normal use, but handle it)
-                        // Wrap in Application
-                        new_components.push(TermComponent::Application {
-                            span: (func_len + 1) as u16,
-                        });
-                        new_components.extend(func_components.iter().copied());
-                    }
-                    TermComponent::Pi { .. } => panic!("Pi in term"),
+                    _ => panic!(
+                        "Term::new: non-atomic func should start with Application: {:?}",
+                        func_components
+                    ),
                 }
             }
 
@@ -982,7 +826,7 @@ impl Term {
                 // Atomic argument
                 new_components.push(arg.components[0]);
             } else {
-                // Compound argument - should already have Application wrapper
+                // Compound argument - must have Application wrapper
                 match arg.components[0] {
                     TermComponent::Application { span } => {
                         debug_assert_eq!(
@@ -992,16 +836,10 @@ impl Term {
                         );
                         new_components.extend(arg.components.iter().copied());
                     }
-                    TermComponent::Atom(_) => {
-                        // Old format - wrap in Application
-                        new_components.push(TermComponent::Application {
-                            span: (arg_len + 1) as u16,
-                        });
-                        new_components.extend(arg.components.iter().copied());
-                    }
-                    TermComponent::Pi { .. } => {
-                        panic!("Term::new: arg {} starts with Pi", i);
-                    }
+                    _ => panic!(
+                        "Term::new: non-atomic arg {} should start with Application: {:?}",
+                        i, arg.components
+                    ),
                 }
             }
 
@@ -1019,7 +857,8 @@ impl Term {
     }
 
     /// Create a new Term from a vector of components.
-    /// Accepts both old format (starting with Atom) and new format (starting with Application).
+    /// Atomic terms have a single Atom component.
+    /// Non-atomic terms start with an Application marker containing the span.
     pub fn from_components(components: Vec<TermComponent>) -> Term {
         if components.is_empty() {
             panic!("from_components: empty components");
@@ -1027,7 +866,7 @@ impl Term {
         // Basic validation: check first component
         match components[0] {
             TermComponent::Application { span } => {
-                // New format: position 1 can be Atom (for simple f(a)) or Application (for nested f(a,b))
+                // Non-atomic term: position 1 can be Atom (for simple f(a)) or Application (for nested f(a,b))
                 if components.len() < 2 {
                     panic!(
                         "from_components: Application at start but no content. Components: {:?}",
@@ -1053,16 +892,19 @@ impl Term {
                 }
             }
             TermComponent::Atom(_) => {
-                // Old format or atomic term - ok
+                // Atomic term (len must be 1)
+                if components.len() != 1 {
+                    panic!(
+                        "from_components: non-atomic term should start with Application, got: {:?}",
+                        components
+                    );
+                }
             }
             TermComponent::Pi { .. } => {
                 panic!("from_components: Pi should not appear in Term");
             }
         }
-        // Note: We don't validate inner structure strictly because old format
-        // allows Application followed by Application (for nested compound args).
-        // The structure is validated lazily during operations.
-        // However, let's add a debug check to catch bad spans
+        // Debug check to catch bad spans
         #[cfg(debug_assertions)]
         {
             let mut i = 0;
@@ -1788,7 +1630,7 @@ mod tests {
         );
         assert_eq!(nested.num_args(), 2);
 
-        // Test decompose on new format
+        // Test decompose
         let term2 = Term::parse("c0(c1, c2)");
         if let Decomposition::Application(func, arg) = term2.as_ref().decompose() {
             assert_eq!(format!("{}", func), "c0(c1)");
