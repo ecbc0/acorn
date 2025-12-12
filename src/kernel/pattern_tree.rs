@@ -17,7 +17,7 @@ use super::local_context::LocalContext;
 use super::symbol::Symbol;
 use super::term::Term;
 use super::term::{Decomposition, TermRef};
-use super::types::{GroundTypeId, TypeclassId, BOOL, EMPTY};
+use super::types::{GroundTypeId, TypeclassId, BOOL};
 
 /// Replaces variables in a term with corresponding replacement terms.
 /// Variables x_i are replaced with replacements[i].
@@ -43,7 +43,6 @@ pub fn replace_term_variables(
         replacements: &[TermRef],
         shift: Option<AtomId>,
         output_closed_types: &mut Vec<ClosedType>,
-        empty_type: ClosedType,
     ) -> Term {
         match term.decompose() {
             Decomposition::Atom(KernelAtom::Variable(var_id)) => {
@@ -62,9 +61,9 @@ pub fn replace_term_variables(
                     let var_closed_type = term_context
                         .get_var_closed_type(idx)
                         .cloned()
-                        .unwrap_or_else(|| empty_type.clone());
+                        .expect("variable type not found in term_context");
                     if new_idx >= output_closed_types.len() {
-                        output_closed_types.resize(new_idx + 1, empty_type.clone());
+                        output_closed_types.resize(new_idx + 1, ClosedType::empty());
                     }
                     output_closed_types[new_idx] = var_closed_type;
                     Term::atom(KernelAtom::Variable(new_var_id))
@@ -72,22 +71,10 @@ pub fn replace_term_variables(
             }
             Decomposition::Atom(_) => term.to_owned(),
             Decomposition::Application(func, arg) => {
-                let replaced_func = replace_recursive(
-                    func,
-                    term_context,
-                    replacements,
-                    shift,
-                    output_closed_types,
-                    empty_type.clone(),
-                );
-                let replaced_arg = replace_recursive(
-                    arg,
-                    term_context,
-                    replacements,
-                    shift,
-                    output_closed_types,
-                    empty_type,
-                );
+                let replaced_func =
+                    replace_recursive(func, term_context, replacements, shift, output_closed_types);
+                let replaced_arg =
+                    replace_recursive(arg, term_context, replacements, shift, output_closed_types);
                 replaced_func.apply(&[replaced_arg])
             }
             Decomposition::Pi(input, output) => {
@@ -97,7 +84,6 @@ pub fn replace_term_variables(
                     replacements,
                     shift,
                     output_closed_types,
-                    empty_type.clone(),
                 );
                 let replaced_output = replace_recursive(
                     output,
@@ -105,21 +91,18 @@ pub fn replace_term_variables(
                     replacements,
                     shift,
                     output_closed_types,
-                    empty_type,
                 );
                 Term::pi(replaced_input, replaced_output)
             }
         }
     }
 
-    let empty_type = ClosedType::ground(EMPTY);
     let result_term = replace_recursive(
         term.as_ref(),
         term_context,
         replacements,
         shift,
         &mut output_closed_types,
-        empty_type,
     );
     let result_context = LocalContext::from_closed_types(output_closed_types);
     (result_term, result_context)
