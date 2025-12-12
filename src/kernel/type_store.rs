@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::elaborator::acorn_type::{AcornType, Datatype, FunctionType, TypeParam, Typeclass};
 use crate::kernel::term::Term;
-use crate::kernel::types::{GroundTypeId, TypeclassId, BOOL, EMPTY};
+use crate::kernel::types::{GroundTypeId, TypeclassId, BOOL, EMPTY, TYPE};
 
 /// Manages ground type registration and typeclass relationships.
 #[derive(Clone)]
@@ -10,6 +10,11 @@ pub struct TypeStore {
     /// ground_id_to_type[ground_id] is the AcornType for that ground type.
     /// Only ground types are stored here.
     ground_id_to_type: Vec<AcornType>,
+
+    /// ground_id_to_arity[ground_id] is the number of type parameters for that type.
+    /// For proper types like Bool, arity is 0.
+    /// For type constructors like List, arity is 1.
+    ground_id_to_arity: Vec<u8>,
 
     /// Maps Datatype (bare data type with no params) to its GroundTypeId.
     datatype_to_ground_id: HashMap<Datatype, GroundTypeId>,
@@ -35,6 +40,7 @@ impl TypeStore {
     pub fn new() -> TypeStore {
         let mut store = TypeStore {
             ground_id_to_type: vec![],
+            ground_id_to_arity: vec![],
             datatype_to_ground_id: HashMap::new(),
             arbitrary_to_ground_id: HashMap::new(),
             typeclass_to_id: HashMap::new(),
@@ -42,8 +48,12 @@ impl TypeStore {
             typeclass_extends: vec![],
             typeclass_instances: vec![],
         };
-        store.add_type_internal(&AcornType::Empty);
-        store.add_type_internal(&AcornType::Bool);
+        // Register built-in types: Empty (id 0), Bool (id 1), Type (id 2)
+        store.add_type_internal(&AcornType::Empty); // arity 0
+        store.add_type_internal(&AcornType::Bool); // arity 0
+                                                   // TYPE is special - it's the kind of proper types. Use Empty as placeholder.
+        store.ground_id_to_type.push(AcornType::Empty);
+        store.ground_id_to_arity.push(0); // TYPE itself has arity 0
         store
     }
 
@@ -65,6 +75,7 @@ impl TypeStore {
                     || (self.ground_id_to_type.len() == 1 && *acorn_type == AcornType::Bool)
                 {
                     self.ground_id_to_type.push(acorn_type.clone());
+                    self.ground_id_to_arity.push(0); // Empty and Bool have arity 0
                 }
             }
 
@@ -75,6 +86,7 @@ impl TypeStore {
                 }
                 let ground_id = self.next_ground_id();
                 self.ground_id_to_type.push(acorn_type.clone());
+                self.ground_id_to_arity.push(0); // Default arity 0, will be updated by set_datatype_arity
                 self.datatype_to_ground_id
                     .insert(datatype.clone(), ground_id);
             }
@@ -83,6 +95,15 @@ impl TypeStore {
             AcornType::Data(datatype, params) => {
                 let bare_constructor = AcornType::Data(datatype.clone(), vec![]);
                 self.add_type_internal(&bare_constructor);
+                // Update arity if we see a parameterized version
+                // This handles cases where we first see List (arity 0) then List[Int] (arity 1)
+                let arity = params.len() as u8;
+                if let Some(ground_id) = self.datatype_to_ground_id.get(datatype) {
+                    let idx = ground_id.as_u16() as usize;
+                    if idx < self.ground_id_to_arity.len() && self.ground_id_to_arity[idx] < arity {
+                        self.ground_id_to_arity[idx] = arity;
+                    }
+                }
                 for param in params {
                     self.add_type_internal(param);
                 }
@@ -103,6 +124,7 @@ impl TypeStore {
                 }
                 let ground_id = self.next_ground_id();
                 self.ground_id_to_type.push(acorn_type.clone());
+                self.ground_id_to_arity.push(0); // Arbitrary types have arity 0
                 self.arbitrary_to_ground_id
                     .insert(type_param.clone(), ground_id);
             }
@@ -123,6 +145,46 @@ impl TypeStore {
     /// Returns None if the datatype hasn't been registered.
     pub fn get_datatype_ground_id(&self, datatype: &Datatype) -> Option<GroundTypeId> {
         self.datatype_to_ground_id.get(datatype).copied()
+    }
+
+    /// Set the arity (number of type parameters) for a datatype.
+    /// This should be called after the datatype is registered and its arity is known.
+    pub fn set_datatype_arity(&mut self, datatype: &Datatype, arity: u8) {
+        if let Some(ground_id) = self.datatype_to_ground_id.get(datatype) {
+            let idx = ground_id.as_u16() as usize;
+            if idx < self.ground_id_to_arity.len() {
+                self.ground_id_to_arity[idx] = arity;
+            }
+        }
+    }
+
+    /// Get the arity (number of type parameters) for a ground type.
+    pub fn get_arity(&self, ground_id: GroundTypeId) -> u8 {
+        self.ground_id_to_arity
+            .get(ground_id.as_u16() as usize)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Generate the kind Term for a type constructor with the given arity.
+    /// arity 0 → Type
+    /// arity 1 → Type -> Type (Pi from Type to Type)
+    /// arity 2 → Type -> Type -> Type
+    pub fn kind_for_arity(&self, arity: u8) -> Term {
+        let type_term = Term::type_ground(TYPE);
+        let mut result = type_term.clone();
+        for _ in 0..arity {
+            result = Term::pi(type_term.clone(), result);
+        }
+        result
+    }
+
+    /// Get the kind (type) of a ground type.
+    /// Proper types like Bool have kind Type.
+    /// Type constructors like List (arity 1) have kind Type -> Type.
+    pub fn get_type_kind(&self, ground_id: GroundTypeId) -> Term {
+        let arity = self.get_arity(ground_id);
+        self.kind_for_arity(arity)
     }
 
     /// Look up a GroundTypeId by datatype name string.

@@ -307,7 +307,9 @@ impl<'a> TermRef<'a> {
                             self.components
                         )
                     }),
-                Atom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol).clone(),
+                Atom::Symbol(symbol) => kernel_context
+                    .symbol_table
+                    .get_symbol_type(*symbol, &kernel_context.type_store),
             },
             Decomposition::Application(func, _arg) => {
                 // The function has type A -> B, so the application has type B
@@ -318,8 +320,8 @@ impl<'a> TermRef<'a> {
             }
             Decomposition::Pi(_, _) => {
                 // Pi types are themselves types - this is used when the term IS a type
-                // Return the type of types (Empty) for now
-                Term::type_empty()
+                // Return the Type kind
+                Term::type_type()
             }
         }
     }
@@ -1111,6 +1113,19 @@ impl Term {
         use std::sync::LazyLock;
         static EMPTY_TYPE: LazyLock<Term> = LazyLock::new(Term::type_empty);
         &EMPTY_TYPE
+    }
+
+    /// Returns a Term for the Type kind (the type of proper types).
+    pub fn type_type() -> Term {
+        use crate::kernel::types::TYPE;
+        Term::type_ground(TYPE)
+    }
+
+    /// Returns a static reference to the Type kind.
+    pub fn type_type_ref() -> &'static Term {
+        use std::sync::LazyLock;
+        static TYPE_KIND: LazyLock<Term> = LazyLock::new(Term::type_type);
+        &TYPE_KIND
     }
 
     /// Create a type application like `List[Int]` or `Map[String, Int]`.

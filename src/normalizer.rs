@@ -1783,7 +1783,10 @@ impl Normalizer {
                 .get_var_type(*i as usize)
                 .cloned()
                 .expect("Variable should have type in LocalContext"),
-            Atom::Symbol(symbol) => self.kernel_context.symbol_table.get_type(*symbol).clone(),
+            Atom::Symbol(symbol) => self
+                .kernel_context
+                .symbol_table
+                .get_symbol_type(*symbol, &self.kernel_context.type_store),
         };
         let head = self.denormalize_atom(&head_type, &term.get_head_atom(), arbitrary_names);
         let args: Vec<_> = term

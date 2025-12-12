@@ -76,14 +76,29 @@ impl SymbolTable {
     }
 
     /// Get the type of a symbol.
+    /// For Symbol::Type, this returns the Type kind (arity 0). Use get_symbol_type() with
+    /// a TypeStore if you need proper kinds for type constructors.
     pub fn get_type(&self, symbol: Symbol) -> &Term {
         match symbol {
             Symbol::True | Symbol::False => Term::type_bool_ref(),
-            Symbol::Type(_) => Term::type_empty_ref(),
+            Symbol::Type(_) => Term::type_type_ref(),
             Symbol::Synthetic(i) => &self.synthetic_types[i as usize],
             Symbol::GlobalConstant(i) => &self.global_constant_types[i as usize],
             Symbol::ScopedConstant(i) => &self.scoped_constant_types[i as usize],
             Symbol::Monomorph(i) => &self.monomorph_types[i as usize],
+        }
+    }
+
+    /// Get the type of a symbol, with proper kinds for type symbols.
+    /// For Symbol::Type, this returns the proper kind based on arity (e.g., Type -> Type for List).
+    pub fn get_symbol_type(&self, symbol: Symbol, type_store: &TypeStore) -> Term {
+        match symbol {
+            Symbol::True | Symbol::False => Term::type_bool(),
+            Symbol::Type(ground_id) => type_store.get_type_kind(ground_id),
+            Symbol::Synthetic(i) => self.synthetic_types[i as usize].clone(),
+            Symbol::GlobalConstant(i) => self.global_constant_types[i as usize].clone(),
+            Symbol::ScopedConstant(i) => self.scoped_constant_types[i as usize].clone(),
+            Symbol::Monomorph(i) => self.monomorph_types[i as usize].clone(),
         }
     }
 

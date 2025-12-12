@@ -5,6 +5,10 @@ use std::fmt;
 pub const EMPTY: GroundTypeId = GroundTypeId(0);
 /// GroundTypeId for the Bool type.
 pub const BOOL: GroundTypeId = GroundTypeId(1);
+/// GroundTypeId for the Type kind (the type of proper types).
+/// This represents kind `*` in type theory. Proper types like Bool have kind Type.
+/// Type constructors like List have kind `Type -> Type`.
+pub const TYPE: GroundTypeId = GroundTypeId(2);
 
 /// A type ID that refers ONLY to a ground type (no internal structure).
 /// Examples: Bool, Nat, Int, user-defined data types without parameters.

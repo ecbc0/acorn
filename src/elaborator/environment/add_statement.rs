@@ -854,8 +854,10 @@ impl Environment {
             Some(ss.name_token.range()),
             definition_string,
         );
-        // Store the computed variances
+        // Store the computed variances and arity
         self.bindings.set_datatype_variances(&datatype, variances);
+        self.bindings
+            .set_datatype_arity(&datatype, type_params.len() as u8);
         let struct_type = potential_type.resolve(arbitrary_params, &ss.name_token)?;
         let mut member_fns = vec![];
         for ((member_fn_name, field_type), doc_comments) in member_fn_names
@@ -1097,13 +1099,15 @@ impl Environment {
             })
             .collect::<Vec<_>>();
 
-        // Store the computed variances for this datatype
+        // Store the computed variances and arity for this datatype
         let datatype_for_variance = Datatype {
             module_id: self.module_id,
             name: is.name_token.text().to_string(),
         };
         self.bindings
             .set_datatype_variances(&datatype_for_variance, variances);
+        self.bindings
+            .set_datatype_arity(&datatype_for_variance, type_params.len() as u8);
 
         // Check strict positivity: ensure the inductive type doesn't appear in negative positions
         for (constructor_name, type_list, _) in &constructors {

@@ -1214,6 +1214,21 @@ impl BindingMap {
         }
     }
 
+    /// Set the arity (number of type parameters) for a datatype.
+    pub fn set_datatype_arity(&mut self, datatype: &Datatype, arity: u8) {
+        if let Some(info) = self.datatype_defs.get_mut(datatype) {
+            info.arity = arity;
+        }
+    }
+
+    /// Get the arity (number of type parameters) for a datatype.
+    pub fn get_datatype_arity(&self, datatype: &Datatype) -> u8 {
+        self.datatype_defs
+            .get(datatype)
+            .map(|info| info.arity)
+            .unwrap_or(0)
+    }
+
     /// Get the doc comment for a typeclass.
     pub fn get_typeclass_doc_comments(&self, typeclass: &Typeclass) -> Option<&Vec<String>> {
         self.typeclass_defs.get(typeclass).and_then(|info| {
@@ -2081,6 +2096,10 @@ struct DatatypeDefinition {
     /// None means variance hasn't been computed yet (for inductive types being defined).
     /// Some(vec) means variance has been computed, with one entry per type parameter.
     variances: Option<Vec<Variance>>,
+
+    /// The number of type parameters this datatype takes.
+    /// This is used to generate the proper kind (e.g., Type -> Type for List).
+    arity: u8,
 }
 
 impl DatatypeDefinition {
@@ -2093,6 +2112,7 @@ impl DatatypeDefinition {
             range: None,
             definition_string: None,
             variances: None,
+            arity: 0,
         }
     }
 
