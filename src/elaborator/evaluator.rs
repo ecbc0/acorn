@@ -62,7 +62,7 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    fn unifier(&self) -> TypeUnifier {
+    fn unifier(&self) -> TypeUnifier<'_> {
         self.bindings.unifier()
     }
 

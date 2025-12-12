@@ -1258,7 +1258,7 @@ impl Term {
     }
 
     /// Get a borrowed reference to this term.
-    pub fn as_ref(&self) -> TermRef {
+    pub fn as_ref(&self) -> TermRef<'_> {
         // Debug validation
         #[cfg(debug_assertions)]
         if let TermComponent::Application { right_offset } = self.components[0] {
@@ -1378,7 +1378,7 @@ impl Term {
 
     /// Iterate over the arguments of this term without allocating.
     /// Each argument is returned as a TermRef.
-    pub fn iter_args(&self) -> TermRefArgsIterator {
+    pub fn iter_args(&self) -> TermRefArgsIterator<'_> {
         self.as_ref().iter_args()
     }
 

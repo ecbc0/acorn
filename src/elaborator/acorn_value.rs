@@ -362,11 +362,11 @@ impl fmt::Display for Subvalue<'_> {
 }
 
 impl Subvalue<'_> {
-    fn new(value: &AcornValue, stack_size: usize) -> Subvalue {
+    fn new(value: &AcornValue, stack_size: usize) -> Subvalue<'_> {
         Subvalue { value, stack_size }
     }
 
-    fn root(value: &AcornValue) -> Subvalue {
+    fn root(value: &AcornValue) -> Subvalue<'_> {
         Subvalue::new(value, 0)
     }
 }

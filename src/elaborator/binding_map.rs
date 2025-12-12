@@ -231,7 +231,7 @@ impl BindingMap {
         Some(&self.typeclass_defs.get(typeclass)?.extends)
     }
 
-    pub fn unifier(&self) -> TypeUnifier {
+    pub fn unifier(&self) -> TypeUnifier<'_> {
         TypeUnifier::new(self)
     }
 

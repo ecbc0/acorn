@@ -173,7 +173,7 @@ impl Monomorphizer {
         }
     }
 
-    fn unifier(&self) -> TypeUnifier {
+    fn unifier(&self) -> TypeUnifier<'_> {
         TypeUnifier::new(self)
     }
 

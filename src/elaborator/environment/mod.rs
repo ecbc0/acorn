@@ -403,7 +403,7 @@ impl Environment {
     /// or subenvironments, recursively.
     /// The order is "proving order", ie the goals inside the block are listed before the
     /// root goal of a block.
-    pub fn iter_goals(&self) -> impl Iterator<Item = NodeCursor> {
+    pub fn iter_goals(&self) -> impl Iterator<Item = NodeCursor<'_>> {
         let mut answer = vec![];
         for i in 0..self.nodes.len() {
             let mut cursor = NodeCursor::new(self, i);
@@ -413,7 +413,7 @@ impl Environment {
     }
 
     /// Used for integration testing.
-    pub fn get_node_by_goal_name(&self, name: &str) -> NodeCursor {
+    pub fn get_node_by_goal_name(&self, name: &str) -> NodeCursor<'_> {
         let mut names = Vec::new();
         for node in self.iter_goals() {
             let context = node.goal().unwrap();

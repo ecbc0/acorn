@@ -48,7 +48,7 @@ pub struct CodeGenerator<'a> {
 
 impl CodeGenerator<'_> {
     /// Creates a new code generator.
-    pub fn new(bindings: &BindingMap) -> CodeGenerator {
+    pub fn new(bindings: &BindingMap) -> CodeGenerator<'_> {
         CodeGenerator {
             bindings,
             next_x: 0,

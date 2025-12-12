@@ -69,7 +69,7 @@ impl ClauseTrace {
         &self.0
     }
 
-    pub fn iter(&self) -> std::slice::Iter<LiteralTrace> {
+    pub fn iter(&self) -> std::slice::Iter<'_, LiteralTrace> {
         self.0.iter()
     }
 
