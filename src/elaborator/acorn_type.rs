@@ -451,6 +451,7 @@ impl AcornType {
     pub fn has_type_variable(&self, name: &str) -> bool {
         match self {
             AcornType::Variable(param) => param.name == name,
+            AcornType::Data(_, types) => types.iter().any(|t| t.has_type_variable(name)),
             AcornType::Function(function_type) => {
                 for arg_type in &function_type.arg_types {
                     if arg_type.has_type_variable(name) {

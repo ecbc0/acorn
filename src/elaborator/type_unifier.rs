@@ -128,6 +128,10 @@ impl<'a> TypeUnifier<'a> {
                         _ => return Err(Error::Other),
                     }
                 }
+                // Occurs check: reject cyclic types like T = List[T]
+                if instance_type.has_type_variable(&param.name) {
+                    return Err(Error::Other);
+                }
                 self.mapping
                     .insert(param.name.clone(), instance_type.clone());
             }
@@ -163,6 +167,10 @@ impl<'a> TypeUnifier<'a> {
                         }
                         _ => return Err(Error::Other),
                     }
+                }
+                // Occurs check: reject cyclic types like T = List[T]
+                if instance_type.has_arbitrary_type_param(param) {
+                    return Err(Error::Other);
                 }
                 self.mapping
                     .insert(param.name.clone(), instance_type.clone());
@@ -345,5 +353,140 @@ impl<'a> TypeUnifier<'a> {
         };
         let value = self.resolve_with_inference(uc, vec![], Some(expected_type), source)?;
         Ok(PotentialValue::Resolved(value))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::elaborator::acorn_type::TypeParam;
+
+    /// A dummy registry that says nothing is an instance of anything.
+    struct DummyRegistry;
+
+    impl TypeclassRegistry for DummyRegistry {
+        fn is_instance_of(&self, _class: &Datatype, _typeclass: &Typeclass) -> bool {
+            false
+        }
+
+        fn extends(&self, _typeclass: &Typeclass, _base: &Typeclass) -> bool {
+            false
+        }
+    }
+
+    /// Test that the unifier rejects cyclic type mappings (occurs check).
+    ///
+    /// Unifying T with List[T] should fail because it would create an
+    /// infinite type T = List[List[List[...]]].
+    #[test]
+    fn test_occurs_check_rejects_cyclic_type() {
+        let registry = DummyRegistry;
+        let mut unifier = TypeUnifier::new(&registry);
+
+        // Create type variable T
+        let t_param = TypeParam {
+            name: "T".to_string(),
+            typeclass: None,
+        };
+        let t = AcornType::Variable(t_param);
+
+        // Create List[T] datatype
+        let list_datatype = Datatype {
+            module_id: ModuleId(0),
+            name: "List".to_string(),
+        };
+        let list_t = AcornType::Data(list_datatype, vec![t.clone()]);
+
+        // Try to unify T with List[T] - should fail due to occurs check
+        let result = unifier.match_instance(&t, &list_t);
+        assert!(result.is_err(), "Unifying T with List[T] should fail");
+
+        // The mapping should not have been created
+        assert!(
+            unifier.mapping.get("T").is_none(),
+            "No mapping should be created for cyclic unification"
+        );
+    }
+
+    /// Test that the occurs check also works for Arbitrary types.
+    #[test]
+    fn test_occurs_check_arbitrary_type() {
+        let registry = DummyRegistry;
+        let mut unifier = TypeUnifier::new(&registry);
+
+        // Create arbitrary type T
+        let t_param = TypeParam {
+            name: "T".to_string(),
+            typeclass: None,
+        };
+        let t = AcornType::Arbitrary(t_param.clone());
+
+        // Create List[T] datatype where T is also Arbitrary
+        let list_datatype = Datatype {
+            module_id: ModuleId(0),
+            name: "List".to_string(),
+        };
+        let list_t = AcornType::Data(list_datatype, vec![AcornType::Arbitrary(t_param)]);
+
+        // Try to unify T with List[T] - should fail due to occurs check
+        let result = unifier.match_instance(&t, &list_t);
+        assert!(result.is_err(), "Unifying T with List[T] should fail");
+    }
+
+    /// Test that Variable can unify with a type containing Arbitrary of same name.
+    /// This is NOT cyclic because Variable and Arbitrary are semantically different.
+    #[test]
+    fn test_variable_can_unify_with_arbitrary_same_name() {
+        let registry = DummyRegistry;
+        let mut unifier = TypeUnifier::new(&registry);
+
+        // Create type variable T (generic)
+        let t_var = AcornType::Variable(TypeParam {
+            name: "T".to_string(),
+            typeclass: None,
+        });
+
+        // Create Pair[T, U] where T and U are Arbitrary (fixed)
+        let pair_datatype = Datatype {
+            module_id: ModuleId(0),
+            name: "Pair".to_string(),
+        };
+        let t_arb = AcornType::Arbitrary(TypeParam {
+            name: "T".to_string(),
+            typeclass: None,
+        });
+        let u_arb = AcornType::Arbitrary(TypeParam {
+            name: "U".to_string(),
+            typeclass: None,
+        });
+        let pair_tu = AcornType::Data(pair_datatype, vec![t_arb.clone(), u_arb]);
+
+        // Unifying Variable(T) with Pair[Arbitrary(T), Arbitrary(U)] should succeed
+        // because Variable and Arbitrary are different - this isn't cyclic
+        let result = unifier.match_instance(&t_var, &pair_tu);
+        assert!(
+            result.is_ok(),
+            "Variable(T) should unify with Pair[Arbitrary(T), U]"
+        );
+        assert_eq!(unifier.mapping.get("T"), Some(&pair_tu));
+    }
+
+    /// Test that valid (non-cyclic) unifications still work.
+    #[test]
+    fn test_valid_unification_still_works() {
+        let registry = DummyRegistry;
+        let mut unifier = TypeUnifier::new(&registry);
+
+        // Create type variable T
+        let t_param = TypeParam {
+            name: "T".to_string(),
+            typeclass: None,
+        };
+        let t = AcornType::Variable(t_param);
+
+        // Unify T with Bool - this should succeed
+        let result = unifier.match_instance(&t, &AcornType::Bool);
+        assert!(result.is_ok(), "Unifying T with Bool should succeed");
+        assert_eq!(unifier.mapping.get("T"), Some(&AcornType::Bool));
     }
 }
