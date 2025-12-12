@@ -329,6 +329,22 @@ impl<'a> Unifier<'a> {
         }
 
         // We don't have a mapping for this variable, so we can just map it now.
+        // But first, we need to check that the types are compatible.
+        let var_type = self
+            .get_local_context(var_scope)
+            .get_var_type(var_id as usize)
+            .cloned()
+            .expect("Variable should have type in LocalContext");
+        let term_type = term.get_type_with_context(&self.output_context, self.kernel_context);
+        if !self.unify_internal(
+            var_scope,
+            var_type.as_ref(),
+            Scope::OUTPUT,
+            term_type.as_ref(),
+        ) {
+            return false;
+        }
+
         self.set_mapping(var_scope, var_id, term.clone());
         true
     }
@@ -365,27 +381,6 @@ impl<'a> Unifier<'a> {
         scope2: Scope,
         term2: TermRef,
     ) -> bool {
-        let local1 = self.get_local_context(scope1);
-        let local2 = self.get_local_context(scope2);
-        let kc = self.kernel_context;
-
-        // Base case: identical non-variable atoms always unify (same symbol = same type)
-        if let (Decomposition::Atom(a1), Decomposition::Atom(a2)) =
-            (term1.decompose(), term2.decompose())
-        {
-            if !a1.is_variable() && !a2.is_variable() {
-                return a1 == a2;
-            }
-        }
-
-        let type1 = term1.get_type_with_context(local1, kc);
-        let type2 = term2.get_type_with_context(local2, kc);
-        // Always unify types - we can't just compare for equality because type variables
-        // in different scopes may have been bound to different concrete types.
-        if !self.unify_internal(scope1, type1.as_ref(), scope2, type2.as_ref()) {
-            return false;
-        }
-
         // Handle the case where we're unifying something with an atomic variable
         if let Some(i) = term1.atomic_variable() {
             return self.unify_variable(scope1, i, scope2, &term2.to_owned());
@@ -1057,6 +1052,41 @@ mod tests {
         assert!(
             !result,
             "Should NOT unify x1:List[Int] (LEFT) with x1:List[Nat] (RIGHT) - types differ after substitution"
+        );
+    }
+
+    #[test]
+    fn test_type_mismatch_prevents_unification() {
+        // Test that a variable of type Int cannot unify with a constant of type Nat.
+        // This verifies that type checking is working correctly in unification.
+        let mut ctx = KernelContext::new();
+        ctx.add_datatype("Int").add_datatype("Nat");
+
+        let int_id = ctx.type_store.get_ground_id_by_name("Int").unwrap();
+        let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
+
+        let int_type = Term::type_ground(int_id);
+        let nat_type = Term::type_ground(nat_id);
+
+        // c0 has type Nat
+        ctx.symbol_table.add_scoped_constant(nat_type.clone());
+
+        // x0 has type Int
+        let local_ctx = LocalContext::from_types(vec![int_type.clone()]);
+
+        let c0 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(0)));
+        let x0 = Term::atom(Atom::Variable(0));
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(local_ctx.clone())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(local_ctx.clone())));
+        u.set_output_var_types(vec![int_type.clone()]);
+
+        // x0: Int should NOT unify with c0: Nat
+        let result = u.unify(Scope::LEFT, &x0, Scope::RIGHT, &c0);
+        assert!(
+            !result,
+            "Should NOT unify x0:Int with c0:Nat - types differ"
         );
     }
 
