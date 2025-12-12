@@ -295,7 +295,7 @@ impl KernelContext {
     /// Looks up datatype names in the TypeStore.
     #[cfg(test)]
     fn parse_type(&self, type_str: &str) -> ClosedType {
-        use crate::kernel::types::{GROUND_BOOL, GROUND_EMPTY};
+        use crate::kernel::types::{BOOL, EMPTY};
 
         let s = type_str.trim();
 
@@ -323,8 +323,8 @@ impl KernelContext {
         } else {
             // Simple type name
             match s {
-                "Bool" => ClosedType::ground(GROUND_BOOL),
-                "Empty" => ClosedType::ground(GROUND_EMPTY),
+                "Bool" => ClosedType::ground(BOOL),
+                "Empty" => ClosedType::ground(EMPTY),
                 _ => {
                     // Look up in TypeStore by name
                     self.type_store

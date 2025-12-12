@@ -170,29 +170,29 @@ impl fmt::Display for ClosedType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::types::{GROUND_BOOL, GROUND_EMPTY};
+    use crate::kernel::types::{BOOL, EMPTY};
 
     #[test]
     fn test_closed_type_ground() {
-        let ct = ClosedType::ground(GROUND_BOOL);
+        let ct = ClosedType::ground(BOOL);
         assert!(ct.is_ground());
-        assert_eq!(ct.as_ground(), Some(GROUND_BOOL));
+        assert_eq!(ct.as_ground(), Some(BOOL));
         assert!(!ct.is_pi());
         assert_eq!(format!("{}", ct), "T1");
     }
 
     #[test]
     fn test_closed_type_pi() {
-        let bool_type = ClosedType::ground(GROUND_BOOL);
-        let empty_type = ClosedType::ground(GROUND_EMPTY);
+        let bool_type = ClosedType::ground(BOOL);
+        let empty_type = ClosedType::ground(EMPTY);
         let pi_type = ClosedType::pi(bool_type.clone(), empty_type.clone());
 
         assert!(!pi_type.is_ground());
         assert!(pi_type.is_pi());
 
         let (input, output) = pi_type.as_pi().unwrap();
-        assert_eq!(input.as_ground(), Some(GROUND_BOOL));
-        assert_eq!(output.as_ground(), Some(GROUND_EMPTY));
+        assert_eq!(input.as_ground(), Some(BOOL));
+        assert_eq!(output.as_ground(), Some(EMPTY));
 
         // Display should show (Bool -> Empty)
         assert_eq!(format!("{}", pi_type), "(T1 -> T0)");
@@ -201,13 +201,13 @@ mod tests {
     #[test]
     fn test_closed_type_nested_pi() {
         // Bool -> Bool -> Bool
-        let bool_type = ClosedType::ground(GROUND_BOOL);
+        let bool_type = ClosedType::ground(BOOL);
         let inner = ClosedType::pi(bool_type.clone(), bool_type.clone());
         let outer = ClosedType::pi(bool_type.clone(), inner);
 
         assert!(outer.is_pi());
         let (input, output) = outer.as_pi().unwrap();
-        assert_eq!(input.as_ground(), Some(GROUND_BOOL));
+        assert_eq!(input.as_ground(), Some(BOOL));
         assert!(output.is_pi());
 
         assert_eq!(format!("{}", outer), "(T1 -> (T1 -> T1))");
@@ -216,9 +216,9 @@ mod tests {
     #[test]
     fn test_closed_type_application() {
         // Create List[Bool] using the application() constructor
-        // We use GROUND_EMPTY as a stand-in for "List" type constructor
-        let list_type = ClosedType::ground(GROUND_EMPTY);
-        let bool_type = ClosedType::ground(GROUND_BOOL);
+        // We use EMPTY as a stand-in for "List" type constructor
+        let list_type = ClosedType::ground(EMPTY);
+        let bool_type = ClosedType::ground(BOOL);
         let list_bool = ClosedType::application(list_type.clone(), vec![bool_type.clone()]);
 
         assert!(!list_bool.is_ground());
@@ -228,21 +228,21 @@ mod tests {
 
         // Test as_application
         let (head, args) = list_bool.as_application().unwrap();
-        assert_eq!(head.as_ground(), Some(GROUND_EMPTY));
+        assert_eq!(head.as_ground(), Some(EMPTY));
         assert_eq!(args.len(), 1);
-        assert_eq!(args[0].as_ground(), Some(GROUND_BOOL));
+        assert_eq!(args[0].as_ground(), Some(BOOL));
 
-        // Test with multiple args: Map[String, Int] (using GROUND_EMPTY and GROUND_BOOL as stand-ins)
-        let map_type = ClosedType::ground(GROUND_EMPTY);
+        // Test with multiple args: Map[String, Int] (using EMPTY and BOOL as stand-ins)
+        let map_type = ClosedType::ground(EMPTY);
         let map_string_int =
             ClosedType::application(map_type, vec![bool_type.clone(), list_type.clone()]);
         assert!(map_string_int.is_application());
 
         let (head2, args2) = map_string_int.as_application().unwrap();
-        assert_eq!(head2.as_ground(), Some(GROUND_EMPTY));
+        assert_eq!(head2.as_ground(), Some(EMPTY));
         assert_eq!(args2.len(), 2);
-        assert_eq!(args2[0].as_ground(), Some(GROUND_BOOL));
-        assert_eq!(args2[1].as_ground(), Some(GROUND_EMPTY));
+        assert_eq!(args2[0].as_ground(), Some(BOOL));
+        assert_eq!(args2[1].as_ground(), Some(EMPTY));
 
         // Ground types are not applications
         assert!(!bool_type.is_application());
@@ -251,8 +251,8 @@ mod tests {
 
     #[test]
     fn test_closed_type_apply() {
-        let bool_type = ClosedType::ground(GROUND_BOOL);
-        let empty_type = ClosedType::ground(GROUND_EMPTY);
+        let bool_type = ClosedType::ground(BOOL);
+        let empty_type = ClosedType::ground(EMPTY);
 
         // Ground types can't be applied
         assert!(bool_type.apply().is_none());
@@ -260,7 +260,7 @@ mod tests {
         // Pi type Bool -> Empty can be applied to get Empty
         let pi_type = ClosedType::pi(bool_type.clone(), empty_type.clone());
         let result = pi_type.apply().unwrap();
-        assert_eq!(result.as_ground(), Some(GROUND_EMPTY));
+        assert_eq!(result.as_ground(), Some(EMPTY));
 
         // Nested Pi type: Bool -> (Bool -> Empty)
         let inner_pi = ClosedType::pi(bool_type.clone(), empty_type.clone());
@@ -272,6 +272,6 @@ mod tests {
 
         // Second apply gives Empty
         let after_second = after_first.apply().unwrap();
-        assert_eq!(after_second.as_ground(), Some(GROUND_EMPTY));
+        assert_eq!(after_second.as_ground(), Some(EMPTY));
     }
 }

@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// GroundTypeId for the Empty type.
-pub const GROUND_EMPTY: GroundTypeId = GroundTypeId(0);
+pub const EMPTY: GroundTypeId = GroundTypeId(0);
 /// GroundTypeId for the Bool type.
-pub const GROUND_BOOL: GroundTypeId = GroundTypeId(1);
+pub const BOOL: GroundTypeId = GroundTypeId(1);
 
 /// A type ID that refers ONLY to a ground type (no internal structure).
 /// Examples: Bool, Nat, Int, user-defined data types without parameters.

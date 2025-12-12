@@ -17,7 +17,7 @@ use super::local_context::LocalContext;
 use super::symbol::Symbol;
 use super::term::Term;
 use super::term::{Decomposition, TermRef};
-use super::types::{GroundTypeId, TypeclassId, GROUND_BOOL, GROUND_EMPTY};
+use super::types::{GroundTypeId, TypeclassId, BOOL, EMPTY};
 
 /// Replaces variables in a term with corresponding replacement terms.
 /// Variables x_i are replaced with replacements[i].
@@ -112,7 +112,7 @@ pub fn replace_term_variables(
         }
     }
 
-    let empty_type = ClosedType::ground(GROUND_EMPTY);
+    let empty_type = ClosedType::ground(EMPTY);
     let result_term = replace_recursive(
         term.as_ref(),
         term_context,
@@ -343,7 +343,7 @@ fn key_from_term_type(
             }),
         KernelAtom::Symbol(Symbol::True) | KernelAtom::Symbol(Symbol::False) => {
             // Special case: True/False has type Bool, encode it directly
-            Edge::Atom(Atom::Type(GROUND_BOOL)).append_to(key);
+            Edge::Atom(Atom::Type(BOOL)).append_to(key);
             return;
         }
         KernelAtom::Symbol(Symbol::Type(_)) => {
@@ -1123,35 +1123,35 @@ mod tests {
     #[test]
     fn test_key_from_closed_type_ground() {
         // Test encoding of a ground type like Bool
-        let bool_type = ClosedType::ground(GROUND_BOOL);
+        let bool_type = ClosedType::ground(BOOL);
         let mut key = Vec::new();
         key_from_closed_type(&bool_type, &mut key);
 
-        // Should be just Atom(Type(GROUND_BOOL))
+        // Should be just Atom(Type(BOOL))
         assert_eq!(key.len(), 3);
         let edge = Edge::from_bytes(key[0], key[1], key[2]);
-        assert_eq!(edge, Edge::Atom(Atom::Type(GROUND_BOOL)));
+        assert_eq!(edge, Edge::Atom(Atom::Type(BOOL)));
     }
 
     #[test]
     fn test_key_from_closed_type_arrow() {
         // Test encoding of Bool -> Bool
-        let bool_type = ClosedType::ground(GROUND_BOOL);
+        let bool_type = ClosedType::ground(BOOL);
         let arrow_type = ClosedType::pi(bool_type.clone(), bool_type.clone());
         let mut key = Vec::new();
         key_from_closed_type(&arrow_type, &mut key);
 
-        // Should be: Arrow + Atom(Type(GROUND_BOOL)) + Atom(Type(GROUND_BOOL))
+        // Should be: Arrow + Atom(Type(BOOL)) + Atom(Type(BOOL))
         assert_eq!(key.len(), 9);
 
         let edge1 = Edge::from_bytes(key[0], key[1], key[2]);
         assert_eq!(edge1, Edge::Arrow);
 
         let edge2 = Edge::from_bytes(key[3], key[4], key[5]);
-        assert_eq!(edge2, Edge::Atom(Atom::Type(GROUND_BOOL)));
+        assert_eq!(edge2, Edge::Atom(Atom::Type(BOOL)));
 
         let edge3 = Edge::from_bytes(key[6], key[7], key[8]);
-        assert_eq!(edge3, Edge::Atom(Atom::Type(GROUND_BOOL)));
+        assert_eq!(edge3, Edge::Atom(Atom::Type(BOOL)));
     }
 
     #[test]

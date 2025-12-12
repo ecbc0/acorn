@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::elaborator::acorn_type::{AcornType, Datatype, FunctionType, TypeParam, Typeclass};
 use crate::kernel::closed_type::ClosedType;
-use crate::kernel::types::{GroundTypeId, TypeclassId, GROUND_BOOL, GROUND_EMPTY};
+use crate::kernel::types::{GroundTypeId, TypeclassId, BOOL, EMPTY};
 
 /// Manages ground type registration and typeclass relationships.
 #[derive(Clone)]
@@ -58,7 +58,7 @@ impl TypeStore {
     /// Non-ground types (Function, parameterized Data) are just recursively processed.
     fn add_type_internal(&mut self, acorn_type: &AcornType) {
         match acorn_type {
-            // Empty and Bool: register if not already (they get GROUND_EMPTY and GROUND_BOOL)
+            // Empty and Bool: register if not already (they get EMPTY and BOOL)
             AcornType::Empty | AcornType::Bool => {
                 // These are registered once in new() - the ground_id_to_type index matches the constants
                 if self.ground_id_to_type.is_empty()
@@ -150,8 +150,8 @@ impl TypeStore {
     pub fn to_closed_type(&self, acorn_type: &AcornType) -> ClosedType {
         match acorn_type {
             // Ground types: use constants
-            AcornType::Empty => ClosedType::ground(GROUND_EMPTY),
-            AcornType::Bool => ClosedType::ground(GROUND_BOOL),
+            AcornType::Empty => ClosedType::ground(EMPTY),
+            AcornType::Bool => ClosedType::ground(BOOL),
 
             AcornType::Data(datatype, params) if params.is_empty() => {
                 // Bare data type - use direct Datatype -> GroundTypeId lookup
@@ -347,7 +347,7 @@ impl Default for TypeStore {
 
 #[cfg(test)]
 mod tests {
-    use crate::kernel::types::{GROUND_BOOL, GROUND_EMPTY};
+    use crate::kernel::types::{BOOL, EMPTY};
 
     use super::*;
 
@@ -356,9 +356,9 @@ mod tests {
         let store = TypeStore::new();
         // EMPTY and BOOL are pre-registered - verify via to_closed_type
         let empty_closed = store.to_closed_type(&AcornType::Empty);
-        assert_eq!(empty_closed.as_ground(), Some(GROUND_EMPTY));
+        assert_eq!(empty_closed.as_ground(), Some(EMPTY));
         let bool_closed = store.to_closed_type(&AcornType::Bool);
-        assert_eq!(bool_closed.as_ground(), Some(GROUND_BOOL));
+        assert_eq!(bool_closed.as_ground(), Some(BOOL));
     }
 
     #[test]
@@ -368,11 +368,11 @@ mod tests {
         // Ground types should convert to simple ClosedType::ground()
         let bool_closed = store.to_closed_type(&AcornType::Bool);
         assert!(bool_closed.is_ground());
-        assert_eq!(bool_closed.as_ground(), Some(GROUND_BOOL));
+        assert_eq!(bool_closed.as_ground(), Some(BOOL));
 
         let empty_closed = store.to_closed_type(&AcornType::Empty);
         assert!(empty_closed.is_ground());
-        assert_eq!(empty_closed.as_ground(), Some(GROUND_EMPTY));
+        assert_eq!(empty_closed.as_ground(), Some(EMPTY));
     }
 
     #[test]
@@ -390,8 +390,8 @@ mod tests {
         assert!(closed.is_pi());
 
         let (input, output) = closed.as_pi().unwrap();
-        assert_eq!(input.as_ground(), Some(GROUND_BOOL));
-        assert_eq!(output.as_ground(), Some(GROUND_BOOL));
+        assert_eq!(input.as_ground(), Some(BOOL));
+        assert_eq!(output.as_ground(), Some(BOOL));
     }
 
     #[test]
@@ -411,13 +411,13 @@ mod tests {
 
         // First Pi: Bool -> (Bool -> Bool)
         let (input1, rest) = closed.as_pi().unwrap();
-        assert_eq!(input1.as_ground(), Some(GROUND_BOOL));
+        assert_eq!(input1.as_ground(), Some(BOOL));
         assert!(rest.is_pi());
 
         // Second Pi: Bool -> Bool
         let (input2, output) = rest.as_pi().unwrap();
-        assert_eq!(input2.as_ground(), Some(GROUND_BOOL));
-        assert_eq!(output.as_ground(), Some(GROUND_BOOL));
+        assert_eq!(input2.as_ground(), Some(BOOL));
+        assert_eq!(output.as_ground(), Some(BOOL));
     }
 
     #[test]
@@ -465,7 +465,7 @@ mod tests {
         assert_eq!(args.len(), 1, "Expected 1 argument, got {}", args.len());
         assert_eq!(
             args[0].as_ground(),
-            Some(GROUND_BOOL),
+            Some(BOOL),
             "Argument should be Bool, got {:?}",
             args[0]
         );
@@ -532,7 +532,7 @@ mod tests {
         assert_eq!(inner_args.len(), 1, "Inner should have 1 argument");
         assert_eq!(
             inner_args[0].as_ground(),
-            Some(GROUND_BOOL),
+            Some(BOOL),
             "Innermost argument should be Bool"
         );
     }

@@ -11,7 +11,7 @@ use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::{PathStep, Term};
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
-use crate::kernel::types::GROUND_EMPTY;
+use crate::kernel::types::EMPTY;
 
 /// The different sorts of proof steps.
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
@@ -601,7 +601,7 @@ impl ProofStep {
         let rewritten_context = {
             let target_context = target_step.clause.get_local_context();
             let mut closed_types = target_context.get_var_closed_types().to_vec();
-            let empty_type = ClosedType::ground(GROUND_EMPTY);
+            let empty_type = ClosedType::ground(EMPTY);
             for (i, ct) in new_subterm_context
                 .get_var_closed_types()
                 .iter()

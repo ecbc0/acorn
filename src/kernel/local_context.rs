@@ -85,10 +85,10 @@ impl LocalContext {
     /// Set ClosedType for a variable at a specific index.
     /// If the context is too short, it will be extended with EMPTY placeholders.
     pub fn set_closed_type(&mut self, var_id: usize, closed_type: ClosedType) {
-        use crate::kernel::types::GROUND_EMPTY;
+        use crate::kernel::types::EMPTY;
         if var_id >= self.var_closed_types.len() {
             // Extend with EMPTY placeholders for gap indices
-            let empty_closed = ClosedType::ground(GROUND_EMPTY);
+            let empty_closed = ClosedType::ground(EMPTY);
             self.var_closed_types.resize(var_id + 1, empty_closed);
         }
         self.var_closed_types[var_id] = closed_type;
@@ -108,29 +108,13 @@ impl LocalContext {
     pub fn from_closed_types(var_closed_types: Vec<ClosedType>) -> LocalContext {
         LocalContext { var_closed_types }
     }
-
-    /// Returns a reference to a LocalContext with BOOL types for tests.
-    #[cfg(test)]
-    pub fn test_bool_ref() -> &'static LocalContext {
-        static TEST_BOOL_CONTEXT: LazyLock<LocalContext> =
-            LazyLock::new(|| LocalContext::from_closed_types(vec![ClosedType::bool(); 10]));
-        &TEST_BOOL_CONTEXT
-    }
-
-    /// Returns a reference to a LocalContext with EMPTY types for tests.
-    #[cfg(test)]
-    pub fn test_empty_ref() -> &'static LocalContext {
-        static TEST_EMPTY_CONTEXT: LazyLock<LocalContext> =
-            LazyLock::new(|| LocalContext::from_closed_types(vec![ClosedType::empty(); 10]));
-        &TEST_EMPTY_CONTEXT
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::kernel::closed_type::ClosedType;
-    use crate::kernel::types::{GroundTypeId, GROUND_BOOL, GROUND_EMPTY};
+    use crate::kernel::types::{GroundTypeId, BOOL, EMPTY};
 
     fn ground(id: u16) -> ClosedType {
         ClosedType::ground(GroundTypeId::new(id))
@@ -166,11 +150,8 @@ mod tests {
     #[test]
     fn test_remap_preserves_closed_types() {
         // Create a context with a Pi type (function type)
-        let pi_type = ClosedType::pi(
-            ClosedType::ground(GROUND_BOOL),
-            ClosedType::ground(GROUND_BOOL),
-        );
-        let ground_type = ClosedType::ground(GROUND_EMPTY);
+        let pi_type = ClosedType::pi(ClosedType::ground(BOOL), ClosedType::ground(BOOL));
+        let ground_type = ClosedType::ground(EMPTY);
 
         let ctx = LocalContext::from_closed_types(vec![ground_type.clone(), pi_type.clone()]);
 

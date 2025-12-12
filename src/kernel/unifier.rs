@@ -499,6 +499,7 @@ impl fmt::Display for Unifier<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::LazyLock;
 
     fn bool_fn(head: Atom, args: Vec<Term>) -> Term {
         Term::new(head, args)
@@ -512,14 +513,19 @@ mod tests {
         KernelContext::test_with_function_types()
     }
 
+    /// Returns a static LocalContext with 10 Bool types for tests.
+    fn bool_context() -> &'static LocalContext {
+        static BOOL_CONTEXT: LazyLock<LocalContext> =
+            LazyLock::new(|| LocalContext::from_closed_types(vec![ClosedType::bool(); 10]));
+        &BOOL_CONTEXT
+    }
+
     /// Creates a test unifier with BOOL types for variables.
     /// Use this for tests that explicitly construct terms with BOOL types.
     fn test_unifier_bool<'a>(kernel_context: &'a KernelContext) -> Unifier<'a> {
-        use crate::kernel::closed_type::ClosedType;
-        use crate::kernel::local_context::LocalContext;
         let mut u = Unifier::new(3, kernel_context);
-        u.set_input_context(Scope::LEFT, LocalContext::test_bool_ref());
-        u.set_input_context(Scope::RIGHT, LocalContext::test_bool_ref());
+        u.set_input_context(Scope::LEFT, bool_context());
+        u.set_input_context(Scope::RIGHT, bool_context());
         u.set_output_var_closed_types(vec![ClosedType::bool(); 10]);
         u
     }
@@ -962,14 +968,13 @@ mod tests {
         let mut initial_map = VariableMap::new();
         initial_map.set(0, g2_term);
 
-        let local_ctx_ref: &'static LocalContext = LocalContext::test_bool_ref();
-        let output_context = initial_map.build_output_context(local_ctx_ref);
+        let output_context = initial_map.build_output_context(bool_context());
         let (mut unifier, scope1) = Unifier::with_map(initial_map, &ctx, output_context);
-        unifier.set_input_context(scope1, local_ctx_ref);
+        unifier.set_input_context(scope1, bool_context());
         let scope2 = unifier.add_scope();
-        unifier.set_input_context(scope2, local_ctx_ref);
+        unifier.set_input_context(scope2, bool_context());
         let scope3 = unifier.add_scope();
-        unifier.set_input_context(scope3, local_ctx_ref);
+        unifier.set_input_context(scope3, bool_context());
         unifier.set_output_var_closed_types(vec![ClosedType::bool(); 10]);
 
         // Unify g0(x0, x1) with g0(c5, x0)
