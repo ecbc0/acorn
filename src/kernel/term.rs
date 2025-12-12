@@ -5,7 +5,7 @@ use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::types::GROUND_BOOL;
+use crate::kernel::symbol::Symbol;
 
 /// A step in a path through a term.
 /// Treats applications in curried form: f(a, b) becomes ((f a) b).
@@ -181,7 +181,7 @@ impl<'a> TermRef<'a> {
 
     /// Check if this term is the boolean constant "true".
     pub fn is_true(&self) -> bool {
-        matches!(self.get_head_atom(), Atom::True)
+        matches!(self.get_head_atom(), Atom::Symbol(Symbol::True))
     }
 
     /// Check if this term is a variable (atomic and head is a variable).
@@ -222,10 +222,6 @@ impl<'a> TermRef<'a> {
                         )
                     }),
                 Atom::Symbol(symbol) => kernel_context.symbol_table.get_closed_type(*symbol).clone(),
-                Atom::True => ClosedType::ground(GROUND_BOOL),
-                Atom::Type(_) => {
-                    panic!("Atom::Type should not appear in Term, only in ClosedType")
-                }
             },
             Decomposition::Application(func, _arg) => {
                 // The function has type A -> B, so the application has type B
@@ -288,8 +284,13 @@ impl<'a> TermRef<'a> {
     pub fn atom_count(&self) -> u32 {
         let mut count = 0;
         for component in self.components {
-            if let TermComponent::Atom(Atom::True) = component {
-                continue; // "true" counts as 0
+            // True and False count as 0
+            if matches!(
+                component,
+                TermComponent::Atom(Atom::Symbol(Symbol::True))
+                    | TermComponent::Atom(Atom::Symbol(Symbol::False))
+            ) {
+                continue;
             }
             if matches!(component, TermComponent::Atom(_)) {
                 count += 1;
@@ -372,8 +373,6 @@ impl<'a> TermRef<'a> {
     /// Calculate multi-weight for KBO ordering.
     /// Returns (weight1, weight2) and populates refcounts with variable usage.
     fn multi_weight(&self, refcounts: &mut Vec<u8>) -> (u32, u32) {
-        use crate::kernel::symbol::Symbol;
-
         let mut weight1 = 0;
         let mut weight2 = 0;
 
@@ -385,8 +384,9 @@ impl<'a> TermRef<'a> {
                 TermComponent::Pi { .. } => {
                     panic!("Pi should not appear in Term, only in ClosedType")
                 }
-                TermComponent::Atom(Atom::True) => {
-                    // True doesn't contribute to weight
+                TermComponent::Atom(Atom::Symbol(Symbol::True))
+                | TermComponent::Atom(Atom::Symbol(Symbol::False)) => {
+                    // True/False don't contribute to weight
                 }
                 TermComponent::Atom(Atom::Variable(i)) => {
                     while refcounts.len() <= *i as usize {
@@ -410,8 +410,8 @@ impl<'a> TermRef<'a> {
                     weight1 += 1;
                     weight2 += 3 + 4 * (*i) as u32;
                 }
-                TermComponent::Atom(Atom::Type(_)) => {
-                    panic!("Atom::Type should not appear in Term, only in ClosedType")
+                TermComponent::Atom(Atom::Symbol(Symbol::Type(_))) => {
+                    panic!("Symbol::Type should not appear in Term, only in ClosedType")
                 }
             }
         }
@@ -755,7 +755,10 @@ impl Term {
         let s = s.trim();
 
         if s == "true" {
-            return Term::atom(Atom::True);
+            return Term::atom(Atom::Symbol(Symbol::True));
+        }
+        if s == "false" {
+            return Term::atom(Atom::Symbol(Symbol::False));
         }
 
         let first_paren = match s.find('(') {
@@ -867,7 +870,12 @@ impl Term {
 
     /// Create a new Term representing the boolean constant "true".
     pub fn new_true() -> Term {
-        Term::atom(Atom::True)
+        Term::atom(Atom::Symbol(Symbol::True))
+    }
+
+    /// Create a new Term representing the boolean constant "false".
+    pub fn new_false() -> Term {
+        Term::atom(Atom::Symbol(Symbol::False))
     }
 
     /// Create a new Term representing a variable with the given index.

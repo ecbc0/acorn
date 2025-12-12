@@ -180,6 +180,11 @@ impl Edge {
                 Atom::Type0 => ATOM_TYPE0,
                 Atom::Type(_) => ATOM_TYPE,
                 Atom::Typeclass(_) => ATOM_TYPECLASS,
+                Atom::Symbol(Symbol::True) => ATOM_TRUE,
+                Atom::Symbol(Symbol::False) => {
+                    panic!("Symbol::False not yet supported in pattern tree")
+                }
+                Atom::Symbol(Symbol::Type(_)) => ATOM_TYPE,
                 Atom::Symbol(Symbol::GlobalConstant(_)) => ATOM_SYMBOL_GLOBAL,
                 Atom::Symbol(Symbol::ScopedConstant(_)) => ATOM_SYMBOL_SCOPED,
                 Atom::Symbol(Symbol::Monomorph(_)) => ATOM_SYMBOL_MONOMORPH,
@@ -200,6 +205,11 @@ impl Edge {
                 Atom::Type0 => 0,
                 Atom::Type(t) => t.as_u16(),
                 Atom::Typeclass(tc) => tc.as_u16(),
+                Atom::Symbol(Symbol::True) => 0,
+                Atom::Symbol(Symbol::False) => {
+                    panic!("Symbol::False not yet supported in pattern tree")
+                }
+                Atom::Symbol(Symbol::Type(t)) => t.as_u16(),
                 Atom::Symbol(Symbol::GlobalConstant(c)) => *c,
                 Atom::Symbol(Symbol::ScopedConstant(c)) => *c,
                 Atom::Symbol(Symbol::Monomorph(m)) => *m,
@@ -289,9 +299,12 @@ fn key_from_closed_type_at(components: &[TermComponent], pos: usize, key: &mut V
         }
         TermComponent::Atom(atom) => {
             let edge_atom = match atom {
-                KernelAtom::Type(t) => Atom::Type(*t),
                 KernelAtom::Variable(v) => Atom::Variable(*v),
-                KernelAtom::True => Atom::True,
+                KernelAtom::Symbol(Symbol::True) => Atom::True,
+                KernelAtom::Symbol(Symbol::False) => {
+                    panic!("Symbol::False not yet supported in pattern tree")
+                }
+                KernelAtom::Symbol(Symbol::Type(t)) => Atom::Type(*t),
                 KernelAtom::Symbol(s) => Atom::Symbol(*s),
             };
             Edge::Atom(edge_atom).append_to(key);
@@ -330,15 +343,15 @@ fn key_from_term_type(
                     local_context.len()
                 )
             }),
-        KernelAtom::Symbol(symbol) => kernel_context.symbol_table.get_closed_type(*symbol),
-        KernelAtom::True => {
-            // Special case: True has type Bool, encode it directly
+        KernelAtom::Symbol(Symbol::True) | KernelAtom::Symbol(Symbol::False) => {
+            // Special case: True/False has type Bool, encode it directly
             Edge::Atom(Atom::Type(GROUND_BOOL)).append_to(key);
             return;
         }
-        KernelAtom::Type(_) => {
-            panic!("Atom::Type should not appear in Term, only in ClosedType")
+        KernelAtom::Symbol(Symbol::Type(_)) => {
+            panic!("Symbol::Type should not appear in Term, only in ClosedType")
         }
+        KernelAtom::Symbol(symbol) => kernel_context.symbol_table.get_closed_type(*symbol),
     };
 
     // Count arguments to determine how many times to "apply" the type
@@ -395,9 +408,12 @@ fn key_from_term_structure(
         Decomposition::Atom(head) => {
             let atom = match head {
                 KernelAtom::Variable(v) => Atom::Variable(*v),
-                KernelAtom::True => Atom::True,
+                KernelAtom::Symbol(Symbol::True) => Atom::True,
+                KernelAtom::Symbol(Symbol::False) => {
+                    panic!("Symbol::False not yet supported in pattern tree")
+                }
+                KernelAtom::Symbol(Symbol::Type(t)) => Atom::Type(*t),
                 KernelAtom::Symbol(s) => Atom::Symbol(*s),
-                KernelAtom::Type(t) => Atom::Type(*t),
             };
             Edge::Atom(atom).append_to(key);
         }
@@ -827,9 +843,12 @@ where
             // Atomic function: emit the atom directly (no type prefix)
             let edge_atom = match atom {
                 KernelAtom::Variable(v) => Atom::Variable(*v),
-                KernelAtom::True => Atom::True,
+                KernelAtom::Symbol(Symbol::True) => Atom::True,
+                KernelAtom::Symbol(Symbol::False) => {
+                    panic!("Symbol::False not yet supported in pattern tree")
+                }
+                KernelAtom::Symbol(Symbol::Type(t)) => Atom::Type(*t),
                 KernelAtom::Symbol(s) => Atom::Symbol(*s),
-                KernelAtom::Type(t) => Atom::Type(*t),
             };
             Edge::Atom(edge_atom).append_to(key);
             let new_subtrie = subtrie.subtrie(key as &[u8]);
@@ -994,9 +1013,12 @@ where
             // Atomic term: match the atom directly
             let edge_atom = match atom {
                 KernelAtom::Variable(v) => Atom::Variable(*v),
-                KernelAtom::True => Atom::True,
+                KernelAtom::Symbol(Symbol::True) => Atom::True,
+                KernelAtom::Symbol(Symbol::False) => {
+                    panic!("Symbol::False not yet supported in pattern tree")
+                }
+                KernelAtom::Symbol(Symbol::Type(t)) => Atom::Type(*t),
                 KernelAtom::Symbol(s) => Atom::Symbol(*s),
-                KernelAtom::Type(t) => Atom::Type(*t),
             };
             Edge::Atom(edge_atom).append_to(key);
             let new_subtrie = subtrie.subtrie(key as &[u8]);

@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::elaborator::acorn_type::{AcornType, Datatype, FunctionType, TypeParam, Typeclass};
 use crate::kernel::atom::Atom;
 use crate::kernel::closed_type::ClosedType;
+use crate::kernel::symbol::Symbol;
 use crate::kernel::term::TermComponent;
 use crate::kernel::types::{GroundTypeId, TypeclassId, GROUND_BOOL, GROUND_EMPTY};
 
@@ -173,7 +174,9 @@ impl TypeStore {
                     .datatype_to_ground_id
                     .get(datatype)
                     .unwrap_or_else(|| panic!("Data type {} not registered", datatype.name));
-                components.push(TermComponent::Atom(Atom::Type(*constructor_ground)));
+                components.push(TermComponent::Atom(Atom::Symbol(Symbol::Type(
+                    *constructor_ground,
+                ))));
 
                 // Add each parameter's components
                 for param in params {
@@ -234,7 +237,7 @@ impl TypeStore {
         start: usize,
     ) -> (AcornType, usize) {
         match &components[start] {
-            TermComponent::Atom(Atom::Type(ground_id)) => {
+            TermComponent::Atom(Atom::Symbol(Symbol::Type(ground_id))) => {
                 // Ground type - look up in ground_id_to_type
                 (
                     self.ground_id_to_type[ground_id.as_u16() as usize].clone(),
@@ -506,7 +509,7 @@ mod tests {
         assert!(
             matches!(
                 closed.components().get(1),
-                Some(TermComponent::Atom(Atom::Type(t))) if *t == list_ground
+                Some(TermComponent::Atom(Atom::Symbol(Symbol::Type(t)))) if *t == list_ground
             ),
             "Head should be List constructor, got {:?}",
             closed.components().get(1)
@@ -516,7 +519,7 @@ mod tests {
         assert!(
             matches!(
                 closed.components().get(2),
-                Some(TermComponent::Atom(Atom::Type(t))) if *t == GROUND_BOOL
+                Some(TermComponent::Atom(Atom::Symbol(Symbol::Type(t)))) if *t == GROUND_BOOL
             ),
             "Argument should be Bool, got {:?}",
             closed.components().get(2)
@@ -561,7 +564,7 @@ mod tests {
         assert!(
             matches!(
                 closed.components().get(1),
-                Some(TermComponent::Atom(Atom::Type(t))) if *t == list_ground
+                Some(TermComponent::Atom(Atom::Symbol(Symbol::Type(t)))) if *t == list_ground
             ),
             "Head should be List constructor, got {:?}",
             closed.components().get(1)
@@ -581,7 +584,7 @@ mod tests {
         assert!(
             matches!(
                 inner_closed.components().get(1),
-                Some(TermComponent::Atom(Atom::Type(t))) if *t == list_ground
+                Some(TermComponent::Atom(Atom::Symbol(Symbol::Type(t)))) if *t == list_ground
             ),
             "Inner head should also be List constructor"
         );
@@ -608,7 +611,7 @@ mod tests {
 
         // Second component: List (head of outer application)
         assert!(
-            matches!(components[1], TermComponent::Atom(Atom::Type(t)) if t == list_ground),
+            matches!(components[1], TermComponent::Atom(Atom::Symbol(Symbol::Type(t))) if t == list_ground),
             "Component 1 should be List, got {:?}",
             components[1]
         );
@@ -622,14 +625,14 @@ mod tests {
 
         // Fourth component: List (head of inner application)
         assert!(
-            matches!(components[3], TermComponent::Atom(Atom::Type(t)) if t == list_ground),
+            matches!(components[3], TermComponent::Atom(Atom::Symbol(Symbol::Type(t))) if t == list_ground),
             "Component 3 should be List, got {:?}",
             components[3]
         );
 
         // Fifth component: Bool (argument of inner application)
         assert!(
-            matches!(components[4], TermComponent::Atom(Atom::Type(t)) if t == GROUND_BOOL),
+            matches!(components[4], TermComponent::Atom(Atom::Symbol(Symbol::Type(t))) if t == GROUND_BOOL),
             "Component 4 should be Bool, got {:?}",
             components[4]
         );

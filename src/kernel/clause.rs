@@ -701,10 +701,10 @@ mod tests {
         );
 
         // Literal 1: not f(x0, x1, x2) = true (negative Bool equality)
-        let lit1 = Literal::new(false, f_args.clone(), Term::atom(Atom::True));
+        let lit1 = Literal::new(false, f_args.clone(), Term::new_true());
 
         // Literal 2: x2 = true (positive Bool equality)
-        let lit2 = Literal::new(true, x2.clone(), Term::atom(Atom::True));
+        let lit2 = Literal::new(true, x2.clone(), Term::new_true());
 
         // Context: x0:Foo, x1:Foo, x2:Bool
         let context = LocalContext::from_closed_types(vec![

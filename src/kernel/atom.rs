@@ -4,7 +4,6 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use super::symbol::Symbol;
-use super::types::GroundTypeId;
 
 pub type AtomId = u16;
 
@@ -18,30 +17,21 @@ pub const INVALID_SYNTHETIC_ID: AtomId = 65000;
 /// It is used in the prover, but not in the AcornValue / Environment.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum Atom {
-    True,
-
     // A Variable can be a reference to a variable on the stack, or its meaning can be implicit,
     // depending on the context.
     // We drop the variable name. Instead we track an id.
     // This does mean that you must be careful when moving values between different environments.
     Variable(AtomId),
 
-    // A symbol representing a constant or function.
+    // A symbol representing a constant, function, type, or boolean.
     Symbol(Symbol),
-
-    // A ground type, used in ClosedType to represent types like Int, Bool, Type<CommRing>.
-    // Ground types have no internal structure - they are atomic type constants.
-    // Uses GroundTypeId to ensure only ground types can be stored in atoms.
-    Type(GroundTypeId),
 }
 
 impl fmt::Display for Atom {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Atom::True => write!(f, "true"),
             Atom::Variable(i) => write!(f, "x{}", i),
             Atom::Symbol(s) => write!(f, "{}", s),
-            Atom::Type(t) => write!(f, "T{}", t.as_u16()),
         }
     }
 }
@@ -78,9 +68,22 @@ impl Atom {
 
     // Orders two atoms, but considers all references the same, so that the ordering
     // is stable under variable renaming.
+    // True and False always sort before other atoms to ensure literals have the expected orientation.
     pub fn stable_partial_order(&self, other: &Atom) -> Ordering {
+        // Helper to check if an atom is a boolean constant (True or False)
+        fn is_bool_constant(atom: &Atom) -> bool {
+            matches!(
+                atom,
+                Atom::Symbol(Symbol::True) | Atom::Symbol(Symbol::False)
+            )
+        }
+
         match (self, other) {
             (Atom::Variable(_), Atom::Variable(_)) => Ordering::Equal,
+            // Bool constants sort before everything except other bool constants
+            (a, b) if is_bool_constant(a) && is_bool_constant(b) => a.cmp(b),
+            (a, _) if is_bool_constant(a) => Ordering::Less,
+            (_, b) if is_bool_constant(b) => Ordering::Greater,
             (x, y) => x.cmp(y),
         }
     }
@@ -130,7 +133,7 @@ mod tests {
 
     #[test]
     fn test_atom_ordering() {
-        assert!(Atom::True < Atom::Symbol(Symbol::GlobalConstant(0)));
+        assert!(Atom::Symbol(Symbol::True) < Atom::Symbol(Symbol::GlobalConstant(0)));
         assert!(Atom::Symbol(Symbol::GlobalConstant(0)) < Atom::Symbol(Symbol::GlobalConstant(1)));
     }
 

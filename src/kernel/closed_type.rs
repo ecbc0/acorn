@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::kernel::atom::Atom;
+use crate::kernel::symbol::Symbol;
 use crate::kernel::term::TermComponent;
 use crate::kernel::types::GroundTypeId;
 
@@ -34,7 +35,7 @@ impl ClosedType {
     /// Takes a GroundTypeId to ensure only ground types are wrapped.
     pub fn ground(type_id: GroundTypeId) -> ClosedType {
         ClosedType {
-            components: vec![TermComponent::Atom(Atom::Type(type_id))],
+            components: vec![TermComponent::Atom(Atom::Symbol(Symbol::Type(type_id)))],
         }
     }
 
@@ -43,9 +44,23 @@ impl ClosedType {
         ClosedType::ground(GroundTypeId::new(1))
     }
 
+    /// Returns a static reference to the Bool type.
+    pub fn bool_ref() -> &'static ClosedType {
+        use std::sync::LazyLock;
+        static BOOL_TYPE: LazyLock<ClosedType> = LazyLock::new(ClosedType::bool);
+        &BOOL_TYPE
+    }
+
     /// Returns a ClosedType for the Empty type.
     pub fn empty() -> ClosedType {
         ClosedType::ground(GroundTypeId::new(0))
+    }
+
+    /// Returns a static reference to the Empty type.
+    pub fn empty_ref() -> &'static ClosedType {
+        use std::sync::LazyLock;
+        static EMPTY_TYPE: LazyLock<ClosedType> = LazyLock::new(ClosedType::empty);
+        &EMPTY_TYPE
     }
 
     /// Create a ClosedType from raw components.
@@ -68,13 +83,16 @@ impl ClosedType {
     /// Returns true if this is a ground type (just a GroundTypeId).
     pub fn is_ground(&self) -> bool {
         self.components.len() == 1
-            && matches!(self.components[0], TermComponent::Atom(Atom::Type(_)))
+            && matches!(
+                self.components[0],
+                TermComponent::Atom(Atom::Symbol(Symbol::Type(_)))
+            )
     }
 
     /// If this is a ground type, return its GroundTypeId.
     pub fn as_ground(&self) -> Option<GroundTypeId> {
         if self.components.len() == 1 {
-            if let TermComponent::Atom(Atom::Type(t)) = self.components[0] {
+            if let TermComponent::Atom(Atom::Symbol(Symbol::Type(t))) = self.components[0] {
                 return Some(t);
             }
         }
@@ -216,8 +234,8 @@ mod tests {
         // We use GROUND_EMPTY as a stand-in for "List" type constructor
         let list_bool = ClosedType::from_components(vec![
             TermComponent::Application { span: 3 },
-            TermComponent::Atom(Atom::Type(GROUND_EMPTY)),
-            TermComponent::Atom(Atom::Type(GROUND_BOOL)),
+            TermComponent::Atom(Atom::Symbol(Symbol::Type(GROUND_EMPTY))),
+            TermComponent::Atom(Atom::Symbol(Symbol::Type(GROUND_BOOL))),
         ]);
 
         assert!(!list_bool.is_ground());

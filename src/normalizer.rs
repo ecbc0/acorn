@@ -1725,7 +1725,8 @@ impl Normalizer {
             .type_store
             .closed_type_to_acorn_type(atom_closed_type);
         match atom {
-            Atom::True => AcornValue::Bool(true),
+            Atom::Symbol(Symbol::True) => AcornValue::Bool(true),
+            Atom::Symbol(Symbol::False) => AcornValue::Bool(false),
             Atom::Symbol(Symbol::GlobalConstant(i)) => {
                 let name = self
                     .kernel_context
@@ -1763,7 +1764,9 @@ impl Normalizer {
                 let name = ConstantName::Synthetic(*i);
                 AcornValue::constant(name, vec![], acorn_type)
             }
-            Atom::Type(_) => panic!("Atom::Type should not appear in open terms"),
+            Atom::Symbol(Symbol::Type(_)) => {
+                panic!("Symbol::Type should not appear in open terms")
+            }
         }
     }
 
@@ -1786,11 +1789,6 @@ impl Normalizer {
                 .symbol_table
                 .get_closed_type(*symbol)
                 .clone(),
-            Atom::True => {
-                use crate::kernel::types::GROUND_BOOL;
-                ClosedType::ground(GROUND_BOOL)
-            }
-            Atom::Type(_) => panic!("Atom::Type should not appear in Term"),
         };
         let head = self.denormalize_atom(&head_closed_type, &term.get_head_atom(), arbitrary_names);
         let args: Vec<_> = term

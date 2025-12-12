@@ -24,12 +24,12 @@ impl Literal {
 
     /// Create a positive literal from a single term (term = true).
     pub fn positive(term: Term) -> Literal {
-        Literal::new(true, term, Term::atom(Atom::True))
+        Literal::new(true, term, Term::new_true())
     }
 
     /// Create a negative literal from a single term (not term, i.e., term != true).
     pub fn negative(term: Term) -> Literal {
-        Literal::new(false, term, Term::atom(Atom::True))
+        Literal::new(false, term, Term::new_true())
     }
 
     /// Create an equality literal (left = right).
@@ -66,12 +66,12 @@ impl Literal {
 
     /// Create a literal representing the value "true" (true = true).
     pub fn true_value() -> Literal {
-        Literal::new(true, Term::atom(Atom::True), Term::atom(Atom::True))
+        Literal::new(true, Term::new_true(), Term::new_true())
     }
 
     /// Create a literal representing the value "false" (true != true).
     pub fn false_value() -> Literal {
-        Literal::new(false, Term::atom(Atom::True), Term::atom(Atom::True))
+        Literal::new(false, Term::new_true(), Term::new_true())
     }
 
     /// Negate this literal (flip positive/negative).

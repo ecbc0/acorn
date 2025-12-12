@@ -79,6 +79,8 @@ impl SymbolTable {
     /// Get the closed type of a symbol.
     pub fn get_closed_type(&self, symbol: Symbol) -> &ClosedType {
         match symbol {
+            Symbol::True | Symbol::False => ClosedType::bool_ref(),
+            Symbol::Type(_) => ClosedType::empty_ref(),
             Symbol::Synthetic(i) => &self.synthetic_types[i as usize],
             Symbol::GlobalConstant(i) => &self.global_constant_types[i as usize],
             Symbol::ScopedConstant(i) => &self.scoped_constant_types[i as usize],

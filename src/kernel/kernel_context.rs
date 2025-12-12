@@ -24,7 +24,8 @@ impl KernelContext {
     /// Returns a human-readable string representation of an atom.
     pub fn atom_str(&self, atom: &Atom) -> String {
         match atom {
-            Atom::True => "true".to_string(),
+            Atom::Symbol(Symbol::True) => "true".to_string(),
+            Atom::Symbol(Symbol::False) => "false".to_string(),
             Atom::Symbol(Symbol::GlobalConstant(i)) => {
                 self.symbol_table.name_for_global_id(*i).to_string()
             }
@@ -36,7 +37,7 @@ impl KernelContext {
             }
             Atom::Variable(i) => format!("x{}", i),
             Atom::Symbol(Symbol::Synthetic(i)) => format!("s{}", i),
-            Atom::Type(t) => format!("T{}", t.as_u16()),
+            Atom::Symbol(Symbol::Type(t)) => format!("T{}", t.as_u16()),
         }
     }
 
