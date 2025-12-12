@@ -251,57 +251,42 @@ impl Edge {
 }
 
 /// Encodes a type Term into the key buffer.
-/// Types are encoded as:
-/// - Type variables: Atom(Variable(id))
-/// - Typeclass constraints: Atom(Typeclass(id))
-/// - Ground types: Atom(Type(id))
-/// - Arrow types: Arrow + domain encoding + codomain encoding
-/// - Type applications: Application + sort + head encoding + arg encoding
+/// Uses the same structural encoding as terms, since types and terms share the same representation.
+/// This handles both regular types (List[Int]) and dependent types (Fin[k] where k: Nat).
 fn key_from_type(type_term: &Term, key: &mut Vec<u8>) {
-    // Check for type variable first
-    if let Some(var_id) = type_term.atomic_variable() {
-        Edge::Atom(Atom::Variable(var_id)).append_to(key);
-        return;
-    }
+    key_from_structure(type_term.as_ref(), key);
+}
 
-    // Check for typeclass constraint (used for constrained type variables)
-    if let Some(tc_id) = type_term.as_ref().as_typeclass() {
-        Edge::Atom(Atom::Typeclass(tc_id)).append_to(key);
-        return;
-    }
-
-    // Check for ground type
-    if let Some(ground_id) = type_term.as_ref().as_type_atom() {
-        Edge::Atom(Atom::Type(ground_id)).append_to(key);
-        return;
-    }
-
-    // Check for Pi (arrow) type
-    if let Some((input, output)) = type_term.as_ref().split_pi() {
-        Edge::Arrow.append_to(key);
-        key_from_type(&input.to_owned(), key);
-        key_from_type(&output.to_owned(), key);
-        return;
-    }
-
-    // Check for type application like List[Int]
-    if let Some((head, args)) = type_term.as_ref().split_application_multi() {
-        // Format: Application + <sort of result> + <head> + <args>
-        // For now, we assume type applications produce Type0 (kind *)
-        Edge::Application.append_to(key);
-        Edge::Atom(Atom::Type0).append_to(key);
-
-        // Encode head
-        key_from_type(&head, key);
-
-        // Encode arguments
-        for arg in args {
-            key_from_type(&arg, key);
+/// Unified structure encoding for both types and terms.
+/// Uses decomposition to handle all cases uniformly:
+/// - Atoms: Variable, Symbol, Typeclass (with special handling for Type atoms)
+/// - Applications: function + argument
+/// - Pi types: encoded as Arrow + input + output
+fn key_from_structure(term: TermRef, key: &mut Vec<u8>) {
+    match term.decompose() {
+        Decomposition::Atom(atom) => {
+            let encoded_atom = match atom {
+                KernelAtom::Variable(i) => Atom::Variable(*i),
+                // Handle Type atoms specially to match expected encoding
+                KernelAtom::Symbol(Symbol::Type(t)) => Atom::Type(*t),
+                KernelAtom::Symbol(Symbol::True) => Atom::True,
+                KernelAtom::Symbol(Symbol::False) => Atom::False,
+                KernelAtom::Symbol(s) => Atom::Symbol(*s),
+                KernelAtom::Typeclass(tc) => Atom::Typeclass(*tc),
+            };
+            Edge::Atom(encoded_atom).append_to(key);
         }
-        return;
+        Decomposition::Application(func, arg) => {
+            Edge::Application.append_to(key);
+            key_from_structure(func, key);
+            key_from_structure(arg, key);
+        }
+        Decomposition::Pi(input, output) => {
+            Edge::Arrow.append_to(key);
+            key_from_structure(input, key);
+            key_from_structure(output, key);
+        }
     }
-
-    panic!("Unexpected type structure: {:?}", type_term);
 }
 
 /// Writes the type of a term directly to the key buffer.
@@ -1594,7 +1579,8 @@ mod tests {
 
     #[test]
     fn test_key_from_parameterized_type_with_variable() {
-        // List[T0] should encode as: Application + Type0 + Type(List) + Variable(0)
+        // List[T0] should encode as: Application + Type(List) + Variable(0)
+        // (using unified structure encoding)
         use crate::kernel::symbol::Symbol;
 
         let mut kctx = KernelContext::new();
@@ -1606,10 +1592,10 @@ mod tests {
         let mut key = Vec::new();
         key_from_type(&list_t0, &mut key);
 
-        // Verify structure: Application + Type0 + Type(List) + Variable(0)
+        // Verify structure: Application + Type(List) + Variable(0)
         let debug = Edge::debug_bytes(&key);
         assert!(debug.contains("Application"), "key: {}", debug);
-        assert!(debug.contains("Type0"), "key: {}", debug);
+        assert!(debug.contains("Type("), "key: {}", debug);
         assert!(debug.contains("Variable(0)"), "key: {}", debug);
     }
 
@@ -1728,5 +1714,138 @@ mod tests {
             "Key should contain term variable: {}",
             debug
         );
+    }
+
+    #[test]
+    fn test_key_from_type_dependent() {
+        // Test: Fin[c0] where c0: Nat encodes correctly (dependent type)
+        let mut kctx = KernelContext::new();
+        kctx.add_type_constructor("Fin", 1);
+        kctx.add_datatype("Nat");
+
+        let nat_id = kctx.type_store.get_ground_id_by_name("Nat").unwrap();
+        let nat_type = Term::type_ground(nat_id);
+        let fin_id = kctx.type_store.get_ground_id_by_name("Fin").unwrap();
+
+        // c0: Nat (a value, not a type)
+        kctx.symbol_table.add_scoped_constant(nat_type.clone());
+
+        // Fin[c0] - a dependent type where c0 is a Nat value
+        let c0 = Term::parse("c0");
+        let fin_c0 = Term::new(KernelAtom::Symbol(Symbol::Type(fin_id)), vec![c0]);
+
+        let mut key = Vec::new();
+        key_from_type(&fin_c0, &mut key);
+
+        // Should not panic, and should produce a valid encoding
+        let debug = Edge::debug_bytes(&key);
+        assert!(
+            debug.contains("Application"),
+            "Dependent type should encode as application: {}",
+            debug
+        );
+        assert!(
+            debug.contains("ScopedConstant(0)"),
+            "Should contain the value argument c0: {}",
+            debug
+        );
+    }
+
+    #[test]
+    fn test_key_from_type_dependent_with_variable() {
+        // Test: Fin[x0] where x0: Nat encodes correctly
+        let mut kctx = KernelContext::new();
+        kctx.add_type_constructor("Fin", 1);
+        kctx.add_datatype("Nat");
+
+        let _nat_id = kctx.type_store.get_ground_id_by_name("Nat").unwrap();
+        let fin_id = kctx.type_store.get_ground_id_by_name("Fin").unwrap();
+
+        // Fin[x0] where x0 is a variable of type Nat
+        let x0 = Term::atom(KernelAtom::Variable(0));
+        let fin_x0 = Term::new(KernelAtom::Symbol(Symbol::Type(fin_id)), vec![x0]);
+
+        let mut key = Vec::new();
+        key_from_type(&fin_x0, &mut key);
+
+        // Should not panic, and should produce a valid encoding
+        let debug = Edge::debug_bytes(&key);
+        assert!(
+            debug.contains("Application"),
+            "Dependent type should encode as application: {}",
+            debug
+        );
+        assert!(
+            debug.contains("Variable(0)"),
+            "Should contain the variable argument x0: {}",
+            debug
+        );
+    }
+
+    #[test]
+    fn test_pattern_tree_with_dependent_type() {
+        // Test pattern tree insert with terms that have dependent types
+        // e.g., a function f : Fin[n] -> Bool where n : Nat
+
+        let mut kctx = KernelContext::new();
+        kctx.add_type_constructor("Fin", 1);
+        kctx.add_datatype("Nat");
+
+        let nat_id = kctx.type_store.get_ground_id_by_name("Nat").unwrap();
+        let nat_type = Term::type_ground(nat_id);
+        let fin_id = kctx.type_store.get_ground_id_by_name("Fin").unwrap();
+
+        // c0 : Nat (a value parameter for Fin)
+        kctx.symbol_table.add_scoped_constant(nat_type.clone());
+
+        // Fin[c0] - the dependent type
+        let c0 = Term::atom(KernelAtom::Symbol(Symbol::ScopedConstant(0)));
+        let fin_c0 = Term::new(KernelAtom::Symbol(Symbol::Type(fin_id)), vec![c0.clone()]);
+
+        // c1 : Fin[c0] (a value of the dependent type)
+        kctx.symbol_table.add_scoped_constant(fin_c0.clone());
+
+        // LocalContext: x0 : Nat, x1 : Fin[x0]
+        let x0_type_var = Term::atom(KernelAtom::Variable(0));
+        let fin_x0 = Term::new(KernelAtom::Symbol(Symbol::Type(fin_id)), vec![x0_type_var]);
+        let lctx = LocalContext::from_types(vec![nat_type.clone(), fin_x0.clone()]);
+
+        // Create terms: x1 (variable of dependent type) and c1 (constant of dependent type)
+        let x1 = Term::atom(KernelAtom::Variable(1));
+        let c1 = Term::atom(KernelAtom::Symbol(Symbol::ScopedConstant(1)));
+
+        // Generate keys - both should work without panicking
+        let key_x1 = key_from_term(&x1, &lctx, &kctx);
+        let key_c1 = key_from_term(&c1, &LocalContext::empty(), &kctx);
+
+        // Verify keys contain expected structure
+        let debug_x1 = Edge::debug_bytes(&key_x1);
+        let debug_c1 = Edge::debug_bytes(&key_c1);
+
+        // Both should encode the Fin type application
+        assert!(
+            debug_x1.contains("Application"),
+            "x1's type should be encoded as application: {}",
+            debug_x1
+        );
+        assert!(
+            debug_c1.contains("Application"),
+            "c1's type should be encoded as application: {}",
+            debug_c1
+        );
+
+        // Test actual pattern tree insertion - should not panic
+        let mut tree: PatternTree<usize> = PatternTree::new();
+
+        // Insert x1 (has dependent type Fin[x0])
+        tree.insert_term(&x1, 1, &lctx, &kctx);
+
+        // Insert c1 (has dependent type Fin[c0])
+        tree.insert_term(&c1, 2, &LocalContext::empty(), &kctx);
+
+        // Verify both were inserted
+        assert_eq!(tree.values.len(), 2, "Both terms should be in the tree");
+        assert_eq!(tree.values[0], 1);
+        assert_eq!(tree.values[1], 2);
     }
 }

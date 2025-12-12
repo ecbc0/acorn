@@ -1308,4 +1308,116 @@ mod tests {
             "Two variables with the same typeclass constraint should unify"
         );
     }
+
+    #[test]
+    fn test_unify_dependent_type_fin() {
+        // Test: Fin[x0] where x0: Nat unifies with Fin[c0] where c0: Nat
+        // This tests dependent types where the type parameter is a value, not a type
+
+        let mut ctx = KernelContext::new();
+        ctx.add_type_constructor("Fin", 1); // Fin takes 1 parameter
+        ctx.add_datatype("Nat");
+
+        let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
+        let nat_type = Term::type_ground(nat_id);
+        let fin_id = ctx.type_store.get_ground_id_by_name("Fin").unwrap();
+
+        // c0 has type Nat (a value, not a type)
+        ctx.symbol_table.add_scoped_constant(nat_type.clone());
+
+        // Create Fin[x0] where x0: Nat
+        let x0 = Term::atom(Atom::Variable(0));
+        let fin_x0 = Term::new(Atom::Symbol(Symbol::Type(fin_id)), vec![x0.clone()]);
+
+        // Create Fin[c0] where c0: Nat
+        let c0 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(0)));
+        let fin_c0 = Term::new(Atom::Symbol(Symbol::Type(fin_id)), vec![c0.clone()]);
+
+        // LocalContext: x0 has type Nat
+        let lctx = LocalContext::from_types(vec![nat_type.clone()]);
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(lctx.clone())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+        u.set_output_var_types(vec![nat_type.clone()]);
+
+        // Fin[x0] should unify with Fin[c0]
+        assert!(
+            u.unify(Scope::LEFT, &fin_x0, Scope::RIGHT, &fin_c0),
+            "Fin[x0] should unify with Fin[c0] when both x0 and c0 have type Nat"
+        );
+
+        // Check the mapping: x0 should map to c0
+        let mapping = u.get_mapping(Scope::LEFT, 0);
+        assert!(mapping.is_some(), "x0 should have a mapping");
+        assert_eq!(
+            mapping.unwrap().as_ref().get_head_atom(),
+            c0.as_ref().get_head_atom(),
+            "x0 should map to c0"
+        );
+    }
+
+    #[test]
+    fn test_unify_dependent_type_same_structure() {
+        // Test: Fin[c0] unifies with Fin[c0] (same value parameter)
+
+        let mut ctx = KernelContext::new();
+        ctx.add_type_constructor("Fin", 1);
+        ctx.add_datatype("Nat");
+
+        let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
+        let nat_type = Term::type_ground(nat_id);
+        let fin_id = ctx.type_store.get_ground_id_by_name("Fin").unwrap();
+
+        // c0 has type Nat
+        ctx.symbol_table.add_scoped_constant(nat_type.clone());
+
+        // Create Fin[c0] twice
+        let c0 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(0)));
+        let fin_c0_left = Term::new(Atom::Symbol(Symbol::Type(fin_id)), vec![c0.clone()]);
+        let fin_c0_right = Term::new(Atom::Symbol(Symbol::Type(fin_id)), vec![c0.clone()]);
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(LocalContext::empty())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+
+        // Fin[c0] should unify with Fin[c0]
+        assert!(
+            u.unify(Scope::LEFT, &fin_c0_left, Scope::RIGHT, &fin_c0_right),
+            "Fin[c0] should unify with Fin[c0]"
+        );
+    }
+
+    #[test]
+    fn test_unify_dependent_type_different_values() {
+        // Test: Fin[c0] does NOT unify with Fin[c1] (different value parameters)
+
+        let mut ctx = KernelContext::new();
+        ctx.add_type_constructor("Fin", 1);
+        ctx.add_datatype("Nat");
+
+        let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
+        let nat_type = Term::type_ground(nat_id);
+        let fin_id = ctx.type_store.get_ground_id_by_name("Fin").unwrap();
+
+        // c0 and c1 both have type Nat
+        ctx.symbol_table.add_scoped_constant(nat_type.clone());
+        ctx.symbol_table.add_scoped_constant(nat_type.clone());
+
+        // Create Fin[c0] and Fin[c1]
+        let c0 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(0)));
+        let c1 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(1)));
+        let fin_c0 = Term::new(Atom::Symbol(Symbol::Type(fin_id)), vec![c0.clone()]);
+        let fin_c1 = Term::new(Atom::Symbol(Symbol::Type(fin_id)), vec![c1.clone()]);
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(LocalContext::empty())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+
+        // Fin[c0] should NOT unify with Fin[c1]
+        assert!(
+            !u.unify(Scope::LEFT, &fin_c0, Scope::RIGHT, &fin_c1),
+            "Fin[c0] should NOT unify with Fin[c1] when c0 != c1"
+        );
+    }
 }
