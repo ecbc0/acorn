@@ -30,7 +30,7 @@ impl Body {
 pub struct LetStatement {
     pub name_token: Token,
 
-    /// What the constant is parametrized by, if anything.
+    /// What the constant is parameterized by, if anything.
     pub type_params: Vec<TypeParamExpr>,
 
     /// The expression for the type of this constant (optional for type inference)

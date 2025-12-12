@@ -671,7 +671,7 @@ fn test_prover_handles_instance_define() {
 }
 
 #[test]
-fn test_prover_handles_parametrized_constants() {
+fn test_prover_handles_parameterized_constants() {
     let text = r#"
     inductive Z1 {
         zero
@@ -856,7 +856,7 @@ fn test_use_typeclass_axiom_on_instance() {
 }
 
 #[test]
-fn test_proving_with_parametrized_constant() {
+fn test_proving_with_parameterized_constant() {
     let text = r#"
     typeclass P: PointedSet {
         point: P
@@ -873,7 +873,7 @@ fn test_proving_with_parametrized_constant() {
 }
 
 #[test]
-fn test_proving_with_parametrized_inductive() {
+fn test_proving_with_parameterized_inductive() {
     let text = r#"
     inductive List[T] {
         nil

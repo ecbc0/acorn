@@ -6,7 +6,7 @@ use crate::module::ModuleId;
 
 /// An instance name is something like Ring.add<Int>.
 /// This can be defined directly, although it should be expressed in
-/// parametrized form when it's a value.
+/// parameterized form when it's a value.
 #[derive(Hash, Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
 pub struct InstanceName {
     /// Like "Ring", in Ring.add<Int>.
@@ -38,7 +38,7 @@ pub enum ConstantName {
     /// An attribute of a datatype.
     DatatypeAttribute(Datatype, String),
 
-    /// An attribute of a specifically parametrized datatype (e.g., Set[Color].has_red).
+    /// An attribute of a specifically parameterized datatype (e.g., Set[Color].has_red).
     SpecificDatatypeAttribute(Datatype, Vec<AcornType>, String),
 
     /// An attribute of a typeclass.

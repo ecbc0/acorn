@@ -600,13 +600,13 @@ mod tests {
     }
 
     #[test]
-    fn test_parsing_parametrized_let_statements() {
+    fn test_parsing_parameterized_let_statements() {
         ok("let foo[T]: T = bar[T]");
         ok("let foo[T: Thing]: T = bar[T]");
     }
 
     #[test]
-    fn test_parsing_parametrized_inductive_statement() {
+    fn test_parsing_parameterized_inductive_statement() {
         ok(indoc! {"
         inductive List[T] {
             nil

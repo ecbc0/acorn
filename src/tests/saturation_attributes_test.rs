@@ -405,8 +405,8 @@ fn test_proving_with_generic_attribute_recursion() {
 }
 
 #[test]
-fn test_proving_with_attributes_on_parametrized_types() {
-    // Test that we can define attributes on specific instantiations of parametrized types
+fn test_proving_with_attributes_on_parameterized_types() {
+    // Test that we can define attributes on specific instantiations of parameterized types
     let text = r#"
     inductive Color {
         red

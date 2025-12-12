@@ -216,7 +216,7 @@ impl Environment {
         if self.depth > 0 && !ls.type_params.is_empty() {
             return Err(ls
                 .name_token
-                .error("parametrized constants may only be defined at the top level"));
+                .error("parameterized constants may only be defined at the top level"));
         }
 
         let local_type_params = self
@@ -358,7 +358,7 @@ impl Environment {
         if self.depth > 0 && !ds.type_params.is_empty() {
             return Err(ds
                 .name_token
-                .error("parametrized functions may only be defined at the top level"));
+                .error("parameterized functions may only be defined at the top level"));
         }
         if self.bindings.constant_name_in_use(&defined_name) {
             return Err(ds.name_token.error(&format!(
@@ -403,7 +403,7 @@ impl Environment {
             let mut fn_value = AcornValue::lambda(arg_types, v);
 
             let params = if let Some(datatype_params) = datatype_params {
-                // When a datatype is parametrized, the member gets parameters from the datatype.
+                // When a datatype is parameterized, the member gets parameters from the datatype.
                 fn_value = fn_value.genericize(&datatype_params);
 
                 // If the member function has additional type parameters, add them too

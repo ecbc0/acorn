@@ -80,7 +80,7 @@ pub struct BindingMap {
 
     /// The definitions of the instance attributes defined in this module.
     /// Alias-type definitions are stored here just like anything else, because the monomorphizer
-    /// is going to need to see them in their parametrized form.
+    /// is going to need to see them in their parameterized form.
     instance_attr_defs: HashMap<InstanceName, InstanceAttributeDefinition>,
 }
 
@@ -437,7 +437,7 @@ impl BindingMap {
         }
     }
 
-    /// Resolves a datatype attribute, checking for specific parametrized attributes first,
+    /// Resolves a datatype attribute, checking for specific parameterized attributes first,
     /// then falling back to generic attributes.
     /// This is used when we have concrete type parameters available (e.g., resolving
     /// `my_set.has_red` where `my_set: Set[Color]`).
@@ -1011,16 +1011,16 @@ impl BindingMap {
                 panic!("invalid definition for constant {}: {}", constant_name, e);
             }
             if params.is_empty() && definition.has_generic() {
-                panic!("there should not be generic types in non-parametrized definitions");
+                panic!("there should not be generic types in non-parameterized definitions");
             }
             if !params.is_empty() && definition.has_arbitrary() {
-                panic!("there should not be arbitrary types in parametrized definitions");
+                panic!("there should not be arbitrary types in parameterized definitions");
             }
         }
 
         let value = if params.is_empty() {
             if constant_type.has_generic() {
-                panic!("there should not be generic types in non-parametrized constant types");
+                panic!("there should not be generic types in non-parameterized constant types");
             }
             PotentialValue::Resolved(AcornValue::constant(
                 constant_name.clone(),
@@ -1028,7 +1028,7 @@ impl BindingMap {
                 constant_type,
             ))
         } else {
-            // For parametrized constants, the type should only contain arbitrary types
+            // For parameterized constants, the type should only contain arbitrary types
             // that correspond to the declared parameters.
             // This is a sanity check - we don't fully validate here, just check that
             // if there are params, the type is generic-like (not fully concrete with unexpected types).
@@ -1773,7 +1773,7 @@ impl BindingMap {
     ///   (None means expect a boolean value.)
     /// value_expr is the expression for the value itself.
     /// function_name, when it is provided, can be used recursively.
-    /// datatype_params: if this is a method on a parametrized datatype, these are the datatype's params.
+    /// datatype_params: if this is a method on a parameterized datatype, these are the datatype's params.
     ///
     /// This function mutates the binding map but sets it back to its original state when finished.
     ///
@@ -1884,7 +1884,7 @@ impl BindingMap {
             self.remove_constant(function_name);
         }
 
-        // We might have types parametrized on this function, or they might be parametrized on the
+        // We might have types parameterized on this function, or they might be parameterized on the
         // datatype definition. We only want to genericize the parameters that we created.
         if type_params.is_empty() {
             // Just keep the types as they are.
@@ -1903,7 +1903,7 @@ impl BindingMap {
                     // In this case, internally it's not polymorphic. It's just a constant
                     // with a type that depends on the arbitrary types we introduced.
                     // But, externally we need to make it polymorphic.
-                    // For methods on parametrized datatypes, we need to include both
+                    // For methods on parameterized datatypes, we need to include both
                     // the datatype params and the function's own params.
                     let mut all_params_for_genericize =
                         datatype_params.cloned().unwrap_or_default();
