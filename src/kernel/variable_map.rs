@@ -213,6 +213,13 @@ impl VariableMap {
                     self.specialize_term(arg, input_context, output_context, kernel_context);
                 specialized_func.apply(&[specialized_arg])
             }
+            Decomposition::Pi(input, output) => {
+                let specialized_input =
+                    self.specialize_term(input, input_context, output_context, kernel_context);
+                let specialized_output =
+                    self.specialize_term(output, input_context, output_context, kernel_context);
+                Term::pi(specialized_input, specialized_output)
+            }
         }
     }
 

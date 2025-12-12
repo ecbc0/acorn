@@ -369,6 +369,10 @@ impl CodeGenerator<'_> {
                 self.add_arbitrary_for_term(&func.to_owned(), local_context);
                 self.add_arbitrary_for_term(&arg.to_owned(), local_context);
             }
+            Decomposition::Pi(input, output) => {
+                self.add_arbitrary_for_term(&input.to_owned(), local_context);
+                self.add_arbitrary_for_term(&output.to_owned(), local_context);
+            }
         }
     }
 

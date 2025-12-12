@@ -328,6 +328,9 @@ impl TermGraph {
                 let key = Decomposition::Application(func_id, arg_id);
                 self.decompositions.get(&key).copied()
             }
+            TermDecomposition::Pi(_, _) => {
+                panic!("Pi types should not be inserted into term graph");
+            }
         }
     }
 
@@ -511,6 +514,13 @@ impl TermGraph {
                 let func_id = self.insert_term(&func.to_owned(), kernel_context);
                 let arg_id = self.insert_term(&arg.to_owned(), kernel_context);
                 self.insert_application(func_id, arg_id)
+            }
+            TermDecomposition::Pi(_, _) => {
+                // Pi types in term graph - not typically expected, panic for now
+                panic!(
+                    "Pi types should not be inserted into TermGraph: {:?}",
+                    term.components()
+                );
             }
         };
         self.process_pending();

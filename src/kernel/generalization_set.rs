@@ -149,10 +149,34 @@ pub fn sub_invariant_term_cmp(
                 x => x,
             }
         }
+        (Decomposition::Pi(l_input, l_output), Decomposition::Pi(r_input, r_output)) => {
+            // Compare Pi types recursively
+            match sub_invariant_term_cmp(
+                l_input,
+                false,
+                r_input,
+                false,
+                local_context,
+                kernel_context,
+            ) {
+                Some(Ordering::Equal) => sub_invariant_term_cmp(
+                    l_output,
+                    false,
+                    r_output,
+                    false,
+                    local_context,
+                    kernel_context,
+                ),
+                x => x,
+            }
+        }
         // Atom vs Application mismatch - shouldn't happen with equal heads and same num_args
         // But could happen with different structure, return based on which is simpler
         (Decomposition::Atom(_), Decomposition::Application(_, _)) => Some(Ordering::Less),
         (Decomposition::Application(_, _), Decomposition::Atom(_)) => Some(Ordering::Greater),
+        // Pi vs other structures
+        (Decomposition::Pi(_, _), _) => Some(Ordering::Less),
+        (_, Decomposition::Pi(_, _)) => Some(Ordering::Greater),
     }
 }
 

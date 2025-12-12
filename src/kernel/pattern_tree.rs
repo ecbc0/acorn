@@ -90,6 +90,25 @@ pub fn replace_term_variables(
                 );
                 replaced_func.apply(&[replaced_arg])
             }
+            Decomposition::Pi(input, output) => {
+                let replaced_input = replace_recursive(
+                    input,
+                    term_context,
+                    replacements,
+                    shift,
+                    output_closed_types,
+                    empty_type.clone(),
+                );
+                let replaced_output = replace_recursive(
+                    output,
+                    term_context,
+                    replacements,
+                    shift,
+                    output_closed_types,
+                    empty_type,
+                );
+                Term::pi(replaced_input, replaced_output)
+            }
         }
     }
 
@@ -424,6 +443,10 @@ fn key_from_term_structure(
             key_from_term_structure(func, key, local_context, kernel_context);
             // For arg, we emit the full encoding (type + structure)
             key_from_term_helper(arg, key, local_context, kernel_context);
+        }
+        Decomposition::Pi(_, _) => {
+            // Pi types in pattern tree - not typically expected in term matching context
+            panic!("Pi types should not appear in pattern tree term structure encoding");
         }
     }
 }
@@ -891,6 +914,10 @@ where
                 return false;
             }
         }
+        Decomposition::Pi(_, _) => {
+            // Pi types should not appear in pattern matching context
+            panic!("Pi types should not appear in pattern tree matching");
+        }
     }
 
     key.truncate(initial_key_len);
@@ -1062,6 +1089,9 @@ where
             ) {
                 return false;
             }
+        }
+        Decomposition::Pi(_, _) => {
+            panic!("Pi types should not appear in pattern tree matching");
         }
     }
 

@@ -50,6 +50,11 @@ pub enum Decomposition<'a> {
     /// For f(a, b, c), decomposes into (f(a, b), c).
     /// Both func and arg are borrowed slices from the original term - no allocation.
     Application(TermRef<'a>, TermRef<'a>),
+
+    /// A Pi type (dependent function type): (x : input) -> output.
+    /// For non-dependent arrow types, output doesn't reference the bound variable.
+    /// Both input and output are borrowed slices - no allocation.
+    Pi(TermRef<'a>, TermRef<'a>),
 }
 
 /// A borrowed reference to a term - wraps a slice of components.
@@ -80,17 +85,17 @@ impl<'a> TermRef<'a> {
         // Verify format is correct
         if self.components.len() > 1 {
             match self.components[0] {
-                TermComponent::Application { span } => {
+                TermComponent::Application { span } | TermComponent::Pi { span } => {
                     debug_assert_eq!(
                         span as usize,
                         self.components.len(),
-                        "to_owned: Application span {} doesn't match len {}",
+                        "to_owned: span {} doesn't match len {}",
                         span,
                         self.components.len()
                     );
                 }
                 _ => panic!(
-                    "to_owned: non-atomic term should start with Application, got: {:?}",
+                    "to_owned: non-atomic term should start with Application or Pi, got: {:?}",
                     self.components
                 ),
             }
@@ -133,12 +138,13 @@ impl<'a> TermRef<'a> {
     /// Returns either:
     /// - `Decomposition::Atom(&atom)` if the term is atomic
     /// - `Decomposition::Application(func, arg)` if the term is an application
+    /// - `Decomposition::Pi(input, output)` if the term is a Pi type
     ///
-    /// Both func and arg are borrowed slices - no allocation needed.
+    /// All returned references are borrowed slices - no allocation needed.
     /// This provides a cleaner way to write recursive algorithms on terms
     /// by pattern matching on the structure rather than checking multiple conditions.
     pub fn decompose(&self) -> Decomposition<'a> {
-        // Handle atomic terms (single Atom, no Application wrapper)
+        // Handle atomic terms (single Atom, no Application/Pi wrapper)
         if self.components.len() == 1 {
             let atom = match &self.components[0] {
                 TermComponent::Atom(atom) => atom,
@@ -147,16 +153,11 @@ impl<'a> TermRef<'a> {
             return Decomposition::Atom(atom);
         }
 
-        // Non-atomic terms have nested Application structure: [Application{outer}, func_part..., arg_part...]
+        // Non-atomic terms start with Application or Pi
         match self.components[0] {
             TermComponent::Application { span: outer_span } => {
                 // Position 1 is where func starts
-                let func_end = match self.components[1] {
-                    TermComponent::Application { span } => 1 + span as usize,
-                    TermComponent::Atom(_) => 2, // func is atomic, so just 1 atom at position 1
-                    TermComponent::Pi { .. } => panic!("Pi in term"),
-                };
-
+                let func_end = self.find_subterm_end(1);
                 let func = TermRef::new(&self.components[1..func_end]);
 
                 // arg starts right after func
@@ -166,22 +167,59 @@ impl<'a> TermRef<'a> {
 
                 Decomposition::Application(func, arg)
             }
-            _ => panic!(
-                "non-atomic term should start with Application, got: {:?}",
+            TermComponent::Pi { span: outer_span } => {
+                // Pi structure: [Pi{span}, input_type..., output_type...]
+                let input_end = self.find_subterm_end(1);
+                let input = TermRef::new(&self.components[1..input_end]);
+
+                let output_start = input_end;
+                let output_end = outer_span as usize;
+                let output = TermRef::new(&self.components[output_start..output_end]);
+
+                Decomposition::Pi(input, output)
+            }
+            TermComponent::Atom(_) => panic!(
+                "non-atomic term should start with Application or Pi, got: {:?}",
                 self.components
             ),
         }
     }
 
+    /// Find the end position of a subterm starting at `start`.
+    fn find_subterm_end(&self, start: usize) -> usize {
+        match self.components[start] {
+            TermComponent::Pi { span } | TermComponent::Application { span } => {
+                start + span as usize
+            }
+            TermComponent::Atom(_) => start + 1,
+        }
+    }
+
     /// Split an application into (function, argument) in curried form.
     /// For f(a, b, c), returns (f(a, b), c).
-    /// Returns None if the term is atomic (has no arguments).
+    /// Returns None if the term is atomic or a Pi type.
     ///
     /// Both returned TermRefs are slices of the original - no allocation needed.
     pub fn split_application(&self) -> Option<(TermRef<'a>, TermRef<'a>)> {
         match self.decompose() {
-            Decomposition::Atom(_) => None,
             Decomposition::Application(func, arg) => Some((func, arg)),
+            _ => None,
+        }
+    }
+
+    /// Check if this term is a Pi type (dependent function type).
+    pub fn is_pi(&self) -> bool {
+        matches!(self.components.first(), Some(TermComponent::Pi { .. }))
+    }
+
+    /// Split a Pi type into (input_type, output_type).
+    /// Returns None if the term is not a Pi type.
+    ///
+    /// Both returned TermRefs are slices of the original - no allocation needed.
+    pub fn split_pi(&self) -> Option<(TermRef<'a>, TermRef<'a>)> {
+        match self.decompose() {
+            Decomposition::Pi(input, output) => Some((input, output)),
+            _ => None,
         }
     }
 
@@ -235,6 +273,11 @@ impl<'a> TermRef<'a> {
                 func_type
                     .apply()
                     .expect("Function type expected but not found during type application")
+            }
+            Decomposition::Pi(_, _) => {
+                // Pi types are themselves types - this is used when the term IS a type
+                // Return the type of types (Empty) for now
+                ClosedType::empty()
             }
         }
     }
@@ -602,7 +645,11 @@ fn format_term_at(f: &mut fmt::Formatter, components: &[TermComponent], pos: usi
             }
             Ok(())
         }
-        TermComponent::Pi { .. } => Err(fmt::Error),
+        TermComponent::Pi { span } => {
+            // Pi type: format as (input -> output)
+            let end = pos + *span as usize;
+            format_pi_contents(f, components, pos + 1, end)
+        }
     }
 }
 
@@ -722,6 +769,36 @@ fn format_application_contents(
     Ok(())
 }
 
+/// Format the contents of a Pi type (input -> output) from start to end.
+fn format_pi_contents(
+    f: &mut fmt::Formatter,
+    components: &[TermComponent],
+    start: usize,
+    end: usize,
+) -> fmt::Result {
+    if start >= end {
+        return Ok(());
+    }
+
+    // Find where the input type ends
+    let input_end = find_subterm_end_at(components, start);
+    let output_start = input_end;
+
+    write!(f, "(")?;
+    format_term_slice(f, components, start, input_end)?;
+    write!(f, " -> ")?;
+    format_term_slice(f, components, output_start, end)?;
+    write!(f, ")")
+}
+
+/// Find the end position of a subterm starting at `start` in a components slice.
+fn find_subterm_end_at(components: &[TermComponent], start: usize) -> usize {
+    match components[start] {
+        TermComponent::Pi { span } | TermComponent::Application { span } => start + span as usize,
+        TermComponent::Atom(_) => start + 1,
+    }
+}
+
 /// Format a slice of components as a term.
 fn format_term_slice(
     f: &mut fmt::Formatter,
@@ -746,7 +823,11 @@ fn format_term_slice(
             }
             Ok(())
         }
-        TermComponent::Pi { .. } => Err(fmt::Error),
+        TermComponent::Pi { span } => {
+            let actual_end = start + *span as usize;
+            debug_assert_eq!(actual_end, end, "span mismatch in format_term_slice for Pi");
+            format_pi_contents(f, components, start + 1, end)
+        }
     }
 }
 
@@ -858,7 +939,7 @@ impl Term {
 
     /// Create a new Term from a vector of components.
     /// Atomic terms have a single Atom component.
-    /// Non-atomic terms start with an Application marker containing the span.
+    /// Non-atomic terms start with an Application or Pi marker containing the span.
     pub fn from_components(components: Vec<TermComponent>) -> Term {
         if components.is_empty() {
             panic!("from_components: empty components");
@@ -866,23 +947,12 @@ impl Term {
         // Basic validation: check first component
         match components[0] {
             TermComponent::Application { span } => {
-                // Non-atomic term: position 1 can be Atom (for simple f(a)) or Application (for nested f(a,b))
+                // Non-atomic term: position 1 can be Atom, Application, or Pi
                 if components.len() < 2 {
                     panic!(
                         "from_components: Application at start but no content. Components: {:?}",
                         components
                     );
-                }
-                match &components[1] {
-                    TermComponent::Atom(_) | TermComponent::Application { .. } => {
-                        // Valid: either atomic head or nested application
-                    }
-                    TermComponent::Pi { .. } => {
-                        panic!(
-                            "from_components: Application at start followed by Pi. Components: {:?}",
-                            components
-                        );
-                    }
                 }
                 if span as usize != components.len() {
                     panic!(
@@ -891,17 +961,29 @@ impl Term {
                     );
                 }
             }
+            TermComponent::Pi { span } => {
+                // Pi type: must have at least input and output
+                if components.len() < 3 {
+                    panic!(
+                        "from_components: Pi at start but not enough content. Components: {:?}",
+                        components
+                    );
+                }
+                if span as usize != components.len() {
+                    panic!(
+                        "from_components: outer Pi span {} doesn't match components length {}. Components: {:?}",
+                        span, components.len(), components
+                    );
+                }
+            }
             TermComponent::Atom(_) => {
                 // Atomic term (len must be 1)
                 if components.len() != 1 {
                     panic!(
-                        "from_components: non-atomic term should start with Application, got: {:?}",
+                        "from_components: non-atomic term should start with Application or Pi, got: {:?}",
                         components
                     );
                 }
-            }
-            TermComponent::Pi { .. } => {
-                panic!("from_components: Pi should not appear in Term");
             }
         }
         // Debug check to catch bad spans
@@ -909,17 +991,20 @@ impl Term {
         {
             let mut i = 0;
             while i < components.len() {
-                if let TermComponent::Application { span } = components[i] {
-                    let end = i + span as usize;
-                    if end > components.len() {
-                        panic!(
-                            "from_components: Application at {} has span {} but only {} components total. Components: {:?}",
-                            i, span, components.len(), components
-                        );
+                match components[i] {
+                    TermComponent::Application { span } | TermComponent::Pi { span } => {
+                        let end = i + span as usize;
+                        if end > components.len() {
+                            panic!(
+                                "from_components: span at {} is {} but only {} components total. Components: {:?}",
+                                i, span, components.len(), components
+                            );
+                        }
+                        i = end;
                     }
-                    i = end;
-                } else {
-                    i += 1;
+                    TermComponent::Atom(_) => {
+                        i += 1;
+                    }
                 }
             }
         }
@@ -931,6 +1016,16 @@ impl Term {
         Term {
             components: vec![TermComponent::Atom(atom)],
         }
+    }
+
+    /// Create a Pi type `(x : input) -> output`.
+    /// For non-dependent arrow types, output simply doesn't reference `Atom::Variable(0)`.
+    pub fn pi(input: Term, output: Term) -> Term {
+        let span = 1 + input.components.len() + output.components.len();
+        let mut components = vec![TermComponent::Pi { span: span as u16 }];
+        components.extend(input.components);
+        components.extend(output.components);
+        Term { components }
     }
 
     /// Parse a Term from a string representation.
@@ -1218,6 +1313,17 @@ impl Term {
 
                 // Rebuild the application
                 new_func.apply(&[new_arg])
+            }
+            Decomposition::Pi(input_ref, output_ref) => {
+                // Recursively replace in both input and output types
+                let input = input_ref.to_owned();
+                let output = output_ref.to_owned();
+
+                let new_input = input.replace_variable_impl(id, value);
+                let new_output = output.replace_variable_impl(id, value);
+
+                // Rebuild the Pi type
+                Term::pi(new_input, new_output)
             }
         }
     }

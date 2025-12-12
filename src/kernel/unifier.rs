@@ -246,6 +246,12 @@ impl<'a> Unifier<'a> {
                 let applied_arg = self.apply_internal(scope, arg);
                 applied_func.apply(&[applied_arg])
             }
+            Decomposition::Pi(input, output) => {
+                // Recursively apply to both input and output types
+                let applied_input = self.apply_internal(scope, input);
+                let applied_output = self.apply_internal(scope, output);
+                Term::pi(applied_input, applied_output)
+            }
         }
     }
 
