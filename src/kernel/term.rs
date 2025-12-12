@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
@@ -18,7 +17,7 @@ pub enum PathStep {
     Argument,
 }
 
-/// A component of a Term or ClosedType in its flattened representation.
+/// A component of a Term in its flattened representation.
 /// This is private to the term module - external code should use decomposition methods.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 enum TermComponent {
@@ -32,7 +31,7 @@ enum TermComponent {
     /// A Pi type (dependent function type) with the given span.
     /// The span includes this Pi marker, the binder type, and the body.
     /// Pi always has exactly 2 sub-elements: binder type and body.
-    /// Used in ClosedType to represent types like `(T : Type<CommRing>) -> T -> T -> T`.
+    /// Used when Term represents types like `(T : Type<CommRing>) -> T -> T -> T`.
     /// A non-dependent arrow `A -> B` is represented as `Pi(A, B)` where B doesn't use Var(0).
     Pi { span: u16 },
 
@@ -115,11 +114,9 @@ impl<'a> TermRef<'a> {
                     // Skip to the func part (position after the Application marker)
                     pos += 1;
                 }
-                TermComponent::Pi { span } => {
-                    panic!(
-                        "Term should not start with Pi marker. Components: {:?}, span: {}",
-                        self.components, span
-                    )
+                TermComponent::Pi { .. } => {
+                    // For Pi types, the head atom is the input type's head atom
+                    pos += 1;
                 }
             }
         }
@@ -280,7 +277,7 @@ impl<'a> TermRef<'a> {
     }
 
     /// If this is an atomic Type symbol, return its GroundTypeId.
-    /// This is used for ground types in ClosedType.
+    /// This is used for ground types when Term represents a type.
     pub fn as_type_atom(&self) -> Option<GroundTypeId> {
         if !self.is_atomic() {
             return None;
@@ -291,18 +288,18 @@ impl<'a> TermRef<'a> {
         }
     }
 
-    /// Get the term's ClosedType with context.
+    /// Get the term's type as a Term with context.
     /// Uses LocalContext for variable types and KernelContext for symbol types.
     /// For function applications, recursively gets the function's type and applies it.
-    pub fn get_closed_type_with_context(
+    pub fn get_type_with_context(
         &self,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
-    ) -> ClosedType {
+    ) -> Term {
         match self.decompose() {
             Decomposition::Atom(atom) => match atom {
                 Atom::Variable(i) => local_context
-                    .get_var_closed_type(*i as usize)
+                    .get_var_type(*i as usize)
                     .cloned()
                     .unwrap_or_else(|| {
                         panic!(
@@ -312,19 +309,19 @@ impl<'a> TermRef<'a> {
                             self.components
                         )
                     }),
-                Atom::Symbol(symbol) => kernel_context.symbol_table.get_closed_type(*symbol).clone(),
+                Atom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol).clone(),
             },
             Decomposition::Application(func, _arg) => {
                 // The function has type A -> B, so the application has type B
-                let func_type = func.get_closed_type_with_context(local_context, kernel_context);
+                let func_type = func.get_type_with_context(local_context, kernel_context);
                 func_type
-                    .apply()
+                    .type_apply()
                     .expect("Function type expected but not found during type application")
             }
             Decomposition::Pi(_, _) => {
                 // Pi types are themselves types - this is used when the term IS a type
                 // Return the type of types (Empty) for now
-                ClosedType::empty()
+                Term::type_empty()
             }
         }
     }
@@ -504,7 +501,8 @@ impl<'a> TermRef<'a> {
                     // Application markers don't contribute to weight
                 }
                 TermComponent::Pi { .. } => {
-                    panic!("Pi should not appear in Term, only in ClosedType")
+                    // Pi types contribute to weight like Application
+                    weight1 += 1;
                 }
                 TermComponent::Atom(Atom::Symbol(Symbol::True))
                 | TermComponent::Atom(Atom::Symbol(Symbol::False)) => {
@@ -532,8 +530,10 @@ impl<'a> TermRef<'a> {
                     weight1 += 1;
                     weight2 += 3 + 4 * (*i) as u32;
                 }
-                TermComponent::Atom(Atom::Symbol(Symbol::Type(_))) => {
-                    panic!("Symbol::Type should not appear in Term, only in ClosedType")
+                TermComponent::Atom(Atom::Symbol(Symbol::Type(t))) => {
+                    // Type atoms contribute to weight
+                    weight1 += 1;
+                    weight2 += 4 * t.as_u16() as u32;
                 }
             }
         }
@@ -1099,6 +1099,56 @@ impl Term {
         Term { components }
     }
 
+    // ========== Type-related methods ==========
+    // These methods are for when Term is used to represent a type.
+
+    /// Create a Term representing a ground type.
+    pub fn type_ground(type_id: GroundTypeId) -> Term {
+        Term::atom(Atom::Symbol(Symbol::Type(type_id)))
+    }
+
+    /// Returns a Term for the Bool type.
+    pub fn type_bool() -> Term {
+        Term::type_ground(GroundTypeId::new(1))
+    }
+
+    /// Returns a static reference to the Bool type.
+    pub fn type_bool_ref() -> &'static Term {
+        use std::sync::LazyLock;
+        static BOOL_TYPE: LazyLock<Term> = LazyLock::new(Term::type_bool);
+        &BOOL_TYPE
+    }
+
+    /// Returns a Term for the Empty type.
+    pub fn type_empty() -> Term {
+        Term::type_ground(GroundTypeId::new(0))
+    }
+
+    /// Returns a static reference to the Empty type.
+    pub fn type_empty_ref() -> &'static Term {
+        use std::sync::LazyLock;
+        static EMPTY_TYPE: LazyLock<Term> = LazyLock::new(Term::type_empty);
+        &EMPTY_TYPE
+    }
+
+    /// Create a type application like `List[Int]` or `Map[String, Int]`.
+    /// `head` is the type constructor, `args` are the type parameters.
+    pub fn type_application(head: Term, args: Vec<Term>) -> Term {
+        debug_assert!(
+            !args.is_empty(),
+            "type_application requires at least one argument"
+        );
+        Term::application_multi(head, args)
+    }
+
+    /// Apply a function type to get its codomain.
+    /// Returns None if this is not a Pi type.
+    pub fn type_apply(&self) -> Option<Term> {
+        self.as_ref()
+            .split_pi()
+            .map(|(_, output)| output.to_owned())
+    }
+
     /// Validates that all spans in this term are correct.
     /// Returns true if valid, false otherwise.
     /// This is primarily for debug assertions.
@@ -1223,26 +1273,24 @@ impl Term {
                     // Skip to the func part (position after the Application marker)
                     pos += 1;
                 }
-                TermComponent::Pi { span } => {
-                    panic!(
-                        "Term should not start with Pi marker. Components: {:?}, span: {}",
-                        self.components, span
-                    )
+                TermComponent::Pi { .. } => {
+                    // For Pi types, the head atom is the input type's head atom
+                    pos += 1;
                 }
             }
         }
     }
 
-    /// Get the term's ClosedType with context.
+    /// Get the term's type as a Term with context.
     /// Uses LocalContext for variable types and KernelContext for symbol types.
     /// For function applications, applies the function type once per argument.
-    pub fn get_closed_type_with_context(
+    pub fn get_type_with_context(
         &self,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
-    ) -> ClosedType {
+    ) -> Term {
         self.as_ref()
-            .get_closed_type_with_context(local_context, kernel_context)
+            .get_type_with_context(local_context, kernel_context)
     }
 
     /// Check if this term is atomic (no arguments).
@@ -1349,14 +1397,14 @@ impl Term {
     }
 
     /// Collects all variables in the term (recursively through arguments).
-    /// Returns (AtomId, ClosedType) pairs for each variable found.
+    /// Returns (AtomId, Term) pairs for each variable found (where Term is the variable's type).
     /// Uses the local_context to look up variable types.
-    pub fn collect_vars(&self, local_context: &LocalContext) -> Vec<(AtomId, ClosedType)> {
+    pub fn collect_vars(&self, local_context: &LocalContext) -> Vec<(AtomId, Term)> {
         let mut result = Vec::new();
         for atom in self.iter_atoms() {
             if let Atom::Variable(id) = atom {
-                let closed_type = local_context
-                    .get_var_closed_type(*id as usize)
+                let var_type = local_context
+                    .get_var_type(*id as usize)
                     .cloned()
                     .unwrap_or_else(|| {
                         panic!(
@@ -1366,7 +1414,7 @@ impl Term {
                             self
                         )
                     });
-                result.push((*id, closed_type));
+                result.push((*id, var_type));
             }
         }
         result

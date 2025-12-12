@@ -5,13 +5,11 @@ use crate::elaborator::proposition::MonomorphicProposition;
 use crate::elaborator::source::{Source, SourceType};
 use crate::kernel::atom::Atom;
 use crate::kernel::clause::Clause;
-use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::{PathStep, Term};
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
-use crate::kernel::types::EMPTY;
 
 /// The different sorts of proof steps.
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
@@ -600,21 +598,17 @@ impl ProofStep {
         // The rewritten literal's variables come from both the target and the new_subterm.
         let rewritten_context = {
             let target_context = target_step.clause.get_local_context();
-            let mut closed_types = target_context.get_var_closed_types().to_vec();
-            let empty_type = ClosedType::ground(EMPTY);
-            for (i, ct) in new_subterm_context
-                .get_var_closed_types()
-                .iter()
-                .enumerate()
-            {
-                if i >= closed_types.len() {
-                    closed_types.resize(i + 1, empty_type.clone());
-                    closed_types[i] = ct.clone();
-                } else if closed_types[i] == empty_type {
-                    closed_types[i] = ct.clone();
+            let mut var_types = target_context.get_var_types().to_vec();
+            let empty_type = Term::type_empty();
+            for (i, vt) in new_subterm_context.get_var_types().iter().enumerate() {
+                if i >= var_types.len() {
+                    var_types.resize(i + 1, empty_type.clone());
+                    var_types[i] = vt.clone();
+                } else if var_types[i] == empty_type {
+                    var_types[i] = vt.clone();
                 }
             }
-            LocalContext::from_closed_types(closed_types)
+            LocalContext::from_types(var_types)
         };
 
         // Use rewritten_context for normalization since it has the correct variable types
@@ -852,9 +846,9 @@ mod tests {
         for lit in &rewrite_step.clause.literals {
             for atom in lit.iter_atoms() {
                 if let Atom::Variable(var_id) = atom {
-                    let var_closed_type = clause_context.get_var_closed_type(*var_id as usize);
+                    let var_type = clause_context.get_var_type(*var_id as usize);
                     assert!(
-                        var_closed_type.is_some(),
+                        var_type.is_some(),
                         "Variable x{} in clause has no type in context (context len: {}). \
                          This indicates that from_literal_traced was called with the wrong context.",
                         var_id,

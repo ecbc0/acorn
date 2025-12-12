@@ -1,5 +1,4 @@
 use crate::kernel::atom::AtomId;
-use crate::kernel::closed_type::ClosedType;
 use crate::kernel::cnf::CNF;
 use crate::kernel::literal::Literal;
 use crate::kernel::term::Term;
@@ -15,7 +14,8 @@ pub enum ExtendedTerm {
     If(Literal, Term, Term),
 
     // Lambda(args, body) represents the value f such that f(args) = body.
-    Lambda(Vec<(AtomId, ClosedType)>, Term),
+    // The Term in the tuple is the type of the argument.
+    Lambda(Vec<(AtomId, Term)>, Term),
 }
 
 impl std::fmt::Display for ExtendedTerm {

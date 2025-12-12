@@ -1,8 +1,8 @@
 use crate::kernel::atom::Atom;
-#[cfg(test)]
-use crate::kernel::closed_type::ClosedType;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::symbol_table::SymbolTable;
+#[cfg(test)]
+use crate::kernel::term::Term;
 use crate::kernel::type_store::TypeStore;
 
 /// KernelContext combines the TypeStore and SymbolTable that are needed
@@ -47,7 +47,7 @@ impl KernelContext {
     pub fn test_with_scoped_constants(n: usize) -> KernelContext {
         let mut ctx = KernelContext::new();
         for _ in 0..n {
-            ctx.symbol_table.add_scoped_constant(ClosedType::empty());
+            ctx.symbol_table.add_scoped_constant(Term::type_empty());
         }
         ctx
     }
@@ -58,17 +58,17 @@ impl KernelContext {
     pub fn test_with_bool_scoped_constants(n: usize) -> KernelContext {
         let mut ctx = KernelContext::new();
         for _ in 0..n {
-            ctx.symbol_table.add_scoped_constant(ClosedType::bool());
+            ctx.symbol_table.add_scoped_constant(Term::type_bool());
         }
         ctx
     }
 
     /// Creates a test KernelContext with pre-populated scoped constants with specified types.
     #[cfg(test)]
-    pub fn test_with_scoped_constant_types(types: &[ClosedType]) -> KernelContext {
+    pub fn test_with_scoped_constant_types(types: &[Term]) -> KernelContext {
         let mut ctx = KernelContext::new();
-        for closed_type in types {
-            ctx.symbol_table.add_scoped_constant(closed_type.clone());
+        for type_term in types {
+            ctx.symbol_table.add_scoped_constant(type_term.clone());
         }
         ctx
     }
@@ -80,18 +80,18 @@ impl KernelContext {
     pub fn test_with_constants(num_scoped: usize, num_global: usize) -> KernelContext {
         let mut ctx = KernelContext::new();
         for _ in 0..num_scoped {
-            ctx.symbol_table.add_scoped_constant(ClosedType::empty());
+            ctx.symbol_table.add_scoped_constant(Term::type_empty());
         }
         for _ in 0..num_global {
-            ctx.symbol_table.add_global_constant(ClosedType::empty());
+            ctx.symbol_table.add_global_constant(Term::type_empty());
         }
         // Also add monomorphs for tests that use "m0", "m1", etc.
         for _ in 0..10 {
-            ctx.symbol_table.add_monomorph(ClosedType::empty());
+            ctx.symbol_table.add_monomorph(Term::type_empty());
         }
         // Also add synthetics for tests that use "s0", "s1", etc.
         for _ in 0..10 {
-            ctx.symbol_table.declare_synthetic(ClosedType::empty());
+            ctx.symbol_table.declare_synthetic(Term::type_empty());
         }
         ctx
     }
@@ -100,23 +100,23 @@ impl KernelContext {
     /// Arrays are indexed by atom id, e.g., monomorph_types[2] gives type for Monomorph(2).
     #[cfg(test)]
     pub fn test_with_all_types(
-        scoped_types: &[ClosedType],
-        global_types: &[ClosedType],
-        monomorph_types: &[ClosedType],
-        synthetic_types: &[ClosedType],
+        scoped_types: &[Term],
+        global_types: &[Term],
+        monomorph_types: &[Term],
+        synthetic_types: &[Term],
     ) -> KernelContext {
         let mut ctx = KernelContext::new();
-        for closed_type in scoped_types {
-            ctx.symbol_table.add_scoped_constant(closed_type.clone());
+        for type_term in scoped_types {
+            ctx.symbol_table.add_scoped_constant(type_term.clone());
         }
-        for closed_type in global_types {
-            ctx.symbol_table.add_global_constant(closed_type.clone());
+        for type_term in global_types {
+            ctx.symbol_table.add_global_constant(type_term.clone());
         }
-        for closed_type in monomorph_types {
-            ctx.symbol_table.add_monomorph(closed_type.clone());
+        for type_term in monomorph_types {
+            ctx.symbol_table.add_monomorph(type_term.clone());
         }
-        for closed_type in synthetic_types {
-            ctx.symbol_table.declare_synthetic(closed_type.clone());
+        for type_term in synthetic_types {
+            ctx.symbol_table.declare_synthetic(type_term.clone());
         }
         ctx
     }
@@ -137,7 +137,7 @@ impl KernelContext {
 
         let mut ctx = KernelContext::new();
 
-        // Add function types and get ClosedTypes
+        // Add function types and get type terms
         let bool_to_bool = AcornType::Function(FunctionType {
             arg_types: vec![AcornType::Bool],
             return_type: Box::new(AcornType::Bool),
@@ -178,84 +178,84 @@ impl KernelContext {
         ctx.type_store.add_type(&func_bool_to_bool);
         ctx.type_store.add_type(&func_to_bool);
 
-        let closed_bool_to_bool = ctx
+        let type_bool_to_bool = ctx
             .type_store
-            .get_closed_type(&bool_to_bool)
+            .get_type_term(&bool_to_bool)
             .expect("type should be valid");
-        let closed_bool2_to_bool = ctx
+        let type_bool2_to_bool = ctx
             .type_store
-            .get_closed_type(&bool2_to_bool)
+            .get_type_term(&bool2_to_bool)
             .expect("type should be valid");
-        let closed_bool3_to_bool = ctx
+        let type_bool3_to_bool = ctx
             .type_store
-            .get_closed_type(&bool3_to_bool)
+            .get_type_term(&bool3_to_bool)
             .expect("type should be valid");
-        let closed_empty_to_bool = ctx
+        let type_empty_to_bool = ctx
             .type_store
-            .get_closed_type(&empty_to_bool)
+            .get_type_term(&empty_to_bool)
             .expect("type should be valid");
-        let closed_empty2_to_empty = ctx
+        let type_empty2_to_empty = ctx
             .type_store
-            .get_closed_type(&empty2_to_empty)
+            .get_type_term(&empty2_to_empty)
             .expect("type should be valid");
-        let closed_func_bool_to_bool = ctx
+        let type_func_bool_to_bool = ctx
             .type_store
-            .get_closed_type(&func_bool_to_bool)
+            .get_type_term(&func_bool_to_bool)
             .expect("type should be valid");
-        let closed_func_to_bool = ctx
+        let type_func_to_bool = ctx
             .type_store
-            .get_closed_type(&func_to_bool)
+            .get_type_term(&func_to_bool)
             .expect("type should be valid");
 
         // Add global constants with function types
         ctx.symbol_table
-            .add_global_constant(closed_bool2_to_bool.clone()); // g0
+            .add_global_constant(type_bool2_to_bool.clone()); // g0
         ctx.symbol_table
-            .add_global_constant(closed_bool_to_bool.clone()); // g1
+            .add_global_constant(type_bool_to_bool.clone()); // g1
         ctx.symbol_table
-            .add_global_constant(closed_bool3_to_bool.clone()); // g2
+            .add_global_constant(type_bool3_to_bool.clone()); // g2
         ctx.symbol_table
-            .add_global_constant(closed_empty_to_bool.clone()); // g3
+            .add_global_constant(type_empty_to_bool.clone()); // g3
         ctx.symbol_table
-            .add_global_constant(closed_empty2_to_empty.clone()); // g4
+            .add_global_constant(type_empty2_to_empty.clone()); // g4
         for _ in 5..10 {
-            ctx.symbol_table.add_global_constant(ClosedType::bool());
+            ctx.symbol_table.add_global_constant(Term::type_bool());
         }
         // h0: (Bool -> Bool, Bool) -> Bool (like true_below)
         ctx.symbol_table
-            .add_global_constant(closed_func_bool_to_bool.clone());
+            .add_global_constant(type_func_bool_to_bool.clone());
         // h1: (Bool -> Bool) -> Bool
         ctx.symbol_table
-            .add_global_constant(closed_func_to_bool.clone());
+            .add_global_constant(type_func_to_bool.clone());
 
         // Add scoped constants with similar types
         ctx.symbol_table
-            .add_scoped_constant(closed_bool2_to_bool.clone()); // c0
+            .add_scoped_constant(type_bool2_to_bool.clone()); // c0
         ctx.symbol_table
-            .add_scoped_constant(closed_bool_to_bool.clone()); // c1
+            .add_scoped_constant(type_bool_to_bool.clone()); // c1
         ctx.symbol_table
-            .add_scoped_constant(closed_bool3_to_bool.clone()); // c2
+            .add_scoped_constant(type_bool3_to_bool.clone()); // c2
         ctx.symbol_table
-            .add_scoped_constant(closed_empty_to_bool.clone()); // c3
+            .add_scoped_constant(type_empty_to_bool.clone()); // c3
         ctx.symbol_table
-            .add_scoped_constant(closed_empty2_to_empty.clone()); // c4
+            .add_scoped_constant(type_empty2_to_empty.clone()); // c4
         for _ in 5..10 {
-            ctx.symbol_table.add_scoped_constant(ClosedType::bool());
+            ctx.symbol_table.add_scoped_constant(Term::type_bool());
         }
 
         // Add monomorphs with function types (m0-m4 are functions, m5-m9 are Bool)
-        ctx.symbol_table.add_monomorph(closed_bool2_to_bool); // m0
-        ctx.symbol_table.add_monomorph(closed_bool_to_bool); // m1
-        ctx.symbol_table.add_monomorph(closed_bool3_to_bool); // m2
-        ctx.symbol_table.add_monomorph(closed_empty_to_bool); // m3
-        ctx.symbol_table.add_monomorph(closed_empty2_to_empty); // m4
+        ctx.symbol_table.add_monomorph(type_bool2_to_bool); // m0
+        ctx.symbol_table.add_monomorph(type_bool_to_bool); // m1
+        ctx.symbol_table.add_monomorph(type_bool3_to_bool); // m2
+        ctx.symbol_table.add_monomorph(type_empty_to_bool); // m3
+        ctx.symbol_table.add_monomorph(type_empty2_to_empty); // m4
         for _ in 5..10 {
-            ctx.symbol_table.add_monomorph(ClosedType::bool());
+            ctx.symbol_table.add_monomorph(Term::type_bool());
         }
 
         // Add synthetics with BOOL type
         for _ in 0..10 {
-            ctx.symbol_table.declare_synthetic(ClosedType::bool());
+            ctx.symbol_table.declare_synthetic(Term::type_bool());
         }
 
         ctx
@@ -294,7 +294,7 @@ impl KernelContext {
     /// Parse a type string like "Bool", "Int", "Int -> Bool", or "(Int, Int) -> Bool".
     /// Looks up datatype names in the TypeStore.
     #[cfg(test)]
-    fn parse_type(&self, type_str: &str) -> ClosedType {
+    fn parse_type(&self, type_str: &str) -> Term {
         use crate::kernel::types::{BOOL, EMPTY};
 
         let s = type_str.trim();
@@ -313,23 +313,23 @@ impl KernelContext {
                 let mut result = output;
                 for arg in args.iter().rev() {
                     let arg_type = self.parse_type(arg.trim());
-                    result = ClosedType::pi(arg_type, result);
+                    result = Term::pi(arg_type, result);
                 }
                 result
             } else {
                 let input = self.parse_type(input_str);
-                ClosedType::pi(input, output)
+                Term::pi(input, output)
             }
         } else {
             // Simple type name
             match s {
-                "Bool" => ClosedType::ground(BOOL),
-                "Empty" => ClosedType::ground(EMPTY),
+                "Bool" => Term::type_ground(BOOL),
+                "Empty" => Term::type_ground(EMPTY),
                 _ => {
                     // Look up in TypeStore by name
                     self.type_store
                         .get_ground_id_by_name(s)
-                        .map(ClosedType::ground)
+                        .map(Term::type_ground)
                         .unwrap_or_else(|| panic!("Unknown type name: {}", s))
                 }
             }
@@ -380,34 +380,34 @@ impl KernelContext {
     /// Example: `ctx.add_constant("c0", "Int").add_constant("g0", "Int -> Bool")`
     #[cfg(test)]
     pub fn add_constant(&mut self, name: &str, type_str: &str) -> &mut Self {
-        let closed_type = self.parse_type(type_str);
+        let type_term = self.parse_type(type_str);
         let first_char = name.chars().next().expect("empty constant name");
         let id: u32 = name[1..].parse().expect("invalid constant id");
 
         match first_char {
             'c' => {
                 while self.symbol_table.num_scoped_constants() <= id {
-                    self.symbol_table.add_scoped_constant(ClosedType::empty());
+                    self.symbol_table.add_scoped_constant(Term::type_empty());
                 }
-                self.symbol_table.set_scoped_constant_type(id, closed_type);
+                self.symbol_table.set_scoped_constant_type(id, type_term);
             }
             'g' => {
                 while self.symbol_table.num_global_constants() <= id {
-                    self.symbol_table.add_global_constant(ClosedType::empty());
+                    self.symbol_table.add_global_constant(Term::type_empty());
                 }
-                self.symbol_table.set_global_constant_type(id, closed_type);
+                self.symbol_table.set_global_constant_type(id, type_term);
             }
             'm' => {
                 while self.symbol_table.num_monomorphs() <= id {
-                    self.symbol_table.add_monomorph(ClosedType::empty());
+                    self.symbol_table.add_monomorph(Term::type_empty());
                 }
-                self.symbol_table.set_monomorph_type(id, closed_type);
+                self.symbol_table.set_monomorph_type(id, type_term);
             }
             's' => {
                 while self.symbol_table.num_synthetics() <= id {
-                    self.symbol_table.declare_synthetic(ClosedType::empty());
+                    self.symbol_table.declare_synthetic(Term::type_empty());
                 }
-                self.symbol_table.set_synthetic_type(id, closed_type);
+                self.symbol_table.set_synthetic_type(id, type_term);
             }
             _ => panic!("Unknown constant prefix: {}", first_char),
         }
@@ -434,11 +434,11 @@ impl KernelContext {
     pub fn make_local(&self, var_types: &[&str]) -> crate::kernel::local_context::LocalContext {
         use crate::kernel::local_context::LocalContext;
 
-        let closed_types: Vec<ClosedType> = var_types
+        let type_terms: Vec<Term> = var_types
             .iter()
             .map(|type_str| self.parse_type(type_str))
             .collect();
-        LocalContext::from_closed_types(closed_types)
+        LocalContext::from_types(type_terms)
     }
 
     /// Parse a clause string with the given variable types.
@@ -467,7 +467,6 @@ impl Default for KernelContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::closed_type::ClosedType;
     use crate::kernel::symbol::Symbol;
 
     #[test]
@@ -476,14 +475,14 @@ mod tests {
         // Verify we can look up the types for scoped constants c0-c9
         for i in 0..10 {
             let symbol = Symbol::ScopedConstant(i);
-            let closed_type = ctx.symbol_table.get_closed_type(symbol);
-            assert_eq!(*closed_type, ClosedType::empty());
+            let type_term = ctx.symbol_table.get_type(symbol);
+            assert_eq!(*type_term, Term::type_empty());
         }
         // Verify we can look up the types for global constants g0-g9
         for i in 0..10 {
             let symbol = Symbol::GlobalConstant(i);
-            let closed_type = ctx.symbol_table.get_closed_type(symbol);
-            assert_eq!(*closed_type, ClosedType::empty());
+            let type_term = ctx.symbol_table.get_type(symbol);
+            assert_eq!(*type_term, Term::type_empty());
         }
     }
 
@@ -496,17 +495,17 @@ mod tests {
             .add_constant("c2", "(Int, Int) -> Bool");
 
         // Verify c0 has type Int
-        let c0_type = ctx.symbol_table.get_closed_type(Symbol::ScopedConstant(0));
+        let c0_type = ctx.symbol_table.get_type(Symbol::ScopedConstant(0));
         let int_id = ctx.type_store.get_ground_id_by_name("Int").unwrap();
-        assert_eq!(*c0_type, ClosedType::ground(int_id));
+        assert_eq!(*c0_type, Term::type_ground(int_id));
 
         // Verify c1 has type Int -> Bool
-        let c1_type = ctx.symbol_table.get_closed_type(Symbol::ScopedConstant(1));
-        assert!(c1_type.as_pi().is_some());
+        let c1_type = ctx.symbol_table.get_type(Symbol::ScopedConstant(1));
+        assert!(c1_type.as_ref().split_pi().is_some());
 
         // Verify c2 has type (Int, Int) -> Bool (curried as Int -> Int -> Bool)
-        let c2_type = ctx.symbol_table.get_closed_type(Symbol::ScopedConstant(2));
-        let (_, inner) = c2_type.as_pi().unwrap();
-        assert!(inner.as_pi().is_some()); // Should be another arrow type
+        let c2_type = ctx.symbol_table.get_type(Symbol::ScopedConstant(2));
+        let (_, inner) = c2_type.as_ref().split_pi().unwrap();
+        assert!(inner.split_pi().is_some()); // Should be another arrow type
     }
 }

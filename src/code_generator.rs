@@ -10,7 +10,6 @@ use crate::elaborator::names::{ConstantName, DefinedName};
 use crate::elaborator::type_unifier::TypeclassRegistry;
 use crate::kernel::atom::AtomId;
 use crate::kernel::clause::Clause;
-use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::{Decomposition, Term};
@@ -43,7 +42,8 @@ pub struct CodeGenerator<'a> {
     synthetic_names: HashMap<AtomId, String>,
 
     /// The names for whenever we need an arbitrary member of a type.
-    arbitrary_names: HashMap<ClosedType, ConstantName>,
+    /// Maps type to the name of an element of that type.
+    arbitrary_names: HashMap<Term, ConstantName>,
 }
 
 impl CodeGenerator<'_> {
@@ -353,15 +353,15 @@ impl CodeGenerator<'_> {
         match term.as_ref().decompose() {
             Decomposition::Atom(Atom::Variable(var_id)) => {
                 // For a variable term, get its type from the local context.
-                let closed_type = local_context
-                    .get_var_closed_type(*var_id as usize)
+                let var_type = local_context
+                    .get_var_type(*var_id as usize)
                     .cloned()
                     .expect("Variable should have type in LocalContext");
-                if !self.arbitrary_names.contains_key(&closed_type) {
+                if !self.arbitrary_names.contains_key(&var_type) {
                     // Generate a name for this arbitrary value
                     let name = self.bindings.next_indexed_var('s', &mut self.next_s);
                     let cname = ConstantName::Unqualified(self.bindings.module_id(), name);
-                    self.arbitrary_names.insert(closed_type, cname);
+                    self.arbitrary_names.insert(var_type, cname);
                 }
             }
             Decomposition::Atom(_) => {}

@@ -11,7 +11,7 @@ pub const BOOL: GroundTypeId = GroundTypeId(1);
 /// NOT for: function types, parameterized types like List[T].
 ///
 /// This distinction is important because:
-/// - `ClosedType::ground(GroundTypeId)` is always correct
+/// - `Term::type_ground(GroundTypeId)` creates an atomic type term
 /// - `Atom::Type(GroundTypeId)` ensures atoms only contain ground types
 #[derive(
     Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Default,

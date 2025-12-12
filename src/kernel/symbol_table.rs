@@ -4,7 +4,6 @@ use crate::elaborator::acorn_type::AcornType;
 use crate::elaborator::acorn_value::{AcornValue, ConstantInstance};
 use crate::elaborator::names::ConstantName;
 use crate::kernel::atom::{Atom, AtomId};
-use crate::kernel::closed_type::ClosedType;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::term::Term;
 use crate::kernel::type_store::TypeStore;
@@ -26,14 +25,14 @@ pub struct SymbolTable {
     global_constants: Vec<Option<ConstantName>>,
 
     /// For global constant i in the prover, global_constant_types[i] is the type.
-    global_constant_types: Vec<ClosedType>,
+    global_constant_types: Vec<Term>,
 
     /// For local constant i in the prover, scoped_constants[i] is the corresponding ConstantName.
     /// Part of the Symbol -> ConstantName lookup direction.
     scoped_constants: Vec<Option<ConstantName>>,
 
     /// For local constant i in the prover, scoped_constant_types[i] is the type.
-    scoped_constant_types: Vec<ClosedType>,
+    scoped_constant_types: Vec<Term>,
 
     /// Inverse map of constants that can be referenced with a single name.
     /// The ConstantName -> Symbol lookup direction.
@@ -48,10 +47,10 @@ pub struct SymbolTable {
     id_to_monomorph: Vec<ConstantInstance>,
 
     /// For monomorph i, monomorph_types[i] is the type.
-    monomorph_types: Vec<ClosedType>,
+    monomorph_types: Vec<Term>,
 
     /// For synthetic atom i, synthetic_types[i] is the type.
-    synthetic_types: Vec<ClosedType>,
+    synthetic_types: Vec<Term>,
 }
 
 impl SymbolTable {
@@ -76,11 +75,11 @@ impl SymbolTable {
         self.name_to_symbol.get(name).cloned()
     }
 
-    /// Get the closed type of a symbol.
-    pub fn get_closed_type(&self, symbol: Symbol) -> &ClosedType {
+    /// Get the type of a symbol.
+    pub fn get_type(&self, symbol: Symbol) -> &Term {
         match symbol {
-            Symbol::True | Symbol::False => ClosedType::bool_ref(),
-            Symbol::Type(_) => ClosedType::empty_ref(),
+            Symbol::True | Symbol::False => Term::type_bool_ref(),
+            Symbol::Type(_) => Term::type_empty_ref(),
             Symbol::Synthetic(i) => &self.synthetic_types[i as usize],
             Symbol::GlobalConstant(i) => &self.global_constant_types[i as usize],
             Symbol::ScopedConstant(i) => &self.scoped_constant_types[i as usize],
@@ -102,8 +101,8 @@ impl SymbolTable {
 
     /// Set the type for a scoped constant at a given index.
     #[cfg(test)]
-    pub fn set_scoped_constant_type(&mut self, id: u32, closed_type: ClosedType) {
-        self.scoped_constant_types[id as usize] = closed_type;
+    pub fn set_scoped_constant_type(&mut self, id: u32, var_type: Term) {
+        self.scoped_constant_types[id as usize] = var_type;
     }
 
     /// Get the number of global constants.
@@ -114,8 +113,8 @@ impl SymbolTable {
 
     /// Set the type for a global constant at a given index.
     #[cfg(test)]
-    pub fn set_global_constant_type(&mut self, id: u32, closed_type: ClosedType) {
-        self.global_constant_types[id as usize] = closed_type;
+    pub fn set_global_constant_type(&mut self, id: u32, var_type: Term) {
+        self.global_constant_types[id as usize] = var_type;
     }
 
     /// Get the number of monomorphs.
@@ -126,8 +125,8 @@ impl SymbolTable {
 
     /// Set the type for a monomorph at a given index.
     #[cfg(test)]
-    pub fn set_monomorph_type(&mut self, id: u32, closed_type: ClosedType) {
-        self.monomorph_types[id as usize] = closed_type;
+    pub fn set_monomorph_type(&mut self, id: u32, var_type: Term) {
+        self.monomorph_types[id as usize] = var_type;
     }
 
     /// Get the number of synthetics.
@@ -138,46 +137,46 @@ impl SymbolTable {
 
     /// Set the type for a synthetic at a given index.
     #[cfg(test)]
-    pub fn set_synthetic_type(&mut self, id: u32, closed_type: ClosedType) {
-        self.synthetic_types[id as usize] = closed_type;
+    pub fn set_synthetic_type(&mut self, id: u32, var_type: Term) {
+        self.synthetic_types[id as usize] = var_type;
     }
 
     /// Declare a new synthetic atom with the given type.
-    pub fn declare_synthetic(&mut self, closed_type: ClosedType) -> Symbol {
+    pub fn declare_synthetic(&mut self, var_type: Term) -> Symbol {
         let atom_id = self.synthetic_types.len() as AtomId;
-        self.synthetic_types.push(closed_type);
+        self.synthetic_types.push(var_type);
         Symbol::Synthetic(atom_id)
     }
 
-    /// Add a scoped constant with the given ClosedType, without a name.
+    /// Add a scoped constant with the given type, without a name.
     /// Returns the Symbol for the new constant.
     /// Primarily for testing with parsed terms like "c0", "c1".
     #[cfg(test)]
-    pub fn add_scoped_constant(&mut self, closed_type: ClosedType) -> Symbol {
+    pub fn add_scoped_constant(&mut self, var_type: Term) -> Symbol {
         let atom_id = self.scoped_constant_types.len() as AtomId;
         self.scoped_constants.push(None);
-        self.scoped_constant_types.push(closed_type);
+        self.scoped_constant_types.push(var_type);
         Symbol::ScopedConstant(atom_id)
     }
 
-    /// Add a global constant with the given ClosedType, without a name.
+    /// Add a global constant with the given type, without a name.
     /// Returns the Symbol for the new constant.
     /// Primarily for testing with parsed terms like "g0", "g1".
     #[cfg(test)]
-    pub fn add_global_constant(&mut self, closed_type: ClosedType) -> Symbol {
+    pub fn add_global_constant(&mut self, var_type: Term) -> Symbol {
         let atom_id = self.global_constant_types.len() as AtomId;
         self.global_constants.push(None);
-        self.global_constant_types.push(closed_type);
+        self.global_constant_types.push(var_type);
         Symbol::GlobalConstant(atom_id)
     }
 
-    /// Add a monomorph with the given ClosedType, without the full ConstantInstance.
+    /// Add a monomorph with the given type, without the full ConstantInstance.
     /// Returns the Symbol for the new monomorph.
     /// Primarily for testing with parsed terms like "m0", "m1".
     #[cfg(test)]
-    pub fn add_monomorph(&mut self, closed_type: ClosedType) -> Symbol {
+    pub fn add_monomorph(&mut self, var_type: Term) -> Symbol {
         let atom_id = self.monomorph_types.len() as AtomId;
-        self.monomorph_types.push(closed_type);
+        self.monomorph_types.push(var_type);
         Symbol::Monomorph(atom_id)
     }
 
@@ -187,7 +186,7 @@ impl SymbolTable {
         &mut self,
         name: ConstantName,
         ctype: NewConstantType,
-        closed_type: ClosedType,
+        var_type: Term,
     ) -> Symbol {
         if name.is_synthetic() {
             panic!("synthetic atoms should not be stored in the ConstantMap");
@@ -199,13 +198,13 @@ impl SymbolTable {
             NewConstantType::Local => {
                 let atom_id = self.scoped_constant_types.len() as AtomId;
                 self.scoped_constants.push(Some(name.clone()));
-                self.scoped_constant_types.push(closed_type);
+                self.scoped_constant_types.push(var_type);
                 Symbol::ScopedConstant(atom_id)
             }
             NewConstantType::Global => {
                 let atom_id = self.global_constant_types.len() as AtomId;
                 self.global_constants.push(Some(name.clone()));
-                self.global_constant_types.push(closed_type);
+                self.global_constant_types.push(var_type);
                 Symbol::GlobalConstant(atom_id)
             }
         };
@@ -221,7 +220,7 @@ impl SymbolTable {
         ctype: NewConstantType,
         type_store: &mut TypeStore,
     ) {
-        // Add all types first, so they can be resolved to ClosedTypes
+        // Add all types first, so they can be resolved to type Terms
         value.for_each_type(&mut |t| {
             type_store.add_type(t);
         });
@@ -229,10 +228,10 @@ impl SymbolTable {
         // Now add all constants (types are now registered)
         value.for_each_constant(&mut |c| {
             if self.get_symbol(&c.name).is_none() {
-                let closed_type = type_store
-                    .get_closed_type(&c.instance_type)
+                let var_type = type_store
+                    .get_type_term(&c.instance_type)
                     .expect("type should be valid");
-                self.add_constant(c.name.clone(), ctype, closed_type);
+                self.add_constant(c.name.clone(), ctype, var_type);
             }
             if !c.params.is_empty() {
                 self.add_monomorph_instance(c, type_store);
@@ -261,17 +260,17 @@ impl SymbolTable {
         local: bool,
         type_store: &mut TypeStore,
     ) {
-        // Register the type first so we can get its ClosedType
+        // Register the type first so we can get its type Term
         type_store.add_type(constant_type);
-        let closed_type = type_store
-            .get_closed_type(constant_type)
+        let var_type = type_store
+            .get_type_term(constant_type)
             .expect("type should be valid");
         let ctype = if local {
             NewConstantType::Local
         } else {
             NewConstantType::Global
         };
-        let symbol = self.add_constant(name.clone(), ctype, closed_type);
+        let symbol = self.add_constant(name.clone(), ctype, var_type);
         self.monomorph_to_symbol.insert(c, symbol);
     }
 
@@ -284,13 +283,13 @@ impl SymbolTable {
         }
 
         // Construct a symbol and appropriate entries for this monomorph
-        let closed_type = type_store
-            .get_closed_type(&c.instance_type)
+        let var_type = type_store
+            .get_type_term(&c.instance_type)
             .expect("type should be valid");
         let monomorph_id = self.monomorph_types.len() as AtomId;
         let symbol = Symbol::Monomorph(monomorph_id);
         self.id_to_monomorph.push(c.clone());
-        self.monomorph_types.push(closed_type);
+        self.monomorph_types.push(var_type);
         self.monomorph_to_symbol.insert(c.clone(), symbol);
     }
 

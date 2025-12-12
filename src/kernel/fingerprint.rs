@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::kernel::atom::Atom;
-use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
@@ -26,11 +25,11 @@ enum TypeCategory {
 }
 
 impl TypeCategory {
-    /// Create a TypeCategory from a ClosedType.
-    fn from_closed_type(ct: &ClosedType) -> TypeCategory {
-        if let Some(gid) = ct.as_ground() {
+    /// Create a TypeCategory from a type Term.
+    fn from_type_term(type_term: &Term) -> TypeCategory {
+        if let Some(gid) = type_term.as_ref().as_type_atom() {
             TypeCategory::Ground(gid)
-        } else if ct.is_pi() {
+        } else if type_term.as_ref().is_pi() {
             TypeCategory::Arrow
         } else {
             TypeCategory::Applied
@@ -61,9 +60,8 @@ impl FingerprintComponent {
     ) -> FingerprintComponent {
         match term.as_ref().get_term_at_path(path) {
             Some(subterm) => {
-                let closed_type =
-                    subterm.get_closed_type_with_context(local_context, kernel_context);
-                let type_category = TypeCategory::from_closed_type(&closed_type);
+                let type_term = subterm.get_type_with_context(local_context, kernel_context);
+                let type_category = TypeCategory::from_type_term(&type_term);
 
                 match subterm.get_head_atom() {
                     Atom::Variable(_) => {
@@ -210,8 +208,8 @@ impl<T> FingerprintUnifier<T> {
         kernel_context: &KernelContext,
     ) {
         let fingerprint = TermFingerprint::new(term, local_context, kernel_context);
-        let closed_type = term.get_closed_type_with_context(local_context, kernel_context);
-        let type_category = TypeCategory::from_closed_type(&closed_type);
+        let type_term = term.get_type_with_context(local_context, kernel_context);
+        let type_category = TypeCategory::from_type_term(&type_term);
         let tree = self.trees.entry(type_category).or_insert(BTreeMap::new());
         tree.entry(fingerprint).or_insert(vec![]).push(value);
     }
@@ -224,8 +222,8 @@ impl<T> FingerprintUnifier<T> {
         kernel_context: &KernelContext,
     ) -> Vec<&T> {
         let fingerprint = TermFingerprint::new(term, local_context, kernel_context);
-        let closed_type = term.get_closed_type_with_context(local_context, kernel_context);
-        let type_category = TypeCategory::from_closed_type(&closed_type);
+        let type_term = term.get_type_with_context(local_context, kernel_context);
+        let type_category = TypeCategory::from_type_term(&type_term);
 
         let mut result = vec![];
 
@@ -295,10 +293,10 @@ impl<T> FingerprintSpecializer<T> {
     ) {
         let fingerprint =
             LiteralFingerprint::new(&literal.left, &literal.right, local_context, kernel_context);
-        let closed_type = literal
+        let type_term = literal
             .left
-            .get_closed_type_with_context(local_context, kernel_context);
-        let type_category = TypeCategory::from_closed_type(&closed_type);
+            .get_type_with_context(local_context, kernel_context);
+        let type_category = TypeCategory::from_type_term(&type_term);
         let tree = self.trees.entry(type_category).or_insert(BTreeMap::new());
         tree.entry(fingerprint).or_insert(vec![]).push(value);
     }
@@ -313,8 +311,8 @@ impl<T> FingerprintSpecializer<T> {
         kernel_context: &KernelContext,
     ) -> Vec<&T> {
         let fingerprint = LiteralFingerprint::new(left, right, local_context, kernel_context);
-        let closed_type = left.get_closed_type_with_context(local_context, kernel_context);
-        let type_category = TypeCategory::from_closed_type(&closed_type);
+        let type_term = left.get_type_with_context(local_context, kernel_context);
+        let type_category = TypeCategory::from_type_term(&type_term);
 
         let mut result = vec![];
 

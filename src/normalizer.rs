@@ -10,7 +10,6 @@ use crate::elaborator::names::ConstantName;
 use crate::elaborator::source::{Source, SourceType};
 use crate::kernel::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
 use crate::kernel::clause::Clause;
-use crate::kernel::closed_type::ClosedType;
 use crate::kernel::cnf::CNF;
 use crate::kernel::extended_term::ExtendedTerm;
 use crate::kernel::kernel_context::KernelContext;
@@ -105,10 +104,10 @@ impl Normalizer {
 
     pub fn get_synthetic_type(&self, id: AtomId) -> AcornType {
         let symbol = Symbol::Synthetic(id);
-        let closed_type = self.kernel_context.symbol_table.get_closed_type(symbol);
+        let type_term = self.kernel_context.symbol_table.get_type(symbol);
         self.kernel_context
             .type_store
-            .closed_type_to_acorn_type(closed_type)
+            .type_term_to_acorn_type(type_term)
     }
 
     pub fn kernel_context(&self) -> &KernelContext {
@@ -147,11 +146,11 @@ impl Normalizer {
     // This weird two-step is necessary since we need to do some constructions
     // before we actually have the definition.
     fn declare_synthetic_atom(&mut self, atom_type: AcornType) -> Result<AtomId, String> {
-        let closed_type = self.kernel_context.type_store.to_closed_type(&atom_type);
+        let type_term = self.kernel_context.type_store.to_type_term(&atom_type);
         let symbol = self
             .kernel_context
             .symbol_table
-            .declare_synthetic(closed_type);
+            .declare_synthetic(type_term);
         let id = match symbol {
             Symbol::Synthetic(id) => id,
             _ => panic!("declare_synthetic should return a Synthetic symbol"),
@@ -199,21 +198,21 @@ impl Normalizer {
     }
 
     pub fn add_scoped_constant(&mut self, cname: ConstantName, acorn_type: &AcornType) -> Atom {
-        let closed_type = self.kernel_context.type_store.to_closed_type(acorn_type);
+        let type_term = self.kernel_context.type_store.to_type_term(acorn_type);
         Atom::Symbol(self.kernel_context.symbol_table.add_constant(
             cname,
             NewConstantType::Local,
-            closed_type,
+            type_term,
         ))
     }
 }
 
 // Represents a binding for a variable on the stack during normalization.
 // Each binding corresponds to a variable in the output clause.
-// The ClosedType tracks the type of the variable for building LocalContext.
+// The Term type tracks the type of the variable for building LocalContext.
 enum TermBinding {
-    Bound(Term, ClosedType),
-    Free(Term, ClosedType),
+    Bound(Term, Term),
+    Free(Term, Term),
 }
 
 impl TermBinding {
@@ -224,8 +223,8 @@ impl TermBinding {
         }
     }
 
-    /// Get the closed type of the variable this binding represents
-    fn closed_type(&self) -> &ClosedType {
+    /// Get the type of the variable this binding represents
+    fn var_type(&self) -> &Term {
         match self {
             TermBinding::Bound(_, t) | TermBinding::Free(_, t) => t,
         }
@@ -233,12 +232,12 @@ impl TermBinding {
 }
 
 /// Builds a LocalContext from the terms in the stack.
-/// Each stack position corresponds to a variable id, and we use the stored ClosedType.
+/// Each stack position corresponds to a variable id, and we use the stored type Term.
 fn build_context_from_stack(stack: &[TermBinding]) -> LocalContext {
     // Each stack position i corresponds to variable x_i
     // We collect the types from the bindings directly
-    let var_closed_types: Vec<ClosedType> = stack.iter().map(|b| b.closed_type().clone()).collect();
-    LocalContext::from_closed_types(var_closed_types)
+    let var_types: Vec<Term> = stack.iter().map(|b| b.var_type().clone()).collect();
+    LocalContext::from_types(var_types)
 }
 
 // A NormalizerView lets us share methods between mutable and non-mutable normalizers that
@@ -490,8 +489,8 @@ impl NormalizerView<'_> {
             let num_args = arg_terms.len();
             // Lambda arguments are bound variables
             for (arg, arg_type) in arg_terms.into_iter().zip(arg_types.iter()) {
-                let closed_type = self.type_store().to_closed_type(arg_type);
-                stack.push(TermBinding::Bound(arg, closed_type));
+                let type_term = self.type_store().to_type_term(arg_type);
+                stack.push(TermBinding::Bound(arg, type_term));
             }
             let answer = self.value_to_cnf(
                 &return_value,
@@ -530,12 +529,12 @@ impl NormalizerView<'_> {
         context: &mut LocalContext,
     ) -> Result<CNF, String> {
         for quant in quants {
-            let closed_type = self.type_store().to_closed_type(quant);
+            let type_term = self.type_store().to_type_term(quant);
             let var_id = *next_var_id;
-            context.push_closed_type(closed_type.clone());
+            context.push_type(type_term.clone());
             let var = Term::new_variable(var_id);
             *next_var_id += 1;
-            stack.push(TermBinding::Free(var, closed_type));
+            stack.push(TermBinding::Free(var, type_term));
         }
         let result =
             self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized, context)?;
@@ -565,7 +564,7 @@ impl NormalizerView<'_> {
                 if seen_vars.insert(var_id) {
                     let var_term = Term::new_variable(var_id);
                     args.push(var_term);
-                    arg_types.push(self.type_store().closed_type_to_acorn_type(&closed_type));
+                    arg_types.push(self.type_store().type_term_to_acorn_type(&closed_type));
                 }
             }
         }
@@ -615,8 +614,8 @@ impl NormalizerView<'_> {
         let skolem_terms = self.make_skolem_terms(quants, stack, synthesized, context)?;
         let len = skolem_terms.len();
         for (skolem_term, quant) in skolem_terms.into_iter().zip(quants.iter()) {
-            let closed_type = self.type_store().to_closed_type(quant);
-            stack.push(TermBinding::Bound(skolem_term, closed_type));
+            let type_term = self.type_store().to_type_term(quant);
+            stack.push(TermBinding::Bound(skolem_term, type_term));
         }
         let result =
             self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized, context)?;
@@ -715,13 +714,13 @@ impl NormalizerView<'_> {
 
         if let AcornType::Function(app) = left.get_type() {
             // Comparing functions.
-            let mut arg_closed_types: Vec<ClosedType> = Vec::with_capacity(app.arg_types.len());
+            let mut arg_type_terms: Vec<Term> = Vec::with_capacity(app.arg_types.len());
             for t in &app.arg_types {
-                arg_closed_types.push(self.type_store().to_closed_type(t));
+                arg_type_terms.push(self.type_store().to_type_term(t));
             }
-            let result_closed_type = self.type_store().to_closed_type(&app.return_type);
+            let result_type_term = self.type_store().to_type_term(&app.return_type);
 
-            if result_closed_type == ClosedType::bool() {
+            if result_type_term == Term::type_bool() {
                 // Boolean functional comparison.
                 if negate {
                     // Boolean functional inequality.
@@ -778,9 +777,9 @@ impl NormalizerView<'_> {
                 // Boolean functional equality.
                 // Create new free variables for each argument
                 let mut args = vec![];
-                for arg_closed_type in &arg_closed_types {
+                for arg_type_term in &arg_type_terms {
                     let var_id = *next_var_id;
-                    context.push_closed_type(arg_closed_type.clone());
+                    context.push_type(arg_type_term.clone());
                     let var = Term::new_variable(var_id);
                     *next_var_id += 1;
                     args.push(ExtendedTerm::Term(var));
@@ -845,9 +844,9 @@ impl NormalizerView<'_> {
             // Functional equality.
             // Create new free variables for each argument
             let mut args = vec![];
-            for arg_closed_type in &arg_closed_types {
+            for arg_type_term in &arg_type_terms {
                 let var_id = *next_var_id;
-                context.push_closed_type(arg_closed_type.clone());
+                context.push_type(arg_type_term.clone());
                 let var = Term::new_variable(var_id);
                 *next_var_id += 1;
                 args.push(var);
@@ -1012,8 +1011,8 @@ impl NormalizerView<'_> {
             let num_args = arg_terms.len();
             // Lambda arguments are bound variables
             for (arg, arg_type) in arg_terms.into_iter().zip(arg_types.iter()) {
-                let closed_type = self.type_store().to_closed_type(arg_type);
-                stack.push(TermBinding::Bound(arg, closed_type));
+                let type_term = self.type_store().to_type_term(arg_type);
+                stack.push(TermBinding::Bound(arg, type_term));
             }
             let answer =
                 self.value_to_extended_term(&return_value, stack, next_var_id, synth, context);
@@ -1209,7 +1208,7 @@ impl NormalizerView<'_> {
                 if seen_vars.insert(var_id) {
                     let var_term = Term::new_variable(var_id);
                     args.push(var_term);
-                    arg_types.push(self.type_store().closed_type_to_acorn_type(&closed_type));
+                    arg_types.push(self.type_store().type_term_to_acorn_type(&closed_type));
                 }
             }
         }
@@ -1285,10 +1284,10 @@ impl NormalizerView<'_> {
 
                 // Determine the type of the result (should be same as then_term and else_term)
                 let result_closed_type =
-                    then_term.get_closed_type_with_context(local_context, self.kernel_context());
+                    then_term.get_type_with_context(local_context, self.kernel_context());
                 let result_type = self
                     .type_store()
-                    .closed_type_to_acorn_type(&result_closed_type);
+                    .type_term_to_acorn_type(&result_closed_type);
 
                 // Create a new synthetic atom with the appropriate function type
                 // based on free variables in the if-expression
@@ -1301,14 +1300,14 @@ impl NormalizerView<'_> {
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(var_id);
                         args.push(var_term);
-                        arg_types.push(self.type_store().closed_type_to_acorn_type(&closed_type));
+                        arg_types.push(self.type_store().type_term_to_acorn_type(&closed_type));
                     }
                 }
                 for (var_id, closed_type) in cond_lit.right.collect_vars(local_context) {
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(var_id);
                         args.push(var_term);
-                        arg_types.push(self.type_store().closed_type_to_acorn_type(&closed_type));
+                        arg_types.push(self.type_store().type_term_to_acorn_type(&closed_type));
                     }
                 }
 
@@ -1317,7 +1316,7 @@ impl NormalizerView<'_> {
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(var_id);
                         args.push(var_term);
-                        arg_types.push(self.type_store().closed_type_to_acorn_type(&closed_type));
+                        arg_types.push(self.type_store().type_term_to_acorn_type(&closed_type));
                     }
                 }
 
@@ -1326,7 +1325,7 @@ impl NormalizerView<'_> {
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(var_id);
                         args.push(var_term);
-                        arg_types.push(self.type_store().closed_type_to_acorn_type(&closed_type));
+                        arg_types.push(self.type_store().type_term_to_acorn_type(&closed_type));
                     }
                 }
 
@@ -1449,14 +1448,14 @@ impl NormalizerView<'_> {
                 // Use next_var_id to assign unique variable IDs
                 let mut args = vec![];
                 for arg_type in arg_types {
-                    let closed_type = self.type_store().to_closed_type(arg_type);
+                    let type_term = self.type_store().to_type_term(arg_type);
                     let var_id = *next_var_id;
                     *next_var_id += 1;
                     // Add the variable type to the context
-                    context.push_closed_type(closed_type.clone());
+                    context.push_type(type_term.clone());
                     let var = Term::new_variable(var_id);
-                    args.push((var_id, closed_type.clone()));
-                    stack.push(TermBinding::Free(var, closed_type));
+                    args.push((var_id, type_term.clone()));
+                    stack.push(TermBinding::Free(var, type_term));
                 }
 
                 // Evaluate the body with the lambda arguments on the stack
@@ -1716,14 +1715,14 @@ impl Normalizer {
     /// to constants.
     fn denormalize_atom(
         &self,
-        atom_closed_type: &ClosedType,
+        atom_type: &Term,
         atom: &Atom,
-        arbitrary_names: Option<&HashMap<ClosedType, ConstantName>>,
+        arbitrary_names: Option<&HashMap<Term, ConstantName>>,
     ) -> AcornValue {
         let acorn_type = self
             .kernel_context
             .type_store
-            .closed_type_to_acorn_type(atom_closed_type);
+            .type_term_to_acorn_type(atom_type);
         match atom {
             Atom::Symbol(Symbol::True) => AcornValue::Bool(true),
             Atom::Symbol(Symbol::False) => AcornValue::Bool(false),
@@ -1748,7 +1747,7 @@ impl Normalizer {
             }
             Atom::Variable(i) => {
                 if let Some(map) = arbitrary_names {
-                    if let Some(name) = map.get(atom_closed_type) {
+                    if let Some(name) = map.get(atom_type) {
                         return AcornValue::constant(name.clone(), vec![], acorn_type);
                     }
                 }
@@ -1756,11 +1755,11 @@ impl Normalizer {
             }
             Atom::Symbol(Symbol::Synthetic(i)) => {
                 let symbol = Symbol::Synthetic(*i);
-                let closed_type = self.kernel_context.symbol_table.get_closed_type(symbol);
+                let type_term = self.kernel_context.symbol_table.get_type(symbol);
                 let acorn_type = self
                     .kernel_context
                     .type_store
-                    .closed_type_to_acorn_type(closed_type);
+                    .type_term_to_acorn_type(type_term);
                 let name = ConstantName::Synthetic(*i);
                 AcornValue::constant(name, vec![], acorn_type)
             }
@@ -1776,21 +1775,17 @@ impl Normalizer {
         &self,
         term: &Term,
         local_context: &LocalContext,
-        arbitrary_names: Option<&HashMap<ClosedType, ConstantName>>,
+        arbitrary_names: Option<&HashMap<Term, ConstantName>>,
     ) -> AcornValue {
-        // Get the closed type of the head atom
-        let head_closed_type = match term.get_head_atom() {
+        // Get the type of the head atom
+        let head_type = match term.get_head_atom() {
             Atom::Variable(i) => local_context
-                .get_var_closed_type(*i as usize)
+                .get_var_type(*i as usize)
                 .cloned()
                 .expect("Variable should have type in LocalContext"),
-            Atom::Symbol(symbol) => self
-                .kernel_context
-                .symbol_table
-                .get_closed_type(*symbol)
-                .clone(),
+            Atom::Symbol(symbol) => self.kernel_context.symbol_table.get_type(*symbol).clone(),
         };
-        let head = self.denormalize_atom(&head_closed_type, &term.get_head_atom(), arbitrary_names);
+        let head = self.denormalize_atom(&head_type, &term.get_head_atom(), arbitrary_names);
         let args: Vec<_> = term
             .args()
             .iter()
@@ -1805,7 +1800,7 @@ impl Normalizer {
         &self,
         literal: &Literal,
         local_context: &LocalContext,
-        arbitrary_names: Option<&HashMap<ClosedType, ConstantName>>,
+        arbitrary_names: Option<&HashMap<Term, ConstantName>>,
     ) -> AcornValue {
         let left = self.denormalize_term(&literal.left, local_context, arbitrary_names);
         if literal.right.is_true() {
@@ -1831,7 +1826,7 @@ impl Normalizer {
     pub fn denormalize(
         &self,
         clause: &Clause,
-        arbitrary_names: Option<&HashMap<ClosedType, ConstantName>>,
+        arbitrary_names: Option<&HashMap<Term, ConstantName>>,
     ) -> AcornValue {
         if clause.literals.is_empty() {
             return AcornValue::Bool(false);
@@ -1869,28 +1864,28 @@ impl Normalizer {
         // Build var_types for the forall quantifier, but exclude any variables that
         // were converted to arbitrary constants (their types are in arbitrary_names).
         let var_types: Vec<AcornType> = local_context
-            .get_var_closed_types()
+            .get_var_types()
             .iter()
             .take(num_vars)
-            .filter(|closed_type| {
+            .filter(|type_term| {
                 // Keep this variable if its type is NOT in arbitrary_names
                 arbitrary_names
-                    .map(|names| !names.contains_key(*closed_type))
+                    .map(|names| !names.contains_key(*type_term))
                     .unwrap_or(true)
             })
-            .map(|closed_type| {
+            .map(|type_term| {
                 self.kernel_context
                     .type_store
-                    .closed_type_to_acorn_type(closed_type)
+                    .type_term_to_acorn_type(type_term)
             })
             .collect();
         AcornValue::forall(var_types, disjunction)
     }
 
-    pub fn denormalize_type(&self, closed_type: ClosedType) -> AcornType {
+    pub fn denormalize_type(&self, type_term: Term) -> AcornType {
         self.kernel_context
             .type_store
-            .closed_type_to_acorn_type(&closed_type)
+            .type_term_to_acorn_type(&type_term)
     }
 
     /// Given a list of atom ids for synthetic atoms that we need to define, find a set

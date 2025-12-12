@@ -1,4 +1,4 @@
-// PatternTree: A pattern tree that uses curried representation and ClosedType for type matching.
+// PatternTree: A pattern tree that uses curried representation and Term types for type matching.
 //
 // Key design decisions:
 // 1. Everything is curried - applications are binary, no num_args
@@ -10,7 +10,6 @@ use qp_trie::{Entry, SubTrie, Trie};
 
 use super::atom::{Atom as KernelAtom, AtomId};
 use super::clause::Clause;
-use super::closed_type::ClosedType;
 use super::kernel_context::KernelContext;
 use super::literal::Literal;
 use super::local_context::LocalContext;
@@ -34,15 +33,14 @@ pub fn replace_term_variables(
     replacement_context: &LocalContext,
     shift: Option<AtomId>,
 ) -> (Term, LocalContext) {
-    let mut output_closed_types: Vec<ClosedType> =
-        replacement_context.get_var_closed_types().to_vec();
+    let mut output_types: Vec<Term> = replacement_context.get_var_types().to_vec();
 
     fn replace_recursive(
         term: TermRef,
         term_context: &LocalContext,
         replacements: &[TermRef],
         shift: Option<AtomId>,
-        output_closed_types: &mut Vec<ClosedType>,
+        output_types: &mut Vec<Term>,
     ) -> Term {
         match term.decompose() {
             Decomposition::Atom(KernelAtom::Variable(var_id)) => {
@@ -58,40 +56,30 @@ pub fn replace_term_variables(
                     };
                     // Track the type for the shifted variable
                     let new_idx = new_var_id as usize;
-                    let var_closed_type = term_context
-                        .get_var_closed_type(idx)
+                    let var_type = term_context
+                        .get_var_type(idx)
                         .cloned()
                         .expect("variable type not found in term_context");
-                    if new_idx >= output_closed_types.len() {
-                        output_closed_types.resize(new_idx + 1, ClosedType::empty());
+                    if new_idx >= output_types.len() {
+                        output_types.resize(new_idx + 1, Term::type_empty());
                     }
-                    output_closed_types[new_idx] = var_closed_type;
+                    output_types[new_idx] = var_type;
                     Term::atom(KernelAtom::Variable(new_var_id))
                 }
             }
             Decomposition::Atom(_) => term.to_owned(),
             Decomposition::Application(func, arg) => {
                 let replaced_func =
-                    replace_recursive(func, term_context, replacements, shift, output_closed_types);
+                    replace_recursive(func, term_context, replacements, shift, output_types);
                 let replaced_arg =
-                    replace_recursive(arg, term_context, replacements, shift, output_closed_types);
+                    replace_recursive(arg, term_context, replacements, shift, output_types);
                 replaced_func.apply(&[replaced_arg])
             }
             Decomposition::Pi(input, output) => {
-                let replaced_input = replace_recursive(
-                    input,
-                    term_context,
-                    replacements,
-                    shift,
-                    output_closed_types,
-                );
-                let replaced_output = replace_recursive(
-                    output,
-                    term_context,
-                    replacements,
-                    shift,
-                    output_closed_types,
-                );
+                let replaced_input =
+                    replace_recursive(input, term_context, replacements, shift, output_types);
+                let replaced_output =
+                    replace_recursive(output, term_context, replacements, shift, output_types);
                 Term::pi(replaced_input, replaced_output)
             }
         }
@@ -102,9 +90,9 @@ pub fn replace_term_variables(
         term_context,
         replacements,
         shift,
-        &mut output_closed_types,
+        &mut output_types,
     );
-    let result_context = LocalContext::from_closed_types(output_closed_types);
+    let result_context = LocalContext::from_types(output_types);
     (result_term, result_context)
 }
 
@@ -262,49 +250,50 @@ impl Edge {
     }
 }
 
-/// Encodes a ClosedType into the key buffer.
-/// Types are encoded as terms:
+/// Encodes a type Term into the key buffer.
+/// Types are encoded as:
 /// - Ground types: Atom(Type(id))
 /// - Arrow types: Arrow + domain encoding + codomain encoding
 /// - Type applications: Application + sort + head encoding + arg encoding
-fn key_from_closed_type(closed_type: &ClosedType, key: &mut Vec<u8>) {
-    if let Some(ground_id) = closed_type.as_ground() {
+fn key_from_type(type_term: &Term, key: &mut Vec<u8>) {
+    // Check for ground type
+    if let Some(ground_id) = type_term.as_ref().as_type_atom() {
         Edge::Atom(Atom::Type(ground_id)).append_to(key);
         return;
     }
 
-    if let Some((input, output)) = closed_type.as_pi() {
-        // Arrow type: domain -> codomain
+    // Check for Pi (arrow) type
+    if let Some((input, output)) = type_term.as_ref().split_pi() {
         Edge::Arrow.append_to(key);
-        key_from_closed_type(&input, key);
-        key_from_closed_type(&output, key);
+        key_from_type(&input.to_owned(), key);
+        key_from_type(&output.to_owned(), key);
         return;
     }
 
-    if let Some((head, args)) = closed_type.as_application() {
-        // Type application like List[Int]
+    // Check for type application like List[Int]
+    if let Some((head, args)) = type_term.as_ref().split_application_multi() {
         // Format: Application + <sort of result> + <head> + <args>
         // For now, we assume type applications produce Type0 (kind *)
         Edge::Application.append_to(key);
         Edge::Atom(Atom::Type0).append_to(key);
 
         // Encode head
-        key_from_closed_type(&head, key);
+        key_from_type(&head, key);
 
         // Encode arguments
-        for arg in &args {
-            key_from_closed_type(arg, key);
+        for arg in args {
+            key_from_type(&arg, key);
         }
         return;
     }
 
-    panic!("Unexpected ClosedType structure: {:?}", closed_type);
+    panic!("Unexpected type structure: {:?}", type_term);
 }
 
-/// Writes the type of a term directly to the key buffer without allocating a ClosedType.
+/// Writes the type of a term directly to the key buffer.
 /// This is equivalent to:
-///   let t = term.get_closed_type_with_context(local_context, kernel_context);
-///   key_from_closed_type(&t, key);
+///   let t = term.get_type_with_context(local_context, kernel_context);
+///   key_from_type(&t, key);
 /// But avoids the intermediate allocation.
 fn key_from_term_type(
     term: TermRef,
@@ -312,27 +301,25 @@ fn key_from_term_type(
     local_context: &LocalContext,
     kernel_context: &KernelContext,
 ) {
-    // Get the head's closed type (as a reference, no allocation)
+    // Get the head's type (as a reference, no allocation)
     let head = term.get_head_atom();
-    let head_closed_type: &ClosedType = match head {
-        KernelAtom::Variable(i) => local_context
-            .get_var_closed_type(*i as usize)
-            .unwrap_or_else(|| {
-                panic!(
-                    "Variable x{} not found in LocalContext (size={})",
-                    i,
-                    local_context.len()
-                )
-            }),
+    let head_type: &Term = match head {
+        KernelAtom::Variable(i) => local_context.get_var_type(*i as usize).unwrap_or_else(|| {
+            panic!(
+                "Variable x{} not found in LocalContext (size={})",
+                i,
+                local_context.len()
+            )
+        }),
         KernelAtom::Symbol(Symbol::True) | KernelAtom::Symbol(Symbol::False) => {
             // Special case: True/False has type Bool, encode it directly
             Edge::Atom(Atom::Type(BOOL)).append_to(key);
             return;
         }
         KernelAtom::Symbol(Symbol::Type(_)) => {
-            panic!("Symbol::Type should not appear in Term, only in ClosedType")
+            panic!("Symbol::Type should not appear in terms")
         }
-        KernelAtom::Symbol(symbol) => kernel_context.symbol_table.get_closed_type(*symbol),
+        KernelAtom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol),
     };
 
     // Count arguments to determine how many times to "apply" the type
@@ -340,18 +327,18 @@ fn key_from_term_type(
 
     // Apply the type num_args times to get the result type
     // Each application skips past one Pi: Pi(input, output) -> output
-    let mut result_type = head_closed_type.clone();
+    let mut result_type = head_type.clone();
     for _ in 0..num_args {
-        match result_type.as_pi() {
+        match result_type.as_ref().split_pi() {
             Some((_, output)) => {
-                result_type = output;
+                result_type = output.to_owned();
             }
             None => panic!("Expected Pi type for function application"),
         }
     }
 
     // Now encode the result type
-    key_from_closed_type(&result_type, key);
+    key_from_type(&result_type, key);
 }
 
 /// Encodes a term into the key buffer (without the form prefix).
@@ -504,7 +491,7 @@ fn key_from_clause(clause: &Clause, kernel_context: &KernelContext) -> Vec<u8> {
     key
 }
 
-/// PatternTree: A pattern tree using curried representation and ClosedType for type matching.
+/// PatternTree: A pattern tree using curried representation and Term for type matching.
 /// Supports type variables in patterns.
 #[derive(Clone, Debug)]
 pub struct PatternTree<T> {
@@ -1104,11 +1091,11 @@ mod tests {
     }
 
     #[test]
-    fn test_key_from_closed_type_ground() {
+    fn test_key_from_type_ground() {
         // Test encoding of a ground type like Bool
-        let bool_type = ClosedType::ground(BOOL);
+        let bool_type = Term::type_ground(BOOL);
         let mut key = Vec::new();
-        key_from_closed_type(&bool_type, &mut key);
+        key_from_type(&bool_type, &mut key);
 
         // Should be just Atom(Type(BOOL))
         assert_eq!(key.len(), 3);
@@ -1117,12 +1104,12 @@ mod tests {
     }
 
     #[test]
-    fn test_key_from_closed_type_arrow() {
+    fn test_key_from_type_arrow() {
         // Test encoding of Bool -> Bool
-        let bool_type = ClosedType::ground(BOOL);
-        let arrow_type = ClosedType::pi(bool_type.clone(), bool_type.clone());
+        let bool_type = Term::type_ground(BOOL);
+        let arrow_type = Term::pi(bool_type.clone(), bool_type.clone());
         let mut key = Vec::new();
-        key_from_closed_type(&arrow_type, &mut key);
+        key_from_type(&arrow_type, &mut key);
 
         // Should be: Arrow + Atom(Type(BOOL)) + Atom(Type(BOOL))
         assert_eq!(key.len(), 9);
@@ -1380,9 +1367,9 @@ mod tests {
         use crate::kernel::symbol::Symbol;
         let type_bool_to_bool = kctx
             .symbol_table
-            .get_closed_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
+            .get_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
             .clone();
-        let lctx = LocalContext::from_closed_types(vec![type_bool_to_bool]);
+        let lctx = LocalContext::from_types(vec![type_bool_to_bool]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
@@ -1393,8 +1380,8 @@ mod tests {
 
         // First verify that the partial application c0(c5) has type Bool -> Bool
         let partial_app = Term::parse("c0(c5)");
-        let partial_type = partial_app.get_closed_type_with_context(&lctx, &kctx);
-        let x0_type = lctx.get_var_closed_type(0);
+        let partial_type = partial_app.get_type_with_context(&lctx, &kctx);
+        let x0_type = lctx.get_var_type(0);
         assert_eq!(
             partial_type,
             *x0_type.unwrap(),
@@ -1434,9 +1421,9 @@ mod tests {
         use crate::kernel::symbol::Symbol;
         let type_bool_to_bool = kctx
             .symbol_table
-            .get_closed_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
+            .get_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
             .clone();
-        let lctx = LocalContext::from_closed_types(vec![type_bool_to_bool]);
+        let lctx = LocalContext::from_types(vec![type_bool_to_bool]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
@@ -1447,8 +1434,8 @@ mod tests {
 
         // First verify c1 has type Bool -> Bool
         let c1_term = Term::parse("c1");
-        let c1_type = c1_term.get_closed_type_with_context(&lctx, &kctx);
-        let x0_type = lctx.get_var_closed_type(0);
+        let c1_type = c1_term.get_type_with_context(&lctx, &kctx);
+        let x0_type = lctx.get_var_type(0);
         assert_eq!(
             c1_type,
             *x0_type.unwrap(),
@@ -1497,9 +1484,9 @@ mod tests {
         use crate::kernel::symbol::Symbol;
         let type_bool_to_bool = kctx
             .symbol_table
-            .get_closed_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
+            .get_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
             .clone();
-        let lctx = LocalContext::from_closed_types(vec![type_bool_to_bool, ClosedType::bool()]);
+        let lctx = LocalContext::from_types(vec![type_bool_to_bool, Term::type_bool()]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
@@ -1539,9 +1526,9 @@ mod tests {
         use crate::kernel::symbol::Symbol;
         let type_bool_to_bool = kctx
             .symbol_table
-            .get_closed_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
+            .get_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
             .clone();
-        let lctx = LocalContext::from_closed_types(vec![type_bool_to_bool]);
+        let lctx = LocalContext::from_types(vec![type_bool_to_bool]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 

@@ -1,11 +1,9 @@
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::clause::Clause;
-use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::{Decomposition, Term, TermRef};
-use crate::kernel::types::EMPTY;
 use std::fmt;
 
 // A VariableMap maintains a mapping from variables to terms, allowing us to turn a more general term
@@ -48,21 +46,21 @@ impl VariableMap {
     /// 2. When the clause is normalized, variable IDs become sequential
     /// 3. The remap operation only keeps entries for actual variables
     pub fn build_output_context(&self, input_context: &LocalContext) -> LocalContext {
-        let empty_type = ClosedType::ground(EMPTY);
-        let mut var_closed_types: Vec<Option<ClosedType>> = vec![];
+        let empty_type = Term::type_empty();
+        let mut var_types: Vec<Option<Term>> = vec![];
         for opt_term in &self.map {
             if let Some(term) = opt_term {
-                for (var_id, closed_type) in term.collect_vars(input_context) {
+                for (var_id, var_type) in term.collect_vars(input_context) {
                     let idx = var_id as usize;
-                    if idx >= var_closed_types.len() {
-                        var_closed_types.resize(idx + 1, None);
+                    if idx >= var_types.len() {
+                        var_types.resize(idx + 1, None);
                     }
-                    var_closed_types[idx] = Some(closed_type);
+                    var_types[idx] = Some(var_type);
                 }
             }
         }
-        LocalContext::from_closed_types(
-            var_closed_types
+        LocalContext::from_types(
+            var_types
                 .into_iter()
                 .map(|t| t.unwrap_or_else(|| empty_type.clone()))
                 .collect(),
@@ -108,8 +106,8 @@ impl VariableMap {
         special_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> bool {
-        if general.get_closed_type_with_context(general_context, kernel_context)
-            != special.get_closed_type_with_context(special_context, kernel_context)
+        if general.get_type_with_context(general_context, kernel_context)
+            != special.get_type_with_context(special_context, kernel_context)
         {
             return false;
         }
@@ -280,8 +278,8 @@ impl VariableMap {
         for i in 0..input_context.len() {
             if self.get_mapping(i as AtomId).is_none() {
                 // This variable is unmapped, so it will remain in the output
-                if let Some(closed_type) = input_context.get_var_closed_type(i) {
-                    output_context.set_closed_type(i, closed_type.clone());
+                if let Some(var_type) = input_context.get_var_type(i) {
+                    output_context.set_type(i, var_type.clone());
                 }
             }
         }

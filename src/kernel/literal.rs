@@ -263,10 +263,10 @@ impl Literal {
         {
             let left_type = self
                 .left
-                .get_closed_type_with_context(local_context, kernel_context);
+                .get_type_with_context(local_context, kernel_context);
             let right_type = self
                 .right
-                .get_closed_type_with_context(local_context, kernel_context);
+                .get_type_with_context(local_context, kernel_context);
             if left_type != right_type {
                 panic!(
                     "Literal type mismatch: {} has type {:?} but {} has type {:?}",

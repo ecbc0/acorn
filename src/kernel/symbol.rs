@@ -14,7 +14,7 @@ pub enum Symbol {
     // The boolean constant false.
     False,
 
-    // A ground type, used in ClosedType to represent types like Int, Bool, Type<CommRing>.
+    // A ground type, used in type terms to represent types like Int, Bool, Type<CommRing>.
     // Ground types have no internal structure - they are atomic type constants.
     Type(GroundTypeId),
 

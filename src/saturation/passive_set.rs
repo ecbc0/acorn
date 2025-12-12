@@ -65,8 +65,8 @@ fn pair_specializes(
     left2: &Term,
     right2: &Term,
 ) -> bool {
-    if left1.get_closed_type_with_context(general_context, kernel_context)
-        != left2.get_closed_type_with_context(special_context, kernel_context)
+    if left1.get_type_with_context(general_context, kernel_context)
+        != left2.get_type_with_context(special_context, kernel_context)
     {
         return false;
     }

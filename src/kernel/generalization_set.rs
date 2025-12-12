@@ -6,6 +6,8 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::pattern_tree::PatternTree;
+#[cfg(test)]
+use crate::kernel::term::Term;
 use crate::kernel::term::{Decomposition, TermRef};
 
 /// The GeneralizationSet stores general clauses in a way that allows us to quickly check whether
@@ -98,8 +100,8 @@ pub fn sub_invariant_term_cmp(
 ) -> Option<Ordering> {
     // Compare the types, because these won't be changed by substitution.
     let type_cmp = left
-        .get_closed_type_with_context(local_context, kernel_context)
-        .cmp(&right.get_closed_type_with_context(local_context, kernel_context));
+        .get_type_with_context(local_context, kernel_context)
+        .cmp(&right.get_type_with_context(local_context, kernel_context));
     if type_cmp != Ordering::Equal {
         return Some(type_cmp);
     }
@@ -117,8 +119,8 @@ pub fn sub_invariant_term_cmp(
 
     // Compare the term types.
     let type_cmp = left
-        .get_closed_type_with_context(local_context, kernel_context)
-        .cmp(&right.get_closed_type_with_context(local_context, kernel_context));
+        .get_type_with_context(local_context, kernel_context)
+        .cmp(&right.get_type_with_context(local_context, kernel_context));
     if type_cmp != Ordering::Equal {
         return Some(type_cmp);
     }
@@ -330,7 +332,6 @@ fn specialized_form(mut clause: Clause, kernel_context: &KernelContext) -> Claus
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::closed_type::ClosedType;
 
     #[test]
     fn test_clause_set_basic_generalization() {
@@ -634,9 +635,9 @@ mod tests {
         // Create local context where x0 has type Bool -> Bool and x1 has type Bool
         let type_bool_to_bool = kctx
             .symbol_table
-            .get_closed_type(Symbol::ScopedConstant(1))
+            .get_type(Symbol::ScopedConstant(1))
             .clone();
-        let lctx = LocalContext::from_closed_types(vec![type_bool_to_bool, ClosedType::bool()]);
+        let lctx = LocalContext::from_types(vec![type_bool_to_bool, Term::type_bool()]);
 
         let mut clause_set = GeneralizationSet::new();
 
@@ -664,9 +665,9 @@ mod tests {
         // Create local context where x0 has type Bool -> Bool and x1 has type Bool
         let type_bool_to_bool = kctx
             .symbol_table
-            .get_closed_type(Symbol::ScopedConstant(1))
+            .get_type(Symbol::ScopedConstant(1))
             .clone();
-        let lctx = LocalContext::from_closed_types(vec![type_bool_to_bool, ClosedType::bool()]);
+        let lctx = LocalContext::from_types(vec![type_bool_to_bool, Term::type_bool()]);
 
         let mut clause_set = GeneralizationSet::new();
 
@@ -694,9 +695,9 @@ mod tests {
 
         let type_bool_to_bool = kctx
             .symbol_table
-            .get_closed_type(Symbol::ScopedConstant(1))
+            .get_type(Symbol::ScopedConstant(1))
             .clone();
-        let lctx = LocalContext::from_closed_types(vec![type_bool_to_bool, ClosedType::bool()]);
+        let lctx = LocalContext::from_types(vec![type_bool_to_bool, Term::type_bool()]);
 
         let mut clause_set = GeneralizationSet::new();
 

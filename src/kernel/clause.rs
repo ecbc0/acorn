@@ -4,6 +4,7 @@ use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::term::Term;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 
 /// A Clause represents a disjunction (an "or") of literals.
@@ -29,7 +30,7 @@ impl Clause {
         for (i, lit) in literals.iter().enumerate() {
             for atom in lit.iter_atoms() {
                 if let crate::kernel::atom::Atom::Variable(var_id) = atom {
-                    if context.get_var_closed_type(*var_id as usize).is_none() {
+                    if context.get_var_type(*var_id as usize).is_none() {
                         panic!(
                             "Clause::new: literal {} has variable x{} but context has no type for it. Context len: {}",
                             i, var_id, context.len()
@@ -287,7 +288,7 @@ impl Clause {
         for (i, lit) in literals.iter().enumerate() {
             for atom in lit.iter_atoms() {
                 if let crate::kernel::atom::Atom::Variable(var_id) = atom {
-                    if context.get_var_closed_type(*var_id as usize).is_none() {
+                    if context.get_var_type(*var_id as usize).is_none() {
                         panic!(
                             "Clause::from_literals_unnormalized: literal {} has variable x{} but context has no type for it. Context len: {}",
                             i, var_id, context.len()
@@ -350,14 +351,14 @@ impl Clause {
             .map(|lit| lit.instantiate_invalid_synthetics(num_to_replace))
             .collect();
         // The context needs to be adjusted - the first num_to_replace var types are removed
-        let new_closed_types: Vec<_> = self
+        let new_types: Vec<_> = self
             .context
-            .get_var_closed_types()
+            .get_var_types()
             .iter()
             .skip(num_to_replace)
             .cloned()
             .collect();
-        let new_context = LocalContext::from_closed_types(new_closed_types);
+        let new_context = LocalContext::from_types(new_types);
         Clause::new(new_literals, &new_context)
     }
 
@@ -518,8 +519,8 @@ impl Clause {
         let new_shorter = shorter.get_head_term();
 
         // Check the types are compatible
-        let longer_type = new_longer.get_closed_type_with_context(&self.context, kernel_context);
-        let shorter_type = new_shorter.get_closed_type_with_context(&self.context, kernel_context);
+        let longer_type = new_longer.get_type_with_context(&self.context, kernel_context);
+        let shorter_type = new_shorter.get_type_with_context(&self.context, kernel_context);
         if longer_type != shorter_type {
             return None;
         }
@@ -538,9 +539,7 @@ impl Clause {
         &self,
         kernel_context: &KernelContext,
     ) -> Vec<(usize, Vec<Literal>)> {
-        use crate::kernel::closed_type::ClosedType;
-
-        let bool_closed = ClosedType::bool();
+        let bool_type = Term::type_bool();
 
         let mut answer = vec![];
 
@@ -548,8 +547,8 @@ impl Clause {
             let literal = &self.literals[i];
             if literal
                 .left
-                .get_closed_type_with_context(&self.context, kernel_context)
-                != bool_closed
+                .get_type_with_context(&self.context, kernel_context)
+                != bool_type
             {
                 continue;
             }
@@ -610,7 +609,6 @@ impl std::fmt::Display for Clause {
 mod tests {
     use super::*;
     use crate::kernel::atom::Atom;
-    use crate::kernel::closed_type::ClosedType;
     use crate::kernel::kernel_context::KernelContext;
     use crate::kernel::literal::Literal;
     use crate::kernel::symbol::Symbol;
@@ -628,8 +626,8 @@ mod tests {
         let x0 = Term::atom(Atom::Variable(0));
         let literal = Literal::equals(g0, x0);
 
-        let some_type = ClosedType::ground(GroundTypeId::new(2));
-        let context = LocalContext::from_closed_types(vec![some_type]);
+        let some_type = Term::type_ground(GroundTypeId::new(2));
+        let context = LocalContext::from_types(vec![some_type]);
         let clause = Clause::from_literals_unnormalized(vec![literal], &context);
 
         // Extensionality should not match this clause since both terms are atomic
@@ -649,8 +647,8 @@ mod tests {
         let f_x0 = Term::new(Atom::Symbol(Symbol::GlobalConstant(0)), vec![x0.clone()]);
         let literal = Literal::equals(f_x0.clone(), f_x0);
 
-        let some_type = ClosedType::ground(GroundTypeId::new(2));
-        let context = LocalContext::from_closed_types(vec![some_type]);
+        let some_type = Term::type_ground(GroundTypeId::new(2));
+        let context = LocalContext::from_types(vec![some_type]);
         let clause = Clause::from_literals_unnormalized(vec![literal], &context);
 
         // Extensionality should not match this clause since both sides use the same function
@@ -672,8 +670,8 @@ mod tests {
         // After sorting, the literals may be reordered. The variable renumbering
         // should correctly track which type belongs to which new variable ID.
 
-        let type_foo = ClosedType::ground(GroundTypeId::new(2)); // Some non-Bool type
-        let type_bool = ClosedType::ground(GroundTypeId::new(1)); // Bool
+        let type_foo = Term::type_ground(GroundTypeId::new(2)); // Some non-Bool type
+        let type_bool = Term::type_ground(GroundTypeId::new(1)); // Bool
 
         // x0 and x1 are Foo, x2 is Bool
         let x0 = Term::atom(Atom::Variable(0));
@@ -693,11 +691,8 @@ mod tests {
         let lit2 = Literal::new(true, x2.clone(), Term::new_true());
 
         // Context: x0:Foo, x1:Foo, x2:Bool
-        let context = LocalContext::from_closed_types(vec![
-            type_foo.clone(),
-            type_foo.clone(),
-            type_bool.clone(),
-        ]);
+        let context =
+            LocalContext::from_types(vec![type_foo.clone(), type_foo.clone(), type_bool.clone()]);
 
         // Normalize the clause
         let (clause, _trace) = Clause::normalize_with_trace(vec![lit1, lit2], &context);
@@ -711,7 +706,7 @@ mod tests {
         let mut foo_count = 0;
         let mut bool_count = 0;
         for i in 0..clause.context.len() {
-            match clause.context.get_var_closed_type(i) {
+            match clause.context.get_var_type(i) {
                 Some(t) if *t == type_foo => foo_count += 1,
                 Some(t) if *t == type_bool => bool_count += 1,
                 _ => panic!("Unexpected type in context"),
@@ -725,10 +720,7 @@ mod tests {
         for lit in &clause.literals {
             if lit.left.is_atomic() {
                 if let Atom::Variable(var_id) = lit.left.get_head_atom() {
-                    let var_type = clause
-                        .context
-                        .get_var_closed_type(*var_id as usize)
-                        .unwrap();
+                    let var_type = clause.context.get_var_type(*var_id as usize).unwrap();
                     assert_eq!(
                         *var_type, type_bool,
                         "Variable in atomic Bool literal should have Bool type, got {:?}",
