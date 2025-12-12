@@ -351,7 +351,7 @@ impl CodeGenerator<'_> {
     fn add_arbitrary_for_term(&mut self, term: &Term, local_context: &LocalContext) {
         use crate::kernel::atom::Atom;
         match term.as_ref().decompose() {
-            Decomposition::Atom(Atom::Variable(var_id)) => {
+            Decomposition::Atom(Atom::FreeVariable(var_id)) => {
                 // For a variable term, get its type from the local context.
                 let var_type = local_context
                     .get_var_type(*var_id as usize)

@@ -18,11 +18,14 @@ pub const INVALID_SYNTHETIC_ID: AtomId = 65000;
 /// It is used in the prover, but not in the AcornValue / Environment.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum Atom {
-    // A Variable can be a reference to a variable on the stack, or its meaning can be implicit,
-    // depending on the context.
-    // We drop the variable name. Instead we track an id.
-    // This does mean that you must be careful when moving values between different environments.
-    Variable(AtomId),
+    // A free variable used in clauses and unification.
+    // These have unique IDs and their types are tracked in LocalContext.
+    FreeVariable(AtomId),
+
+    // A bound variable using de Bruijn indexing.
+    // BoundVariable(0) refers to the closest enclosing Pi binder.
+    // These only appear inside Pi output types and don't participate in unification.
+    BoundVariable(u16),
 
     // A symbol representing a constant, function, type, or boolean.
     Symbol(Symbol),
@@ -36,7 +39,8 @@ pub enum Atom {
 impl fmt::Display for Atom {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Atom::Variable(i) => write!(f, "x{}", i),
+            Atom::FreeVariable(i) => write!(f, "x{}", i),
+            Atom::BoundVariable(i) => write!(f, "b{}", i),
             Atom::Symbol(s) => write!(f, "{}", s),
             Atom::Typeclass(tc) => write!(f, "tc{}", tc.as_u16()),
         }
@@ -58,7 +62,8 @@ impl Atom {
         match first {
             'g' => Some(Atom::Symbol(Symbol::GlobalConstant(rest.parse().ok()?))),
             'c' => Some(Atom::Symbol(Symbol::ScopedConstant(rest.parse().ok()?))),
-            'x' => Some(Atom::Variable(rest.parse().ok()?)),
+            'x' => Some(Atom::FreeVariable(rest.parse().ok()?)),
+            'b' => Some(Atom::BoundVariable(rest.parse().ok()?)),
             'm' => Some(Atom::Symbol(Symbol::Monomorph(rest.parse().ok()?))),
             's' => Some(Atom::Symbol(Symbol::Synthetic(rest.parse().ok()?))),
             _ => None,
@@ -69,8 +74,19 @@ impl Atom {
         matches!(self, Atom::Symbol(Symbol::ScopedConstant(_)))
     }
 
+    /// Returns true if this is a free variable (used in unification).
+    pub fn is_free_variable(&self) -> bool {
+        matches!(self, Atom::FreeVariable(_))
+    }
+
+    /// Returns true if this is a bound variable (de Bruijn index).
+    pub fn is_bound_variable(&self) -> bool {
+        matches!(self, Atom::BoundVariable(_))
+    }
+
+    /// Returns true if this is any kind of variable (free or bound).
     pub fn is_variable(&self) -> bool {
-        matches!(self, Atom::Variable(_))
+        matches!(self, Atom::FreeVariable(_) | Atom::BoundVariable(_))
     }
 
     /// Returns the TypeclassId if this is a Typeclass atom.
@@ -81,7 +97,7 @@ impl Atom {
         }
     }
 
-    // Orders two atoms, but considers all references the same, so that the ordering
+    // Orders two atoms, but considers all free variables the same, so that the ordering
     // is stable under variable renaming.
     // True and False always sort before other atoms to ensure literals have the expected orientation.
     pub fn stable_partial_order(&self, other: &Atom) -> Ordering {
@@ -94,7 +110,10 @@ impl Atom {
         }
 
         match (self, other) {
-            (Atom::Variable(_), Atom::Variable(_)) => Ordering::Equal,
+            // All free variables are considered equal for stable ordering
+            (Atom::FreeVariable(_), Atom::FreeVariable(_)) => Ordering::Equal,
+            // Bound variables are compared by index (they're structural, not semantic)
+            (Atom::BoundVariable(a), Atom::BoundVariable(b)) => a.cmp(b),
             // Bool constants sort before everything except other bool constants
             (a, b) if is_bool_constant(a) && is_bool_constant(b) => a.cmp(b),
             (a, _) if is_bool_constant(a) => Ordering::Less,
@@ -116,27 +135,29 @@ impl Atom {
         }
     }
 
-    /// Replace the first `num_to_replace` variables with invalid synthetic atoms, adjusting
+    /// Replace the first `num_to_replace` free variables with invalid synthetic atoms, adjusting
     /// the subsequent variable ids accordingly.
+    /// Bound variables are left unchanged.
     pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> Atom {
         match self {
-            Atom::Variable(i) => {
+            Atom::FreeVariable(i) => {
                 if (*i as usize) < num_to_replace {
                     Atom::Symbol(Symbol::Synthetic(
                         (INVALID_SYNTHETIC_ID as usize + *i as usize) as AtomId,
                     ))
                 } else {
-                    Atom::Variable(*i - num_to_replace as AtomId)
+                    Atom::FreeVariable(*i - num_to_replace as AtomId)
                 }
             }
             a => *a,
         }
     }
 
-    // Replaces x_i with x_{var_map[i]}.
-    pub fn remap_variables(&self, var_map: &[AtomId]) -> Atom {
+    // Replaces free variable x_i with x_{var_map[i]}.
+    // Bound variables are left unchanged.
+    pub fn remap_free_variables(&self, var_map: &[AtomId]) -> Atom {
         match self {
-            Atom::Variable(i) => Atom::Variable(var_map[*i as usize]),
+            Atom::FreeVariable(i) => Atom::FreeVariable(var_map[*i as usize]),
             a => *a,
         }
     }
@@ -159,17 +180,22 @@ mod tests {
                 .stable_partial_order(&Atom::Symbol(Symbol::GlobalConstant(1))),
             Ordering::Less
         );
+        // All free variables are equal for stable ordering
         assert_eq!(
-            Atom::Variable(0).stable_partial_order(&Atom::Variable(1)),
+            Atom::FreeVariable(0).stable_partial_order(&Atom::FreeVariable(1)),
             Ordering::Equal
+        );
+        // Bound variables compare by index
+        assert_eq!(
+            Atom::BoundVariable(0).stable_partial_order(&Atom::BoundVariable(1)),
+            Ordering::Less
         );
     }
 
     #[test]
     fn test_atom_size() {
         // Atom should be small since it's used extensively in the prover.
-        // AtomId is u16 (2 bytes), plus 1 byte for the enum discriminant = 4 bytes total
-        // (with alignment padding).
+        // All variants use u16, so size is 4 bytes (discriminant + u16 + padding).
         assert_eq!(std::mem::size_of::<Atom>(), 4);
     }
 }

@@ -243,7 +243,7 @@ mod tests {
 
         // Valid: x0 : Type, x1 : x0 (references lower-numbered variable)
         let type_type = Term::type_sort();
-        let type_var_x0 = Term::atom(Atom::Variable(0));
+        let type_var_x0 = Term::atom(Atom::FreeVariable(0));
         let ctx2 = LocalContext::from_types(vec![type_type, type_var_x0]);
         assert!(ctx2.validate_variable_ordering());
 
@@ -257,7 +257,7 @@ mod tests {
         use crate::kernel::atom::Atom;
 
         // Invalid: x0 : x0 (variable referencing itself)
-        let type_var_x0 = Term::atom(Atom::Variable(0));
+        let type_var_x0 = Term::atom(Atom::FreeVariable(0));
         let ctx = LocalContext::from_types(vec![type_var_x0]);
         assert!(!ctx.validate_variable_ordering());
     }
@@ -268,7 +268,7 @@ mod tests {
 
         // Invalid: x0 : x1, x1 : Type (x0 references higher-numbered x1)
         let type_type = Term::type_sort();
-        let type_var_x1 = Term::atom(Atom::Variable(1));
+        let type_var_x1 = Term::atom(Atom::FreeVariable(1));
         let ctx = LocalContext::from_types(vec![type_var_x1, type_type]);
         assert!(!ctx.validate_variable_ordering());
     }
@@ -281,7 +281,7 @@ mod tests {
         // For this test, we'll use a Pi type: x0 : Type, x1 : x0 -> x0
 
         let type_type = Term::type_sort();
-        let type_var_x0 = Term::atom(Atom::Variable(0));
+        let type_var_x0 = Term::atom(Atom::FreeVariable(0));
         let arrow_type = Term::pi(type_var_x0.clone(), type_var_x0.clone()); // x0 -> x0
 
         // Valid: x0 : Type, x1 : x0 -> x0

@@ -43,7 +43,7 @@ pub fn replace_term_variables(
         output_types: &mut Vec<Term>,
     ) -> Term {
         match term.decompose() {
-            Decomposition::Atom(KernelAtom::Variable(var_id)) => {
+            Decomposition::Atom(KernelAtom::FreeVariable(var_id)) => {
                 let idx = *var_id as usize;
                 if idx < replacements.len() {
                     // Replace with the replacement term
@@ -64,7 +64,7 @@ pub fn replace_term_variables(
                         output_types.resize(new_idx + 1, Term::empty_type());
                     }
                     output_types[new_idx] = var_type;
-                    Term::atom(KernelAtom::Variable(new_var_id))
+                    Term::atom(KernelAtom::FreeVariable(new_var_id))
                 }
             }
             Decomposition::Atom(_) => term.to_owned(),
@@ -103,6 +103,9 @@ pub enum Atom {
     /// Pattern variable, numbered by first occurrence in the path.
     /// Used for both term variables and type variables.
     Variable(AtomId),
+
+    /// De Bruijn bound variable (for Pi types).
+    BoundVariable(u16),
 
     /// Named constants and functions.
     Symbol(Symbol),
@@ -162,6 +165,7 @@ const ATOM_FALSE: u8 = 13;
 const ATOM_SYMBOL_EMPTY: u8 = 14;
 const ATOM_SYMBOL_BOOL: u8 = 15;
 const ATOM_SYMBOL_TYPESORT: u8 = 16;
+const ATOM_BOUND_VARIABLE: u8 = 17;
 
 impl Edge {
     /// Returns the discriminant byte for this edge.
@@ -173,6 +177,7 @@ impl Edge {
             Edge::LiteralForm(false) => LITERAL_NEGATIVE,
             Edge::Atom(atom) => match atom {
                 Atom::Variable(_) => ATOM_VARIABLE,
+                Atom::BoundVariable(_) => ATOM_BOUND_VARIABLE,
                 Atom::True => ATOM_TRUE,
                 Atom::False => ATOM_FALSE,
                 Atom::Type0 => ATOM_TYPE0,
@@ -200,6 +205,7 @@ impl Edge {
             Edge::Application | Edge::Arrow | Edge::LiteralForm(_) => 0,
             Edge::Atom(atom) => match atom {
                 Atom::Variable(i) => *i,
+                Atom::BoundVariable(i) => *i,
                 Atom::True => 0,
                 Atom::False => 0,
                 Atom::Type0 => 0,
@@ -278,7 +284,8 @@ fn key_from_structure(term: TermRef, key: &mut Vec<u8>) {
     match term.decompose() {
         Decomposition::Atom(atom) => {
             let encoded_atom = match atom {
-                KernelAtom::Variable(i) => Atom::Variable(*i),
+                KernelAtom::FreeVariable(i) => Atom::Variable(*i),
+                KernelAtom::BoundVariable(i) => Atom::BoundVariable(*i),
                 // Handle Type atoms specially to match expected encoding
                 KernelAtom::Symbol(Symbol::Type(t)) => Atom::Type(*t),
                 KernelAtom::Symbol(Symbol::True) => Atom::True,
@@ -315,17 +322,22 @@ fn key_from_term_type(
     // Get the head's type (as a reference, no allocation)
     let head = term.get_head_atom();
     let head_type: &Term = match head {
-        KernelAtom::Variable(i) => local_context.get_var_type(*i as usize).unwrap_or_else(|| {
-            panic!(
-                "Variable x{} not found in LocalContext (size={})",
-                i,
-                local_context.len()
-            )
-        }),
+        KernelAtom::FreeVariable(i) => {
+            local_context.get_var_type(*i as usize).unwrap_or_else(|| {
+                panic!(
+                    "Variable x{} not found in LocalContext (size={})",
+                    i,
+                    local_context.len()
+                )
+            })
+        }
         KernelAtom::Symbol(Symbol::True) | KernelAtom::Symbol(Symbol::False) => {
             // Special case: True/False has type Bool, encode it directly
             Edge::Atom(Atom::Symbol(Symbol::Bool)).append_to(key);
             return;
+        }
+        KernelAtom::BoundVariable(_) => {
+            panic!("BoundVariable should not appear as term head in key_from_term_type")
         }
         KernelAtom::Symbol(Symbol::Type(_))
         | KernelAtom::Symbol(Symbol::Empty)
@@ -388,7 +400,8 @@ fn key_from_term_structure(
     match term.decompose() {
         Decomposition::Atom(head) => {
             let atom = match head {
-                KernelAtom::Variable(v) => Atom::Variable(*v),
+                KernelAtom::FreeVariable(v) => Atom::Variable(*v),
+                KernelAtom::BoundVariable(i) => Atom::BoundVariable(*i),
                 KernelAtom::Symbol(Symbol::True) => Atom::True,
                 KernelAtom::Symbol(Symbol::False) => Atom::False,
                 KernelAtom::Symbol(Symbol::Type(t)) => Atom::Type(*t),
@@ -826,7 +839,8 @@ where
         Decomposition::Atom(atom) => {
             // Atomic function: emit the atom directly (no type prefix)
             let edge_atom = match atom {
-                KernelAtom::Variable(v) => Atom::Variable(*v),
+                KernelAtom::FreeVariable(v) => Atom::Variable(*v),
+                KernelAtom::BoundVariable(i) => Atom::BoundVariable(*i),
                 KernelAtom::Symbol(Symbol::True) => Atom::True,
                 KernelAtom::Symbol(Symbol::False) => Atom::False,
                 KernelAtom::Symbol(Symbol::Type(t)) => Atom::Type(*t),
@@ -999,7 +1013,8 @@ where
         Decomposition::Atom(atom) => {
             // Atomic term: match the atom directly
             let edge_atom = match atom {
-                KernelAtom::Variable(v) => Atom::Variable(*v),
+                KernelAtom::FreeVariable(v) => Atom::Variable(*v),
+                KernelAtom::BoundVariable(i) => Atom::BoundVariable(*i),
                 KernelAtom::Symbol(Symbol::True) => Atom::True,
                 KernelAtom::Symbol(Symbol::False) => Atom::False,
                 KernelAtom::Symbol(Symbol::Type(t)) => Atom::Type(*t),
@@ -1550,7 +1565,7 @@ mod tests {
     #[test]
     fn test_key_from_type_variable() {
         // Type variable T0 should encode as Variable(0)
-        let type_var = Term::atom(KernelAtom::Variable(0));
+        let type_var = Term::atom(KernelAtom::FreeVariable(0));
         let mut key = Vec::new();
         key_from_type(&type_var, &mut key);
         assert_eq!(key.len(), 3);
@@ -1561,7 +1576,7 @@ mod tests {
     #[test]
     fn test_key_from_type_variable_higher_id() {
         // Type variable T5 should encode as Variable(5)
-        let type_var = Term::atom(KernelAtom::Variable(5));
+        let type_var = Term::atom(KernelAtom::FreeVariable(5));
         let mut key = Vec::new();
         key_from_type(&type_var, &mut key);
         assert_eq!(key.len(), 3);
@@ -1579,7 +1594,7 @@ mod tests {
         kctx.add_type_constructor("List", 1);
         let list_id = kctx.type_store.get_ground_id_by_name("List").unwrap();
 
-        let type_var = Term::atom(KernelAtom::Variable(0));
+        let type_var = Term::atom(KernelAtom::FreeVariable(0));
         let list_t0 = Term::new(KernelAtom::Symbol(Symbol::Type(list_id)), vec![type_var]);
         let mut key = Vec::new();
         key_from_type(&list_t0, &mut key);
@@ -1594,8 +1609,8 @@ mod tests {
     #[test]
     fn test_key_from_arrow_type_with_variables() {
         // T0 -> T1 should encode as: Arrow + Variable(0) + Variable(1)
-        let t0 = Term::atom(KernelAtom::Variable(0));
-        let t1 = Term::atom(KernelAtom::Variable(1));
+        let t0 = Term::atom(KernelAtom::FreeVariable(0));
+        let t1 = Term::atom(KernelAtom::FreeVariable(1));
         let arrow_type = Term::pi(t0, t1);
 
         let mut key = Vec::new();
@@ -1616,11 +1631,11 @@ mod tests {
 
         // Create LocalContext: x0 : Type (a type variable)
         let type_type = Term::type_sort();
-        let type_var_x0 = Term::atom(KernelAtom::Variable(0));
+        let type_var_x0 = Term::atom(KernelAtom::FreeVariable(0));
         let lctx = LocalContext::from_types(vec![type_type.clone(), type_var_x0.clone()]);
 
         // Generate keys for the same pattern twice
-        let x1 = Term::atom(KernelAtom::Variable(1));
+        let x1 = Term::atom(KernelAtom::FreeVariable(1));
         let key1 = key_from_term(&x1, &lctx, &kctx);
 
         // Generate key for an equivalent pattern (same structure)
@@ -1689,7 +1704,7 @@ mod tests {
         let lctx = LocalContext::from_types(vec![typeclass_type.clone()]);
 
         // Generate key for x0 which has typeclass constraint
-        let x0 = Term::atom(KernelAtom::Variable(0));
+        let x0 = Term::atom(KernelAtom::FreeVariable(0));
         let key = key_from_term(&x0, &lctx, &kctx);
 
         // Verify the key contains the typeclass encoding
@@ -1752,7 +1767,7 @@ mod tests {
         let fin_id = kctx.type_store.get_ground_id_by_name("Fin").unwrap();
 
         // Fin[x0] where x0 is a variable of type Nat
-        let x0 = Term::atom(KernelAtom::Variable(0));
+        let x0 = Term::atom(KernelAtom::FreeVariable(0));
         let fin_x0 = Term::new(KernelAtom::Symbol(Symbol::Type(fin_id)), vec![x0]);
 
         let mut key = Vec::new();
@@ -1796,12 +1811,12 @@ mod tests {
         kctx.symbol_table.add_scoped_constant(fin_c0.clone());
 
         // LocalContext: x0 : Nat, x1 : Fin[x0]
-        let x0_type_var = Term::atom(KernelAtom::Variable(0));
+        let x0_type_var = Term::atom(KernelAtom::FreeVariable(0));
         let fin_x0 = Term::new(KernelAtom::Symbol(Symbol::Type(fin_id)), vec![x0_type_var]);
         let lctx = LocalContext::from_types(vec![nat_type.clone(), fin_x0.clone()]);
 
         // Create terms: x1 (variable of dependent type) and c1 (constant of dependent type)
-        let x1 = Term::atom(KernelAtom::Variable(1));
+        let x1 = Term::atom(KernelAtom::FreeVariable(1));
         let c1 = Term::atom(KernelAtom::Symbol(Symbol::ScopedConstant(1)));
 
         // Generate keys - both should work without panicking

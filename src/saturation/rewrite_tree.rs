@@ -313,7 +313,7 @@ mod tests {
 
         let mut tree = RewriteTree::new();
         // Make a rule for Bool-typed variables
-        let var_bool = Term::atom(Atom::Variable(0));
+        let var_bool = Term::atom(Atom::FreeVariable(0));
         tree.insert_terms(0, &var_bool, &var_bool, true, &lctx, &kctx);
 
         // A Bool constant should match it

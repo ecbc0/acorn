@@ -115,8 +115,8 @@ impl FingerprintComponent {
                 let type_category = TypeCategory::from_type_term(&type_term);
 
                 match subterm.get_head_atom() {
-                    Atom::Variable(_) => {
-                        FingerprintComponent::Something(type_category, Atom::Variable(0))
+                    Atom::FreeVariable(_) => {
+                        FingerprintComponent::Something(type_category, Atom::FreeVariable(0))
                     }
                     atom => FingerprintComponent::Something(type_category, *atom),
                 }
@@ -536,7 +536,7 @@ mod tests {
     #[test]
     fn test_type_category_variable() {
         // Test that type variables are correctly categorized
-        let type_var = Term::atom(crate::kernel::atom::Atom::Variable(0));
+        let type_var = Term::atom(crate::kernel::atom::Atom::FreeVariable(0));
         assert_eq!(
             TypeCategory::from_type_term(&type_var),
             TypeCategory::Variable
@@ -589,7 +589,7 @@ mod tests {
 
         // Local context: x0 has type T0 (a type variable)
         let type_type = Term::type_sort();
-        let type_var = Term::atom(crate::kernel::atom::Atom::Variable(0));
+        let type_var = Term::atom(crate::kernel::atom::Atom::FreeVariable(0));
         let lctx_with_type_var = LocalContext::from_types(vec![type_type, type_var]);
 
         // Local context for concrete types
@@ -630,7 +630,7 @@ mod tests {
 
         // Local context with type variable: x0: Type, x1: T0
         let type_type = Term::type_sort();
-        let type_var = Term::atom(crate::kernel::atom::Atom::Variable(0));
+        let type_var = Term::atom(crate::kernel::atom::Atom::FreeVariable(0));
         let lctx_with_type_var = LocalContext::from_types(vec![type_type, type_var]);
 
         // Local context for concrete type
@@ -669,7 +669,7 @@ mod tests {
 
         // Local context with type variable: x0: Type, x1: T0
         let type_type = Term::type_sort();
-        let type_var = Term::atom(crate::kernel::atom::Atom::Variable(0));
+        let type_var = Term::atom(crate::kernel::atom::Atom::FreeVariable(0));
         let lctx_with_type_var = LocalContext::from_types(vec![type_type, type_var]);
 
         // Local context for concrete type

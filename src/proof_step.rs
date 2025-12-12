@@ -853,7 +853,7 @@ mod tests {
         let clause_context = rewrite_step.clause.get_local_context();
         for lit in &rewrite_step.clause.literals {
             for atom in lit.iter_atoms() {
-                if let Atom::Variable(var_id) = atom {
+                if let Atom::FreeVariable(var_id) = atom {
                     let var_type = clause_context.get_var_type(*var_id as usize);
                     assert!(
                         var_type.is_some(),

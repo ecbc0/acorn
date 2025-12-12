@@ -209,7 +209,7 @@ impl<'a> Unifier<'a> {
 
     fn apply_internal(&mut self, scope: Scope, term: TermRef) -> Term {
         match term.decompose() {
-            Decomposition::Atom(Atom::Variable(i)) => {
+            Decomposition::Atom(Atom::FreeVariable(i)) => {
                 // Handle variable: either use existing mapping or create fresh output variable
                 if !self.has_mapping(scope, *i) && scope != Scope::OUTPUT {
                     // Create a new output variable for this unmapped input variable
@@ -388,12 +388,15 @@ impl<'a> Unifier<'a> {
 
     // Returns whether they can be unified.
     fn unify_atoms(&mut self, scope1: Scope, atom1: &Atom, scope2: Scope, atom2: &Atom) -> bool {
-        if let Atom::Variable(i) = atom1 {
+        // Free variables can be unified with anything
+        if let Atom::FreeVariable(i) = atom1 {
             return self.unify_variable(scope1, *i, scope2, &Term::atom(*atom2));
         }
-        if let Atom::Variable(i) = atom2 {
+        if let Atom::FreeVariable(i) = atom2 {
             return self.unify_variable(scope2, *i, scope1, &Term::atom(*atom1));
         }
+        // Bound variables are structurally matched - they unify only if identical
+        // (same index). They do NOT participate in variable substitution.
         if atom1 == atom2 {
             return true;
         }
@@ -579,9 +582,9 @@ mod tests {
     #[test]
     fn test_unifying_variables() {
         let ctx = test_ctx();
-        let bool0 = Term::atom(Atom::Variable(0));
-        let bool1 = Term::atom(Atom::Variable(1));
-        let bool2 = Term::atom(Atom::Variable(2));
+        let bool0 = Term::atom(Atom::FreeVariable(0));
+        let bool1 = Term::atom(Atom::FreeVariable(1));
+        let bool2 = Term::atom(Atom::FreeVariable(2));
         let fterm = bool_fn(
             Atom::Symbol(Symbol::GlobalConstant(0)),
             vec![bool0.clone(), bool1.clone()],
@@ -598,9 +601,9 @@ mod tests {
     #[test]
     fn test_same_scope() {
         let ctx = test_ctx();
-        let bool0 = Term::atom(Atom::Variable(0));
-        let bool1 = Term::atom(Atom::Variable(1));
-        let bool2 = Term::atom(Atom::Variable(2));
+        let bool0 = Term::atom(Atom::FreeVariable(0));
+        let bool1 = Term::atom(Atom::FreeVariable(1));
+        let bool2 = Term::atom(Atom::FreeVariable(2));
         let term1 = bool_fn(
             Atom::Symbol(Symbol::GlobalConstant(0)),
             vec![bool0.clone(), bool1.clone()],
@@ -621,9 +624,9 @@ mod tests {
     #[test]
     fn test_different_scope() {
         let ctx = test_ctx();
-        let bool0 = Term::atom(Atom::Variable(0));
-        let bool1 = Term::atom(Atom::Variable(1));
-        let bool2 = Term::atom(Atom::Variable(2));
+        let bool0 = Term::atom(Atom::FreeVariable(0));
+        let bool1 = Term::atom(Atom::FreeVariable(1));
+        let bool2 = Term::atom(Atom::FreeVariable(2));
         let term1 = bool_fn(
             Atom::Symbol(Symbol::GlobalConstant(0)),
             vec![bool0.clone(), bool1.clone()],
@@ -649,12 +652,12 @@ mod tests {
         // g3 has type Empty -> Bool
         let empty_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(3)).clone();
 
-        let empty0 = Term::atom(Atom::Variable(0));
+        let empty0 = Term::atom(Atom::FreeVariable(0));
         let const_f_term = Term::new(
             Atom::Symbol(Symbol::GlobalConstant(3)),
             vec![empty0.clone()],
         );
-        let var_f_term = Term::new(Atom::Variable(1), vec![empty0.clone()]);
+        let var_f_term = Term::new(Atom::FreeVariable(1), vec![empty0.clone()]);
 
         // Set up a unifier where Variable(0) has EMPTY type and Variable(1) has Empty -> Bool type
         let mut u = Unifier::new(3, &ctx);
@@ -683,14 +686,14 @@ mod tests {
         let local_ctx_ref: &'static LocalContext = Box::leak(Box::new(local_ctx));
 
         let c5 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(5)));
-        let x1_var = Term::atom(Atom::Variable(1));
+        let x1_var = Term::atom(Atom::FreeVariable(1));
 
         // left_term = x0(x0(c5)) where x0 has type Bool -> Bool
-        let inner = Term::new(Atom::Variable(0), vec![c5.clone()]);
-        let left_term = Term::new(Atom::Variable(0), vec![inner]);
+        let inner = Term::new(Atom::FreeVariable(0), vec![c5.clone()]);
+        let left_term = Term::new(Atom::FreeVariable(0), vec![inner]);
 
         // right_term = c1(x0(x1)) where c1: Bool -> Bool
-        let x0_x1 = Term::new(Atom::Variable(0), vec![x1_var.clone()]);
+        let x0_x1 = Term::new(Atom::FreeVariable(0), vec![x1_var.clone()]);
         let right_term = Term::new(Atom::Symbol(Symbol::ScopedConstant(1)), vec![x0_x1]);
 
         let mut u = Unifier::new(3, &ctx);
@@ -724,9 +727,9 @@ mod tests {
 
         // Build terms: s = x0(x0(x1)) where x0: Bool -> Bool, x1: Bool
         // x0(x1) : Bool, x0(x0(x1)) : Bool
-        let x1 = Term::atom(Atom::Variable(1));
-        let x0_x1 = Term::new(Atom::Variable(0), vec![x1.clone()]);
-        let s = Term::new(Atom::Variable(0), vec![x0_x1.clone()]);
+        let x1 = Term::atom(Atom::FreeVariable(1));
+        let x0_x1 = Term::new(Atom::FreeVariable(0), vec![x1.clone()]);
+        let s = Term::new(Atom::FreeVariable(0), vec![x0_x1.clone()]);
 
         // u_subterm = g1(x0(x1))
         let u_subterm = Term::new(Atom::Symbol(Symbol::GlobalConstant(1)), vec![x0_x1.clone()]);
@@ -776,7 +779,7 @@ mod tests {
 
         // Left side: x0(c6) where x0: Bool -> Bool
         let left_local = LocalContext::from_types(vec![bool_to_bool.clone()]);
-        let left_term = Term::new(Atom::Variable(0), vec![c6.clone()]);
+        let left_term = Term::new(Atom::FreeVariable(0), vec![c6.clone()]);
 
         // Right side: g0(c5, c6) : Bool
         // This is the full application
@@ -819,8 +822,11 @@ mod tests {
         let lctx = LocalContext::from_types(vec![bool_to_bool.clone(), Term::bool_type()]);
 
         // Build terms: s = x0(x0(x1)) where x0: Bool -> Bool, x1: Bool
-        let x0_x1 = Term::new(Atom::Variable(0), vec![Term::atom(Atom::Variable(1))]);
-        let s = Term::new(Atom::Variable(0), vec![x0_x1.clone()]);
+        let x0_x1 = Term::new(
+            Atom::FreeVariable(0),
+            vec![Term::atom(Atom::FreeVariable(1))],
+        );
+        let s = Term::new(Atom::FreeVariable(0), vec![x0_x1.clone()]);
 
         // u_subterm = g1(x0(x1))
         let u_subterm = Term::new(Atom::Symbol(Symbol::GlobalConstant(1)), vec![x0_x1.clone()]);
@@ -859,9 +865,9 @@ mod tests {
         // Using g1 which has type Bool -> Bool for c1-like behavior
         let ctx = test_ctx();
 
-        let x0 = Term::atom(Atom::Variable(0));
-        let x1 = Term::atom(Atom::Variable(1));
-        let x2 = Term::atom(Atom::Variable(2));
+        let x0 = Term::atom(Atom::FreeVariable(0));
+        let x1 = Term::atom(Atom::FreeVariable(1));
+        let x2 = Term::atom(Atom::FreeVariable(2));
 
         // c1(x2) -> g1(x2)
         let g1_x2 = Term::new(Atom::Symbol(Symbol::GlobalConstant(1)), vec![x2.clone()]);
@@ -897,9 +903,9 @@ mod tests {
         // Test: c0(c0(x0, c1(x1)), x2) should not unify with c0(x2, c0(x1, x0))
         let ctx = test_ctx();
 
-        let x0 = Term::atom(Atom::Variable(0));
-        let x1 = Term::atom(Atom::Variable(1));
-        let x2 = Term::atom(Atom::Variable(2));
+        let x0 = Term::atom(Atom::FreeVariable(0));
+        let x1 = Term::atom(Atom::FreeVariable(1));
+        let x2 = Term::atom(Atom::FreeVariable(2));
 
         // c1(x1) -> g1(x1)
         let g1_x1 = Term::new(Atom::Symbol(Symbol::GlobalConstant(1)), vec![x1.clone()]);
@@ -937,8 +943,8 @@ mod tests {
         // So we use g0 instead
         let ctx = test_ctx();
 
-        let x0 = Term::atom(Atom::Variable(0));
-        let x1 = Term::atom(Atom::Variable(1));
+        let x0 = Term::atom(Atom::FreeVariable(0));
+        let x1 = Term::atom(Atom::FreeVariable(1));
         let c5 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(5))); // c5 is Bool
 
         // Left: g0(x0, x0)
@@ -995,14 +1001,14 @@ mod tests {
         let type_type = Term::type_sort();
         let list_x0 = Term::new(
             Atom::Symbol(Symbol::Type(list_id)),
-            vec![Term::atom(Atom::Variable(0))],
+            vec![Term::atom(Atom::FreeVariable(0))],
         );
         let local_ctx = LocalContext::from_types(vec![type_type.clone(), list_x0.clone()]);
 
         // c0 : List[Int]
         let c0 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(0)));
         // x1 : List[x0]
-        let x1 = Term::atom(Atom::Variable(1));
+        let x1 = Term::atom(Atom::FreeVariable(1));
 
         // Try to unify c0 with x1
         // c0 has type List[Int], x1 has type List[x0]
@@ -1052,14 +1058,14 @@ mod tests {
         // List[x0] - a list parameterized by type variable x0
         let list_x0 = Term::new(
             Atom::Symbol(Symbol::Type(list_id)),
-            vec![Term::atom(Atom::Variable(0))],
+            vec![Term::atom(Atom::FreeVariable(0))],
         );
 
         // LocalContext: x0: Type, x1: List[x0]
         let local_ctx = LocalContext::from_types(vec![type_type.clone(), list_x0.clone()]);
 
-        let x0 = Term::atom(Atom::Variable(0));
-        let x1 = Term::atom(Atom::Variable(1));
+        let x0 = Term::atom(Atom::FreeVariable(0));
+        let x1 = Term::atom(Atom::FreeVariable(1));
 
         let mut u = Unifier::new(3, &ctx);
         u.set_input_context(Scope::LEFT, Box::leak(Box::new(local_ctx.clone())));
@@ -1108,7 +1114,7 @@ mod tests {
         let local_ctx = LocalContext::from_types(vec![int_type.clone()]);
 
         let c0 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(0)));
-        let x0 = Term::atom(Atom::Variable(0));
+        let x0 = Term::atom(Atom::FreeVariable(0));
 
         let mut u = Unifier::new(3, &ctx);
         u.set_input_context(Scope::LEFT, Box::leak(Box::new(local_ctx.clone())));
@@ -1130,8 +1136,8 @@ mod tests {
 
         // Create a term for the initial mapping using only atomic synthetics
         // Use g2(x0, x1, s4) instead of s0(x0, x1, s4) since g2 has proper function type
-        let x0 = Term::atom(Atom::Variable(0));
-        let x1 = Term::atom(Atom::Variable(1));
+        let x0 = Term::atom(Atom::FreeVariable(0));
+        let x1 = Term::atom(Atom::FreeVariable(1));
         let s4 = Term::atom(Atom::Symbol(Symbol::Synthetic(4))); // BOOL type
         let g2_term = Term::new(
             Atom::Symbol(Symbol::GlobalConstant(2)),
@@ -1163,7 +1169,7 @@ mod tests {
         assert!(unifier.unify(scope2, &g0_x0_x1, scope3, &g0_c5_x0));
 
         // Unify g0(x2, x1) with g0(s4, x0)
-        let x2 = Term::atom(Atom::Variable(2));
+        let x2 = Term::atom(Atom::FreeVariable(2));
         let g0_x2_x1 = Term::new(
             Atom::Symbol(Symbol::GlobalConstant(0)),
             vec![x2.clone(), x1.clone()],
@@ -1213,7 +1219,7 @@ mod tests {
         let local_ctx = LocalContext::from_types(vec![typeclass_type.clone()]);
 
         let c0 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(0)));
-        let x0 = Term::atom(Atom::Variable(0));
+        let x0 = Term::atom(Atom::FreeVariable(0));
 
         let mut u = Unifier::new(3, &ctx);
         u.set_input_context(Scope::LEFT, Box::leak(Box::new(local_ctx.clone())));
@@ -1255,7 +1261,7 @@ mod tests {
         let local_ctx = LocalContext::from_types(vec![typeclass_type.clone()]);
 
         let c0 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(0)));
-        let x0 = Term::atom(Atom::Variable(0));
+        let x0 = Term::atom(Atom::FreeVariable(0));
 
         let mut u = Unifier::new(3, &ctx);
         u.set_input_context(Scope::LEFT, Box::leak(Box::new(local_ctx.clone())));
@@ -1289,8 +1295,8 @@ mod tests {
         let left_ctx = LocalContext::from_types(vec![typeclass_type.clone()]);
         let right_ctx = LocalContext::from_types(vec![typeclass_type.clone()]);
 
-        let x0_left = Term::atom(Atom::Variable(0));
-        let x0_right = Term::atom(Atom::Variable(0));
+        let x0_left = Term::atom(Atom::FreeVariable(0));
+        let x0_right = Term::atom(Atom::FreeVariable(0));
 
         let mut u = Unifier::new(3, &ctx);
         u.set_input_context(Scope::LEFT, Box::leak(Box::new(left_ctx)));
@@ -1322,7 +1328,7 @@ mod tests {
         ctx.symbol_table.add_scoped_constant(nat_type.clone());
 
         // Create Fin[x0] where x0: Nat
-        let x0 = Term::atom(Atom::Variable(0));
+        let x0 = Term::atom(Atom::FreeVariable(0));
         let fin_x0 = Term::new(Atom::Symbol(Symbol::Type(fin_id)), vec![x0.clone()]);
 
         // Create Fin[c0] where c0: Nat
@@ -1414,6 +1420,93 @@ mod tests {
         assert!(
             !u.unify(Scope::LEFT, &fin_c0, Scope::RIGHT, &fin_c1),
             "Fin[c0] should NOT unify with Fin[c1] when c0 != c1"
+        );
+    }
+
+    #[test]
+    fn test_unify_bound_variables() {
+        // Test that bound variables unify only when they have the same index
+        let ctx = KernelContext::new();
+
+        // b0 should unify with b0
+        let b0_left = Term::atom(Atom::BoundVariable(0));
+        let b0_right = Term::atom(Atom::BoundVariable(0));
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(LocalContext::empty())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+
+        assert!(
+            u.unify(Scope::LEFT, &b0_left, Scope::RIGHT, &b0_right),
+            "b0 should unify with b0"
+        );
+    }
+
+    #[test]
+    fn test_unify_different_bound_variables() {
+        // Test that bound variables with different indices do NOT unify
+        let ctx = KernelContext::new();
+
+        let b0 = Term::atom(Atom::BoundVariable(0));
+        let b1 = Term::atom(Atom::BoundVariable(1));
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(LocalContext::empty())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+
+        assert!(
+            !u.unify(Scope::LEFT, &b0, Scope::RIGHT, &b1),
+            "b0 should NOT unify with b1"
+        );
+    }
+
+    #[test]
+    fn test_unify_pi_with_bound_variables() {
+        // Test that Pi types with bound variables unify correctly
+        // Pi(Nat, b0) should unify with Pi(Nat, b0)
+        let mut ctx = KernelContext::new();
+        ctx.add_datatype("Nat");
+
+        let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
+        let nat_type = Term::ground_type(nat_id);
+
+        // Create Pi(Nat, b0) - a dependent function type where output references the input
+        let b0 = Term::atom(Atom::BoundVariable(0));
+        let pi_left = Term::pi(nat_type.clone(), b0.clone());
+        let pi_right = Term::pi(nat_type.clone(), b0.clone());
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(LocalContext::empty())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+
+        assert!(
+            u.unify(Scope::LEFT, &pi_left, Scope::RIGHT, &pi_right),
+            "Pi(Nat, b0) should unify with Pi(Nat, b0)"
+        );
+    }
+
+    #[test]
+    fn test_unify_pi_different_bound_indices_fail() {
+        // Test that Pi types with different bound variable indices don't unify
+        // Pi(Nat, b0) should NOT unify with Pi(Nat, b1)
+        let mut ctx = KernelContext::new();
+        ctx.add_datatype("Nat");
+
+        let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
+        let nat_type = Term::ground_type(nat_id);
+
+        let b0 = Term::atom(Atom::BoundVariable(0));
+        let b1 = Term::atom(Atom::BoundVariable(1));
+        let pi_b0 = Term::pi(nat_type.clone(), b0);
+        let pi_b1 = Term::pi(nat_type.clone(), b1);
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(LocalContext::empty())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+
+        assert!(
+            !u.unify(Scope::LEFT, &pi_b0, Scope::RIGHT, &pi_b1),
+            "Pi(Nat, b0) should NOT unify with Pi(Nat, b1)"
         );
     }
 }

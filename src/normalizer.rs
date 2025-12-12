@@ -1717,7 +1717,7 @@ impl Normalizer {
             Atom::Symbol(Symbol::Monomorph(i)) => {
                 AcornValue::Constant(self.kernel_context.symbol_table.get_monomorph(*i).clone())
             }
-            Atom::Variable(i) => {
+            Atom::FreeVariable(i) => {
                 if let Some(map) = arbitrary_names {
                     if let Some(name) = map.get(atom_type) {
                         return AcornValue::constant(name.clone(), vec![], acorn_type);
@@ -1744,6 +1744,9 @@ impl Normalizer {
             Atom::Typeclass(_) => {
                 panic!("Typeclass atoms should not appear in open terms")
             }
+            Atom::BoundVariable(_) => {
+                panic!("BoundVariable atoms should not appear in denormalize_atom")
+            }
         }
     }
 
@@ -1757,7 +1760,7 @@ impl Normalizer {
     ) -> AcornValue {
         // Get the type of the head atom
         let head_type = match term.get_head_atom() {
-            Atom::Variable(i) => local_context
+            Atom::FreeVariable(i) => local_context
                 .get_var_type(*i as usize)
                 .cloned()
                 .expect("Variable should have type in LocalContext"),
@@ -1767,6 +1770,9 @@ impl Normalizer {
                 .get_symbol_type(*symbol, &self.kernel_context.type_store),
             Atom::Typeclass(_) => {
                 panic!("Typeclass atoms should not appear as head of terms")
+            }
+            Atom::BoundVariable(_) => {
+                panic!("BoundVariable atoms should not appear as head of terms")
             }
         };
         let head = self.denormalize_atom(&head_type, &term.get_head_atom(), arbitrary_names);

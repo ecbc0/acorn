@@ -29,7 +29,7 @@ impl Clause {
         #[cfg(debug_assertions)]
         for (i, lit) in literals.iter().enumerate() {
             for atom in lit.iter_atoms() {
-                if let crate::kernel::atom::Atom::Variable(var_id) = atom {
+                if let crate::kernel::atom::Atom::FreeVariable(var_id) = atom {
                     if context.get_var_type(*var_id as usize).is_none() {
                         panic!(
                             "Clause::new: literal {} has variable x{} but context has no type for it. Context len: {}",
@@ -287,7 +287,7 @@ impl Clause {
         #[cfg(debug_assertions)]
         for (i, lit) in literals.iter().enumerate() {
             for atom in lit.iter_atoms() {
-                if let crate::kernel::atom::Atom::Variable(var_id) = atom {
+                if let crate::kernel::atom::Atom::FreeVariable(var_id) = atom {
                     if context.get_var_type(*var_id as usize).is_none() {
                         panic!(
                             "Clause::from_literals_unnormalized: literal {} has variable x{} but context has no type for it. Context len: {}",
@@ -620,7 +620,7 @@ mod tests {
 
         // Create a clause like "g0 = x0" (global constant equals variable)
         let g0 = Term::atom(Atom::Symbol(Symbol::GlobalConstant(0)));
-        let x0 = Term::atom(Atom::Variable(0));
+        let x0 = Term::atom(Atom::FreeVariable(0));
         let literal = Literal::equals(g0, x0);
 
         let some_type = Term::ground_type(GroundTypeId::new(2));
@@ -640,7 +640,7 @@ mod tests {
         let kernel_context = KernelContext::new();
 
         // Create a clause like "f(x0) = f(x0)" (same function on both sides)
-        let x0 = Term::atom(Atom::Variable(0));
+        let x0 = Term::atom(Atom::FreeVariable(0));
         let f_x0 = Term::new(Atom::Symbol(Symbol::GlobalConstant(0)), vec![x0.clone()]);
         let literal = Literal::equals(f_x0.clone(), f_x0);
 
@@ -671,9 +671,9 @@ mod tests {
         let type_bool = Term::ground_type(GroundTypeId::new(1)); // Bool
 
         // x0 and x1 are Foo, x2 is Bool
-        let x0 = Term::atom(Atom::Variable(0));
-        let x1 = Term::atom(Atom::Variable(1));
-        let x2 = Term::atom(Atom::Variable(2));
+        let x0 = Term::atom(Atom::FreeVariable(0));
+        let x1 = Term::atom(Atom::FreeVariable(1));
+        let x2 = Term::atom(Atom::FreeVariable(2));
 
         // Create f(x0, x1, x2) - a function application
         let f_args = Term::new(
@@ -716,7 +716,7 @@ mod tests {
         // has the correct Bool type in the context
         for lit in &clause.literals {
             if lit.left.is_atomic() {
-                if let Atom::Variable(var_id) = lit.left.get_head_atom() {
+                if let Atom::FreeVariable(var_id) = lit.left.get_head_atom() {
                     let var_type = clause.context.get_var_type(*var_id as usize).unwrap();
                     assert_eq!(
                         *var_type, type_bool,
@@ -778,7 +778,7 @@ mod tests {
         // Create a context with a variable that has Empty type
         let context = LocalContext::from_types(vec![Term::empty_type()]);
         // Create a simple literal using x0
-        let term = Term::atom(Atom::Variable(0));
+        let term = Term::atom(Atom::FreeVariable(0));
         let literal = Literal::positive(term);
         let clause = Clause::new(vec![literal], &context);
         // Validation should panic

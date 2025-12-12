@@ -38,7 +38,8 @@ impl KernelContext {
             Atom::Symbol(Symbol::Monomorph(i)) => {
                 format!("{}", self.symbol_table.get_monomorph(*i))
             }
-            Atom::Variable(i) => format!("x{}", i),
+            Atom::FreeVariable(i) => format!("x{}", i),
+            Atom::BoundVariable(i) => format!("b{}", i),
             Atom::Symbol(Symbol::Synthetic(i)) => format!("s{}", i),
             Atom::Symbol(Symbol::Type(t)) => format!("T{}", t.as_u16()),
             Atom::Typeclass(tc) => {
@@ -361,7 +362,7 @@ impl KernelContext {
         } else if s.starts_with('T') && s.len() > 1 && s[1..].chars().all(|c| c.is_ascii_digit()) {
             // Type variable: "T0", "T1", etc. - represented as Variable in the term
             let var_id: u16 = s[1..].parse().expect("invalid type variable id");
-            Term::atom(Atom::Variable(var_id))
+            Term::atom(Atom::FreeVariable(var_id))
         } else {
             // Simple type name
             match s {
@@ -620,17 +621,17 @@ mod tests {
 
         // Test parsing T0, T1 as type variables
         let t0 = ctx.parse_type("T0");
-        assert_eq!(t0, Term::atom(Atom::Variable(0)));
+        assert_eq!(t0, Term::atom(Atom::FreeVariable(0)));
 
         let t1 = ctx.parse_type("T1");
-        assert_eq!(t1, Term::atom(Atom::Variable(1)));
+        assert_eq!(t1, Term::atom(Atom::FreeVariable(1)));
 
         // Test parsing List[T0] - a generic list type
         let list_id = ctx.type_store.get_ground_id_by_name("List").unwrap();
         let list_t0 = ctx.parse_type("List[T0]");
         let expected = Term::new(
             Atom::Symbol(Symbol::Type(list_id)),
-            vec![Term::atom(Atom::Variable(0))],
+            vec![Term::atom(Atom::FreeVariable(0))],
         );
         assert_eq!(list_t0, expected);
     }

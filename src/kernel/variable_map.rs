@@ -91,7 +91,7 @@ impl VariableMap {
     }
 
     fn match_atoms(&mut self, general: &Atom, special: &Atom) -> bool {
-        if let Atom::Variable(i) = general {
+        if let Atom::FreeVariable(i) = general {
             self.match_var(*i, Term::atom(*special).as_ref())
         } else {
             general == special
@@ -113,7 +113,7 @@ impl VariableMap {
         }
 
         match (general.decompose(), special.decompose()) {
-            (Decomposition::Atom(Atom::Variable(i)), _) => self.match_var(*i, special),
+            (Decomposition::Atom(Atom::FreeVariable(i)), _) => self.match_var(*i, special),
             (Decomposition::Atom(g_atom), Decomposition::Atom(s_atom)) => {
                 self.match_atoms(g_atom, s_atom)
             }
@@ -194,7 +194,7 @@ impl VariableMap {
         kernel_context: &KernelContext,
     ) -> Term {
         match term.decompose() {
-            Decomposition::Atom(Atom::Variable(i)) => {
+            Decomposition::Atom(Atom::FreeVariable(i)) => {
                 // Check if we have a mapping for this variable
                 if let Some(replacement) = self.get_mapping(*i) {
                     replacement.clone()

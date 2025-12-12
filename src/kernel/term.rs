@@ -252,7 +252,7 @@ impl<'a> TermRef<'a> {
             return None;
         }
         match self.get_head_atom() {
-            Atom::Variable(i) => Some(*i),
+            Atom::FreeVariable(i) => Some(*i),
             _ => None,
         }
     }
@@ -306,7 +306,7 @@ impl<'a> TermRef<'a> {
     ) -> Term {
         let result = match self.decompose() {
             Decomposition::Atom(atom) => match atom {
-                Atom::Variable(i) => local_context
+                Atom::FreeVariable(i) => local_context
                     .get_var_type(*i as usize)
                     .cloned()
                     .unwrap_or_else(|| {
@@ -317,6 +317,11 @@ impl<'a> TermRef<'a> {
                             self.components
                         )
                     }),
+                Atom::BoundVariable(_) => {
+                    // BoundVariables get their type from the enclosing Pi binder.
+                    // This case should not be reached during normal type computation.
+                    panic!("BoundVariable should not appear as standalone term in get_type_with_context")
+                }
                 Atom::Symbol(symbol) => kernel_context
                     .symbol_table
                     .get_symbol_type(*symbol, &kernel_context.type_store),
@@ -344,7 +349,7 @@ impl<'a> TermRef<'a> {
     /// Check if this term contains a variable with the given index anywhere.
     pub fn has_variable(&self, index: AtomId) -> bool {
         for component in self.components {
-            if let TermComponent::Atom(Atom::Variable(i)) = component {
+            if let TermComponent::Atom(Atom::FreeVariable(i)) = component {
                 if *i == index {
                     return true;
                 }
@@ -486,7 +491,7 @@ impl<'a> TermRef<'a> {
     pub fn max_variable(&self) -> Option<AtomId> {
         let mut max: Option<AtomId> = None;
         for atom in self.iter_atoms() {
-            if let Atom::Variable(i) = atom {
+            if let Atom::FreeVariable(i) = atom {
                 max = Some(match max {
                     None => *i,
                     Some(current_max) => current_max.max(*i),
@@ -529,11 +534,15 @@ impl<'a> TermRef<'a> {
                     // Built-in type symbols contribute to weight
                     weight1 += 1;
                 }
-                TermComponent::Atom(Atom::Variable(i)) => {
+                TermComponent::Atom(Atom::FreeVariable(i)) => {
                     while refcounts.len() <= *i as usize {
                         refcounts.push(0);
                     }
                     refcounts[*i as usize] += 1;
+                }
+                TermComponent::Atom(Atom::BoundVariable(_)) => {
+                    // Bound variables contribute weight but don't use refcounts
+                    weight1 += 1;
                 }
                 TermComponent::Atom(Atom::Symbol(Symbol::GlobalConstant(i))) => {
                     weight1 += 1;
@@ -713,7 +722,7 @@ fn format_term_at(f: &mut fmt::Formatter, components: &[TermComponent], pos: usi
         TermComponent::Atom(atom) => {
             // Atomic term - just format the atom
             match atom {
-                Atom::Variable(i) => write!(f, "x{}", i)?,
+                Atom::FreeVariable(i) => write!(f, "x{}", i)?,
                 _ => write!(f, "{}", atom)?,
             }
             Ok(())
@@ -752,7 +761,7 @@ fn format_application_contents(
             TermComponent::Atom(atom) => {
                 // Found the head atom - write it
                 match atom {
-                    Atom::Variable(i) => write!(f, "x{}", i)?,
+                    Atom::FreeVariable(i) => write!(f, "x{}", i)?,
                     _ => write!(f, "{}", atom)?,
                 }
                 // If there's anything after this atom (within our bounds), it's an argument
@@ -876,7 +885,7 @@ fn format_term_slice(
         }
         TermComponent::Atom(atom) => {
             match atom {
-                Atom::Variable(i) => write!(f, "x{}", i)?,
+                Atom::FreeVariable(i) => write!(f, "x{}", i)?,
                 _ => write!(f, "{}", atom)?,
             }
             Ok(())
@@ -1072,7 +1081,7 @@ impl Term {
     }
 
     /// Create a Pi type `(x : input) -> output`.
-    /// For non-dependent arrow types, output simply doesn't reference `Atom::Variable(0)`.
+    /// For non-dependent arrow types, output simply doesn't reference `Atom::FreeVariable(0)`.
     pub fn pi(input: Term, output: Term) -> Term {
         // right_offset points to where the output type starts (after the marker and input)
         let right_offset = (1 + input.components.len()) as u16;
@@ -1367,7 +1376,7 @@ impl Term {
     /// Create a new Term representing a variable with the given index.
     pub fn new_variable(index: AtomId) -> Term {
         Term {
-            components: vec![TermComponent::Atom(Atom::Variable(index))],
+            components: vec![TermComponent::Atom(Atom::FreeVariable(index))],
         }
     }
 
@@ -1453,7 +1462,7 @@ impl Term {
     pub fn collect_vars(&self, local_context: &LocalContext) -> Vec<(AtomId, Term)> {
         let mut result = Vec::new();
         for atom in self.iter_atoms() {
-            if let Atom::Variable(id) = atom {
+            if let Atom::FreeVariable(id) = atom {
                 let var_type = local_context
                     .get_var_type(*id as usize)
                     .cloned()
@@ -1487,7 +1496,7 @@ impl Term {
     pub fn replace_variable(&self, id: AtomId, value: &Term) -> Term {
         // Special case: if this term IS the variable being replaced, just return the value
         if self.components.len() == 1 {
-            if let TermComponent::Atom(Atom::Variable(var_id)) = self.components[0] {
+            if let TermComponent::Atom(Atom::FreeVariable(var_id)) = self.components[0] {
                 if var_id == id {
                     return value.clone();
                 }
@@ -1502,7 +1511,7 @@ impl Term {
     fn replace_variable_impl(&self, id: AtomId, value: &Term) -> Term {
         match self.as_ref().decompose() {
             Decomposition::Atom(atom) => {
-                if let Atom::Variable(var_id) = atom {
+                if let Atom::FreeVariable(var_id) = atom {
                     if *var_id == id {
                         return value.clone();
                     }
@@ -1597,7 +1606,7 @@ impl Term {
     /// The var_ids output tracks original variable IDs for use with LocalContext::remap.
     pub fn normalize_var_ids_into(&mut self, var_ids: &mut Vec<AtomId>) {
         for component in &mut self.components {
-            if let TermComponent::Atom(Atom::Variable(i)) = component {
+            if let TermComponent::Atom(Atom::FreeVariable(i)) = component {
                 let pos = var_ids.iter().position(|&x| x == *i);
                 match pos {
                     Some(j) => *i = j as AtomId,
@@ -1665,7 +1674,7 @@ impl Term {
     /// This mutates the term in place.
     pub fn normalize_var_ids(&mut self, var_ids: &mut Vec<AtomId>) {
         for component in &mut self.components {
-            if let TermComponent::Atom(Atom::Variable(i)) = component {
+            if let TermComponent::Atom(Atom::FreeVariable(i)) = component {
                 let pos = var_ids.iter().position(|&x| x == *i);
                 match pos {
                     Some(j) => *i = j as AtomId,
@@ -1771,6 +1780,126 @@ impl Term {
         // Add this term itself
         answer.push((prefix.clone(), self.clone()));
     }
+
+    /// Check if this term contains any free variables.
+    pub fn has_free_variable(&self) -> bool {
+        for component in &self.components {
+            if let TermComponent::Atom(Atom::FreeVariable(_)) = component {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Check if this term contains any bound variables.
+    pub fn has_bound_variable(&self) -> bool {
+        for component in &self.components {
+            if let TermComponent::Atom(Atom::BoundVariable(_)) = component {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Substitute a bound variable with a replacement term.
+    /// Replaces BoundVariable(index) with the given replacement term.
+    /// This is the core operation for applying a Pi type to an argument.
+    pub fn substitute_bound(&self, index: u16, replacement: &Term) -> Term {
+        // Special case: if this term IS the bound variable being replaced
+        if self.components.len() == 1 {
+            if let TermComponent::Atom(Atom::BoundVariable(i)) = self.components[0] {
+                if i == index {
+                    return replacement.clone();
+                }
+            }
+        }
+
+        self.substitute_bound_impl(index, replacement)
+    }
+
+    /// Helper for substitute_bound using decomposition.
+    fn substitute_bound_impl(&self, index: u16, replacement: &Term) -> Term {
+        match self.as_ref().decompose() {
+            Decomposition::Atom(atom) => {
+                if let Atom::BoundVariable(i) = atom {
+                    if *i == index {
+                        return replacement.clone();
+                    }
+                }
+                // Not the variable we're replacing
+                self.clone()
+            }
+            Decomposition::Application(func_ref, arg_ref) => {
+                let func = func_ref.to_owned();
+                let arg = arg_ref.to_owned();
+
+                let new_func = func.substitute_bound_impl(index, replacement);
+                let new_arg = arg.substitute_bound_impl(index, replacement);
+
+                new_func.apply(&[new_arg])
+            }
+            Decomposition::Pi(input_ref, output_ref) => {
+                let input = input_ref.to_owned();
+                let output = output_ref.to_owned();
+
+                // Substitute in input type
+                let new_input = input.substitute_bound_impl(index, replacement);
+                // In the output type, bound variables are shifted by 1, so we substitute at index+1
+                let new_output = output.substitute_bound_impl(index + 1, replacement);
+
+                Term::pi(new_input, new_output)
+            }
+        }
+    }
+
+    /// Shift bound variable indices.
+    /// Variables with index >= cutoff are shifted by amount.
+    /// This is used when entering/exiting binders.
+    ///
+    /// Example: When substituting into a Pi body, any references to outer binders
+    /// need to be adjusted since we're removing one layer of binding.
+    pub fn shift_bound(&self, cutoff: u16, amount: i16) -> Term {
+        if amount == 0 {
+            return self.clone();
+        }
+
+        self.shift_bound_impl(cutoff, amount)
+    }
+
+    /// Helper for shift_bound using decomposition.
+    fn shift_bound_impl(&self, cutoff: u16, amount: i16) -> Term {
+        match self.as_ref().decompose() {
+            Decomposition::Atom(atom) => {
+                if let Atom::BoundVariable(i) = atom {
+                    if *i >= cutoff {
+                        let new_i = (*i as i16 + amount) as u16;
+                        return Term::atom(Atom::BoundVariable(new_i));
+                    }
+                }
+                self.clone()
+            }
+            Decomposition::Application(func_ref, arg_ref) => {
+                let func = func_ref.to_owned();
+                let arg = arg_ref.to_owned();
+
+                let new_func = func.shift_bound_impl(cutoff, amount);
+                let new_arg = arg.shift_bound_impl(cutoff, amount);
+
+                new_func.apply(&[new_arg])
+            }
+            Decomposition::Pi(input_ref, output_ref) => {
+                let input = input_ref.to_owned();
+                let output = output_ref.to_owned();
+
+                // Shift in input type
+                let new_input = input.shift_bound_impl(cutoff, amount);
+                // In the output type, the cutoff increases by 1 (we're under a binder)
+                let new_output = output.shift_bound_impl(cutoff + 1, amount);
+
+                Term::pi(new_input, new_output)
+            }
+        }
+    }
 }
 
 impl fmt::Display for Term {
@@ -1848,7 +1977,7 @@ mod tests {
 
         // Second arg should be x1
         let arg1_head = args[1].get_head_atom();
-        assert!(matches!(arg1_head, Atom::Variable(1)));
+        assert!(matches!(arg1_head, Atom::FreeVariable(1)));
     }
 
     #[test]
@@ -1865,7 +1994,7 @@ mod tests {
 
         let args: Vec<_> = result.iter_args().collect();
         assert_eq!(args.len(), 1);
-        assert!(matches!(args[0].get_head_atom(), Atom::Variable(1)));
+        assert!(matches!(args[0].get_head_atom(), Atom::FreeVariable(1)));
     }
 
     #[test]
@@ -1951,5 +2080,97 @@ mod tests {
         } else {
             panic!("Expected Application decomposition");
         }
+    }
+
+    #[test]
+    fn test_bound_variable_parsing() {
+        // Test parsing bound variables
+        let b0 = Term::parse("b0");
+        assert!(matches!(b0.get_head_atom(), Atom::BoundVariable(0)));
+
+        let b5 = Term::parse("b5");
+        assert!(matches!(b5.get_head_atom(), Atom::BoundVariable(5)));
+
+        // Bound variables in compound terms
+        let term = Term::parse("c0(b0, b1)");
+        assert!(term.has_bound_variable());
+        assert!(!term.has_free_variable());
+    }
+
+    #[test]
+    fn test_substitute_bound_simple() {
+        // Replace b0 with c0
+        let term = Term::parse("b0");
+        let replacement = Term::parse("c0");
+        let result = term.substitute_bound(0, &replacement);
+        assert_eq!(format!("{}", result), "c0");
+    }
+
+    #[test]
+    fn test_substitute_bound_in_application() {
+        // Replace b0 in c0(b0, b1) with c1
+        // Should get c0(c1, b1)
+        let term = Term::parse("c0(b0, b1)");
+        let replacement = Term::parse("c1");
+        let result = term.substitute_bound(0, &replacement);
+        assert_eq!(format!("{}", result), "c0(c1, b1)");
+
+        // Replace b1 in c0(b0, b1) with c2
+        // Should get c0(b0, c2)
+        let result2 = term.substitute_bound(1, &replacement);
+        assert_eq!(format!("{}", result2), "c0(b0, c1)");
+    }
+
+    #[test]
+    fn test_shift_bound_simple() {
+        // Shift b0 by +1 -> b1
+        let term = Term::parse("b0");
+        let result = term.shift_bound(0, 1);
+        assert_eq!(format!("{}", result), "b1");
+
+        // Shift b2 by -1 -> b1
+        let term2 = Term::parse("b2");
+        let result2 = term2.shift_bound(0, -1);
+        assert_eq!(format!("{}", result2), "b1");
+    }
+
+    #[test]
+    fn test_shift_bound_with_cutoff() {
+        // Shift b0 with cutoff 1 (no change - 0 < 1)
+        let term = Term::parse("b0");
+        let result = term.shift_bound(1, 1);
+        assert_eq!(format!("{}", result), "b0");
+
+        // Shift b1 with cutoff 1 (+1 -> b2)
+        let term2 = Term::parse("b1");
+        let result2 = term2.shift_bound(1, 1);
+        assert_eq!(format!("{}", result2), "b2");
+    }
+
+    #[test]
+    fn test_shift_bound_in_compound() {
+        // c0(b0, b1) shifted by +1 at cutoff 0 -> c0(b1, b2)
+        let term = Term::parse("c0(b0, b1)");
+        let result = term.shift_bound(0, 1);
+        assert_eq!(format!("{}", result), "c0(b1, b2)");
+    }
+
+    #[test]
+    fn test_has_free_and_bound_variable() {
+        let free_only = Term::parse("c0(x0, x1)");
+        assert!(free_only.has_free_variable());
+        assert!(!free_only.has_bound_variable());
+
+        let bound_only = Term::parse("c0(b0, b1)");
+        assert!(!bound_only.has_free_variable());
+        assert!(bound_only.has_bound_variable());
+
+        let both = Term::parse("c0(x0, b0)");
+        assert!(both.has_free_variable());
+        assert!(both.has_bound_variable());
+
+        let neither = Term::parse("c0(c1)");
+        assert!(!neither.has_free_variable());
+        assert!(!neither.has_bound_variable());
     }
 }
