@@ -88,6 +88,32 @@ impl ClosedType {
         ClosedType(Term::pi(input.0, output.0))
     }
 
+    /// Create a type application like `List[Int]` or `Map[String, Int]`.
+    /// `head` is the type constructor, `args` are the type parameters.
+    pub fn application(head: ClosedType, args: Vec<ClosedType>) -> ClosedType {
+        debug_assert!(
+            !args.is_empty(),
+            "application requires at least one argument"
+        );
+        // Build: [Application{span}, head_components..., arg1_components..., arg2_components..., ...]
+        let head_components = head.0.components();
+        let mut total_len = 1 + head_components.len(); // 1 for Application marker
+        for arg in &args {
+            total_len += arg.0.components().len();
+        }
+
+        let mut components = Vec::with_capacity(total_len);
+        components.push(TermComponent::Application {
+            span: total_len as u16,
+        });
+        components.extend_from_slice(head_components);
+        for arg in args {
+            components.extend(arg.0.components().iter().copied());
+        }
+
+        ClosedType(Term::from_components(components))
+    }
+
     /// Returns true if this is a ground type (just a GroundTypeId).
     pub fn is_ground(&self) -> bool {
         let components = self.0.components();
@@ -121,6 +147,41 @@ impl ClosedType {
                 Some((ClosedType(input.to_owned()), ClosedType(output.to_owned())))
             }
             None => None,
+        }
+    }
+
+    /// Returns true if this is a type application (e.g., `List[Int]`).
+    pub fn is_application(&self) -> bool {
+        matches!(
+            self.0.components().first(),
+            Some(TermComponent::Application { .. })
+        )
+    }
+
+    /// If this is a type application, returns (head, args).
+    /// E.g., for `List[Int, Bool]`, returns `(List, [Int, Bool])`.
+    pub fn as_application(&self) -> Option<(ClosedType, Vec<ClosedType>)> {
+        let components = self.0.components();
+        match components.first() {
+            Some(TermComponent::Application { span }) => {
+                let total_span = *span as usize;
+                // Find where the head ends
+                let head_end = self.find_subterm_end(1);
+                let head = ClosedType::from_components(components[1..head_end].to_vec());
+
+                // Collect all arguments
+                let mut args = Vec::new();
+                let mut pos = head_end;
+                while pos < total_span {
+                    let arg_end = self.find_subterm_end(pos);
+                    let arg = ClosedType::from_components(components[pos..arg_end].to_vec());
+                    args.push(arg);
+                    pos = arg_end;
+                }
+
+                Some((head, args))
+            }
+            _ => None,
         }
     }
 
@@ -236,17 +297,38 @@ mod tests {
 
     #[test]
     fn test_closed_type_application() {
-        // Simulate List[Bool] - a type constructor applied to Bool
+        // Create List[Bool] using the application() constructor
         // We use GROUND_EMPTY as a stand-in for "List" type constructor
-        let list_bool = ClosedType::from_components(vec![
-            TermComponent::Application { span: 3 },
-            TermComponent::Atom(Atom::Symbol(Symbol::Type(GROUND_EMPTY))),
-            TermComponent::Atom(Atom::Symbol(Symbol::Type(GROUND_BOOL))),
-        ]);
+        let list_type = ClosedType::ground(GROUND_EMPTY);
+        let bool_type = ClosedType::ground(GROUND_BOOL);
+        let list_bool = ClosedType::application(list_type.clone(), vec![bool_type.clone()]);
 
         assert!(!list_bool.is_ground());
         assert!(!list_bool.is_pi());
+        assert!(list_bool.is_application());
         assert_eq!(format!("{}", list_bool), "T0[T1]");
+
+        // Test as_application
+        let (head, args) = list_bool.as_application().unwrap();
+        assert_eq!(head.as_ground(), Some(GROUND_EMPTY));
+        assert_eq!(args.len(), 1);
+        assert_eq!(args[0].as_ground(), Some(GROUND_BOOL));
+
+        // Test with multiple args: Map[String, Int] (using GROUND_EMPTY and GROUND_BOOL as stand-ins)
+        let map_type = ClosedType::ground(GROUND_EMPTY);
+        let map_string_int =
+            ClosedType::application(map_type, vec![bool_type.clone(), list_type.clone()]);
+        assert!(map_string_int.is_application());
+
+        let (head2, args2) = map_string_int.as_application().unwrap();
+        assert_eq!(head2.as_ground(), Some(GROUND_EMPTY));
+        assert_eq!(args2.len(), 2);
+        assert_eq!(args2[0].as_ground(), Some(GROUND_BOOL));
+        assert_eq!(args2[1].as_ground(), Some(GROUND_EMPTY));
+
+        // Ground types are not applications
+        assert!(!bool_type.is_application());
+        assert!(bool_type.as_application().is_none());
     }
 
     #[test]
