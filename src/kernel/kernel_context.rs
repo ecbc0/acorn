@@ -267,6 +267,18 @@ impl KernelContext {
     /// Example: `ctx.add_datatype("Int")`
     #[cfg(test)]
     pub fn add_datatype(&mut self, name: &str) -> &mut Self {
+        self.add_type_constructor(name, 0)
+    }
+
+    /// Add a type constructor by name with the given arity for testing.
+    /// Arity 0 means a simple type like "Int".
+    /// Arity 1 means a type constructor like "List" (List[T]).
+    /// Arity 2 means a type constructor like "Pair" (Pair[S, T]).
+    /// Returns self for chaining.
+    ///
+    /// Example: `ctx.add_type_constructor("List", 1)`
+    #[cfg(test)]
+    pub fn add_type_constructor(&mut self, name: &str, arity: u8) -> &mut Self {
         use crate::elaborator::acorn_type::{AcornType, Datatype};
         use crate::module::ModuleId;
 
@@ -274,8 +286,9 @@ impl KernelContext {
             module_id: ModuleId(0),
             name: name.to_string(),
         };
-        let acorn_type = AcornType::Data(datatype, vec![]);
+        let acorn_type = AcornType::Data(datatype.clone(), vec![]);
         self.type_store.add_type(&acorn_type);
+        self.type_store.set_datatype_arity(&datatype, arity);
         self
     }
 
@@ -291,10 +304,12 @@ impl KernelContext {
         self
     }
 
-    /// Parse a type string like "Bool", "Int", "Int -> Bool", or "(Int, Int) -> Bool".
+    /// Parse a type string like "Bool", "Int", "Int -> Bool", "(Int, Int) -> Bool",
+    /// "List[Int]", "Pair[Int, Bool]", or "T0" (type variable).
     /// Looks up datatype names in the TypeStore.
     #[cfg(test)]
     fn parse_type(&self, type_str: &str) -> Term {
+        use crate::kernel::atom::Atom;
         use crate::kernel::types::{BOOL, EMPTY};
 
         let s = type_str.trim();
@@ -320,6 +335,27 @@ impl KernelContext {
                 let input = self.parse_type(input_str);
                 Term::pi(input, output)
             }
+        } else if let Some(bracket_pos) = s.find('[') {
+            // Parameterized type: "List[Int]" or "Pair[Int, Bool]"
+            let name = s[..bracket_pos].trim();
+            let params_str = &s[bracket_pos + 1..s.len() - 1]; // Strip [ and ]
+            let params: Vec<&str> = Self::split_by_comma(params_str);
+
+            // Get the ground type for the type constructor
+            let ground_id = self
+                .type_store
+                .get_ground_id_by_name(name)
+                .unwrap_or_else(|| panic!("Unknown type constructor: {}", name));
+
+            // Parse type parameters
+            let type_args: Vec<Term> = params.iter().map(|p| self.parse_type(p.trim())).collect();
+
+            // Build applied type: TypeConstructor(param1, param2, ...)
+            Term::new(Atom::Symbol(Symbol::Type(ground_id)), type_args)
+        } else if s.starts_with('T') && s.len() > 1 && s[1..].chars().all(|c| c.is_ascii_digit()) {
+            // Type variable: "T0", "T1", etc. - represented as Variable in the term
+            let var_id: u16 = s[1..].parse().expect("invalid type variable id");
+            Term::atom(Atom::Variable(var_id))
         } else {
             // Simple type name
             match s {
@@ -336,15 +372,15 @@ impl KernelContext {
         }
     }
 
-    /// Find the position of a top-level "->" (not inside parentheses).
+    /// Find the position of a top-level "->" (not inside parentheses or brackets).
     #[cfg(test)]
     fn find_top_level_arrow(s: &str) -> Option<usize> {
         let mut depth = 0;
         let bytes = s.as_bytes();
         for i in 0..bytes.len().saturating_sub(1) {
             match bytes[i] {
-                b'(' => depth += 1,
-                b')' => depth -= 1,
+                b'(' | b'[' => depth += 1,
+                b')' | b']' => depth -= 1,
                 b'-' if depth == 0 && bytes.get(i + 1) == Some(&b'>') => return Some(i),
                 _ => {}
             }
@@ -352,7 +388,7 @@ impl KernelContext {
         None
     }
 
-    /// Split a string by commas, respecting parentheses.
+    /// Split a string by commas, respecting parentheses and brackets.
     #[cfg(test)]
     fn split_by_comma(s: &str) -> Vec<&str> {
         let mut result = Vec::new();
@@ -360,8 +396,8 @@ impl KernelContext {
         let mut start = 0;
         for (i, c) in s.char_indices() {
             match c {
-                '(' => depth += 1,
-                ')' => depth -= 1,
+                '(' | '[' => depth += 1,
+                ')' | ']' => depth -= 1,
                 ',' if depth == 0 => {
                     result.push(&s[start..i]);
                     start = i + 1;
@@ -507,5 +543,73 @@ mod tests {
         let c2_type = ctx.symbol_table.get_type(Symbol::ScopedConstant(2));
         let (_, inner) = c2_type.as_ref().split_pi().unwrap();
         assert!(inner.split_pi().is_some()); // Should be another arrow type
+    }
+
+    #[test]
+    fn test_parameterized_type_parsing() {
+        use crate::kernel::atom::Atom;
+
+        let mut ctx = KernelContext::new();
+        ctx.add_datatype("Int")
+            .add_type_constructor("List", 1)
+            .add_type_constructor("Pair", 2)
+            .add_constant("c0", "List[Int]")
+            .add_constant("c1", "Pair[Int, Bool]")
+            .add_constant("c2", "List[Int] -> Bool");
+
+        // Verify List has arity 1
+        let list_id = ctx.type_store.get_ground_id_by_name("List").unwrap();
+        assert_eq!(ctx.type_store.get_arity(list_id), 1);
+
+        // Verify Pair has arity 2
+        let pair_id = ctx.type_store.get_ground_id_by_name("Pair").unwrap();
+        assert_eq!(ctx.type_store.get_arity(pair_id), 2);
+
+        // Verify c0 has type List[Int] (an application of List to Int)
+        let c0_type = ctx.symbol_table.get_type(Symbol::ScopedConstant(0));
+        let int_id = ctx.type_store.get_ground_id_by_name("Int").unwrap();
+        let expected_list_int = Term::new(
+            Atom::Symbol(Symbol::Type(list_id)),
+            vec![Term::type_ground(int_id)],
+        );
+        assert_eq!(*c0_type, expected_list_int);
+
+        // Verify c1 has type Pair[Int, Bool]
+        let c1_type = ctx.symbol_table.get_type(Symbol::ScopedConstant(1));
+        let expected_pair = Term::new(
+            Atom::Symbol(Symbol::Type(pair_id)),
+            vec![Term::type_ground(int_id), Term::type_bool()],
+        );
+        assert_eq!(*c1_type, expected_pair);
+
+        // Verify c2 has type List[Int] -> Bool
+        let c2_type = ctx.symbol_table.get_type(Symbol::ScopedConstant(2));
+        let (input, output) = c2_type.as_ref().split_pi().unwrap();
+        assert_eq!(input.to_owned(), expected_list_int);
+        assert_eq!(output.to_owned(), Term::type_bool());
+    }
+
+    #[test]
+    fn test_type_variable_parsing() {
+        use crate::kernel::atom::Atom;
+
+        let mut ctx = KernelContext::new();
+        ctx.add_type_constructor("List", 1);
+
+        // Test parsing T0, T1 as type variables
+        let t0 = ctx.parse_type("T0");
+        assert_eq!(t0, Term::atom(Atom::Variable(0)));
+
+        let t1 = ctx.parse_type("T1");
+        assert_eq!(t1, Term::atom(Atom::Variable(1)));
+
+        // Test parsing List[T0] - a generic list type
+        let list_id = ctx.type_store.get_ground_id_by_name("List").unwrap();
+        let list_t0 = ctx.parse_type("List[T0]");
+        let expected = Term::new(
+            Atom::Symbol(Symbol::Type(list_id)),
+            vec![Term::atom(Atom::Variable(0))],
+        );
+        assert_eq!(list_t0, expected);
     }
 }
