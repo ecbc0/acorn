@@ -102,6 +102,24 @@ impl LocalContext {
     pub fn from_types(var_types: Vec<Term>) -> LocalContext {
         LocalContext { var_types }
     }
+
+    /// Validates that variable types only reference lower-numbered variables.
+    ///
+    /// For variable x_i, its type can only contain variables x_j where j < i.
+    /// This ensures a well-founded ordering where type variables come before
+    /// term variables that depend on them.
+    ///
+    /// Returns true if all variable types satisfy this constraint.
+    pub fn validate_variable_ordering(&self) -> bool {
+        for (i, var_type) in self.var_types.iter().enumerate() {
+            if let Some(max_var) = var_type.max_variable() {
+                if max_var as usize >= i {
+                    return false;
+                }
+            }
+        }
+        true
+    }
 }
 
 #[cfg(test)]
@@ -188,5 +206,64 @@ mod tests {
 
         // Try to remap with an out-of-bounds variable ID
         ctx.remap(&[0, 5]);
+    }
+
+    #[test]
+    fn test_validate_variable_ordering_valid() {
+        use crate::kernel::atom::Atom;
+        use crate::kernel::types::TYPE;
+
+        // Valid: x0 : Type (no variable references)
+        let ctx1 = LocalContext::from_types(vec![Term::type_ground(TYPE)]);
+        assert!(ctx1.validate_variable_ordering());
+
+        // Valid: x0 : Type, x1 : x0 (references lower-numbered variable)
+        let type_type = Term::type_ground(TYPE);
+        let type_var_x0 = Term::atom(Atom::Variable(0));
+        let ctx2 = LocalContext::from_types(vec![type_type, type_var_x0]);
+        assert!(ctx2.validate_variable_ordering());
+
+        // Valid: x0 : Bool, x1 : Bool (no variable references in types)
+        let ctx3 = LocalContext::from_types(vec![Term::type_bool(), Term::type_bool()]);
+        assert!(ctx3.validate_variable_ordering());
+    }
+
+    #[test]
+    fn test_validate_variable_ordering_invalid_self_reference() {
+        use crate::kernel::atom::Atom;
+
+        // Invalid: x0 : x0 (variable referencing itself)
+        let type_var_x0 = Term::atom(Atom::Variable(0));
+        let ctx = LocalContext::from_types(vec![type_var_x0]);
+        assert!(!ctx.validate_variable_ordering());
+    }
+
+    #[test]
+    fn test_validate_variable_ordering_invalid_forward_reference() {
+        use crate::kernel::atom::Atom;
+        use crate::kernel::types::TYPE;
+
+        // Invalid: x0 : x1, x1 : Type (x0 references higher-numbered x1)
+        let type_type = Term::type_ground(TYPE);
+        let type_var_x1 = Term::atom(Atom::Variable(1));
+        let ctx = LocalContext::from_types(vec![type_var_x1, type_type]);
+        assert!(!ctx.validate_variable_ordering());
+    }
+
+    #[test]
+    fn test_validate_variable_ordering_nested_reference() {
+        use crate::kernel::atom::Atom;
+        use crate::kernel::types::TYPE;
+
+        // Setup: need a type constructor like List
+        // For this test, we'll use a Pi type: x0 : Type, x1 : x0 -> x0
+
+        let type_type = Term::type_ground(TYPE);
+        let type_var_x0 = Term::atom(Atom::Variable(0));
+        let arrow_type = Term::pi(type_var_x0.clone(), type_var_x0.clone()); // x0 -> x0
+
+        // Valid: x0 : Type, x1 : x0 -> x0
+        let ctx = LocalContext::from_types(vec![type_type, arrow_type]);
+        assert!(ctx.validate_variable_ordering());
     }
 }

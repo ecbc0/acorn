@@ -252,10 +252,17 @@ impl Edge {
 
 /// Encodes a type Term into the key buffer.
 /// Types are encoded as:
+/// - Type variables: Atom(Variable(id))
 /// - Ground types: Atom(Type(id))
 /// - Arrow types: Arrow + domain encoding + codomain encoding
 /// - Type applications: Application + sort + head encoding + arg encoding
 fn key_from_type(type_term: &Term, key: &mut Vec<u8>) {
+    // Check for type variable first
+    if let Some(var_id) = type_term.atomic_variable() {
+        Edge::Atom(Atom::Variable(var_id)).append_to(key);
+        return;
+    }
+
     // Check for ground type
     if let Some(ground_id) = type_term.as_ref().as_type_atom() {
         Edge::Atom(Atom::Type(ground_id)).append_to(key);
@@ -1547,6 +1554,103 @@ mod tests {
             found,
             Some(&42),
             "Should match pair where applied variable also appears as argument"
+        );
+    }
+
+    #[test]
+    fn test_key_from_type_variable() {
+        // Type variable T0 should encode as Variable(0)
+        let type_var = Term::atom(KernelAtom::Variable(0));
+        let mut key = Vec::new();
+        key_from_type(&type_var, &mut key);
+        assert_eq!(key.len(), 3);
+        let edge = Edge::from_bytes(key[0], key[1], key[2]);
+        assert_eq!(edge, Edge::Atom(Atom::Variable(0)));
+    }
+
+    #[test]
+    fn test_key_from_type_variable_higher_id() {
+        // Type variable T5 should encode as Variable(5)
+        let type_var = Term::atom(KernelAtom::Variable(5));
+        let mut key = Vec::new();
+        key_from_type(&type_var, &mut key);
+        assert_eq!(key.len(), 3);
+        let edge = Edge::from_bytes(key[0], key[1], key[2]);
+        assert_eq!(edge, Edge::Atom(Atom::Variable(5)));
+    }
+
+    #[test]
+    fn test_key_from_parameterized_type_with_variable() {
+        // List[T0] should encode as: Application + Type0 + Type(List) + Variable(0)
+        use crate::kernel::symbol::Symbol;
+
+        let mut kctx = KernelContext::new();
+        kctx.add_type_constructor("List", 1);
+        let list_id = kctx.type_store.get_ground_id_by_name("List").unwrap();
+
+        let type_var = Term::atom(KernelAtom::Variable(0));
+        let list_t0 = Term::new(KernelAtom::Symbol(Symbol::Type(list_id)), vec![type_var]);
+        let mut key = Vec::new();
+        key_from_type(&list_t0, &mut key);
+
+        // Verify structure: Application + Type0 + Type(List) + Variable(0)
+        let debug = Edge::debug_bytes(&key);
+        assert!(debug.contains("Application"), "key: {}", debug);
+        assert!(debug.contains("Type0"), "key: {}", debug);
+        assert!(debug.contains("Variable(0)"), "key: {}", debug);
+    }
+
+    #[test]
+    fn test_key_from_arrow_type_with_variables() {
+        // T0 -> T1 should encode as: Arrow + Variable(0) + Variable(1)
+        let t0 = Term::atom(KernelAtom::Variable(0));
+        let t1 = Term::atom(KernelAtom::Variable(1));
+        let arrow_type = Term::pi(t0, t1);
+
+        let mut key = Vec::new();
+        key_from_type(&arrow_type, &mut key);
+
+        // Verify structure: Arrow + Variable(0) + Variable(1)
+        let debug = Edge::debug_bytes(&key);
+        assert!(debug.contains("Arrow"), "key: {}", debug);
+        assert!(debug.contains("Variable(0)"), "key: {}", debug);
+        assert!(debug.contains("Variable(1)"), "key: {}", debug);
+    }
+
+    #[test]
+    fn test_pattern_tree_with_type_variable() {
+        // Test that type variables in the type encoding are correctly encoded and matched.
+        // This test verifies the key encoding produces matching keys for identical type structures.
+        use crate::kernel::types::TYPE;
+
+        let kctx = KernelContext::new();
+
+        // Create LocalContext: x0 : Type (a type variable)
+        let type_type = Term::type_ground(TYPE);
+        let type_var_x0 = Term::atom(KernelAtom::Variable(0));
+        let lctx = LocalContext::from_types(vec![type_type.clone(), type_var_x0.clone()]);
+
+        // Generate keys for the same pattern twice
+        let x1 = Term::atom(KernelAtom::Variable(1));
+        let key1 = key_from_term(&x1, &lctx, &kctx);
+
+        // Generate key for an equivalent pattern (same structure)
+        let key2 = key_from_term(&x1, &lctx, &kctx);
+
+        // Keys should be identical
+        assert_eq!(key1, key2, "Keys for identical patterns should match");
+
+        // Verify the key structure contains the type variable encoding
+        let debug = Edge::debug_bytes(&key1);
+        assert!(
+            debug.contains("Variable(0)"),
+            "Key should contain type variable: {}",
+            debug
+        );
+        assert!(
+            debug.contains("Variable(1)"),
+            "Key should contain term variable: {}",
+            debug
         );
     }
 }
