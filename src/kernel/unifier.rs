@@ -369,13 +369,21 @@ impl<'a> Unifier<'a> {
         let local2 = self.get_local_context(scope2);
         let kc = self.kernel_context;
 
+        // Base case: identical non-variable atoms always unify (same symbol = same type)
+        if let (Decomposition::Atom(a1), Decomposition::Atom(a2)) =
+            (term1.decompose(), term2.decompose())
+        {
+            if !a1.is_variable() && !a2.is_variable() {
+                return a1 == a2;
+            }
+        }
+
         let type1 = term1.get_type_with_context(local1, kc);
         let type2 = term2.get_type_with_context(local2, kc);
-        if type1 != type2 {
-            // Types differ - try to unify them (handles type variables like List[x0])
-            if !self.unify_internal(scope1, type1.as_ref(), scope2, type2.as_ref()) {
-                return false;
-            }
+        // Always unify types - we can't just compare for equality because type variables
+        // in different scopes may have been bound to different concrete types.
+        if !self.unify_internal(scope1, type1.as_ref(), scope2, type2.as_ref()) {
+            return false;
         }
 
         // Handle the case where we're unifying something with an atomic variable
@@ -388,6 +396,7 @@ impl<'a> Unifier<'a> {
 
         match (term1.decompose(), term2.decompose()) {
             (Decomposition::Atom(a1), Decomposition::Atom(a2)) => {
+                // This case is now only for variables, handled by unify_atoms
                 self.unify_atoms(scope1, a1, scope2, a2)
             }
             (Decomposition::Application(f1, a1), Decomposition::Application(f2, a2)) => {
@@ -982,6 +991,73 @@ mod tests {
         // After unification, x1 should map to c0
         let x1_mapping = u.get_mapping(Scope::RIGHT, 1);
         assert!(x1_mapping.is_some(), "x1 should have a mapping");
+    }
+
+    #[test]
+    fn test_type_variable_inconsistency_bug() {
+        // This test checks for a bug where type variables in different scopes
+        // get bound to different concrete types, but the raw types still compare equal.
+        //
+        // Scenario:
+        // - LEFT and RIGHT both have x0: Type, x1: List[x0]
+        // - We bind x0 in LEFT to Int (by unifying x0 with Int)
+        // - We bind x0 in RIGHT to Nat (by unifying x0 with Nat)
+        // - Now x1 in LEFT has effective type List[Int]
+        // - And x1 in RIGHT has effective type List[Nat]
+        // - Unifying x1 (LEFT) with x1 (RIGHT) should FAIL because the types differ
+        // - But if we only compare raw types (List[x0] == List[x0]), it would wrongly succeed
+        use crate::kernel::types::TYPE;
+
+        let mut ctx = KernelContext::new();
+        ctx.add_type_constructor("List", 1)
+            .add_datatype("Int")
+            .add_datatype("Nat");
+
+        let list_id = ctx.type_store.get_ground_id_by_name("List").unwrap();
+        let int_id = ctx.type_store.get_ground_id_by_name("Int").unwrap();
+        let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
+
+        let type_type = Term::type_ground(TYPE);
+        let int_type = Term::type_ground(int_id);
+        let nat_type = Term::type_ground(nat_id);
+
+        // List[x0] - a list parameterized by type variable x0
+        let list_x0 = Term::new(
+            Atom::Symbol(Symbol::Type(list_id)),
+            vec![Term::atom(Atom::Variable(0))],
+        );
+
+        // LocalContext: x0: Type, x1: List[x0]
+        let local_ctx = LocalContext::from_types(vec![type_type.clone(), list_x0.clone()]);
+
+        let x0 = Term::atom(Atom::Variable(0));
+        let x1 = Term::atom(Atom::Variable(1));
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(local_ctx.clone())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(local_ctx.clone())));
+        u.set_output_var_types(vec![type_type.clone(), type_type.clone()]);
+
+        // Bind x0 in LEFT to Int
+        assert!(
+            u.unify(Scope::LEFT, &x0, Scope::LEFT, &int_type),
+            "Should unify x0 with Int in LEFT"
+        );
+
+        // Bind x0 in RIGHT to Nat
+        assert!(
+            u.unify(Scope::RIGHT, &x0, Scope::RIGHT, &nat_type),
+            "Should unify x0 with Nat in RIGHT"
+        );
+
+        // Now x1 in LEFT has effective type List[Int]
+        // And x1 in RIGHT has effective type List[Nat]
+        // These should NOT unify!
+        let result = u.unify(Scope::LEFT, &x1, Scope::RIGHT, &x1);
+        assert!(
+            !result,
+            "Should NOT unify x1:List[Int] (LEFT) with x1:List[Nat] (RIGHT) - types differ after substitution"
+        );
     }
 
     #[test]

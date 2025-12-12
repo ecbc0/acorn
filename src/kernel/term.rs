@@ -175,18 +175,6 @@ impl<'a> TermRef<'a> {
         }
     }
 
-    /// Find the end position of a subterm starting at `start`.
-    /// For compound terms, this follows the right child recursively.
-    fn find_subterm_end(&self, start: usize) -> usize {
-        match self.components[start] {
-            TermComponent::Pi { right_offset } | TermComponent::Application { right_offset } => {
-                // End is the end of the right child
-                self.find_subterm_end(start + right_offset as usize)
-            }
-            TermComponent::Atom(_) => start + 1,
-        }
-    }
-
     /// Split an application into (function, argument) in curried form.
     /// For f(a, b, c), returns (f(a, b), c).
     /// Returns None if the term is atomic or a Pi type.
@@ -225,32 +213,27 @@ impl<'a> TermRef<'a> {
         )
     }
 
-    /// Split a type application into (head, args).
-    /// Returns None if the term doesn't start with an Application marker.
-    /// Unlike split_application() which returns (func, last_arg) for curried apps,
-    /// this returns the head and ALL arguments as owned Terms.
+    /// Split a curried application into (head, args).
+    /// Returns None if the term is not an application.
+    /// For `((f a) b)`, returns (f, [a, b]).
     pub fn split_application_multi(&self) -> Option<(Term, Vec<Term>)> {
-        match self.components.first() {
-            Some(TermComponent::Application { right_offset }) => {
-                // Find where the head ends - directly from right_offset
-                let head_end = *right_offset as usize;
-                let head = TermRef::new(&self.components[1..head_end]).to_owned();
-
-                // Collect all arguments
-                let mut args = Vec::new();
-                let mut pos = head_end;
-                let total_len = self.components.len();
-                while pos < total_len {
-                    let arg_end = self.find_subterm_end(pos);
-                    let arg = TermRef::new(&self.components[pos..arg_end]).to_owned();
-                    args.push(arg);
-                    pos = arg_end;
-                }
-
-                Some((head, args))
-            }
-            _ => None,
+        if !self.is_application() {
+            return None;
         }
+
+        // Collect args by recursively splitting curried applications
+        let mut args = Vec::new();
+        let mut current = *self;
+
+        while let Some((func, arg)) = current.split_application() {
+            args.push(arg.to_owned());
+            current = func;
+        }
+
+        // Reverse args since we collected from right to left
+        args.reverse();
+
+        Some((current.to_owned(), args))
     }
 
     /// Check if this term is the boolean constant "true".
@@ -294,7 +277,7 @@ impl<'a> TermRef<'a> {
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> Term {
-        match self.decompose() {
+        let result = match self.decompose() {
             Decomposition::Atom(atom) => match atom {
                 Atom::Variable(i) => local_context
                     .get_var_type(*i as usize)
@@ -323,7 +306,9 @@ impl<'a> TermRef<'a> {
                 // Return the Type kind
                 Term::type_type()
             }
-        }
+        };
+        result.validate();
+        result
     }
 
     /// Check if this term contains a variable with the given index anywhere.
@@ -1057,30 +1042,13 @@ impl Term {
     }
 
     /// Create an Application term with a head and multiple arguments.
-    /// This creates: [Application{right_offset}, head_components..., arg1_components..., arg2_components..., ...]
-    /// The right_offset points to where the first arg starts (1 + head_len).
-    /// This is NOT the same as curried form - it's a flat structure used for type applications.
+    /// This creates proper curried form: f(a, b) becomes ((f a) b).
     pub fn application_multi(head: Term, args: Vec<Term>) -> Term {
         debug_assert!(
             !args.is_empty(),
             "application_multi requires at least one argument"
         );
-        let mut total_len = 1 + head.components.len();
-        for arg in &args {
-            total_len += arg.components.len();
-        }
-
-        // right_offset points to where the first arg starts
-        let right_offset = (1 + head.components.len()) as u16;
-
-        let mut components = Vec::with_capacity(total_len);
-        components.push(TermComponent::Application { right_offset });
-        components.extend(head.components);
-        for arg in args {
-            components.extend(arg.components);
-        }
-
-        Term { components }
+        head.apply(&args)
     }
 
     // ========== Type-related methods ==========
@@ -1146,11 +1114,39 @@ impl Term {
             .map(|(_, output)| output.to_owned())
     }
 
+    /// Validates that this term has correct structure.
+    /// Panics with detailed information if the term is malformed.
+    /// Only runs in test builds or when the "validate" feature is enabled.
+    pub fn validate(&self) {
+        #[cfg(not(any(test, feature = "validate")))]
+        {
+            return;
+        }
+
+        #[cfg(any(test, feature = "validate"))]
+        {
+            if !self.validate_structure_impl() {
+                panic!(
+                    "Malformed term detected: {:?}\nLength: {}\nFirst component: {:?}",
+                    self.components,
+                    self.components.len(),
+                    self.components.first()
+                );
+            }
+        }
+    }
+
     /// Validates that all right_offsets in this term are correct.
     /// Returns true if valid, false otherwise.
     /// This is primarily for debug assertions.
     #[cfg(debug_assertions)]
     pub fn validate_structure(&self) -> bool {
+        self.validate_structure_impl()
+    }
+
+    /// Returns true if this term has valid structure, false otherwise.
+    /// Use validate() for a version that panics with details on failure.
+    pub fn validate_structure_impl(&self) -> bool {
         fn check_subterm(components: &[TermComponent], start: usize) -> Option<usize> {
             if start >= components.len() {
                 return None;

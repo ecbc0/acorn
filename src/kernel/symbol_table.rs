@@ -92,14 +92,16 @@ impl SymbolTable {
     /// Get the type of a symbol, with proper kinds for type symbols.
     /// For Symbol::Type, this returns the proper kind based on arity (e.g., Type -> Type for List).
     pub fn get_symbol_type(&self, symbol: Symbol, type_store: &TypeStore) -> Term {
-        match symbol {
+        let result = match symbol {
             Symbol::True | Symbol::False => Term::type_bool(),
             Symbol::Type(ground_id) => type_store.get_type_kind(ground_id),
             Symbol::Synthetic(i) => self.synthetic_types[i as usize].clone(),
             Symbol::GlobalConstant(i) => self.global_constant_types[i as usize].clone(),
             Symbol::ScopedConstant(i) => self.scoped_constant_types[i as usize].clone(),
             Symbol::Monomorph(i) => self.monomorph_types[i as usize].clone(),
-        }
+        };
+        result.validate();
+        result
     }
 
     /// Get the count of scoped constants for debugging.

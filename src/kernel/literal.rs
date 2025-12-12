@@ -261,6 +261,21 @@ impl Literal {
 
         #[cfg(any(test, feature = "validate"))]
         {
+            // Validate term structure
+            self.left.validate();
+            self.right.validate();
+
+            // Validate types in local context
+            for (i, var_type) in local_context.get_var_types().iter().enumerate() {
+                if !var_type.validate_structure_impl() {
+                    panic!(
+                        "Malformed type in LocalContext for variable x{}: {:?}",
+                        i, var_type
+                    );
+                }
+            }
+
+            // Validate type consistency
             let left_type = self
                 .left
                 .get_type_with_context(local_context, kernel_context);
