@@ -21,19 +21,20 @@ pub enum PathStep {
 /// This is private to the term module - external code should use decomposition methods.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 enum TermComponent {
-    /// Indicates a function application with the given span (total number of components).
-    /// The span includes this Application marker itself, the head, and all arguments recursively.
-    /// To skip over this entire subterm: index += span
-    /// To enter this subterm (process the head): index += 1
-    /// Used in Term (open terms with free variables).
-    Application { span: u16 },
+    /// Indicates a function application.
+    /// - Left child (function): always at index + 1
+    /// - Right child (argument): at index + right_offset
+    /// The right_offset is the offset from this marker to the start of the right child.
+    /// For f(a): [Application{2}, f, a] - right_offset=2 means arg is at position 2 from marker.
+    Application { right_offset: u16 },
 
-    /// A Pi type (dependent function type) with the given span.
-    /// The span includes this Pi marker, the binder type, and the body.
-    /// Pi always has exactly 2 sub-elements: binder type and body.
+    /// A Pi type (dependent function type).
+    /// - Left child (input type): always at index + 1
+    /// - Right child (output type): at index + right_offset
+    /// Pi always has exactly 2 sub-elements: input type and output type.
     /// Used when Term represents types like `(T : Type<CommRing>) -> T -> T -> T`.
     /// A non-dependent arrow `A -> B` is represented as `Pi(A, B)` where B doesn't use Var(0).
-    Pi { span: u16 },
+    Pi { right_offset: u16 },
 
     /// A leaf atom in the term tree.
     Atom(Atom),
@@ -81,12 +82,12 @@ impl<'a> TermRef<'a> {
         // Verify format is correct
         if self.components.len() > 1 {
             match self.components[0] {
-                TermComponent::Application { span } | TermComponent::Pi { span } => {
-                    debug_assert_eq!(
-                        span as usize,
-                        self.components.len(),
-                        "to_owned: span {} doesn't match len {}",
-                        span,
+                TermComponent::Application { right_offset }
+                | TermComponent::Pi { right_offset } => {
+                    debug_assert!(
+                        right_offset >= 2 && (right_offset as usize) < self.components.len(),
+                        "to_owned: invalid right_offset {} for len {}",
+                        right_offset,
                         self.components.len()
                     );
                 }
@@ -149,26 +150,21 @@ impl<'a> TermRef<'a> {
 
         // Non-atomic terms start with Application or Pi
         match self.components[0] {
-            TermComponent::Application { span: outer_span } => {
-                // Position 1 is where func starts
-                let func_end = self.find_subterm_end(1);
-                let func = TermRef::new(&self.components[1..func_end]);
+            TermComponent::Application { right_offset } => {
+                // Left child (func) starts at position 1, ends at right_offset
+                let func = TermRef::new(&self.components[1..right_offset as usize]);
 
-                // arg starts right after func
-                let arg_start = func_end;
-                let arg_end = outer_span as usize;
-                let arg = TermRef::new(&self.components[arg_start..arg_end]);
+                // Right child (arg) starts at right_offset, extends to end of slice
+                let arg = TermRef::new(&self.components[right_offset as usize..]);
 
                 Decomposition::Application(func, arg)
             }
-            TermComponent::Pi { span: outer_span } => {
-                // Pi structure: [Pi{span}, input_type..., output_type...]
-                let input_end = self.find_subterm_end(1);
-                let input = TermRef::new(&self.components[1..input_end]);
+            TermComponent::Pi { right_offset } => {
+                // Left child (input type) starts at position 1, ends at right_offset
+                let input = TermRef::new(&self.components[1..right_offset as usize]);
 
-                let output_start = input_end;
-                let output_end = outer_span as usize;
-                let output = TermRef::new(&self.components[output_start..output_end]);
+                // Right child (output type) starts at right_offset, extends to end of slice
+                let output = TermRef::new(&self.components[right_offset as usize..]);
 
                 Decomposition::Pi(input, output)
             }
@@ -180,10 +176,12 @@ impl<'a> TermRef<'a> {
     }
 
     /// Find the end position of a subterm starting at `start`.
+    /// For compound terms, this follows the right child recursively.
     fn find_subterm_end(&self, start: usize) -> usize {
         match self.components[start] {
-            TermComponent::Pi { span } | TermComponent::Application { span } => {
-                start + span as usize
+            TermComponent::Pi { right_offset } | TermComponent::Application { right_offset } => {
+                // End is the end of the right child
+                self.find_subterm_end(start + right_offset as usize)
             }
             TermComponent::Atom(_) => start + 1,
         }
@@ -219,7 +217,7 @@ impl<'a> TermRef<'a> {
 
     /// Check if this term starts with an Application marker.
     /// This is different from has_args() which checks for any application structure.
-    /// is_application() specifically checks for the top-level Application{span} marker.
+    /// is_application() specifically checks for the top-level Application{right_offset} marker.
     pub fn is_application(&self) -> bool {
         matches!(
             self.components.first(),
@@ -233,16 +231,16 @@ impl<'a> TermRef<'a> {
     /// this returns the head and ALL arguments as owned Terms.
     pub fn split_application_multi(&self) -> Option<(Term, Vec<Term>)> {
         match self.components.first() {
-            Some(TermComponent::Application { span }) => {
-                let total_span = *span as usize;
-                // Find where the head ends
-                let head_end = self.find_subterm_end(1);
+            Some(TermComponent::Application { right_offset }) => {
+                // Find where the head ends - directly from right_offset
+                let head_end = *right_offset as usize;
                 let head = TermRef::new(&self.components[1..head_end]).to_owned();
 
                 // Collect all arguments
                 let mut args = Vec::new();
                 let mut pos = head_end;
-                while pos < total_span {
+                let total_len = self.components.len();
+                while pos < total_len {
                     let arg_end = self.find_subterm_end(pos);
                     let arg = TermRef::new(&self.components[pos..arg_end]).to_owned();
                     args.push(arg);
@@ -679,9 +677,9 @@ fn format_term_at(f: &mut fmt::Formatter, components: &[TermComponent], pos: usi
     }
 
     match &components[pos] {
-        TermComponent::Application { span } => {
+        TermComponent::Application { .. } => {
             // Non-atomic term: format the contents (skip the Application marker)
-            let end = pos + *span as usize;
+            let end = find_subterm_end_at(components, pos);
             format_application_contents(f, components, pos + 1, end)
         }
         TermComponent::Atom(atom) => {
@@ -692,9 +690,9 @@ fn format_term_at(f: &mut fmt::Formatter, components: &[TermComponent], pos: usi
             }
             Ok(())
         }
-        TermComponent::Pi { span } => {
+        TermComponent::Pi { .. } => {
             // Pi type: format as (input -> output)
-            let end = pos + *span as usize;
+            let end = find_subterm_end_at(components, pos);
             format_pi_contents(f, components, pos + 1, end)
         }
     }
@@ -702,8 +700,8 @@ fn format_term_at(f: &mut fmt::Formatter, components: &[TermComponent], pos: usi
 
 /// Format the contents of an application (func + arg) from start to end.
 /// Terms use nested Application markers:
-///   - f(a, b): [App{5}, App{3}, f, a, b] - func is another App, arg is last
-///   - f(g(x)): [App{4}, f, App{3}, g, x] - func is atomic, arg is compound
+///   - f(a, b): [App{right_offset:3}, App{right_offset:2}, f, a, b] - func is another App, arg is last
+///   - f(g(x)): [App{right_offset:2}, f, App{right_offset:2}, g, x] - func is atomic, arg is compound
 /// We collect all args by walking the curried structure.
 fn format_application_contents(
     f: &mut fmt::Formatter,
@@ -735,37 +733,27 @@ fn format_application_contents(
                     // Collect the remaining content as an argument
                     // For atomic head with compound arg: [head, App{n}, ...]
                     // We need to find where the arg ends
-                    match components[arg_start] {
-                        TermComponent::Application { span } => {
-                            let arg_end = arg_start + span as usize;
-                            args.push((arg_start, arg_end));
-                            // If there's more after this arg, it's weird (shouldn't happen)
-                            // but we'll just stop here
-                        }
-                        TermComponent::Atom(_) => {
-                            // Atomic arg
-                            args.push((arg_start, arg_start + 1));
-                        }
-                        TermComponent::Pi { .. } => return Err(fmt::Error),
-                    }
+                    let arg_end = find_subterm_end_at(components, arg_start);
+                    args.push((arg_start, arg_end));
                 }
                 break;
             }
-            TermComponent::Application { span } => {
-                // This is a nested application within our current bounds
-                // We're looking at an App marker, but the arg comes from current_end, not app_end
+            TermComponent::Application { right_offset } => {
+                // This is a nested application within our current bounds.
+                // The nested App represents the "func" part of our current level.
+                // We need to find where the nested App term ends (= where our arg starts).
                 //
-                // Example: format_application_contents(f, components, 1, 5) for [App{5}, App{3}, c0, c1, c2]
-                // - current_start=1 is App{3} (the func)
-                // - current_end=5
-                // - The func spans positions 1-4 (span=3)
-                // - The arg spans positions 4-5 (= func_end to current_end)
+                // Example: format_application_contents for [App{ro:4}, App{ro:2}, f, a, b]
+                // Called with start=1, end=5
+                //   at position 1: App{ro:2} (the inner App representing f(a))
+                //   - The inner App term ends at position 4 (after 'a')
+                //   - The outer arg 'b' is at positions [4, 5)
 
-                let func_span = *span as usize;
-                let func_end = current_start + func_span;
+                // Find where this nested App term ends
+                let nested_app_end = find_subterm_end_at(components, current_start);
 
-                // The arg is everything from func_end to current_end
-                let arg_start = func_end;
+                // The outer arg (at our current level) is from nested_app_end to current_end
+                let arg_start = nested_app_end;
                 let arg_end = current_end;
 
                 if arg_start < arg_end {
@@ -773,26 +761,20 @@ fn format_application_contents(
                     args.push((arg_start, arg_end));
                 }
 
-                // Continue with the func part - go inside the App marker's contents
+                // Now process the contents of this nested App
+                // right_offset tells us where the inner right child starts
                 let inner_func_start = current_start + 1;
-                let inner_func_end = match &components[inner_func_start] {
-                    TermComponent::Application { span } => inner_func_start + *span as usize,
-                    TermComponent::Atom(_) => inner_func_start + 1,
-                    TermComponent::Pi { .. } => return Err(fmt::Error),
-                };
+                let inner_arg_start = current_start + *right_offset as usize;
 
                 // Check if there's an inner arg (within this nested App)
-                let inner_arg_start = inner_func_end;
-                let inner_arg_end = func_end; // end of this App's span
-
-                if inner_arg_start < inner_arg_end {
+                if inner_arg_start < nested_app_end {
                     // There's an arg inside this nested application
-                    args.push((inner_arg_start, inner_arg_end));
+                    args.push((inner_arg_start, nested_app_end));
                 }
 
-                // Continue with inner func
+                // Continue with the inner func
                 current_start = inner_func_start;
-                current_end = inner_func_end;
+                current_end = inner_arg_start;
             }
             TermComponent::Pi { .. } => {
                 return Err(fmt::Error);
@@ -841,7 +823,10 @@ fn format_pi_contents(
 /// Find the end position of a subterm starting at `start` in a components slice.
 fn find_subterm_end_at(components: &[TermComponent], start: usize) -> usize {
     match components[start] {
-        TermComponent::Pi { span } | TermComponent::Application { span } => start + span as usize,
+        TermComponent::Pi { right_offset } | TermComponent::Application { right_offset } => {
+            // Right child starts at start + right_offset, recursively find its end
+            find_subterm_end_at(components, start + right_offset as usize)
+        }
         TermComponent::Atom(_) => start + 1,
     }
 }
@@ -858,9 +843,7 @@ fn format_term_slice(
     }
 
     match &components[start] {
-        TermComponent::Application { span } => {
-            let actual_end = start + *span as usize;
-            debug_assert_eq!(actual_end, end, "span mismatch in format_term_slice");
+        TermComponent::Application { .. } => {
             format_application_contents(f, components, start + 1, end)
         }
         TermComponent::Atom(atom) => {
@@ -870,11 +853,7 @@ fn format_term_slice(
             }
             Ok(())
         }
-        TermComponent::Pi { span } => {
-            let actual_end = start + *span as usize;
-            debug_assert_eq!(actual_end, end, "span mismatch in format_term_slice for Pi");
-            format_pi_contents(f, components, start + 1, end)
-        }
+        TermComponent::Pi { .. } => format_pi_contents(f, components, start + 1, end),
     }
 }
 
@@ -886,8 +865,8 @@ fn format_term_slice(
 /// Examples:
 /// - Simple atom "a": [Atom(a)]
 /// - Application "f(a)": [Atom(f), Atom(a)]
-/// - Nested "f(a, g(b))": [Atom(f), Atom(a), Application{span: 3}, Atom(g), Atom(b)]
-///                                            ^--- this application has span 3: the marker, g, and b
+/// - Nested "f(a, g(b))": [Atom(f), Atom(a), Application{right_offset: 2}, Atom(g), Atom(b)]
+///                                            ^--- right_offset=2 means the arg (b) is 2 positions after this marker
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct Term {
     components: Vec<TermComponent>,
@@ -920,26 +899,25 @@ impl Term {
             let func_len = func_components.len();
             let arg_len = arg.components.len();
 
-            // Build new application: [Application{span}, func_components..., arg_components...]
+            // Build new application: [Application{right_offset}, func_components..., arg_components...]
             // But we need to handle the func_components - if it's just an atom, no wrapper needed inside
             // If it already has components > 1, we need to wrap it in Application
             let mut new_components = Vec::with_capacity(1 + func_len + arg_len + 1);
 
-            // Outer Application for the whole thing
-            new_components.push(TermComponent::Application { span: 0 }); // Placeholder
+            // right_offset = 1 + func_len (marker + left child = position of right child)
+            let right_offset = (1 + func_len) as u16;
 
-            // Add the func part
+            // Outer Application for the whole thing
+            new_components.push(TermComponent::Application { right_offset });
+
+            // Add the func part (left child)
             if func_len == 1 {
                 // Atomic func - just add it directly
                 new_components.extend(func_components.iter().copied());
             } else {
                 // Non-atomic func - must be wrapped in Application
                 match func_components[0] {
-                    TermComponent::Application { span } => {
-                        debug_assert_eq!(
-                            span as usize, func_len,
-                            "Term::new: func has Application with wrong span"
-                        );
+                    TermComponent::Application { .. } => {
                         new_components.extend(func_components.iter().copied());
                     }
                     _ => panic!(
@@ -949,19 +927,14 @@ impl Term {
                 }
             }
 
-            // Add the argument
+            // Add the argument (right child)
             if arg_len == 1 {
                 // Atomic argument
                 new_components.push(arg.components[0]);
             } else {
                 // Compound argument - must have Application wrapper
                 match arg.components[0] {
-                    TermComponent::Application { span } => {
-                        debug_assert_eq!(
-                            span as usize, arg_len,
-                            "Term::new: arg {} has Application with wrong span {} (expected {})",
-                            i, span, arg_len
-                        );
+                    TermComponent::Application { .. } => {
                         new_components.extend(arg.components.iter().copied());
                     }
                     _ => panic!(
@@ -970,11 +943,6 @@ impl Term {
                     ),
                 }
             }
-
-            // Update outer Application span
-            new_components[0] = TermComponent::Application {
-                span: new_components.len() as u16,
-            };
 
             func_components = new_components;
         }
@@ -986,14 +954,14 @@ impl Term {
 
     /// Create a new Term from a vector of components.
     /// Atomic terms have a single Atom component.
-    /// Non-atomic terms start with an Application or Pi marker containing the span.
+    /// Non-atomic terms start with an Application or Pi marker containing right_offset.
     fn from_components(components: Vec<TermComponent>) -> Term {
         if components.is_empty() {
             panic!("from_components: empty components");
         }
         // Basic validation: check first component
         match components[0] {
-            TermComponent::Application { span } => {
+            TermComponent::Application { right_offset } => {
                 // Non-atomic term: position 1 can be Atom, Application, or Pi
                 if components.len() < 2 {
                     panic!(
@@ -1001,14 +969,16 @@ impl Term {
                         components
                     );
                 }
-                if span as usize != components.len() {
+                // right_offset must be valid: at least 2 (marker + at least one left child component)
+                // and less than total length (right child must exist)
+                if right_offset < 2 || right_offset as usize >= components.len() {
                     panic!(
-                        "from_components: outer Application span {} doesn't match components length {}. Components: {:?}",
-                        span, components.len(), components
+                        "from_components: outer Application has invalid right_offset {} for len {}. Components: {:?}",
+                        right_offset, components.len(), components
                     );
                 }
             }
-            TermComponent::Pi { span } => {
+            TermComponent::Pi { right_offset } => {
                 // Pi type: must have at least input and output
                 if components.len() < 3 {
                     panic!(
@@ -1016,10 +986,10 @@ impl Term {
                         components
                     );
                 }
-                if span as usize != components.len() {
+                if right_offset < 2 || right_offset as usize >= components.len() {
                     panic!(
-                        "from_components: outer Pi span {} doesn't match components length {}. Components: {:?}",
-                        span, components.len(), components
+                        "from_components: outer Pi has invalid right_offset {} for len {}. Components: {:?}",
+                        right_offset, components.len(), components
                     );
                 }
             }
@@ -1033,27 +1003,35 @@ impl Term {
                 }
             }
         }
-        // Debug check to catch bad spans
+        // Debug check to catch bad right_offsets
         #[cfg(debug_assertions)]
         {
-            let mut i = 0;
-            while i < components.len() {
-                match components[i] {
-                    TermComponent::Application { span } | TermComponent::Pi { span } => {
-                        let end = i + span as usize;
-                        if end > components.len() {
+            fn check_subterm(components: &[TermComponent], start: usize) -> usize {
+                match components[start] {
+                    TermComponent::Application { right_offset }
+                    | TermComponent::Pi { right_offset } => {
+                        let right_start = start + right_offset as usize;
+                        if right_start >= components.len() {
                             panic!(
-                                "from_components: span at {} is {} but only {} components total. Components: {:?}",
-                                i, span, components.len(), components
+                                "from_components: right_offset at {} is {} but only {} components total. Components: {:?}",
+                                start, right_offset, components.len(), components
                             );
                         }
-                        i = end;
+                        // Check left child
+                        let left_end = check_subterm(components, start + 1);
+                        if left_end != right_start {
+                            panic!(
+                                "from_components: left child at {} ends at {} but right_offset says {}. Components: {:?}",
+                                start + 1, left_end, right_start, components
+                            );
+                        }
+                        // Check right child
+                        check_subterm(components, right_start)
                     }
-                    TermComponent::Atom(_) => {
-                        i += 1;
-                    }
+                    TermComponent::Atom(_) => start + 1,
                 }
             }
+            check_subterm(&components, 0);
         }
         Term { components }
     }
@@ -1068,15 +1046,18 @@ impl Term {
     /// Create a Pi type `(x : input) -> output`.
     /// For non-dependent arrow types, output simply doesn't reference `Atom::Variable(0)`.
     pub fn pi(input: Term, output: Term) -> Term {
-        let span = 1 + input.components.len() + output.components.len();
-        let mut components = vec![TermComponent::Pi { span: span as u16 }];
+        // right_offset points to where the output type starts (after the marker and input)
+        let right_offset = (1 + input.components.len()) as u16;
+        let mut components = vec![TermComponent::Pi { right_offset }];
         components.extend(input.components);
         components.extend(output.components);
         Term { components }
     }
 
     /// Create an Application term with a head and multiple arguments.
-    /// This creates: [Application{span}, head_components..., arg1_components..., arg2_components..., ...]
+    /// This creates: [Application{right_offset}, head_components..., arg1_components..., arg2_components..., ...]
+    /// The right_offset points to where the first arg starts (1 + head_len).
+    /// This is NOT the same as curried form - it's a flat structure used for type applications.
     pub fn application_multi(head: Term, args: Vec<Term>) -> Term {
         debug_assert!(
             !args.is_empty(),
@@ -1087,10 +1068,11 @@ impl Term {
             total_len += arg.components.len();
         }
 
+        // right_offset points to where the first arg starts
+        let right_offset = (1 + head.components.len()) as u16;
+
         let mut components = Vec::with_capacity(total_len);
-        components.push(TermComponent::Application {
-            span: total_len as u16,
-        });
+        components.push(TermComponent::Application { right_offset });
         components.extend(head.components);
         for arg in args {
             components.extend(arg.components);
@@ -1149,39 +1131,52 @@ impl Term {
             .map(|(_, output)| output.to_owned())
     }
 
-    /// Validates that all spans in this term are correct.
+    /// Validates that all right_offsets in this term are correct.
     /// Returns true if valid, false otherwise.
     /// This is primarily for debug assertions.
     #[cfg(debug_assertions)]
     pub fn validate_structure(&self) -> bool {
-        // Check that the first component has correct span if non-atomic
+        fn check_subterm(components: &[TermComponent], start: usize) -> Option<usize> {
+            if start >= components.len() {
+                return None;
+            }
+            match components[start] {
+                TermComponent::Application { right_offset }
+                | TermComponent::Pi { right_offset } => {
+                    let right_start = start + right_offset as usize;
+                    if right_start >= components.len() {
+                        return None;
+                    }
+                    // Check left child ends where right child starts
+                    let left_end = check_subterm(components, start + 1)?;
+                    if left_end != right_start {
+                        return None;
+                    }
+                    // Return end of right child
+                    check_subterm(components, right_start)
+                }
+                TermComponent::Atom(_) => Some(start + 1),
+            }
+        }
+
+        // Check that the first component is valid for non-atomic terms
         if self.components.len() > 1 {
             match self.components[0] {
-                TermComponent::Application { span } | TermComponent::Pi { span } => {
-                    if span as usize != self.components.len() {
+                TermComponent::Application { right_offset }
+                | TermComponent::Pi { right_offset } => {
+                    if right_offset < 2 || right_offset as usize >= self.components.len() {
                         return false;
                     }
                 }
                 TermComponent::Atom(_) => return false, // Non-atomic must start with marker
             }
         }
-        // Check all internal spans
-        let mut i = 0;
-        while i < self.components.len() {
-            match self.components[i] {
-                TermComponent::Application { span } | TermComponent::Pi { span } => {
-                    let end = i + span as usize;
-                    if end > self.components.len() {
-                        return false;
-                    }
-                    i += 1; // Move to first element inside the span
-                }
-                TermComponent::Atom(_) => {
-                    i += 1;
-                }
-            }
+
+        // Recursively validate the structure
+        match check_subterm(&self.components, 0) {
+            Some(end) => end == self.components.len(),
+            None => false,
         }
-        true
     }
 
     /// Parse a Term from a string representation.
@@ -1251,11 +1246,11 @@ impl Term {
     pub fn as_ref(&self) -> TermRef {
         // Debug validation
         #[cfg(debug_assertions)]
-        if let TermComponent::Application { span } = self.components[0] {
-            if span as usize != self.components.len() {
+        if let TermComponent::Application { right_offset } = self.components[0] {
+            if right_offset < 2 || right_offset as usize >= self.components.len() {
                 panic!(
-                    "as_ref: Term has Application at start with span {} but len {}. Components: {:?}",
-                    span, self.components.len(), self.components
+                    "as_ref: Term has Application at start with invalid right_offset {} for len {}. Components: {:?}",
+                    right_offset, self.components.len(), self.components
                 );
             }
         }
@@ -1431,7 +1426,7 @@ impl Term {
     }
 
     /// Replace all occurrences of a variable with a term.
-    /// This handles the complexity of updating Application span markers when
+    /// This handles the complexity of updating Application right_offset markers when
     /// the replacement term has a different size than the variable (1 component).
     pub fn replace_variable(&self, id: AtomId, value: &Term) -> Term {
         // Special case: if this term IS the variable being replaced, just return the value
