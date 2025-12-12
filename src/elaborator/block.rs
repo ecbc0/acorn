@@ -181,7 +181,7 @@ impl Block {
                 let partial_goal = unbound_goal.clone().bind_values(0, 0, &internal_args);
                 let bound_goal = AcornValue::exists(vec![return_type.clone()], partial_goal);
                 assert!(!bound_goal.has_generic());
-                let source = Source::block_goal(env.module_id, range, env.depth);
+                let source = Source::block_goal(env.module_id, range, subenv.depth);
                 let prop = Proposition::monomorphic(bound_goal, source);
                 Some(prop)
             }
@@ -215,7 +215,7 @@ impl Block {
                 // return it as goal_prop for the old single-goal path.
                 // Multiple constraints will be handled separately below.
                 if constraints.len() == 1 {
-                    let source = Source::block_goal(env.module_id, range, env.depth);
+                    let source = Source::block_goal(env.module_id, range, subenv.depth);
                     Some(Proposition::monomorphic(constraints[0].clone(), source))
                 } else {
                     None
