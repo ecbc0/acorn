@@ -16,7 +16,7 @@ use super::literal::Literal;
 use super::local_context::LocalContext;
 use super::symbol::Symbol;
 use super::term::Term;
-use super::term::{Decomposition, TermComponent, TermRef};
+use super::term::{Decomposition, TermRef};
 use super::types::{GroundTypeId, TypeclassId, GROUND_BOOL, GROUND_EMPTY};
 
 /// Replaces variables in a term with corresponding replacement terms.
@@ -284,60 +284,38 @@ impl Edge {
 /// - Ground types: Atom(Type(id))
 /// - Arrow types: Arrow + domain encoding + codomain encoding
 /// - Type applications: Application + sort + head encoding + arg encoding
-#[cfg(test)]
 fn key_from_closed_type(closed_type: &ClosedType, key: &mut Vec<u8>) {
-    key_from_closed_type_at(closed_type.components(), 0, key)
-}
-
-/// Encodes a ClosedType starting at the given position.
-fn key_from_closed_type_at(components: &[TermComponent], pos: usize, key: &mut Vec<u8>) {
-    match &components[pos] {
-        TermComponent::Pi { span: _ } => {
-            // Arrow type: domain -> codomain
-            Edge::Arrow.append_to(key);
-            // Find where domain ends
-            let domain_end = find_subterm_end(components, pos + 1);
-            key_from_closed_type_at(components, pos + 1, key);
-            key_from_closed_type_at(components, domain_end, key);
-        }
-        TermComponent::Application { span } => {
-            // Type application like List[Int]
-            // Format: Application + <sort of result> + <head> + <args>
-            // For now, we assume type applications produce Type0 (kind *)
-            Edge::Application.append_to(key);
-            Edge::Atom(Atom::Type0).append_to(key);
-
-            // Encode head
-            let head_end = find_subterm_end(components, pos + 1);
-            key_from_closed_type_at(components, pos + 1, key);
-
-            // Encode arguments
-            let total_span = *span as usize;
-            let mut arg_pos = head_end;
-            while arg_pos < pos + total_span {
-                key_from_closed_type_at(components, arg_pos, key);
-                arg_pos = find_subterm_end(components, arg_pos);
-            }
-        }
-        TermComponent::Atom(atom) => {
-            let edge_atom = match atom {
-                KernelAtom::Variable(v) => Atom::Variable(*v),
-                KernelAtom::Symbol(Symbol::True) => Atom::True,
-                KernelAtom::Symbol(Symbol::False) => Atom::False,
-                KernelAtom::Symbol(Symbol::Type(t)) => Atom::Type(*t),
-                KernelAtom::Symbol(s) => Atom::Symbol(*s),
-            };
-            Edge::Atom(edge_atom).append_to(key);
-        }
+    if let Some(ground_id) = closed_type.as_ground() {
+        Edge::Atom(Atom::Type(ground_id)).append_to(key);
+        return;
     }
-}
 
-/// Find the end position of a subterm in components starting at `start`.
-fn find_subterm_end(components: &[TermComponent], start: usize) -> usize {
-    match components[start] {
-        TermComponent::Pi { span } | TermComponent::Application { span } => start + span as usize,
-        TermComponent::Atom(_) => start + 1,
+    if let Some((input, output)) = closed_type.as_pi() {
+        // Arrow type: domain -> codomain
+        Edge::Arrow.append_to(key);
+        key_from_closed_type(&input, key);
+        key_from_closed_type(&output, key);
+        return;
     }
+
+    if let Some((head, args)) = closed_type.as_application() {
+        // Type application like List[Int]
+        // Format: Application + <sort of result> + <head> + <args>
+        // For now, we assume type applications produce Type0 (kind *)
+        Edge::Application.append_to(key);
+        Edge::Atom(Atom::Type0).append_to(key);
+
+        // Encode head
+        key_from_closed_type(&head, key);
+
+        // Encode arguments
+        for arg in &args {
+            key_from_closed_type(arg, key);
+        }
+        return;
+    }
+
+    panic!("Unexpected ClosedType structure: {:?}", closed_type);
 }
 
 /// Writes the type of a term directly to the key buffer without allocating a ClosedType.
@@ -377,24 +355,20 @@ fn key_from_term_type(
     // Count arguments to determine how many times to "apply" the type
     let num_args = term.num_args();
 
-    // Find the position in the head's type components that represents the result type
-    // after applying num_args arguments (skip past num_args Pi domains)
-    let components = head_closed_type.components();
-    let mut pos = 0;
+    // Apply the type num_args times to get the result type
+    // Each application skips past one Pi: Pi(input, output) -> output
+    let mut result_type = head_closed_type.clone();
     for _ in 0..num_args {
-        // Each application skips past one Pi: Pi + domain -> output
-        // The output starts at find_subterm_end(pos + 1) (skip Pi marker and domain)
-        match &components[pos] {
-            TermComponent::Pi { span: _ } => {
-                let domain_end = find_subterm_end(components, pos + 1);
-                pos = domain_end;
+        match result_type.as_pi() {
+            Some((_, output)) => {
+                result_type = output;
             }
-            _ => panic!("Expected Pi type for function application"),
+            None => panic!("Expected Pi type for function application"),
         }
     }
 
-    // Now encode the type starting at the computed position
-    key_from_closed_type_at(components, pos, key);
+    // Now encode the result type
+    key_from_closed_type(&result_type, key);
 }
 
 /// Encodes a term into the key buffer (without the form prefix).

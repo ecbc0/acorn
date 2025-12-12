@@ -10,9 +10,6 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::term::{Decomposition as TermDecomposition, Term};
 
-#[cfg(debug_assertions)]
-use crate::kernel::term::TermComponent;
-
 /// Every time we set two terms equal or not equal, that action is tagged with a StepId.
 /// The term graph uses it to provide a history of the reasoning that led to a conclusion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -491,36 +488,31 @@ impl TermGraph {
         let term_id = match term.as_ref().decompose() {
             TermDecomposition::Atom(atom) => self.insert_atom(atom),
             TermDecomposition::Application(func, arg) => {
-                // Debug: check if func/arg are valid before to_owned
+                let func_term = func.to_owned();
+                let arg_term = arg.to_owned();
+                // Debug: check if func/arg have valid structure
                 #[cfg(debug_assertions)]
                 {
-                    if let TermComponent::Application { span } = func.components()[0] {
-                        if span as usize != func.components().len() {
-                            panic!(
-                                "insert_term: decompose returned func with mismatched span. span={}, len={}.\nfunc components: {:?}\noriginal term: {:?}",
-                                span, func.components().len(), func.components(), term.components()
-                            );
-                        }
+                    if !func_term.validate_structure() {
+                        panic!(
+                            "insert_term: decompose returned func with invalid structure.\nfunc: {}\noriginal term: {}",
+                            func_term, term
+                        );
                     }
-                    if let TermComponent::Application { span } = arg.components()[0] {
-                        if span as usize != arg.components().len() {
-                            panic!(
-                                "insert_term: decompose returned arg with mismatched span. span={}, len={}.\narg components: {:?}\noriginal term: {:?}",
-                                span, arg.components().len(), arg.components(), term.components()
-                            );
-                        }
+                    if !arg_term.validate_structure() {
+                        panic!(
+                            "insert_term: decompose returned arg with invalid structure.\narg: {}\noriginal term: {}",
+                            arg_term, term
+                        );
                     }
                 }
-                let func_id = self.insert_term(&func.to_owned(), kernel_context);
-                let arg_id = self.insert_term(&arg.to_owned(), kernel_context);
+                let func_id = self.insert_term(&func_term, kernel_context);
+                let arg_id = self.insert_term(&arg_term, kernel_context);
                 self.insert_application(func_id, arg_id)
             }
             TermDecomposition::Pi(_, _) => {
                 // Pi types in term graph - not typically expected, panic for now
-                panic!(
-                    "Pi types should not be inserted into TermGraph: {:?}",
-                    term.components()
-                );
+                panic!("Pi types should not be inserted into TermGraph: {}", term);
             }
         };
         self.process_pending();

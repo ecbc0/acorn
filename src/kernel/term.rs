@@ -6,6 +6,7 @@ use crate::kernel::closed_type::ClosedType;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
+use crate::kernel::types::GroundTypeId;
 
 /// A step in a path through a term.
 /// Treats applications in curried form: f(a, b) becomes ((f a) b).
@@ -18,8 +19,9 @@ pub enum PathStep {
 }
 
 /// A component of a Term or ClosedType in its flattened representation.
+/// This is private to the term module - external code should use decomposition methods.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
-pub enum TermComponent {
+enum TermComponent {
     /// Indicates a function application with the given span (total number of components).
     /// The span includes this Application marker itself, the head, and all arguments recursively.
     /// To skip over this entire subterm: index += span
@@ -67,13 +69,8 @@ pub struct TermRef<'a> {
 
 impl<'a> TermRef<'a> {
     /// Create a TermRef from a slice of components.
-    pub fn new(components: &'a [TermComponent]) -> TermRef<'a> {
+    fn new(components: &'a [TermComponent]) -> TermRef<'a> {
         TermRef { components }
-    }
-
-    /// Get the underlying components slice (for debugging/validation).
-    pub fn components(&self) -> &[TermComponent] {
-        self.components
     }
 
     /// Convert this borrowed TermRef to an owned Term.
@@ -223,6 +220,44 @@ impl<'a> TermRef<'a> {
         }
     }
 
+    /// Check if this term starts with an Application marker.
+    /// This is different from has_args() which checks for any application structure.
+    /// is_application() specifically checks for the top-level Application{span} marker.
+    pub fn is_application(&self) -> bool {
+        matches!(
+            self.components.first(),
+            Some(TermComponent::Application { .. })
+        )
+    }
+
+    /// Split a type application into (head, args).
+    /// Returns None if the term doesn't start with an Application marker.
+    /// Unlike split_application() which returns (func, last_arg) for curried apps,
+    /// this returns the head and ALL arguments as owned Terms.
+    pub fn split_application_multi(&self) -> Option<(Term, Vec<Term>)> {
+        match self.components.first() {
+            Some(TermComponent::Application { span }) => {
+                let total_span = *span as usize;
+                // Find where the head ends
+                let head_end = self.find_subterm_end(1);
+                let head = TermRef::new(&self.components[1..head_end]).to_owned();
+
+                // Collect all arguments
+                let mut args = Vec::new();
+                let mut pos = head_end;
+                while pos < total_span {
+                    let arg_end = self.find_subterm_end(pos);
+                    let arg = TermRef::new(&self.components[pos..arg_end]).to_owned();
+                    args.push(arg);
+                    pos = arg_end;
+                }
+
+                Some((head, args))
+            }
+            _ => None,
+        }
+    }
+
     /// Check if this term is the boolean constant "true".
     pub fn is_true(&self) -> bool {
         matches!(self.get_head_atom(), Atom::Symbol(Symbol::True))
@@ -240,6 +275,18 @@ impl<'a> TermRef<'a> {
         }
         match self.get_head_atom() {
             Atom::Variable(i) => Some(*i),
+            _ => None,
+        }
+    }
+
+    /// If this is an atomic Type symbol, return its GroundTypeId.
+    /// This is used for ground types in ClosedType.
+    pub fn as_type_atom(&self) -> Option<GroundTypeId> {
+        if !self.is_atomic() {
+            return None;
+        }
+        match self.get_head_atom() {
+            Atom::Symbol(Symbol::Type(t)) => Some(*t),
             _ => None,
         }
     }
@@ -940,7 +987,7 @@ impl Term {
     /// Create a new Term from a vector of components.
     /// Atomic terms have a single Atom component.
     /// Non-atomic terms start with an Application or Pi marker containing the span.
-    pub fn from_components(components: Vec<TermComponent>) -> Term {
+    fn from_components(components: Vec<TermComponent>) -> Term {
         if components.is_empty() {
             panic!("from_components: empty components");
         }
@@ -1028,6 +1075,65 @@ impl Term {
         Term { components }
     }
 
+    /// Create an Application term with a head and multiple arguments.
+    /// This creates: [Application{span}, head_components..., arg1_components..., arg2_components..., ...]
+    pub fn application_multi(head: Term, args: Vec<Term>) -> Term {
+        debug_assert!(
+            !args.is_empty(),
+            "application_multi requires at least one argument"
+        );
+        let mut total_len = 1 + head.components.len();
+        for arg in &args {
+            total_len += arg.components.len();
+        }
+
+        let mut components = Vec::with_capacity(total_len);
+        components.push(TermComponent::Application {
+            span: total_len as u16,
+        });
+        components.extend(head.components);
+        for arg in args {
+            components.extend(arg.components);
+        }
+
+        Term { components }
+    }
+
+    /// Validates that all spans in this term are correct.
+    /// Returns true if valid, false otherwise.
+    /// This is primarily for debug assertions.
+    #[cfg(debug_assertions)]
+    pub fn validate_structure(&self) -> bool {
+        // Check that the first component has correct span if non-atomic
+        if self.components.len() > 1 {
+            match self.components[0] {
+                TermComponent::Application { span } | TermComponent::Pi { span } => {
+                    if span as usize != self.components.len() {
+                        return false;
+                    }
+                }
+                TermComponent::Atom(_) => return false, // Non-atomic must start with marker
+            }
+        }
+        // Check all internal spans
+        let mut i = 0;
+        while i < self.components.len() {
+            match self.components[i] {
+                TermComponent::Application { span } | TermComponent::Pi { span } => {
+                    let end = i + span as usize;
+                    if end > self.components.len() {
+                        return false;
+                    }
+                    i += 1; // Move to first element inside the span
+                }
+                TermComponent::Atom(_) => {
+                    i += 1;
+                }
+            }
+        }
+        true
+    }
+
     /// Parse a Term from a string representation.
     /// Format: "f(a, g(b))" or just "x0" for atoms.
     /// Variables are written as x0, x1, etc.
@@ -1085,7 +1191,9 @@ impl Term {
     }
 
     /// Get the components of this term.
-    pub fn components(&self) -> &[TermComponent] {
+    /// Used in tests and debug assertions.
+    #[cfg(test)]
+    fn components(&self) -> &[TermComponent] {
         &self.components
     }
 

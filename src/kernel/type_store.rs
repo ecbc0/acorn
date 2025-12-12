@@ -1,10 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::elaborator::acorn_type::{AcornType, Datatype, FunctionType, TypeParam, Typeclass};
-use crate::kernel::atom::Atom;
 use crate::kernel::closed_type::ClosedType;
-use crate::kernel::symbol::Symbol;
-use crate::kernel::term::TermComponent;
 use crate::kernel::types::{GroundTypeId, TypeclassId, GROUND_BOOL, GROUND_EMPTY};
 
 /// Manages ground type registration and typeclass relationships.
@@ -166,29 +163,19 @@ impl TypeStore {
             }
 
             AcornType::Data(datatype, params) => {
-                // Parameterized data type: build Application
-                let mut components = Vec::new();
-
-                // Head is the bare constructor - use direct Datatype -> GroundTypeId lookup
+                // Parameterized data type: build Application using ClosedType::application()
                 let constructor_ground = self
                     .datatype_to_ground_id
                     .get(datatype)
                     .unwrap_or_else(|| panic!("Data type {} not registered", datatype.name));
-                components.push(TermComponent::Atom(Atom::Symbol(Symbol::Type(
-                    *constructor_ground,
-                ))));
+                let head = ClosedType::ground(*constructor_ground);
 
-                // Add each parameter's components
-                for param in params {
-                    let param_closed = self.to_closed_type(param);
-                    components.extend(param_closed.components().iter().copied());
-                }
+                let args: Vec<ClosedType> = params
+                    .iter()
+                    .map(|param| self.to_closed_type(param))
+                    .collect();
 
-                // Build Application with correct span
-                let total_span = components.len() as u16 + 1;
-                let mut result = vec![TermComponent::Application { span: total_span }];
-                result.extend(components);
-                ClosedType::from_components(result)
+                ClosedType::application(head, args)
             }
 
             AcornType::Function(ft) => {
@@ -223,95 +210,56 @@ impl TypeStore {
     }
 
     /// Convert a ClosedType back to an AcornType.
-    /// This is the inverse of `acorn_type_to_closed_type`.
+    /// This is the inverse of `to_closed_type`.
     pub fn closed_type_to_acorn_type(&self, closed_type: &ClosedType) -> AcornType {
-        self.closed_type_to_acorn_type_impl(closed_type.components(), 0)
-            .0
-    }
-
-    /// Implementation of closed_type_to_acorn_type that tracks position in components.
-    /// Returns the AcornType and the end position.
-    fn closed_type_to_acorn_type_impl(
-        &self,
-        components: &[TermComponent],
-        start: usize,
-    ) -> (AcornType, usize) {
-        match &components[start] {
-            TermComponent::Atom(Atom::Symbol(Symbol::Type(ground_id))) => {
-                // Ground type - look up in ground_id_to_type
-                (
-                    self.ground_id_to_type[ground_id.as_u16() as usize].clone(),
-                    start + 1,
-                )
-            }
-            TermComponent::Pi { span } => {
-                // Pi type: convert to function type
-                // Pi(A, Pi(B, C)) becomes (A, B) -> C
-                let span = *span as usize;
-                let mut arg_types = vec![];
-                let mut pos = start + 1;
-
-                // Parse argument types, uncurrying nested Pi types
-                loop {
-                    let (arg_type, next_pos) = self.closed_type_to_acorn_type_impl(components, pos);
-                    arg_types.push(arg_type);
-                    pos = next_pos;
-
-                    // Check if the output is another Pi (to uncurry) or the final return type
-                    if pos < start + span {
-                        if let TermComponent::Pi { .. } = components[pos] {
-                            // Continue uncurrying
-                            pos += 1; // Skip the nested Pi marker
-                            continue;
-                        }
-                    }
-                    break;
-                }
-
-                // The remaining part is the return type
-                let (return_type, end_pos) = self.closed_type_to_acorn_type_impl(components, pos);
-
-                let ft = FunctionType {
-                    arg_types,
-                    return_type: Box::new(return_type),
-                };
-                (AcornType::Function(ft), end_pos)
-            }
-            TermComponent::Application { span } => {
-                // Type application like List[Int]
-                // [Application{span}, Atom(Type(List)), ...]
-                let span = *span as usize;
-                let mut pos = start + 1;
-
-                // First component is the base type (must be a ground type)
-                let (base_type, next_pos) = self.closed_type_to_acorn_type_impl(components, pos);
-                pos = next_pos;
-
-                // Extract the datatype from base_type
-                let datatype = match &base_type {
-                    AcornType::Data(dt, params) if params.is_empty() => dt.clone(),
-                    _ => panic!(
-                        "Expected ground data type in type application, got {:?}",
-                        base_type
-                    ),
-                };
-
-                // Collect parameter types
-                let mut params = vec![];
-                while pos < start + span {
-                    let (param_type, next_pos) =
-                        self.closed_type_to_acorn_type_impl(components, pos);
-                    params.push(param_type);
-                    pos = next_pos;
-                }
-
-                (AcornType::Data(datatype, params), start + span)
-            }
-            other => panic!(
-                "Unexpected component in ClosedType: {:?} at position {}",
-                other, start
-            ),
+        if let Some(ground_id) = closed_type.as_ground() {
+            // Ground type - look up in ground_id_to_type
+            return self.ground_id_to_type[ground_id.as_u16() as usize].clone();
         }
+
+        if let Some((input, output)) = closed_type.as_pi() {
+            // Pi type: convert to function type
+            // Pi(A, Pi(B, C)) becomes (A, B) -> C
+            let mut arg_types = vec![self.closed_type_to_acorn_type(&input)];
+
+            // Uncurry nested Pi types
+            let mut current_output = output;
+            while let Some((next_input, next_output)) = current_output.as_pi() {
+                arg_types.push(self.closed_type_to_acorn_type(&next_input));
+                current_output = next_output;
+            }
+
+            let return_type = self.closed_type_to_acorn_type(&current_output);
+
+            let ft = FunctionType {
+                arg_types,
+                return_type: Box::new(return_type),
+            };
+            return AcornType::Function(ft);
+        }
+
+        if let Some((head, args)) = closed_type.as_application() {
+            // Type application like List[Int]
+            // Extract the datatype from head (must be a ground type)
+            let base_type = self.closed_type_to_acorn_type(&head);
+            let datatype = match &base_type {
+                AcornType::Data(dt, params) if params.is_empty() => dt.clone(),
+                _ => panic!(
+                    "Expected ground data type in type application, got {:?}",
+                    base_type
+                ),
+            };
+
+            // Convert parameter types
+            let params: Vec<AcornType> = args
+                .iter()
+                .map(|arg| self.closed_type_to_acorn_type(arg))
+                .collect();
+
+            return AcornType::Data(datatype, params);
+        }
+
+        panic!("Unexpected ClosedType structure: {:?}", closed_type);
     }
 
     /// Get the id for a typeclass if it exists, otherwise return an error.
@@ -497,32 +445,29 @@ mod tests {
 
         // It should be an Application
         assert!(
-            matches!(
-                closed.components().first(),
-                Some(TermComponent::Application { .. })
-            ),
+            closed.is_application(),
             "Expected Application, got {:?}",
             closed
         );
 
-        // The head (second component) should be the bare List constructor's GroundTypeId
-        assert!(
-            matches!(
-                closed.components().get(1),
-                Some(TermComponent::Atom(Atom::Symbol(Symbol::Type(t)))) if *t == list_ground
-            ),
+        // Check structure using as_application
+        let (head, args) = closed.as_application().unwrap();
+
+        // The head should be the bare List constructor's GroundTypeId
+        assert_eq!(
+            head.as_ground(),
+            Some(list_ground),
             "Head should be List constructor, got {:?}",
-            closed.components().get(1)
+            head
         );
 
-        // The argument should be Bool
-        assert!(
-            matches!(
-                closed.components().get(2),
-                Some(TermComponent::Atom(Atom::Symbol(Symbol::Type(t)))) if *t == GROUND_BOOL
-            ),
+        // There should be exactly one argument (Bool)
+        assert_eq!(args.len(), 1, "Expected 1 argument, got {}", args.len());
+        assert_eq!(
+            args[0].as_ground(),
+            Some(GROUND_BOOL),
             "Argument should be Bool, got {:?}",
-            closed.components().get(2)
+            args[0]
         );
     }
 
@@ -552,89 +497,43 @@ mod tests {
 
         // It should be an Application
         assert!(
-            matches!(
-                closed.components().first(),
-                Some(TermComponent::Application { .. })
-            ),
+            closed.is_application(),
             "Expected Application, got {:?}",
             closed
         );
 
+        // Check structure using as_application
+        let (head, args) = closed.as_application().unwrap();
+
         // The head should be the bare List constructor
-        assert!(
-            matches!(
-                closed.components().get(1),
-                Some(TermComponent::Atom(Atom::Symbol(Symbol::Type(t)))) if *t == list_ground
-            ),
+        assert_eq!(
+            head.as_ground(),
+            Some(list_ground),
             "Head should be List constructor, got {:?}",
-            closed.components().get(1)
+            head
         );
 
-        // Get the inner ClosedType for comparison
-        let inner_closed = store.to_closed_type(&list_bool);
+        // There should be exactly one argument (List[Bool])
+        assert_eq!(args.len(), 1, "Expected 1 argument, got {}", args.len());
 
-        // The inner List[Bool] should also be an Application with List as head
+        // The argument should be List[Bool], which is also an Application
+        let inner_closed = &args[0];
         assert!(
-            matches!(
-                inner_closed.components().first(),
-                Some(TermComponent::Application { .. })
-            ),
+            inner_closed.is_application(),
             "Inner type should be Application"
         );
-        assert!(
-            matches!(
-                inner_closed.components().get(1),
-                Some(TermComponent::Atom(Atom::Symbol(Symbol::Type(t)))) if *t == list_ground
-            ),
+
+        let (inner_head, inner_args) = inner_closed.as_application().unwrap();
+        assert_eq!(
+            inner_head.as_ground(),
+            Some(list_ground),
             "Inner head should also be List constructor"
         );
-
-        // Verify the structure of List[List[Bool]] matches expectations
-        // It should be: Application(List, List[Bool])
-        // where List[Bool] is Application(List, Bool)
-        // So the components should be:
-        // [App{5}, List, App{3}, List, Bool]
-        let components = closed.components();
+        assert_eq!(inner_args.len(), 1, "Inner should have 1 argument");
         assert_eq!(
-            components.len(),
-            5,
-            "List[List[Bool]] should have 5 components, got {:?}",
-            components
-        );
-
-        // First component: outer Application with span covering all 5 components
-        assert!(
-            matches!(components[0], TermComponent::Application { span: 5 }),
-            "Component 0 should be Application{{span: 5}}, got {:?}",
-            components[0]
-        );
-
-        // Second component: List (head of outer application)
-        assert!(
-            matches!(components[1], TermComponent::Atom(Atom::Symbol(Symbol::Type(t))) if t == list_ground),
-            "Component 1 should be List, got {:?}",
-            components[1]
-        );
-
-        // Third component: inner Application with span covering components 2-4
-        assert!(
-            matches!(components[2], TermComponent::Application { span: 3 }),
-            "Component 2 should be Application{{span: 3}}, got {:?}",
-            components[2]
-        );
-
-        // Fourth component: List (head of inner application)
-        assert!(
-            matches!(components[3], TermComponent::Atom(Atom::Symbol(Symbol::Type(t))) if t == list_ground),
-            "Component 3 should be List, got {:?}",
-            components[3]
-        );
-
-        // Fifth component: Bool (argument of inner application)
-        assert!(
-            matches!(components[4], TermComponent::Atom(Atom::Symbol(Symbol::Type(t))) if t == GROUND_BOOL),
-            "Component 4 should be Bool, got {:?}",
-            components[4]
+            inner_args[0].as_ground(),
+            Some(GROUND_BOOL),
+            "Innermost argument should be Bool"
         );
     }
 }

@@ -3,8 +3,10 @@ use std::fmt;
 
 use crate::kernel::atom::Atom;
 use crate::kernel::symbol::Symbol;
-use crate::kernel::term::{Term, TermComponent, TermRef};
+use crate::kernel::term::Term;
 use crate::kernel::types::GroundTypeId;
+
+// Note: Atom and Symbol are still used in the ground() constructor
 
 /// A closed type representation - a type with no free variables.
 ///
@@ -12,18 +14,12 @@ use crate::kernel::types::GroundTypeId;
 /// Unlike general Terms which are for "open terms" with free variables, ClosedType represents
 /// fully-resolved types that may contain Pi (dependent function types).
 ///
-/// The underlying Term uses the same `Vec<TermComponent>` format:
-/// - Can contain `TermComponent::Pi { span }` for dependent function types
-/// - Can contain `TermComponent::Application { span }` for type applications like `List[Int]`
-/// - Can contain `Atom::Type(GroundTypeId)` for ground types like Int, Bool, Nat
-/// - Cannot contain free variables (but can have bound variables from Pi)
-///
 /// Examples:
-/// - Simple ground type: `[Atom(Type(BOOL))]` represents `Bool`
-/// - Arrow type `A -> B`: `[Pi{span: 3}, Atom(Type(A)), Atom(Type(B))]`
-/// - Type application `List[Int]`: `[Atom(Type(List)), Atom(Type(Int))]`
+/// - Simple ground type: `Bool`
+/// - Arrow type: `A -> B` (represented as Pi)
+/// - Type application: `List[Int]` (represented as Application)
 ///
-/// Note: Within ClosedType, `Atom::Variable` represents de Bruijn indices for bound variables
+/// Note: Within ClosedType, variables represent de Bruijn indices for bound variables
 /// introduced by Pi, not free variables.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct ClosedType(Term);
@@ -59,13 +55,6 @@ impl ClosedType {
         &EMPTY_TYPE
     }
 
-    /// Create a ClosedType from raw components.
-    /// Caller is responsible for ensuring validity.
-    pub fn from_components(components: Vec<TermComponent>) -> ClosedType {
-        debug_assert!(!components.is_empty(), "ClosedType cannot be empty");
-        ClosedType(Term::from_components(components))
-    }
-
     /// Create a ClosedType from a Term.
     /// Caller is responsible for ensuring the term represents a valid closed type.
     pub fn from_term(term: Term) -> ClosedType {
@@ -75,11 +64,6 @@ impl ClosedType {
     /// Get the underlying Term.
     pub fn as_term(&self) -> &Term {
         &self.0
-    }
-
-    /// Get a TermRef to the underlying term.
-    pub fn as_term_ref(&self) -> TermRef {
-        self.0.as_ref()
     }
 
     /// Create a Pi type `(x : input) -> output`.
@@ -95,44 +79,18 @@ impl ClosedType {
             !args.is_empty(),
             "application requires at least one argument"
         );
-        // Build: [Application{span}, head_components..., arg1_components..., arg2_components..., ...]
-        let head_components = head.0.components();
-        let mut total_len = 1 + head_components.len(); // 1 for Application marker
-        for arg in &args {
-            total_len += arg.0.components().len();
-        }
-
-        let mut components = Vec::with_capacity(total_len);
-        components.push(TermComponent::Application {
-            span: total_len as u16,
-        });
-        components.extend_from_slice(head_components);
-        for arg in args {
-            components.extend(arg.0.components().iter().copied());
-        }
-
-        ClosedType(Term::from_components(components))
+        let arg_terms: Vec<Term> = args.into_iter().map(|a| a.0).collect();
+        ClosedType(Term::application_multi(head.0, arg_terms))
     }
 
     /// Returns true if this is a ground type (just a GroundTypeId).
     pub fn is_ground(&self) -> bool {
-        let components = self.0.components();
-        components.len() == 1
-            && matches!(
-                components[0],
-                TermComponent::Atom(Atom::Symbol(Symbol::Type(_)))
-            )
+        self.0.as_ref().as_type_atom().is_some()
     }
 
     /// If this is a ground type, return its GroundTypeId.
     pub fn as_ground(&self) -> Option<GroundTypeId> {
-        let components = self.0.components();
-        if components.len() == 1 {
-            if let TermComponent::Atom(Atom::Symbol(Symbol::Type(t))) = components[0] {
-                return Some(t);
-            }
-        }
-        None
+        self.0.as_ref().as_type_atom()
     }
 
     /// Returns true if this is a Pi/arrow type.
@@ -152,42 +110,20 @@ impl ClosedType {
 
     /// Returns true if this is a type application (e.g., `List[Int]`).
     pub fn is_application(&self) -> bool {
-        matches!(
-            self.0.components().first(),
-            Some(TermComponent::Application { .. })
-        )
+        self.0.as_ref().is_application()
     }
 
     /// If this is a type application, returns (head, args).
     /// E.g., for `List[Int, Bool]`, returns `(List, [Int, Bool])`.
     pub fn as_application(&self) -> Option<(ClosedType, Vec<ClosedType>)> {
-        let components = self.0.components();
-        match components.first() {
-            Some(TermComponent::Application { span }) => {
-                let total_span = *span as usize;
-                // Find where the head ends
-                let head_end = self.find_subterm_end(1);
-                let head = ClosedType::from_components(components[1..head_end].to_vec());
-
-                // Collect all arguments
-                let mut args = Vec::new();
-                let mut pos = head_end;
-                while pos < total_span {
-                    let arg_end = self.find_subterm_end(pos);
-                    let arg = ClosedType::from_components(components[pos..arg_end].to_vec());
-                    args.push(arg);
-                    pos = arg_end;
-                }
-
-                Some((head, args))
-            }
-            _ => None,
-        }
-    }
-
-    /// Returns the components slice for inspection.
-    pub fn components(&self) -> &[TermComponent] {
-        self.0.components()
+        self.0
+            .as_ref()
+            .split_application_multi()
+            .map(|(head, args)| {
+                let head = ClosedType::from_term(head);
+                let args = args.into_iter().map(ClosedType::from_term).collect();
+                (head, args)
+            })
     }
 
     /// Apply a function type to get its codomain.
@@ -197,55 +133,37 @@ impl ClosedType {
         self.as_pi().map(|(_, output)| output)
     }
 
-    fn format_at(&self, f: &mut fmt::Formatter, pos: usize) -> fmt::Result {
-        let components = self.0.components();
-        match &components[pos] {
-            TermComponent::Pi { span: _ } => {
-                let input_end = self.find_subterm_end(pos + 1);
-                write!(f, "(")?;
-                self.format_at(f, pos + 1)?;
-                write!(f, " -> ")?;
-                self.format_at(f, input_end)?;
-                write!(f, ")")
-            }
-            TermComponent::Application { span } => {
-                // Type application like List[Int]
-                let span = *span as usize;
-                // Format head
-                self.format_at(f, pos + 1)?;
-                write!(f, "[")?;
-                // Format arguments
-                let mut arg_pos = self.find_subterm_end(pos + 1);
-                let mut first = true;
-                while arg_pos < pos + span {
-                    if !first {
-                        write!(f, ", ")?;
-                    }
-                    first = false;
-                    self.format_at(f, arg_pos)?;
-                    arg_pos = self.find_subterm_end(arg_pos);
+    /// Format this closed type for display.
+    fn format_impl(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(ground_id) = self.as_ground() {
+            return write!(f, "T{}", ground_id);
+        }
+        if let Some((input, output)) = self.as_pi() {
+            write!(f, "(")?;
+            input.format_impl(f)?;
+            write!(f, " -> ")?;
+            output.format_impl(f)?;
+            return write!(f, ")");
+        }
+        if let Some((head, args)) = self.as_application() {
+            head.format_impl(f)?;
+            write!(f, "[")?;
+            for (i, arg) in args.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
                 }
-                write!(f, "]")
+                arg.format_impl(f)?;
             }
-            TermComponent::Atom(atom) => write!(f, "{}", atom),
+            return write!(f, "]");
         }
-    }
-
-    /// Find the end position of a subterm starting at `start`.
-    fn find_subterm_end(&self, start: usize) -> usize {
-        let components = self.0.components();
-        match components[start] {
-            TermComponent::Pi { span } | TermComponent::Application { span } => {
-                start + span as usize
-            }
-            TermComponent::Atom(_) => start + 1,
-        }
+        // Fallback for unexpected cases
+        write!(f, "{:?}", self.0)
     }
 }
 
 impl fmt::Display for ClosedType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.format_at(f, 0)
+        self.format_impl(f)
     }
 }
 
