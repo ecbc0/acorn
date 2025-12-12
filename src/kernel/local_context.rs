@@ -130,6 +130,21 @@ impl LocalContext {
         }
         true
     }
+
+    /// Validates that no variable has the Empty type.
+    ///
+    /// The Empty type is a placeholder that should never appear in a valid context.
+    /// Having a variable with Empty type indicates an error in clause construction.
+    ///
+    /// Returns None if valid, or Some(var_id) for the first variable with Empty type.
+    pub fn find_empty_type(&self) -> Option<usize> {
+        for (i, var_type) in self.var_types.iter().enumerate() {
+            if var_type.as_ref().is_empty_type() {
+                return Some(i);
+            }
+        }
+        None
+    }
 }
 
 #[cfg(test)]

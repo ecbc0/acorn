@@ -315,8 +315,18 @@ impl Clause {
         }
 
         #[cfg(any(test, feature = "validate"))]
-        for literal in &self.literals {
-            literal.validate_type(&self.context, kernel_context);
+        {
+            // Check that no variable has the Empty type
+            if let Some(var_id) = self.context.find_empty_type() {
+                panic!(
+                    "Clause validation failed: variable x{} has Empty type. Clause: {}",
+                    var_id, self
+                );
+            }
+
+            for literal in &self.literals {
+                literal.validate_type(&self.context, kernel_context);
+            }
         }
     }
 
@@ -771,5 +781,20 @@ mod tests {
         // g0(c0) is Bool -> Bool applied to Bool = Bool, c1 is Bool, so this is valid
         let clause = kctx.make_clause("g0(c0) = c1", &[]);
         assert_eq!(clause.literals.len(), 1);
+    }
+
+    /// Test that validation catches variables with Empty type.
+    #[test]
+    #[should_panic(expected = "has Empty type")]
+    fn test_validation_catches_empty_type() {
+        let kctx = KernelContext::new();
+        // Create a context with a variable that has Empty type
+        let context = LocalContext::from_types(vec![Term::empty_type()]);
+        // Create a simple literal using x0
+        let term = Term::atom(Atom::Variable(0));
+        let literal = Literal::positive(term);
+        let clause = Clause::new(vec![literal], &context);
+        // Validation should panic
+        clause.validate(&kctx);
     }
 }
