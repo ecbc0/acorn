@@ -1,21 +1,15 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// GroundTypeId for the Empty type.
-pub const EMPTY: GroundTypeId = GroundTypeId(0);
-/// GroundTypeId for the Bool type.
-pub const BOOL: GroundTypeId = GroundTypeId(1);
-/// GroundTypeId for the Type kind (the type of proper types).
-/// This represents kind `*` in type theory. Proper types like Bool have kind Type.
-/// Type constructors like List have kind `Type -> Type`.
-pub const TYPE: GroundTypeId = GroundTypeId(2);
+// Note: Empty, Bool, and TypeSort are now Symbol variants (in symbol.rs),
+// not GroundTypeIds. GroundTypeId is now only used for user-defined ground types.
 
 /// A type ID that refers ONLY to a ground type (no internal structure).
-/// Examples: Bool, Nat, Int, user-defined data types without parameters.
-/// NOT for: function types, parameterized types like List[T].
+/// Examples: Nat, Int, user-defined data types without parameters.
+/// NOT for: function types, parameterized types like List[T], or built-in types (Empty, Bool, TypeSort).
 ///
 /// This distinction is important because:
-/// - `Term::type_ground(GroundTypeId)` creates an atomic type term
+/// - `Term::ground_type(GroundTypeId)` creates an atomic type term
 /// - `Atom::Type(GroundTypeId)` ensures atoms only contain ground types
 #[derive(
     Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Default,

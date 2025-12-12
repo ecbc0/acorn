@@ -93,7 +93,7 @@ impl LocalContext {
     pub fn set_type(&mut self, var_id: usize, var_type: Term) {
         if var_id >= self.var_types.len() {
             // Extend with EMPTY placeholders for gap indices
-            self.var_types.resize(var_id + 1, Term::type_empty());
+            self.var_types.resize(var_id + 1, Term::empty_type());
         }
         self.var_types[var_id] = var_type;
     }
@@ -135,10 +135,10 @@ impl LocalContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::types::{GroundTypeId, BOOL, EMPTY};
+    use crate::kernel::types::GroundTypeId;
 
     fn ground(id: u16) -> Term {
-        Term::type_ground(GroundTypeId::new(id))
+        Term::ground_type(GroundTypeId::new(id))
     }
 
     #[test]
@@ -171,8 +171,8 @@ mod tests {
     #[test]
     fn test_remap_preserves_types() {
         // Create a context with a Pi type (function type)
-        let pi_type = Term::pi(Term::type_ground(BOOL), Term::type_ground(BOOL));
-        let ground_type = Term::type_ground(EMPTY);
+        let pi_type = Term::pi(Term::bool_type(), Term::bool_type());
+        let ground_type = Term::empty_type();
 
         let ctx = LocalContext::from_types(vec![ground_type.clone(), pi_type.clone()]);
 
@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn test_remap_empty() {
-        let ctx = LocalContext::from_types(vec![Term::type_bool(), Term::type_empty()]);
+        let ctx = LocalContext::from_types(vec![Term::bool_type(), Term::empty_type()]);
 
         // Remap to empty
         let remapped = ctx.remap(&[]);
@@ -198,21 +198,21 @@ mod tests {
     #[test]
     fn test_remap_duplicates_variable() {
         // It's valid to include the same variable ID multiple times
-        let ctx = LocalContext::from_types(vec![Term::type_bool(), Term::type_empty()]);
+        let ctx = LocalContext::from_types(vec![Term::bool_type(), Term::empty_type()]);
 
         let remapped = ctx.remap(&[0, 0, 1, 0]);
 
         assert_eq!(remapped.len(), 4);
-        assert_eq!(remapped.get_var_type(0), Some(&Term::type_bool()));
-        assert_eq!(remapped.get_var_type(1), Some(&Term::type_bool()));
-        assert_eq!(remapped.get_var_type(2), Some(&Term::type_empty()));
-        assert_eq!(remapped.get_var_type(3), Some(&Term::type_bool()));
+        assert_eq!(remapped.get_var_type(0), Some(&Term::bool_type()));
+        assert_eq!(remapped.get_var_type(1), Some(&Term::bool_type()));
+        assert_eq!(remapped.get_var_type(2), Some(&Term::empty_type()));
+        assert_eq!(remapped.get_var_type(3), Some(&Term::bool_type()));
     }
 
     #[test]
     #[should_panic(expected = "variable x5 not found")]
     fn test_remap_panics_on_out_of_bounds() {
-        let ctx = LocalContext::from_types(vec![Term::type_bool(), Term::type_empty()]);
+        let ctx = LocalContext::from_types(vec![Term::bool_type(), Term::empty_type()]);
 
         // Try to remap with an out-of-bounds variable ID
         ctx.remap(&[0, 5]);
@@ -221,20 +221,19 @@ mod tests {
     #[test]
     fn test_validate_variable_ordering_valid() {
         use crate::kernel::atom::Atom;
-        use crate::kernel::types::TYPE;
 
         // Valid: x0 : Type (no variable references)
-        let ctx1 = LocalContext::from_types(vec![Term::type_ground(TYPE)]);
+        let ctx1 = LocalContext::from_types(vec![Term::type_sort()]);
         assert!(ctx1.validate_variable_ordering());
 
         // Valid: x0 : Type, x1 : x0 (references lower-numbered variable)
-        let type_type = Term::type_ground(TYPE);
+        let type_type = Term::type_sort();
         let type_var_x0 = Term::atom(Atom::Variable(0));
         let ctx2 = LocalContext::from_types(vec![type_type, type_var_x0]);
         assert!(ctx2.validate_variable_ordering());
 
         // Valid: x0 : Bool, x1 : Bool (no variable references in types)
-        let ctx3 = LocalContext::from_types(vec![Term::type_bool(), Term::type_bool()]);
+        let ctx3 = LocalContext::from_types(vec![Term::bool_type(), Term::bool_type()]);
         assert!(ctx3.validate_variable_ordering());
     }
 
@@ -251,10 +250,9 @@ mod tests {
     #[test]
     fn test_validate_variable_ordering_invalid_forward_reference() {
         use crate::kernel::atom::Atom;
-        use crate::kernel::types::TYPE;
 
         // Invalid: x0 : x1, x1 : Type (x0 references higher-numbered x1)
-        let type_type = Term::type_ground(TYPE);
+        let type_type = Term::type_sort();
         let type_var_x1 = Term::atom(Atom::Variable(1));
         let ctx = LocalContext::from_types(vec![type_var_x1, type_type]);
         assert!(!ctx.validate_variable_ordering());
@@ -263,12 +261,11 @@ mod tests {
     #[test]
     fn test_validate_variable_ordering_nested_reference() {
         use crate::kernel::atom::Atom;
-        use crate::kernel::types::TYPE;
 
         // Setup: need a type constructor like List
         // For this test, we'll use a Pi type: x0 : Type, x1 : x0 -> x0
 
-        let type_type = Term::type_ground(TYPE);
+        let type_type = Term::type_sort();
         let type_var_x0 = Term::atom(Atom::Variable(0));
         let arrow_type = Term::pi(type_var_x0.clone(), type_var_x0.clone()); // x0 -> x0
 
@@ -284,7 +281,7 @@ mod tests {
         // Create a context with a typeclass-constrained type variable
         let monoid_id = TypeclassId::new(0);
         let typeclass_type = Term::typeclass(monoid_id);
-        let ctx = LocalContext::from_types(vec![typeclass_type, Term::type_bool()]);
+        let ctx = LocalContext::from_types(vec![typeclass_type, Term::bool_type()]);
 
         // x0 has typeclass constraint
         assert_eq!(ctx.get_typeclass_constraint(0), Some(monoid_id));

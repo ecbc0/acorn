@@ -76,12 +76,14 @@ impl SymbolTable {
     }
 
     /// Get the type of a symbol.
-    /// For Symbol::Type, this returns the Type kind (arity 0). Use get_symbol_type() with
-    /// a TypeStore if you need proper kinds for type constructors.
+    /// For Symbol::Type and built-in type symbols, this returns the Type kind (arity 0).
+    /// Use get_symbol_type() with a TypeStore if you need proper kinds for type constructors.
     pub fn get_type(&self, symbol: Symbol) -> &Term {
         match symbol {
-            Symbol::True | Symbol::False => Term::type_bool_ref(),
-            Symbol::Type(_) => Term::type_type_ref(),
+            Symbol::True | Symbol::False => Term::bool_type_ref(),
+            Symbol::Empty | Symbol::Bool | Symbol::TypeSort | Symbol::Type(_) => {
+                Term::type_sort_ref()
+            }
             Symbol::Synthetic(i) => &self.synthetic_types[i as usize],
             Symbol::GlobalConstant(i) => &self.global_constant_types[i as usize],
             Symbol::ScopedConstant(i) => &self.scoped_constant_types[i as usize],
@@ -93,7 +95,8 @@ impl SymbolTable {
     /// For Symbol::Type, this returns the proper kind based on arity (e.g., Type -> Type for List).
     pub fn get_symbol_type(&self, symbol: Symbol, type_store: &TypeStore) -> Term {
         let result = match symbol {
-            Symbol::True | Symbol::False => Term::type_bool(),
+            Symbol::True | Symbol::False => Term::bool_type(),
+            Symbol::Empty | Symbol::Bool | Symbol::TypeSort => Term::type_sort(),
             Symbol::Type(ground_id) => type_store.get_type_kind(ground_id),
             Symbol::Synthetic(i) => self.synthetic_types[i as usize].clone(),
             Symbol::GlobalConstant(i) => self.global_constant_types[i as usize].clone(),

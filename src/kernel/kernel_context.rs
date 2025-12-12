@@ -26,6 +26,9 @@ impl KernelContext {
         match atom {
             Atom::Symbol(Symbol::True) => "true".to_string(),
             Atom::Symbol(Symbol::False) => "false".to_string(),
+            Atom::Symbol(Symbol::Empty) => "Empty".to_string(),
+            Atom::Symbol(Symbol::Bool) => "Bool".to_string(),
+            Atom::Symbol(Symbol::TypeSort) => "Type".to_string(),
             Atom::Symbol(Symbol::GlobalConstant(i)) => {
                 self.symbol_table.name_for_global_id(*i).to_string()
             }
@@ -51,7 +54,7 @@ impl KernelContext {
     pub fn test_with_scoped_constants(n: usize) -> KernelContext {
         let mut ctx = KernelContext::new();
         for _ in 0..n {
-            ctx.symbol_table.add_scoped_constant(Term::type_empty());
+            ctx.symbol_table.add_scoped_constant(Term::empty_type());
         }
         ctx
     }
@@ -62,7 +65,7 @@ impl KernelContext {
     pub fn test_with_bool_scoped_constants(n: usize) -> KernelContext {
         let mut ctx = KernelContext::new();
         for _ in 0..n {
-            ctx.symbol_table.add_scoped_constant(Term::type_bool());
+            ctx.symbol_table.add_scoped_constant(Term::bool_type());
         }
         ctx
     }
@@ -84,18 +87,18 @@ impl KernelContext {
     pub fn test_with_constants(num_scoped: usize, num_global: usize) -> KernelContext {
         let mut ctx = KernelContext::new();
         for _ in 0..num_scoped {
-            ctx.symbol_table.add_scoped_constant(Term::type_empty());
+            ctx.symbol_table.add_scoped_constant(Term::empty_type());
         }
         for _ in 0..num_global {
-            ctx.symbol_table.add_global_constant(Term::type_empty());
+            ctx.symbol_table.add_global_constant(Term::empty_type());
         }
         // Also add monomorphs for tests that use "m0", "m1", etc.
         for _ in 0..10 {
-            ctx.symbol_table.add_monomorph(Term::type_empty());
+            ctx.symbol_table.add_monomorph(Term::empty_type());
         }
         // Also add synthetics for tests that use "s0", "s1", etc.
         for _ in 0..10 {
-            ctx.symbol_table.declare_synthetic(Term::type_empty());
+            ctx.symbol_table.declare_synthetic(Term::empty_type());
         }
         ctx
     }
@@ -223,7 +226,7 @@ impl KernelContext {
         ctx.symbol_table
             .add_global_constant(type_empty2_to_empty.clone()); // g4
         for _ in 5..10 {
-            ctx.symbol_table.add_global_constant(Term::type_bool());
+            ctx.symbol_table.add_global_constant(Term::bool_type());
         }
         // h0: (Bool -> Bool, Bool) -> Bool (like true_below)
         ctx.symbol_table
@@ -244,7 +247,7 @@ impl KernelContext {
         ctx.symbol_table
             .add_scoped_constant(type_empty2_to_empty.clone()); // c4
         for _ in 5..10 {
-            ctx.symbol_table.add_scoped_constant(Term::type_bool());
+            ctx.symbol_table.add_scoped_constant(Term::bool_type());
         }
 
         // Add monomorphs with function types (m0-m4 are functions, m5-m9 are Bool)
@@ -254,12 +257,12 @@ impl KernelContext {
         ctx.symbol_table.add_monomorph(type_empty_to_bool); // m3
         ctx.symbol_table.add_monomorph(type_empty2_to_empty); // m4
         for _ in 5..10 {
-            ctx.symbol_table.add_monomorph(Term::type_bool());
+            ctx.symbol_table.add_monomorph(Term::bool_type());
         }
 
         // Add synthetics with BOOL type
         for _ in 0..10 {
-            ctx.symbol_table.declare_synthetic(Term::type_bool());
+            ctx.symbol_table.declare_synthetic(Term::bool_type());
         }
 
         ctx
@@ -314,7 +317,6 @@ impl KernelContext {
     #[cfg(test)]
     fn parse_type(&self, type_str: &str) -> Term {
         use crate::kernel::atom::Atom;
-        use crate::kernel::types::{BOOL, EMPTY};
 
         let s = type_str.trim();
 
@@ -363,13 +365,13 @@ impl KernelContext {
         } else {
             // Simple type name
             match s {
-                "Bool" => Term::type_ground(BOOL),
-                "Empty" => Term::type_ground(EMPTY),
+                "Bool" => Term::bool_type(),
+                "Empty" => Term::empty_type(),
                 _ => {
                     // Look up in TypeStore by name
                     self.type_store
                         .get_ground_id_by_name(s)
-                        .map(Term::type_ground)
+                        .map(Term::ground_type)
                         .unwrap_or_else(|| panic!("Unknown type name: {}", s))
                 }
             }
@@ -427,25 +429,25 @@ impl KernelContext {
         match first_char {
             'c' => {
                 while self.symbol_table.num_scoped_constants() <= id {
-                    self.symbol_table.add_scoped_constant(Term::type_empty());
+                    self.symbol_table.add_scoped_constant(Term::empty_type());
                 }
                 self.symbol_table.set_scoped_constant_type(id, type_term);
             }
             'g' => {
                 while self.symbol_table.num_global_constants() <= id {
-                    self.symbol_table.add_global_constant(Term::type_empty());
+                    self.symbol_table.add_global_constant(Term::empty_type());
                 }
                 self.symbol_table.set_global_constant_type(id, type_term);
             }
             'm' => {
                 while self.symbol_table.num_monomorphs() <= id {
-                    self.symbol_table.add_monomorph(Term::type_empty());
+                    self.symbol_table.add_monomorph(Term::empty_type());
                 }
                 self.symbol_table.set_monomorph_type(id, type_term);
             }
             's' => {
                 while self.symbol_table.num_synthetics() <= id {
-                    self.symbol_table.declare_synthetic(Term::type_empty());
+                    self.symbol_table.declare_synthetic(Term::empty_type());
                 }
                 self.symbol_table.set_synthetic_type(id, type_term);
             }
@@ -516,13 +518,13 @@ mod tests {
         for i in 0..10 {
             let symbol = Symbol::ScopedConstant(i);
             let type_term = ctx.symbol_table.get_type(symbol);
-            assert_eq!(*type_term, Term::type_empty());
+            assert_eq!(*type_term, Term::empty_type());
         }
         // Verify we can look up the types for global constants g0-g9
         for i in 0..10 {
             let symbol = Symbol::GlobalConstant(i);
             let type_term = ctx.symbol_table.get_type(symbol);
-            assert_eq!(*type_term, Term::type_empty());
+            assert_eq!(*type_term, Term::empty_type());
         }
     }
 
@@ -537,7 +539,7 @@ mod tests {
         // Verify c0 has type Int
         let c0_type = ctx.symbol_table.get_type(Symbol::ScopedConstant(0));
         let int_id = ctx.type_store.get_ground_id_by_name("Int").unwrap();
-        assert_eq!(*c0_type, Term::type_ground(int_id));
+        assert_eq!(*c0_type, Term::ground_type(int_id));
 
         // Verify c1 has type Int -> Bool
         let c1_type = ctx.symbol_table.get_type(Symbol::ScopedConstant(1));
@@ -574,7 +576,7 @@ mod tests {
         let int_id = ctx.type_store.get_ground_id_by_name("Int").unwrap();
         let expected_list_int = Term::new(
             Atom::Symbol(Symbol::Type(list_id)),
-            vec![Term::type_ground(int_id)],
+            vec![Term::ground_type(int_id)],
         );
         assert_eq!(*c0_type, expected_list_int);
 
@@ -582,7 +584,7 @@ mod tests {
         let c1_type = ctx.symbol_table.get_type(Symbol::ScopedConstant(1));
         let expected_pair = Term::new(
             Atom::Symbol(Symbol::Type(pair_id)),
-            vec![Term::type_ground(int_id), Term::type_bool()],
+            vec![Term::ground_type(int_id), Term::bool_type()],
         );
         assert_eq!(*c1_type, expected_pair);
 
@@ -590,7 +592,7 @@ mod tests {
         let c2_type = ctx.symbol_table.get_type(Symbol::ScopedConstant(2));
         let (input, output) = c2_type.as_ref().split_pi().unwrap();
         assert_eq!(input.to_owned(), expected_list_int);
-        assert_eq!(output.to_owned(), Term::type_bool());
+        assert_eq!(output.to_owned(), Term::bool_type());
     }
 
     #[test]

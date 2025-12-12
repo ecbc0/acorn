@@ -16,7 +16,7 @@ use super::local_context::LocalContext;
 use super::symbol::Symbol;
 use super::term::Term;
 use super::term::{Decomposition, TermRef};
-use super::types::{GroundTypeId, TypeclassId, BOOL};
+use super::types::{GroundTypeId, TypeclassId};
 
 /// Replaces variables in a term with corresponding replacement terms.
 /// Variables x_i are replaced with replacements[i].
@@ -61,7 +61,7 @@ pub fn replace_term_variables(
                         .cloned()
                         .expect("variable type not found in term_context");
                     if new_idx >= output_types.len() {
-                        output_types.resize(new_idx + 1, Term::type_empty());
+                        output_types.resize(new_idx + 1, Term::empty_type());
                     }
                     output_types[new_idx] = var_type;
                     Term::atom(KernelAtom::Variable(new_var_id))
@@ -159,6 +159,9 @@ const ATOM_SYMBOL_SCOPED: u8 = 10;
 const ATOM_SYMBOL_MONOMORPH: u8 = 11;
 const ATOM_SYMBOL_SYNTHETIC: u8 = 12;
 const ATOM_FALSE: u8 = 13;
+const ATOM_SYMBOL_EMPTY: u8 = 14;
+const ATOM_SYMBOL_BOOL: u8 = 15;
+const ATOM_SYMBOL_TYPESORT: u8 = 16;
 
 impl Edge {
     /// Returns the discriminant byte for this edge.
@@ -177,6 +180,9 @@ impl Edge {
                 Atom::Typeclass(_) => ATOM_TYPECLASS,
                 Atom::Symbol(Symbol::True) => ATOM_TRUE,
                 Atom::Symbol(Symbol::False) => ATOM_FALSE,
+                Atom::Symbol(Symbol::Empty) => ATOM_SYMBOL_EMPTY,
+                Atom::Symbol(Symbol::Bool) => ATOM_SYMBOL_BOOL,
+                Atom::Symbol(Symbol::TypeSort) => ATOM_SYMBOL_TYPESORT,
                 Atom::Symbol(Symbol::Type(_)) => ATOM_TYPE,
                 Atom::Symbol(Symbol::GlobalConstant(_)) => ATOM_SYMBOL_GLOBAL,
                 Atom::Symbol(Symbol::ScopedConstant(_)) => ATOM_SYMBOL_SCOPED,
@@ -201,6 +207,9 @@ impl Edge {
                 Atom::Typeclass(tc) => tc.as_u16(),
                 Atom::Symbol(Symbol::True) => 0,
                 Atom::Symbol(Symbol::False) => 0,
+                Atom::Symbol(Symbol::Empty) => 0,
+                Atom::Symbol(Symbol::Bool) => 0,
+                Atom::Symbol(Symbol::TypeSort) => 0,
                 Atom::Symbol(Symbol::Type(t)) => t.as_u16(),
                 Atom::Symbol(Symbol::GlobalConstant(c)) => *c,
                 Atom::Symbol(Symbol::ScopedConstant(c)) => *c,
@@ -229,6 +238,9 @@ impl Edge {
             ATOM_SYMBOL_SCOPED => Edge::Atom(Atom::Symbol(Symbol::ScopedConstant(id))),
             ATOM_SYMBOL_MONOMORPH => Edge::Atom(Atom::Symbol(Symbol::Monomorph(id))),
             ATOM_SYMBOL_SYNTHETIC => Edge::Atom(Atom::Symbol(Symbol::Synthetic(id))),
+            ATOM_SYMBOL_EMPTY => Edge::Atom(Atom::Symbol(Symbol::Empty)),
+            ATOM_SYMBOL_BOOL => Edge::Atom(Atom::Symbol(Symbol::Bool)),
+            ATOM_SYMBOL_TYPESORT => Edge::Atom(Atom::Symbol(Symbol::TypeSort)),
             _ => panic!("invalid edge discriminant: {}", byte1),
         }
     }
@@ -312,11 +324,14 @@ fn key_from_term_type(
         }),
         KernelAtom::Symbol(Symbol::True) | KernelAtom::Symbol(Symbol::False) => {
             // Special case: True/False has type Bool, encode it directly
-            Edge::Atom(Atom::Type(BOOL)).append_to(key);
+            Edge::Atom(Atom::Symbol(Symbol::Bool)).append_to(key);
             return;
         }
-        KernelAtom::Symbol(Symbol::Type(_)) => {
-            panic!("Symbol::Type should not appear in terms")
+        KernelAtom::Symbol(Symbol::Type(_))
+        | KernelAtom::Symbol(Symbol::Empty)
+        | KernelAtom::Symbol(Symbol::Bool)
+        | KernelAtom::Symbol(Symbol::TypeSort) => {
+            panic!("Type symbols should not appear in terms")
         }
         KernelAtom::Typeclass(_) => {
             panic!("Typeclass should not appear as term head in key_from_term_type")
@@ -1096,37 +1111,37 @@ mod tests {
     }
 
     #[test]
-    fn test_key_from_type_ground() {
-        // Test encoding of a ground type like Bool
-        let bool_type = Term::type_ground(BOOL);
+    fn test_key_from_ground_type() {
+        // Test encoding of the Bool type (now a Symbol variant)
+        let bool_type = Term::bool_type();
         let mut key = Vec::new();
         key_from_type(&bool_type, &mut key);
 
-        // Should be just Atom(Type(BOOL))
+        // Should be just Atom(Symbol(Bool))
         assert_eq!(key.len(), 3);
         let edge = Edge::from_bytes(key[0], key[1], key[2]);
-        assert_eq!(edge, Edge::Atom(Atom::Type(BOOL)));
+        assert_eq!(edge, Edge::Atom(Atom::Symbol(Symbol::Bool)));
     }
 
     #[test]
     fn test_key_from_type_arrow() {
         // Test encoding of Bool -> Bool
-        let bool_type = Term::type_ground(BOOL);
+        let bool_type = Term::bool_type();
         let arrow_type = Term::pi(bool_type.clone(), bool_type.clone());
         let mut key = Vec::new();
         key_from_type(&arrow_type, &mut key);
 
-        // Should be: Arrow + Atom(Type(BOOL)) + Atom(Type(BOOL))
+        // Should be: Arrow + Atom(Symbol(Bool)) + Atom(Symbol(Bool))
         assert_eq!(key.len(), 9);
 
         let edge1 = Edge::from_bytes(key[0], key[1], key[2]);
         assert_eq!(edge1, Edge::Arrow);
 
         let edge2 = Edge::from_bytes(key[3], key[4], key[5]);
-        assert_eq!(edge2, Edge::Atom(Atom::Type(BOOL)));
+        assert_eq!(edge2, Edge::Atom(Atom::Symbol(Symbol::Bool)));
 
         let edge3 = Edge::from_bytes(key[6], key[7], key[8]);
-        assert_eq!(edge3, Edge::Atom(Atom::Type(BOOL)));
+        assert_eq!(edge3, Edge::Atom(Atom::Symbol(Symbol::Bool)));
     }
 
     #[test]
@@ -1140,9 +1155,9 @@ mod tests {
         let key = key_from_term(&term, &lctx, &kctx);
 
         // For an atomic term: type + atom
-        // So: Type(BOOL) + Atom(c0)
+        // So: Symbol(Bool) + Atom(c0)
         let debug = Edge::debug_bytes(&key);
-        assert!(debug.contains("Type"), "key: {}", debug);
+        assert!(debug.contains("Bool"), "key: {}", debug);
         assert!(debug.contains("ScopedConstant"), "key: {}", debug);
     }
 
@@ -1491,7 +1506,7 @@ mod tests {
             .symbol_table
             .get_type(Symbol::ScopedConstant(1)) // c1 has type Bool -> Bool
             .clone();
-        let lctx = LocalContext::from_types(vec![type_bool_to_bool, Term::type_bool()]);
+        let lctx = LocalContext::from_types(vec![type_bool_to_bool, Term::bool_type()]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
@@ -1620,12 +1635,10 @@ mod tests {
     fn test_pattern_tree_with_type_variable() {
         // Test that type variables in the type encoding are correctly encoded and matched.
         // This test verifies the key encoding produces matching keys for identical type structures.
-        use crate::kernel::types::TYPE;
-
         let kctx = KernelContext::new();
 
         // Create LocalContext: x0 : Type (a type variable)
-        let type_type = Term::type_ground(TYPE);
+        let type_type = Term::type_sort();
         let type_var_x0 = Term::atom(KernelAtom::Variable(0));
         let lctx = LocalContext::from_types(vec![type_type.clone(), type_var_x0.clone()]);
 
@@ -1724,7 +1737,7 @@ mod tests {
         kctx.add_datatype("Nat");
 
         let nat_id = kctx.type_store.get_ground_id_by_name("Nat").unwrap();
-        let nat_type = Term::type_ground(nat_id);
+        let nat_type = Term::ground_type(nat_id);
         let fin_id = kctx.type_store.get_ground_id_by_name("Fin").unwrap();
 
         // c0: Nat (a value, not a type)
@@ -1792,7 +1805,7 @@ mod tests {
         kctx.add_datatype("Nat");
 
         let nat_id = kctx.type_store.get_ground_id_by_name("Nat").unwrap();
-        let nat_type = Term::type_ground(nat_id);
+        let nat_type = Term::ground_type(nat_id);
         let fin_id = kctx.type_store.get_ground_id_by_name("Fin").unwrap();
 
         // c0 : Nat (a value parameter for Fin)

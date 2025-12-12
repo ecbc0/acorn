@@ -539,7 +539,7 @@ impl Clause {
         &self,
         kernel_context: &KernelContext,
     ) -> Vec<(usize, Vec<Literal>)> {
-        let bool_type = Term::type_bool();
+        let bool_type = Term::bool_type();
 
         let mut answer = vec![];
 
@@ -626,7 +626,7 @@ mod tests {
         let x0 = Term::atom(Atom::Variable(0));
         let literal = Literal::equals(g0, x0);
 
-        let some_type = Term::type_ground(GroundTypeId::new(2));
+        let some_type = Term::ground_type(GroundTypeId::new(2));
         let context = LocalContext::from_types(vec![some_type]);
         let clause = Clause::from_literals_unnormalized(vec![literal], &context);
 
@@ -647,7 +647,7 @@ mod tests {
         let f_x0 = Term::new(Atom::Symbol(Symbol::GlobalConstant(0)), vec![x0.clone()]);
         let literal = Literal::equals(f_x0.clone(), f_x0);
 
-        let some_type = Term::type_ground(GroundTypeId::new(2));
+        let some_type = Term::ground_type(GroundTypeId::new(2));
         let context = LocalContext::from_types(vec![some_type]);
         let clause = Clause::from_literals_unnormalized(vec![literal], &context);
 
@@ -670,8 +670,8 @@ mod tests {
         // After sorting, the literals may be reordered. The variable renumbering
         // should correctly track which type belongs to which new variable ID.
 
-        let type_foo = Term::type_ground(GroundTypeId::new(2)); // Some non-Bool type
-        let type_bool = Term::type_ground(GroundTypeId::new(1)); // Bool
+        let type_foo = Term::ground_type(GroundTypeId::new(2)); // Some non-Bool type
+        let type_bool = Term::ground_type(GroundTypeId::new(1)); // Bool
 
         // x0 and x1 are Foo, x2 is Bool
         let x0 = Term::atom(Atom::Variable(0));

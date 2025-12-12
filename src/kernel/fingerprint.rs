@@ -14,8 +14,17 @@ use crate::kernel::types::{GroundTypeId, TypeclassId};
 /// This is cheap to compare and hash while still providing useful discrimination.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum TypeCategory {
-    /// A ground type, distinguished by ID
+    /// A ground type, distinguished by ID (user-defined ground types only)
     Ground(GroundTypeId),
+
+    /// The Empty type (built-in)
+    Empty,
+
+    /// The Bool type (built-in)
+    Bool,
+
+    /// The TypeSort kind (built-in)
+    TypeSort,
 
     /// An arrow/function type (any Pi type)
     Arrow,
@@ -38,6 +47,12 @@ impl TypeCategory {
             TypeCategory::Variable
         } else if let Some(tc_id) = type_term.as_ref().as_typeclass() {
             TypeCategory::Typeclass(tc_id)
+        } else if type_term.as_ref().is_bool_type() {
+            TypeCategory::Bool
+        } else if type_term.as_ref().is_empty_type() {
+            TypeCategory::Empty
+        } else if type_term.as_ref().is_type_sort() {
+            TypeCategory::TypeSort
         } else if let Some(gid) = type_term.as_ref().as_type_atom() {
             TypeCategory::Ground(gid)
         } else if type_term.as_ref().is_pi() {
@@ -57,8 +72,15 @@ impl TypeCategory {
             // Variables match anything
             (TypeCategory::Variable, _) | (_, TypeCategory::Variable) => true,
             // Typeclasses can match ground types (possibly instances) or other typeclasses
+            // Built-in types (Bool, Empty, TypeSort) can also potentially have typeclass instances
             (TypeCategory::Typeclass(_), TypeCategory::Ground(_))
             | (TypeCategory::Ground(_), TypeCategory::Typeclass(_))
+            | (TypeCategory::Typeclass(_), TypeCategory::Bool)
+            | (TypeCategory::Bool, TypeCategory::Typeclass(_))
+            | (TypeCategory::Typeclass(_), TypeCategory::Empty)
+            | (TypeCategory::Empty, TypeCategory::Typeclass(_))
+            | (TypeCategory::Typeclass(_), TypeCategory::TypeSort)
+            | (TypeCategory::TypeSort, TypeCategory::Typeclass(_))
             | (TypeCategory::Typeclass(_), TypeCategory::Typeclass(_)) => true,
             // Other cases require exact match
             _ => self == other,
@@ -520,39 +542,37 @@ mod tests {
             TypeCategory::Variable
         );
 
-        // Ground types should still be categorized as Ground
-        let bool_type = Term::type_bool();
-        assert!(matches!(
-            TypeCategory::from_type_term(&bool_type),
-            TypeCategory::Ground(_)
-        ));
+        // Bool type should be categorized as Bool
+        let bool_type = Term::bool_type();
+        assert_eq!(TypeCategory::from_type_term(&bool_type), TypeCategory::Bool);
     }
 
     #[test]
     fn test_type_category_could_match() {
-        use crate::kernel::types::BOOL;
+        use crate::kernel::types::GroundTypeId;
+
+        let test_ground = GroundTypeId::new(0); // Use a test ground type ID
 
         // Variable matches anything
-        assert!(TypeCategory::Variable.could_match(&TypeCategory::Ground(BOOL)));
+        assert!(TypeCategory::Variable.could_match(&TypeCategory::Ground(test_ground)));
         assert!(TypeCategory::Variable.could_match(&TypeCategory::Arrow));
         assert!(TypeCategory::Variable.could_match(&TypeCategory::Applied));
         assert!(TypeCategory::Variable.could_match(&TypeCategory::Variable));
 
         // Ground matches Variable or same Ground
-        assert!(TypeCategory::Ground(BOOL).could_match(&TypeCategory::Variable));
-        assert!(TypeCategory::Ground(BOOL).could_match(&TypeCategory::Ground(BOOL)));
-        assert!(!TypeCategory::Ground(BOOL).could_match(&TypeCategory::Arrow));
+        assert!(TypeCategory::Ground(test_ground).could_match(&TypeCategory::Variable));
+        assert!(TypeCategory::Ground(test_ground).could_match(&TypeCategory::Ground(test_ground)));
+        assert!(!TypeCategory::Ground(test_ground).could_match(&TypeCategory::Arrow));
 
         // Arrow matches Variable or Arrow
         assert!(TypeCategory::Arrow.could_match(&TypeCategory::Variable));
         assert!(TypeCategory::Arrow.could_match(&TypeCategory::Arrow));
-        assert!(!TypeCategory::Arrow.could_match(&TypeCategory::Ground(BOOL)));
+        assert!(!TypeCategory::Arrow.could_match(&TypeCategory::Ground(test_ground)));
     }
 
     #[test]
     fn test_fingerprint_unifier_with_type_variable_query() {
         // Test that a query with a type variable can find terms with concrete types
-        use crate::kernel::types::TYPE;
 
         let mut kctx = KernelContext::new();
         kctx.add_datatype("Int").add_datatype("Nat");
@@ -560,15 +580,15 @@ mod tests {
         let int_id = kctx.type_store.get_ground_id_by_name("Int").unwrap();
         let nat_id = kctx.type_store.get_ground_id_by_name("Nat").unwrap();
 
-        let int_type = Term::type_ground(int_id);
-        let nat_type = Term::type_ground(nat_id);
+        let int_type = Term::ground_type(int_id);
+        let nat_type = Term::ground_type(nat_id);
 
         // c0 has type Int, c1 has type Nat
         kctx.symbol_table.add_scoped_constant(int_type.clone());
         kctx.symbol_table.add_scoped_constant(nat_type.clone());
 
         // Local context: x0 has type T0 (a type variable)
-        let type_type = Term::type_ground(TYPE);
+        let type_type = Term::type_sort();
         let type_var = Term::atom(crate::kernel::atom::Atom::Variable(0));
         let lctx_with_type_var = LocalContext::from_types(vec![type_type, type_var]);
 
@@ -599,19 +619,17 @@ mod tests {
     #[test]
     fn test_fingerprint_unifier_stored_type_variable() {
         // Test that a concrete query can find stored terms with type variables
-        use crate::kernel::types::TYPE;
-
         let mut kctx = KernelContext::new();
         kctx.add_datatype("Int");
 
         let int_id = kctx.type_store.get_ground_id_by_name("Int").unwrap();
-        let int_type = Term::type_ground(int_id);
+        let int_type = Term::ground_type(int_id);
 
         // c0 has type Int
         kctx.symbol_table.add_scoped_constant(int_type.clone());
 
         // Local context with type variable: x0: Type, x1: T0
-        let type_type = Term::type_ground(TYPE);
+        let type_type = Term::type_sort();
         let type_var = Term::atom(crate::kernel::atom::Atom::Variable(0));
         let lctx_with_type_var = LocalContext::from_types(vec![type_type, type_var]);
 
@@ -639,20 +657,18 @@ mod tests {
     #[test]
     fn test_fingerprint_specializer_with_type_variable() {
         // Test that FingerprintSpecializer works with type variables
-        use crate::kernel::types::TYPE;
-
         let mut kctx = KernelContext::new();
         kctx.add_datatype("Int");
 
         let int_id = kctx.type_store.get_ground_id_by_name("Int").unwrap();
-        let int_type = Term::type_ground(int_id);
+        let int_type = Term::ground_type(int_id);
 
         // c0 and c1 have type Int
         kctx.symbol_table.add_scoped_constant(int_type.clone());
         kctx.symbol_table.add_scoped_constant(int_type.clone());
 
         // Local context with type variable: x0: Type, x1: T0
-        let type_type = Term::type_ground(TYPE);
+        let type_type = Term::type_sort();
         let type_var = Term::atom(crate::kernel::atom::Atom::Variable(0));
         let lctx_with_type_var = LocalContext::from_types(vec![type_type, type_var]);
 
@@ -704,7 +720,7 @@ mod tests {
         );
 
         // Typeclass should match Ground types (conservatively, for potential instances)
-        let bool_type = Term::type_bool();
+        let bool_type = Term::bool_type();
         let ground_cat = TypeCategory::from_type_term(&bool_type);
         assert!(
             category.could_match(&ground_cat),
@@ -745,7 +761,7 @@ mod tests {
         kctx.add_datatype("Int");
 
         let int_id = kctx.type_store.get_ground_id_by_name("Int").unwrap();
-        let int_type = Term::type_ground(int_id);
+        let int_type = Term::ground_type(int_id);
 
         // Register a typeclass
         let monoid = Typeclass {
@@ -792,7 +808,7 @@ mod tests {
         kctx.add_datatype("Int");
 
         let int_id = kctx.type_store.get_ground_id_by_name("Int").unwrap();
-        let int_type = Term::type_ground(int_id);
+        let int_type = Term::ground_type(int_id);
 
         // Register a typeclass
         let monoid = Typeclass {

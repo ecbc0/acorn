@@ -637,7 +637,7 @@ mod tests {
             .symbol_table
             .get_type(Symbol::ScopedConstant(1))
             .clone();
-        let lctx = LocalContext::from_types(vec![type_bool_to_bool, Term::type_bool()]);
+        let lctx = LocalContext::from_types(vec![type_bool_to_bool, Term::bool_type()]);
 
         let mut clause_set = GeneralizationSet::new();
 
@@ -667,7 +667,7 @@ mod tests {
             .symbol_table
             .get_type(Symbol::ScopedConstant(1))
             .clone();
-        let lctx = LocalContext::from_types(vec![type_bool_to_bool, Term::type_bool()]);
+        let lctx = LocalContext::from_types(vec![type_bool_to_bool, Term::bool_type()]);
 
         let mut clause_set = GeneralizationSet::new();
 
@@ -697,7 +697,7 @@ mod tests {
             .symbol_table
             .get_type(Symbol::ScopedConstant(1))
             .clone();
-        let lctx = LocalContext::from_types(vec![type_bool_to_bool, Term::type_bool()]);
+        let lctx = LocalContext::from_types(vec![type_bool_to_bool, Term::bool_type()]);
 
         let mut clause_set = GeneralizationSet::new();
 

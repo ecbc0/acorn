@@ -14,8 +14,19 @@ pub enum Symbol {
     // The boolean constant false.
     False,
 
-    // A ground type, used in type terms to represent types like Int, Bool, Type<CommRing>.
+    // The Empty type (bottom type).
+    Empty,
+
+    // The Bool type.
+    Bool,
+
+    // The type of types (kind *). Called "Type" in the language but "TypeSort" here
+    // to avoid confusion with the Type(GroundTypeId) variant.
+    TypeSort,
+
+    // A ground type, used in type terms to represent user-defined types like Nat, Int, etc.
     // Ground types have no internal structure - they are atomic type constants.
+    // Note: Empty, Bool, and TypeSort are NOT GroundTypeIds - they have their own variants.
     Type(GroundTypeId),
 
     // Synthetic atoms are created by the normalizer to handle expressions that cannot be converted
@@ -41,6 +52,9 @@ impl fmt::Display for Symbol {
         match self {
             Symbol::True => write!(f, "true"),
             Symbol::False => write!(f, "false"),
+            Symbol::Empty => write!(f, "Empty"),
+            Symbol::Bool => write!(f, "Bool"),
+            Symbol::TypeSort => write!(f, "Type"),
             Symbol::Type(t) => write!(f, "T{}", t.as_u16()),
             Symbol::Synthetic(i) => write!(f, "s{}", i),
             Symbol::GlobalConstant(i) => write!(f, "g{}", i),

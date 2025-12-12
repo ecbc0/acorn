@@ -720,7 +720,7 @@ impl NormalizerView<'_> {
             }
             let result_type_term = self.type_store().to_type_term(&app.return_type);
 
-            if result_type_term == Term::type_bool() {
+            if result_type_term == Term::bool_type() {
                 // Boolean functional comparison.
                 if negate {
                     // Boolean functional inequality.
@@ -1763,8 +1763,11 @@ impl Normalizer {
                 let name = ConstantName::Synthetic(*i);
                 AcornValue::constant(name, vec![], acorn_type)
             }
-            Atom::Symbol(Symbol::Type(_)) => {
-                panic!("Symbol::Type should not appear in open terms")
+            Atom::Symbol(Symbol::Type(_))
+            | Atom::Symbol(Symbol::Empty)
+            | Atom::Symbol(Symbol::Bool)
+            | Atom::Symbol(Symbol::TypeSort) => {
+                panic!("Type symbols should not appear in open terms")
             }
             Atom::Typeclass(_) => {
                 panic!("Typeclass atoms should not appear in open terms")

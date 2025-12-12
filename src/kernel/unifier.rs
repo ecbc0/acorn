@@ -562,7 +562,7 @@ mod tests {
     /// Returns a static LocalContext with 10 Bool types for tests.
     fn bool_context() -> &'static LocalContext {
         static BOOL_CONTEXT: LazyLock<LocalContext> =
-            LazyLock::new(|| LocalContext::from_types(vec![Term::type_bool(); 10]));
+            LazyLock::new(|| LocalContext::from_types(vec![Term::bool_type(); 10]));
         &BOOL_CONTEXT
     }
 
@@ -572,7 +572,7 @@ mod tests {
         let mut u = Unifier::new(3, kernel_context);
         u.set_input_context(Scope::LEFT, bool_context());
         u.set_input_context(Scope::RIGHT, bool_context());
-        u.set_output_var_types(vec![Term::type_bool(); 10]);
+        u.set_output_var_types(vec![Term::bool_type(); 10]);
         u
     }
 
@@ -659,11 +659,11 @@ mod tests {
         // Set up a unifier where Variable(0) has EMPTY type and Variable(1) has Empty -> Bool type
         let mut u = Unifier::new(3, &ctx);
         // x0: EMPTY, x1: Empty -> Bool
-        let local_ctx = LocalContext::from_types(vec![Term::type_empty(), empty_to_bool]);
+        let local_ctx = LocalContext::from_types(vec![Term::empty_type(), empty_to_bool]);
         let local_ctx_ref: &'static LocalContext = Box::leak(Box::new(local_ctx));
         u.set_input_context(Scope::LEFT, local_ctx_ref);
         u.set_input_context(Scope::RIGHT, local_ctx_ref);
-        u.set_output_var_types(vec![Term::type_empty(); 10]);
+        u.set_output_var_types(vec![Term::empty_type(); 10]);
         u.assert_unify(Scope::LEFT, &const_f_term, Scope::RIGHT, &var_f_term);
     }
 
@@ -679,7 +679,7 @@ mod tests {
         let bool_to_bool = ctx.symbol_table.get_type(Symbol::ScopedConstant(1)).clone();
 
         // Create local context where x0: Bool -> Bool, x1: Bool
-        let local_ctx = LocalContext::from_types(vec![bool_to_bool.clone(), Term::type_bool()]);
+        let local_ctx = LocalContext::from_types(vec![bool_to_bool.clone(), Term::bool_type()]);
         let local_ctx_ref: &'static LocalContext = Box::leak(Box::new(local_ctx));
 
         let c5 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(5)));
@@ -698,10 +698,10 @@ mod tests {
         u.set_input_context(Scope::RIGHT, local_ctx_ref);
         u.set_output_var_types(vec![
             bool_to_bool,
-            Term::type_bool(),
-            Term::type_bool(),
-            Term::type_bool(),
-            Term::type_bool(),
+            Term::bool_type(),
+            Term::bool_type(),
+            Term::bool_type(),
+            Term::bool_type(),
         ]);
 
         u.assert_unify(Scope::LEFT, &left_term, Scope::RIGHT, &right_term);
@@ -720,7 +720,7 @@ mod tests {
         let bool_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(1)).clone(); // g1: Bool -> Bool
 
         // Create local context where x0 has type Bool -> Bool, x1 has type Bool
-        let lctx = LocalContext::from_types(vec![bool_to_bool.clone(), Term::type_bool()]);
+        let lctx = LocalContext::from_types(vec![bool_to_bool.clone(), Term::bool_type()]);
 
         // Build terms: s = x0(x0(x1)) where x0: Bool -> Bool, x1: Bool
         // x0(x1) : Bool, x0(x0(x1)) : Bool
@@ -738,9 +738,9 @@ mod tests {
         u.set_input_context(Scope::RIGHT, Box::leak(Box::new(lctx.clone())));
         u.set_output_var_types(vec![
             bool_to_bool,
-            Term::type_bool(),
-            Term::type_bool(),
-            Term::type_bool(),
+            Term::bool_type(),
+            Term::bool_type(),
+            Term::bool_type(),
         ]);
 
         u.assert_unify(Scope::LEFT, &s, Scope::RIGHT, &u_subterm);
@@ -791,7 +791,7 @@ mod tests {
         let mut u = Unifier::new(3, &ctx);
         u.set_input_context(Scope::LEFT, Box::leak(Box::new(left_local)));
         u.set_input_context(Scope::RIGHT, Box::leak(Box::new(right_local)));
-        u.set_output_var_types(vec![bool_to_bool, Term::type_bool(), Term::type_bool()]);
+        u.set_output_var_types(vec![bool_to_bool, Term::bool_type(), Term::bool_type()]);
 
         let result = u.unify(Scope::LEFT, &left_term, Scope::RIGHT, &right_term);
 
@@ -816,7 +816,7 @@ mod tests {
         let bool_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(1)).clone(); // g1: Bool -> Bool
 
         // Create local context where x0 has type Bool -> Bool, x1 has type Bool
-        let lctx = LocalContext::from_types(vec![bool_to_bool.clone(), Term::type_bool()]);
+        let lctx = LocalContext::from_types(vec![bool_to_bool.clone(), Term::bool_type()]);
 
         // Build terms: s = x0(x0(x1)) where x0: Bool -> Bool, x1: Bool
         let x0_x1 = Term::new(Atom::Variable(0), vec![Term::atom(Atom::Variable(1))]);
@@ -831,9 +831,9 @@ mod tests {
         u.set_input_context(Scope::RIGHT, Box::leak(Box::new(lctx.clone())));
         u.set_output_var_types(vec![
             bool_to_bool,
-            Term::type_bool(),
-            Term::type_bool(),
-            Term::type_bool(),
+            Term::bool_type(),
+            Term::bool_type(),
+            Term::bool_type(),
         ]);
 
         u.assert_unify(Scope::LEFT, &s, Scope::RIGHT, &u_subterm);
@@ -976,8 +976,6 @@ mod tests {
     fn test_parameterized_type_unification() {
         // Test unifying a constant of type List[Int] with a variable of type List[x0]
         // where x0 is a type variable. This tests that polymorphic types work in unification.
-        use crate::kernel::types::TYPE;
-
         let mut ctx = KernelContext::new();
         ctx.add_type_constructor("List", 1).add_datatype("Int");
 
@@ -987,14 +985,14 @@ mod tests {
         // c0 has type List[Int]
         let list_int = Term::new(
             Atom::Symbol(Symbol::Type(list_id)),
-            vec![Term::type_ground(int_id)],
+            vec![Term::ground_type(int_id)],
         );
         ctx.symbol_table.add_scoped_constant(list_int.clone());
 
         // Create LocalContext where:
         // x0 : Type (a type variable)
         // x1 : List[x0] (a list parameterized by x0)
-        let type_type = Term::type_ground(TYPE);
+        let type_type = Term::type_sort();
         let list_x0 = Term::new(
             Atom::Symbol(Symbol::Type(list_id)),
             vec![Term::atom(Atom::Variable(0))],
@@ -1038,8 +1036,6 @@ mod tests {
         // - And x1 in RIGHT has effective type List[Nat]
         // - Unifying x1 (LEFT) with x1 (RIGHT) should FAIL because the types differ
         // - But if we only compare raw types (List[x0] == List[x0]), it would wrongly succeed
-        use crate::kernel::types::TYPE;
-
         let mut ctx = KernelContext::new();
         ctx.add_type_constructor("List", 1)
             .add_datatype("Int")
@@ -1049,9 +1045,9 @@ mod tests {
         let int_id = ctx.type_store.get_ground_id_by_name("Int").unwrap();
         let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
 
-        let type_type = Term::type_ground(TYPE);
-        let int_type = Term::type_ground(int_id);
-        let nat_type = Term::type_ground(nat_id);
+        let type_type = Term::type_sort();
+        let int_type = Term::ground_type(int_id);
+        let nat_type = Term::ground_type(nat_id);
 
         // List[x0] - a list parameterized by type variable x0
         let list_x0 = Term::new(
@@ -1102,8 +1098,8 @@ mod tests {
         let int_id = ctx.type_store.get_ground_id_by_name("Int").unwrap();
         let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
 
-        let int_type = Term::type_ground(int_id);
-        let nat_type = Term::type_ground(nat_id);
+        let int_type = Term::ground_type(int_id);
+        let nat_type = Term::ground_type(nat_id);
 
         // c0 has type Nat
         ctx.symbol_table.add_scoped_constant(nat_type.clone());
@@ -1152,7 +1148,7 @@ mod tests {
         unifier.set_input_context(scope2, bool_context());
         let scope3 = unifier.add_scope();
         unifier.set_input_context(scope3, bool_context());
-        unifier.set_output_var_types(vec![Term::type_bool(); 10]);
+        unifier.set_output_var_types(vec![Term::bool_type(); 10]);
 
         // Unify g0(x0, x1) with g0(c5, x0)
         let c5 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(5)));
@@ -1189,7 +1185,7 @@ mod tests {
         ctx.add_datatype("Int");
 
         let int_id = ctx.type_store.get_ground_id_by_name("Int").unwrap();
-        let int_type = Term::type_ground(int_id);
+        let int_type = Term::ground_type(int_id);
 
         // Register a Monoid typeclass
         let monoid = Typeclass {
@@ -1242,7 +1238,7 @@ mod tests {
         ctx.add_datatype("String");
 
         let string_id = ctx.type_store.get_ground_id_by_name("String").unwrap();
-        let string_type = Term::type_ground(string_id);
+        let string_type = Term::ground_type(string_id);
 
         // Register a Monoid typeclass but don't add String as an instance
         let monoid = Typeclass {
@@ -1319,7 +1315,7 @@ mod tests {
         ctx.add_datatype("Nat");
 
         let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
-        let nat_type = Term::type_ground(nat_id);
+        let nat_type = Term::ground_type(nat_id);
         let fin_id = ctx.type_store.get_ground_id_by_name("Fin").unwrap();
 
         // c0 has type Nat (a value, not a type)
@@ -1366,7 +1362,7 @@ mod tests {
         ctx.add_datatype("Nat");
 
         let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
-        let nat_type = Term::type_ground(nat_id);
+        let nat_type = Term::ground_type(nat_id);
         let fin_id = ctx.type_store.get_ground_id_by_name("Fin").unwrap();
 
         // c0 has type Nat
@@ -1397,7 +1393,7 @@ mod tests {
         ctx.add_datatype("Nat");
 
         let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
-        let nat_type = Term::type_ground(nat_id);
+        let nat_type = Term::ground_type(nat_id);
         let fin_id = ctx.type_store.get_ground_id_by_name("Fin").unwrap();
 
         // c0 and c1 both have type Nat

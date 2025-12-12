@@ -281,6 +281,21 @@ impl<'a> TermRef<'a> {
         }
     }
 
+    /// Returns true if this is the Bool type.
+    pub fn is_bool_type(&self) -> bool {
+        self.is_atomic() && matches!(self.get_head_atom(), Atom::Symbol(Symbol::Bool))
+    }
+
+    /// Returns true if this is the Empty type.
+    pub fn is_empty_type(&self) -> bool {
+        self.is_atomic() && matches!(self.get_head_atom(), Atom::Symbol(Symbol::Empty))
+    }
+
+    /// Returns true if this is the TypeSort (the type of types).
+    pub fn is_type_sort(&self) -> bool {
+        self.is_atomic() && matches!(self.get_head_atom(), Atom::Symbol(Symbol::TypeSort))
+    }
+
     /// Get the term's type as a Term with context.
     /// Uses LocalContext for variable types and KernelContext for symbol types.
     /// For function applications, recursively gets the function's type and applies it.
@@ -307,7 +322,7 @@ impl<'a> TermRef<'a> {
                     .get_symbol_type(*symbol, &kernel_context.type_store),
                 // A typeclass atom represents a typeclass-as-type constraint.
                 // Its kind is Type (typeclasses categorize types).
-                Atom::Typeclass(_) => Term::type_type(),
+                Atom::Typeclass(_) => Term::type_sort(),
             },
             Decomposition::Application(func, _arg) => {
                 // The function has type A -> B, so the application has type B
@@ -319,7 +334,7 @@ impl<'a> TermRef<'a> {
             Decomposition::Pi(_, _) => {
                 // Pi types are themselves types - this is used when the term IS a type
                 // Return the Type kind
-                Term::type_type()
+                Term::type_sort()
             }
         };
         result.validate();
@@ -507,6 +522,12 @@ impl<'a> TermRef<'a> {
                 TermComponent::Atom(Atom::Symbol(Symbol::True))
                 | TermComponent::Atom(Atom::Symbol(Symbol::False)) => {
                     // True/False don't contribute to weight
+                }
+                TermComponent::Atom(Atom::Symbol(Symbol::Empty))
+                | TermComponent::Atom(Atom::Symbol(Symbol::Bool))
+                | TermComponent::Atom(Atom::Symbol(Symbol::TypeSort)) => {
+                    // Built-in type symbols contribute to weight
+                    weight1 += 1;
                 }
                 TermComponent::Atom(Atom::Variable(i)) => {
                     while refcounts.len() <= *i as usize {
@@ -1075,7 +1096,7 @@ impl Term {
     // These methods are for when Term is used to represent a type.
 
     /// Create a Term representing a ground type.
-    pub fn type_ground(type_id: GroundTypeId) -> Term {
+    pub fn ground_type(type_id: GroundTypeId) -> Term {
         Term::atom(Atom::Symbol(Symbol::Type(type_id)))
     }
 
@@ -1085,39 +1106,38 @@ impl Term {
     }
 
     /// Returns a Term for the Bool type.
-    pub fn type_bool() -> Term {
-        Term::type_ground(GroundTypeId::new(1))
+    pub fn bool_type() -> Term {
+        Term::atom(Atom::Symbol(Symbol::Bool))
     }
 
     /// Returns a static reference to the Bool type.
-    pub fn type_bool_ref() -> &'static Term {
+    pub fn bool_type_ref() -> &'static Term {
         use std::sync::LazyLock;
-        static BOOL_TYPE: LazyLock<Term> = LazyLock::new(Term::type_bool);
+        static BOOL_TYPE: LazyLock<Term> = LazyLock::new(Term::bool_type);
         &BOOL_TYPE
     }
 
     /// Returns a Term for the Empty type.
-    pub fn type_empty() -> Term {
-        Term::type_ground(GroundTypeId::new(0))
+    pub fn empty_type() -> Term {
+        Term::atom(Atom::Symbol(Symbol::Empty))
     }
 
     /// Returns a static reference to the Empty type.
-    pub fn type_empty_ref() -> &'static Term {
+    pub fn empty_type_ref() -> &'static Term {
         use std::sync::LazyLock;
-        static EMPTY_TYPE: LazyLock<Term> = LazyLock::new(Term::type_empty);
+        static EMPTY_TYPE: LazyLock<Term> = LazyLock::new(Term::empty_type);
         &EMPTY_TYPE
     }
 
     /// Returns a Term for the Type kind (the type of proper types).
-    pub fn type_type() -> Term {
-        use crate::kernel::types::TYPE;
-        Term::type_ground(TYPE)
+    pub fn type_sort() -> Term {
+        Term::atom(Atom::Symbol(Symbol::TypeSort))
     }
 
     /// Returns a static reference to the Type kind.
-    pub fn type_type_ref() -> &'static Term {
+    pub fn type_sort_ref() -> &'static Term {
         use std::sync::LazyLock;
-        static TYPE_KIND: LazyLock<Term> = LazyLock::new(Term::type_type);
+        static TYPE_KIND: LazyLock<Term> = LazyLock::new(Term::type_sort);
         &TYPE_KIND
     }
 

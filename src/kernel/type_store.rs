@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::elaborator::acorn_type::{AcornType, Datatype, FunctionType, TypeParam, Typeclass};
 use crate::kernel::atom::Atom;
 use crate::kernel::term::Term;
-use crate::kernel::types::{GroundTypeId, TypeclassId, BOOL, EMPTY, TYPE};
+use crate::kernel::types::{GroundTypeId, TypeclassId};
 
 /// Manages ground type registration and typeclass relationships.
 #[derive(Clone)]
@@ -39,7 +39,9 @@ pub struct TypeStore {
 
 impl TypeStore {
     pub fn new() -> TypeStore {
-        let mut store = TypeStore {
+        // Empty, Bool, and TypeSort are now Symbol variants, not GroundTypeIds.
+        // No pre-registration needed.
+        TypeStore {
             ground_id_to_type: vec![],
             ground_id_to_arity: vec![],
             datatype_to_ground_id: HashMap::new(),
@@ -48,14 +50,7 @@ impl TypeStore {
             id_to_typeclass: vec![],
             typeclass_extends: vec![],
             typeclass_instances: vec![],
-        };
-        // Register built-in types: Empty (id 0), Bool (id 1), Type (id 2)
-        store.add_type_internal(&AcornType::Empty); // arity 0
-        store.add_type_internal(&AcornType::Bool); // arity 0
-                                                   // TYPE is special - it's the kind of proper types. Use Empty as placeholder.
-        store.ground_id_to_type.push(AcornType::Empty);
-        store.ground_id_to_arity.push(0); // TYPE itself has arity 0
-        store
+        }
     }
 
     /// Register a type in the type store. Call this before using to_type_term()
@@ -65,20 +60,13 @@ impl TypeStore {
     }
 
     /// Internal implementation that registers ground types.
-    /// Only ground types (Empty, Bool, bare Data types, Arbitrary) get GroundTypeIds.
+    /// Only user-defined ground types (bare Data types, Arbitrary) get GroundTypeIds.
+    /// Empty, Bool, and TypeSort are Symbol variants, not GroundTypeIds.
     /// Non-ground types (Function, parameterized Data) are just recursively processed.
     fn add_type_internal(&mut self, acorn_type: &AcornType) {
         match acorn_type {
-            // Empty and Bool: register if not already (they get EMPTY and BOOL)
-            AcornType::Empty | AcornType::Bool => {
-                // These are registered once in new() - the ground_id_to_type index matches the constants
-                if self.ground_id_to_type.is_empty()
-                    || (self.ground_id_to_type.len() == 1 && *acorn_type == AcornType::Bool)
-                {
-                    self.ground_id_to_type.push(acorn_type.clone());
-                    self.ground_id_to_arity.push(0); // Empty and Bool have arity 0
-                }
-            }
+            // Empty and Bool are now Symbol variants, no registration needed
+            AcornType::Empty | AcornType::Bool => {}
 
             // Bare data type: assign a new GroundTypeId
             AcornType::Data(datatype, params) if params.is_empty() => {
@@ -144,7 +132,7 @@ impl TypeStore {
 
     /// Get the GroundTypeId for a bare Datatype (no type parameters).
     /// Returns None if the datatype hasn't been registered.
-    pub fn get_datatype_ground_id(&self, datatype: &Datatype) -> Option<GroundTypeId> {
+    pub fn get_datatype_id(&self, datatype: &Datatype) -> Option<GroundTypeId> {
         self.datatype_to_ground_id.get(datatype).copied()
     }
 
@@ -172,7 +160,7 @@ impl TypeStore {
     /// arity 1 → Type -> Type (Pi from Type to Type)
     /// arity 2 → Type -> Type -> Type
     pub fn kind_for_arity(&self, arity: u8) -> Term {
-        let type_term = Term::type_ground(TYPE);
+        let type_term = Term::type_sort();
         let mut result = type_term.clone();
         for _ in 0..arity {
             result = Term::pi(type_term.clone(), result);
@@ -212,9 +200,9 @@ impl TypeStore {
     /// Function types and parameterized data types are constructed on the fly.
     pub fn to_type_term(&self, acorn_type: &AcornType) -> Term {
         match acorn_type {
-            // Ground types: use constants
-            AcornType::Empty => Term::type_ground(EMPTY),
-            AcornType::Bool => Term::type_ground(BOOL),
+            // Built-in types: use dedicated Symbol variants
+            AcornType::Empty => Term::empty_type(),
+            AcornType::Bool => Term::bool_type(),
 
             AcornType::Data(datatype, params) if params.is_empty() => {
                 // Bare data type - use direct Datatype -> GroundTypeId lookup
@@ -222,7 +210,7 @@ impl TypeStore {
                     .datatype_to_ground_id
                     .get(datatype)
                     .unwrap_or_else(|| panic!("Data type {} not registered", datatype.name));
-                Term::type_ground(*ground_id)
+                Term::ground_type(*ground_id)
             }
 
             AcornType::Data(datatype, params) => {
@@ -231,7 +219,7 @@ impl TypeStore {
                     .datatype_to_ground_id
                     .get(datatype)
                     .unwrap_or_else(|| panic!("Data type {} not registered", datatype.name));
-                let head = Term::type_ground(*constructor_ground);
+                let head = Term::ground_type(*constructor_ground);
 
                 let args: Vec<Term> = params
                     .iter()
@@ -267,7 +255,7 @@ impl TypeStore {
                     .arbitrary_to_ground_id
                     .get(type_param)
                     .unwrap_or_else(|| panic!("Arbitrary type {:?} not registered", type_param));
-                Term::type_ground(*ground_id)
+                Term::ground_type(*ground_id)
             }
         }
     }
@@ -275,7 +263,16 @@ impl TypeStore {
     /// Convert a type Term back to an AcornType.
     /// This is the inverse of `to_type_term`.
     pub fn type_term_to_acorn_type(&self, type_term: &Term) -> AcornType {
-        // Check for ground type
+        // Check for built-in types first
+        if type_term.as_ref().is_bool_type() {
+            return AcornType::Bool;
+        }
+        if type_term.as_ref().is_empty_type() {
+            return AcornType::Empty;
+        }
+        // Note: TypeSort is the type of types, not typically used as a value type
+
+        // Check for user-defined ground type
         if let Some(ground_id) = type_term.as_ref().as_type_atom() {
             // Ground type - look up in ground_id_to_type
             return self.ground_id_to_type[ground_id.as_u16() as usize].clone();
@@ -426,32 +423,30 @@ impl Default for TypeStore {
 
 #[cfg(test)]
 mod tests {
-    use crate::kernel::types::{BOOL, EMPTY};
-
     use super::*;
 
     #[test]
     fn test_type_store_defaults() {
         let store = TypeStore::new();
-        // EMPTY and BOOL are pre-registered - verify via to_type_term
+        // Empty and Bool are now Symbol variants - verify via to_type_term
         let empty_term = store.to_type_term(&AcornType::Empty);
-        assert_eq!(empty_term.as_ref().as_type_atom(), Some(EMPTY));
+        assert!(empty_term.as_ref().is_empty_type());
         let bool_term = store.to_type_term(&AcornType::Bool);
-        assert_eq!(bool_term.as_ref().as_type_atom(), Some(BOOL));
+        assert!(bool_term.as_ref().is_bool_type());
     }
 
     #[test]
     fn test_to_type_term_ground() {
         let store = TypeStore::new();
 
-        // Ground types should convert to simple Term::type_ground()
+        // Built-in types should convert to their Symbol variants
         let bool_term = store.to_type_term(&AcornType::Bool);
         assert!(bool_term.as_ref().is_atomic());
-        assert_eq!(bool_term.as_ref().as_type_atom(), Some(BOOL));
+        assert!(bool_term.as_ref().is_bool_type());
 
         let empty_term = store.to_type_term(&AcornType::Empty);
         assert!(empty_term.as_ref().is_atomic());
-        assert_eq!(empty_term.as_ref().as_type_atom(), Some(EMPTY));
+        assert!(empty_term.as_ref().is_empty_type());
     }
 
     #[test]
@@ -469,8 +464,8 @@ mod tests {
         assert!(type_term.as_ref().is_pi());
 
         let (input, output) = type_term.as_ref().split_pi().unwrap();
-        assert_eq!(input.as_type_atom(), Some(BOOL));
-        assert_eq!(output.as_type_atom(), Some(BOOL));
+        assert!(input.is_bool_type());
+        assert!(output.is_bool_type());
     }
 
     #[test]
@@ -490,13 +485,13 @@ mod tests {
 
         // First Pi: Bool -> (Bool -> Bool)
         let (input1, rest) = type_term.as_ref().split_pi().unwrap();
-        assert_eq!(input1.as_type_atom(), Some(BOOL));
+        assert!(input1.is_bool_type());
         assert!(rest.is_pi());
 
         // Second Pi: Bool -> Bool
         let (input2, output) = rest.split_pi().unwrap();
-        assert_eq!(input2.as_type_atom(), Some(BOOL));
-        assert_eq!(output.as_type_atom(), Some(BOOL));
+        assert!(input2.is_bool_type());
+        assert!(output.is_bool_type());
     }
 
     #[test]
@@ -516,7 +511,7 @@ mod tests {
 
         // The bare constructor should have been auto-registered
         let list_ground = store
-            .get_datatype_ground_id(&list_datatype)
+            .get_datatype_id(&list_datatype)
             .expect("List should be registered");
 
         // Get the type term
@@ -542,9 +537,8 @@ mod tests {
 
         // There should be exactly one argument (Bool)
         assert_eq!(args.len(), 1, "Expected 1 argument, got {}", args.len());
-        assert_eq!(
-            args[0].as_ref().as_type_atom(),
-            Some(BOOL),
+        assert!(
+            args[0].as_ref().is_bool_type(),
             "Argument should be Bool, got {:?}",
             args[0]
         );
@@ -568,7 +562,7 @@ mod tests {
 
         // Get GroundTypeId for List constructor
         let list_ground = store
-            .get_datatype_ground_id(&list_datatype)
+            .get_datatype_id(&list_datatype)
             .expect("List should be registered");
 
         // Get the type term for List[List[Bool]]
@@ -609,9 +603,8 @@ mod tests {
             "Inner head should also be List constructor"
         );
         assert_eq!(inner_args.len(), 1, "Inner should have 1 argument");
-        assert_eq!(
-            inner_args[0].as_ref().as_type_atom(),
-            Some(BOOL),
+        assert!(
+            inner_args[0].as_ref().is_bool_type(),
             "Innermost argument should be Bool"
         );
     }
@@ -652,14 +645,22 @@ mod tests {
         };
         let monoid_id = store.add_typeclass(&monoid);
 
-        // Register a data type
+        // Register data types
         let int_type = Datatype {
             module_id: ModuleId(0),
             name: "Int".to_string(),
         };
         let int_acorn = AcornType::Data(int_type.clone(), vec![]);
         store.add_type(&int_acorn);
-        let int_id = store.get_datatype_ground_id(&int_type).unwrap();
+        let int_id = store.get_datatype_id(&int_type).unwrap();
+
+        let nat_type = Datatype {
+            module_id: ModuleId(0),
+            name: "Nat".to_string(),
+        };
+        let nat_acorn = AcornType::Data(nat_type.clone(), vec![]);
+        store.add_type(&nat_acorn);
+        let nat_id = store.get_datatype_id(&nat_type).unwrap();
 
         // Before adding as instance, should return false
         assert!(!store.is_instance_of(int_id, monoid_id));
@@ -670,7 +671,7 @@ mod tests {
         // Now should return true
         assert!(store.is_instance_of(int_id, monoid_id));
 
-        // Bool should not be an instance (we didn't add it)
-        assert!(!store.is_instance_of(BOOL, monoid_id));
+        // Nat should not be an instance (we didn't add it)
+        assert!(!store.is_instance_of(nat_id, monoid_id));
     }
 }

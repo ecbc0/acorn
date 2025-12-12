@@ -46,7 +46,7 @@ impl VariableMap {
     /// 2. When the clause is normalized, variable IDs become sequential
     /// 3. The remap operation only keeps entries for actual variables
     pub fn build_output_context(&self, input_context: &LocalContext) -> LocalContext {
-        let empty_type = Term::type_empty();
+        let empty_type = Term::empty_type();
         let mut var_types: Vec<Option<Term>> = vec![];
         for opt_term in &self.map {
             if let Some(term) = opt_term {
