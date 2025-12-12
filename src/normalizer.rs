@@ -209,35 +209,18 @@ impl Normalizer {
 
 // Represents a binding for a variable on the stack during normalization.
 // Each binding corresponds to a variable in the output clause.
-// The Term type tracks the type of the variable for building LocalContext.
 enum TermBinding {
-    Bound(Term, Term),
-    Free(Term, Term),
+    Bound(Term),
+    Free(Term),
 }
 
 impl TermBinding {
     /// Get the underlying term regardless of binding type
     fn term(&self) -> &Term {
         match self {
-            TermBinding::Bound(t, _) | TermBinding::Free(t, _) => t,
+            TermBinding::Bound(t) | TermBinding::Free(t) => t,
         }
     }
-
-    /// Get the type of the variable this binding represents
-    fn var_type(&self) -> &Term {
-        match self {
-            TermBinding::Bound(_, t) | TermBinding::Free(_, t) => t,
-        }
-    }
-}
-
-/// Builds a LocalContext from the terms in the stack.
-/// Each stack position corresponds to a variable id, and we use the stored type Term.
-fn build_context_from_stack(stack: &[TermBinding]) -> LocalContext {
-    // Each stack position i corresponds to variable x_i
-    // We collect the types from the bindings directly
-    let var_types: Vec<Term> = stack.iter().map(|b| b.var_type().clone()).collect();
-    LocalContext::from_types(var_types)
 }
 
 // A NormalizerView lets us share methods between mutable and non-mutable normalizers that
@@ -481,16 +464,15 @@ impl NormalizerView<'_> {
         synthesized: &mut Vec<AtomId>,
         context: &mut LocalContext,
     ) -> Result<CNF, String> {
-        if let AcornValue::Lambda(arg_types, return_value) = function {
+        if let AcornValue::Lambda(_, return_value) = function {
             let mut arg_terms = vec![];
             for arg in args {
                 arg_terms.push(arg.to_term()?);
             }
             let num_args = arg_terms.len();
             // Lambda arguments are bound variables
-            for (arg, arg_type) in arg_terms.into_iter().zip(arg_types.iter()) {
-                let type_term = self.type_store().to_type_term(arg_type);
-                stack.push(TermBinding::Bound(arg, type_term));
+            for arg in arg_terms {
+                stack.push(TermBinding::Bound(arg));
             }
             let answer = self.value_to_cnf(
                 &return_value,
@@ -531,10 +513,10 @@ impl NormalizerView<'_> {
         for quant in quants {
             let type_term = self.type_store().to_type_term(quant);
             let var_id = *next_var_id;
-            context.push_type(type_term.clone());
+            context.push_type(type_term);
             let var = Term::new_variable(var_id);
             *next_var_id += 1;
-            stack.push(TermBinding::Free(var, type_term));
+            stack.push(TermBinding::Free(var));
         }
         let result =
             self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized, context)?;
@@ -613,9 +595,8 @@ impl NormalizerView<'_> {
     ) -> Result<CNF, String> {
         let skolem_terms = self.make_skolem_terms(quants, stack, synthesized, context)?;
         let len = skolem_terms.len();
-        for (skolem_term, quant) in skolem_terms.into_iter().zip(quants.iter()) {
-            let type_term = self.type_store().to_type_term(quant);
-            stack.push(TermBinding::Bound(skolem_term, type_term));
+        for skolem_term in skolem_terms {
+            stack.push(TermBinding::Bound(skolem_term));
         }
         let result =
             self.value_to_cnf(subvalue, negate, stack, next_var_id, synthesized, context)?;
@@ -1003,16 +984,15 @@ impl NormalizerView<'_> {
         synth: &mut Vec<AtomId>,
         context: &mut LocalContext,
     ) -> Result<ExtendedTerm, String> {
-        if let AcornValue::Lambda(arg_types, return_value) = function {
+        if let AcornValue::Lambda(_, return_value) = function {
             let mut arg_terms = vec![];
             for arg in args {
                 arg_terms.push(arg.to_term()?);
             }
             let num_args = arg_terms.len();
             // Lambda arguments are bound variables
-            for (arg, arg_type) in arg_terms.into_iter().zip(arg_types.iter()) {
-                let type_term = self.type_store().to_type_term(arg_type);
-                stack.push(TermBinding::Bound(arg, type_term));
+            for arg in arg_terms {
+                stack.push(TermBinding::Bound(arg));
             }
             let answer =
                 self.value_to_extended_term(&return_value, stack, next_var_id, synth, context);
@@ -1375,31 +1355,23 @@ impl NormalizerView<'_> {
     ) -> Result<ExtendedTerm, String> {
         match value {
             AcornValue::IfThenElse(cond_val, then_value, else_value) => {
-                // Build context from stack for variable type lookups
-                let stack_context = build_context_from_stack(stack);
-
-                // Convert the condition to CNF, tracking any new variables in cond_context
-                let mut cond_context = LocalContext::empty();
-                let cond_cnf = self.value_to_cnf(
-                    cond_val,
-                    false,
-                    stack,
-                    next_var_id,
-                    synth,
-                    &mut cond_context,
-                )?;
+                // Convert the condition to CNF, using the main context to track variable types.
+                // This is important because foralls in the condition will push variable types
+                // to the context, and we need those types when creating clauses.
+                let cond_cnf =
+                    self.value_to_cnf(cond_val, false, stack, next_var_id, synth, context)?;
                 let cond_lit = if cond_cnf.is_literal() {
                     cond_cnf.to_literal().unwrap()
                 } else {
                     // For non-literal conditions, synthesize a new boolean atom
-                    self.synthesize_literal_from_cnf(cond_cnf, stack, synth, &stack_context)?
+                    self.synthesize_literal_from_cnf(cond_cnf, stack, synth, context)?
                 };
                 let then_ext =
                     self.value_to_extended_term(then_value, stack, next_var_id, synth, context)?;
-                let then_branch = self.extended_term_to_term(then_ext, &stack_context, synth)?;
+                let then_branch = self.extended_term_to_term(then_ext, context, synth)?;
                 let else_ext =
                     self.value_to_extended_term(else_value, stack, next_var_id, synth, context)?;
-                let else_branch = self.extended_term_to_term(else_ext, &stack_context, synth)?;
+                let else_branch = self.extended_term_to_term(else_ext, context, synth)?;
                 Ok(ExtendedTerm::If(cond_lit, then_branch, else_branch))
             }
             AcornValue::Application(app) => {
@@ -1454,8 +1426,8 @@ impl NormalizerView<'_> {
                     // Add the variable type to the context
                     context.push_type(type_term.clone());
                     let var = Term::new_variable(var_id);
-                    args.push((var_id, type_term.clone()));
-                    stack.push(TermBinding::Free(var, type_term));
+                    args.push((var_id, type_term));
+                    stack.push(TermBinding::Free(var));
                 }
 
                 // Evaluate the body with the lambda arguments on the stack

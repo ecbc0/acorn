@@ -827,3 +827,41 @@ fn test_normalizing_nested_lambdas() {
         ],
     );
 }
+
+#[test]
+fn test_if_then_else_with_forall_condition() {
+    // Test that if-then-else with a forall in the condition works correctly.
+    // This exercises a code path where forall variables need their types tracked
+    // in the context. The forall body is a conjunction so that it produces non-literal CNF.
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        type Nat: axiom
+        let zero: Nat = axiom
+        let one: Nat = axiom
+        let p: Nat -> Bool = axiom
+        let q: Nat -> Bool = axiom
+
+        theorem goal {
+            if forall(n: Nat) { p(n) and q(n) } {
+                zero
+            } else {
+                one
+            } = zero
+        }
+        "#,
+    );
+    let mut norm = Normalizer::new();
+    // The key thing is that normalization doesn't panic - the forall variable's type must be
+    // properly tracked in the context when creating clauses.
+    norm.check(
+        &env,
+        "goal",
+        &[
+            "not s0 or p(x0)",
+            "not s0 or q(x0)",
+            "not q(x0) or not p(x0) or s0",
+            "one = zero or s0",
+        ],
+    );
+}
