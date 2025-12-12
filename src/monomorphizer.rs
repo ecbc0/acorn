@@ -290,8 +290,8 @@ impl Monomorphizer {
                         .unwrap_or(0);
                     self.try_to_monomorphize_prop(
                         i,
-                        &monomorph_params,
                         &instance_params,
+                        &monomorph_params,
                         generation,
                     );
                 }
