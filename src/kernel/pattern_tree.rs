@@ -19,6 +19,24 @@ use super::term::Term;
 use super::term::{Decomposition, TermComponent, TermRef};
 use super::types::{GroundTypeId, TypeclassId, GROUND_BOOL, GROUND_EMPTY};
 
+/// Semantic equality for TermRefs that handles both old and new format.
+/// Two terms are semantically equal if they have the same head atom and same arguments.
+fn terms_equal(a: TermRef, b: TermRef) -> bool {
+    // Fast path: if the TermRefs are identical (same slice), they're equal
+    if a == b {
+        return true;
+    }
+
+    // Otherwise, compare semantically using decomposition
+    match (a.decompose(), b.decompose()) {
+        (Decomposition::Atom(atom_a), Decomposition::Atom(atom_b)) => atom_a == atom_b,
+        (Decomposition::Application(func_a, arg_a), Decomposition::Application(func_b, arg_b)) => {
+            terms_equal(func_a, func_b) && terms_equal(arg_a, arg_b)
+        }
+        _ => false,
+    }
+}
+
 /// Replaces variables in a term with corresponding replacement terms.
 /// Variables x_i are replaced with replacements[i].
 /// If a variable index >= replacements.len() and shift is Some, the variable is shifted.
@@ -791,7 +809,7 @@ where
     // Case 1: func matches an existing replacement (backreference) - NO type prefix
     if !head_atom.is_variable() {
         for i in 0..replacements.len() {
-            if func == replacements[i] {
+            if terms_equal(func, replacements[i]) {
                 Edge::Atom(Atom::Variable(i as u16)).append_to(key);
                 let new_subtrie = subtrie.subtrie(key as &[u8]);
                 if !new_subtrie.is_empty() {
@@ -951,7 +969,7 @@ where
 
     // Case 1: the first term could match an existing replacement (backreference)
     for i in 0..replacements.len() {
-        if first == replacements[i] {
+        if terms_equal(first, replacements[i]) {
             // Need to emit type encoding first, then the variable
             key_from_term_type(first, key, local_context, kernel_context);
             Edge::Atom(Atom::Variable(i as u16)).append_to(key);

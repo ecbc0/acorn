@@ -10,6 +10,9 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::term::{Decomposition as TermDecomposition, Term};
 
+#[cfg(debug_assertions)]
+use crate::kernel::term::TermComponent;
+
 /// Every time we set two terms equal or not equal, that action is tagged with a StepId.
 /// The term graph uses it to provide a history of the reasoning that led to a conclusion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -485,6 +488,26 @@ impl TermGraph {
         let term_id = match term.as_ref().decompose() {
             TermDecomposition::Atom(atom) => self.insert_atom(atom),
             TermDecomposition::Application(func, arg) => {
+                // Debug: check if func/arg are valid before to_owned
+                #[cfg(debug_assertions)]
+                {
+                    if let TermComponent::Application { span } = func.components()[0] {
+                        if span as usize != func.components().len() {
+                            panic!(
+                                "insert_term: decompose returned func with mismatched span. span={}, len={}.\nfunc components: {:?}\noriginal term: {:?}",
+                                span, func.components().len(), func.components(), term.components()
+                            );
+                        }
+                    }
+                    if let TermComponent::Application { span } = arg.components()[0] {
+                        if span as usize != arg.components().len() {
+                            panic!(
+                                "insert_term: decompose returned arg with mismatched span. span={}, len={}.\narg components: {:?}\noriginal term: {:?}",
+                                span, arg.components().len(), arg.components(), term.components()
+                            );
+                        }
+                    }
+                }
                 let func_id = self.insert_term(&func.to_owned(), kernel_context);
                 let arg_id = self.insert_term(&arg.to_owned(), kernel_context);
                 self.insert_application(func_id, arg_id)

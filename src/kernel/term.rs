@@ -65,17 +65,17 @@ impl<'a> TermRef<'a> {
         TermRef { components }
     }
 
+    /// Get the underlying components slice (for debugging/validation).
+    pub fn components(&self) -> &[TermComponent] {
+        self.components
+    }
+
     /// Convert this reference to an owned Term by cloning the components.
+    /// Note: This preserves the format of the slice (old or new).
+    /// Use Term::new() or similar constructors if you need new-format terms.
     pub fn to_owned(&self) -> Term {
-        // Validate that the result will be a valid Term
         if self.components.is_empty() {
             panic!("Cannot convert empty TermRef to Term");
-        }
-        if let TermComponent::Application { span } = self.components[0] {
-            panic!(
-                "TermRef starts with Application (span={}) - cannot convert to Term. Components: {:?}",
-                span, self.components
-            );
         }
         Term {
             components: self.components.to_vec(),
@@ -87,11 +87,15 @@ impl<'a> TermRef<'a> {
     pub fn get_head_atom(&self) -> &Atom {
         match &self.components[0] {
             TermComponent::Atom(atom) => atom,
-            TermComponent::Application { span } => {
-                panic!(
-                    "Term should not start with Application marker. Components: {:?}, span: {}",
-                    self.components, span
-                )
+            TermComponent::Application { .. } => {
+                // Skip the Application marker to get the head
+                match &self.components[1] {
+                    TermComponent::Atom(atom) => atom,
+                    _ => panic!(
+                        "Expected Atom after Application marker. Components: {:?}",
+                        self.components
+                    ),
+                }
             }
             TermComponent::Pi { span } => {
                 panic!(
@@ -116,8 +120,8 @@ impl<'a> TermRef<'a> {
     /// This provides a cleaner way to write recursive algorithms on terms
     /// by pattern matching on the structure rather than checking multiple conditions.
     pub fn decompose(&self) -> Decomposition<'a> {
-        if self.components.len() <= 1 {
-            // Access the atom directly from components to preserve the 'a lifetime
+        // Handle atomic terms (single Atom, no Application wrapper)
+        if self.components.len() == 1 {
             let atom = match &self.components[0] {
                 TermComponent::Atom(atom) => atom,
                 _ => panic!("atomic term should have Atom component"),
@@ -125,12 +129,25 @@ impl<'a> TermRef<'a> {
             return Decomposition::Atom(atom);
         }
 
-        // Iterate through args, tracking where the previous arg started
-        let mut prev_position = 1;
-        let mut position = 1;
+        // Determine the bounds based on whether we have an Application wrapper
+        let (args_start, args_end) = match self.components[0] {
+            TermComponent::Application { span } => (2, span as usize), // Skip App marker and head
+            TermComponent::Atom(_) => (1, self.components.len()),      // Old format: skip head only
+            TermComponent::Pi { .. } => panic!("Pi should not appear in term structure"),
+        };
 
-        while position < self.components.len() {
+        // Find the start of the last argument
+        let mut prev_position = args_start;
+        let mut position = args_start;
+
+        while position < args_end {
             prev_position = position;
+            if position >= self.components.len() {
+                panic!(
+                    "decompose: position {} >= len {}. components: {:?}, args_start: {}, args_end: {}",
+                    position, self.components.len(), self.components, args_start, args_end
+                );
+            }
             match self.components[position] {
                 TermComponent::Application { span } => {
                     position += span as usize;
@@ -145,15 +162,49 @@ impl<'a> TermRef<'a> {
         }
 
         // prev_position now points to the start of the last argument
-        let func_part = TermRef::new(&self.components[..prev_position]);
+        // Build the func_part: everything except the last argument
+        let func_part = if prev_position == args_start {
+            // Only one argument - func_part is just the head atom
+            match self.components[0] {
+                TermComponent::Application { .. } => {
+                    // Head is at position 1
+                    TermRef::new(&self.components[1..2])
+                }
+                TermComponent::Atom(_) => {
+                    // Head is at position 0
+                    TermRef::new(&self.components[0..1])
+                }
+                _ => panic!("Unexpected component"),
+            }
+        } else {
+            // Multiple arguments - need to build func_part with remaining args
+            match self.components[0] {
+                TermComponent::Application { .. } => {
+                    // Reconstruct: [Application{span}, head, args_except_last]
+                    // We return a slice from 0 to prev_position, but with adjusted span
+                    // Actually, we can just return the slice - it already has the right structure
+                    // But we need to handle the span adjustment... this is tricky for zero-copy.
+                    // For now, return the slice as-is; the span will be wrong but we're removing
+                    // the outer Application wrapper anyway.
+                    // Actually, the func_part should NOT include the outer Application wrapper.
+                    // It should be: [Application{new_span}, head, args_except_last] or [head, args_except_last]
+                    // For zero-copy, we return [head, args_except_last] (old format)
+                    TermRef::new(&self.components[1..prev_position])
+                }
+                TermComponent::Atom(_) => {
+                    // Old format: just slice up to prev_position
+                    TermRef::new(&self.components[..prev_position])
+                }
+                _ => panic!("Unexpected component"),
+            }
+        };
 
         // Extract the last argument
         let last_arg = match self.components[prev_position] {
             TermComponent::Application { span } => {
-                // Complex argument: skip the Application marker
-                let start = prev_position + 1;
+                // Composite argument - return the whole slice (with Application wrapper)
                 let end = prev_position + span as usize;
-                TermRef::new(&self.components[start..end])
+                TermRef::new(&self.components[prev_position..end])
             }
             TermComponent::Atom(_) => {
                 // Simple atomic argument
@@ -302,18 +353,31 @@ impl<'a> TermRef<'a> {
     /// Returns true if this term has any arguments.
     /// This is O(1) unlike num_args() which must iterate.
     pub fn has_args(&self) -> bool {
-        self.components.len() > 1
+        // A term has args if it starts with Application, or if it's old format with len > 1
+        match self.components[0] {
+            TermComponent::Application { .. } => true,
+            TermComponent::Atom(_) => self.components.len() > 1,
+            TermComponent::Pi { .. } => panic!("Pi should not appear in Term"),
+        }
     }
 
     /// Get the number of arguments this term has.
     pub fn num_args(&self) -> usize {
-        if self.components.len() <= 1 {
-            return 0;
-        }
+        // Determine where arguments start based on whether we have an Application wrapper
+        let (args_start, args_end) = match self.components[0] {
+            TermComponent::Application { span } => (2, span as usize), // Skip App marker and head
+            TermComponent::Atom(_) => {
+                if self.components.len() <= 1 {
+                    return 0;
+                }
+                (1, self.components.len()) // Skip head atom only
+            }
+            TermComponent::Pi { .. } => panic!("Pi should not appear in Term"),
+        };
 
         let mut arg_count = 0;
-        let mut i = 1; // Skip the head
-        while i < self.components.len() {
+        let mut i = args_start;
+        while i < args_end {
             arg_count += 1;
             if let TermComponent::Application { span } = self.components[i] {
                 i += span as usize;
@@ -327,13 +391,25 @@ impl<'a> TermRef<'a> {
     /// Iterate over the arguments of this term without allocating.
     /// Each argument is returned as a TermRef.
     pub fn iter_args(&self) -> TermRefArgsIterator<'a> {
+        // Determine the start and end positions for iteration
+        let (start, end) = match self.components[0] {
+            TermComponent::Application { span } => (2, span as usize), // Skip App marker and head
+            TermComponent::Atom(_) => {
+                if self.components.len() <= 1 {
+                    return TermRefArgsIterator {
+                        components: self.components,
+                        position: self.components.len(),
+                        end: self.components.len(),
+                    };
+                }
+                (1, self.components.len()) // Skip head atom only
+            }
+            TermComponent::Pi { .. } => panic!("Pi should not appear in Term"),
+        };
         TermRefArgsIterator {
             components: self.components,
-            position: if self.components.len() > 1 {
-                1
-            } else {
-                self.components.len()
-            },
+            position: start,
+            end,
         }
     }
 
@@ -558,8 +634,8 @@ fn format_term_at(f: &mut fmt::Formatter, components: &[TermComponent], pos: usi
 
     match &components[pos] {
         TermComponent::Application { span } => {
-            // This shouldn't happen at the start of a term, but handle it
-            // by formatting the contents (skip the Application marker)
+            // Term starts with Application marker (new format)
+            // Format the contents (skip the Application marker)
             let end = pos + *span as usize;
             format_application_contents(f, components, pos + 1, end)
         }
@@ -568,12 +644,12 @@ fn format_term_at(f: &mut fmt::Formatter, components: &[TermComponent], pos: usi
             Err(fmt::Error)
         }
         TermComponent::Atom(atom) => {
-            // Format the head atom
+            // Format the head atom (old format or atomic term)
             match atom {
                 Atom::Variable(i) => write!(f, "x{}", i)?,
                 _ => write!(f, "{}", atom)?,
             }
-            // Check if there are arguments following
+            // Check if there are arguments following (old format)
             if pos + 1 < components.len() {
                 // Format the arguments
                 write!(f, "(")?;
@@ -680,60 +756,123 @@ pub struct Term {
 
 impl Term {
     /// Create a new Term with the given head atom and arguments.
+    /// If args is empty, returns an atomic term [Atom(head)].
+    /// If args is non-empty, wraps in Application: [Application{span}, Atom(head), ...args].
     pub fn new(head: Atom, args: Vec<Term>) -> Term {
-        let mut components = vec![TermComponent::Atom(head)];
+        if args.is_empty() {
+            return Term {
+                components: vec![TermComponent::Atom(head)],
+            };
+        }
+
+        // Non-atomic: build [Application{span}, head, args...]
+        let mut components = vec![
+            TermComponent::Application { span: 0 }, // Placeholder, will update
+            TermComponent::Atom(head),
+        ];
+
         for (i, arg) in args.iter().enumerate() {
-            // Validate that arg is a valid term (starts with Atom)
             if arg.components.is_empty() {
                 panic!("Term::new: arg {} is empty", i);
-            }
-            if let TermComponent::Application { span } = arg.components[0] {
-                panic!(
-                    "Term::new: arg {} starts with Application (span={}). Arg components: {:?}",
-                    i, span, arg.components
-                );
             }
 
             if arg.components.len() == 1 {
                 // Atomic argument - just add the atom
                 components.push(arg.components[0]);
             } else {
-                // Compound argument - add Application marker with span
-                components.push(TermComponent::Application {
-                    span: arg.components.len() as u16 + 1,
-                });
-                components.extend(arg.components.iter().copied());
+                // Compound argument - check if it has Application wrapper
+                match arg.components[0] {
+                    TermComponent::Application { span } => {
+                        // Already has Application wrapper - copy as-is
+                        debug_assert_eq!(
+                            span as usize,
+                            arg.components.len(),
+                            "Term::new: arg {} has Application with wrong span {} (expected {}). Components: {:?}",
+                            i,
+                            span,
+                            arg.components.len(),
+                            arg.components
+                        );
+                        components.extend(arg.components.iter().copied());
+                    }
+                    TermComponent::Atom(_) => {
+                        // Old format - wrap in Application
+                        let arg_span = arg.components.len() as u16 + 1;
+                        components.push(TermComponent::Application { span: arg_span });
+                        components.extend(arg.components.iter().copied());
+                    }
+                    TermComponent::Pi { .. } => {
+                        panic!(
+                            "Term::new: arg {} starts with Pi. Components: {:?}",
+                            i, arg.components
+                        );
+                    }
+                }
             }
         }
+
+        // Update the outer Application span
+        components[0] = TermComponent::Application {
+            span: components.len() as u16,
+        };
         Term { components }
     }
 
     /// Create a new Term from a vector of components.
+    /// Accepts both old format (starting with Atom) and new format (starting with Application).
     pub fn from_components(components: Vec<TermComponent>) -> Term {
-        // Validate structure: must start with Atom, and after each Application must come an Atom
         if components.is_empty() {
             panic!("from_components: empty components");
         }
-        if let TermComponent::Application { span } = components[0] {
-            panic!(
-                "from_components: starts with Application (span={}). Components: {:?}",
-                span, components
-            );
-        }
-        // Validate that after each Application comes an Atom
-        for i in 0..components.len() {
-            if let TermComponent::Application { .. } = components[i] {
-                if i + 1 >= components.len() {
+        // Basic validation: check first component
+        match components[0] {
+            TermComponent::Application { span } => {
+                // New format: must have Atom at position 1
+                if components.len() < 2 {
                     panic!(
-                        "from_components: Application at {} has no following component. Components: {:?}",
-                        i, components
+                        "from_components: Application at start but no head atom. Components: {:?}",
+                        components
                     );
                 }
-                if let TermComponent::Application { span: inner } = components[i + 1] {
+                if !matches!(components[1], TermComponent::Atom(_)) {
                     panic!(
-                        "from_components: Application at {} followed by Application (span={}). Components: {:?}",
-                        i, inner, components
+                        "from_components: Application at start followed by non-Atom at position 1. Components: {:?}",
+                        components
                     );
+                }
+                if span as usize != components.len() {
+                    panic!(
+                        "from_components: outer Application span {} doesn't match components length {}. Components: {:?}",
+                        span, components.len(), components
+                    );
+                }
+            }
+            TermComponent::Atom(_) => {
+                // Old format or atomic term - ok
+            }
+            TermComponent::Pi { .. } => {
+                panic!("from_components: Pi should not appear in Term");
+            }
+        }
+        // Note: We don't validate inner structure strictly because old format
+        // allows Application followed by Application (for nested compound args).
+        // The structure is validated lazily during operations.
+        // However, let's add a debug check to catch bad spans
+        #[cfg(debug_assertions)]
+        {
+            let mut i = 0;
+            while i < components.len() {
+                if let TermComponent::Application { span } = components[i] {
+                    let end = i + span as usize;
+                    if end > components.len() {
+                        panic!(
+                            "from_components: Application at {} has span {} but only {} components total. Components: {:?}",
+                            i, span, components.len(), components
+                        );
+                    }
+                    i = end;
+                } else {
+                    i += 1;
                 }
             }
         }
@@ -799,22 +938,8 @@ impl Term {
             args.push(Term::parse(&s[start..*terminator_index]));
         }
 
-        // Build the component vector
-        let mut components = vec![TermComponent::Atom(Atom::new(head))];
-        for arg in args {
-            if arg.components.len() == 1 {
-                // Atomic argument - just add the atom
-                components.push(arg.components[0]);
-            } else {
-                // Compound argument - add Application marker with span
-                components.push(TermComponent::Application {
-                    span: arg.components.len() as u16 + 1,
-                });
-                components.extend(arg.components);
-            }
-        }
-
-        Term { components }
+        // Build the component vector using Term::new
+        Term::new(Atom::new(head), args)
     }
 
     /// Get the components of this term.
@@ -824,6 +949,16 @@ impl Term {
 
     /// Get a borrowed reference to this term.
     pub fn as_ref(&self) -> TermRef {
+        // Debug validation
+        #[cfg(debug_assertions)]
+        if let TermComponent::Application { span } = self.components[0] {
+            if span as usize != self.components.len() {
+                panic!(
+                    "as_ref: Term has Application at start with span {} but len {}. Components: {:?}",
+                    span, self.components.len(), self.components
+                );
+            }
+        }
         TermRef::new(&self.components)
     }
 
@@ -831,11 +966,15 @@ impl Term {
     pub fn get_head_atom(&self) -> &Atom {
         match &self.components[0] {
             TermComponent::Atom(atom) => atom,
-            TermComponent::Application { span } => {
-                panic!(
-                    "Term should not start with Application marker. Components: {:?}, span: {}",
-                    self.components, span
-                )
+            TermComponent::Application { .. } => {
+                // Skip the Application marker to get the head
+                match &self.components[1] {
+                    TermComponent::Atom(atom) => atom,
+                    _ => panic!(
+                        "Expected Atom after Application marker. Components: {:?}",
+                        self.components
+                    ),
+                }
             }
             TermComponent::Pi { span } => {
                 panic!(
@@ -923,7 +1062,7 @@ impl Term {
     /// Returns true if this term has any arguments.
     /// This is O(1) unlike num_args() which must iterate.
     pub fn has_args(&self) -> bool {
-        self.components.len() > 1
+        self.as_ref().has_args()
     }
 
     /// Get the number of arguments this term has.
@@ -999,21 +1138,6 @@ impl Term {
     /// This handles the complexity of updating Application span markers when
     /// the replacement term has a different size than the variable (1 component).
     pub fn replace_variable(&self, id: AtomId, value: &Term) -> Term {
-        // Validate input term is well-formed
-        for i in 0..self.components.len() {
-            if let TermComponent::Application { .. } = self.components[i] {
-                if i + 1 < self.components.len() {
-                    if let TermComponent::Application { span } = self.components[i + 1] {
-                        panic!(
-                            "replace_variable: input term has Application followed by Application at {}. \
-                             span={}, components: {:?}",
-                            i, span, self.components
-                        );
-                    }
-                }
-            }
-        }
-
         // Special case: if this term IS the variable being replaced, just return the value
         if self.components.len() == 1 {
             if let TermComponent::Atom(Atom::Variable(var_id)) = self.components[0] {
@@ -1023,97 +1147,34 @@ impl Term {
             }
         }
 
-        // Build the result by processing components, tracking size changes for spans
-        let mut result = Vec::new();
-        self.replace_variable_recursive(&mut result, id, value);
-        Term::from_components(result)
+        // Use a recursive approach based on decomposition
+        self.replace_variable_impl(id, value)
     }
 
-    /// Helper for replace_variable that processes components recursively.
-    /// Returns the number of components added to result.
-    fn replace_variable_recursive(
-        &self,
-        result: &mut Vec<TermComponent>,
-        id: AtomId,
-        value: &Term,
-    ) -> usize {
-        let mut i = 0;
-        let mut added = 0;
-
-        while i < self.components.len() {
-            match &self.components[i] {
-                TermComponent::Atom(Atom::Variable(var_id)) if *var_id == id => {
-                    // Replace this variable with the value's components
-                    if value.components.len() == 1 {
-                        // Simple replacement - just copy the single component
-                        result.push(value.components[0]);
-                        added += 1;
-                    } else if i == 0 {
-                        // Head position replacement - don't wrap in Application
-                        // The value's head becomes this term's head, and value's args
-                        // are inserted before the remaining args
-                        result.extend(value.components.iter().copied());
-                        added += value.components.len();
-                    } else {
-                        // Non-head position - need to wrap in Application
-                        result.push(TermComponent::Application {
-                            span: value.components.len() as u16 + 1,
-                        });
-                        result.extend(value.components.iter().copied());
-                        added += value.components.len() + 1;
+    /// Helper for replace_variable using decomposition.
+    fn replace_variable_impl(&self, id: AtomId, value: &Term) -> Term {
+        match self.as_ref().decompose() {
+            Decomposition::Atom(atom) => {
+                if let Atom::Variable(var_id) = atom {
+                    if *var_id == id {
+                        return value.clone();
                     }
-                    i += 1;
                 }
-                TermComponent::Atom(atom) => {
-                    // Non-matching atom - copy as-is
-                    result.push(TermComponent::Atom(*atom));
-                    added += 1;
-                    i += 1;
-                }
-                TermComponent::Application { span } => {
-                    // Process the composite subterm recursively
-                    let subterm_start = i + 1;
-                    let subterm_end = i + *span as usize;
+                // Not the variable we're replacing, return as-is
+                self.clone()
+            }
+            Decomposition::Application(func_ref, arg_ref) => {
+                // Recursively replace in both func and arg parts
+                let func = func_ref.to_owned();
+                let arg = arg_ref.to_owned();
 
-                    // Create a temporary Term for the subterm (excluding Application marker)
-                    let subterm =
-                        Term::from_components(self.components[subterm_start..subterm_end].to_vec());
+                let new_func = func.replace_variable_impl(id, value);
+                let new_arg = arg.replace_variable_impl(id, value);
 
-                    // Recursively replace in the subterm
-                    let mut sub_result = Vec::new();
-                    subterm.replace_variable_recursive(&mut sub_result, id, value);
-
-                    // Validate: sub_result must start with Atom, not Application
-                    if let Some(TermComponent::Application { span: sr_span }) = sub_result.first() {
-                        panic!(
-                            "replace_variable_recursive: sub_result starts with Application (span={}). \
-                             Original subterm: {:?}, sub_result: {:?}",
-                            sr_span, subterm.components, sub_result
-                        );
-                    }
-
-                    // If the subterm is now atomic (single component), don't wrap it
-                    if sub_result.len() == 1 {
-                        result.push(sub_result[0]);
-                        added += 1;
-                    } else {
-                        // Add a new Application marker with the correct span
-                        result.push(TermComponent::Application {
-                            span: sub_result.len() as u16 + 1,
-                        });
-                        result.extend(sub_result.iter().copied());
-                        added += sub_result.len() + 1;
-                    }
-
-                    i = subterm_end;
-                }
-                TermComponent::Pi { .. } => {
-                    panic!("Pi should not appear in open terms");
-                }
+                // Rebuild the application
+                new_func.apply(&[new_arg])
             }
         }
-
-        added
     }
 
     /// Replace multiple variables at once.
@@ -1199,18 +1260,13 @@ impl Term {
             return self.clone();
         }
 
-        let mut components = self.components.clone();
-        for arg in args {
-            if arg.components.len() == 1 {
-                components.push(arg.components[0]);
-            } else {
-                components.push(TermComponent::Application {
-                    span: arg.components.len() as u16 + 1,
-                });
-                components.extend(arg.components.iter().copied());
-            }
-        }
-        Term::from_components(components)
+        // Get existing args and combine with new args
+        let existing_args = self.args();
+        let mut all_args = existing_args;
+        all_args.extend(args.iter().cloned());
+
+        // Use Term::new to build the result with proper Application wrapper
+        Term::new(*self.get_head_atom(), all_args)
     }
 
     /// Build a term from a spine (function + arguments).
@@ -1229,18 +1285,8 @@ impl Term {
             let mut all_args = func_args;
             all_args.extend(spine);
 
-            let mut components = vec![TermComponent::Atom(*func.get_head_atom())];
-            for arg in all_args {
-                if arg.components.len() == 1 {
-                    components.push(arg.components[0]);
-                } else {
-                    components.push(TermComponent::Application {
-                        span: arg.components.len() as u16 + 1,
-                    });
-                    components.extend(arg.components.iter().copied());
-                }
-            }
-            Term::from_components(components)
+            // Use Term::new to build the result with proper Application wrapper
+            Term::new(*func.get_head_atom(), all_args)
         }
     }
 
@@ -1392,40 +1438,29 @@ fn dominates(a: &Vec<u8>, b: &Vec<u8>) -> bool {
 pub struct TermRefArgsIterator<'a> {
     components: &'a [TermComponent],
     position: usize,
+    end: usize,
 }
 
 impl<'a> Iterator for TermRefArgsIterator<'a> {
     type Item = TermRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.position >= self.components.len() {
+        if self.position >= self.end {
             return None;
         }
 
         match self.components[self.position] {
             TermComponent::Application { span } => {
-                // Extract the composite term as a slice reference.
-                // Skip the Application marker itself - the term content starts after it.
-                let start = self.position + 1;
-                let end = self.position + span as usize;
-                if end > self.components.len() {
+                // Composite argument - return the whole Application-wrapped term
+                let arg_end = self.position + span as usize;
+                if arg_end > self.end {
                     panic!(
-                        "iter_args: span {} at position {} exceeds components length {}. Components: {:?}",
-                        span, self.position, self.components.len(), self.components
+                        "iter_args: span {} at position {} exceeds end {}. Components: {:?}",
+                        span, self.position, self.end, self.components
                     );
                 }
-                let arg_slice = &self.components[start..end];
-                // Validate the extracted slice starts with an Atom
-                if !arg_slice.is_empty() {
-                    if let TermComponent::Application { span: inner_span } = arg_slice[0] {
-                        panic!(
-                            "iter_args: extracted arg starts with Application (inner_span={}). \
-                             Parent components: {:?}, position: {}, span: {}, arg_slice: {:?}",
-                            inner_span, self.components, self.position, span, arg_slice
-                        );
-                    }
-                }
-                self.position += span as usize;
+                let arg_slice = &self.components[self.position..arg_end];
+                self.position = arg_end;
                 Some(TermRef::new(arg_slice))
             }
             TermComponent::Atom(_) => {
@@ -1543,6 +1578,41 @@ mod tests {
         // Each arg should be able to get its head atom without panicking
         for arg in &args {
             let _ = arg.get_head_atom();
+        }
+    }
+
+    #[test]
+    fn test_new_term_format() {
+        // Test that non-atomic terms start with Application
+        let term = Term::parse("c0(c1)");
+        assert!(
+            matches!(term.components()[0], TermComponent::Application { .. }),
+            "Non-atomic term should start with Application. Got: {:?}",
+            term.components()
+        );
+
+        // Test atomic term does NOT start with Application
+        let atomic = Term::parse("c0");
+        assert!(
+            matches!(atomic.components()[0], TermComponent::Atom(_)),
+            "Atomic term should start with Atom"
+        );
+
+        // Test nested term
+        let nested = Term::parse("c0(c1(c2), c3)");
+        assert!(
+            matches!(nested.components()[0], TermComponent::Application { .. }),
+            "Nested term should start with Application"
+        );
+        assert_eq!(nested.num_args(), 2);
+
+        // Test decompose on new format
+        let term2 = Term::parse("c0(c1, c2)");
+        if let Decomposition::Application(func, arg) = term2.as_ref().decompose() {
+            assert_eq!(format!("{}", func), "c0(c1)");
+            assert_eq!(format!("{}", arg), "c2");
+        } else {
+            panic!("Expected Application decomposition");
         }
     }
 }

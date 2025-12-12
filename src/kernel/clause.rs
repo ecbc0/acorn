@@ -511,22 +511,8 @@ impl Clause {
         let new_longer = if diff == 0 {
             longer.get_head_term()
         } else {
-            let mut components = vec![crate::kernel::term::TermComponent::Atom(
-                *longer.get_head_atom(),
-            )];
-            for arg in &longer_args[..diff] {
-                if arg.is_atomic() {
-                    components.push(crate::kernel::term::TermComponent::Atom(
-                        *arg.get_head_atom(),
-                    ));
-                } else {
-                    components.push(crate::kernel::term::TermComponent::Application {
-                        span: arg.components().len() as u16 + 1,
-                    });
-                    components.extend(arg.components().iter().copied());
-                }
-            }
-            crate::kernel::term::Term::from_components(components)
+            let args: Vec<_> = longer_args[..diff].iter().map(|a| a.to_owned()).collect();
+            crate::kernel::term::Term::new(*longer.get_head_atom(), args)
         };
 
         let new_shorter = shorter.get_head_term();
