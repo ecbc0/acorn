@@ -841,7 +841,7 @@ fn format_term_slice(
 /// - Application "f(a)": [Atom(f), Atom(a)]
 /// - Nested "f(a, g(b))": [Atom(f), Atom(a), Application{span: 3}, Atom(g), Atom(b)]
 ///                                            ^--- this application has span 3: the marker, g, and b
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct Term {
     components: Vec<TermComponent>,
 }

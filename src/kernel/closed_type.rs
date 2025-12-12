@@ -3,16 +3,16 @@ use std::fmt;
 
 use crate::kernel::atom::Atom;
 use crate::kernel::symbol::Symbol;
-use crate::kernel::term::TermComponent;
+use crate::kernel::term::{Term, TermComponent, TermRef};
 use crate::kernel::types::GroundTypeId;
 
 /// A closed type representation - a type with no free variables.
 ///
-/// ClosedType is used for storing types in the KernelContext. Unlike Term which is for
-/// "open terms" with free variables, ClosedType represents fully-resolved types that may
-/// contain Pi (dependent function types).
+/// ClosedType is a newtype wrapper around Term, used for storing types in the KernelContext.
+/// Unlike general Terms which are for "open terms" with free variables, ClosedType represents
+/// fully-resolved types that may contain Pi (dependent function types).
 ///
-/// The representation uses the same `Vec<TermComponent>` format as Term, but:
+/// The underlying Term uses the same `Vec<TermComponent>` format:
 /// - Can contain `TermComponent::Pi { span }` for dependent function types
 /// - Can contain `TermComponent::Application { span }` for type applications like `List[Int]`
 /// - Can contain `Atom::Type(GroundTypeId)` for ground types like Int, Bool, Nat
@@ -26,17 +26,13 @@ use crate::kernel::types::GroundTypeId;
 /// Note: Within ClosedType, `Atom::Variable` represents de Bruijn indices for bound variables
 /// introduced by Pi, not free variables.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
-pub struct ClosedType {
-    components: Vec<TermComponent>,
-}
+pub struct ClosedType(Term);
 
 impl ClosedType {
     /// Create a ClosedType representing a ground type.
     /// Takes a GroundTypeId to ensure only ground types are wrapped.
     pub fn ground(type_id: GroundTypeId) -> ClosedType {
-        ClosedType {
-            components: vec![TermComponent::Atom(Atom::Symbol(Symbol::Type(type_id)))],
-        }
+        ClosedType(Term::atom(Atom::Symbol(Symbol::Type(type_id))))
     }
 
     /// Returns a ClosedType for the Bool type.
@@ -67,32 +63,46 @@ impl ClosedType {
     /// Caller is responsible for ensuring validity.
     pub fn from_components(components: Vec<TermComponent>) -> ClosedType {
         debug_assert!(!components.is_empty(), "ClosedType cannot be empty");
-        ClosedType { components }
+        ClosedType(Term::from_components(components))
+    }
+
+    /// Create a ClosedType from a Term.
+    /// Caller is responsible for ensuring the term represents a valid closed type.
+    pub fn from_term(term: Term) -> ClosedType {
+        ClosedType(term)
+    }
+
+    /// Get the underlying Term.
+    pub fn as_term(&self) -> &Term {
+        &self.0
+    }
+
+    /// Get a TermRef to the underlying term.
+    pub fn as_term_ref(&self) -> TermRef {
+        self.0.as_ref()
     }
 
     /// Create a Pi type `(x : input) -> output`.
     /// For non-dependent arrow types, output simply doesn't reference `Atom::Variable(0)`.
     pub fn pi(input: ClosedType, output: ClosedType) -> ClosedType {
-        let span = 1 + input.components.len() + output.components.len();
-        let mut components = vec![TermComponent::Pi { span: span as u16 }];
-        components.extend(input.components);
-        components.extend(output.components);
-        ClosedType { components }
+        ClosedType(Term::pi(input.0, output.0))
     }
 
     /// Returns true if this is a ground type (just a GroundTypeId).
     pub fn is_ground(&self) -> bool {
-        self.components.len() == 1
+        let components = self.0.components();
+        components.len() == 1
             && matches!(
-                self.components[0],
+                components[0],
                 TermComponent::Atom(Atom::Symbol(Symbol::Type(_)))
             )
     }
 
     /// If this is a ground type, return its GroundTypeId.
     pub fn as_ground(&self) -> Option<GroundTypeId> {
-        if self.components.len() == 1 {
-            if let TermComponent::Atom(Atom::Symbol(Symbol::Type(t))) = self.components[0] {
+        let components = self.0.components();
+        if components.len() == 1 {
+            if let TermComponent::Atom(Atom::Symbol(Symbol::Type(t))) = components[0] {
                 return Some(t);
             }
         }
@@ -101,38 +111,22 @@ impl ClosedType {
 
     /// Returns true if this is a Pi/arrow type.
     pub fn is_pi(&self) -> bool {
-        matches!(self.components.first(), Some(TermComponent::Pi { .. }))
+        self.0.as_ref().is_pi()
     }
 
     /// If this is a Pi type, return the input type and output type.
     pub fn as_pi(&self) -> Option<(ClosedType, ClosedType)> {
-        if let Some(TermComponent::Pi { span }) = self.components.first() {
-            let total_span = *span as usize;
-            // Find where the input type ends
-            // The input type starts at position 1
-            let input_end = self.find_subterm_end(1);
-            let input = ClosedType::from_components(self.components[1..input_end].to_vec());
-            let output =
-                ClosedType::from_components(self.components[input_end..total_span].to_vec());
-            Some((input, output))
-        } else {
-            None
-        }
-    }
-
-    /// Find the end position of a subterm starting at `start`.
-    fn find_subterm_end(&self, start: usize) -> usize {
-        match self.components[start] {
-            TermComponent::Pi { span } | TermComponent::Application { span } => {
-                start + span as usize
+        match self.0.as_ref().split_pi() {
+            Some((input, output)) => {
+                Some((ClosedType(input.to_owned()), ClosedType(output.to_owned())))
             }
-            TermComponent::Atom(_) => start + 1,
+            None => None,
         }
     }
 
     /// Returns the components slice for inspection.
     pub fn components(&self) -> &[TermComponent] {
-        &self.components
+        self.0.components()
     }
 
     /// Apply a function type to get its codomain.
@@ -143,7 +137,8 @@ impl ClosedType {
     }
 
     fn format_at(&self, f: &mut fmt::Formatter, pos: usize) -> fmt::Result {
-        match &self.components[pos] {
+        let components = self.0.components();
+        match &components[pos] {
             TermComponent::Pi { span: _ } => {
                 let input_end = self.find_subterm_end(pos + 1);
                 write!(f, "(")?;
@@ -172,6 +167,17 @@ impl ClosedType {
                 write!(f, "]")
             }
             TermComponent::Atom(atom) => write!(f, "{}", atom),
+        }
+    }
+
+    /// Find the end position of a subterm starting at `start`.
+    fn find_subterm_end(&self, start: usize) -> usize {
+        let components = self.0.components();
+        match components[start] {
+            TermComponent::Pi { span } | TermComponent::Application { span } => {
+                start + span as usize
+            }
+            TermComponent::Atom(_) => start + 1,
         }
     }
 }
