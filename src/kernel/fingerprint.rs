@@ -22,17 +22,31 @@ enum TypeCategory {
 
     /// An applied type constructor (like List[T])
     Applied,
+
+    /// A type variable that could match any type
+    Variable,
 }
 
 impl TypeCategory {
     /// Create a TypeCategory from a type Term.
     fn from_type_term(type_term: &Term) -> TypeCategory {
-        if let Some(gid) = type_term.as_ref().as_type_atom() {
+        if type_term.atomic_variable().is_some() {
+            TypeCategory::Variable
+        } else if let Some(gid) = type_term.as_ref().as_type_atom() {
             TypeCategory::Ground(gid)
         } else if type_term.as_ref().is_pi() {
             TypeCategory::Arrow
         } else {
             TypeCategory::Applied
+        }
+    }
+
+    /// Whether this category could potentially match another category.
+    /// Type variables can match any category.
+    fn could_match(&self, other: &TypeCategory) -> bool {
+        match (self, other) {
+            (TypeCategory::Variable, _) | (_, TypeCategory::Variable) => true,
+            _ => self == other,
         }
     }
 }
@@ -101,7 +115,7 @@ impl FingerprintComponent {
             (_, FingerprintComponent::Below) => true,
             (FingerprintComponent::Nothing, FingerprintComponent::Nothing) => true,
             (FingerprintComponent::Something(t1, a1), FingerprintComponent::Something(t2, a2)) => {
-                if t1 != t2 {
+                if !t1.could_match(t2) {
                     return false;
                 }
                 if a1.is_variable() || a2.is_variable() {
@@ -124,7 +138,7 @@ impl FingerprintComponent {
             (_, FingerprintComponent::Below) => false,
             (FingerprintComponent::Nothing, FingerprintComponent::Nothing) => true,
             (FingerprintComponent::Something(t1, a1), FingerprintComponent::Something(t2, a2)) => {
-                if t1 != t2 {
+                if !t1.could_match(t2) {
                     return false;
                 }
                 // If the query (self) has a variable, it can be specialized to match anything
@@ -227,17 +241,28 @@ impl<T> FingerprintUnifier<T> {
 
         let mut result = vec![];
 
-        let tree = match self.trees.get(&type_category) {
-            Some(tree) => tree,
-            None => return result,
+        // If the query has a type variable, it could match any type category,
+        // so we need to search all trees.
+        // Otherwise, search the matching category tree plus the Variable tree
+        // (since stored type variables can match any concrete type).
+        let trees_to_search: Vec<_> = if type_category == TypeCategory::Variable {
+            self.trees.values().collect()
+        } else {
+            self.trees
+                .get(&type_category)
+                .into_iter()
+                .chain(self.trees.get(&TypeCategory::Variable))
+                .collect()
         };
 
         // At around 8000 goals in library, we tried doing smart tree things instead of
         // dumb search, but the dumb search was faster.
-        for (f, values) in tree {
-            if fingerprint.could_unify(f) {
-                for v in values {
-                    result.push(v);
+        for tree in trees_to_search {
+            for (f, values) in tree {
+                if fingerprint.could_unify(f) {
+                    for v in values {
+                        result.push(v);
+                    }
                 }
             }
         }
@@ -316,17 +341,28 @@ impl<T> FingerprintSpecializer<T> {
 
         let mut result = vec![];
 
-        let tree = match self.trees.get(&type_category) {
-            Some(tree) => tree,
-            None => return result,
+        // If the query has a type variable, it could match any type category,
+        // so we need to search all trees.
+        // Otherwise, search the matching category tree plus the Variable tree
+        // (since stored type variables can match any concrete type).
+        let trees_to_search: Vec<_> = if type_category == TypeCategory::Variable {
+            self.trees.values().collect()
+        } else {
+            self.trees
+                .get(&type_category)
+                .into_iter()
+                .chain(self.trees.get(&TypeCategory::Variable))
+                .collect()
         };
 
         // At around 8000 goals in library, we tried doing smart tree things instead of
         // dumb search, but the dumb search was faster.
-        for (f, values) in tree {
-            if fingerprint.could_specialize(f) {
-                for v in values {
-                    result.push(v);
+        for tree in trees_to_search {
+            for (f, values) in tree {
+                if fingerprint.could_specialize(f) {
+                    for v in values {
+                        result.push(v);
+                    }
                 }
             }
         }
@@ -428,5 +464,173 @@ mod tests {
         tree.insert(&term1, 1, &lctx, &kctx);
         assert!(tree.find_unifying(&term1, &lctx, &kctx).len() > 0);
         assert!(tree.find_unifying(&term2, &lctx, &kctx).len() > 0);
+    }
+
+    #[test]
+    fn test_type_category_variable() {
+        // Test that type variables are correctly categorized
+        let type_var = Term::atom(crate::kernel::atom::Atom::Variable(0));
+        assert_eq!(
+            TypeCategory::from_type_term(&type_var),
+            TypeCategory::Variable
+        );
+
+        // Ground types should still be categorized as Ground
+        let bool_type = Term::type_bool();
+        assert!(matches!(
+            TypeCategory::from_type_term(&bool_type),
+            TypeCategory::Ground(_)
+        ));
+    }
+
+    #[test]
+    fn test_type_category_could_match() {
+        use crate::kernel::types::BOOL;
+
+        // Variable matches anything
+        assert!(TypeCategory::Variable.could_match(&TypeCategory::Ground(BOOL)));
+        assert!(TypeCategory::Variable.could_match(&TypeCategory::Arrow));
+        assert!(TypeCategory::Variable.could_match(&TypeCategory::Applied));
+        assert!(TypeCategory::Variable.could_match(&TypeCategory::Variable));
+
+        // Ground matches Variable or same Ground
+        assert!(TypeCategory::Ground(BOOL).could_match(&TypeCategory::Variable));
+        assert!(TypeCategory::Ground(BOOL).could_match(&TypeCategory::Ground(BOOL)));
+        assert!(!TypeCategory::Ground(BOOL).could_match(&TypeCategory::Arrow));
+
+        // Arrow matches Variable or Arrow
+        assert!(TypeCategory::Arrow.could_match(&TypeCategory::Variable));
+        assert!(TypeCategory::Arrow.could_match(&TypeCategory::Arrow));
+        assert!(!TypeCategory::Arrow.could_match(&TypeCategory::Ground(BOOL)));
+    }
+
+    #[test]
+    fn test_fingerprint_unifier_with_type_variable_query() {
+        // Test that a query with a type variable can find terms with concrete types
+        use crate::kernel::types::TYPE;
+
+        let mut kctx = KernelContext::new();
+        kctx.add_datatype("Int").add_datatype("Nat");
+
+        let int_id = kctx.type_store.get_ground_id_by_name("Int").unwrap();
+        let nat_id = kctx.type_store.get_ground_id_by_name("Nat").unwrap();
+
+        let int_type = Term::type_ground(int_id);
+        let nat_type = Term::type_ground(nat_id);
+
+        // c0 has type Int, c1 has type Nat
+        kctx.symbol_table.add_scoped_constant(int_type.clone());
+        kctx.symbol_table.add_scoped_constant(nat_type.clone());
+
+        // Local context: x0 has type T0 (a type variable)
+        let type_type = Term::type_ground(TYPE);
+        let type_var = Term::atom(crate::kernel::atom::Atom::Variable(0));
+        let lctx_with_type_var = LocalContext::from_types(vec![type_type, type_var]);
+
+        // Local context for concrete types
+        let lctx_int = LocalContext::from_types(vec![int_type.clone()]);
+        let lctx_nat = LocalContext::from_types(vec![nat_type.clone()]);
+
+        let mut tree = FingerprintUnifier::new();
+
+        // Insert c0 (Int) and c1 (Nat) into the tree
+        let c0 = Term::parse("c0");
+        let c1 = Term::parse("c1");
+        tree.insert(&c0, "int_term", &lctx_int, &kctx);
+        tree.insert(&c1, "nat_term", &lctx_nat, &kctx);
+
+        // Query with x1 which has type T0 (type variable) - should find both!
+        let x1 = Term::parse("x1");
+        let results = tree.find_unifying(&x1, &lctx_with_type_var, &kctx);
+
+        // Should find both terms since type variable can match any type
+        assert_eq!(
+            results.len(),
+            2,
+            "Type variable query should find terms of any type"
+        );
+    }
+
+    #[test]
+    fn test_fingerprint_unifier_stored_type_variable() {
+        // Test that a concrete query can find stored terms with type variables
+        use crate::kernel::types::TYPE;
+
+        let mut kctx = KernelContext::new();
+        kctx.add_datatype("Int");
+
+        let int_id = kctx.type_store.get_ground_id_by_name("Int").unwrap();
+        let int_type = Term::type_ground(int_id);
+
+        // c0 has type Int
+        kctx.symbol_table.add_scoped_constant(int_type.clone());
+
+        // Local context with type variable: x0: Type, x1: T0
+        let type_type = Term::type_ground(TYPE);
+        let type_var = Term::atom(crate::kernel::atom::Atom::Variable(0));
+        let lctx_with_type_var = LocalContext::from_types(vec![type_type, type_var]);
+
+        // Local context for concrete type
+        let lctx_int = LocalContext::from_types(vec![int_type.clone()]);
+
+        let mut tree = FingerprintUnifier::new();
+
+        // Insert x1 which has type T0 (type variable)
+        let x1 = Term::parse("x1");
+        tree.insert(&x1, "type_var_term", &lctx_with_type_var, &kctx);
+
+        // Query with c0 which has concrete type Int
+        let c0 = Term::parse("c0");
+        let results = tree.find_unifying(&c0, &lctx_int, &kctx);
+
+        // Should find the type variable term since it can match any type
+        assert_eq!(
+            results.len(),
+            1,
+            "Concrete query should find terms with type variables"
+        );
+    }
+
+    #[test]
+    fn test_fingerprint_specializer_with_type_variable() {
+        // Test that FingerprintSpecializer works with type variables
+        use crate::kernel::types::TYPE;
+
+        let mut kctx = KernelContext::new();
+        kctx.add_datatype("Int");
+
+        let int_id = kctx.type_store.get_ground_id_by_name("Int").unwrap();
+        let int_type = Term::type_ground(int_id);
+
+        // c0 and c1 have type Int
+        kctx.symbol_table.add_scoped_constant(int_type.clone());
+        kctx.symbol_table.add_scoped_constant(int_type.clone());
+
+        // Local context with type variable: x0: Type, x1: T0
+        let type_type = Term::type_ground(TYPE);
+        let type_var = Term::atom(crate::kernel::atom::Atom::Variable(0));
+        let lctx_with_type_var = LocalContext::from_types(vec![type_type, type_var]);
+
+        // Local context for concrete type
+        let lctx_int = LocalContext::from_types(vec![int_type.clone()]);
+
+        let mut specializer = FingerprintSpecializer::new();
+
+        // Insert a literal with concrete Int type: c0 = c1
+        let c0 = Term::parse("c0");
+        let c1 = Term::parse("c1");
+        let lit = Literal::equals(c0.clone(), c1.clone());
+        specializer.insert(&lit, "concrete_literal", &lctx_int, &kctx);
+
+        // Query with type variable terms: x1 = x1
+        let x1 = Term::parse("x1");
+        let results = specializer.find_specializing(&x1, &x1, &lctx_with_type_var, &kctx);
+
+        // Should find the concrete literal since type variable can specialize to Int
+        assert_eq!(
+            results.len(),
+            1,
+            "Type variable query should find concrete literals"
+        );
     }
 }
