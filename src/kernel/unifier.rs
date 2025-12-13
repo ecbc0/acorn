@@ -1509,4 +1509,136 @@ mod tests {
             "Pi(Nat, b0) should NOT unify with Pi(Nat, b1)"
         );
     }
+
+    #[test]
+    fn test_unify_dependent_pi_type() {
+        // Test unifying two identical dependent Pi types:
+        // Π (R : Ring), R -> R -> R
+        // This should unify with itself
+        let mut ctx = KernelContext::new();
+        ctx.add_datatype("Ring");
+
+        let ring_id = ctx.type_store.get_ground_id_by_name("Ring").unwrap();
+        let ring_type = Term::ground_type(ring_id);
+
+        // Build: Pi(Ring, Pi(b0, Pi(b0, b0)))
+        let b0 = Term::atom(Atom::BoundVariable(0));
+        let inner = Term::pi(b0.clone(), Term::pi(b0.clone(), b0.clone()));
+        let add_type = Term::pi(ring_type.clone(), inner.clone());
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(LocalContext::empty())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+
+        // Same dependent type should unify with itself
+        assert!(
+            u.unify(Scope::LEFT, &add_type, Scope::RIGHT, &add_type.clone()),
+            "Dependent Pi type should unify with itself"
+        );
+    }
+
+    #[test]
+    fn test_apply_preserves_bound_variables() {
+        // Test that applying a substitution to a Pi type preserves bound variables
+        // If we have Pi(Ring, Pi(b0, b0)) and apply the unifier,
+        // the b0's should be preserved (not substituted)
+        let mut ctx = KernelContext::new();
+        ctx.add_datatype("Ring");
+
+        let ring_id = ctx.type_store.get_ground_id_by_name("Ring").unwrap();
+        let ring_type = Term::ground_type(ring_id);
+
+        // Build: Pi(Ring, Pi(b0, b0))
+        let b0 = Term::atom(Atom::BoundVariable(0));
+        let identity_type = Term::pi(ring_type.clone(), Term::pi(b0.clone(), b0.clone()));
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(LocalContext::empty())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+
+        // Apply to the dependent type (with no free variables to substitute)
+        let applied = u.apply(Scope::LEFT, &identity_type);
+
+        // Should be unchanged since there are no free variables
+        assert_eq!(
+            applied, identity_type,
+            "Applying to a type with only bound variables should preserve it"
+        );
+    }
+
+    #[test]
+    fn test_unify_dependent_pi_with_free_variable() {
+        // Test that a free variable of type Type can unify with a dependent Pi type
+        let mut ctx = KernelContext::new();
+        ctx.add_datatype("Ring");
+
+        let ring_id = ctx.type_store.get_ground_id_by_name("Ring").unwrap();
+        let ring_type = Term::ground_type(ring_id);
+
+        // Build: Pi(Ring, Pi(b0, b0)) - identity function type
+        let b0 = Term::atom(Atom::BoundVariable(0));
+        let identity_type = Term::pi(ring_type.clone(), Term::pi(b0.clone(), b0.clone()));
+
+        // x0 is a type variable (has type Type)
+        let type_sort = Term::type_sort();
+        let lctx = LocalContext::from_types(vec![type_sort.clone()]);
+
+        let x0 = Term::atom(Atom::FreeVariable(0));
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(lctx.clone())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+        u.set_output_var_types(vec![type_sort]);
+
+        // x0 should unify with the dependent Pi type
+        assert!(
+            u.unify(Scope::LEFT, &x0, Scope::RIGHT, &identity_type),
+            "Type variable should unify with dependent Pi type"
+        );
+
+        // Check that x0 maps to the identity_type
+        let x0_mapping = u.get_mapping(Scope::LEFT, 0);
+        assert!(x0_mapping.is_some(), "x0 should have a mapping");
+        assert_eq!(
+            x0_mapping.unwrap().to_string(),
+            identity_type.to_string(),
+            "x0 should map to the dependent Pi type"
+        );
+    }
+
+    #[test]
+    fn test_unify_nested_dependent_pi() {
+        // Test unifying nested dependent Pi types:
+        // Π (R : Ring), Π (S : Ring), R -> S -> R
+        let mut ctx = KernelContext::new();
+        ctx.add_datatype("Ring");
+
+        let ring_id = ctx.type_store.get_ground_id_by_name("Ring").unwrap();
+        let ring_type = Term::ground_type(ring_id);
+
+        // b0 = S (innermost), b1 = R (outermost)
+        let b0 = Term::atom(Atom::BoundVariable(0));
+        let b1 = Term::atom(Atom::BoundVariable(1));
+
+        // Build: Pi(Ring, Pi(Ring, Pi(b1, Pi(b0, b1))))
+        // This is: Π(R: Ring), Π(S: Ring), R -> S -> R
+        let body = Term::pi(b1.clone(), Term::pi(b0.clone(), b1.clone()));
+        let inner_pi = Term::pi(ring_type.clone(), body);
+        let nested_type = Term::pi(ring_type.clone(), inner_pi.clone());
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(LocalContext::empty())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+
+        // Same nested type should unify with itself
+        assert!(
+            u.unify(
+                Scope::LEFT,
+                &nested_type,
+                Scope::RIGHT,
+                &nested_type.clone()
+            ),
+            "Nested dependent Pi type should unify with itself"
+        );
+    }
 }
