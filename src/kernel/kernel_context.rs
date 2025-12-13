@@ -416,6 +416,105 @@ impl KernelContext {
         result
     }
 
+    /// Parse a dependent type with explicit binders.
+    ///
+    /// Example: `ctx.parse_dependent_type(&["CommRing"], "T0 -> T0 -> T0")`
+    /// produces `Pi(CommRing, Pi(b0, Pi(b0, b0)))` representing `Π(R: CommRing), R -> R -> R`
+    ///
+    /// - `binder_types`: Types for the Pi binders, outermost first
+    /// - `body`: The body type, using T0, T1, ... to refer to bound variables
+    ///   (T0 = first binder, T1 = second binder, etc.)
+    #[cfg(test)]
+    pub fn parse_dependent_type(&self, binder_types: &[&str], body: &str) -> Term {
+        // Parse the body, converting T0..T{n-1} to BoundVariable
+        let body_term = self.parse_type_for_dependent(body, binder_types.len());
+
+        // Wrap with Pi types from innermost to outermost
+        let mut result = body_term;
+        for binder_type_str in binder_types.iter().rev() {
+            let binder_type = self.parse_type(binder_type_str);
+            result = Term::pi(binder_type, result);
+        }
+        result
+    }
+
+    /// Like parse_type, but T0..T{n-1} become BoundVariable instead of FreeVariable.
+    /// T{n} and above remain FreeVariable (shifted down by num_binders).
+    ///
+    /// Note: Ti refers to the i-th binder (0-indexed, outermost first).
+    /// In de Bruijn notation, outermost = highest index, so:
+    /// Ti -> BoundVariable(num_binders - 1 - i)
+    #[cfg(test)]
+    fn parse_type_for_dependent(&self, type_str: &str, num_binders: usize) -> Term {
+        use crate::kernel::atom::Atom;
+
+        let s = type_str.trim();
+
+        // Check for arrow type: "A -> B"
+        if let Some(arrow_pos) = Self::find_top_level_arrow(s) {
+            let input_str = s[..arrow_pos].trim();
+            let output_str = s[arrow_pos + 2..].trim();
+
+            let output = self.parse_type_for_dependent(output_str, num_binders);
+
+            if input_str.starts_with('(') && input_str.ends_with(')') {
+                // Multi-argument: "(A, B, C)" -> curried Pi
+                let inner = &input_str[1..input_str.len() - 1];
+                let args: Vec<&str> = Self::split_by_comma(inner);
+                let mut result = output;
+                for arg in args.iter().rev() {
+                    let arg_type = self.parse_type_for_dependent(arg.trim(), num_binders);
+                    result = Term::pi(arg_type, result);
+                }
+                result
+            } else {
+                let input = self.parse_type_for_dependent(input_str, num_binders);
+                Term::pi(input, output)
+            }
+        } else if let Some(bracket_pos) = s.find('[') {
+            // Parameterized type: "List[Int]" or "Pair[Int, Bool]"
+            let name = s[..bracket_pos].trim();
+            let params_str = &s[bracket_pos + 1..s.len() - 1];
+            let params: Vec<&str> = Self::split_by_comma(params_str);
+
+            let ground_id = self
+                .type_store
+                .get_ground_id_by_name(name)
+                .unwrap_or_else(|| panic!("Unknown type constructor: {}", name));
+
+            let type_args: Vec<Term> = params
+                .iter()
+                .map(|p| self.parse_type_for_dependent(p.trim(), num_binders))
+                .collect();
+
+            Term::new(Atom::Symbol(Symbol::Type(ground_id)), type_args)
+        } else if s.starts_with('T') && s.len() > 1 && s[1..].chars().all(|c| c.is_ascii_digit()) {
+            // Type variable: "T0", "T1", etc.
+            let var_id: usize = s[1..].parse().expect("invalid type variable id");
+            if var_id < num_binders {
+                // Bound variable: Ti -> BoundVariable(num_binders - 1 - i)
+                // This maps T0 (outermost binder) to highest index
+                let bound_idx = (num_binders - 1 - var_id) as u16;
+                Term::atom(Atom::BoundVariable(bound_idx))
+            } else {
+                // Free variable beyond the binders (shifted down)
+                let free_idx = (var_id - num_binders) as u16;
+                Term::atom(Atom::FreeVariable(free_idx))
+            }
+        } else {
+            // Simple type name - delegate to regular parse_type
+            match s {
+                "Bool" => Term::bool_type(),
+                "Empty" => Term::empty_type(),
+                _ => self
+                    .type_store
+                    .get_ground_id_by_name(s)
+                    .map(Term::ground_type)
+                    .unwrap_or_else(|| panic!("Unknown type name: {}", s)),
+            }
+        }
+    }
+
     /// Add a constant with a given name and type string for testing.
     /// The name should be like "c0", "g0", "m0", or "s0".
     /// Returns self for chaining.
@@ -634,5 +733,118 @@ mod tests {
             vec![Term::atom(Atom::FreeVariable(0))],
         );
         assert_eq!(list_t0, expected);
+    }
+
+    #[test]
+    fn test_parse_dependent_type_simple() {
+        use crate::kernel::atom::Atom;
+
+        let mut ctx = KernelContext::new();
+        ctx.add_datatype("Ring");
+
+        // Π (R : Ring), R -> R -> R
+        // T0 refers to the Ring-typed variable
+        let add_type = ctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
+
+        let ring_id = ctx.type_store.get_ground_id_by_name("Ring").unwrap();
+        let ring = Term::ground_type(ring_id);
+        let b0 = Term::atom(Atom::BoundVariable(0));
+
+        // Expected: Pi(Ring, Pi(b0, Pi(b0, b0)))
+        let expected = Term::pi(ring, Term::pi(b0.clone(), Term::pi(b0.clone(), b0)));
+
+        assert_eq!(add_type, expected);
+    }
+
+    #[test]
+    fn test_parse_dependent_type_two_binders() {
+        use crate::kernel::atom::Atom;
+
+        let mut ctx = KernelContext::new();
+        ctx.add_datatype("Nat");
+        ctx.add_datatype("Ring");
+        ctx.add_type_constructor("Matrix", 3);
+
+        // Π (R : Ring), Π (n : Nat), Matrix[R, n, n]
+        // T0 = Ring (first binder), T1 = Nat (second binder)
+        let matrix_type = ctx.parse_dependent_type(&["Ring", "Nat"], "Matrix[T0, T1, T1]");
+
+        let ring_id = ctx.type_store.get_ground_id_by_name("Ring").unwrap();
+        let ring = Term::ground_type(ring_id);
+        let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
+        let nat = Term::ground_type(nat_id);
+        let matrix_id = ctx.type_store.get_ground_id_by_name("Matrix").unwrap();
+
+        // T0 -> b1 (outermost binder = Ring)
+        // T1 -> b0 (innermost binder = Nat)
+        let b0 = Term::atom(Atom::BoundVariable(0));
+        let b1 = Term::atom(Atom::BoundVariable(1));
+
+        let matrix_applied = Term::new(
+            Atom::Symbol(Symbol::Type(matrix_id)),
+            vec![b1, b0.clone(), b0],
+        );
+
+        // Expected: Pi(Ring, Pi(Nat, Matrix[b1, b0, b0]))
+        let expected = Term::pi(ring, Term::pi(nat, matrix_applied));
+
+        assert_eq!(matrix_type, expected);
+    }
+
+    #[test]
+    fn test_parse_dependent_type_with_concrete_types() {
+        let mut ctx = KernelContext::new();
+        ctx.add_datatype("Nat");
+
+        // Π (n : Nat), Nat -> Nat
+        // The body mixes bound variable (T0) and concrete type (Nat)
+        let fn_type = ctx.parse_dependent_type(&["Nat"], "Nat -> Nat");
+
+        let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
+        let nat = Term::ground_type(nat_id);
+
+        // Expected: Pi(Nat, Pi(Nat, Nat))
+        let expected = Term::pi(nat.clone(), Term::pi(nat.clone(), nat));
+
+        assert_eq!(fn_type, expected);
+    }
+
+    #[test]
+    fn test_parse_dependent_type_with_typeclass() {
+        use crate::elaborator::acorn_type::Typeclass;
+        use crate::kernel::atom::Atom;
+        use crate::module::ModuleId;
+
+        let mut ctx = KernelContext::new();
+
+        // Create a CommRing typeclass
+        let comm_ring = Typeclass {
+            module_id: ModuleId(0),
+            name: "CommRing".to_string(),
+        };
+        let comm_ring_id = ctx.type_store.add_typeclass(&comm_ring);
+        let comm_ring_type = Term::typeclass(comm_ring_id);
+
+        // Π (R : CommRing), R -> R -> R
+        // We build the body using parse_type_for_dependent directly,
+        // then wrap with the typeclass binder manually
+        let body = ctx.parse_type_for_dependent("T0 -> T0 -> T0", 1);
+
+        let b0 = Term::atom(Atom::BoundVariable(0));
+
+        // Verify body is Pi(b0, Pi(b0, b0))
+        let expected_body = Term::pi(b0.clone(), Term::pi(b0.clone(), b0.clone()));
+        assert_eq!(body, expected_body);
+
+        // Wrap with Pi(CommRing, body)
+        let add_type = Term::pi(comm_ring_type.clone(), body);
+
+        // Expected: Pi(CommRing, Pi(b0, Pi(b0, b0)))
+        let expected = Term::pi(
+            comm_ring_type,
+            Term::pi(b0.clone(), Term::pi(b0.clone(), b0)),
+        );
+
+        assert_eq!(add_type, expected);
     }
 }
