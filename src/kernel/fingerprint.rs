@@ -844,4 +844,171 @@ mod tests {
             "Ground type query should find terms with typeclass constraints"
         );
     }
+
+    #[test]
+    fn test_fingerprint_unifier_with_dependent_pi_type() {
+        // Test that functions with dependent Pi types like Π(R: Ring), R -> R -> R
+        // can be stored and retrieved from FingerprintUnifier
+        let mut kctx = KernelContext::new();
+        kctx.add_typeclass("Ring");
+
+        // Create dependent Pi type: Π(R: Ring), R -> R -> R
+        let add_type = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
+
+        // c0 : Π(R: Ring), R -> R -> R (the 'add' function)
+        kctx.symbol_table.add_scoped_constant(add_type.clone());
+
+        let mut tree = FingerprintUnifier::new();
+
+        // Insert c0 (add function with dependent Pi type)
+        let c0 = Term::parse("c0");
+        tree.insert(&c0, "add", &LocalContext::empty(), &kctx);
+
+        // Query with the same term
+        let results = tree.find_unifying(&c0, &LocalContext::empty(), &kctx);
+
+        assert_eq!(results.len(), 1, "Should find the dependent Pi typed term");
+        assert_eq!(results[0], &"add");
+    }
+
+    #[test]
+    fn test_fingerprint_unifier_multiple_dependent_pi_functions() {
+        // Test that multiple functions with the same dependent Pi type structure
+        // can be stored and found
+        let mut kctx = KernelContext::new();
+        kctx.add_typeclass("Ring");
+
+        // Create dependent Pi type: Π(R: Ring), R -> R -> R
+        let op_type = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
+
+        // c0 : add, c1 : mul, both with type Π(R: Ring), R -> R -> R
+        kctx.symbol_table.add_scoped_constant(op_type.clone());
+        kctx.symbol_table.add_scoped_constant(op_type.clone());
+
+        let mut tree = FingerprintUnifier::new();
+
+        let c0 = Term::parse("c0");
+        let c1 = Term::parse("c1");
+        tree.insert(&c0, "add", &LocalContext::empty(), &kctx);
+        tree.insert(&c1, "mul", &LocalContext::empty(), &kctx);
+
+        // Query with c0 should find both (since they have the same type category)
+        let results = tree.find_unifying(&c0, &LocalContext::empty(), &kctx);
+
+        // Both have Arrow type category, so both should be candidates
+        assert!(results.len() >= 1, "Should find at least one term");
+    }
+
+    #[test]
+    fn test_fingerprint_unifier_dependent_pi_with_variable() {
+        // Test that a type variable can unify with a dependent Pi type
+        let mut kctx = KernelContext::new();
+        kctx.add_typeclass("Ring");
+        kctx.add_datatype("Bool");
+
+        // Create dependent Pi type: Π(R: Ring), R -> R -> R
+        let add_type = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
+
+        // c0 : Π(R: Ring), R -> R -> R
+        kctx.symbol_table.add_scoped_constant(add_type.clone());
+
+        // x0 is a type variable (could be any type)
+        let var_type = Term::atom(Atom::FreeVariable(0));
+        let lctx_var = LocalContext::from_types(vec![var_type]);
+
+        let mut tree = FingerprintUnifier::new();
+
+        // Insert c0 (has dependent Pi type)
+        let c0 = Term::parse("c0");
+        tree.insert(&c0, "add", &LocalContext::empty(), &kctx);
+
+        // Query with x0 (has variable type)
+        let x0 = Term::parse("x0");
+        let results = tree.find_unifying(&x0, &lctx_var, &kctx);
+
+        // Variable type should potentially match Arrow type
+        assert_eq!(
+            results.len(),
+            1,
+            "Variable should find dependent Pi typed terms"
+        );
+    }
+
+    #[test]
+    fn test_fingerprint_specializer_with_dependent_pi_type() {
+        // Test that FingerprintSpecializer works with dependent Pi types
+        let mut kctx = KernelContext::new();
+        kctx.add_typeclass("Ring");
+
+        // Create dependent Pi type: Π(R: Ring), R -> R -> R
+        let add_type = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
+
+        // c0 : Π(R: Ring), R -> R -> R
+        kctx.symbol_table.add_scoped_constant(add_type.clone());
+
+        let mut spec = FingerprintSpecializer::new();
+
+        // Create a literal: c0 = c0 (reflexive equality with dependent Pi type)
+        let c0 = Term::parse("c0");
+        let lit = Literal::equals(c0.clone(), c0.clone());
+
+        spec.insert(&lit, "reflexive_add", &LocalContext::empty(), &kctx);
+
+        // Query should find the literal (using left and right terms)
+        let results = spec.find_specializing(&c0, &c0, &LocalContext::empty(), &kctx);
+
+        assert_eq!(
+            results.len(),
+            1,
+            "Should find literal with dependent Pi typed terms"
+        );
+    }
+
+    #[test]
+    fn test_type_category_dependent_pi_is_arrow() {
+        // Verify that dependent Pi types are categorized as Arrow
+        let mut kctx = KernelContext::new();
+        kctx.add_typeclass("Ring");
+
+        // Create dependent Pi type: Π(R: Ring), R -> R -> R
+        let dependent_pi = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
+
+        let category = TypeCategory::from_type_term(&dependent_pi);
+        assert_eq!(
+            category,
+            TypeCategory::Arrow,
+            "Dependent Pi type should be categorized as Arrow"
+        );
+    }
+
+    #[test]
+    fn test_fingerprint_unifier_nested_dependent_pi() {
+        // Test with more complex nested dependent Pi types
+        let mut kctx = KernelContext::new();
+        kctx.add_typeclass("Ring");
+        kctx.add_datatype("Nat");
+        kctx.add_type_constructor("Matrix", 3);
+
+        // Π(R: Ring), Π(n: Nat), Matrix[R, n, n] -> Matrix[R, n, n]
+        let matrix_op_type =
+            kctx.parse_dependent_type(&["Ring", "Nat"], "Matrix[T0, T1, T1] -> Matrix[T0, T1, T1]");
+
+        // c0 : matrix operation with nested dependent type
+        kctx.symbol_table
+            .add_scoped_constant(matrix_op_type.clone());
+
+        let mut tree = FingerprintUnifier::new();
+
+        let c0 = Term::parse("c0");
+        tree.insert(&c0, "matrix_op", &LocalContext::empty(), &kctx);
+
+        let results = tree.find_unifying(&c0, &LocalContext::empty(), &kctx);
+
+        assert_eq!(
+            results.len(),
+            1,
+            "Should find nested dependent Pi typed term"
+        );
+        assert_eq!(results[0], &"matrix_op");
+    }
 }
