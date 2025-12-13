@@ -312,11 +312,28 @@ impl KernelContext {
         self
     }
 
+    /// Add a typeclass by name for testing.
+    /// Returns self for chaining.
+    ///
+    /// Example: `ctx.add_typeclass("Ring")`
+    #[cfg(test)]
+    pub fn add_typeclass(&mut self, name: &str) -> &mut Self {
+        use crate::elaborator::acorn_type::Typeclass;
+        use crate::module::ModuleId;
+
+        let typeclass = Typeclass {
+            module_id: ModuleId(0),
+            name: name.to_string(),
+        };
+        self.type_store.add_typeclass(&typeclass);
+        self
+    }
+
     /// Parse a type string like "Bool", "Int", "Int -> Bool", "(Int, Int) -> Bool",
     /// "List[Int]", "Pair[Int, Bool]", or "T0" (type variable).
     /// Looks up datatype names in the TypeStore.
     #[cfg(test)]
-    fn parse_type(&self, type_str: &str) -> Term {
+    pub fn parse_type(&self, type_str: &str) -> Term {
         use crate::kernel::atom::Atom;
 
         let s = type_str.trim();
@@ -432,10 +449,23 @@ impl KernelContext {
         // Wrap with Pi types from innermost to outermost
         let mut result = body_term;
         for binder_type_str in binder_types.iter().rev() {
-            let binder_type = self.parse_type(binder_type_str);
+            let binder_type = self.parse_binder_type(binder_type_str);
             result = Term::pi(binder_type, result);
         }
         result
+    }
+
+    /// Parse a binder type - tries typeclass first, then falls back to parse_type.
+    /// This is for parsing the types in Pi binders like Π(R: Ring).
+    #[cfg(test)]
+    fn parse_binder_type(&self, type_str: &str) -> Term {
+        let s = type_str.trim();
+        // Try typeclass first
+        if let Some(tc_id) = self.type_store.get_typeclass_id_by_name(s) {
+            return Term::typeclass(tc_id);
+        }
+        // Fall back to regular type parsing
+        self.parse_type(s)
     }
 
     /// Like parse_type, but T0..T{n-1} become BoundVariable instead of FreeVariable.

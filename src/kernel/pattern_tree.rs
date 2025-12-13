@@ -247,6 +247,7 @@ impl Edge {
             ATOM_SYMBOL_EMPTY => Edge::Atom(Atom::Symbol(Symbol::Empty)),
             ATOM_SYMBOL_BOOL => Edge::Atom(Atom::Symbol(Symbol::Bool)),
             ATOM_SYMBOL_TYPESORT => Edge::Atom(Atom::Symbol(Symbol::TypeSort)),
+            ATOM_BOUND_VARIABLE => Edge::Atom(Atom::BoundVariable(id)),
             _ => panic!("invalid edge discriminant: {}", byte1),
         }
     }
@@ -1852,5 +1853,144 @@ mod tests {
         assert_eq!(tree.values.len(), 2, "Both terms should be in the tree");
         assert_eq!(tree.values[0], 1);
         assert_eq!(tree.values[1], 2);
+    }
+
+    #[test]
+    fn test_key_from_dependent_pi_type() {
+        // Test: Π(R: Ring), R -> R -> R encodes correctly
+        // This is the type of a polymorphic function like `add`
+        let mut kctx = KernelContext::new();
+        kctx.add_typeclass("Ring");
+
+        let dependent_pi = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
+
+        let mut key = Vec::new();
+        key_from_type(&dependent_pi, &mut key);
+
+        // Should not panic, and should produce a valid encoding
+        let debug = Edge::debug_bytes(&key);
+
+        // Should contain Arrow edges for the Pi types
+        assert!(
+            debug.contains("Arrow"),
+            "Dependent Pi type should encode with Arrow: {}",
+            debug
+        );
+
+        // Should contain BoundVariable(0) for the bound type variable
+        assert!(
+            debug.contains("BoundVariable(0)"),
+            "Should contain bound variable b0: {}",
+            debug
+        );
+    }
+
+    #[test]
+    fn test_key_from_nested_dependent_pi() {
+        // Test: Π(R: Ring), Π(n: Nat), Matrix[R, n, n]
+        // More complex dependent type with multiple binders
+        let mut kctx = KernelContext::new();
+        kctx.add_typeclass("Ring");
+        kctx.add_datatype("Nat");
+        kctx.add_type_constructor("Matrix", 3);
+
+        let nested_pi = kctx.parse_dependent_type(&["Ring", "Nat"], "Matrix[T0, T1, T1]");
+
+        let mut key = Vec::new();
+        key_from_type(&nested_pi, &mut key);
+
+        let debug = Edge::debug_bytes(&key);
+
+        // Should contain both BoundVariable(0) and BoundVariable(1)
+        assert!(
+            debug.contains("BoundVariable(0)"),
+            "Should contain b0: {}",
+            debug
+        );
+        assert!(
+            debug.contains("BoundVariable(1)"),
+            "Should contain b1: {}",
+            debug
+        );
+    }
+
+    #[test]
+    fn test_pattern_tree_with_dependent_pi_function_type() {
+        // Test pattern tree insertion for a function whose type is a dependent Pi type
+        // e.g., `add : Π(R: Ring), R -> R -> R`
+        let mut kctx = KernelContext::new();
+        kctx.add_typeclass("Ring");
+
+        // Create the dependent Pi type: Π(R: Ring), R -> R -> R
+        let add_type = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
+
+        // Create constant `add` with this type
+        kctx.symbol_table.add_scoped_constant(add_type.clone());
+
+        // Create term: c0 (the `add` function)
+        let add_term = Term::atom(KernelAtom::Symbol(Symbol::ScopedConstant(0)));
+
+        // Generate key - should not panic
+        let key = key_from_term(&add_term, &LocalContext::empty(), &kctx);
+
+        // Verify key contains expected structure
+        let debug = Edge::debug_bytes(&key);
+        assert!(
+            debug.contains("Arrow"),
+            "add's type should encode with Arrow: {}",
+            debug
+        );
+        assert!(
+            debug.contains("BoundVariable(0)"),
+            "add's type should contain b0: {}",
+            debug
+        );
+
+        // Test actual pattern tree insertion
+        let mut tree: PatternTree<usize> = PatternTree::new();
+        tree.insert_term(&add_term, 1, &LocalContext::empty(), &kctx);
+
+        // Verify insertion
+        assert_eq!(tree.values.len(), 1, "add should be in the tree");
+        assert_eq!(tree.values[0], 1);
+    }
+
+    #[test]
+    fn test_pattern_tree_match_dependent_pi_functions() {
+        // Test that two functions with the same dependent Pi type structure
+        // can be found in the pattern tree
+        let mut kctx = KernelContext::new();
+        kctx.add_typeclass("Ring");
+
+        // Create the dependent Pi type: Π(R: Ring), R -> R -> R
+        let op_type = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
+
+        // Create two constants with this type: c0 = add, c1 = mul
+        kctx.symbol_table.add_scoped_constant(op_type.clone());
+        kctx.symbol_table.add_scoped_constant(op_type.clone());
+
+        let add_term = Term::atom(KernelAtom::Symbol(Symbol::ScopedConstant(0)));
+        let mul_term = Term::atom(KernelAtom::Symbol(Symbol::ScopedConstant(1)));
+
+        // Insert both into the pattern tree
+        let mut tree: PatternTree<&str> = PatternTree::new();
+        tree.insert_term(&add_term, "add", &LocalContext::empty(), &kctx);
+        tree.insert_term(&mul_term, "mul", &LocalContext::empty(), &kctx);
+
+        // Verify both were inserted
+        assert_eq!(tree.values.len(), 2, "Both ops should be in the tree");
+
+        // Both should have the same type encoding (up to the head atom)
+        let key_add = key_from_term(&add_term, &LocalContext::empty(), &kctx);
+        let key_mul = key_from_term(&mul_term, &LocalContext::empty(), &kctx);
+
+        // The keys differ only in the head atom (c0 vs c1), but the type portion should be identical
+        // Both start with the head atom, then the type encoding follows
+        let debug_add = Edge::debug_bytes(&key_add);
+        let debug_mul = Edge::debug_bytes(&key_mul);
+
+        // Both should have the same Arrow and BoundVariable structure
+        assert!(debug_add.contains("Arrow") && debug_mul.contains("Arrow"));
+        assert!(debug_add.contains("BoundVariable(0)") && debug_mul.contains("BoundVariable(0)"));
     }
 }

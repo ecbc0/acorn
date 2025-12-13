@@ -352,6 +352,18 @@ impl TypeStore {
         &self.id_to_typeclass[typeclass_id.as_u16() as usize]
     }
 
+    /// Get the TypeclassId for a typeclass by name.
+    /// Returns None if not found.
+    #[cfg(test)]
+    pub fn get_typeclass_id_by_name(&self, name: &str) -> Option<TypeclassId> {
+        for (i, tc) in self.id_to_typeclass.iter().enumerate() {
+            if tc.name == name {
+                return Some(TypeclassId::new(i as u16));
+            }
+        }
+        None
+    }
+
     /// Register that one typeclass extends another.
     /// This should be the direct extension relationship; the transitive closure is computed automatically.
     pub fn add_typeclass_extends(&mut self, typeclass_id: TypeclassId, base_id: TypeclassId) {
