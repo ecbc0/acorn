@@ -332,9 +332,20 @@ impl<'a> TermRef<'a> {
             Decomposition::Application(func, _arg) => {
                 // The function has type A -> B, so the application has type B
                 let func_type = func.get_type_with_context(local_context, kernel_context);
-                func_type
-                    .type_apply()
-                    .expect("Function type expected but not found during type application")
+                #[cfg(feature = "no_mono_symbols")]
+                {
+                    // For dependent types, we need to substitute the argument into the output type
+                    let arg_term = _arg.to_owned();
+                    func_type
+                        .type_apply_with_arg(&arg_term)
+                        .expect("Function type expected but not found during type application")
+                }
+                #[cfg(not(feature = "no_mono_symbols"))]
+                {
+                    func_type
+                        .type_apply()
+                        .expect("Function type expected but not found during type application")
+                }
             }
             Decomposition::Pi(_, _) => {
                 // Pi types are themselves types - this is used when the term IS a type
@@ -1168,6 +1179,24 @@ impl Term {
             .map(|(_, output)| output.to_owned())
     }
 
+    /// Apply a dependent Pi type to an argument, performing substitution.
+    /// For non-dependent types like `A -> B`, this just returns B.
+    /// For dependent types like `Pi(Type, b0 -> b0)`, applying `Int` gives `Int -> Int`.
+    /// Returns None if this is not a Pi type.
+    #[cfg(feature = "no_mono_symbols")]
+    pub fn type_apply_with_arg(&self, arg: &Term) -> Option<Term> {
+        self.as_ref().split_pi().map(|(_, output)| {
+            let output = output.to_owned();
+            if output.has_bound_variable() {
+                // Dependent type: substitute and shift
+                output.substitute_bound(0, arg).shift_bound(0, -1)
+            } else {
+                // Non-dependent type: just return output
+                output
+            }
+        })
+    }
+
     /// Validates that this term has correct structure.
     /// Panics with detailed information if the term is malformed.
     /// Only runs in test builds or when the "validate" feature is enabled.
@@ -1896,6 +1925,35 @@ impl Term {
                 // In the output type, the cutoff increases by 1 (we're under a binder)
                 let new_output = output.shift_bound_impl(cutoff + 1, amount);
 
+                Term::pi(new_input, new_output)
+            }
+        }
+    }
+
+    /// Replace all occurrences of `old` subterm with `new` subterm.
+    /// Used for abstracting over concrete types to create polymorphic types.
+    #[cfg(feature = "no_mono_symbols")]
+    pub fn replace_subterm(&self, old: &Term, new: &Term) -> Term {
+        // If this term equals old, return new
+        if self == old {
+            return new.clone();
+        }
+
+        // Otherwise, recursively replace in subterms
+        match self.as_ref().decompose() {
+            Decomposition::Atom(_) => self.clone(),
+            Decomposition::Application(func_ref, arg_ref) => {
+                let func = func_ref.to_owned();
+                let arg = arg_ref.to_owned();
+                let new_func = func.replace_subterm(old, new);
+                let new_arg = arg.replace_subterm(old, new);
+                new_func.apply(&[new_arg])
+            }
+            Decomposition::Pi(input_ref, output_ref) => {
+                let input = input_ref.to_owned();
+                let output = output_ref.to_owned();
+                let new_input = input.replace_subterm(old, new);
+                let new_output = output.replace_subterm(old, new);
                 Term::pi(new_input, new_output)
             }
         }

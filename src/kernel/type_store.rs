@@ -243,10 +243,20 @@ impl TypeStore {
             }
 
             AcornType::Variable(_) => {
-                panic!(
-                    "Variable types should not be converted to type Term: {:?}",
-                    acorn_type
-                );
+                #[cfg(feature = "no_mono_symbols")]
+                {
+                    panic!(
+                        "Variable types should not be converted to type Term without binding context: {:?}. Use to_polymorphic_type_term instead.",
+                        acorn_type
+                    );
+                }
+                #[cfg(not(feature = "no_mono_symbols"))]
+                {
+                    panic!(
+                        "Variable types should not be converted to type Term: {:?}",
+                        acorn_type
+                    );
+                }
             }
 
             AcornType::Arbitrary(type_param) => {
@@ -258,6 +268,120 @@ impl TypeStore {
                 Term::ground_type(*ground_id)
             }
         }
+    }
+
+    /// Convert an AcornType with type parameters to a type Term using bound variables.
+    /// Type parameters in `params` are converted to BoundVariable(index) based on their position.
+    /// For example, if params = [T, U] and the type is T -> U, we get Pi(b0, b1) where
+    /// b0 = BoundVariable(0) and b1 = BoundVariable(1).
+    /// The result should be wrapped in Pi(Type, ...) binders for each type parameter.
+    #[cfg(feature = "no_mono_symbols")]
+    pub fn to_polymorphic_type_term(&self, acorn_type: &AcornType, params: &[AcornType]) -> Term {
+        self.to_polymorphic_type_term_impl(acorn_type, params)
+    }
+
+    #[cfg(feature = "no_mono_symbols")]
+    fn to_polymorphic_type_term_impl(&self, acorn_type: &AcornType, params: &[AcornType]) -> Term {
+        use crate::kernel::atom::Atom;
+
+        match acorn_type {
+            AcornType::Empty => Term::empty_type(),
+            AcornType::Bool => Term::bool_type(),
+
+            AcornType::Data(datatype, type_args) if type_args.is_empty() => {
+                let ground_id = self
+                    .datatype_to_ground_id
+                    .get(datatype)
+                    .unwrap_or_else(|| panic!("Data type {} not registered", datatype.name));
+                Term::ground_type(*ground_id)
+            }
+
+            AcornType::Data(datatype, type_args) => {
+                let constructor_ground = self
+                    .datatype_to_ground_id
+                    .get(datatype)
+                    .unwrap_or_else(|| panic!("Data type {} not registered", datatype.name));
+                let head = Term::ground_type(*constructor_ground);
+
+                let args: Vec<Term> = type_args
+                    .iter()
+                    .map(|arg| self.to_polymorphic_type_term_impl(arg, params))
+                    .collect();
+
+                Term::type_application(head, args)
+            }
+
+            AcornType::Function(ft) => {
+                let mut result = self.to_polymorphic_type_term_impl(&ft.return_type, params);
+
+                for arg_type in ft.arg_types.iter().rev() {
+                    let arg_type_term = self.to_polymorphic_type_term_impl(arg_type, params);
+                    result = Term::pi(arg_type_term, result);
+                }
+
+                result
+            }
+
+            AcornType::Variable(type_param) => {
+                // Find the index of this type parameter in the params list
+                for (i, param) in params.iter().enumerate() {
+                    if let AcornType::Variable(p) = param {
+                        if p == type_param {
+                            return Term::atom(Atom::BoundVariable(i as u16));
+                        }
+                    }
+                }
+                panic!(
+                    "Type variable {:?} not found in params: {:?}",
+                    type_param, params
+                );
+            }
+
+            AcornType::Arbitrary(type_param) => {
+                // Arbitrary types should be registered, use as ground types
+                let ground_id = self
+                    .arbitrary_to_ground_id
+                    .get(type_param)
+                    .unwrap_or_else(|| panic!("Arbitrary type {:?} not registered", type_param));
+                Term::ground_type(*ground_id)
+            }
+        }
+    }
+
+    /// Compute the polymorphic type for a constant from its instantiated type.
+    /// Given an instance_type and concrete type params, replace each param type with
+    /// a bound variable and wrap with Pi(Type, ...) for each parameter.
+    ///
+    /// For example, if instance_type is `Nat -> Bool` and params is `[Nat]`,
+    /// returns `Pi(Type, Pi(BoundVariable(0), Bool))`.
+    #[cfg(feature = "no_mono_symbols")]
+    pub fn compute_polymorphic_type(
+        &self,
+        instance_type: &AcornType,
+        concrete_params: &[AcornType],
+    ) -> Term {
+        // First convert the instance_type to a Term
+        let instance_term = self.to_type_term(instance_type);
+
+        // Convert each concrete param to a Term for replacement
+        let param_terms: Vec<Term> = concrete_params
+            .iter()
+            .map(|p| self.to_type_term(p))
+            .collect();
+
+        // Replace each param type with a BoundVariable
+        let mut body = instance_term;
+        for (i, param_term) in param_terms.iter().enumerate() {
+            body = body.replace_subterm(param_term, &Term::atom(Atom::BoundVariable(i as u16)));
+        }
+
+        // Wrap in Pi(Type, ...) for each type parameter
+        let mut result = body;
+        for _ in (0..concrete_params.len()).rev() {
+            result = Term::pi(Term::type_sort(), result);
+        }
+
+        result
     }
 
     /// Convert a type Term back to an AcornType.

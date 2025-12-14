@@ -234,6 +234,7 @@ impl SymbolTable {
 
     /// Add all constant names, monomorphs, and types from a value to the symbol table.
     /// This ensures that all constants and types in the value are registered.
+    #[cfg(not(feature = "no_mono_symbols"))]
     pub fn add_from(
         &mut self,
         value: &AcornValue,
@@ -251,6 +252,55 @@ impl SymbolTable {
                 let var_type = type_store
                     .get_type_term(&c.instance_type)
                     .expect("type should be valid");
+                self.add_constant(c.name.clone(), ctype, var_type);
+            }
+            if !c.params.is_empty() {
+                self.add_monomorph_instance(c, type_store);
+            }
+        });
+    }
+
+    /// Add all constant names, monomorphs, and types from a value to the symbol table.
+    /// With no_mono_symbols, polymorphic constants get Pi-wrapped types.
+    #[cfg(feature = "no_mono_symbols")]
+    pub fn add_from(
+        &mut self,
+        value: &AcornValue,
+        ctype: NewConstantType,
+        type_store: &mut TypeStore,
+    ) {
+        use crate::elaborator::acorn_type::AcornType;
+
+        // Add all types first, so they can be resolved to type Terms
+        value.for_each_type(&mut |t| {
+            type_store.add_type(t);
+        });
+
+        // Now add all constants (types are now registered)
+        value.for_each_constant(&mut |c| {
+            if self.get_symbol(&c.name).is_none() {
+                let var_type = if c.params.is_empty() {
+                    // Non-polymorphic: use instance_type directly
+                    type_store
+                        .get_type_term(&c.instance_type)
+                        .expect("type should be valid")
+                } else if c.params.iter().all(|p| matches!(p, AcornType::Variable(_))) {
+                    // Polymorphic with Variable params: compute polymorphic type
+                    // Convert instance_type to a term with bound variables
+                    let body_type =
+                        type_store.to_polymorphic_type_term(&c.instance_type, &c.params);
+
+                    // Wrap in Pi(Type, ...) for each type parameter (from outermost to innermost)
+                    let mut result = body_type;
+                    for _ in (0..c.params.len()).rev() {
+                        result = Term::pi(Term::type_sort(), result);
+                    }
+                    result
+                } else {
+                    // Polymorphic with concrete params: compute polymorphic type by
+                    // abstracting over the concrete types
+                    type_store.compute_polymorphic_type(&c.instance_type, &c.params)
+                };
                 self.add_constant(c.name.clone(), ctype, var_type);
             }
             if !c.params.is_empty() {
@@ -314,6 +364,7 @@ impl SymbolTable {
     }
 
     /// The monomorph should already have been added.
+    #[cfg(not(feature = "no_mono_symbols"))]
     pub fn term_from_monomorph(&self, c: &ConstantInstance) -> Result<Term, String> {
         if let Some(&symbol) = self.monomorph_to_symbol.get(&c) {
             Ok(Term::new(Atom::Symbol(symbol), vec![]))
@@ -323,6 +374,36 @@ impl SymbolTable {
                 c
             ))
         }
+    }
+
+    /// Build a term application for a polymorphic constant.
+    /// E.g., for add[Int], builds add(Int) instead of using a monomorph symbol.
+    #[cfg(feature = "no_mono_symbols")]
+    pub fn term_from_monomorph(
+        &self,
+        c: &ConstantInstance,
+        type_store: &TypeStore,
+    ) -> Result<Term, String> {
+        // Get the base constant symbol
+        let Some(base_symbol) = self.get_symbol(&c.name) else {
+            return Err(format!("Base constant {} not found", c.name));
+        };
+
+        if c.params.is_empty() {
+            // No type params, just return the base symbol
+            return Ok(Term::atom(Atom::Symbol(base_symbol)));
+        }
+
+        // Convert type params to Terms
+        let type_args: Vec<Term> = c
+            .params
+            .iter()
+            .map(|param| type_store.to_type_term(param))
+            .collect();
+
+        // Build application: base(type_arg1, type_arg2, ...)
+        let head = Term::atom(Atom::Symbol(base_symbol));
+        Ok(head.apply(&type_args))
     }
 
     pub fn get_monomorph(&self, id: AtomId) -> &ConstantInstance {

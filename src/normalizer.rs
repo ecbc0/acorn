@@ -959,7 +959,13 @@ impl NormalizerView<'_> {
                     };
                     Ok(Some((Term::new(Atom::Symbol(symbol), vec![]), true)))
                 } else {
-                    Ok(Some((self.symbol_table().term_from_monomorph(&c)?, true)))
+                    #[cfg(feature = "no_mono_symbols")]
+                    let term = self
+                        .symbol_table()
+                        .term_from_monomorph(&c, self.type_store())?;
+                    #[cfg(not(feature = "no_mono_symbols"))]
+                    let term = self.symbol_table().term_from_monomorph(&c)?;
+                    Ok(Some((term, true)))
                 }
             }
             AcornValue::Not(subvalue) => {
@@ -1408,9 +1414,13 @@ impl NormalizerView<'_> {
                     };
                     Ok(ExtendedTerm::Term(Term::new(Atom::Symbol(symbol), vec![])))
                 } else {
-                    Ok(ExtendedTerm::Term(
-                        self.symbol_table().term_from_monomorph(&c)?,
-                    ))
+                    #[cfg(feature = "no_mono_symbols")]
+                    let term = self
+                        .symbol_table()
+                        .term_from_monomorph(&c, self.type_store())?;
+                    #[cfg(not(feature = "no_mono_symbols"))]
+                    let term = self.symbol_table().term_from_monomorph(&c)?;
+                    Ok(ExtendedTerm::Term(term))
                 }
             }
             AcornValue::Not(_) => Err("negation in unexpected position".to_string()),
