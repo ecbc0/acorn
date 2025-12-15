@@ -14,6 +14,16 @@ pub enum NewConstantType {
     Local,
 }
 
+/// Info about a polymorphic constant's generic type structure.
+/// Used in no_mono_symbols mode to properly denormalize constants.
+#[derive(Clone, Debug)]
+pub struct PolymorphicInfo {
+    /// The generic type with type Variables (not Arbitrary types).
+    pub generic_type: AcornType,
+    /// The ordered names of type parameters.
+    pub type_param_names: Vec<String>,
+}
+
 /// In the Acorn language, constants and types have names, scoped by modules. They can be rich values
 /// with internal structure, like polymorphic parameters or complex types.
 /// The prover, on the other hand, operates in simply typed higher order logic.
@@ -51,6 +61,10 @@ pub struct SymbolTable {
 
     /// For synthetic atom i, synthetic_types[i] is the type.
     synthetic_types: Vec<Term>,
+
+    /// Maps polymorphic constant names to their generic type info.
+    /// Used in no_mono_symbols mode to properly denormalize constants.
+    polymorphic_info: HashMap<ConstantName, PolymorphicInfo>,
 }
 
 impl SymbolTable {
@@ -65,6 +79,7 @@ impl SymbolTable {
             id_to_monomorph: vec![],
             monomorph_types: vec![],
             synthetic_types: vec![],
+            polymorphic_info: HashMap::new(),
         }
     }
 
@@ -73,6 +88,11 @@ impl SymbolTable {
             return Some(Symbol::Synthetic(*i));
         };
         self.name_to_symbol.get(name).cloned()
+    }
+
+    /// Get polymorphic info for a constant, if it's polymorphic.
+    pub fn get_polymorphic_info(&self, name: &ConstantName) -> Option<&PolymorphicInfo> {
+        self.polymorphic_info.get(name)
     }
 
     /// Get the type of a symbol.
@@ -279,7 +299,8 @@ impl SymbolTable {
         // Now add all constants (types are now registered)
         value.for_each_constant(&mut |c| {
             if self.get_symbol(&c.name).is_none() {
-                let var_type = if c.type_param_names.is_empty() {
+                let is_polymorphic = !c.type_param_names.is_empty();
+                let var_type = if !is_polymorphic {
                     // Non-polymorphic: use instance_type directly
                     type_store
                         .get_type_term(&c.instance_type)
@@ -310,6 +331,31 @@ impl SymbolTable {
                     result
                 };
                 self.add_constant(c.name.clone(), ctype, var_type);
+
+                // Store polymorphic info for later use in denormalization
+                if is_polymorphic {
+                    // Convert Arbitrary types to Variable types in generic_type
+                    // The ConstantInstance we're visiting may have Arbitrary types,
+                    // but we need Variable types for proper instantiation.
+                    let params_for_genericize: Vec<TypeParam> = c
+                        .type_param_names
+                        .iter()
+                        .map(|name| TypeParam {
+                            name: name.clone(),
+                            typeclass: None,
+                        })
+                        .collect();
+                    let generic_type_with_variables =
+                        c.generic_type.genericize(&params_for_genericize);
+
+                    self.polymorphic_info.insert(
+                        c.name.clone(),
+                        PolymorphicInfo {
+                            generic_type: generic_type_with_variables,
+                            type_param_names: c.type_param_names.clone(),
+                        },
+                    );
+                }
             }
             if !c.params.is_empty() {
                 self.add_monomorph_instance(c, type_store);

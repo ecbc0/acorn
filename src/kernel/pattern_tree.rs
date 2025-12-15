@@ -277,6 +277,43 @@ fn key_from_type(type_term: &Term, key: &mut Vec<u8>) {
 }
 
 /// Unified structure encoding for both types and terms.
+/// Substitute BoundVariable(0) with `arg` in `typ`, and decrement other bound variable indices.
+/// This is used for computing the result type of a function application:
+/// if f : Pi(A, B) and x : A, then f(x) : B[0 := x]
+fn substitute_bound_zero(typ: &Term, arg: TermRef) -> Term {
+    fn helper(typ: TermRef, arg: TermRef, depth: u16) -> Term {
+        match typ.decompose() {
+            Decomposition::Atom(KernelAtom::BoundVariable(i)) => {
+                let i = *i;
+                if i == depth {
+                    // BoundVar(depth) at this level refers to the outermost Pi we're substituting
+                    // Replace with arg
+                    arg.to_owned()
+                } else if i > depth {
+                    // Refers to an outer binding, decrement since we're removing one binder
+                    Term::atom(KernelAtom::BoundVariable(i - 1))
+                } else {
+                    // Refers to an inner binding, keep as is
+                    Term::atom(KernelAtom::BoundVariable(i))
+                }
+            }
+            Decomposition::Atom(atom) => Term::atom(atom.clone()),
+            Decomposition::Application(func, arg_inner) => {
+                let new_func = helper(func, arg, depth);
+                let new_arg = helper(arg_inner, arg, depth);
+                new_func.apply(&[new_arg])
+            }
+            Decomposition::Pi(input, output) => {
+                let new_input = helper(input, arg, depth);
+                // Inside the Pi body, depth increases by 1
+                let new_output = helper(output, arg, depth + 1);
+                Term::pi(new_input, new_output)
+            }
+        }
+    }
+    helper(typ.as_ref(), arg, 0)
+}
+
 /// Uses decomposition to handle all cases uniformly:
 /// - Atoms: Variable, Symbol, Typeclass (with special handling for Type atoms)
 /// - Applications: function + argument
@@ -374,16 +411,18 @@ fn key_from_term_type(
         KernelAtom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol),
     };
 
-    // Count arguments to determine how many times to "apply" the type
-    let num_args = term.num_args();
+    // Collect arguments and apply the type with proper substitution
+    // For f(a)(b), we compute the type as: head_type[0 := a][0 := b]
+    let args: Vec<TermRef> = term.iter_args().collect();
 
-    // Apply the type num_args times to get the result type
-    // Each application skips past one Pi: Pi(input, output) -> output
+    // Apply the type for each argument, substituting bound variables
     let mut result_type = head_type.clone();
-    for _ in 0..num_args {
+    for arg in &args {
         match result_type.as_ref().split_pi() {
             Some((_, output)) => {
-                result_type = output.to_owned();
+                // Substitute BoundVar(0) in output with the actual argument
+                // This handles dependent types properly
+                result_type = substitute_bound_zero(&output.to_owned(), *arg);
             }
             None => panic!("Expected Pi type for function application"),
         }

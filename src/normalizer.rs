@@ -1716,8 +1716,29 @@ impl Normalizer {
                     .symbol_table
                     .name_for_global_id(*i)
                     .clone();
-                // Non-generic: generic_type equals instance_type
-                AcornValue::constant(name, vec![], acorn_type.clone(), acorn_type, vec![])
+                #[cfg(feature = "no_mono_symbols")]
+                {
+                    // In no_mono_symbols mode, look up stored polymorphic info
+                    if let Some(poly_info) =
+                        self.kernel_context.symbol_table.get_polymorphic_info(&name)
+                    {
+                        AcornValue::constant(
+                            name,
+                            vec![],
+                            poly_info.generic_type.clone(),
+                            poly_info.generic_type.clone(),
+                            poly_info.type_param_names.clone(),
+                        )
+                    } else {
+                        // Non-polymorphic constant
+                        AcornValue::constant(name, vec![], acorn_type.clone(), acorn_type, vec![])
+                    }
+                }
+                #[cfg(not(feature = "no_mono_symbols"))]
+                {
+                    // Non-generic: generic_type equals instance_type
+                    AcornValue::constant(name, vec![], acorn_type.clone(), acorn_type, vec![])
+                }
             }
             Atom::Symbol(Symbol::ScopedConstant(i)) => {
                 let name = self
@@ -1725,8 +1746,29 @@ impl Normalizer {
                     .symbol_table
                     .name_for_local_id(*i)
                     .clone();
-                // Non-generic: generic_type equals instance_type
-                AcornValue::constant(name, vec![], acorn_type.clone(), acorn_type, vec![])
+                #[cfg(feature = "no_mono_symbols")]
+                {
+                    // In no_mono_symbols mode, look up stored polymorphic info
+                    if let Some(poly_info) =
+                        self.kernel_context.symbol_table.get_polymorphic_info(&name)
+                    {
+                        AcornValue::constant(
+                            name,
+                            vec![],
+                            poly_info.generic_type.clone(),
+                            poly_info.generic_type.clone(),
+                            poly_info.type_param_names.clone(),
+                        )
+                    } else {
+                        // Non-polymorphic constant
+                        AcornValue::constant(name, vec![], acorn_type.clone(), acorn_type, vec![])
+                    }
+                }
+                #[cfg(not(feature = "no_mono_symbols"))]
+                {
+                    // Non-generic: generic_type equals instance_type
+                    AcornValue::constant(name, vec![], acorn_type.clone(), acorn_type, vec![])
+                }
             }
             Atom::Symbol(Symbol::Monomorph(i)) => {
                 AcornValue::Constant(self.kernel_context.symbol_table.get_monomorph(*i).clone())
@@ -1845,11 +1887,11 @@ impl Normalizer {
                         let instance_type = c.generic_type.instantiate(&named_params);
 
                         AcornValue::Constant(ConstantInstance {
-                            name: c.name,
-                            params: type_args,
+                            name: c.name.clone(),
+                            params: type_args.clone(),
                             instance_type,
-                            generic_type: c.generic_type,
-                            type_param_names: c.type_param_names,
+                            generic_type: c.generic_type.clone(),
+                            type_param_names: c.type_param_names.clone(),
                         })
                     }
                     other => other, // Non-constant head, just keep as is

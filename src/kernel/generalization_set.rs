@@ -684,4 +684,304 @@ mod tests {
         let found = clause_set.find_generalization(query, &kctx);
         assert_eq!(found, None, "Should NOT match when signs are different");
     }
+
+    /// This test is inspired by a failing case in no_mono_symbols mode.
+    /// The pattern has a variable f: (Bool, Bool) -> Bool that gets applied to
+    /// s(f) twice (where s: ((Bool, Bool) -> Bool) -> Bool), like f(s(f), s(f)).
+    ///
+    /// The query substitutes f with a curried application g(a) where:
+    /// - g: A -> (Bool, Bool) -> Bool
+    /// - a: A (some constant type)
+    ///
+    /// This tests that the pattern tree correctly matches:
+    ///   pattern: f(s(f), s(f)) or r(f)
+    ///   query:   g(a)(s(g(a)), s(g(a))) or r(g(a))
+    ///
+    /// Both are curried in term representation, so:
+    ///   pattern: (f(s(f)))(s(f)) or r(f)
+    ///   query:   ((g(a))(s(g(a))))(s(g(a))) or r(g(a))
+    #[test]
+    fn test_clause_set_curried_function_substitution() {
+        use crate::kernel::atom::Atom;
+        use crate::kernel::symbol::Symbol;
+        use crate::kernel::term::Term;
+
+        let mut kctx = KernelContext::new();
+        // A is a constant type to simulate a type parameter
+        kctx.add_datatype("A")
+            // g0 takes A and returns a binary Bool function (like lte_from with type param)
+            .add_constant("g0", "A -> (Bool, Bool) -> Bool")
+            // s0 is a selector: given a binary function, returns a Bool (like Synthetic)
+            .add_constant("s0", "((Bool, Bool) -> Bool) -> Bool")
+            // c0 is a predicate on binary functions (like is_reflexive)
+            .add_constant("c0", "((Bool, Bool) -> Bool) -> Bool")
+            // c1 is a constant of type A (like the type argument)
+            .add_constant("c1", "A");
+
+        let mut clause_set = GeneralizationSet::new();
+
+        // Pattern: not f(s0(f), s0(f)) or c0(f)
+        // where f: (Bool, Bool) -> Bool (variable x0)
+        let pattern = kctx.make_clause(
+            "not x0(s0(x0), s0(x0)) or c0(x0)",
+            &["(Bool, Bool) -> Bool"],
+        );
+        clause_set.insert(pattern.clone(), 99, &kctx);
+        eprintln!("Inserted pattern: {:?}", pattern);
+
+        // Build query manually: not g0(c1)(s0(g0(c1)), s0(g0(c1))) or c0(g0(c1))
+        // Symbols: g0 = GlobalConstant(0), s0 = Synthetic(0), c0 = ScopedConstant(0), c1 = ScopedConstant(1)
+        let g0_atom = Atom::Symbol(Symbol::GlobalConstant(0));
+        let s0_atom = Atom::Symbol(Symbol::Synthetic(0));
+        let c0_atom = Atom::Symbol(Symbol::ScopedConstant(0));
+        let c1_atom = Atom::Symbol(Symbol::ScopedConstant(1));
+        let c1_term = Term::atom(c1_atom);
+
+        // g0(c1) - a function (Bool, Bool) -> Bool
+        let g0_c1 = Term::new(g0_atom, vec![c1_term.clone()]);
+
+        // s0(g0(c1)) - a Bool
+        let s0_g0_c1 = Term::new(s0_atom, vec![g0_c1.clone()]);
+
+        // g0(c1)(s0(g0(c1)), s0(g0(c1))) = g0(c1, s0(g0(c1)), s0(g0(c1))) in curried form
+        // This is g0 applied to c1, then to s0(g0(c1)), then to s0(g0(c1))
+        let g0_c1_s0_s0 = Term::new(
+            g0_atom,
+            vec![c1_term.clone(), s0_g0_c1.clone(), s0_g0_c1.clone()],
+        );
+
+        // c0(g0(c1))
+        let c0_g0_c1 = Term::new(c0_atom, vec![g0_c1.clone()]);
+
+        // Build the literals:
+        // Literal 1: not g0(c1, s0(g0(c1)), s0(g0(c1))) = true
+        let lit1 = Literal {
+            positive: false,
+            left: g0_c1_s0_s0,
+            right: Term::new_true(),
+        };
+
+        // Literal 2: c0(g0(c1)) = true
+        let lit2 = Literal {
+            positive: true,
+            left: c0_g0_c1,
+            right: Term::new_true(),
+        };
+
+        let query = Clause::from_literals_unnormalized(vec![lit1, lit2], &LocalContext::empty());
+        eprintln!("Query: {:?}", query);
+
+        let found = clause_set.find_generalization(query, &kctx);
+        assert_eq!(
+            found,
+            Some(99),
+            "Should match pattern when f is substituted with curried application g0(c1)"
+        );
+    }
+
+    /// Similar to the above test, but now the function takes TWO curried applications
+    /// before becoming a binary function. This more closely matches the no_mono_symbols
+    /// case where lte_from(Type)(lt) has two applications.
+    ///
+    /// Pattern: not f(s0(f), s0(f)) or c0(f)
+    /// Query: not g0(Type)(c1)(s0(g0(Type)(c1)), s0(g0(Type)(c1))) or c0(g0(Type)(c1))
+    ///
+    /// Where Type is an actual Type symbol (like in no_mono_symbols mode).
+    #[test]
+    #[cfg(feature = "no_mono_symbols")]
+    fn test_clause_set_with_type_symbol_argument() {
+        use crate::kernel::atom::Atom;
+        use crate::kernel::symbol::Symbol;
+        use crate::kernel::term::Term;
+        use crate::kernel::types::GroundTypeId;
+
+        let mut kctx = KernelContext::new();
+        // T is a type (like a type parameter bound in the environment)
+        kctx.add_datatype("T")
+            // g0 takes a Type, then another arg of that type, and returns (T, T) -> Bool
+            // This simulates: forall T. A -> (T, T) -> Bool
+            .add_constant("g0", "T -> T -> (T, T) -> Bool")
+            // s0 is a selector: given a binary function, returns a T
+            .add_constant("s0", "((T, T) -> Bool) -> T")
+            // c0 is a predicate on binary functions (like is_reflexive)
+            .add_constant("c0", "((T, T) -> Bool) -> Bool")
+            // c1 is a constant of type T
+            .add_constant("c1", "T");
+
+        let mut clause_set = GeneralizationSet::new();
+
+        // Pattern: not f(s0(f), s0(f)) or c0(f)
+        // where f: (T, T) -> Bool (variable x0)
+        let pattern = kctx.make_clause("not x0(s0(x0), s0(x0)) or c0(x0)", &["(T, T) -> Bool"]);
+        clause_set.insert(pattern.clone(), 99, &kctx);
+        eprintln!("Inserted pattern: {:?}", pattern);
+
+        // Build query: not g0(Type)(c1)(s0(...), s0(...)) or c0(g0(Type)(c1))
+        // g0 = GlobalConstant(0), s0 = Synthetic(0), c0 = ScopedConstant(0), c1 = ScopedConstant(1)
+        // Type = Type(GroundTypeId(0)) which is the type T
+        let g0_atom = Atom::Symbol(Symbol::GlobalConstant(0));
+        let s0_atom = Atom::Symbol(Symbol::Synthetic(0));
+        let c0_atom = Atom::Symbol(Symbol::ScopedConstant(0));
+        let c1_atom = Atom::Symbol(Symbol::ScopedConstant(1));
+        let type_atom = Atom::Symbol(Symbol::Type(GroundTypeId::new(0))); // T as a type symbol
+
+        let type_term = Term::atom(type_atom);
+        let c1_term = Term::atom(c1_atom);
+
+        // g0(Type)(c1) = g0(Type, c1) - a function (T, T) -> Bool
+        // This mirrors lte_from(Type)(lt) in no_mono_symbols mode
+        let g0_type_c1 = Term::new(g0_atom, vec![type_term.clone(), c1_term.clone()]);
+
+        // s0(g0(Type)(c1)) - a T
+        let s0_g0_type_c1 = Term::new(s0_atom, vec![g0_type_c1.clone()]);
+
+        // g0(Type)(c1)(s0(...), s0(...)) = g0(Type, c1, s0(...), s0(...))
+        let g0_type_c1_s0_s0 = Term::new(
+            g0_atom,
+            vec![
+                type_term.clone(),
+                c1_term.clone(),
+                s0_g0_type_c1.clone(),
+                s0_g0_type_c1.clone(),
+            ],
+        );
+
+        // c0(g0(Type)(c1))
+        let c0_g0_type_c1 = Term::new(c0_atom, vec![g0_type_c1.clone()]);
+
+        // Build the literals:
+        let lit1 = Literal {
+            positive: false,
+            left: g0_type_c1_s0_s0,
+            right: Term::new_true(),
+        };
+
+        let lit2 = Literal {
+            positive: true,
+            left: c0_g0_type_c1,
+            right: Term::new_true(),
+        };
+
+        let query = Clause::from_literals_unnormalized(vec![lit1, lit2], &LocalContext::empty());
+        eprintln!("Query: {:?}", query);
+
+        let found = clause_set.find_generalization(query, &kctx);
+        assert_eq!(
+            found,
+            Some(99),
+            "Should match pattern when f is substituted with g0(Type)(c1)"
+        );
+    }
+
+    /// This test exactly matches the failing scenario in no_mono_symbols mode:
+    /// - The predicate (is_reflexive) takes a Type argument as well
+    /// - Pattern: not f(s0(f), s0(f)) or g1(Type)(f)
+    /// - Query: not g0(Type)(c1)(s0(...), s0(...)) or g1(Type)(g0(Type)(c1))
+    #[test]
+    #[cfg(feature = "no_mono_symbols")]
+    fn test_clause_set_predicate_with_type_arg() {
+        use crate::kernel::atom::Atom;
+        use crate::kernel::symbol::Symbol;
+        use crate::kernel::term::Term;
+        use crate::kernel::types::GroundTypeId;
+
+        let mut kctx = KernelContext::new();
+        // T is a type (like a type parameter bound in the environment)
+        kctx.add_datatype("T")
+            // g0 (lte_from): Type -> T -> (T, T) -> Bool
+            .add_constant("g0", "T -> T -> (T, T) -> Bool")
+            // g1 (is_reflexive): Type -> ((T, T) -> Bool) -> Bool
+            .add_constant("g1", "T -> ((T, T) -> Bool) -> Bool")
+            // s0: ((T, T) -> Bool) -> T
+            .add_constant("s0", "((T, T) -> Bool) -> T")
+            // c1 is lt: T -> T -> Bool (after type application, it's (T, T) -> Bool)
+            .add_constant("c1", "T -> T -> Bool");
+
+        let mut clause_set = GeneralizationSet::new();
+
+        // Pattern: not f(s0(f), s0(f)) or g1(Type)(f)
+        // where f: (T, T) -> Bool (variable x0)
+        // But we need the pattern to be g1(Type)(x0), not just g1(x0)
+        // We'll need to construct this manually
+        let type_atom = Atom::Symbol(Symbol::Type(GroundTypeId::new(0)));
+        let type_term = Term::atom(type_atom);
+        let g1_atom = Atom::Symbol(Symbol::GlobalConstant(1));
+        let s0_atom = Atom::Symbol(Symbol::Synthetic(0));
+        let x0_term = Term::new_variable(0);
+
+        // First literal: not x0(s0(x0), s0(x0))
+        let s0_x0 = Term::new(s0_atom, vec![x0_term.clone()]);
+        let x0_s0_s0 = x0_term.apply(&[s0_x0.clone(), s0_x0.clone()]);
+        let lit1_pattern = Literal {
+            positive: false,
+            left: x0_s0_s0,
+            right: Term::new_true(),
+        };
+
+        // Second literal: g1(Type)(x0) = g1(Type, x0)
+        let g1_type_x0 = Term::new(g1_atom, vec![type_term.clone(), x0_term.clone()]);
+        let lit2_pattern = Literal {
+            positive: true,
+            left: g1_type_x0,
+            right: Term::new_true(),
+        };
+
+        // The variable type for x0
+        let var_type = kctx.parse_type("(T, T) -> Bool");
+        let pattern_context = LocalContext::from_types(vec![var_type]);
+        let pattern =
+            Clause::from_literals_unnormalized(vec![lit1_pattern, lit2_pattern], &pattern_context);
+        clause_set.insert(pattern.clone(), 99, &kctx);
+        eprintln!("Inserted pattern: {:?}", pattern);
+
+        // Build query: not g0(Type)(c1)(s0(...), s0(...)) or g1(Type)(g0(Type)(c1))
+        let g0_atom = Atom::Symbol(Symbol::GlobalConstant(0));
+        let c1_atom = Atom::Symbol(Symbol::ScopedConstant(1));
+        let c1_term = Term::atom(c1_atom);
+
+        // g0(Type)(c1) = g0(Type, c1)
+        let g0_type_c1 = Term::new(g0_atom, vec![type_term.clone(), c1_term.clone()]);
+
+        // s0(g0(Type)(c1))
+        let s0_g0 = Term::new(s0_atom, vec![g0_type_c1.clone()]);
+
+        // g0(Type, c1, s0(...), s0(...))
+        let g0_type_c1_s0_s0 = Term::new(
+            g0_atom,
+            vec![
+                type_term.clone(),
+                c1_term.clone(),
+                s0_g0.clone(),
+                s0_g0.clone(),
+            ],
+        );
+
+        // g1(Type, g0(Type, c1))
+        let g1_type_g0 = Term::new(g1_atom, vec![type_term.clone(), g0_type_c1.clone()]);
+
+        let lit1_query = Literal {
+            positive: false,
+            left: g0_type_c1_s0_s0,
+            right: Term::new_true(),
+        };
+
+        let lit2_query = Literal {
+            positive: true,
+            left: g1_type_g0,
+            right: Term::new_true(),
+        };
+
+        let query = Clause::from_literals_unnormalized(
+            vec![lit1_query, lit2_query],
+            &LocalContext::empty(),
+        );
+        eprintln!("Query: {:?}", query);
+
+        let found = clause_set.find_generalization(query, &kctx);
+        assert_eq!(
+            found,
+            Some(99),
+            "Should match pattern with g1(Type)(f) against g1(Type)(g0(Type)(c1))"
+        );
+    }
 }
