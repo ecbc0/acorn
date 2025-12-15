@@ -1785,6 +1785,15 @@ impl Normalizer {
                 panic!("BoundVariable atoms should not appear as head of terms")
             }
         };
+
+        // With no_mono_symbols, type arguments appear as terms. Skip them in denormalization.
+        #[cfg(feature = "no_mono_symbols")]
+        if head_type.as_ref().is_type_sort() {
+            // This is a type argument - don't try to denormalize it as a value
+            // Return a placeholder that won't be used (the caller should handle type args specially)
+            return AcornValue::Bool(true);
+        }
+
         let head = self.denormalize_atom(&head_type, &term.get_head_atom(), arbitrary_names);
         let args: Vec<_> = term
             .args()

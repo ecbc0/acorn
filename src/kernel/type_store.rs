@@ -406,12 +406,22 @@ impl TypeStore {
         if let Some((input, output)) = type_term.as_ref().split_pi() {
             // Pi type: convert to function type
             // Pi(A, Pi(B, C)) becomes (A, B) -> C
-            let mut arg_types = vec![self.type_term_to_acorn_type(&input.to_owned())];
+            // But Pi(Type, ...) is a dependent type for polymorphic functions - skip the Type argument
+            let input_owned = input.to_owned();
+            let mut arg_types = if input_owned.as_ref().is_type_sort() {
+                vec![] // Skip Type arguments (they're type parameters, not value arguments)
+            } else {
+                vec![self.type_term_to_acorn_type(&input_owned)]
+            };
 
             // Uncurry nested Pi types
             let mut current_output = output.to_owned();
             while let Some((next_input, next_output)) = current_output.as_ref().split_pi() {
-                arg_types.push(self.type_term_to_acorn_type(&next_input.to_owned()));
+                let next_input_owned = next_input.to_owned();
+                // Skip Type arguments in nested Pi types too
+                if !next_input_owned.as_ref().is_type_sort() {
+                    arg_types.push(self.type_term_to_acorn_type(&next_input_owned));
+                }
                 current_output = next_output.to_owned();
             }
 
@@ -444,6 +454,20 @@ impl TypeStore {
                 .collect();
 
             return AcornType::Data(datatype, params);
+        }
+
+        // Handle BoundVariable - these can appear in dependent types that weren't fully instantiated
+        // Convert to type variable for display purposes
+        #[cfg(feature = "no_mono_symbols")]
+        if type_term.as_ref().is_atomic() {
+            if let Atom::BoundVariable(i) = type_term.as_ref().get_head_atom() {
+                // Create a synthetic type variable for display purposes
+                let type_param = TypeParam {
+                    name: format!("T{}", i),
+                    typeclass: None,
+                };
+                return AcornType::Variable(type_param);
+            }
         }
 
         panic!("Unexpected type Term structure: {:?}", type_term);

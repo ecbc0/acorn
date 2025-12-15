@@ -1320,7 +1320,14 @@ impl AcornValue {
                 x.for_each_type(f);
                 f(t);
             }
-            AcornValue::Constant(c) => f(&c.instance_type),
+            AcornValue::Constant(c) => {
+                // Process instance type
+                f(&c.instance_type);
+                // Also process type parameters (needed for no_mono_symbols)
+                for param in &c.params {
+                    f(param);
+                }
+            }
             AcornValue::Bool(_) => {}
         }
     }
