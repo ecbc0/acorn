@@ -328,10 +328,33 @@ impl SymbolTable {
                     );
                 }
             }
+            // With no_mono_symbols, polymorphic constants are represented as type applications
+            // (e.g., add(Int)) rather than monomorph symbols.
+            #[cfg(not(feature = "no_mono_symbols"))]
             if !c.params.is_empty() {
                 self.add_monomorph_instance(c, type_store);
             }
         });
+    }
+
+    /// Should only be called when c has params.
+    #[cfg(not(feature = "no_mono_symbols"))]
+    fn add_monomorph_instance(&mut self, c: &ConstantInstance, type_store: &mut TypeStore) {
+        assert!(!c.params.is_empty());
+        if self.monomorph_to_symbol.get(c).is_some() {
+            // We already have it
+            return;
+        }
+
+        // Construct a symbol and appropriate entries for this monomorph
+        let var_type = type_store
+            .get_type_term(&c.instance_type)
+            .expect("type should be valid");
+        let monomorph_id = self.monomorph_types.len() as AtomId;
+        let symbol = Symbol::Monomorph(monomorph_id);
+        self.id_to_monomorph.push(c.clone());
+        self.monomorph_types.push(var_type);
+        self.monomorph_to_symbol.insert(c.clone(), symbol);
     }
 
     /// Get the name corresponding to a particular global AtomId.
@@ -369,25 +392,6 @@ impl SymbolTable {
         self.monomorph_to_symbol.insert(c, symbol);
     }
 
-    /// Should only be called when c has params.
-    fn add_monomorph_instance(&mut self, c: &ConstantInstance, type_store: &mut TypeStore) {
-        assert!(!c.params.is_empty());
-        if self.monomorph_to_symbol.get(c).is_some() {
-            // We already have it
-            return;
-        }
-
-        // Construct a symbol and appropriate entries for this monomorph
-        let var_type = type_store
-            .get_type_term(&c.instance_type)
-            .expect("type should be valid");
-        let monomorph_id = self.monomorph_types.len() as AtomId;
-        let symbol = Symbol::Monomorph(monomorph_id);
-        self.id_to_monomorph.push(c.clone());
-        self.monomorph_types.push(var_type);
-        self.monomorph_to_symbol.insert(c.clone(), symbol);
-    }
-
     /// Build a term application for a polymorphic constant.
     /// E.g., for add[Int], builds add(Int) instead of using a monomorph symbol.
     /// However, if the constant has an alias (via alias_monomorph), use that instead.
@@ -399,6 +403,14 @@ impl SymbolTable {
         // Check for an alias first - instance definitions create aliases
         // where Arf.foo[Foo] = Foo.foo makes them the same symbol
         if let Some(&symbol) = self.monomorph_to_symbol.get(c) {
+            // With no_mono_symbols, we should only find aliases (GlobalConstant/ScopedConstant),
+            // never Monomorph symbols.
+            #[cfg(feature = "no_mono_symbols")]
+            assert!(
+                !matches!(symbol, Symbol::Monomorph(_)),
+                "no_mono_symbols is set but found Monomorph symbol for {:?}",
+                c
+            );
             return Ok(Term::atom(Atom::Symbol(symbol)));
         }
 
