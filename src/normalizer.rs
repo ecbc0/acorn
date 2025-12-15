@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use crate::builder::BuildError;
 use crate::elaborator::acorn_type::AcornType;
+#[cfg(feature = "no_mono_symbols")]
+use crate::elaborator::acorn_value::ConstantInstance;
 use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
 use crate::elaborator::fact::Fact;
 use crate::elaborator::goal::Goal;
@@ -1805,12 +1807,69 @@ impl Normalizer {
         }
 
         let head = self.denormalize_atom(&head_type, &term.get_head_atom(), arbitrary_names);
-        let args: Vec<_> = term
-            .args()
-            .iter()
-            .map(|t| self.denormalize_term(t, local_context, arbitrary_names))
-            .collect();
-        AcornValue::apply(head, args)
+
+        #[cfg(feature = "no_mono_symbols")]
+        {
+            // With no_mono_symbols, type arguments appear as the first few arguments.
+            // We need to:
+            // 1. Extract type arguments and convert them to AcornTypes
+            // 2. Update the head constant with those type parameters
+            // 3. Apply only the value arguments
+
+            let mut type_args: Vec<AcornType> = vec![];
+            let mut value_args: Vec<AcornValue> = vec![];
+
+            for arg in term.args().iter() {
+                let arg_type = arg.get_type_with_context(local_context, &self.kernel_context);
+                if arg_type.as_ref().is_type_sort() {
+                    // This is a type argument - convert it to an AcornType
+                    let acorn_type = self.kernel_context.type_store.type_term_to_acorn_type(arg);
+                    type_args.push(acorn_type);
+                } else {
+                    // This is a value argument
+                    value_args.push(self.denormalize_term(arg, local_context, arbitrary_names));
+                }
+            }
+
+            // Update the head with type parameters if needed
+            let head = if !type_args.is_empty() {
+                match head {
+                    AcornValue::Constant(c) => {
+                        // Compute the instance_type by applying type args to generic_type
+                        let named_params: Vec<_> = c
+                            .type_param_names
+                            .iter()
+                            .zip(type_args.iter())
+                            .map(|(name, t)| (name.clone(), t.clone()))
+                            .collect();
+                        let instance_type = c.generic_type.instantiate(&named_params);
+
+                        AcornValue::Constant(ConstantInstance {
+                            name: c.name,
+                            params: type_args,
+                            instance_type,
+                            generic_type: c.generic_type,
+                            type_param_names: c.type_param_names,
+                        })
+                    }
+                    other => other, // Non-constant head, just keep as is
+                }
+            } else {
+                head
+            };
+
+            AcornValue::apply(head, value_args)
+        }
+
+        #[cfg(not(feature = "no_mono_symbols"))]
+        {
+            let args: Vec<_> = term
+                .args()
+                .iter()
+                .map(|t| self.denormalize_term(t, local_context, arbitrary_names))
+                .collect();
+            AcornValue::apply(head, args)
+        }
     }
 
     /// If arbitrary names are provided, any free variables of the keyed types are converted

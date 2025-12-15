@@ -314,8 +314,12 @@ impl TypeStore {
             AcornType::Function(ft) => {
                 let mut result = self.to_polymorphic_type_term_impl(&ft.return_type, params);
 
+                // When wrapping with Pi, we need to shift bound variables in the result
+                // because they're now inside a binder. Each Pi adds one to the De Bruijn index.
                 for arg_type in ft.arg_types.iter().rev() {
                     let arg_type_term = self.to_polymorphic_type_term_impl(arg_type, params);
+                    // Shift bound variables in result up by 1 since we're entering a Pi
+                    result = result.shift_bound(0, 1);
                     result = Term::pi(arg_type_term, result);
                 }
 
