@@ -1185,7 +1185,7 @@ impl Term {
     /// Returns None if this is not a Pi type.
     #[cfg(feature = "no_mono_symbols")]
     pub fn type_apply_with_arg(&self, arg: &Term) -> Option<Term> {
-        self.as_ref().split_pi().map(|(input, output)| {
+        self.as_ref().split_pi().map(|(_input, output)| {
             let output = output.to_owned();
             let result = if output.has_bound_variable() {
                 // Dependent type: substitute and shift

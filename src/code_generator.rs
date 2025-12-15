@@ -391,57 +391,47 @@ impl CodeGenerator<'_> {
     /// The key insight: if a function foo[P, Q] takes argument of type P,
     /// we can't infer Q from just the argument. So we need explicit parameters.
     fn can_infer_type_params_from_args(&self, function: &AcornValue, args: &[AcornValue]) -> bool {
-        // In no_mono_symbols mode, always show explicit type parameters for verification
-        #[cfg(feature = "no_mono_symbols")]
-        {
-            let _ = (function, args); // Suppress unused warnings
-            return false;
+        // Get the constant and its parameters
+        let constant = match function {
+            AcornValue::Constant(c) => c,
+            _ => return true, // Not a generic constant, inference doesn't apply
+        };
+
+        if constant.params.is_empty() {
+            return true; // No parameters to infer
         }
 
-        // Get the constant and its parameters
-        #[cfg(not(feature = "no_mono_symbols"))]
-        {
-            let constant = match function {
-                AcornValue::Constant(c) => c,
-                _ => return true, // Not a generic constant, inference doesn't apply
-            };
+        // Get the function type
+        let function_type = function.get_type();
+        let fn_type = match &function_type {
+            AcornType::Function(ft) => ft,
+            _ => return false, // Not a function type, can't infer
+        };
 
-            if constant.params.is_empty() {
-                return true; // No parameters to infer
-            }
+        // For each type parameter, check if it appears in the argument types
+        // in a way that would allow inference
+        for param_type in &constant.params {
+            let mut found_in_args = false;
 
-            // Get the function type
-            let function_type = function.get_type();
-            let fn_type = match &function_type {
-                AcornType::Function(ft) => ft,
-                _ => return false, // Not a function type, can't infer
-            };
-
-            // For each type parameter, check if it appears in the argument types
-            // in a way that would allow inference
-            for param_type in &constant.params {
-                let mut found_in_args = false;
-
-                // Check each argument type to see if this parameter appears
-                for (i, _arg) in args.iter().enumerate() {
-                    if let Some(expected_arg_type) = fn_type.arg_types.get(i) {
-                        // Check if the parameter appears in this argument position
-                        // For simplicity, we just check direct equality
-                        if param_type == expected_arg_type {
-                            found_in_args = true;
-                            break;
-                        }
+            // Check each argument type to see if this parameter appears
+            for (i, _arg) in args.iter().enumerate() {
+                if let Some(expected_arg_type) = fn_type.arg_types.get(i) {
+                    // Check if the parameter appears in this argument position
+                    // For simplicity, we just check direct equality
+                    if param_type == expected_arg_type {
+                        found_in_args = true;
+                        break;
                     }
                 }
-
-                if !found_in_args {
-                    // This parameter doesn't appear in arguments, can't infer
-                    return false;
-                }
             }
 
-            true
+            if !found_in_args {
+                // This parameter doesn't appear in arguments, can't infer
+                return false;
+            }
         }
+
+        true
     }
 
     /// Create a marked-up string to display information for this value.

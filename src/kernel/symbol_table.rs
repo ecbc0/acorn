@@ -432,12 +432,19 @@ impl SymbolTable {
 
     /// Build a term application for a polymorphic constant.
     /// E.g., for add[Int], builds add(Int) instead of using a monomorph symbol.
+    /// However, if the constant has an alias (via alias_monomorph), use that instead.
     #[cfg(feature = "no_mono_symbols")]
     pub fn term_from_monomorph(
         &self,
         c: &ConstantInstance,
         type_store: &TypeStore,
     ) -> Result<Term, String> {
+        // Check for an alias first - instance definitions create aliases
+        // where Arf.foo[Foo] = Foo.foo makes them the same symbol
+        if let Some(&symbol) = self.monomorph_to_symbol.get(c) {
+            return Ok(Term::atom(Atom::Symbol(symbol)));
+        }
+
         // Get the base constant symbol
         let Some(base_symbol) = self.get_symbol(&c.name) else {
             return Err(format!("Base constant {} not found", c.name));
