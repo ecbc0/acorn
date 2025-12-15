@@ -330,10 +330,17 @@ impl TypeStore {
                 // Find the index of this type parameter in the params list by name.
                 // We compare by name only, not the full TypeParam struct, because
                 // the typeclass constraint might differ between generic_type and params.
+                //
+                // The bound variable index is computed as (n - 1 - i) because after the
+                // caller wraps the result with Pi binders for type params, the first type
+                // param (index 0) will be at the outermost binder, accessible via BV(n-1)
+                // from inside, while the last type param (index n-1) will be at the
+                // innermost binder, accessible via BV(0).
+                let n = params.len();
                 for (i, param) in params.iter().enumerate() {
                     if let AcornType::Variable(p) = param {
                         if p.name == type_param.name {
-                            return Term::atom(Atom::BoundVariable(i as u16));
+                            return Term::atom(Atom::BoundVariable((n - 1 - i) as u16));
                         }
                     }
                 }
