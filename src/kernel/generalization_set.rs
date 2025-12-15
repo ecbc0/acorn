@@ -685,7 +685,7 @@ mod tests {
         assert_eq!(found, None, "Should NOT match when signs are different");
     }
 
-    /// This test is inspired by a failing case in no_mono_symbols mode.
+    /// This test covers a case with curried function applications.
     /// The pattern has a variable f: (Bool, Bool) -> Bool that gets applied to
     /// s(f) twice (where s: ((Bool, Bool) -> Bool) -> Bool), like f(s(f), s(f)).
     ///
@@ -780,15 +780,13 @@ mod tests {
     }
 
     /// Similar to the above test, but now the function takes TWO curried applications
-    /// before becoming a binary function. This more closely matches the no_mono_symbols
-    /// case where lte_from(Type)(lt) has two applications.
+    /// before becoming a binary function. lte_from(Type)(lt) has two applications.
     ///
     /// Pattern: not f(s0(f), s0(f)) or c0(f)
     /// Query: not g0(Type)(c1)(s0(g0(Type)(c1)), s0(g0(Type)(c1))) or c0(g0(Type)(c1))
     ///
-    /// Where Type is an actual Type symbol (like in no_mono_symbols mode).
+    /// Where Type is an actual Type symbol.
     #[test]
-    #[cfg(feature = "no_mono_symbols")]
     fn test_clause_set_with_type_symbol_argument() {
         use crate::kernel::atom::Atom;
         use crate::kernel::symbol::Symbol;
@@ -829,7 +827,7 @@ mod tests {
         let c1_term = Term::atom(c1_atom);
 
         // g0(Type)(c1) = g0(Type, c1) - a function (T, T) -> Bool
-        // This mirrors lte_from(Type)(lt) in no_mono_symbols mode
+        // This mirrors lte_from(Type)(lt)
         let g0_type_c1 = Term::new(g0_atom, vec![type_term.clone(), c1_term.clone()]);
 
         // s0(g0(Type)(c1)) - a T
@@ -873,12 +871,11 @@ mod tests {
         );
     }
 
-    /// This test exactly matches the failing scenario in no_mono_symbols mode:
+    /// This test matches a scenario with type arguments:
     /// - The predicate (is_reflexive) takes a Type argument as well
     /// - Pattern: not f(s0(f), s0(f)) or g1(Type)(f)
     /// - Query: not g0(Type)(c1)(s0(...), s0(...)) or g1(Type)(g0(Type)(c1))
     #[test]
-    #[cfg(feature = "no_mono_symbols")]
     fn test_clause_set_predicate_with_type_arg() {
         use crate::kernel::atom::Atom;
         use crate::kernel::symbol::Symbol;

@@ -1393,7 +1393,7 @@ impl AcornValue {
             AcornValue::Constant(c) => {
                 // Process instance type
                 f(&c.instance_type);
-                // Also process type parameters (needed for no_mono_symbols)
+                // Also process type parameters
                 for param in &c.params {
                     f(param);
                 }

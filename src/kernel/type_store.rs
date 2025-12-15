@@ -243,20 +243,10 @@ impl TypeStore {
             }
 
             AcornType::Variable(_) => {
-                #[cfg(feature = "no_mono_symbols")]
-                {
-                    panic!(
-                        "Variable types should not be converted to type Term without binding context: {:?}. Use to_polymorphic_type_term instead.",
-                        acorn_type
-                    );
-                }
-                #[cfg(not(feature = "no_mono_symbols"))]
-                {
-                    panic!(
-                        "Variable types should not be converted to type Term: {:?}",
-                        acorn_type
-                    );
-                }
+                panic!(
+                    "Variable types should not be converted to type Term without binding context: {:?}. Use to_polymorphic_type_term instead.",
+                    acorn_type
+                );
             }
 
             AcornType::Arbitrary(type_param) => {
@@ -275,12 +265,10 @@ impl TypeStore {
     /// For example, if params = [T, U] and the type is T -> U, we get Pi(b0, b1) where
     /// b0 = BoundVariable(0) and b1 = BoundVariable(1).
     /// The result should be wrapped in Pi(Type, ...) binders for each type parameter.
-    #[cfg(feature = "no_mono_symbols")]
     pub fn to_polymorphic_type_term(&self, acorn_type: &AcornType, params: &[AcornType]) -> Term {
         self.to_polymorphic_type_term_impl(acorn_type, params)
     }
 
-    #[cfg(feature = "no_mono_symbols")]
     fn to_polymorphic_type_term_impl(&self, acorn_type: &AcornType, params: &[AcornType]) -> Term {
         use crate::kernel::atom::Atom;
 
@@ -435,7 +423,6 @@ impl TypeStore {
 
         // Handle BoundVariable - these can appear in dependent types that weren't fully instantiated
         // Convert to type variable for display purposes
-        #[cfg(feature = "no_mono_symbols")]
         if type_term.as_ref().is_atomic() {
             if let Atom::BoundVariable(i) = type_term.as_ref().get_head_atom() {
                 // Create a synthetic type variable for display purposes

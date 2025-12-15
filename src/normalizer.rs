@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use crate::builder::BuildError;
 use crate::elaborator::acorn_type::AcornType;
-#[cfg(feature = "no_mono_symbols")]
 use crate::elaborator::acorn_value::ConstantInstance;
 use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
 use crate::elaborator::fact::Fact;
@@ -961,12 +960,9 @@ impl NormalizerView<'_> {
                     };
                     Ok(Some((Term::new(Atom::Symbol(symbol), vec![]), true)))
                 } else {
-                    #[cfg(feature = "no_mono_symbols")]
                     let term = self
                         .symbol_table()
                         .term_from_monomorph(&c, self.type_store())?;
-                    #[cfg(not(feature = "no_mono_symbols"))]
-                    let term = self.symbol_table().term_from_monomorph(&c)?;
                     Ok(Some((term, true)))
                 }
             }
@@ -1416,12 +1412,9 @@ impl NormalizerView<'_> {
                     };
                     Ok(ExtendedTerm::Term(Term::new(Atom::Symbol(symbol), vec![])))
                 } else {
-                    #[cfg(feature = "no_mono_symbols")]
                     let term = self
                         .symbol_table()
                         .term_from_monomorph(&c, self.type_store())?;
-                    #[cfg(not(feature = "no_mono_symbols"))]
-                    let term = self.symbol_table().term_from_monomorph(&c)?;
                     Ok(ExtendedTerm::Term(term))
                 }
             }
@@ -1716,27 +1709,19 @@ impl Normalizer {
                     .symbol_table
                     .name_for_global_id(*i)
                     .clone();
-                #[cfg(feature = "no_mono_symbols")]
+                // Look up stored polymorphic info
+                if let Some(poly_info) =
+                    self.kernel_context.symbol_table.get_polymorphic_info(&name)
                 {
-                    // In no_mono_symbols mode, look up stored polymorphic info
-                    if let Some(poly_info) =
-                        self.kernel_context.symbol_table.get_polymorphic_info(&name)
-                    {
-                        AcornValue::constant(
-                            name,
-                            vec![],
-                            poly_info.generic_type.clone(),
-                            poly_info.generic_type.clone(),
-                            poly_info.type_param_names.clone(),
-                        )
-                    } else {
-                        // Non-polymorphic constant
-                        AcornValue::constant(name, vec![], acorn_type.clone(), acorn_type, vec![])
-                    }
-                }
-                #[cfg(not(feature = "no_mono_symbols"))]
-                {
-                    // Non-generic: generic_type equals instance_type
+                    AcornValue::constant(
+                        name,
+                        vec![],
+                        poly_info.generic_type.clone(),
+                        poly_info.generic_type.clone(),
+                        poly_info.type_param_names.clone(),
+                    )
+                } else {
+                    // Non-polymorphic constant
                     AcornValue::constant(name, vec![], acorn_type.clone(), acorn_type, vec![])
                 }
             }
@@ -1746,27 +1731,19 @@ impl Normalizer {
                     .symbol_table
                     .name_for_local_id(*i)
                     .clone();
-                #[cfg(feature = "no_mono_symbols")]
+                // Look up stored polymorphic info
+                if let Some(poly_info) =
+                    self.kernel_context.symbol_table.get_polymorphic_info(&name)
                 {
-                    // In no_mono_symbols mode, look up stored polymorphic info
-                    if let Some(poly_info) =
-                        self.kernel_context.symbol_table.get_polymorphic_info(&name)
-                    {
-                        AcornValue::constant(
-                            name,
-                            vec![],
-                            poly_info.generic_type.clone(),
-                            poly_info.generic_type.clone(),
-                            poly_info.type_param_names.clone(),
-                        )
-                    } else {
-                        // Non-polymorphic constant
-                        AcornValue::constant(name, vec![], acorn_type.clone(), acorn_type, vec![])
-                    }
-                }
-                #[cfg(not(feature = "no_mono_symbols"))]
-                {
-                    // Non-generic: generic_type equals instance_type
+                    AcornValue::constant(
+                        name,
+                        vec![],
+                        poly_info.generic_type.clone(),
+                        poly_info.generic_type.clone(),
+                        poly_info.type_param_names.clone(),
+                    )
+                } else {
+                    // Non-polymorphic constant
                     AcornValue::constant(name, vec![], acorn_type.clone(), acorn_type, vec![])
                 }
             }
@@ -1840,8 +1817,7 @@ impl Normalizer {
             }
         };
 
-        // With no_mono_symbols, type arguments appear as terms. Skip them in denormalization.
-        #[cfg(feature = "no_mono_symbols")]
+        // Type arguments appear as terms. Skip them in denormalization.
         if head_type.as_ref().is_type_sort() {
             // This is a type argument - don't try to denormalize it as a value
             // Return a placeholder that won't be used (the caller should handle type args specially)
@@ -1850,68 +1826,55 @@ impl Normalizer {
 
         let head = self.denormalize_atom(&head_type, &term.get_head_atom(), arbitrary_names);
 
-        #[cfg(feature = "no_mono_symbols")]
-        {
-            // With no_mono_symbols, type arguments appear as the first few arguments.
-            // We need to:
-            // 1. Extract type arguments and convert them to AcornTypes
-            // 2. Update the head constant with those type parameters
-            // 3. Apply only the value arguments
+        // Type arguments appear as the first few arguments.
+        // We need to:
+        // 1. Extract type arguments and convert them to AcornTypes
+        // 2. Update the head constant with those type parameters
+        // 3. Apply only the value arguments
 
-            let mut type_args: Vec<AcornType> = vec![];
-            let mut value_args: Vec<AcornValue> = vec![];
+        let mut type_args: Vec<AcornType> = vec![];
+        let mut value_args: Vec<AcornValue> = vec![];
 
-            for arg in term.args().iter() {
-                let arg_type = arg.get_type_with_context(local_context, &self.kernel_context);
-                if arg_type.as_ref().is_type_sort() {
-                    // This is a type argument - convert it to an AcornType
-                    let acorn_type = self.kernel_context.type_store.type_term_to_acorn_type(arg);
-                    type_args.push(acorn_type);
-                } else {
-                    // This is a value argument
-                    value_args.push(self.denormalize_term(arg, local_context, arbitrary_names));
-                }
-            }
-
-            // Update the head with type parameters if needed
-            let head = if !type_args.is_empty() {
-                match head {
-                    AcornValue::Constant(c) => {
-                        // Compute the instance_type by applying type args to generic_type
-                        let named_params: Vec<_> = c
-                            .type_param_names
-                            .iter()
-                            .zip(type_args.iter())
-                            .map(|(name, t)| (name.clone(), t.clone()))
-                            .collect();
-                        let instance_type = c.generic_type.instantiate(&named_params);
-
-                        AcornValue::Constant(ConstantInstance {
-                            name: c.name.clone(),
-                            params: type_args.clone(),
-                            instance_type,
-                            generic_type: c.generic_type.clone(),
-                            type_param_names: c.type_param_names.clone(),
-                        })
-                    }
-                    other => other, // Non-constant head, just keep as is
-                }
+        for arg in term.args().iter() {
+            let arg_type = arg.get_type_with_context(local_context, &self.kernel_context);
+            if arg_type.as_ref().is_type_sort() {
+                // This is a type argument - convert it to an AcornType
+                let acorn_type = self.kernel_context.type_store.type_term_to_acorn_type(arg);
+                type_args.push(acorn_type);
             } else {
-                head
-            };
-
-            AcornValue::apply(head, value_args)
+                // This is a value argument
+                value_args.push(self.denormalize_term(arg, local_context, arbitrary_names));
+            }
         }
 
-        #[cfg(not(feature = "no_mono_symbols"))]
-        {
-            let args: Vec<_> = term
-                .args()
-                .iter()
-                .map(|t| self.denormalize_term(t, local_context, arbitrary_names))
-                .collect();
-            AcornValue::apply(head, args)
-        }
+        // Update the head with type parameters if needed
+        let head = if !type_args.is_empty() {
+            match head {
+                AcornValue::Constant(c) => {
+                    // Compute the instance_type by applying type args to generic_type
+                    let named_params: Vec<_> = c
+                        .type_param_names
+                        .iter()
+                        .zip(type_args.iter())
+                        .map(|(name, t)| (name.clone(), t.clone()))
+                        .collect();
+                    let instance_type = c.generic_type.instantiate(&named_params);
+
+                    AcornValue::Constant(ConstantInstance {
+                        name: c.name.clone(),
+                        params: type_args.clone(),
+                        instance_type,
+                        generic_type: c.generic_type.clone(),
+                        type_param_names: c.type_param_names.clone(),
+                    })
+                }
+                other => other, // Non-constant head, just keep as is
+            }
+        } else {
+            head
+        };
+
+        AcornValue::apply(head, value_args)
     }
 
     /// If arbitrary names are provided, any free variables of the keyed types are converted

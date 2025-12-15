@@ -380,30 +380,16 @@ fn key_from_term_type(
         KernelAtom::Symbol(Symbol::Type(_))
         | KernelAtom::Symbol(Symbol::Empty)
         | KernelAtom::Symbol(Symbol::Bool) => {
-            // With no_mono_symbols, types can appear as arguments to polymorphic functions.
+            // Types can appear as arguments to polymorphic functions.
             // Types have kind Type (TypeSort), so their "type" for the key is TypeSort.
-            #[cfg(feature = "no_mono_symbols")]
-            {
-                Edge::Atom(Atom::Symbol(Symbol::TypeSort)).append_to(key);
-                return;
-            }
-            #[cfg(not(feature = "no_mono_symbols"))]
-            {
-                panic!("Type symbols should not appear in terms")
-            }
+            Edge::Atom(Atom::Symbol(Symbol::TypeSort)).append_to(key);
+            return;
         }
         KernelAtom::Symbol(Symbol::TypeSort) => {
             // TypeSort is the kind of types. If it appears, it has kind TypeSort (or higher).
             // For now, just use TypeSort as its own kind.
-            #[cfg(feature = "no_mono_symbols")]
-            {
-                Edge::Atom(Atom::Symbol(Symbol::TypeSort)).append_to(key);
-                return;
-            }
-            #[cfg(not(feature = "no_mono_symbols"))]
-            {
-                panic!("TypeSort should not appear in terms")
-            }
+            Edge::Atom(Atom::Symbol(Symbol::TypeSort)).append_to(key);
+            return;
         }
         KernelAtom::Typeclass(_) => {
             panic!("Typeclass should not appear as term head in key_from_term_type")

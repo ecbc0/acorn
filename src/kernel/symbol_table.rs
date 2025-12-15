@@ -15,7 +15,7 @@ pub enum NewConstantType {
 }
 
 /// Info about a polymorphic constant's generic type structure.
-/// Used in no_mono_symbols mode to properly denormalize constants.
+/// Used to properly denormalize constants.
 #[derive(Clone, Debug)]
 pub struct PolymorphicInfo {
     /// The generic type with type Variables (not Arbitrary types).
@@ -63,7 +63,7 @@ pub struct SymbolTable {
     synthetic_types: Vec<Term>,
 
     /// Maps polymorphic constant names to their generic type info.
-    /// Used in no_mono_symbols mode to properly denormalize constants.
+    /// Used to properly denormalize constants.
     polymorphic_info: HashMap<ConstantName, PolymorphicInfo>,
 }
 
@@ -253,36 +253,7 @@ impl SymbolTable {
     }
 
     /// Add all constant names, monomorphs, and types from a value to the symbol table.
-    /// This ensures that all constants and types in the value are registered.
-    #[cfg(not(feature = "no_mono_symbols"))]
-    pub fn add_from(
-        &mut self,
-        value: &AcornValue,
-        ctype: NewConstantType,
-        type_store: &mut TypeStore,
-    ) {
-        // Add all types first, so they can be resolved to type Terms
-        value.for_each_type(&mut |t| {
-            type_store.add_type(t);
-        });
-
-        // Now add all constants (types are now registered)
-        value.for_each_constant(&mut |c| {
-            if self.get_symbol(&c.name).is_none() {
-                let var_type = type_store
-                    .get_type_term(&c.instance_type)
-                    .expect("type should be valid");
-                self.add_constant(c.name.clone(), ctype, var_type);
-            }
-            if !c.params.is_empty() {
-                self.add_monomorph_instance(c, type_store);
-            }
-        });
-    }
-
-    /// Add all constant names, monomorphs, and types from a value to the symbol table.
-    /// With no_mono_symbols, polymorphic constants get Pi-wrapped types.
-    #[cfg(feature = "no_mono_symbols")]
+    /// Polymorphic constants get Pi-wrapped types for dependent type representation.
     pub fn add_from(
         &mut self,
         value: &AcornValue,
@@ -417,23 +388,9 @@ impl SymbolTable {
         self.monomorph_to_symbol.insert(c.clone(), symbol);
     }
 
-    /// The monomorph should already have been added.
-    #[cfg(not(feature = "no_mono_symbols"))]
-    pub fn term_from_monomorph(&self, c: &ConstantInstance) -> Result<Term, String> {
-        if let Some(&symbol) = self.monomorph_to_symbol.get(&c) {
-            Ok(Term::new(Atom::Symbol(symbol), vec![]))
-        } else {
-            Err(format!(
-                "Monomorphized constant {} not found in symbol table",
-                c
-            ))
-        }
-    }
-
     /// Build a term application for a polymorphic constant.
     /// E.g., for add[Int], builds add(Int) instead of using a monomorph symbol.
     /// However, if the constant has an alias (via alias_monomorph), use that instead.
-    #[cfg(feature = "no_mono_symbols")]
     pub fn term_from_monomorph(
         &self,
         c: &ConstantInstance,

@@ -329,23 +329,14 @@ impl<'a> TermRef<'a> {
                 // Its kind is Type (typeclasses categorize types).
                 Atom::Typeclass(_) => Term::type_sort(),
             },
-            Decomposition::Application(func, _arg) => {
+            Decomposition::Application(func, arg) => {
                 // The function has type A -> B, so the application has type B
                 let func_type = func.get_type_with_context(local_context, kernel_context);
-                #[cfg(feature = "no_mono_symbols")]
-                {
-                    // For dependent types, we need to substitute the argument into the output type
-                    let arg_term = _arg.to_owned();
-                    func_type
-                        .type_apply_with_arg(&arg_term)
-                        .expect("Function type expected but not found during type application")
-                }
-                #[cfg(not(feature = "no_mono_symbols"))]
-                {
-                    func_type
-                        .type_apply()
-                        .expect("Function type expected but not found during type application")
-                }
+                // For dependent types, we need to substitute the argument into the output type
+                let arg_term = arg.to_owned();
+                func_type
+                    .type_apply_with_arg(&arg_term)
+                    .expect("Function type expected but not found during type application")
             }
             Decomposition::Pi(_, _) => {
                 // Pi types are themselves types - this is used when the term IS a type
@@ -1183,7 +1174,6 @@ impl Term {
     /// For non-dependent types like `A -> B`, this just returns B.
     /// For dependent types like `Pi(Type, b0 -> b0)`, applying `Int` gives `Int -> Int`.
     /// Returns None if this is not a Pi type.
-    #[cfg(feature = "no_mono_symbols")]
     pub fn type_apply_with_arg(&self, arg: &Term) -> Option<Term> {
         self.as_ref().split_pi().map(|(_input, output)| {
             let output = output.to_owned();
@@ -1934,7 +1924,6 @@ impl Term {
 
     /// Replace all occurrences of `old` subterm with `new` subterm.
     /// Used for abstracting over concrete types to create polymorphic types.
-    #[cfg(feature = "no_mono_symbols")]
     pub fn replace_subterm(&self, old: &Term, new: &Term) -> Term {
         // If this term equals old, return new
         if self == old {
