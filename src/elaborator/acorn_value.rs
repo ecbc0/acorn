@@ -102,7 +102,11 @@ impl fmt::Display for BinaryOp {
     }
 }
 /// An instance of a constant. Could be generic or not.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
+///
+/// Identity is determined by `name` and `params` only. The other fields (`instance_type`,
+/// `generic_type`, `type_param_names`) are derived from these and are not included in
+/// Hash/Eq/Ord comparisons.
+#[derive(Clone, Debug)]
 pub struct ConstantInstance {
     /// The name of this constant
     pub name: ConstantName,
@@ -113,6 +117,47 @@ pub struct ConstantInstance {
 
     /// The type of the instance, after instantiation.
     pub instance_type: AcornType,
+
+    /// The original type of this constant before instantiation.
+    /// Uses Variable types (not Arbitrary) to represent type parameters.
+    /// For non-generic constants, this equals instance_type.
+    pub generic_type: AcornType,
+
+    /// The ordered names of type parameters for this constant.
+    /// Used to map Variable names to bound variable indices for polymorphic type conversion.
+    /// Empty for non-generic constants.
+    pub type_param_names: Vec<String>,
+}
+
+// Identity is based only on name and params
+impl PartialEq for ConstantInstance {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.params == other.params
+    }
+}
+
+impl Eq for ConstantInstance {}
+
+impl std::hash::Hash for ConstantInstance {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        self.params.hash(state);
+    }
+}
+
+impl PartialOrd for ConstantInstance {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ConstantInstance {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self.name.cmp(&other.name) {
+            std::cmp::Ordering::Equal => self.params.cmp(&other.params),
+            ord => ord,
+        }
+    }
 }
 
 impl fmt::Display for ConstantInstance {
@@ -128,11 +173,14 @@ impl fmt::Display for ConstantInstance {
 
 impl ConstantInstance {
     /// Make another constant with the same name as this one.
+    /// Preserves generic_type and type_param_names from self.
     fn same_name(&self, params: Vec<AcornType>, instance_type: AcornType) -> ConstantInstance {
         ConstantInstance {
             name: self.name.clone(),
             params,
             instance_type,
+            generic_type: self.generic_type.clone(),
+            type_param_names: self.type_param_names.clone(),
         }
     }
 
@@ -243,10 +291,13 @@ impl ConstantInstance {
         let id = self.name.synthetic_id()?;
         let name = synthetic_names.get(&id)?;
         assert!(self.params.is_empty());
+        // Non-generic constant: generic_type equals instance_type
         Some(ConstantInstance {
             name: ConstantName::unqualified(module_id, name),
             params: vec![],
             instance_type: self.instance_type.clone(),
+            generic_type: self.instance_type.clone(),
+            type_param_names: vec![],
         })
     }
 }
@@ -539,26 +590,45 @@ impl AcornValue {
 
     /// Make a constant for an instance attribute.
     pub fn instance_constant(instance_name: InstanceName, instance_type: AcornType) -> AcornValue {
-        let name = ConstantName::typeclass_attr(instance_name.typeclass, &instance_name.attribute);
-        let param = AcornType::Data(instance_name.datatype, vec![]);
+        let name =
+            ConstantName::typeclass_attr(instance_name.typeclass.clone(), &instance_name.attribute);
+        let param = AcornType::Data(instance_name.datatype.clone(), vec![]);
+
+        // Create the type parameter for the generic form
+        let type_param = TypeParam {
+            name: "Self".to_string(),
+            typeclass: Some(instance_name.typeclass),
+        };
+        // Compute generic_type by abstracting over the datatype
+        let generic_type =
+            instance_type.abstract_over_datatype(&instance_name.datatype, type_param);
+
         let ci = ConstantInstance {
             name,
             params: vec![param],
             instance_type,
+            generic_type,
+            type_param_names: vec!["Self".to_string()],
         };
         AcornValue::Constant(ci)
     }
 
-    /// Creates a constant value
+    /// Creates a constant value.
+    /// For non-generic constants (params is empty), generic_type should equal instance_type
+    /// and type_param_names should be empty.
     pub fn constant(
         name: ConstantName,
         params: Vec<AcornType>,
         instance_type: AcornType,
+        generic_type: AcornType,
+        type_param_names: Vec<String>,
     ) -> AcornValue {
         let ci = ConstantInstance {
             name,
             params,
             instance_type,
+            generic_type,
+            type_param_names,
         };
         AcornValue::Constant(ci)
     }
@@ -1766,6 +1836,25 @@ mod tests {
 
         // Create a ConstantInstance with params: [Arbitrary(T), Data(List, [Arbitrary(U)])]
         // This is like a function that takes T and returns something with List<U>
+        let generic_type = AcornType::functional(
+            vec![
+                AcornType::Variable(t_param.clone()),
+                AcornType::functional(
+                    vec![AcornType::Variable(t_param.clone())],
+                    AcornType::Data(
+                        list_datatype.clone(),
+                        vec![AcornType::Variable(u_param.clone())],
+                    ),
+                ),
+            ],
+            AcornType::Data(
+                list_datatype.clone(),
+                vec![AcornType::Data(
+                    list_datatype.clone(),
+                    vec![AcornType::Variable(u_param.clone())],
+                )],
+            ),
+        );
         let instance = ConstantInstance {
             name: ConstantName::unqualified(ModuleId(0), "test_fn"),
             params: vec![
@@ -1794,6 +1883,8 @@ mod tests {
                     )],
                 ),
             ),
+            generic_type,
+            type_param_names: vec!["T".to_string(), "U".to_string()],
         };
 
         // Genericize with [T, U]

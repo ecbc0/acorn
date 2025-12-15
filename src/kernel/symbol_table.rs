@@ -269,7 +269,7 @@ impl SymbolTable {
         ctype: NewConstantType,
         type_store: &mut TypeStore,
     ) {
-        use crate::elaborator::acorn_type::AcornType;
+        use crate::elaborator::acorn_type::{AcornType, TypeParam};
 
         // Add all types first, so they can be resolved to type Terms
         value.for_each_type(&mut |t| {
@@ -279,27 +279,35 @@ impl SymbolTable {
         // Now add all constants (types are now registered)
         value.for_each_constant(&mut |c| {
             if self.get_symbol(&c.name).is_none() {
-                let var_type = if c.params.is_empty() {
+                let var_type = if c.type_param_names.is_empty() {
                     // Non-polymorphic: use instance_type directly
                     type_store
                         .get_type_term(&c.instance_type)
                         .expect("type should be valid")
-                } else if c.params.iter().all(|p| matches!(p, AcornType::Variable(_))) {
-                    // Polymorphic with Variable params: compute polymorphic type
-                    // Convert instance_type to a term with bound variables
+                } else {
+                    // Polymorphic: use generic_type (which has Variable types) to compute
+                    // the polymorphic type term. Create Variable params from type_param_names.
+                    let variable_params: Vec<AcornType> = c
+                        .type_param_names
+                        .iter()
+                        .map(|name| {
+                            AcornType::Variable(TypeParam {
+                                name: name.clone(),
+                                typeclass: None,
+                            })
+                        })
+                        .collect();
+
+                    // Convert generic_type to a term with bound variables
                     let body_type =
-                        type_store.to_polymorphic_type_term(&c.instance_type, &c.params);
+                        type_store.to_polymorphic_type_term(&c.generic_type, &variable_params);
 
                     // Wrap in Pi(Type, ...) for each type parameter (from outermost to innermost)
                     let mut result = body_type;
-                    for _ in (0..c.params.len()).rev() {
+                    for _ in (0..c.type_param_names.len()).rev() {
                         result = Term::pi(Term::type_sort(), result);
                     }
                     result
-                } else {
-                    // Polymorphic with concrete params: compute polymorphic type by
-                    // abstracting over the concrete types
-                    type_store.compute_polymorphic_type(&c.instance_type, &c.params)
                 };
                 self.add_constant(c.name.clone(), ctype, var_type);
             }

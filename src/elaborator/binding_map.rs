@@ -1022,10 +1022,13 @@ impl BindingMap {
             if constant_type.has_generic() {
                 panic!("there should not be generic types in non-parameterized constant types");
             }
+            // Non-generic: generic_type equals instance_type
             PotentialValue::Resolved(AcornValue::constant(
                 constant_name.clone(),
                 vec![],
+                constant_type.clone(),
                 constant_type,
+                vec![],
             ))
         } else {
             // For parameterized constants, the type should only contain arbitrary types

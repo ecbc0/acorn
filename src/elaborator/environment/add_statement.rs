@@ -720,7 +720,14 @@ impl Environment {
             statement.to_string(),
         );
         let const_name = ConstantName::unqualified(self.module_id, fss.name_token.text());
-        let function_constant = AcornValue::constant(const_name, vec![], function_type);
+        // Non-generic: generic_type equals instance_type
+        let function_constant = AcornValue::constant(
+            const_name,
+            vec![],
+            function_type.clone(),
+            function_type,
+            vec![],
+        );
         let function_term = AcornValue::apply(
             function_constant.clone(),
             arg_types
@@ -2518,7 +2525,8 @@ impl Environment {
             .zip(&arg_types)
             .map(|(token, arg_type)| {
                 let name = ConstantName::unqualified(self.module_id, token.text());
-                AcornValue::constant(name, vec![], arg_type.clone())
+                // Non-generic: generic_type equals instance_type
+                AcornValue::constant(name, vec![], arg_type.clone(), arg_type.clone(), vec![])
             })
             .collect();
 

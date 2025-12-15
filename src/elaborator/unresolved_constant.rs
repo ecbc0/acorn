@@ -47,7 +47,18 @@ impl UnresolvedConstant {
             .map(|(param, t)| (param.name.clone(), t.clone()))
             .collect();
         let resolved_type = self.generic_type.instantiate(&named_params);
-        let mut value = AcornValue::constant(self.name.clone(), params, resolved_type);
+
+        // Convert generic_type from Arbitrary to Variable types
+        let generic_type = self.generic_type.genericize(&self.params);
+        let type_param_names: Vec<String> = self.params.iter().map(|p| p.name.clone()).collect();
+
+        let mut value = AcornValue::constant(
+            self.name.clone(),
+            params,
+            resolved_type,
+            generic_type,
+            type_param_names,
+        );
 
         // Apply any stored arguments
         if !self.args.is_empty() {
@@ -59,12 +70,24 @@ impl UnresolvedConstant {
 
     /// Turn this into a constant value by keeping each parameter as a type variable.
     pub fn to_generic_value(self) -> AcornValue {
-        let params = self
+        let params: Vec<_> = self
             .params
             .iter()
             .map(|p| AcornType::Variable(p.clone()))
             .collect();
-        let mut value = AcornValue::constant(self.name.clone(), params, self.generic_type);
+
+        // Convert generic_type from Arbitrary to Variable types
+        let generic_type = self.generic_type.genericize(&self.params);
+        let type_param_names: Vec<String> = self.params.iter().map(|p| p.name.clone()).collect();
+
+        // For generic value, instance_type equals generic_type since params are Variables
+        let mut value = AcornValue::constant(
+            self.name.clone(),
+            params,
+            generic_type.clone(),
+            generic_type,
+            type_param_names,
+        );
 
         // Apply any stored arguments
         if !self.args.is_empty() {

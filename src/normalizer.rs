@@ -1714,7 +1714,8 @@ impl Normalizer {
                     .symbol_table
                     .name_for_global_id(*i)
                     .clone();
-                AcornValue::constant(name, vec![], acorn_type)
+                // Non-generic: generic_type equals instance_type
+                AcornValue::constant(name, vec![], acorn_type.clone(), acorn_type, vec![])
             }
             Atom::Symbol(Symbol::ScopedConstant(i)) => {
                 let name = self
@@ -1722,7 +1723,8 @@ impl Normalizer {
                     .symbol_table
                     .name_for_local_id(*i)
                     .clone();
-                AcornValue::constant(name, vec![], acorn_type)
+                // Non-generic: generic_type equals instance_type
+                AcornValue::constant(name, vec![], acorn_type.clone(), acorn_type, vec![])
             }
             Atom::Symbol(Symbol::Monomorph(i)) => {
                 AcornValue::Constant(self.kernel_context.symbol_table.get_monomorph(*i).clone())
@@ -1730,7 +1732,14 @@ impl Normalizer {
             Atom::FreeVariable(i) => {
                 if let Some(map) = arbitrary_names {
                     if let Some(name) = map.get(atom_type) {
-                        return AcornValue::constant(name.clone(), vec![], acorn_type);
+                        // Non-generic: generic_type equals instance_type
+                        return AcornValue::constant(
+                            name.clone(),
+                            vec![],
+                            acorn_type.clone(),
+                            acorn_type,
+                            vec![],
+                        );
                     }
                 }
                 AcornValue::Variable(*i, acorn_type)
@@ -1743,7 +1752,8 @@ impl Normalizer {
                     .type_store
                     .type_term_to_acorn_type(type_term);
                 let name = ConstantName::Synthetic(*i);
-                AcornValue::constant(name, vec![], acorn_type)
+                // Non-generic: generic_type equals instance_type
+                AcornValue::constant(name, vec![], acorn_type.clone(), acorn_type, vec![])
             }
             Atom::Symbol(Symbol::Type(_))
             | Atom::Symbol(Symbol::Empty)

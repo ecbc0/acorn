@@ -598,6 +598,32 @@ impl AcornType {
         }
     }
 
+    /// Replaces occurrences of a specific datatype with a type Variable.
+    /// Used to abstract over a concrete type to get the generic form.
+    pub fn abstract_over_datatype(&self, datatype: &Datatype, param: TypeParam) -> AcornType {
+        match self {
+            AcornType::Data(dt, params) if dt == datatype && params.is_empty() => {
+                AcornType::Variable(param)
+            }
+            AcornType::Data(dt, params) => AcornType::Data(
+                dt.clone(),
+                params
+                    .iter()
+                    .map(|t| t.abstract_over_datatype(datatype, param.clone()))
+                    .collect(),
+            ),
+            AcornType::Function(ftype) => AcornType::functional(
+                ftype
+                    .arg_types
+                    .iter()
+                    .map(|t| t.abstract_over_datatype(datatype, param.clone()))
+                    .collect(),
+                ftype.return_type.abstract_over_datatype(datatype, param),
+            ),
+            _ => self.clone(),
+        }
+    }
+
     /// Returns whether this type contains a specific arbitrary type parameter.
     pub fn has_arbitrary_type_param(&self, param: &TypeParam) -> bool {
         match self {

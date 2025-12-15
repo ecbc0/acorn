@@ -323,10 +323,12 @@ impl TypeStore {
             }
 
             AcornType::Variable(type_param) => {
-                // Find the index of this type parameter in the params list
+                // Find the index of this type parameter in the params list by name.
+                // We compare by name only, not the full TypeParam struct, because
+                // the typeclass constraint might differ between generic_type and params.
                 for (i, param) in params.iter().enumerate() {
                     if let AcornType::Variable(p) = param {
-                        if p == type_param {
+                        if p.name == type_param.name {
                             return Term::atom(Atom::BoundVariable(i as u16));
                         }
                     }
@@ -346,42 +348,6 @@ impl TypeStore {
                 Term::ground_type(*ground_id)
             }
         }
-    }
-
-    /// Compute the polymorphic type for a constant from its instantiated type.
-    /// Given an instance_type and concrete type params, replace each param type with
-    /// a bound variable and wrap with Pi(Type, ...) for each parameter.
-    ///
-    /// For example, if instance_type is `Nat -> Bool` and params is `[Nat]`,
-    /// returns `Pi(Type, Pi(BoundVariable(0), Bool))`.
-    #[cfg(feature = "no_mono_symbols")]
-    pub fn compute_polymorphic_type(
-        &self,
-        instance_type: &AcornType,
-        concrete_params: &[AcornType],
-    ) -> Term {
-        // First convert the instance_type to a Term
-        let instance_term = self.to_type_term(instance_type);
-
-        // Convert each concrete param to a Term for replacement
-        let param_terms: Vec<Term> = concrete_params
-            .iter()
-            .map(|p| self.to_type_term(p))
-            .collect();
-
-        // Replace each param type with a BoundVariable
-        let mut body = instance_term;
-        for (i, param_term) in param_terms.iter().enumerate() {
-            body = body.replace_subterm(param_term, &Term::atom(Atom::BoundVariable(i as u16)));
-        }
-
-        // Wrap in Pi(Type, ...) for each type parameter
-        let mut result = body;
-        for _ in (0..concrete_params.len()).rev() {
-            result = Term::pi(Term::type_sort(), result);
-        }
-
-        result
     }
 
     /// Convert a type Term back to an AcornType.

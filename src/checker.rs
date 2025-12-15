@@ -397,10 +397,13 @@ impl Checker {
                     for (i, (name, acorn_type)) in decls.iter().enumerate() {
                         let synthetic_id = atoms[i];
                         let synthetic_cname = ConstantName::Synthetic(synthetic_id);
+                        // Non-generic: generic_type equals instance_type
                         let value = AcornValue::constant(
                             synthetic_cname.clone(),
                             vec![],
                             acorn_type.clone(),
+                            acorn_type.clone(),
+                            vec![],
                         );
                         let user_cname = ConstantName::unqualified(bindings.module_id(), name);
                         bindings.to_mut().add_constant_alias(
