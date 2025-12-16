@@ -903,4 +903,46 @@ mod tests {
         // Validation should panic
         clause.validate(&kctx);
     }
+
+    /// Test that extensionality works with asymmetric arities.
+    /// This is the case from the no_mono_symbols bug:
+    /// g0(c0, c1, x0) = g1(c0, x0) where c0, c1 are ground constants, x0 is free var
+    /// The trailing x0 matches on both sides, so we should be able to peel x0:
+    /// g0(c0, c1) = g1(c0)
+    #[test]
+    fn test_extensionality_asymmetric_arities() {
+        let mut kctx = KernelContext::new();
+        // c0 and c1 are ground type constants (like type parameters T and Nat)
+        // g0 takes 3 args: T, Nat, value -> result
+        // g1 takes 2 args: T, value -> result
+        kctx.add_constant("c0", "Bool")
+            .add_constant("c1", "Bool")
+            .add_constant("g0", "Bool -> Bool -> Bool -> Bool")
+            .add_constant("g1", "Bool -> Bool -> Bool");
+
+        // Create clause: g0(c0, c1, x0) = g1(c0, x0)
+        // This represents: intersection_family(T, Nat, seq) = seq_intersection(T, seq)
+        let clause = kctx.make_clause("g0(c0, c1, x0) = g1(c0, x0)", &["Bool"]);
+
+        // Extensionality should work: x0 is a free variable at the end of both sides
+        let result = clause.find_extensionality(&kctx);
+        assert!(
+            result.is_some(),
+            "Extensionality should work with asymmetric arities when trailing args match"
+        );
+
+        // Result should be g0(c0, c1) = g1(c0)
+        let result_lits = result.unwrap();
+        assert_eq!(result_lits.len(), 1);
+        let result_lit = &result_lits[0];
+        // g0 side should have 2 args (c0, c1)
+        // g1 side should have 1 arg (c0)
+        let (longer, shorter) = if result_lit.left.num_args() >= result_lit.right.num_args() {
+            (&result_lit.left, &result_lit.right)
+        } else {
+            (&result_lit.right, &result_lit.left)
+        };
+        assert_eq!(longer.num_args(), 2, "g0 should have 2 args after peeling");
+        assert_eq!(shorter.num_args(), 1, "g1 should have 1 arg after peeling");
+    }
 }
