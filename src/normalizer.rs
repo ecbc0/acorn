@@ -1612,6 +1612,9 @@ impl Normalizer {
         }
 
         // Check if this looks like an aliasing.
+        // When no_instance_alias is enabled, we skip aliasing and let the fact
+        // flow through as a normal equality proposition.
+        #[cfg(not(feature = "no_instance_alias"))]
         if let Some((ci, name, constant_type)) = fact.as_instance_alias() {
             let local = fact.source().truthiness() != Truthiness::Factual;
             self.kernel_context.symbol_table.alias_instance(
