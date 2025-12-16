@@ -110,6 +110,10 @@ pub struct Builder<'a> {
 
     /// Configuration for which prover to use.
     prover_config: ProverConfig,
+
+    /// When set, use this certificate instead of the cached one for single-goal verification.
+    /// Only used when single_goal is also set.
+    pub cert_override: Option<Certificate>,
 }
 
 /// Metrics collected during a build.
@@ -337,6 +341,7 @@ impl<'a> Builder<'a> {
             cancellation_token,
             training_output: None,
             prover_config,
+            cert_override: None,
         }
     }
 
@@ -630,6 +635,25 @@ impl<'a> Builder<'a> {
         // Check if we've been cancelled before starting any work
         if self.cancellation_token.is_cancelled() {
             return Err(BuildError::goal(goal, "was interrupted"));
+        }
+
+        // If there's a cert override for single-goal verification, use it instead of the worklist
+        if let Some(ref cert) = self.cert_override {
+            let result = processor.check_cert(cert, Some(goal), self.project, &env.bindings);
+            match result {
+                Ok(_steps) => {
+                    self.metrics.goals_done += 1;
+                    self.metrics.goals_success += 1;
+                    self.log_verified(goal.first_line, goal.last_line);
+                    return Ok(());
+                }
+                Err(e) => {
+                    return Err(BuildError::goal(
+                        goal,
+                        format!("certificate override failed to verify: {}", e),
+                    ));
+                }
+            }
         }
 
         // Check for a cached cert

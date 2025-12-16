@@ -111,6 +111,14 @@ enum Command {
             value_name = "LINE"
         )]
         line: Option<u32>,
+
+        /// Use a specific certificate instead of the cached one (requires --line)
+        #[clap(
+            long,
+            help = "Use a specific certificate (JSON format) instead of the cached one.",
+            value_name = "CERT"
+        )]
+        cert: Option<String>,
     },
 
     /// Re-prove goals without using the cache (neither reads from nor writes to cache)
@@ -276,7 +284,13 @@ async fn main() {
             }
         }
 
-        Some(Command::Reverify { target, line }) => {
+        Some(Command::Reverify { target, line, cert }) => {
+            // Validate that cert requires line
+            if cert.is_some() && line.is_none() {
+                println!("Error: --cert requires --line to be set");
+                std::process::exit(1);
+            }
+
             let mut verifier = match Verifier::new(current_dir, ProjectConfig::default(), target) {
                 Ok(v) => v,
                 Err(e) => {
@@ -289,6 +303,19 @@ async fn main() {
             verifier.line = line;
             verifier.builder.reverify = true;
             verifier.builder.check_hashes = false;
+
+            // Parse and set the certificate override if provided
+            if let Some(cert_json) = cert {
+                match serde_json::from_str::<acorn::certificate::Certificate>(&cert_json) {
+                    Ok(certificate) => {
+                        verifier.builder.cert_override = Some(certificate);
+                    }
+                    Err(e) => {
+                        println!("Error parsing certificate JSON: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
 
             match verifier.run() {
                 Err(e) => {
