@@ -480,7 +480,8 @@ impl Clause {
             return None;
         }
 
-        // Check if this is f(a, b, c, x1, x2, ..., xn) = g(x1, x2, ..., xn)
+        // Check if this is f(..., x1, x2, ..., xn) = g(..., x1, x2, ..., xn)
+        // where the trailing args match and can be peeled via extensionality.
         let (longer, shorter) = if literal.left.num_args() >= literal.right.num_args() {
             (&literal.left, &literal.right)
         } else {
@@ -504,14 +505,23 @@ impl Clause {
 
         let longer_args = longer.args();
         let shorter_args = shorter.args();
-        let n = shorter_args.len();
-        let diff = longer_args.len() - n;
 
-        // Check if the last n arguments are identical
-        for i in 0..n {
-            if longer_args[diff + i] != shorter_args[i] {
-                return None;
+        // Find the longest matching suffix between longer_args and shorter_args.
+        // We compare from the right: longer_args[len-1] vs shorter_args[len-1], etc.
+        let mut matching_suffix_len = 0;
+        let longer_len = longer_args.len();
+        let shorter_len = shorter_args.len();
+        while matching_suffix_len < shorter_len {
+            let longer_idx = longer_len - 1 - matching_suffix_len;
+            let shorter_idx = shorter_len - 1 - matching_suffix_len;
+            if longer_args[longer_idx] != shorter_args[shorter_idx] {
+                break;
             }
+            matching_suffix_len += 1;
+        }
+
+        if matching_suffix_len == 0 {
+            return None; // No matching suffix at all
         }
 
         // Find the longest right-suffix of matching args that are distinct free variables.
@@ -519,8 +529,10 @@ impl Clause {
         let mut peel_count = 0;
         let mut peeled_vars: HashSet<AtomId> = HashSet::new();
 
-        for i in (0..n).rev() {
-            let arg = &shorter_args[i];
+        for i in 0..matching_suffix_len {
+            // Index from the right
+            let shorter_idx = shorter_len - 1 - i;
+            let arg = &shorter_args[shorter_idx];
             match arg.atomic_variable() {
                 Some(var_id) => {
                     // Check this var is distinct from vars we're already peeling
@@ -528,18 +540,33 @@ impl Clause {
                         break; // Duplicate var, stop peeling
                     }
 
-                    // Check var is not in the prefix (non-peeled args on the longer side)
-                    let prefix_end = diff + (n - peel_count);
+                    // Check var is not in the prefix (non-peeled args) on either side
+                    let longer_prefix_end = longer_len - peel_count;
+                    let shorter_prefix_end = shorter_len - peel_count;
                     let mut var_in_prefix = false;
-                    for j in 0..prefix_end {
-                        if j < diff || j < diff + i {
-                            // This is either a "diff" arg or a non-peeled matching arg
+
+                    // Check longer's prefix (all args except peeled suffix)
+                    for j in 0..longer_prefix_end {
+                        if j < longer_len - matching_suffix_len || j < longer_len - 1 - i {
                             if longer_args[j].has_variable(var_id) {
                                 var_in_prefix = true;
                                 break;
                             }
                         }
                     }
+
+                    // Also check shorter's prefix
+                    if !var_in_prefix {
+                        for j in 0..shorter_prefix_end {
+                            if j < shorter_idx {
+                                if shorter_args[j].has_variable(var_id) {
+                                    var_in_prefix = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
                     if var_in_prefix {
                         break; // Var appears in prefix, stop peeling
                     }
@@ -556,8 +583,8 @@ impl Clause {
         }
 
         // Build the new terms by removing only peel_count args from the right
-        let new_longer_arg_count = longer_args.len() - peel_count;
-        let new_shorter_arg_count = n - peel_count;
+        let new_longer_arg_count = longer_len - peel_count;
+        let new_shorter_arg_count = shorter_len - peel_count;
 
         let new_longer = if new_longer_arg_count == 0 {
             longer.get_head_term()
