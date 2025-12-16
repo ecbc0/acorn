@@ -339,7 +339,7 @@ impl Clause {
             .iter()
             .map(|lit| lit.invalidate_synthetics(from))
             .collect();
-        Clause::new(new_literals, &self.context)
+        Clause::new(new_literals, &self.context).canonicalize()
     }
 
     /// Replace the first `num_to_replace` variables with invalid synthetic atoms.
@@ -358,7 +358,29 @@ impl Clause {
             .cloned()
             .collect();
         let new_context = LocalContext::from_types(new_types);
-        Clause::new(new_literals, &new_context)
+        Clause::new(new_literals, &new_context).canonicalize()
+    }
+
+    /// Returns a canonical form of this clause with literals in deterministic order.
+    /// This is used for SyntheticKey matching where we need clauses to match
+    /// regardless of variable naming in the source.
+    fn canonicalize(&self) -> Clause {
+        // The clause has already been through Clause::new, so variables are renumbered.
+        // But literals might be in different order if the stable sort didn't break ties.
+        // Re-sort using total ordering now that variables are normalized.
+        let mut literals = self.literals.clone();
+        literals.sort();
+
+        // Now renumber variables again based on the new literal order
+        let mut var_ids = vec![];
+        for lit in &mut literals {
+            lit.normalize_var_ids_into(&mut var_ids);
+        }
+
+        Clause {
+            literals,
+            context: self.context.remap(&var_ids),
+        }
     }
 
     /// Extracts the polarity from all literals.
