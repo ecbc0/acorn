@@ -165,7 +165,7 @@ async fn main() {
     //   RUST_LOG=acorn::processor=debug cargo run -- verify
     //   RUST_LOG=acorn::processor=trace cargo run -- verify
     tracing_subscriber::registry()
-        .with(fmt::layer())
+        .with(fmt::layer().with_ansi(false).without_time())
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")))
         .init();
 

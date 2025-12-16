@@ -11,9 +11,9 @@
 
   This verifies the code in `~/acornlib`, which you can inspect to figure out verification failures.
 
-- If we run into an error during reverification, to debug it, it helps to add debugging logs, and then
-  run the reverification just on the module and line that failed. For example:
-  `cargo run --profile release -- reverify list.list_base --line 123`
+- If we run into an error during reverification, to debug it, it can help to
+  run the reverification just on the module that failed at a higher log level. For example:
+  `RUST_LOG=acorn::checker=trace cargo run --profile release -- reverify list.list_base`
 
 - To evaluate performance, we should do a release build:
 

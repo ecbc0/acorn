@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
 
+use tracing::trace;
+
 use crate::elaborator::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::elaborator::acorn_value::{AcornValue, ConstantInstance};
 use crate::elaborator::fact::Fact;
@@ -240,6 +242,7 @@ impl Monomorphizer {
     }
 
     fn add_proposition(&mut self, proposition: Arc<Proposition>) {
+        trace!("add_proposition: {}", proposition.value);
         // We don't monomorphize to match constants in global facts, because it would blow up.
         if proposition.source.truthiness() != Truthiness::Factual {
             // Non-global facts are generation 0

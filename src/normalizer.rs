@@ -21,6 +21,7 @@ use crate::kernel::symbol_table::NewConstantType;
 use crate::kernel::term::Term;
 use crate::monomorphizer::Monomorphizer;
 use crate::proof_step::{ProofStep, Truthiness};
+use tracing::trace;
 
 /// Information about the definition of a set of synthetic atoms.
 pub struct SyntheticDefinition {
@@ -174,6 +175,18 @@ impl Normalizer {
             if self.synthetic_definitions.contains_key(atom) {
                 return Err(format!("synthetic atom {} is already defined", atom));
             }
+        }
+
+        for (i, atom) in atoms.iter().enumerate() {
+            trace!(
+                atom_id = atom,
+                source = ?source,
+                clause_index = i,
+                "defining synthetic atom"
+            );
+        }
+        for clause in &clauses {
+            trace!(clause = %clause, "synthetic definition clause");
         }
 
         // In the synthetic key, we normalize synthetic ids by renumbering them.
@@ -1622,6 +1635,9 @@ impl Normalizer {
             let clauses = self
                 .normalize_value(&proposition.value, ctype, &proposition.source)
                 .map_err(|msg| BuildError::new(range, msg))?;
+            for clause in &clauses {
+                trace!(clause = %clause, "normalized to clause");
+            }
             let defined = match &proposition.source.source_type {
                 SourceType::ConstantDefinition(value, _) => {
                     let view = NormalizerView::Ref(self);
