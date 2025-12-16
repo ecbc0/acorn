@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
 use crate::kernel::atom::{Atom, AtomId};
@@ -437,6 +439,13 @@ impl Clause {
     /// Finds if extensionality can be applied to this clause.
     /// Returns the resulting literals if extensionality applies.
     /// Only works on single-literal clauses.
+    ///
+    /// Lambda-native: We peel arguments from the right only as long as they are
+    /// distinct free variables. This allows extensionality to work when leading
+    /// arguments are ground constants (like type arguments).
+    ///
+    /// Example: f(T, x, y) = g(T, x, y) where T is ground, x and y are free vars
+    /// → Peels y then x, stops at T → Result: f(T) = g(T)
     pub fn find_extensionality(&self, kernel_context: &KernelContext) -> Option<Vec<Literal>> {
         // Extensionality only works on single-literal clauses
         if self.literals.len() != 1 {
@@ -466,54 +475,87 @@ impl Clause {
             return None;
         }
 
+        // Heads must not be variables
+        if longer.get_head_atom().is_variable() || shorter.get_head_atom().is_variable() {
+            return None;
+        }
+
         let longer_args = longer.args();
         let shorter_args = shorter.args();
         let n = shorter_args.len();
+        let diff = longer_args.len() - n;
 
         // Check if the last n arguments are identical
-        let diff = longer_args.len() - n;
         for i in 0..n {
             if longer_args[diff + i] != shorter_args[i] {
                 return None;
             }
         }
 
-        // Check that the matching arguments are all distinct variables
-        for i in 0..n {
-            match shorter_args[i].atomic_variable() {
+        // Find the longest right-suffix of matching args that are distinct free variables.
+        // We peel from the right, stopping when we hit a non-variable or a duplicate.
+        let mut peel_count = 0;
+        let mut peeled_vars: HashSet<AtomId> = HashSet::new();
+
+        for i in (0..n).rev() {
+            let arg = &shorter_args[i];
+            match arg.atomic_variable() {
                 Some(var_id) => {
-                    // Make sure this variable isn't used elsewhere
-                    for j in 0..n {
-                        if i != j && shorter_args[j].has_variable(var_id) {
-                            return None;
+                    // Check this var is distinct from vars we're already peeling
+                    if peeled_vars.contains(&var_id) {
+                        break; // Duplicate var, stop peeling
+                    }
+
+                    // Check var is not in the prefix (non-peeled args on the longer side)
+                    let prefix_end = diff + (n - peel_count);
+                    let mut var_in_prefix = false;
+                    for j in 0..prefix_end {
+                        if j < diff || j < diff + i {
+                            // This is either a "diff" arg or a non-peeled matching arg
+                            if longer_args[j].has_variable(var_id) {
+                                var_in_prefix = true;
+                                break;
+                            }
                         }
                     }
-                    // Make sure this variable isn't in the "extra" args of the longer term
-                    for j in 0..diff {
-                        if longer_args[j].has_variable(var_id) {
-                            return None;
-                        }
+                    if var_in_prefix {
+                        break; // Var appears in prefix, stop peeling
                     }
-                    // Make sure this variable isn't in the heads
-                    if longer.get_head_atom().is_variable() || shorter.get_head_atom().is_variable()
-                    {
-                        return None;
-                    }
+
+                    peeled_vars.insert(var_id);
+                    peel_count += 1;
                 }
-                None => return None,
+                None => break, // Not a variable, stop peeling
             }
         }
 
-        // We can apply extensionality
-        // Build the new literal without the trailing arguments
-        let new_longer = if diff == 0 {
+        if peel_count == 0 {
+            return None; // Can't peel anything
+        }
+
+        // Build the new terms by removing only peel_count args from the right
+        let new_longer_arg_count = longer_args.len() - peel_count;
+        let new_shorter_arg_count = n - peel_count;
+
+        let new_longer = if new_longer_arg_count == 0 {
             longer.get_head_term()
         } else {
-            let args: Vec<_> = longer_args[..diff].iter().map(|a| a.to_owned()).collect();
-            crate::kernel::term::Term::new(*longer.get_head_atom(), args)
+            let args: Vec<_> = longer_args[..new_longer_arg_count]
+                .iter()
+                .map(|a| a.to_owned())
+                .collect();
+            Term::new(*longer.get_head_atom(), args)
         };
 
-        let new_shorter = shorter.get_head_term();
+        let new_shorter = if new_shorter_arg_count == 0 {
+            shorter.get_head_term()
+        } else {
+            let args: Vec<_> = shorter_args[..new_shorter_arg_count]
+                .iter()
+                .map(|a| a.to_owned())
+                .collect();
+            Term::new(*shorter.get_head_atom(), args)
+        };
 
         // Check the types are compatible
         let longer_type = new_longer.get_type_with_context(&self.context, kernel_context);
@@ -653,6 +695,61 @@ mod tests {
             clause.find_extensionality(&kernel_context).is_none(),
             "Extensionality should not match when functions are the same"
         );
+    }
+
+    /// Test that extensionality works with ground prefix (like type arguments).
+    /// g0(c0, x) = g1(c0, x) where c0 is ground constant, x is free var → g0(c0) = g1(c0)
+    #[test]
+    fn test_extensionality_with_ground_prefix() {
+        let mut kctx = KernelContext::new();
+        // c0 is a ground constant, g0 and g1 are functions that take Bool, Bool -> Bool
+        kctx.add_constant("c0", "Bool")
+            .add_constant("g0", "Bool -> Bool -> Bool")
+            .add_constant("g1", "Bool -> Bool -> Bool");
+
+        // Create clause: g0(c0, x0) = g1(c0, x0)
+        let clause = kctx.make_clause("g0(c0, x0) = g1(c0, x0)", &["Bool"]);
+
+        // Extensionality should work, peeling x0 but keeping c0
+        let result = clause.find_extensionality(&kctx);
+        assert!(
+            result.is_some(),
+            "Extensionality should work with ground prefix"
+        );
+
+        // Result should be g0(c0) = g1(c0)
+        let result_lits = result.unwrap();
+        assert_eq!(result_lits.len(), 1);
+        let result_lit = &result_lits[0];
+        // Both sides should have 1 argument (c0)
+        assert_eq!(result_lit.left.num_args(), 1);
+        assert_eq!(result_lit.right.num_args(), 1);
+    }
+
+    /// Test that extensionality rejects duplicate variables.
+    /// g0(x, x) = g1(x, x) must NOT derive g0 = g1.
+    #[test]
+    fn test_extensionality_rejects_duplicate_variables() {
+        let mut kctx = KernelContext::new();
+        kctx.add_constant("g0", "Bool -> Bool -> Bool")
+            .add_constant("g1", "Bool -> Bool -> Bool");
+
+        // Create clause: g0(x0, x0) = g1(x0, x0) using x0 for both positions
+        let clause = kctx.make_clause("g0(x0, x0) = g1(x0, x0)", &["Bool"]);
+
+        // Extensionality should NOT fully peel because x0 appears twice
+        let result = clause.find_extensionality(&kctx);
+
+        // If extensionality applies, verify it doesn't peel down to g0 = g1
+        if let Some(result_lits) = result {
+            let result_lit = &result_lits[0];
+            // Should NOT be g0 = g1 (both with 0 args)
+            assert!(
+                result_lit.left.num_args() > 0 || result_lit.right.num_args() > 0,
+                "Extensionality should not derive g0 = g1 from g0(x, x) = g1(x, x)"
+            );
+        }
+        // If it returns None, that's also acceptable (conservative behavior)
     }
 
     /// Test that normalize_with_trace correctly preserves variable types when

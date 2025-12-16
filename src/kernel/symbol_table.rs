@@ -440,4 +440,3 @@ impl SymbolTable {
         &self.id_to_monomorph[id as usize]
     }
 }
-
