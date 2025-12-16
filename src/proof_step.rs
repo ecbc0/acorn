@@ -816,13 +816,13 @@ mod tests {
     #[test]
     fn test_rewrite_clause_context_matches_variables() {
         let mut kctx = KernelContext::new();
-        kctx.add_constant("m0", "(Bool, Bool) -> Bool")
+        kctx.add_constant("g0", "(Bool, Bool) -> Bool")
             .add_constant("g1", "Bool -> Bool")
             .add_constant("c0", "Bool");
 
-        // Pattern: m0(x0, x1) = x1
+        // Pattern: g0(x0, x1) = x1
         // Context: [Bool, Bool]
-        let pattern_clause = kctx.make_clause("m0(x0, x1) = x1", &["Bool", "Bool"]);
+        let pattern_clause = kctx.make_clause("g0(x0, x1) = x1", &["Bool", "Bool"]);
         let pattern_context = pattern_clause.get_local_context().clone();
         let pattern_step = ProofStep::mock_from_clause(pattern_clause);
 
@@ -830,10 +830,10 @@ mod tests {
         let target_clause = kctx.make_clause("g1(c0) = c0", &[]);
         let target_step = ProofStep::mock_from_clause(target_clause);
 
-        // new_subterm: m0(x0, c0)
+        // new_subterm: g0(x0, c0)
         // This introduces a variable x0 that's NOT in the pattern_step's context
         // (well, it is in this case, but in general it might have different types)
-        let new_subterm = Term::parse("m0(x0, c0)");
+        let new_subterm = Term::parse("g0(x0, c0)");
 
         let rewrite_step = ProofStep::rewrite(
             0,
@@ -848,7 +848,7 @@ mod tests {
         );
 
         // The clause should have all variables in its context
-        // In this case, the rewritten literal is m0(x0, c0) = c0
+        // In this case, the rewritten literal is g0(x0, c0) = c0
         // which has variable x0
         let clause_context = rewrite_step.clause.get_local_context();
         for lit in &rewrite_step.clause.literals {

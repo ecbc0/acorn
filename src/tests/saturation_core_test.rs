@@ -1719,20 +1719,9 @@ fn test_proving_with_theorem_arg() {
     );
 
     let c = prove(&mut p, "main", "goal");
-    // The proof found depends on term representation (monomorph symbols vs type applications)
-    #[cfg(feature = "no_mono_symbols")]
     assert_eq!(
         c.proof.unwrap(),
         vec!["a + (b + c) = a + b + c", "a + (b + c) = b + c + a"]
-    );
-    #[cfg(not(feature = "no_mono_symbols"))]
-    assert_eq!(
-        c.proof.unwrap(),
-        vec![
-            "a + b + c = a + (b + c)",
-            "b + c + a != a + (b + c)",
-            "b + c + a = a + (b + c)"
-        ]
     );
 }
 

@@ -554,10 +554,6 @@ impl<'a> TermRef<'a> {
                     weight1 += 1;
                     weight2 += 1 + 4 * (*i) as u32;
                 }
-                TermComponent::Atom(Atom::Symbol(Symbol::Monomorph(i))) => {
-                    weight1 += 1;
-                    weight2 += 2 + 4 * (*i) as u32;
-                }
                 TermComponent::Atom(Atom::Symbol(Symbol::Synthetic(i))) => {
                     weight1 += 1;
                     weight2 += 3 + 4 * (*i) as u32;
@@ -2002,19 +1998,19 @@ mod tests {
         // compound term incorrectly wrapped the result in a Application marker.
         //
         // Term: x0(x1) - variable x0 applied to x1
-        // Replace x0 with m0(c0) - a compound term
-        // Expected result: m0(c0, x1) - m0 applied to c0 and x1
-        // Bug would produce: [Application, m0, c0, x1] which is invalid
+        // Replace x0 with g0(c0) - a compound term
+        // Expected result: g0(c0, x1) - g0 applied to c0 and x1
+        // Bug would produce: [Application, g0, c0, x1] which is invalid
         let term = Term::parse("x0(x1)");
-        let replacement = Term::parse("m0(c0)");
+        let replacement = Term::parse("g0(c0)");
 
-        // Replace x0 with m0(c0)
+        // Replace x0 with g0(c0)
         let result = term.replace_variable(0, &replacement);
 
-        // Result should be m0(c0, x1)
+        // Result should be g0(c0, x1)
         // This should not panic due to invalid term structure
         let head = result.get_head_atom();
-        assert!(matches!(head, Atom::Symbol(Symbol::Monomorph(0))));
+        assert!(matches!(head, Atom::Symbol(Symbol::GlobalConstant(0))));
 
         // The result should have exactly two args: c0 and x1
         let args: Vec<_> = result.iter_args().collect();
@@ -2050,24 +2046,24 @@ mod tests {
     fn test_replace_non_head_variable_with_compound() {
         // Non-head position should still wrap in Application
         // Term: c0(x0) - c0 applied to variable x0
-        // Replace x0 with m0(c1) - a compound term
-        // Result: c0(m0(c1)) - c0 applied to m0(c1)
+        // Replace x0 with g0(c1) - a compound term
+        // Result: c0(g0(c1)) - c0 applied to g0(c1)
         let term = Term::parse("c0(x0)");
-        let replacement = Term::parse("m0(c1)");
+        let replacement = Term::parse("g0(c1)");
 
         let result = term.replace_variable(0, &replacement);
 
-        // Result should be c0(m0(c1))
+        // Result should be c0(g0(c1))
         let head = result.get_head_atom();
         assert!(matches!(head, Atom::Symbol(Symbol::ScopedConstant(0))));
 
         let args: Vec<_> = result.iter_args().collect();
         assert_eq!(args.len(), 1);
 
-        // The arg should be compound: m0(c1)
+        // The arg should be compound: g0(c1)
         let arg = &args[0];
         let arg_head = arg.get_head_atom();
-        assert!(matches!(arg_head, Atom::Symbol(Symbol::Monomorph(0))));
+        assert!(matches!(arg_head, Atom::Symbol(Symbol::GlobalConstant(0))));
     }
 
     #[test]

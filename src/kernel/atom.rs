@@ -64,7 +64,6 @@ impl Atom {
             'c' => Some(Atom::Symbol(Symbol::ScopedConstant(rest.parse().ok()?))),
             'x' => Some(Atom::FreeVariable(rest.parse().ok()?)),
             'b' => Some(Atom::BoundVariable(rest.parse().ok()?)),
-            'm' => Some(Atom::Symbol(Symbol::Monomorph(rest.parse().ok()?))),
             's' => Some(Atom::Symbol(Symbol::Synthetic(rest.parse().ok()?))),
             _ => None,
         }

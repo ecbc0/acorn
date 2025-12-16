@@ -614,11 +614,11 @@ impl TestChecker {
         let mut context = KernelContext::new();
         // c0-c5: Bool constants
         context.add_constants(&["c0", "c1", "c2", "c3", "c4", "c5"], "Bool");
-        // m0, m1, m3, m4: (Bool, Bool) -> Bool functions
-        context.add_constants(&["m0", "m1"], "(Bool, Bool) -> Bool");
-        // m2 placeholder to get to m3 and m4
-        context.add_constant("m2", "(Bool, Bool) -> Bool");
-        context.add_constants(&["m3", "m4"], "(Bool, Bool) -> Bool");
+        // g0, g1, g3, g4: (Bool, Bool) -> Bool functions
+        context.add_constants(&["g0", "g1"], "(Bool, Bool) -> Bool");
+        // g2 placeholder to get to g3 and g4
+        context.add_constant("g2", "(Bool, Bool) -> Bool");
+        context.add_constants(&["g3", "g4"], "(Bool, Bool) -> Bool");
 
         let mut checker = Checker::new();
         for clause_str in clauses {
@@ -644,28 +644,28 @@ mod tests {
     fn test_checker_should_be_monovariant() {
         // This basic case works
         let mut checker1 = TestChecker::with_clauses(&[
-            "not m0(m1(c5, c0), c1)",
-            "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or m0(m1(c5, c0), c1) or c4 = c1",
+            "not g0(g1(c5, c0), c1)",
+            "g4(c4, g1(c5, c0)) != g1(c3, c0) or not g0(g1(c3, c0), c1) or g0(g1(c5, c0), c1) or c4 = c1",
         ]);
 
         checker1.check_clause_str(
-            "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or c4 = c1",
+            "g4(c4, g1(c5, c0)) != g1(c3, c0) or not g0(g1(c3, c0), c1) or c4 = c1",
         );
 
         // This is the basic case plus extra things. So it should also work.
         let mut checker2 = TestChecker::with_clauses(&[
             // The minimal set of clauses that screw up our result
-            "m4(c4, c5) = c3",
+            "g4(c4, c5) = c3",
             "c4 != c0",
-            "m4(c4, c5) != c3 or m4(c4, m1(c5, c0)) = m1(c3, c0) or c4 = c0",
+            "g4(c4, c5) != c3 or g4(c4, g1(c5, c0)) = g1(c3, c0) or c4 = c0",
 
             // The clauses from the basic case
-            "not m0(m1(c5, c0), c1)",
-            "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or m0(m1(c5, c0), c1) or c4 = c1",
+            "not g0(g1(c5, c0), c1)",
+            "g4(c4, g1(c5, c0)) != g1(c3, c0) or not g0(g1(c3, c0), c1) or g0(g1(c5, c0), c1) or c4 = c1",
         ]);
 
         checker2.check_clause_str(
-            "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or c4 = c1",
+            "g4(c4, g1(c5, c0)) != g1(c3, c0) or not g0(g1(c3, c0), c1) or c4 = c1",
         );
     }
 

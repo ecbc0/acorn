@@ -35,9 +35,6 @@ impl KernelContext {
             Atom::Symbol(Symbol::ScopedConstant(i)) => {
                 self.symbol_table.name_for_local_id(*i).to_string()
             }
-            Atom::Symbol(Symbol::Monomorph(i)) => {
-                format!("{}", self.symbol_table.get_monomorph(*i))
-            }
             Atom::FreeVariable(i) => format!("x{}", i),
             Atom::BoundVariable(i) => format!("b{}", i),
             Atom::Symbol(Symbol::Synthetic(i)) => format!("s{}", i),
@@ -82,8 +79,8 @@ impl KernelContext {
     }
 
     /// Creates a test KernelContext with pre-populated scoped constants, global constants,
-    /// monomorphs, and synthetics. All types will be EMPTY.
-    /// For use in tests that parse terms like "c0", "g0", "m0", "s0".
+    /// and synthetics. All types will be EMPTY.
+    /// For use in tests that parse terms like "c0", "g0", "s0".
     #[cfg(test)]
     pub fn test_with_constants(num_scoped: usize, num_global: usize) -> KernelContext {
         let mut ctx = KernelContext::new();
@@ -93,10 +90,6 @@ impl KernelContext {
         for _ in 0..num_global {
             ctx.symbol_table.add_global_constant(Term::empty_type());
         }
-        // Also add monomorphs for tests that use "m0", "m1", etc.
-        for _ in 0..10 {
-            ctx.symbol_table.add_monomorph(Term::empty_type());
-        }
         // Also add synthetics for tests that use "s0", "s1", etc.
         for _ in 0..10 {
             ctx.symbol_table.declare_synthetic(Term::empty_type());
@@ -105,12 +98,11 @@ impl KernelContext {
     }
 
     /// Creates a test KernelContext with all symbol types populated with specified types.
-    /// Arrays are indexed by atom id, e.g., monomorph_types[2] gives type for Monomorph(2).
+    /// Arrays are indexed by atom id, e.g., synthetic_types[2] gives type for Synthetic(2).
     #[cfg(test)]
     pub fn test_with_all_types(
         scoped_types: &[Term],
         global_types: &[Term],
-        monomorph_types: &[Term],
         synthetic_types: &[Term],
     ) -> KernelContext {
         let mut ctx = KernelContext::new();
@@ -119,9 +111,6 @@ impl KernelContext {
         }
         for type_term in global_types {
             ctx.symbol_table.add_global_constant(type_term.clone());
-        }
-        for type_term in monomorph_types {
-            ctx.symbol_table.add_monomorph(type_term.clone());
         }
         for type_term in synthetic_types {
             ctx.symbol_table.declare_synthetic(type_term.clone());
@@ -249,16 +238,6 @@ impl KernelContext {
             .add_scoped_constant(type_empty2_to_empty.clone()); // c4
         for _ in 5..10 {
             ctx.symbol_table.add_scoped_constant(Term::bool_type());
-        }
-
-        // Add monomorphs with function types (m0-m4 are functions, m5-m9 are Bool)
-        ctx.symbol_table.add_monomorph(type_bool2_to_bool); // m0
-        ctx.symbol_table.add_monomorph(type_bool_to_bool); // m1
-        ctx.symbol_table.add_monomorph(type_bool3_to_bool); // m2
-        ctx.symbol_table.add_monomorph(type_empty_to_bool); // m3
-        ctx.symbol_table.add_monomorph(type_empty2_to_empty); // m4
-        for _ in 5..10 {
-            ctx.symbol_table.add_monomorph(Term::bool_type());
         }
 
         // Add synthetics with BOOL type
@@ -546,7 +525,7 @@ impl KernelContext {
     }
 
     /// Add a constant with a given name and type string for testing.
-    /// The name should be like "c0", "g0", "m0", or "s0".
+    /// The name should be like "c0", "g0", or "s0".
     /// Returns self for chaining.
     ///
     /// Example: `ctx.add_constant("c0", "Int").add_constant("g0", "Int -> Bool")`
@@ -568,12 +547,6 @@ impl KernelContext {
                     self.symbol_table.add_global_constant(Term::empty_type());
                 }
                 self.symbol_table.set_global_constant_type(id, type_term);
-            }
-            'm' => {
-                while self.symbol_table.num_monomorphs() <= id {
-                    self.symbol_table.add_monomorph(Term::empty_type());
-                }
-                self.symbol_table.set_monomorph_type(id, type_term);
             }
             's' => {
                 while self.symbol_table.num_synthetics() <= id {

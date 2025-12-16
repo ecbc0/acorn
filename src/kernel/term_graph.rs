@@ -1411,9 +1411,9 @@ impl TestGraph {
         context.add_constants(&["c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7"], "Bool");
         // g1-g4: Bool -> Bool functions
         context.add_constants(&["g1", "g2", "g3", "g4"], "Bool -> Bool");
-        // m0-m5: (Bool, Bool) -> Bool functions
+        // g5-g10: (Bool, Bool) -> Bool functions (replacing m0-m5)
         context.add_constants(
-            &["m0", "m1", "m2", "m3", "m4", "m5"],
+            &["g5", "g6", "g7", "g8", "g9", "g10"],
             "(Bool, Bool) -> Bool",
         );
         TestGraph {
@@ -1636,31 +1636,31 @@ mod tests {
 
     #[test]
     fn test_term_graph_rewriting_equality() {
-        // Use m1, m2 ((Bool, Bool) -> Bool) for two-arg functions
+        // Use g6, g7 ((Bool, Bool) -> Bool) for two-arg functions
         let mut g =
-            TestGraph::with_clauses(&["m1(c1, m2(c2, c3)) = c4", "m2(c2, c3) = m2(c3, c2)"]);
-        g.check_clause_str("m1(c1, m2(c3, c2)) = c4");
+            TestGraph::with_clauses(&["g6(c1, g7(c2, c3)) = c4", "g7(c2, c3) = g7(c3, c2)"]);
+        g.check_clause_str("g6(c1, g7(c3, c2)) = c4");
     }
 
     #[test]
     fn test_term_graph_rewriting_inequality() {
-        // Use m1, m2 ((Bool, Bool) -> Bool) for two-arg functions
+        // Use g6, g7 ((Bool, Bool) -> Bool) for two-arg functions
         let mut g =
-            TestGraph::with_clauses(&["m1(c1, m2(c2, c3)) != c4", "m2(c2, c3) = m2(c3, c2)"]);
-        g.check_clause_str("m1(c1, m2(c3, c2)) != c4");
+            TestGraph::with_clauses(&["g6(c1, g7(c2, c3)) != c4", "g7(c2, c3) = g7(c3, c2)"]);
+        g.check_clause_str("g6(c1, g7(c3, c2)) != c4");
     }
 
     #[test]
     fn test_term_graph_concluding_opposing_literals() {
         let mut g = TestGraph::with_clauses(&[
-            "not m4(c6, m5(c1, c0))",
-            "m4(c6, c6) or m3(c6, c6)",
-            "not m3(c6, c6) or m4(c6, c6)",
-            "m5(c1, c0) = c6",
-            "not m4(c6, c6)",
+            "not g9(c6, g10(c1, c0))",
+            "g9(c6, c6) or g8(c6, c6)",
+            "not g8(c6, c6) or g9(c6, c6)",
+            "g10(c1, c0) = c6",
+            "not g9(c6, c6)",
         ]);
 
-        g.check_clause_str("m3(c6, c6)");
+        g.check_clause_str("g8(c6, c6)");
     }
 
     #[test]
@@ -1673,9 +1673,9 @@ mod tests {
     #[test]
     fn test_term_graph_shortening_long_clause() {
         let mut g =
-            TestGraph::with_clauses(&["not m0(c2, c3)", "not m1(c2, c3) or m0(c2, c3) or c3 = c2"]);
+            TestGraph::with_clauses(&["not g5(c2, c3)", "not g6(c2, c3) or g5(c2, c3) or c3 = c2"]);
 
-        g.check_clause_str("not m1(c2, c3) or c3 = c2");
+        g.check_clause_str("not g6(c2, c3) or c3 = c2");
     }
 
     #[test]
@@ -1683,14 +1683,14 @@ mod tests {
         // This failed at some point because we were checking a clause that could be reduced.
         let mut g = TestGraph::with_clauses(&[
             // These are necessary to reproduce the bug
-            "m4(c4, c5) = c3",
+            "g9(c4, c5) = c3",
             "c4 != c0",
-            "m4(c4, c5) != c3 or m4(c4, m1(c5, c0)) = m1(c3, c0) or c4 = c0",
+            "g9(c4, c5) != c3 or g9(c4, g6(c5, c0)) = g6(c3, c0) or c4 = c0",
             // The clauses from the basic case
-            "not m0(m1(c5, c0), c1)",
-            "m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or m0(m1(c5, c0), c1) or c4 = c1",
+            "not g5(g6(c5, c0), c1)",
+            "g9(c4, g6(c5, c0)) != g6(c3, c0) or not g5(g6(c3, c0), c1) or g5(g6(c5, c0), c1) or c4 = c1",
         ]);
-        g.check_clause_str("m4(c4, m1(c5, c0)) != m1(c3, c0) or not m0(m1(c3, c0), c1) or c4 = c1");
+        g.check_clause_str("g9(c4, g6(c5, c0)) != g6(c3, c0) or not g5(g6(c3, c0), c1) or c4 = c1");
     }
 
     #[test]
@@ -1895,13 +1895,13 @@ mod tests {
     #[test]
     fn test_term_graph_missed_resolution() {
         let mut g = TestGraph::with_clauses(&[
-            "m4(c0, c1) = c1",
-            "not m3(m4(c0, c1), c0)",
-            "m1(c1, c0) or m1(c0, c1)", // Key clause 1
-            "m3(m4(c0, c1), c0) = m1(c0, m4(c0, c1))",
-            "not m1(c0, c1)", // Key clause 2
+            "g9(c0, c1) = c1",
+            "not g8(g9(c0, c1), c0)",
+            "g6(c1, c0) or g6(c0, c1)", // Key clause 1
+            "g8(g9(c0, c1), c0) = g6(c0, g9(c0, c1))",
+            "not g6(c0, c1)", // Key clause 2
         ]);
-        g.check_clause_str("m1(c1, c0)");
+        g.check_clause_str("g6(c1, c0)");
     }
 
     // Test partial application congruence: if f(a) = g(c), then f(a, b) = g(c, b).

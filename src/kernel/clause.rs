@@ -932,7 +932,6 @@ mod tests {
     }
 
     /// Test that extensionality works with asymmetric arities.
-    /// This is the case from the no_mono_symbols bug:
     /// g0(c0, c1, x0) = g1(c0, x0) where c0, c1 are ground constants, x0 is free var
     /// The trailing x0 matches on both sides, so we should be able to peel x0:
     /// g0(c0, c1) = g1(c0)

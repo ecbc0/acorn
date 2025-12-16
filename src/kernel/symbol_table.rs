@@ -48,16 +48,9 @@ pub struct SymbolTable {
     /// The ConstantName -> Symbol lookup direction.
     name_to_symbol: HashMap<ConstantName, Symbol>,
 
-    /// Maps the rich constant instance to the Symbol that represents it.
-    /// The Symbol might be a Monomorph, or it might be an alias to another constant type.
-    monomorph_to_symbol: HashMap<ConstantInstance, Symbol>,
-
-    /// Indexed by the AtomId of the monomorph.
-    /// For each id, store the rich constant corresponding to it.
-    id_to_monomorph: Vec<ConstantInstance>,
-
-    /// For monomorph i, monomorph_types[i] is the type.
-    monomorph_types: Vec<Term>,
+    /// Maps constant instances (with type parameters) to their Symbol aliases.
+    /// Used for instance definitions where e.g. Arf.foo[Foo] = Foo.foo.
+    instance_to_symbol: HashMap<ConstantInstance, Symbol>,
 
     /// For synthetic atom i, synthetic_types[i] is the type.
     synthetic_types: Vec<Term>,
@@ -75,9 +68,7 @@ impl SymbolTable {
             scoped_constants: vec![],
             scoped_constant_types: vec![],
             name_to_symbol: HashMap::new(),
-            monomorph_to_symbol: HashMap::new(),
-            id_to_monomorph: vec![],
-            monomorph_types: vec![],
+            instance_to_symbol: HashMap::new(),
             synthetic_types: vec![],
             polymorphic_info: HashMap::new(),
         }
@@ -107,7 +98,6 @@ impl SymbolTable {
             Symbol::Synthetic(i) => &self.synthetic_types[i as usize],
             Symbol::GlobalConstant(i) => &self.global_constant_types[i as usize],
             Symbol::ScopedConstant(i) => &self.scoped_constant_types[i as usize],
-            Symbol::Monomorph(i) => &self.monomorph_types[i as usize],
         }
     }
 
@@ -121,7 +111,6 @@ impl SymbolTable {
             Symbol::Synthetic(i) => self.synthetic_types[i as usize].clone(),
             Symbol::GlobalConstant(i) => self.global_constant_types[i as usize].clone(),
             Symbol::ScopedConstant(i) => self.scoped_constant_types[i as usize].clone(),
-            Symbol::Monomorph(i) => self.monomorph_types[i as usize].clone(),
         };
         result.validate();
         result
@@ -155,18 +144,6 @@ impl SymbolTable {
     #[cfg(test)]
     pub fn set_global_constant_type(&mut self, id: u32, var_type: Term) {
         self.global_constant_types[id as usize] = var_type;
-    }
-
-    /// Get the number of monomorphs.
-    #[cfg(test)]
-    pub fn num_monomorphs(&self) -> u32 {
-        self.monomorph_types.len() as u32
-    }
-
-    /// Set the type for a monomorph at a given index.
-    #[cfg(test)]
-    pub fn set_monomorph_type(&mut self, id: u32, var_type: Term) {
-        self.monomorph_types[id as usize] = var_type;
     }
 
     /// Get the number of synthetics.
@@ -208,16 +185,6 @@ impl SymbolTable {
         self.global_constants.push(None);
         self.global_constant_types.push(var_type);
         Symbol::GlobalConstant(atom_id)
-    }
-
-    /// Add a monomorph with the given type, without the full ConstantInstance.
-    /// Returns the Symbol for the new monomorph.
-    /// Primarily for testing with parsed terms like "m0", "m1".
-    #[cfg(test)]
-    pub fn add_monomorph(&mut self, var_type: Term) -> Symbol {
-        let atom_id = self.monomorph_types.len() as AtomId;
-        self.monomorph_types.push(var_type);
-        Symbol::Monomorph(atom_id)
     }
 
     /// Assigns an id to this (module, name) pair if it doesn't already have one.
@@ -328,33 +295,7 @@ impl SymbolTable {
                     );
                 }
             }
-            // With no_mono_symbols, polymorphic constants are represented as type applications
-            // (e.g., add(Int)) rather than monomorph symbols.
-            #[cfg(not(feature = "no_mono_symbols"))]
-            if !c.params.is_empty() {
-                self.add_monomorph_instance(c, type_store);
-            }
         });
-    }
-
-    /// Should only be called when c has params.
-    #[cfg(not(feature = "no_mono_symbols"))]
-    fn add_monomorph_instance(&mut self, c: &ConstantInstance, type_store: &mut TypeStore) {
-        assert!(!c.params.is_empty());
-        if self.monomorph_to_symbol.get(c).is_some() {
-            // We already have it
-            return;
-        }
-
-        // Construct a symbol and appropriate entries for this monomorph
-        let var_type = type_store
-            .get_type_term(&c.instance_type)
-            .expect("type should be valid");
-        let monomorph_id = self.monomorph_types.len() as AtomId;
-        let symbol = Symbol::Monomorph(monomorph_id);
-        self.id_to_monomorph.push(c.clone());
-        self.monomorph_types.push(var_type);
-        self.monomorph_to_symbol.insert(c.clone(), symbol);
     }
 
     /// Get the name corresponding to a particular global AtomId.
@@ -367,10 +308,10 @@ impl SymbolTable {
         &self.scoped_constants[atom_id as usize].as_ref().unwrap()
     }
 
-    /// Make this monomorphized constant an alias for the given name.
+    /// Make this constant instance an alias for the given name.
     /// If neither of the names map to anything, we create a new entry.
     /// This is rare but can happen if we're aliasing something that was structurally generated.
-    pub fn alias_monomorph(
+    pub fn alias_instance(
         &mut self,
         c: ConstantInstance,
         name: &ConstantName,
@@ -389,28 +330,20 @@ impl SymbolTable {
             NewConstantType::Global
         };
         let symbol = self.add_constant(name.clone(), ctype, var_type);
-        self.monomorph_to_symbol.insert(c, symbol);
+        self.instance_to_symbol.insert(c, symbol);
     }
 
     /// Build a term application for a polymorphic constant.
     /// E.g., for add[Int], builds add(Int) instead of using a monomorph symbol.
-    /// However, if the constant has an alias (via alias_monomorph), use that instead.
-    pub fn term_from_monomorph(
+    /// However, if the constant has an alias (via alias_instance), use that instead.
+    pub fn term_from_instance(
         &self,
         c: &ConstantInstance,
         type_store: &TypeStore,
     ) -> Result<Term, String> {
         // Check for an alias first - instance definitions create aliases
         // where Arf.foo[Foo] = Foo.foo makes them the same symbol
-        if let Some(&symbol) = self.monomorph_to_symbol.get(c) {
-            // With no_mono_symbols, we should only find aliases (GlobalConstant/ScopedConstant),
-            // never Monomorph symbols.
-            #[cfg(feature = "no_mono_symbols")]
-            assert!(
-                !matches!(symbol, Symbol::Monomorph(_)),
-                "no_mono_symbols is set but found Monomorph symbol for {:?}",
-                c
-            );
+        if let Some(&symbol) = self.instance_to_symbol.get(c) {
             return Ok(Term::atom(Atom::Symbol(symbol)));
         }
 
@@ -434,9 +367,5 @@ impl SymbolTable {
         // Build application: base(type_arg1, type_arg2, ...)
         let head = Term::atom(Atom::Symbol(base_symbol));
         Ok(head.apply(&type_args))
-    }
-
-    pub fn get_monomorph(&self, id: AtomId) -> &ConstantInstance {
-        &self.id_to_monomorph[id as usize]
     }
 }

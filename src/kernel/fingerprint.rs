@@ -443,11 +443,11 @@ mod tests {
 
     #[test]
     fn test_split_application() {
-        // m0: (Bool, Bool) -> Bool
-        let term = Term::parse("m0(c0, c1)");
+        // g0: (Bool, Bool) -> Bool
+        let term = Term::parse("g0(c0, c1)");
         let (func, arg) = term.as_ref().split_application().unwrap();
 
-        // func should be m0(c0)
+        // func should be g0(c0)
         assert_eq!(func.num_args(), 1);
 
         // arg should be c1
@@ -456,8 +456,8 @@ mod tests {
 
     #[test]
     fn test_path_navigation() {
-        // m0: (Bool, Bool) -> Bool
-        let term = Term::parse("m0(c0, c1)");
+        // g0: (Bool, Bool) -> Bool
+        let term = Term::parse("g0(c0, c1)");
 
         // [] should return the whole term
         let root = term.as_ref().get_term_at_path(&[]).unwrap();
@@ -470,7 +470,7 @@ mod tests {
             .unwrap();
         assert!(last_arg.is_atomic());
 
-        // [Function] should return m0(c0)
+        // [Function] should return g0(c0)
         let func = term
             .as_ref()
             .get_term_at_path(&[PathStep::Function])
@@ -484,7 +484,7 @@ mod tests {
             .unwrap();
         assert!(first_arg.is_atomic());
 
-        // [Function, Function] should return m0 (the head)
+        // [Function, Function] should return g0 (the head)
         let head = term
             .as_ref()
             .get_term_at_path(&[PathStep::Function, PathStep::Function])
@@ -495,11 +495,11 @@ mod tests {
     #[test]
     fn test_fingerprint() {
         let mut kctx = KernelContext::new();
-        kctx.add_constant("m0", "(Bool, Bool) -> Bool");
+        kctx.add_constant("g0", "(Bool, Bool) -> Bool");
         let lctx = kctx.make_local(&["Bool", "Bool"]);
 
-        // m0: (Bool, Bool) -> Bool, x0 and x1 are Bool
-        let term = Term::parse("m0(x0, x1)");
+        // g0: (Bool, Bool) -> Bool, x0 and x1 are Bool
+        let term = Term::parse("g0(x0, x1)");
         TermFingerprint::new(&term, &lctx, &kctx);
     }
 

@@ -159,7 +159,6 @@ const ATOM_TYPE: u8 = 7;
 const ATOM_TYPECLASS: u8 = 8;
 const ATOM_SYMBOL_GLOBAL: u8 = 9;
 const ATOM_SYMBOL_SCOPED: u8 = 10;
-const ATOM_SYMBOL_MONOMORPH: u8 = 11;
 const ATOM_SYMBOL_SYNTHETIC: u8 = 12;
 const ATOM_FALSE: u8 = 13;
 const ATOM_SYMBOL_EMPTY: u8 = 14;
@@ -191,7 +190,6 @@ impl Edge {
                 Atom::Symbol(Symbol::Type(_)) => ATOM_TYPE,
                 Atom::Symbol(Symbol::GlobalConstant(_)) => ATOM_SYMBOL_GLOBAL,
                 Atom::Symbol(Symbol::ScopedConstant(_)) => ATOM_SYMBOL_SCOPED,
-                Atom::Symbol(Symbol::Monomorph(_)) => ATOM_SYMBOL_MONOMORPH,
                 Atom::Symbol(Symbol::Synthetic(_)) => ATOM_SYMBOL_SYNTHETIC,
             },
         }
@@ -219,7 +217,6 @@ impl Edge {
                 Atom::Symbol(Symbol::Type(t)) => t.as_u16(),
                 Atom::Symbol(Symbol::GlobalConstant(c)) => *c,
                 Atom::Symbol(Symbol::ScopedConstant(c)) => *c,
-                Atom::Symbol(Symbol::Monomorph(m)) => *m,
                 Atom::Symbol(Symbol::Synthetic(s)) => *s,
             },
         };
@@ -242,7 +239,6 @@ impl Edge {
             ATOM_TYPECLASS => Edge::Atom(Atom::Typeclass(TypeclassId::new(id))),
             ATOM_SYMBOL_GLOBAL => Edge::Atom(Atom::Symbol(Symbol::GlobalConstant(id))),
             ATOM_SYMBOL_SCOPED => Edge::Atom(Atom::Symbol(Symbol::ScopedConstant(id))),
-            ATOM_SYMBOL_MONOMORPH => Edge::Atom(Atom::Symbol(Symbol::Monomorph(id))),
             ATOM_SYMBOL_SYNTHETIC => Edge::Atom(Atom::Symbol(Symbol::Synthetic(id))),
             ATOM_SYMBOL_EMPTY => Edge::Atom(Atom::Symbol(Symbol::Empty)),
             ATOM_SYMBOL_BOOL => Edge::Atom(Atom::Symbol(Symbol::Bool)),
@@ -1147,7 +1143,6 @@ mod tests {
             Edge::Atom(Atom::Typeclass(TypeclassId::new(5))),
             Edge::Atom(Atom::Symbol(Symbol::GlobalConstant(10))),
             Edge::Atom(Atom::Symbol(Symbol::ScopedConstant(20))),
-            Edge::Atom(Atom::Symbol(Symbol::Monomorph(30))),
             Edge::Atom(Atom::Symbol(Symbol::Synthetic(40))),
         ];
 

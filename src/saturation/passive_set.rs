@@ -421,16 +421,16 @@ mod tests {
     #[test]
     fn test_passive_set_simplification() {
         let mut kctx = KernelContext::new();
-        kctx.add_constant("m0", "(Bool, Bool) -> Bool")
+        kctx.add_constant("g0", "(Bool, Bool) -> Bool")
             .add_constants(&["c0", "c1", "c2"], "Bool");
 
         let mut passive_set = PassiveSet::new();
-        let clause1 = kctx.make_clause("m0(c0, c1) or m0(c0, c2)", &[]);
+        let clause1 = kctx.make_clause("g0(c0, c1) or g0(c0, c2)", &[]);
         passive_set.push_batch(vec![ProofStep::mock_from_clause(clause1)], &kctx);
 
         // This should match *both* the literals in our existing clause.
         // x0 is a Bool variable that matches both c1 and c2.
-        let clause2 = kctx.make_clause("not m0(c0, x0)", &["Bool"]);
+        let clause2 = kctx.make_clause("not g0(c0, x0)", &["Bool"]);
         passive_set.simplify(3, &ProofStep::mock_from_clause(clause2), &kctx);
 
         let step = passive_set.pop().unwrap();

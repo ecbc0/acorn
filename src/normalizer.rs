@@ -975,7 +975,7 @@ impl NormalizerView<'_> {
                 } else {
                     let term = self
                         .symbol_table()
-                        .term_from_monomorph(&c, self.type_store())?;
+                        .term_from_instance(&c, self.type_store())?;
                     Ok(Some((term, true)))
                 }
             }
@@ -1427,7 +1427,7 @@ impl NormalizerView<'_> {
                 } else {
                     let term = self
                         .symbol_table()
-                        .term_from_monomorph(&c, self.type_store())?;
+                        .term_from_instance(&c, self.type_store())?;
                     Ok(ExtendedTerm::Term(term))
                 }
             }
@@ -1614,7 +1614,7 @@ impl Normalizer {
         // Check if this looks like an aliasing.
         if let Some((ci, name, constant_type)) = fact.as_instance_alias() {
             let local = fact.source().truthiness() != Truthiness::Factual;
-            self.kernel_context.symbol_table.alias_monomorph(
+            self.kernel_context.symbol_table.alias_instance(
                 ci,
                 name,
                 &constant_type,
@@ -1762,9 +1762,6 @@ impl Normalizer {
                     // Non-polymorphic constant
                     AcornValue::constant(name, vec![], acorn_type.clone(), acorn_type, vec![])
                 }
-            }
-            Atom::Symbol(Symbol::Monomorph(i)) => {
-                AcornValue::Constant(self.kernel_context.symbol_table.get_monomorph(*i).clone())
             }
             Atom::FreeVariable(i) => {
                 if let Some(map) = arbitrary_names {

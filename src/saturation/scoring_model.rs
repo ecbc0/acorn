@@ -98,11 +98,11 @@ mod tests {
     #[test]
     fn test_ort_model_batch_score() {
         let mut kctx = KernelContext::new();
-        kctx.add_constant("m4", "(Bool, Bool) -> Bool")
+        kctx.add_constant("g0", "(Bool, Bool) -> Bool")
             .add_constants(&["c1", "c2"], "Bool");
 
-        let clause1 = kctx.make_clause("m4(c1, c1) = c2", &[]);
-        let clause2 = kctx.make_clause("m4(c1, c1) = m4(c2, c2)", &[]);
+        let clause1 = kctx.make_clause("g0(c1, c1) = c2", &[]);
+        let clause2 = kctx.make_clause("g0(c1, c1) = g0(c2, c2)", &[]);
         let step1 = ProofStep::mock_from_clause(clause1);
         let step2 = ProofStep::mock_from_clause(clause2);
         let features1 = Features::new(&step1);
