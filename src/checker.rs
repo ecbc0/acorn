@@ -139,29 +139,17 @@ pub struct Checker {
 
     /// The reason for each step. The step_id is the index in this vector.
     reasons: Vec<StepReason>,
-
-    /// The clause for each step. Only tracked in verbose mode.
-    clauses: Option<Vec<Clause>>,
 }
 
 impl Checker {
-    fn new(clauses: Option<Vec<Clause>>) -> Checker {
+    pub fn new() -> Checker {
         Checker {
             term_graph: TermGraph::new(),
             generalization_set: Arc::new(GeneralizationSet::new()),
             direct_contradiction: false,
             past_boolean_reductions: HashSet::new(),
             reasons: Vec::new(),
-            clauses,
         }
-    }
-
-    pub fn new_fast() -> Checker {
-        Checker::new(None)
-    }
-
-    pub fn new_verbose() -> Checker {
-        Checker::new(Some(vec![]))
     }
 
     /// Adds a true clause to the checker with a specific reason.
@@ -178,10 +166,6 @@ impl Checker {
 
         let step_id = self.reasons.len();
         self.reasons.push(reason.clone());
-
-        if let Some(clauses) = &mut self.clauses {
-            clauses.push(clause.clone());
-        }
 
         if clause.has_any_variable() {
             // The clause has free variables, so it can be a generalization.
@@ -285,39 +269,6 @@ impl Checker {
     /// has_contradiction will return true.
     pub fn has_contradiction(&self) -> bool {
         self.direct_contradiction || self.term_graph.has_contradiction()
-    }
-
-    /// Creates a certificate step along with all its dependencies.
-    ///
-    /// If the checker is in verbose mode and the reason has a dependency,
-    /// this recursively includes all dependent steps first, then the current step.
-    fn make_steps(
-        &self,
-        statement: String,
-        reason: StepReason,
-        normalizer: &Normalizer,
-        bindings: &Cow<BindingMap>,
-    ) -> Vec<CertificateStep> {
-        let mut steps = Vec::new();
-
-        // If verbose mode and reason has a dependency, recurse
-        if let Some(clauses_vec) = &self.clauses {
-            if let Some(dep_id) = reason.dependency() {
-                // Get the dependency's clause and reason
-                let dep_clause = &clauses_vec[dep_id];
-                let dep_reason = self.reasons[dep_id].clone();
-                let dep_statement = clause_to_code(dep_clause, normalizer, bindings);
-
-                // Recursively get all dependencies
-                let dep_steps = self.make_steps(dep_statement, dep_reason, normalizer, bindings);
-                steps.extend(dep_steps);
-            }
-        }
-
-        // Add the current step
-        steps.push(CertificateStep { statement, reason });
-
-        steps
     }
 
     /// Helper method to check a single line of code in a proof.
@@ -455,8 +406,10 @@ impl Checker {
                     Some(source) => StepReason::Skolemization(source),
                     None => StepReason::SyntheticDefinition,
                 };
-                let steps = self.make_steps(code.to_string(), reason, normalizer, bindings);
-                certificate_steps.extend(steps);
+                certificate_steps.push(CertificateStep {
+                    statement: code.to_string(),
+                    reason,
+                });
 
                 Ok(())
             }
@@ -502,8 +455,10 @@ impl Checker {
 
                 // Record the certificate step with the reason we found
                 if let Some(reason) = reason {
-                    let steps = self.make_steps(code.to_string(), reason, normalizer, bindings);
-                    certificate_steps.extend(steps);
+                    certificate_steps.push(CertificateStep {
+                        statement: code.to_string(),
+                        reason,
+                    });
                 }
 
                 Ok(())
@@ -655,7 +610,7 @@ impl TestChecker {
         context.add_constant("m2", "(Bool, Bool) -> Bool");
         context.add_constants(&["m3", "m4"], "(Bool, Bool) -> Bool");
 
-        let mut checker = Checker::new(None);
+        let mut checker = Checker::new();
         for clause_str in clauses {
             let clause = context.make_clause(clause_str, &[]);
             checker.insert_clause(&clause, StepReason::Testing, &context);

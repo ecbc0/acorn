@@ -81,7 +81,7 @@ fn main() {
     let mut prover = GenerativeProver::new(config.clone());
 
     // Create a checker
-    let checker = Checker::new_fast();
+    let checker = Checker::new();
 
     // Set the goal context (initializes the KV cache)
     println!("Setting goal context and warming up KV cache...");

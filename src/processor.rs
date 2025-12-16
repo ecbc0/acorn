@@ -46,7 +46,7 @@ impl Processor {
         Processor {
             prover: Box::new(SaturationProver::new(vec![])),
             normalizer: Normalizer::new(),
-            checker: Checker::new_fast(),
+            checker: Checker::new(),
         }
     }
 
@@ -54,7 +54,7 @@ impl Processor {
         Processor {
             prover: Box::new(SaturationProver::new(vec![cancellation_token])),
             normalizer: Normalizer::new(),
-            checker: Checker::new_fast(),
+            checker: Checker::new(),
         }
     }
 
@@ -62,7 +62,7 @@ impl Processor {
         Processor {
             prover: Box::new(GenerativeProver::new(config)),
             normalizer: Normalizer::new(),
-            checker: Checker::new_fast(),
+            checker: Checker::new(),
         }
     }
 
