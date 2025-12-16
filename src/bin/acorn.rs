@@ -11,6 +11,7 @@ use acorn::server::{run_server, ServerArgs};
 use acorn::verifier::Verifier;
 use clap::{Parser, Subcommand};
 use mimalloc::MiMalloc;
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -159,6 +160,15 @@ enum Command {
 
 #[tokio::main]
 async fn main() {
+    // Initialize tracing subscriber with env filter
+    // Use RUST_LOG env var to control log levels, e.g.:
+    //   RUST_LOG=acorn::processor=debug cargo run -- verify
+    //   RUST_LOG=acorn::processor=trace cargo run -- verify
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")))
+        .init();
+
     let args = Args::parse();
 
     let current_dir = if let Some(lib_dir) = &args.lib {

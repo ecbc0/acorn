@@ -10,19 +10,11 @@ use crate::elaborator::goal::Goal;
 use crate::generative::generative_prover::{GenerativeProver, GenerativeProverConfig};
 use crate::normalizer::Normalizer;
 use crate::project::Project;
-use crate::proof_step::{ProofStep, Rule};
+use crate::proof_step::Rule;
 use crate::prover::{Outcome, Prover, ProverMode};
 use crate::saturation::SaturationProver;
 use tokio_util::sync::CancellationToken;
-
-const VERBOSE: bool = false;
-
-fn print_steps(steps: &[ProofStep], normalizer: &Normalizer) {
-    for step in steps {
-        let denormalized = normalizer.denormalize(&step.clause, None);
-        println!("    {}", denormalized);
-    }
-}
+use tracing::{debug, trace};
 
 /// The processor represents what we do with a stream of facts.
 pub struct Processor {
@@ -75,16 +67,15 @@ impl Processor {
 
     /// Normalizes a fact and adds the resulting proof steps to the prover.
     pub fn add_fact(&mut self, fact: Fact) -> Result<(), BuildError> {
-        if VERBOSE {
-            match &fact {
-                Fact::Proposition(prop) => println!("\n{}", prop.value),
-                Fact::Definition(c, val, _) => println!("\ndefining {c} = {val}"),
-                _ => println!("\nother fact"),
-            }
+        match &fact {
+            Fact::Proposition(prop) => debug!(value = %prop.value, "adding proposition"),
+            Fact::Definition(c, val, _) => debug!(constant = %c, value = %val, "adding definition"),
+            _ => debug!("adding other fact"),
         }
         let steps = self.normalizer.normalize_fact(fact)?;
-        if VERBOSE {
-            print_steps(&steps, &self.normalizer);
+        for step in &steps {
+            let denormalized = self.normalizer.denormalize(&step.clause, None);
+            trace!(clause = %denormalized, "proof step");
         }
         let kernel_context = self.normalizer.kernel_context();
         for step in &steps {
@@ -117,9 +108,10 @@ impl Processor {
     pub fn set_goal(&mut self, goal: &Goal, project: &Project) -> Result<(), BuildError> {
         let source = &goal.proposition.source;
         let (ng, steps) = self.normalizer.normalize_goal(goal)?;
-        if VERBOSE {
-            println!("\nGoal: {}", goal.proposition.value);
-            print_steps(&steps, &self.normalizer);
+        debug!(goal = %goal.proposition.value, "setting goal");
+        for step in &steps {
+            let denormalized = self.normalizer.denormalize(&step.clause, None);
+            trace!(clause = %denormalized, "proof step");
         }
         let kernel_context = self.normalizer.kernel_context();
         for step in &steps {
