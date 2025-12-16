@@ -530,6 +530,7 @@ impl Checker {
 
         for code in proof {
             if self.has_contradiction() {
+                trace!("has_contradiction (early exit)");
                 return Ok(certificate_steps);
             }
             let kernel_context = normalizer.kernel_context().clone();
@@ -544,6 +545,7 @@ impl Checker {
         }
 
         if self.has_contradiction() {
+            trace!("has_contradiction (end of proof)");
             Ok(certificate_steps)
         } else {
             Err(Error::GeneratedBadCode(
