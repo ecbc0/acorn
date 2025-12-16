@@ -13,7 +13,7 @@
 
 - If we run into an error during reverification, to debug it, it can help to
   run the reverification just on the module that failed at a higher log level. For example:
-  `RUST_LOG=acorn::checker=trace cargo run --profile release -- reverify list.list_base`
+  `RUST_LOG=acorn=trace cargo run --profile release -- reverify list.list_base`
 
 - To evaluate performance, we should do a release build:
 

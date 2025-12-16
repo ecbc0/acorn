@@ -486,7 +486,7 @@ impl Checker {
         goal: &crate::elaborator::goal::Goal,
         normalizer: &mut crate::normalizer::Normalizer,
     ) -> Result<(), Error> {
-        trace!("checking {} (line {})", goal.name, goal.first_line);
+        trace!("inserting goal {} (line {})", goal.name, goal.first_line);
         use crate::proof_step::Rule;
 
         let source = &goal.proposition.source;
