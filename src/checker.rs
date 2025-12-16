@@ -21,6 +21,7 @@ use crate::normalizer::{Normalizer, NormalizerView};
 use crate::project::Project;
 use crate::syntax::expression::Declaration;
 use crate::syntax::statement::{Statement, StatementInfo};
+use tracing::trace;
 
 /// The reason why a certificate step was accepted.
 #[derive(Debug, Clone)]
@@ -159,6 +160,8 @@ impl Checker {
         reason: StepReason,
         kernel_context: &KernelContext,
     ) {
+        trace!(clause = %clause, reason = ?reason, "inserting clause");
+
         if clause.is_impossible() {
             self.direct_contradiction = true;
             return;
@@ -240,11 +243,13 @@ impl Checker {
         kernel_context: &KernelContext,
     ) -> Option<StepReason> {
         if self.has_contradiction() {
+            trace!(clause = %clause, result = "contradiction", "checking clause");
             return Some(StepReason::Contradiction);
         }
 
         // Check the term graph for concrete evaluation
         if self.term_graph.check_clause(clause, kernel_context) {
+            trace!(clause = %clause, result = "term_graph", "checking clause");
             return Some(StepReason::TermGraph);
         }
 
@@ -253,9 +258,11 @@ impl Checker {
             .generalization_set
             .find_generalization(clause.clone(), kernel_context)
         {
+            trace!(clause = %clause, result = "generalization_set", "checking clause");
             return Some(self.reasons[step_id].clone());
         }
 
+        trace!(clause = %clause, result = "failed", "checking clause");
         None
     }
 
