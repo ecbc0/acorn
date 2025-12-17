@@ -1802,3 +1802,71 @@ fn test_typeclass_attribute_multiple_constraints() {
         "#,
     );
 }
+
+#[test]
+fn test_env_recursive_instance_function() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        typeclass I: Identity {
+            id: I -> I
+        }
+
+        inductive Nat {
+            zero
+            suc(Nat)
+        }
+
+        instance Nat: Identity {
+            define id(self) -> Nat {
+                match self {
+                    Nat.zero {
+                        Nat.zero
+                    }
+                    Nat.suc(pred) {
+                        id(pred).suc
+                    }
+                }
+            }
+        }
+        "#,
+    );
+}
+
+#[test]
+fn test_env_proving_with_recursive_instance() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        typeclass I: Identity {
+            id: I -> I
+        }
+
+        inductive Nat {
+            zero
+            suc(Nat)
+        }
+
+        instance Nat: Identity {
+            define id(self) -> Nat {
+                match self {
+                    Nat.zero {
+                        Nat.zero
+                    }
+                    Nat.suc(pred) {
+                        id(pred).suc
+                    }
+                }
+            }
+        }
+
+        theorem id_zero {
+            Nat.zero.id = Nat.zero
+        }
+
+        theorem id_suc(n: Nat) {
+            n.suc.id = n.id.suc
+        }
+        "#,
+    );
+}

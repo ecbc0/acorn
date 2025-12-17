@@ -368,6 +368,7 @@ impl Environment {
         }
 
         // Calculate the function value
+        let recursion_name = defined_name.recursion_name();
         let (fn_param_names, _, arg_types, unbound_value, value_type) =
             self.bindings.evaluate_scoped_value(
                 &ds.type_params,
@@ -375,7 +376,7 @@ impl Environment {
                 Some(&ds.return_type),
                 &ds.return_value,
                 self_type,
-                defined_name.as_constant(),
+                recursion_name.as_ref(),
                 datatype_params,
                 project,
                 Some(&mut self.token_map),

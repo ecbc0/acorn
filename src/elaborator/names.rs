@@ -19,6 +19,14 @@ pub struct InstanceName {
     pub datatype: Datatype,
 }
 
+impl InstanceName {
+    /// Converts the instance name to a typeclass attribute name.
+    /// This is used for enabling recursion in instance function definitions.
+    pub fn to_typeclass_attribute(&self) -> ConstantName {
+        ConstantName::TypeclassAttribute(self.typeclass.clone(), self.attribute.clone())
+    }
+}
+
 impl fmt::Display for InstanceName {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
@@ -238,6 +246,25 @@ impl DefinedName {
         match self {
             DefinedName::Constant(name) => Some(name),
             DefinedName::Instance(_) => None,
+        }
+    }
+
+    /// Returns a ConstantName that can be used for enabling recursion.
+    /// For constants, this is the constant name itself.
+    /// For instance functions, we use an unqualified name with the attribute name,
+    /// which allows recursion via direct function call syntax (e.g., `id(pred)`).
+    pub fn recursion_name(&self) -> Option<ConstantName> {
+        match self {
+            DefinedName::Constant(name) => Some(name.clone()),
+            DefinedName::Instance(inst) => {
+                // Use an unqualified name so recursive calls like `id(pred)` will find it.
+                // We can't use TypeclassAttribute because that would overwrite and then
+                // remove the existing typeclass attribute definition.
+                Some(ConstantName::Unqualified(
+                    inst.datatype.module_id,
+                    inst.attribute.clone(),
+                ))
+            }
         }
     }
 
