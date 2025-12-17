@@ -463,9 +463,24 @@ impl CodeGenerator<'_> {
         // Handle numeric literals
         if let Some((_, datatype_name, attr)) = ci.name.as_attribute() {
             if attr.chars().all(|ch| ch.is_ascii_digit()) {
-                let datatype = Datatype {
-                    module_id: ci.name.module_id(),
-                    name: datatype_name.to_string(),
+                // For typeclass attributes like Zero.0[Foo], get the datatype from the params.
+                // For datatype attributes like Nat.0, get the datatype from the name.
+                let datatype = if ci.name.is_typeclass_attr() {
+                    // For typeclass attributes, the first param is the instantiated type
+                    if let Some(AcornType::Data(dt, _)) = ci.params.first() {
+                        dt.clone()
+                    } else {
+                        // Fallback to using the name if no params (shouldn't happen)
+                        Datatype {
+                            module_id: ci.name.module_id(),
+                            name: datatype_name.to_string(),
+                        }
+                    }
+                } else {
+                    Datatype {
+                        module_id: ci.name.module_id(),
+                        name: datatype_name.to_string(),
+                    }
                 };
 
                 let numeral = TokenType::Numeral.new_token(&attr);
@@ -806,6 +821,22 @@ impl CodeGenerator<'_> {
                                     if !self.bindings.constant_name_in_use(&datatype_attr_name) {
                                         // Generate DataType.attribute instead of Typeclass.attribute[DataType]
                                         // only if the datatype doesn't override this attribute
+
+                                        // Special case for digit attributes with numerals
+                                        if attr.chars().all(|ch| ch.is_ascii_digit()) {
+                                            let numeral = TokenType::Numeral.new_token(&attr);
+                                            if self.bindings.numerals() == Some(datatype) {
+                                                // If it's the numerals type, just return the numeral
+                                                return Ok(Expression::Singleton(numeral));
+                                            }
+                                            // Otherwise, scope it by the type
+                                            let lhs = self.type_to_expr(&c.params[0])?;
+                                            return Ok(Expression::generate_dot(
+                                                lhs,
+                                                Expression::Singleton(numeral),
+                                            ));
+                                        }
+
                                         let lhs = self.type_to_expr(&c.params[0])?;
                                         let rhs = Expression::generate_identifier(&attr);
                                         return Ok(Expression::generate_dot(lhs, rhs));
@@ -1591,5 +1622,38 @@ mod tests {
         );
         p.check_goal_code("main", "const_attr", "Foo.flag[Bar]");
         p.check_goal_code("main", "fn_attr", "Foo.foo[Bar](b)");
+    }
+
+    #[test]
+    fn test_codegen_typeclass_digit_with_numerals() {
+        // When a typeclass provides a digit (like 0 from Zero typeclass),
+        // and a type Foo implements that typeclass,
+        // and numerals Foo is set,
+        // then Zero.0[Foo] should codegen to just "0", not "Foo.0"
+        let mut p = Project::new_mock();
+        p.mock(
+            "/mock/main.ac",
+            r#"
+            typeclass Z: Zero {
+                0: Z
+            }
+
+            inductive Foo {
+                foo
+            }
+
+            instance Foo: Zero {
+                let 0: Foo = Foo.foo
+            }
+
+            numerals Foo
+
+            theorem goal {
+                Zero.0[Foo] = Foo.foo
+            }
+            "#,
+        );
+        // Zero.0[Foo] should codegen to "0" when numerals Foo is set
+        p.check_goal_code("main", "goal", "0 = Foo.foo");
     }
 }
