@@ -1870,3 +1870,41 @@ fn test_env_proving_with_recursive_instance() {
         "#,
     );
 }
+
+#[test]
+fn test_env_typeclass_digits_with_numerals() {
+    // Typeclasses should be able to provide digits that work with the numerals keyword.
+    // A "Zero" typeclass that provides a 0 digit should allow types implementing it
+    // to use 0 as a numeral.
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        typeclass Z: Zero {
+            0: Z
+        }
+
+        inductive Nat {
+            zero
+            suc(Nat)
+        }
+
+        instance Nat: Zero {
+            let 0: Nat = Nat.zero
+        }
+
+        attributes Nat {
+            define read(self, other: Nat) -> Nat {
+                // For this test we don't need a real implementation
+                self
+            }
+        }
+
+        numerals Nat
+
+        // This should work - 0 should resolve to Nat.zero via the Zero typeclass
+        theorem zero_is_zero {
+            0 = Nat.zero
+        }
+        "#,
+    );
+}

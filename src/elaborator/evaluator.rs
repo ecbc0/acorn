@@ -345,7 +345,8 @@ impl<'a> Evaluator<'a> {
         datatype: &Datatype,
         s: &str,
     ) -> error::Result<AcornValue> {
-        if self.bindings.has_type_attr(&datatype, s) {
+        // Check if this digit/number is defined as an attribute (either directly or via typeclass)
+        if self.bindings.resolve_datatype_attr(datatype, s).is_ok() {
             return self
                 .evaluate_datatype_attr(&datatype, s, token)?
                 .as_value(token);
