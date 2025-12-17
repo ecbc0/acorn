@@ -8,7 +8,7 @@ use std::path::Path;
 /// The current version of the build format.
 /// Increment this when making breaking changes to the manifest structure, or to the structure
 /// of other components of the cached build.
-const MANIFEST_VERSION: u32 = 2;
+const MANIFEST_VERSION: u32 = 3;
 
 /// A newtype wrapper for module names, created by joining parts with "."
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

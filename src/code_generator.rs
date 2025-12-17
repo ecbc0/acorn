@@ -460,27 +460,14 @@ impl CodeGenerator<'_> {
             return Err(Error::synthetic(&ci.name.to_string()));
         }
 
-        // Handle numeric literals
+        // Handle numeric literals for datatype attributes (not typeclass attributes).
+        // Typeclass attribute numerals are handled in value_to_expr where we have
+        // more context about whether the datatype has its own override.
         if let Some((_, datatype_name, attr)) = ci.name.as_attribute() {
-            if attr.chars().all(|ch| ch.is_ascii_digit()) {
-                // For typeclass attributes like Zero.0[Foo], get the datatype from the params.
-                // For datatype attributes like Nat.0, get the datatype from the name.
-                let datatype = if ci.name.is_typeclass_attr() {
-                    // For typeclass attributes, the first param is the instantiated type
-                    if let Some(AcornType::Data(dt, _)) = ci.params.first() {
-                        dt.clone()
-                    } else {
-                        // Fallback to using the name if no params (shouldn't happen)
-                        Datatype {
-                            module_id: ci.name.module_id(),
-                            name: datatype_name.to_string(),
-                        }
-                    }
-                } else {
-                    Datatype {
-                        module_id: ci.name.module_id(),
-                        name: datatype_name.to_string(),
-                    }
+            if attr.chars().all(|ch| ch.is_ascii_digit()) && !ci.name.is_typeclass_attr() {
+                let datatype = Datatype {
+                    module_id: ci.name.module_id(),
+                    name: datatype_name.to_string(),
                 };
 
                 let numeral = TokenType::Numeral.new_token(&attr);
@@ -818,25 +805,27 @@ impl CodeGenerator<'_> {
                                     // Check if the datatype has its own attribute with the same name
                                     let datatype_attr_name =
                                         DefinedName::datatype_attr(datatype, &attr);
-                                    if !self.bindings.constant_name_in_use(&datatype_attr_name) {
+                                    let datatype_has_own_attr =
+                                        self.bindings.constant_name_in_use(&datatype_attr_name);
+
+                                    // Special case for digit attributes
+                                    if attr.chars().all(|ch| ch.is_ascii_digit()) {
+                                        let numeral = TokenType::Numeral.new_token(&attr);
+                                        if self.bindings.numerals() == Some(datatype) {
+                                            // If it's the numerals type, just return the numeral
+                                            return Ok(Expression::Singleton(numeral));
+                                        }
+                                        // Otherwise, scope it by the type
+                                        let lhs = self.type_to_expr(&c.params[0])?;
+                                        return Ok(Expression::generate_dot(
+                                            lhs,
+                                            Expression::Singleton(numeral),
+                                        ));
+                                    }
+
+                                    if !datatype_has_own_attr {
                                         // Generate DataType.attribute instead of Typeclass.attribute[DataType]
                                         // only if the datatype doesn't override this attribute
-
-                                        // Special case for digit attributes with numerals
-                                        if attr.chars().all(|ch| ch.is_ascii_digit()) {
-                                            let numeral = TokenType::Numeral.new_token(&attr);
-                                            if self.bindings.numerals() == Some(datatype) {
-                                                // If it's the numerals type, just return the numeral
-                                                return Ok(Expression::Singleton(numeral));
-                                            }
-                                            // Otherwise, scope it by the type
-                                            let lhs = self.type_to_expr(&c.params[0])?;
-                                            return Ok(Expression::generate_dot(
-                                                lhs,
-                                                Expression::Singleton(numeral),
-                                            ));
-                                        }
-
                                         let lhs = self.type_to_expr(&c.params[0])?;
                                         let rhs = Expression::generate_identifier(&attr);
                                         return Ok(Expression::generate_dot(lhs, rhs));
@@ -1655,5 +1644,41 @@ mod tests {
         );
         // Zero.0[Foo] should codegen to "0" when numerals Foo is set
         p.check_goal_code("main", "goal", "0 = Foo.foo");
+    }
+
+    #[test]
+    fn test_codegen_typeclass_digit_with_own_attribute() {
+        // When a datatype has its OWN digit attribute (not just via typeclass instance),
+        // and it's also an instance of a Zero typeclass,
+        // Zero.0[Type] should codegen to Type.0 (using the datatype's own attribute)
+        let mut p = Project::new_mock();
+        p.mock(
+            "/mock/main.ac",
+            r#"
+            typeclass Z: Zero {
+                0: Z
+            }
+
+            inductive Bar {
+                bar
+            }
+
+            // Bar has its OWN 0 attribute
+            attributes Bar {
+                let 0: Bar = Bar.bar
+            }
+
+            // Bar is also an instance of Zero, referencing its own 0
+            instance Bar: Zero {
+                let 0: Bar = Bar.0
+            }
+
+            theorem goal {
+                Zero.0[Bar] = Bar.bar
+            }
+            "#,
+        );
+        // Zero.0[Bar] should codegen to "Bar.0" since Bar has its own 0 attribute
+        p.check_goal_code("main", "goal", "Bar.0 = Bar.bar");
     }
 }
