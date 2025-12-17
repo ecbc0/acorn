@@ -706,18 +706,20 @@ impl<'a> Builder<'a> {
                 }
                 Err(e) if self.reverify => {
                     // In reverify mode, a bad cert is an error
-                    // Print a command to reproduce this failure
-                    let module_name = self
-                        .current_module
-                        .as_ref()
-                        .map(|m| m.to_string())
-                        .unwrap_or_else(|| "unknown".to_string());
-                    let external_line = goal.first_line + 1;
-                    let cert_json = serde_json::to_string(&cert_to_use).unwrap_or_default();
-                    self.log_global(format!(
-                        "To reproduce: acorn reverify {} --line {} --cert '{}'",
-                        module_name, external_line, cert_json
-                    ));
+                    if false {
+                        // Print a command to reproduce this failure
+                        let module_name = self
+                            .current_module
+                            .as_ref()
+                            .map(|m| m.to_string())
+                            .unwrap_or_else(|| "unknown".to_string());
+                        let external_line = goal.first_line + 1;
+                        let cert_json = serde_json::to_string(&cert_to_use).unwrap_or_default();
+                        self.log_global(format!(
+                            "To reproduce: acorn reverify {} --line {} --cert '{}'",
+                            module_name, external_line, cert_json
+                        ));
+                    }
                     return Err(BuildError::goal(
                         goal,
                         format!("certificate failed to verify: {}", e),
