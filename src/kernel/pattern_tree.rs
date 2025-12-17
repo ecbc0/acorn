@@ -643,7 +643,7 @@ impl<T> PatternTree<T> {
             terms,
             local_context,
             kernel_context,
-            100, // stack limit
+            500, // stack limit - need enough depth for complex nested terms
             replacements,
             callback,
         )
@@ -824,6 +824,9 @@ where
     F: FnMut(usize, &Vec<TermRef<'a>>) -> bool,
 {
     if subtrie.is_empty() || stack_limit == 0 {
+        if stack_limit == 0 && !subtrie.is_empty() {
+            eprintln!("WARNING: pattern_tree stack_limit exhausted in match_func_part - consider increasing the limit");
+        }
         return true;
     }
 
@@ -974,6 +977,7 @@ where
     }
 
     if stack_limit == 0 {
+        eprintln!("WARNING: pattern_tree stack_limit exhausted in find_term_matches_while - consider increasing the limit");
         return false;
     }
 

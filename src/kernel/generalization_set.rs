@@ -727,7 +727,6 @@ mod tests {
             &["(Bool, Bool) -> Bool"],
         );
         clause_set.insert(pattern.clone(), 99, &kctx);
-        eprintln!("Inserted pattern: {:?}", pattern);
 
         // Build query manually: not g0(c1)(s0(g0(c1)), s0(g0(c1))) or c0(g0(c1))
         // Symbols: g0 = GlobalConstant(0), s0 = Synthetic(0), c0 = ScopedConstant(0), c1 = ScopedConstant(1)
@@ -769,7 +768,6 @@ mod tests {
         };
 
         let query = Clause::from_literals_unnormalized(vec![lit1, lit2], &LocalContext::empty());
-        eprintln!("Query: {:?}", query);
 
         let found = clause_set.find_generalization(query, &kctx);
         assert_eq!(
@@ -812,7 +810,6 @@ mod tests {
         // where f: (T, T) -> Bool (variable x0)
         let pattern = kctx.make_clause("not x0(s0(x0), s0(x0)) or c0(x0)", &["(T, T) -> Bool"]);
         clause_set.insert(pattern.clone(), 99, &kctx);
-        eprintln!("Inserted pattern: {:?}", pattern);
 
         // Build query: not g0(Type)(c1)(s0(...), s0(...)) or c0(g0(Type)(c1))
         // g0 = GlobalConstant(0), s0 = Synthetic(0), c0 = ScopedConstant(0), c1 = ScopedConstant(1)
@@ -861,7 +858,6 @@ mod tests {
         };
 
         let query = Clause::from_literals_unnormalized(vec![lit1, lit2], &LocalContext::empty());
-        eprintln!("Query: {:?}", query);
 
         let found = clause_set.find_generalization(query, &kctx);
         assert_eq!(
@@ -929,7 +925,6 @@ mod tests {
         let pattern =
             Clause::from_literals_unnormalized(vec![lit1_pattern, lit2_pattern], &pattern_context);
         clause_set.insert(pattern.clone(), 99, &kctx);
-        eprintln!("Inserted pattern: {:?}", pattern);
 
         // Build query: not g0(Type)(c1)(s0(...), s0(...)) or g1(Type)(g0(Type)(c1))
         let g0_atom = Atom::Symbol(Symbol::GlobalConstant(0));
@@ -972,13 +967,210 @@ mod tests {
             vec![lit1_query, lit2_query],
             &LocalContext::empty(),
         );
-        eprintln!("Query: {:?}", query);
 
         let found = clause_set.find_generalization(query, &kctx);
         assert_eq!(
             found,
             Some(99),
             "Should match pattern with g1(Type)(f) against g1(Type)(g0(Type)(c1))"
+        );
+    }
+
+    /// This test reproduces the exact failing case from complex.ac line 157.
+    ///
+    /// The pattern (mul_three_re theorem) is:
+    /// g217(g92(T7, g92(T7, x0, x1), x2)) = g90(T6, g90(T6, g90(T6, g92(T6, g92(T6, g217(x0), g217(x1)), g217(x2)), ...), ...), ...)
+    ///
+    /// The query is the same but with c1, c2, c3 instead of x0, x1, x2.
+    ///
+    /// Symbols:
+    /// - g90 = GlobalConstant(90) - some combining function (like add)
+    /// - g92 = GlobalConstant(92) - another combining function (like mul)
+    /// - g217 = GlobalConstant(217) - a selector (like .re)
+    /// - g218 = GlobalConstant(218) - another selector (like .im)
+    /// - T6 = Type(GroundTypeId(6)) - Real type
+    /// - T7 = Type(GroundTypeId(7)) - Complex type
+    #[test]
+    fn test_exact_mul_three_re_failure() {
+        use crate::kernel::atom::Atom;
+        use crate::kernel::symbol::Symbol;
+        use crate::kernel::term::Term;
+        use crate::kernel::types::GroundTypeId;
+
+        // Create a kernel context with the types we need
+        let mut kctx = KernelContext::new();
+        // Add datatypes to get the GroundTypeIds we need (0-7)
+        // We need T6 (Real) and T7 (Complex)
+        kctx.add_datatype("T0"); // GroundTypeId(0)
+        kctx.add_datatype("T1"); // GroundTypeId(1)
+        kctx.add_datatype("T2"); // GroundTypeId(2)
+        kctx.add_datatype("T3"); // GroundTypeId(3)
+        kctx.add_datatype("T4"); // GroundTypeId(4)
+        kctx.add_datatype("T5"); // GroundTypeId(5)
+        kctx.add_datatype("T6"); // GroundTypeId(6) - Real
+        kctx.add_datatype("T7"); // GroundTypeId(7) - Complex
+
+        // Build the types manually using Term::pi() and Term::type_sort()
+        // The actual types from the failing case:
+        // GlobalConstant(90): (Type -> (b0 -> (b1 -> b2))) where b0 is the bound type
+        // GlobalConstant(92): (Type -> (b0 -> (b1 -> b2)))
+        // GlobalConstant(217): (T7 -> T6)
+        // GlobalConstant(218): (T7 -> T6)
+
+        let type_sort = Term::type_sort();
+        let t6_type = Term::ground_type(GroundTypeId::new(6));
+        let t7_type = Term::ground_type(GroundTypeId::new(7));
+
+        // For polymorphic types: Type -> (T -> (T -> T))
+        // With De Bruijn indices, references to the outer Type binding must be shifted
+        // as we go deeper into nested Pis:
+        // - At depth 1 (first arg): BoundVar(0) refers to Type
+        // - At depth 2 (second arg): BoundVar(1) refers to Type (shifted by 1)
+        // - At depth 3 (output): BoundVar(2) refers to Type (shifted by 2)
+        let b0 = Term::atom(Atom::BoundVariable(0));
+        let b1 = Term::atom(Atom::BoundVariable(1));
+        let b2 = Term::atom(Atom::BoundVariable(2));
+
+        // g90/g92 type: Pi(Type, Pi(b0, Pi(b1, b2)))
+        // This is Type -> T -> T -> T where T is the type argument
+        let polymorphic_binary_type = Term::pi(
+            type_sort.clone(),
+            Term::pi(b0.clone(), Term::pi(b1.clone(), b2.clone())),
+        );
+
+        // g217/g218 type: T7 -> T6
+        let selector_type = Term::pi(t7_type.clone(), t6_type.clone());
+
+        // Add global constants with proper types
+        // g0 = polymorphic add (like g90)
+        kctx.symbol_table
+            .add_global_constant(polymorphic_binary_type.clone());
+        // g1 = polymorphic mul (like g92)
+        kctx.symbol_table
+            .add_global_constant(polymorphic_binary_type.clone());
+        // g2 = re selector (like g217)
+        kctx.symbol_table.add_global_constant(selector_type.clone());
+        // g3 = im selector (like g218)
+        kctx.symbol_table.add_global_constant(selector_type.clone());
+
+        // Add scoped constants c0, c1, c2 of type T7
+        kctx.symbol_table.add_scoped_constant(t7_type.clone());
+        kctx.symbol_table.add_scoped_constant(t7_type.clone());
+        kctx.symbol_table.add_scoped_constant(t7_type.clone());
+
+        let mut clause_set = GeneralizationSet::new();
+
+        // Atoms using GlobalConstant indices from above
+        let g90 = Atom::Symbol(Symbol::GlobalConstant(0)); // add_r (like g90)
+        let g92 = Atom::Symbol(Symbol::GlobalConstant(1)); // mul_c (like g92)
+        let g217 = Atom::Symbol(Symbol::GlobalConstant(2)); // re (like g217)
+        let g218 = Atom::Symbol(Symbol::GlobalConstant(3)); // im (like g218)
+
+        // Type symbols used as term arguments (T6=Real, T7=Complex)
+        let t6 = Term::atom(Atom::Symbol(Symbol::Type(GroundTypeId::new(6))));
+        let t7 = Term::atom(Atom::Symbol(Symbol::Type(GroundTypeId::new(7))));
+
+        // Variables
+        let x0 = Term::new_variable(0);
+        let x1 = Term::new_variable(1);
+        let x2 = Term::new_variable(2);
+
+        // Constants for the query
+        let c1 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(0)));
+        let c2 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(1)));
+        let c3 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(2)));
+
+        // Helper to build g92(T6, a, b)
+        let mk_g92_t6 =
+            |a: Term, b: Term| -> Term { Term::new(g92.clone(), vec![t6.clone(), a, b]) };
+
+        // Helper to build g92(T7, a, b)
+        let mk_g92_t7 =
+            |a: Term, b: Term| -> Term { Term::new(g92.clone(), vec![t7.clone(), a, b]) };
+
+        // Helper to build g90(T6, a, b)
+        let mk_g90_t6 =
+            |a: Term, b: Term| -> Term { Term::new(g90.clone(), vec![t6.clone(), a, b]) };
+
+        // Helper to build g217(a)
+        let mk_g217 = |a: Term| -> Term { Term::new(g217.clone(), vec![a]) };
+
+        // Helper to build g218(a)
+        let mk_g218 = |a: Term| -> Term { Term::new(g218.clone(), vec![a]) };
+
+        // Build the pattern RHS (the big g90 expression):
+        // g90(T6, g90(T6, g90(T6,
+        //   g92(T6, g92(T6, g217(x0), g217(x1)), g217(x2)),
+        //   g92(T6, g92(T6, g217(x0), g218(x1)), g218(x2))),
+        //   g92(T6, g92(T6, g218(x0), g217(x1)), g218(x2))),
+        //   g92(T6, g92(T6, g218(x0), g218(x1)), g217(x2)))
+
+        // Innermost terms for pattern
+        let p_part1 = mk_g92_t6(
+            mk_g92_t6(mk_g217(x0.clone()), mk_g217(x1.clone())),
+            mk_g217(x2.clone()),
+        );
+        let p_part2 = mk_g92_t6(
+            mk_g92_t6(mk_g217(x0.clone()), mk_g218(x1.clone())),
+            mk_g218(x2.clone()),
+        );
+        let p_part3 = mk_g92_t6(
+            mk_g92_t6(mk_g218(x0.clone()), mk_g217(x1.clone())),
+            mk_g218(x2.clone()),
+        );
+        let p_part4 = mk_g92_t6(
+            mk_g92_t6(mk_g218(x0.clone()), mk_g218(x1.clone())),
+            mk_g217(x2.clone()),
+        );
+
+        let p_rhs = mk_g90_t6(mk_g90_t6(mk_g90_t6(p_part1, p_part2), p_part3), p_part4);
+
+        // Pattern LHS: g217(g92(T7, g92(T7, x0, x1), x2))
+        let p_lhs = mk_g217(mk_g92_t7(mk_g92_t7(x0.clone(), x1.clone()), x2.clone()));
+
+        // Create pattern clause with variables of type T7 (Complex)
+        let complex_type = Term::atom(Atom::Symbol(Symbol::Type(GroundTypeId::new(7))));
+        let local_ctx = LocalContext::from_types(vec![
+            complex_type.clone(),
+            complex_type.clone(),
+            complex_type.clone(),
+        ]);
+        let pattern_lit = Literal::new(true, p_lhs.clone(), p_rhs.clone());
+        let pattern_clause = Clause::new(vec![pattern_lit], &local_ctx);
+
+        clause_set.insert(pattern_clause, 42, &kctx);
+
+        // Now build the query with constants c1, c2, c3
+        let q_part1 = mk_g92_t6(
+            mk_g92_t6(mk_g217(c1.clone()), mk_g217(c2.clone())),
+            mk_g217(c3.clone()),
+        );
+        let q_part2 = mk_g92_t6(
+            mk_g92_t6(mk_g217(c1.clone()), mk_g218(c2.clone())),
+            mk_g218(c3.clone()),
+        );
+        let q_part3 = mk_g92_t6(
+            mk_g92_t6(mk_g218(c1.clone()), mk_g217(c2.clone())),
+            mk_g218(c3.clone()),
+        );
+        let q_part4 = mk_g92_t6(
+            mk_g92_t6(mk_g218(c1.clone()), mk_g218(c2.clone())),
+            mk_g217(c3.clone()),
+        );
+
+        let q_rhs = mk_g90_t6(mk_g90_t6(mk_g90_t6(q_part1, q_part2), q_part3), q_part4);
+
+        // Query LHS: g217(g92(T7, g92(T7, c1, c2), c3))
+        let q_lhs = mk_g217(mk_g92_t7(mk_g92_t7(c1.clone(), c2.clone()), c3.clone()));
+
+        let query_lit = Literal::new(true, q_lhs.clone(), q_rhs.clone());
+        let query_clause = Clause::new(vec![query_lit], &LocalContext::empty());
+
+        let found = clause_set.find_generalization(query_clause, &kctx);
+        assert_eq!(
+            found,
+            Some(42),
+            "Should match pattern with x0->c1, x1->c2, x2->c3"
         );
     }
 }
