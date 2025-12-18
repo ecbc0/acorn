@@ -43,6 +43,8 @@ assert_fs = "1.1.2"
 # Enable thorough type validation. This is always on in tests, but can be
 # enabled in release builds with --features validate for debugging.
 validate = []
+# Skip monomorphization. This keeps propositions in their polymorphic form.
+polymorphic = []
 
 [lib]
 doctest = false

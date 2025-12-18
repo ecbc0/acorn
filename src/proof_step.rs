@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 use std::fmt;
 
-use crate::elaborator::proposition::MonomorphicProposition;
 use crate::elaborator::source::{Source, SourceType};
 use crate::kernel::atom::Atom;
 use crate::kernel::clause::Clause;
@@ -410,12 +409,9 @@ impl fmt::Display for ProofStep {
 impl ProofStep {
     /// Construct a new assumption ProofStep that is not dependent on any other steps.
     /// Assumptions are always depth zero, but eventually we may have to revisit that.
-    pub fn assumption(
-        proposition: &MonomorphicProposition,
-        clause: Clause,
-        defined_atom: Option<Atom>,
-    ) -> ProofStep {
-        let source = proposition.source.clone();
+    pub fn assumption(source: &Source, clause: Clause, defined_atom: Option<Atom>) -> ProofStep {
+        let source = source.clone();
+        let truthiness = source.truthiness();
         let literals = clause.literals.clone();
         let context = clause.get_local_context().clone();
         let rule = Rule::Assumption(AssumptionInfo {
@@ -440,7 +436,7 @@ impl ProofStep {
 
         ProofStep {
             clause,
-            truthiness: proposition.source.truthiness(),
+            truthiness,
             rule,
             simplification_rules: vec![],
             proof_size: 0,

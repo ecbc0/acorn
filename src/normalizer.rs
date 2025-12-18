@@ -8,6 +8,10 @@ use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
 use crate::elaborator::fact::Fact;
 use crate::elaborator::goal::Goal;
 use crate::elaborator::names::ConstantName;
+#[cfg(feature = "polymorphic")]
+use crate::elaborator::potential_value::PotentialValue;
+#[cfg(feature = "polymorphic")]
+use crate::elaborator::proposition::Proposition;
 use crate::elaborator::source::{Source, SourceType};
 use crate::kernel::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
 use crate::kernel::clause::Clause;
@@ -19,6 +23,7 @@ use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::symbol_table::NewConstantType;
 use crate::kernel::term::Term;
+#[cfg(not(feature = "polymorphic"))]
 use crate::monomorphizer::Monomorphizer;
 use crate::proof_step::{ProofStep, Truthiness};
 use tracing::trace;
@@ -81,6 +86,7 @@ impl std::fmt::Display for SyntheticKey {
 
 #[derive(Clone)]
 pub struct Normalizer {
+    #[cfg(not(feature = "polymorphic"))]
     monomorphizer: Monomorphizer,
 
     /// The definition for each synthetic atom, indexed by AtomId.
@@ -97,6 +103,7 @@ pub struct Normalizer {
 impl Normalizer {
     pub fn new() -> Normalizer {
         Normalizer {
+            #[cfg(not(feature = "polymorphic"))]
             monomorphizer: Monomorphizer::new(),
             synthetic_definitions: HashMap::new(),
             synthetic_map: HashMap::new(),
@@ -1612,40 +1619,102 @@ impl Normalizer {
         }
 
         let range = fact.source().range;
-        self.monomorphizer.add_fact(fact);
-        for proposition in self.monomorphizer.take_output() {
-            let ctype = if proposition.source.truthiness() == Truthiness::Factual {
-                NewConstantType::Global
-            } else {
-                NewConstantType::Local
-            };
-            let clauses = self
-                .normalize_value(&proposition.value, ctype, &proposition.source)
-                .map_err(|msg| BuildError::new(range, msg))?;
-            for clause in &clauses {
-                trace!(clause = %clause, "normalized to clause");
-            }
-            let defined = match &proposition.source.source_type {
-                SourceType::ConstantDefinition(value, _) => {
-                    let view = NormalizerView::Ref(self);
-                    let term = view
-                        .force_simple_value_to_term(value, &vec![])
-                        .map_err(|msg| {
-                            BuildError::new(
-                                range,
-                                format!("cannot convert definition to term: {}", msg),
-                            )
-                        })?;
-                    Some(term.get_head_atom().clone())
+
+        #[cfg(not(feature = "polymorphic"))]
+        {
+            self.monomorphizer.add_fact(fact);
+            for proposition in self.monomorphizer.take_output() {
+                let ctype = if proposition.source.truthiness() == Truthiness::Factual {
+                    NewConstantType::Global
+                } else {
+                    NewConstantType::Local
+                };
+                let clauses = self
+                    .normalize_value(&proposition.value, ctype, &proposition.source)
+                    .map_err(|msg| BuildError::new(range, msg))?;
+                for clause in &clauses {
+                    trace!(clause = %clause, "normalized to clause");
                 }
-                _ => None,
-            };
-            for clause in clauses {
-                clause.validate(&self.kernel_context);
-                let step = ProofStep::assumption(&proposition, clause, defined);
-                steps.push(step);
+                let defined = match &proposition.source.source_type {
+                    SourceType::ConstantDefinition(value, _) => {
+                        let view = NormalizerView::Ref(self);
+                        let term =
+                            view.force_simple_value_to_term(value, &vec![])
+                                .map_err(|msg| {
+                                    BuildError::new(
+                                        range,
+                                        format!("cannot convert definition to term: {}", msg),
+                                    )
+                                })?;
+                        Some(term.get_head_atom().clone())
+                    }
+                    _ => None,
+                };
+                for clause in clauses {
+                    clause.validate(&self.kernel_context);
+                    let step = ProofStep::assumption(&proposition.source, clause, defined);
+                    steps.push(step);
+                }
             }
         }
+
+        #[cfg(feature = "polymorphic")]
+        {
+            // In polymorphic mode, skip monomorphization and pass propositions through directly
+            let propositions: Vec<(AcornValue, Source)> = match fact {
+                Fact::Proposition(prop) => {
+                    vec![(prop.value.clone(), prop.source.clone())]
+                }
+                Fact::Definition(potential, definition, source) => {
+                    let (params, constant) = match potential {
+                        PotentialValue::Unresolved(u) => (u.params.clone(), u.to_generic_value()),
+                        PotentialValue::Resolved(c) => (vec![], c.clone()),
+                    };
+                    let claim = constant.inflate_function_definition(definition);
+                    let prop = Proposition::new(claim, params, source);
+                    vec![(prop.value, prop.source)]
+                }
+                Fact::Extends(..) | Fact::Instance(..) => {
+                    // These don't produce propositions
+                    vec![]
+                }
+            };
+
+            for (value, source) in propositions {
+                let ctype = if source.truthiness() == Truthiness::Factual {
+                    NewConstantType::Global
+                } else {
+                    NewConstantType::Local
+                };
+                let clauses = self
+                    .normalize_value(&value, ctype, &source)
+                    .map_err(|msg| BuildError::new(range, msg))?;
+                for clause in &clauses {
+                    trace!(clause = %clause, "normalized to clause");
+                }
+                let defined = match &source.source_type {
+                    SourceType::ConstantDefinition(def_value, _) => {
+                        let view = NormalizerView::Ref(self);
+                        let term = view
+                            .force_simple_value_to_term(def_value, &vec![])
+                            .map_err(|msg| {
+                                BuildError::new(
+                                    range,
+                                    format!("cannot convert definition to term: {}", msg),
+                                )
+                            })?;
+                        Some(term.get_head_atom().clone())
+                    }
+                    _ => None,
+                };
+                for clause in clauses {
+                    clause.validate(&self.kernel_context);
+                    let step = ProofStep::assumption(&source, clause, defined);
+                    steps.push(step);
+                }
+            }
+        }
+
         Ok(steps)
     }
 }
