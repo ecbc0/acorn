@@ -1,7 +1,7 @@
 use tokio::sync::{RwLock, RwLockReadGuard};
 use tokio_util::sync::CancellationToken;
 
-use crate::project::{Project, ProjectConfig};
+use crate::project::{Project, ProjectConfig, ProjectError};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -20,19 +20,24 @@ pub struct ProjectView<'a> {
 }
 
 impl ProjectManager {
-    /// Creates a new ProjectManager with the given project configuration
-    pub fn new(src_dir: PathBuf, build_dir: PathBuf, config: ProjectConfig) -> Self {
-        let mut project = Project::new(src_dir, build_dir, config.clone());
+    /// Creates a new ProjectManager with the given project configuration.
+    /// Returns an error if the build cache manifest version is too new.
+    pub fn new(
+        src_dir: PathBuf,
+        build_dir: PathBuf,
+        config: ProjectConfig,
+    ) -> Result<Self, ProjectError> {
+        let mut project = Project::new(src_dir, build_dir, config.clone())?;
         // Add all targets so we build everything, not just open files
         // (only if using filesystem)
         if config.use_filesystem {
             project.add_src_targets();
         }
-        ProjectManager {
+        Ok(ProjectManager {
             project: RwLock::new(project),
             cancel: RwLock::new(CancellationToken::new()),
             epoch: AtomicU64::new(0),
-        }
+        })
     }
 
     /// Gets a read-only view of the project

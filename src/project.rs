@@ -102,6 +102,12 @@ impl From<io::Error> for ProjectError {
     }
 }
 
+impl From<crate::manifest::ManifestError> for ProjectError {
+    fn from(error: crate::manifest::ManifestError) -> Self {
+        ProjectError(format!("{}", error))
+    }
+}
+
 impl fmt::Display for ProjectError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -191,15 +197,20 @@ pub fn localize_mock_filename(s: &str) -> String {
 
 impl Project {
     // Create a new project.
-    pub fn new(src_dir: PathBuf, build_dir: PathBuf, config: ProjectConfig) -> Project {
+    // Returns an error if the build cache manifest version is too new.
+    pub fn new(
+        src_dir: PathBuf,
+        build_dir: PathBuf,
+        config: ProjectConfig,
+    ) -> Result<Project, ProjectError> {
         // Load the build cache
         let build_cache = if config.read_cache {
-            BuildCache::load(build_dir.clone())
+            BuildCache::load(build_dir.clone())?
         } else {
             BuildCache::new(build_dir.clone())
         };
 
-        Project {
+        Ok(Project {
             config,
             src_dir,
             open_files: HashMap::new(),
@@ -209,7 +220,7 @@ impl Project {
             build_cache,
             build_dir,
             building: false,
-        }
+        })
     }
 
     // Finds an acorn library directory, based on the provided path.
@@ -262,7 +273,7 @@ impl Project {
     }
 
     // A Project based on the provided starting path.
-    // Returns an error if we can't find an acorn library.
+    // Returns an error if we can't find an acorn library, or if the manifest version is too new.
     pub fn new_local(start_path: &Path, config: ProjectConfig) -> Result<Project, ProjectError> {
         let (src_dir, build_dir) =
             Project::find_local_acorn_library(start_path).ok_or_else(|| {
@@ -273,8 +284,7 @@ impl Project {
                         .to_string(),
                 )
             })?;
-        let project = Project::new(src_dir, build_dir, config);
-        Ok(project)
+        Project::new(src_dir, build_dir, config)
     }
 
     // Create a Project where nothing can be imported.
@@ -286,7 +296,8 @@ impl Project {
             read_cache: false,
             write_cache: false,
         };
-        Project::new(mock_dir, build_dir, config)
+        // Mock projects don't read the cache, so this can't fail
+        Project::new(mock_dir, build_dir, config).expect("mock project creation failed")
     }
 
     /// Updates the build cache with a new one and optionally writes it to disk.

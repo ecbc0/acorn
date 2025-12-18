@@ -308,7 +308,11 @@ impl AcornLanguageServer {
     // Determines which library to use based on the root of the current workspace.
     // If we can't find one in a logical location based on the editor, we use
     // the library bundled with the extension.
-    pub fn new(client: Arc<dyn LspClient>, args: &ServerArgs) -> AcornLanguageServer {
+    // Returns an error if the build cache manifest version is too new.
+    pub fn new(
+        client: Arc<dyn LspClient>,
+        args: &ServerArgs,
+    ) -> Result<AcornLanguageServer, String> {
         let (src_dir, build_dir, write_cache) = find_acorn_library(&args);
 
         log(&format!(
@@ -322,13 +326,14 @@ impl AcornLanguageServer {
             write_cache,
             ..Default::default()
         };
-        let project_manager = Arc::new(ProjectManager::new(src_dir, build_dir, config));
-        AcornLanguageServer {
+        let project_manager =
+            Arc::new(ProjectManager::new(src_dir, build_dir, config).map_err(|e| e.to_string())?);
+        Ok(AcornLanguageServer {
             project_manager,
             client,
             build: Arc::new(RwLock::new(BuildInfo::none())),
             documents: DashMap::new(),
-        }
+        })
     }
 
     // Updates the project, then runs a build in a background thread.
@@ -733,17 +738,18 @@ pub async fn run_server(args: &ServerArgs) {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    let (service, socket) =
-        LspService::build(move |client| AcornLanguageServer::new(Arc::new(client), args))
-            .custom_method(
-                "acorn/progress",
-                AcornLanguageServer::handle_progress_request,
-            )
-            .custom_method(
-                "acorn/selection",
-                AcornLanguageServer::handle_selection_request,
-            )
-            .finish();
+    let (service, socket) = LspService::build(move |client| {
+        AcornLanguageServer::new(Arc::new(client), args).expect("failed to create language server")
+    })
+    .custom_method(
+        "acorn/progress",
+        AcornLanguageServer::handle_progress_request,
+    )
+    .custom_method(
+        "acorn/selection",
+        AcornLanguageServer::handle_selection_request,
+    )
+    .finish();
 
     Server::new(stdin, stdout, socket).serve(service).await;
 }

@@ -1,9 +1,58 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::error::Error;
+use std::fmt;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
+
+/// Errors that can occur when loading a manifest.
+#[derive(Debug)]
+pub enum ManifestError {
+    /// IO error (file not found, permission denied, etc.) - recoverable by starting fresh
+    Io(std::io::Error),
+    /// JSON parse error - recoverable by starting fresh
+    Parse(serde_json::Error),
+    /// Manifest version is newer than this binary supports - user must update Acorn
+    VersionTooNew { found: u32, supported: u32 },
+}
+
+impl fmt::Display for ManifestError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ManifestError::Io(e) => write!(f, "IO error loading manifest: {}", e),
+            ManifestError::Parse(e) => write!(f, "Parse error loading manifest: {}", e),
+            ManifestError::VersionTooNew { found, supported } => write!(
+                f,
+                "The library manifest is using build format {}, but this version of Acorn only supports up to build format {}. \
+                 Please update your version of Acorn.",
+                found, supported
+            ),
+        }
+    }
+}
+
+impl Error for ManifestError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            ManifestError::Io(e) => Some(e),
+            ManifestError::Parse(e) => Some(e),
+            ManifestError::VersionTooNew { .. } => None,
+        }
+    }
+}
+
+impl From<std::io::Error> for ManifestError {
+    fn from(e: std::io::Error) -> Self {
+        ManifestError::Io(e)
+    }
+}
+
+impl From<serde_json::Error> for ManifestError {
+    fn from(e: serde_json::Error) -> Self {
+        ManifestError::Parse(e)
+    }
+}
 
 /// The current version of the build format.
 /// Increment this when making breaking changes to the manifest structure, or to the structure
@@ -117,8 +166,7 @@ impl Manifest {
     }
 
     /// Load a manifest from manifest.json in the build directory.
-    /// If there is no such file, return an empty manifest.
-    pub fn load(build_dir: &Path) -> Result<Self, Box<dyn Error>> {
+    pub fn load(build_dir: &Path) -> Result<Self, ManifestError> {
         let path = build_dir.join("manifest.json");
         let mut file = File::open(path)?;
         let mut contents = String::new();
@@ -127,12 +175,10 @@ impl Manifest {
 
         // Check version compatibility
         if manifest.version > MANIFEST_VERSION {
-            return Err(format!(
-                "The library manifest is using build format {}, but this version of Acorn only supports up to build format {}.\n\
-                 Please update your version of Acorn.",
-                manifest.version, MANIFEST_VERSION
-            )
-            .into());
+            return Err(ManifestError::VersionTooNew {
+                found: manifest.version,
+                supported: MANIFEST_VERSION,
+            });
         }
 
         // If the manifest version is older, we can still work with it
@@ -142,11 +188,13 @@ impl Manifest {
     }
 
     /// Load a manifest from the build directory, or create a new one if it doesn't exist.
-    /// Swallows any errors.
-    pub fn load_or_create(build_dir: &Path) -> Self {
+    /// Recoverable errors (IO, parse) result in a fresh manifest.
+    /// Returns an error only if the manifest version is too new (user must update Acorn).
+    pub fn load_or_create(build_dir: &Path) -> Result<Self, ManifestError> {
         match Self::load(build_dir) {
-            Ok(manifest) => manifest,
-            Err(_) => Self::new(),
+            Ok(manifest) => Ok(manifest),
+            Err(ManifestError::Io(_)) | Err(ManifestError::Parse(_)) => Ok(Self::new()),
+            Err(e @ ManifestError::VersionTooNew { .. }) => Err(e),
         }
     }
 }
@@ -186,12 +234,12 @@ mod tests {
         assert!(loaded.matches_entry(&parts, hash));
 
         // Test load_or_create with existing manifest
-        let loaded2 = Manifest::load_or_create(build_dir);
+        let loaded2 = Manifest::load_or_create(build_dir).expect("Failed to load_or_create");
         assert_eq!(loaded2.modules.len(), 1);
 
         // Test load_or_create with non-existent directory
         let new_dir = temp_dir.path().join("nonexistent");
-        let created = Manifest::load_or_create(&new_dir);
+        let created = Manifest::load_or_create(&new_dir).expect("Failed to load_or_create");
         assert_eq!(created.modules.len(), 0);
     }
 }

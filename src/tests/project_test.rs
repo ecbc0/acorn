@@ -65,13 +65,15 @@ fn test_update_file_first_call_drops_modules() {
     fs::write(&test_file, initial_content).unwrap();
 
     // Step 1: Create first project and build to get baseline
-    let mut p1 = Project::new(src_dir.clone(), build_dir.clone(), ProjectConfig::default());
+    let mut p1 =
+        Project::new(src_dir.clone(), build_dir.clone(), ProjectConfig::default()).unwrap();
     p1.add_target_by_path(&test_file).unwrap();
     let initial_searches = expect_build_ok(&mut p1);
 
     // Step 2: Create a fresh project (simulating server restart)
     // The file exists on disk with the initial content
-    let mut p2 = Project::new(src_dir.clone(), build_dir.clone(), ProjectConfig::default());
+    let mut p2 =
+        Project::new(src_dir.clone(), build_dir.clone(), ProjectConfig::default()).unwrap();
 
     // Load and build once - this caches the module from disk
     p2.add_target_by_path(&test_file).unwrap();
@@ -1728,7 +1730,7 @@ fn test_handle_selection_typeclass_attribute() {
     fs::write(&test_file, content).unwrap();
 
     // Create project and build
-    let mut p = Project::new(src_dir.clone(), build_dir.clone(), ProjectConfig::default());
+    let mut p = Project::new(src_dir.clone(), build_dir.clone(), ProjectConfig::default()).unwrap();
     p.add_target_by_path(&test_file).unwrap();
     expect_build_ok(&mut p);
 

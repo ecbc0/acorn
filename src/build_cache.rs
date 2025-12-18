@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use walkdir::WalkDir;
 
 use crate::certificate::{CertificateStore, CertificateWorklist};
-use crate::manifest::Manifest;
+use crate::manifest::{Manifest, ManifestError};
 use crate::module::ModuleDescriptor;
 
 /// Cached information about a build.
@@ -29,8 +29,9 @@ impl BuildCache {
         }
     }
 
-    /// Load a build cache from a directory containing JSONL files
-    pub fn load(build_dir: PathBuf) -> Self {
+    /// Load a build cache from a directory containing JSONL files.
+    /// Returns an error if the manifest version is too new (user must update Acorn).
+    pub fn load(build_dir: PathBuf) -> Result<Self, ManifestError> {
         let mut cache = HashMap::new();
 
         if build_dir.exists() {
@@ -46,13 +47,13 @@ impl BuildCache {
             }
         }
 
-        let manifest = Manifest::load_or_create(&build_dir);
+        let manifest = Manifest::load_or_create(&build_dir)?;
 
-        BuildCache {
+        Ok(BuildCache {
             cache,
             manifest,
             build_dir,
-        }
+        })
     }
 
     pub fn insert(

@@ -44,10 +44,9 @@ assert_fs = "1.1.2"
 # enabled in release builds with --features validate for debugging.
 validate = []
 
-# Disable instance aliasing. When set, monomorphized typeclass attributes
-# (like Ring.add[Int]) are not aliased to their implementations (like Int.add).
-# Instead, an equality fact is generated. This is needed if theorems are not
-# always monomorphized.
+# Disable instance aliasing. By default, monomorphized typeclass attributes
+# (like Ring.add[Int]) are aliased to their implementations (like Int.add).
+# When this feature is set, an equality fact is generated instead.
 no_instance_alias = []
 
 [lib]

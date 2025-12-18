@@ -91,7 +91,7 @@ impl TestFixture {
         };
 
         let client = Arc::new(MockClient::new());
-        let server = AcornLanguageServer::new(client.clone(), &args);
+        let server = AcornLanguageServer::new(client.clone(), &args).expect("server creation");
 
         TestFixture {
             _temp_dir: temp_dir,
