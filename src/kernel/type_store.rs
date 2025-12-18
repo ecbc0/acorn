@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::elaborator::acorn_type::{AcornType, Datatype, FunctionType, TypeParam, Typeclass};
-use crate::kernel::atom::Atom;
+use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::term::Term;
 use crate::kernel::types::{GroundTypeId, TypeclassId};
 
@@ -118,10 +118,9 @@ impl TypeStore {
                     .insert(type_param.clone(), ground_id);
             }
 
-            // Variable types should not be registered
-            AcornType::Variable(_) => {
-                panic!("Variable types should not be registered: {:?}", acorn_type);
-            }
+            // Variable types are represented as FreeVariable atoms, not registered as ground types.
+            // They will be converted to FreeVariable by to_type_term_with_vars.
+            AcornType::Variable(_) => {}
         }
     }
 
@@ -196,9 +195,17 @@ impl TypeStore {
     }
 
     /// Convert an AcornType to a type Term.
-    /// Only ground types (Bool, Empty, bare data types, type variables) need to be registered.
+    /// Only ground types (Bool, Empty, bare data types, arbitrary types) need to be registered.
     /// Function types and parameterized data types are constructed on the fly.
-    pub fn to_type_term(&self, acorn_type: &AcornType) -> Term {
+    ///
+    /// If `type_var_map` is provided, type variables are converted to FreeVariable atoms
+    /// using the mapping. This is used in polymorphic mode where type variables participate
+    /// in unification like term variables.
+    pub fn to_type_term_with_vars(
+        &self,
+        acorn_type: &AcornType,
+        type_var_map: Option<&HashMap<String, AtomId>>,
+    ) -> Term {
         match acorn_type {
             // Built-in types: use dedicated Symbol variants
             AcornType::Empty => Term::empty_type(),
@@ -223,7 +230,7 @@ impl TypeStore {
 
                 let args: Vec<Term> = params
                     .iter()
-                    .map(|param| self.to_type_term(param))
+                    .map(|param| self.to_type_term_with_vars(param, type_var_map))
                     .collect();
 
                 Term::type_application(head, args)
@@ -231,20 +238,39 @@ impl TypeStore {
 
             AcornType::Function(ft) => {
                 // Function type: build nested Pi types (curried)
-                let mut result = self.to_type_term(&ft.return_type);
+                let mut result = self.to_type_term_with_vars(&ft.return_type, type_var_map);
 
                 // Build Pi types from right to left
                 for arg_type in ft.arg_types.iter().rev() {
-                    let arg_type_term = self.to_type_term(arg_type);
+                    let arg_type_term = self.to_type_term_with_vars(arg_type, type_var_map);
                     result = Term::pi(arg_type_term, result);
                 }
 
                 result
             }
 
-            AcornType::Variable(_) => {
+            AcornType::Variable(type_param) => {
+                // Type variables become FreeVariable atoms if we have a mapping
+                if let Some(map) = type_var_map {
+                    if let Some(&var_id) = map.get(&type_param.name) {
+                        return Term::atom(Atom::FreeVariable(var_id));
+                    }
+                }
+                // Check if this is a synthesized variable name (like "x0", "x1")
+                // created by type_term_to_acorn_type from a FreeVariable
+                if type_param.name.starts_with('x') {
+                    if let Ok(var_id) = type_param.name[1..].parse::<AtomId>() {
+                        return Term::atom(Atom::FreeVariable(var_id));
+                    }
+                }
+                // Check for BoundVariable-style names (like "T0", "T1")
+                if type_param.name.starts_with('T') {
+                    if let Ok(var_id) = type_param.name[1..].parse::<u16>() {
+                        return Term::atom(Atom::BoundVariable(var_id));
+                    }
+                }
                 panic!(
-                    "Variable types should not be converted to type Term without binding context: {:?}. Use to_polymorphic_type_term instead.",
+                    "Variable types should not be converted to type Term without binding context: {:?}. Use to_polymorphic_type_term or provide type_var_map.",
                     acorn_type
                 );
             }
@@ -258,6 +284,12 @@ impl TypeStore {
                 Term::ground_type(*ground_id)
             }
         }
+    }
+
+    /// Convert an AcornType to a type Term (no type variable support).
+    /// This is a convenience wrapper that panics on type variables.
+    pub fn to_type_term(&self, acorn_type: &AcornType) -> Term {
+        self.to_type_term_with_vars(acorn_type, None)
     }
 
     /// Convert an AcornType with type parameters to a type Term using bound variables.
@@ -359,7 +391,12 @@ impl TypeStore {
         if type_term.as_ref().is_empty_type() {
             return AcornType::Empty;
         }
-        // Note: TypeSort is the type of types, not typically used as a value type
+        // TypeSort is the "type of types" - it's a kind, not a type.
+        // When we encounter it (e.g., as the type of a type variable), we use Empty as a placeholder.
+        // This is a workaround for polymorphic mode where type variables have type TypeSort.
+        if type_term.as_ref().is_type_sort() {
+            return AcornType::Empty;
+        }
 
         // Check for user-defined ground type
         if let Some(ground_id) = type_term.as_ref().as_type_atom() {
@@ -428,6 +465,19 @@ impl TypeStore {
                 // Create a synthetic type variable for display purposes
                 let type_param = TypeParam {
                     name: format!("T{}", i),
+                    typeclass: None,
+                };
+                return AcornType::Variable(type_param);
+            }
+        }
+
+        // Handle FreeVariable - these are used for type variables in polymorphic mode
+        if type_term.as_ref().is_atomic() {
+            if let Atom::FreeVariable(i) = type_term.as_ref().get_head_atom() {
+                // Create a synthetic type variable for display purposes
+                // Use "x" prefix to match the free variable naming convention
+                let type_param = TypeParam {
+                    name: format!("x{}", i),
                     typeclass: None,
                 };
                 return AcornType::Variable(type_param);

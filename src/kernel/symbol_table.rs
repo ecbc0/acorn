@@ -341,6 +341,15 @@ impl SymbolTable {
         c: &ConstantInstance,
         type_store: &TypeStore,
     ) -> Result<Term, String> {
+        self.term_from_instance_with_vars(c, type_store, None)
+    }
+
+    pub fn term_from_instance_with_vars(
+        &self,
+        c: &ConstantInstance,
+        type_store: &TypeStore,
+        type_var_map: Option<&HashMap<String, AtomId>>,
+    ) -> Result<Term, String> {
         // Check for an alias first - instance definitions create aliases
         // where Arf.foo[Foo] = Foo.foo makes them the same symbol
         if let Some(&symbol) = self.instance_to_symbol.get(c) {
@@ -361,7 +370,7 @@ impl SymbolTable {
         let type_args: Vec<Term> = c
             .params
             .iter()
-            .map(|param| type_store.to_type_term(param))
+            .map(|param| type_store.to_type_term_with_vars(param, type_var_map))
             .collect();
 
         // Build application: base(type_arg1, type_arg2, ...)

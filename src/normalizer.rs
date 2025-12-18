@@ -98,6 +98,11 @@ pub struct Normalizer {
 
     /// The kernel context containing TypeStore and SymbolTable.
     kernel_context: KernelContext,
+
+    /// Current type variable mapping for polymorphic normalization.
+    /// Maps type parameter names to their allocated FreeVariable ids.
+    #[cfg(feature = "polymorphic")]
+    type_var_map: Option<HashMap<String, AtomId>>,
 }
 
 impl Normalizer {
@@ -108,7 +113,15 @@ impl Normalizer {
             synthetic_definitions: HashMap::new(),
             synthetic_map: HashMap::new(),
             kernel_context: KernelContext::new(),
+            #[cfg(feature = "polymorphic")]
+            type_var_map: None,
         }
+    }
+
+    /// Get the current type variable map for polymorphic normalization.
+    #[cfg(feature = "polymorphic")]
+    fn type_var_map(&self) -> Option<&HashMap<String, AtomId>> {
+        self.type_var_map.as_ref()
     }
 
     pub fn get_synthetic_type(&self, id: AtomId) -> AcornType {
@@ -155,7 +168,19 @@ impl Normalizer {
     // This weird two-step is necessary since we need to do some constructions
     // before we actually have the definition.
     fn declare_synthetic_atom(&mut self, atom_type: AcornType) -> Result<AtomId, String> {
+        #[cfg(feature = "polymorphic")]
+        let type_term = self
+            .kernel_context
+            .type_store
+            .to_type_term_with_vars(&atom_type, self.type_var_map.as_ref());
+        #[cfg(not(feature = "polymorphic"))]
         let type_term = self.kernel_context.type_store.to_type_term(&atom_type);
+        self.declare_synthetic_atom_with_type_term(type_term)
+    }
+
+    /// Declare a synthetic atom with a type already in Term form.
+    /// This avoids round-trip conversion through AcornType.
+    fn declare_synthetic_atom_with_type_term(&mut self, type_term: Term) -> Result<AtomId, String> {
         let symbol = self
             .kernel_context
             .symbol_table
@@ -219,6 +244,12 @@ impl Normalizer {
     }
 
     pub fn add_scoped_constant(&mut self, cname: ConstantName, acorn_type: &AcornType) -> Atom {
+        #[cfg(feature = "polymorphic")]
+        let type_term = self
+            .kernel_context
+            .type_store
+            .to_type_term_with_vars(acorn_type, self.type_var_map.as_ref());
+        #[cfg(not(feature = "polymorphic"))]
         let type_term = self.kernel_context.type_store.to_type_term(acorn_type);
         Atom::Symbol(self.kernel_context.symbol_table.add_constant(
             cname,
@@ -278,6 +309,12 @@ impl NormalizerView<'_> {
         &self.as_ref().kernel_context
     }
 
+    /// Get the current type variable map for polymorphic normalization.
+    #[cfg(feature = "polymorphic")]
+    fn type_var_map(&self) -> Option<&HashMap<String, AtomId>> {
+        self.as_ref().type_var_map.as_ref()
+    }
+
     /// Wrapper around value_to_cnf.
     /// Note that this only works on values that have already been "cleaned up" to some extent.
     pub fn nice_value_to_clauses(
@@ -294,8 +331,23 @@ impl NormalizerView<'_> {
             }
             _ => {
                 let mut stack = vec![];
-                let mut next_var_id = 0;
                 let mut local_context = LocalContext::empty();
+
+                // In polymorphic mode, pre-allocate space for type variables
+                #[cfg(feature = "polymorphic")]
+                let mut next_var_id = if let Some(type_var_map) = self.type_var_map() {
+                    // Pre-populate local_context with Type entries for each type variable
+                    // Type variables are of kind Type (i.e., they are types)
+                    for _ in 0..type_var_map.len() {
+                        local_context.push_type(Term::type_sort());
+                    }
+                    type_var_map.len() as AtomId
+                } else {
+                    0
+                };
+                #[cfg(not(feature = "polymorphic"))]
+                let mut next_var_id = 0;
+
                 let cnf = self.value_to_cnf(
                     &value,
                     false,
@@ -532,6 +584,11 @@ impl NormalizerView<'_> {
         context: &mut LocalContext,
     ) -> Result<CNF, String> {
         for quant in quants {
+            #[cfg(feature = "polymorphic")]
+            let type_term = self
+                .type_store()
+                .to_type_term_with_vars(quant, self.type_var_map());
+            #[cfg(not(feature = "polymorphic"))]
             let type_term = self.type_store().to_type_term(quant);
             let var_id = *next_var_id;
             context.push_type(type_term);
@@ -558,7 +615,8 @@ impl NormalizerView<'_> {
         context: &LocalContext,
     ) -> Result<Vec<Term>, String> {
         let mut args = vec![];
-        let mut arg_types = vec![];
+        // Keep arg_type_terms as Terms to avoid round-trip conversion
+        let mut arg_type_terms: Vec<Term> = vec![];
         let mut seen_vars = std::collections::HashSet::new();
 
         for binding in stack.iter() {
@@ -567,7 +625,8 @@ impl NormalizerView<'_> {
                 if seen_vars.insert(var_id) {
                     let var_term = Term::new_variable(var_id);
                     args.push(var_term);
-                    arg_types.push(self.type_store().type_term_to_acorn_type(&closed_type));
+                    // Keep types as Terms - no conversion needed
+                    arg_type_terms.push(closed_type);
                 }
             }
         }
@@ -576,8 +635,25 @@ impl NormalizerView<'_> {
         for t in skolem_types {
             // Each existential quantifier needs a new skolem atom.
             // The skolem term is that atom applied to the free variables on the stack.
-            let skolem_atom_type = AcornType::functional(arg_types.clone(), t.clone());
-            let skolem_id = self.as_mut()?.declare_synthetic_atom(skolem_atom_type)?;
+
+            // Convert the result type to a Term
+            #[cfg(feature = "polymorphic")]
+            let result_type_term = self
+                .type_store()
+                .to_type_term_with_vars(t, self.type_var_map());
+            #[cfg(not(feature = "polymorphic"))]
+            let result_type_term = self.type_store().to_type_term(t);
+
+            // Build the function type as a Term: arg1 -> arg2 -> ... -> result
+            // using Term::pi for curried form
+            let mut skolem_type_term = result_type_term;
+            for arg_type in arg_type_terms.iter().rev() {
+                skolem_type_term = Term::pi(arg_type.clone(), skolem_type_term);
+            }
+
+            let skolem_id = self
+                .as_mut()?
+                .declare_synthetic_atom_with_type_term(skolem_type_term)?;
             synthesized.push(skolem_id);
             let skolem_atom = Atom::Symbol(Symbol::Synthetic(skolem_id));
             let skolem_term = Term::new(skolem_atom, args.clone());
@@ -718,8 +794,19 @@ impl NormalizerView<'_> {
             // Comparing functions.
             let mut arg_type_terms: Vec<Term> = Vec::with_capacity(app.arg_types.len());
             for t in &app.arg_types {
+                #[cfg(feature = "polymorphic")]
+                arg_type_terms.push(
+                    self.type_store()
+                        .to_type_term_with_vars(t, self.type_var_map()),
+                );
+                #[cfg(not(feature = "polymorphic"))]
                 arg_type_terms.push(self.type_store().to_type_term(t));
             }
+            #[cfg(feature = "polymorphic")]
+            let result_type_term = self
+                .type_store()
+                .to_type_term_with_vars(&app.return_type, self.type_var_map());
+            #[cfg(not(feature = "polymorphic"))]
             let result_type_term = self.type_store().to_type_term(&app.return_type);
 
             if result_type_term == Term::bool_type() {
@@ -980,6 +1067,13 @@ impl NormalizerView<'_> {
                     };
                     Ok(Some((Term::new(Atom::Symbol(symbol), vec![]), true)))
                 } else {
+                    #[cfg(feature = "polymorphic")]
+                    let term = self.symbol_table().term_from_instance_with_vars(
+                        &c,
+                        self.type_store(),
+                        self.type_var_map(),
+                    )?;
+                    #[cfg(not(feature = "polymorphic"))]
                     let term = self
                         .symbol_table()
                         .term_from_instance(&c, self.type_store())?;
@@ -1432,6 +1526,13 @@ impl NormalizerView<'_> {
                     };
                     Ok(ExtendedTerm::Term(Term::new(Atom::Symbol(symbol), vec![])))
                 } else {
+                    #[cfg(feature = "polymorphic")]
+                    let term = self.symbol_table().term_from_instance_with_vars(
+                        &c,
+                        self.type_store(),
+                        self.type_var_map(),
+                    )?;
+                    #[cfg(not(feature = "polymorphic"))]
                     let term = self
                         .symbol_table()
                         .term_from_instance(&c, self.type_store())?;
@@ -1445,6 +1546,11 @@ impl NormalizerView<'_> {
                 // Use next_var_id to assign unique variable IDs
                 let mut args = vec![];
                 for arg_type in arg_types {
+                    #[cfg(feature = "polymorphic")]
+                    let type_term = self
+                        .type_store()
+                        .to_type_term_with_vars(arg_type, self.type_var_map());
+                    #[cfg(not(feature = "polymorphic"))]
                     let type_term = self.type_store().to_type_term(arg_type);
                     let var_id = *next_var_id;
                     *next_var_id += 1;
@@ -1660,10 +1766,13 @@ impl Normalizer {
 
         #[cfg(feature = "polymorphic")]
         {
+            use crate::elaborator::acorn_type::TypeParam;
+
             // In polymorphic mode, skip monomorphization and pass propositions through directly
-            let propositions: Vec<(AcornValue, Source)> = match fact {
+            // We keep track of type params to build the type_var_map
+            let propositions: Vec<(AcornValue, Vec<TypeParam>, Source)> = match fact {
                 Fact::Proposition(prop) => {
-                    vec![(prop.value.clone(), prop.source.clone())]
+                    vec![(prop.value.clone(), prop.params.clone(), prop.source.clone())]
                 }
                 Fact::Definition(potential, definition, source) => {
                     let (params, constant) = match potential {
@@ -1672,7 +1781,7 @@ impl Normalizer {
                     };
                     let claim = constant.inflate_function_definition(definition);
                     let prop = Proposition::new(claim, params, source);
-                    vec![(prop.value, prop.source)]
+                    vec![(prop.value, prop.params, prop.source)]
                 }
                 Fact::Extends(..) | Fact::Instance(..) => {
                     // These don't produce propositions
@@ -1680,7 +1789,20 @@ impl Normalizer {
                 }
             };
 
-            for (value, source) in propositions {
+            for (value, type_params, source) in propositions {
+                // Build type_var_map from type parameters
+                let type_var_map: HashMap<String, AtomId> = type_params
+                    .iter()
+                    .enumerate()
+                    .map(|(i, p)| (p.name.clone(), i as AtomId))
+                    .collect();
+
+                // Set the type_var_map before normalization
+                self.type_var_map = if type_var_map.is_empty() {
+                    None
+                } else {
+                    Some(type_var_map)
+                };
                 let ctype = if source.truthiness() == Truthiness::Factual {
                     NewConstantType::Global
                 } else {
@@ -1712,6 +1834,9 @@ impl Normalizer {
                     let step = ProofStep::assumption(&source, clause, defined);
                     steps.push(step);
                 }
+
+                // Clear type_var_map after processing this proposition
+                self.type_var_map = None;
             }
         }
 
