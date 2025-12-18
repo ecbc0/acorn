@@ -1611,22 +1611,6 @@ impl Normalizer {
             _ => {}
         }
 
-        // Check if this looks like an aliasing.
-        // By default, we alias typeclass instances to their implementations.
-        // When no_instance_alias is enabled, we let the fact flow through as a normal equality.
-        #[cfg(not(feature = "no_instance_alias"))]
-        if let Some((ci, name, constant_type)) = fact.as_instance_alias() {
-            let local = fact.source().truthiness() != Truthiness::Factual;
-            self.kernel_context.symbol_table.alias_instance(
-                ci,
-                name,
-                &constant_type,
-                local,
-                &mut self.kernel_context.type_store,
-            );
-            return Ok(steps);
-        }
-
         let range = fact.source().range;
         self.monomorphizer.add_fact(fact);
         for proposition in self.monomorphizer.take_output() {
