@@ -215,14 +215,22 @@ impl<'a> Unifier<'a> {
                     // Create a new output variable for this unmapped input variable
                     let var_id = self.maps[Scope::OUTPUT.get()].len() as AtomId;
                     self.maps[Scope::OUTPUT.get()].push_none();
+                    let new_var = Term::new_variable(var_id);
+                    // Set the mapping BEFORE applying to the type, so if the type
+                    // contains this same variable, we don't recurse infinitely
+                    self.set_mapping(scope, *i, new_var);
                     let var_type = self
                         .get_local_context(scope)
                         .get_var_type(*i as usize)
                         .cloned()
                         .expect("Variable should have type in LocalContext");
-                    self.output_context.push_type(var_type);
-                    let new_var = Term::new_variable(var_id);
-                    self.set_mapping(scope, *i, new_var);
+                    // Apply the unifier to the type to translate FreeVariable references
+                    // from input variable IDs to output variable IDs
+                    let translated_type = self.apply(scope, &var_type);
+                    // Use set_type at var_id position, not push_type, because recursion
+                    // may have already added entries to output_context
+                    self.output_context
+                        .set_type(var_id as usize, translated_type);
                 }
 
                 match self.get_mapping(scope, *i) {
