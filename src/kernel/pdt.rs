@@ -899,8 +899,6 @@ mod tests {
         // by binding T -> Int. The current simple equality check fails because:
         // - List[T] != List[Int]
         // - List[T] is not a FreeVariable atom (it's an Application)
-        //
-        // This requires implementing proper type instantiation checking (the first TODO).
 
         let mut kctx = KernelContext::new();
 
