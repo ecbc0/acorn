@@ -1210,8 +1210,8 @@ mod tests {
     fn test_key_from_term_atomic() {
         // Test encoding of an atomic term c0 : Bool
         let mut kctx = KernelContext::new();
-        kctx.add_constants(&["c0", "c1", "c2", "c3", "c4"], "Bool");
-        let lctx = kctx.make_local(&["Bool", "Bool"]);
+        kctx.parse_constants(&["c0", "c1", "c2", "c3", "c4"], "Bool");
+        let lctx = kctx.parse_local(&["Bool", "Bool"]);
 
         let term = Term::parse("c0");
         let key = key_from_term(&term, &lctx, &kctx);
@@ -1227,9 +1227,9 @@ mod tests {
     fn test_key_from_literal() {
         // Test encoding of x0 = c0
         let mut kctx = KernelContext::new();
-        kctx.add_constants(&["c0", "c1", "c2", "c3", "c4"], "Bool");
+        kctx.parse_constants(&["c0", "c1", "c2", "c3", "c4"], "Bool");
 
-        let clause = kctx.make_clause("x0 = c0", &["Bool"]);
+        let clause = kctx.parse_clause("x0 = c0", &["Bool"]);
         let literal = &clause.literals[0];
         let key = key_from_literal(literal, clause.get_local_context(), &kctx);
 
@@ -1246,8 +1246,8 @@ mod tests {
     fn test_pattern_tree_insert_term() {
         // Test inserting and finding atomic terms
         let mut kctx = KernelContext::new();
-        kctx.add_constants(&["c0", "c1", "c2", "c3", "c4"], "Bool");
-        let lctx = kctx.make_local(&[]);
+        kctx.parse_constants(&["c0", "c1", "c2", "c3", "c4"], "Bool");
+        let lctx = kctx.parse_local(&[]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
@@ -1263,8 +1263,8 @@ mod tests {
     fn test_pattern_tree_insert_pair() {
         // Test inserting term pairs
         let mut kctx = KernelContext::new();
-        kctx.add_constants(&["c0", "c1", "c2", "c3", "c4"], "Bool");
-        let lctx = kctx.make_local(&[]);
+        kctx.parse_constants(&["c0", "c1", "c2", "c3", "c4"], "Bool");
+        let lctx = kctx.parse_local(&[]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
@@ -1290,8 +1290,8 @@ mod tests {
     fn test_pattern_tree_variable_matching() {
         // Test that patterns with variables match concrete terms
         let mut kctx = KernelContext::new();
-        kctx.add_constants(&["c0", "c1", "c2", "c3", "c4"], "Bool");
-        let lctx = kctx.make_local(&["Bool"]);
+        kctx.parse_constants(&["c0", "c1", "c2", "c3", "c4"], "Bool");
+        let lctx = kctx.parse_local(&["Bool"]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
@@ -1301,7 +1301,7 @@ mod tests {
         tree.insert_pair(&pattern_left, &pattern_right, 7, &lctx, &kctx);
 
         // Query "c1 = c0" should match (c1 can be matched by variable x0)
-        let query_lctx = kctx.make_local(&[]);
+        let query_lctx = kctx.parse_local(&[]);
         let query_left = Term::parse("c1");
         let query_right = Term::parse("c0");
         let found = tree.find_pair(&query_left, &query_right, &query_lctx, &kctx);
@@ -1313,9 +1313,9 @@ mod tests {
         // Test that patterns with function applications and variables match correctly
         // c1 : Bool -> Bool, so c1(x0) : Bool when x0 : Bool
         let mut kctx = KernelContext::new();
-        kctx.add_constant("c1", "Bool -> Bool")
-            .add_constants(&["c5", "c6"], "Bool");
-        let lctx = kctx.make_local(&["Bool"]);
+        kctx.parse_constant("c1", "Bool -> Bool")
+            .parse_constants(&["c5", "c6"], "Bool");
+        let lctx = kctx.parse_local(&["Bool"]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
@@ -1325,7 +1325,7 @@ mod tests {
         tree.insert_pair(&pattern_left, &pattern_right, 42, &lctx, &kctx);
 
         // Query "c1(c6) = c5" should match (c6 : Bool can be matched by variable x0)
-        let query_lctx = kctx.make_local(&[]);
+        let query_lctx = kctx.parse_local(&[]);
         let query_left = Term::parse("c1(c6)");
         let query_right = Term::parse("c5");
         let found = tree.find_pair(&query_left, &query_right, &query_lctx, &kctx);
@@ -1336,13 +1336,13 @@ mod tests {
     fn test_pattern_tree_clause_with_function_application() {
         // Test that clauses with function applications can be inserted and found
         let mut kctx = KernelContext::new();
-        kctx.add_constant("c1", "Bool -> Bool")
-            .add_constant("c5", "Bool");
+        kctx.parse_constant("c1", "Bool -> Bool")
+            .parse_constant("c5", "Bool");
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Create a clause with a function application: c1(x0) = c5
-        let clause = kctx.make_clause("c1(x0) = c5", &["Bool"]);
+        let clause = kctx.parse_clause("c1(x0) = c5", &["Bool"]);
         tree.insert_clause(&clause, 42, &kctx);
 
         // Should be able to find the exact same clause
@@ -1354,16 +1354,16 @@ mod tests {
     fn test_pattern_tree_clause_specialization() {
         // Test that find_clause can match a specialized clause against a pattern.
         let mut kctx = KernelContext::new();
-        kctx.add_constant("c5", "Bool");
+        kctx.parse_constant("c5", "Bool");
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Insert pattern: x0 = x0
-        let clause = kctx.make_clause("x0 = x0", &["Bool"]);
+        let clause = kctx.parse_clause("x0 = x0", &["Bool"]);
         tree.insert_clause(&clause, 42, &kctx);
 
         // Query: c5 = c5 should match (c5 substituted for x0)
-        let special = kctx.make_clause("c5 = c5", &[]);
+        let special = kctx.parse_clause("c5 = c5", &[]);
         let found_special = tree.find_clause(&special, &kctx);
         assert_eq!(found_special, Some(&42));
     }
@@ -1372,14 +1372,14 @@ mod tests {
     fn test_pattern_tree_clause_multi_literal() {
         // Test clause with multiple literals containing function applications
         let mut kctx = KernelContext::new();
-        kctx.add_constant("c0", "(Bool, Bool) -> Bool")
-            .add_constant("c1", "Bool -> Bool")
-            .add_constants(&["c5", "c6"], "Bool");
+        kctx.parse_constant("c0", "(Bool, Bool) -> Bool")
+            .parse_constant("c1", "Bool -> Bool")
+            .parse_constants(&["c5", "c6"], "Bool");
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Create a clause with two literals: c1(x0) = c5 or c0(x0, x1) = c6
-        let clause = kctx.make_clause("c1(x0) = c5 or c0(x0, x1) = c6", &["Bool", "Bool"]);
+        let clause = kctx.parse_clause("c1(x0) = c5 or c0(x0, x1) = c6", &["Bool", "Bool"]);
         tree.insert_clause(&clause, 99, &kctx);
 
         // Should be able to find the clause
@@ -1391,8 +1391,8 @@ mod tests {
     fn test_insert_or_append_and_find() {
         // Test the insert_or_append + find_term_matches_while pattern used by RewriteTree
         let mut kctx = KernelContext::new();
-        kctx.add_constants(&["c0", "c1", "c2"], "Bool");
-        let lctx = kctx.make_local(&[]);
+        kctx.parse_constants(&["c0", "c1", "c2"], "Bool");
+        let lctx = kctx.parse_local(&[]);
 
         let mut tree: PatternTree<Vec<usize>> = PatternTree::new();
 
@@ -1441,12 +1441,12 @@ mod tests {
         //
         // The match should succeed with x0 = c0(c5), which has type Bool -> Bool.
         let mut kctx = KernelContext::new();
-        kctx.add_constant("c0", "(Bool, Bool) -> Bool")
-            .add_constant("c1", "Bool -> Bool")
-            .add_constants(&["c5", "c6"], "Bool");
+        kctx.parse_constant("c0", "(Bool, Bool) -> Bool")
+            .parse_constant("c1", "Bool -> Bool")
+            .parse_constants(&["c5", "c6"], "Bool");
 
         // x0: Bool -> Bool
-        let lctx = kctx.make_local(&["Bool -> Bool"]);
+        let lctx = kctx.parse_local(&["Bool -> Bool"]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
@@ -1491,11 +1491,11 @@ mod tests {
         //
         // This should match with x0 = c1 (simple variable binding).
         let mut kctx = KernelContext::new();
-        kctx.add_constant("c0", "(Bool, Bool) -> Bool")
-            .add_constant("c1", "Bool -> Bool")
-            .add_constants(&["c5", "c6", "c7"], "Bool");
+        kctx.parse_constant("c0", "(Bool, Bool) -> Bool")
+            .parse_constant("c1", "Bool -> Bool")
+            .parse_constants(&["c5", "c6", "c7"], "Bool");
 
-        let lctx = kctx.make_local(&["Bool -> Bool"]);
+        let lctx = kctx.parse_local(&["Bool -> Bool"]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
@@ -1547,19 +1547,19 @@ mod tests {
         // This should match with x0 -> c1, x1 -> c6
         let mut kctx = KernelContext::new();
         // Add constants in order so Term::parse indices match
-        kctx.add_constant("c0", "Bool") // placeholder
-            .add_constant("c1", "Bool -> Bool")
-            .add_constants(&["c2", "c3", "c4"], "Bool") // placeholders
-            .add_constants(&["c5", "c6"], "Bool");
+        kctx.parse_constant("c0", "Bool") // placeholder
+            .parse_constant("c1", "Bool -> Bool")
+            .parse_constants(&["c2", "c3", "c4"], "Bool") // placeholders
+            .parse_constants(&["c5", "c6"], "Bool");
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
         // Insert pattern: not x0(c5) or x0(x1), where x0: Bool -> Bool, x1: Bool
-        let pattern = kctx.make_clause("not x0(c5) or x0(x1)", &["Bool -> Bool", "Bool"]);
+        let pattern = kctx.parse_clause("not x0(c5) or x0(x1)", &["Bool -> Bool", "Bool"]);
         tree.insert_clause(&pattern, 42, &kctx);
 
         // Query: not c1(c5) or c1(c6)
-        let query = kctx.make_clause("not c1(c5) or c1(c6)", &[]);
+        let query = kctx.parse_clause("not c1(c5) or c1(c6)", &[]);
 
         // This should find the pattern with x0 -> c1, x1 -> c6
         let found = tree.find_clause(&query, &kctx);
@@ -1582,12 +1582,12 @@ mod tests {
         //
         // This should match with x0 -> c0(c6)
         let mut kctx = KernelContext::new();
-        kctx.add_constant("c0", "(Bool, Bool) -> Bool")
-            .add_constant("c1", "Bool -> Bool")
-            .add_constants(&["c5", "c6"], "Bool");
+        kctx.parse_constant("c0", "(Bool, Bool) -> Bool")
+            .parse_constant("c1", "Bool -> Bool")
+            .parse_constants(&["c5", "c6"], "Bool");
 
         // x0: Bool -> Bool
-        let lctx = kctx.make_local(&["Bool -> Bool"]);
+        let lctx = kctx.parse_local(&["Bool -> Bool"]);
 
         let mut tree: PatternTree<usize> = PatternTree::new();
 
@@ -1597,7 +1597,7 @@ mod tests {
         tree.insert_pair(&pattern_left, &pattern_right, 42, &lctx, &kctx);
 
         // Query: c0(c6, c1(c0(c6))) = c5
-        let query_lctx = kctx.make_local(&[]);
+        let query_lctx = kctx.parse_local(&[]);
         let query_left = Term::parse("c0(c6, c1(c0(c6)))");
         let query_right = Term::parse("c5");
         let found = tree.find_pair(&query_left, &query_right, &query_lctx, &kctx);
@@ -1638,7 +1638,7 @@ mod tests {
         use crate::kernel::symbol::Symbol;
 
         let mut kctx = KernelContext::new();
-        kctx.add_type_constructor("List", 1);
+        kctx.parse_type_constructor("List", 1);
         let list_id = kctx.type_store.get_ground_id_by_name("List").unwrap();
 
         let type_var = Term::atom(KernelAtom::FreeVariable(0));
@@ -1772,8 +1772,8 @@ mod tests {
     fn test_key_from_type_dependent() {
         // Test: Fin[c0] where c0: Nat encodes correctly (dependent type)
         let mut kctx = KernelContext::new();
-        kctx.add_type_constructor("Fin", 1);
-        kctx.add_datatype("Nat");
+        kctx.parse_type_constructor("Fin", 1);
+        kctx.parse_datatype("Nat");
 
         let nat_id = kctx.type_store.get_ground_id_by_name("Nat").unwrap();
         let nat_type = Term::ground_type(nat_id);
@@ -1807,8 +1807,8 @@ mod tests {
     fn test_key_from_type_dependent_with_variable() {
         // Test: Fin[x0] where x0: Nat encodes correctly
         let mut kctx = KernelContext::new();
-        kctx.add_type_constructor("Fin", 1);
-        kctx.add_datatype("Nat");
+        kctx.parse_type_constructor("Fin", 1);
+        kctx.parse_datatype("Nat");
 
         let _nat_id = kctx.type_store.get_ground_id_by_name("Nat").unwrap();
         let fin_id = kctx.type_store.get_ground_id_by_name("Fin").unwrap();
@@ -1840,8 +1840,8 @@ mod tests {
         // e.g., a function f : Fin[n] -> Bool where n : Nat
 
         let mut kctx = KernelContext::new();
-        kctx.add_type_constructor("Fin", 1);
-        kctx.add_datatype("Nat");
+        kctx.parse_type_constructor("Fin", 1);
+        kctx.parse_datatype("Nat");
 
         let nat_id = kctx.type_store.get_ground_id_by_name("Nat").unwrap();
         let nat_type = Term::ground_type(nat_id);
@@ -1906,7 +1906,7 @@ mod tests {
         // Test: Π(R: Ring), R -> R -> R encodes correctly
         // This is the type of a polymorphic function like `add`
         let mut kctx = KernelContext::new();
-        kctx.add_typeclass("Ring");
+        kctx.parse_typeclass("Ring");
 
         let dependent_pi = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
 
@@ -1936,9 +1936,9 @@ mod tests {
         // Test: Π(R: Ring), Π(n: Nat), Matrix[R, n, n]
         // More complex dependent type with multiple binders
         let mut kctx = KernelContext::new();
-        kctx.add_typeclass("Ring");
-        kctx.add_datatype("Nat");
-        kctx.add_type_constructor("Matrix", 3);
+        kctx.parse_typeclass("Ring");
+        kctx.parse_datatype("Nat");
+        kctx.parse_type_constructor("Matrix", 3);
 
         let nested_pi = kctx.parse_dependent_type(&["Ring", "Nat"], "Matrix[T0, T1, T1]");
 
@@ -1965,7 +1965,7 @@ mod tests {
         // Test pattern tree insertion for a function whose type is a dependent Pi type
         // e.g., `add : Π(R: Ring), R -> R -> R`
         let mut kctx = KernelContext::new();
-        kctx.add_typeclass("Ring");
+        kctx.parse_typeclass("Ring");
 
         // Create the dependent Pi type: Π(R: Ring), R -> R -> R
         let add_type = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
@@ -2006,7 +2006,7 @@ mod tests {
         // Test that two functions with the same dependent Pi type structure
         // can be found in the pattern tree
         let mut kctx = KernelContext::new();
-        kctx.add_typeclass("Ring");
+        kctx.parse_typeclass("Ring");
 
         // Create the dependent Pi type: Π(R: Ring), R -> R -> R
         let op_type = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");

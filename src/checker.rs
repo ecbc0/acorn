@@ -613,23 +613,23 @@ impl TestChecker {
     fn with_clauses(clauses: &[&str]) -> TestChecker {
         let mut context = KernelContext::new();
         // c0-c5: Bool constants
-        context.add_constants(&["c0", "c1", "c2", "c3", "c4", "c5"], "Bool");
+        context.parse_constants(&["c0", "c1", "c2", "c3", "c4", "c5"], "Bool");
         // g0, g1, g3, g4: (Bool, Bool) -> Bool functions
-        context.add_constants(&["g0", "g1"], "(Bool, Bool) -> Bool");
+        context.parse_constants(&["g0", "g1"], "(Bool, Bool) -> Bool");
         // g2 placeholder to get to g3 and g4
-        context.add_constant("g2", "(Bool, Bool) -> Bool");
-        context.add_constants(&["g3", "g4"], "(Bool, Bool) -> Bool");
+        context.parse_constant("g2", "(Bool, Bool) -> Bool");
+        context.parse_constants(&["g3", "g4"], "(Bool, Bool) -> Bool");
 
         let mut checker = Checker::new();
         for clause_str in clauses {
-            let clause = context.make_clause(clause_str, &[]);
+            let clause = context.parse_clause(clause_str, &[]);
             checker.insert_clause(&clause, StepReason::Testing, &context);
         }
         TestChecker { checker, context }
     }
 
     fn check_clause_str(&mut self, s: &str) {
-        let clause = self.context.make_clause(s, &[]);
+        let clause = self.context.parse_clause(s, &[]);
         if !self.checker.check_clause(&clause, &self.context).is_some() {
             panic!("check_clause_str(\"{}\") failed", s);
         }

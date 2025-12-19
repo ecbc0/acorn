@@ -991,7 +991,7 @@ mod tests {
         // Test unifying a constant of type List[Int] with a variable of type List[x0]
         // where x0 is a type variable. This tests that polymorphic types work in unification.
         let mut ctx = KernelContext::new();
-        ctx.add_type_constructor("List", 1).add_datatype("Int");
+        ctx.parse_type_constructor("List", 1).parse_datatype("Int");
 
         let list_id = ctx.type_store.get_ground_id_by_name("List").unwrap();
         let int_id = ctx.type_store.get_ground_id_by_name("Int").unwrap();
@@ -1051,9 +1051,9 @@ mod tests {
         // - Unifying x1 (LEFT) with x1 (RIGHT) should FAIL because the types differ
         // - But if we only compare raw types (List[x0] == List[x0]), it would wrongly succeed
         let mut ctx = KernelContext::new();
-        ctx.add_type_constructor("List", 1)
-            .add_datatype("Int")
-            .add_datatype("Nat");
+        ctx.parse_type_constructor("List", 1)
+            .parse_datatype("Int")
+            .parse_datatype("Nat");
 
         let list_id = ctx.type_store.get_ground_id_by_name("List").unwrap();
         let int_id = ctx.type_store.get_ground_id_by_name("Int").unwrap();
@@ -1107,7 +1107,7 @@ mod tests {
         // Test that a variable of type Int cannot unify with a constant of type Nat.
         // This verifies that type checking is working correctly in unification.
         let mut ctx = KernelContext::new();
-        ctx.add_datatype("Int").add_datatype("Nat");
+        ctx.parse_datatype("Int").parse_datatype("Nat");
 
         let int_id = ctx.type_store.get_ground_id_by_name("Int").unwrap();
         let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
@@ -1196,7 +1196,7 @@ mod tests {
         use crate::module::ModuleId;
 
         let mut ctx = KernelContext::new();
-        ctx.add_datatype("Int");
+        ctx.parse_datatype("Int");
 
         let int_id = ctx.type_store.get_ground_id_by_name("Int").unwrap();
         let int_type = Term::ground_type(int_id);
@@ -1249,7 +1249,7 @@ mod tests {
         use crate::module::ModuleId;
 
         let mut ctx = KernelContext::new();
-        ctx.add_datatype("String");
+        ctx.parse_datatype("String");
 
         let string_id = ctx.type_store.get_ground_id_by_name("String").unwrap();
         let string_type = Term::ground_type(string_id);
@@ -1325,8 +1325,8 @@ mod tests {
         // This tests dependent types where the type parameter is a value, not a type
 
         let mut ctx = KernelContext::new();
-        ctx.add_type_constructor("Fin", 1); // Fin takes 1 parameter
-        ctx.add_datatype("Nat");
+        ctx.parse_type_constructor("Fin", 1); // Fin takes 1 parameter
+        ctx.parse_datatype("Nat");
 
         let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
         let nat_type = Term::ground_type(nat_id);
@@ -1372,8 +1372,8 @@ mod tests {
         // Test: Fin[c0] unifies with Fin[c0] (same value parameter)
 
         let mut ctx = KernelContext::new();
-        ctx.add_type_constructor("Fin", 1);
-        ctx.add_datatype("Nat");
+        ctx.parse_type_constructor("Fin", 1);
+        ctx.parse_datatype("Nat");
 
         let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
         let nat_type = Term::ground_type(nat_id);
@@ -1403,8 +1403,8 @@ mod tests {
         // Test: Fin[c0] does NOT unify with Fin[c1] (different value parameters)
 
         let mut ctx = KernelContext::new();
-        ctx.add_type_constructor("Fin", 1);
-        ctx.add_datatype("Nat");
+        ctx.parse_type_constructor("Fin", 1);
+        ctx.parse_datatype("Nat");
 
         let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
         let nat_type = Term::ground_type(nat_id);
@@ -1473,7 +1473,7 @@ mod tests {
         // Test that Pi types with bound variables unify correctly
         // Pi(Nat, b0) should unify with Pi(Nat, b0)
         let mut ctx = KernelContext::new();
-        ctx.add_datatype("Nat");
+        ctx.parse_datatype("Nat");
 
         let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
         let nat_type = Term::ground_type(nat_id);
@@ -1498,7 +1498,7 @@ mod tests {
         // Test that Pi types with different bound variable indices don't unify
         // Pi(Nat, b0) should NOT unify with Pi(Nat, b1)
         let mut ctx = KernelContext::new();
-        ctx.add_datatype("Nat");
+        ctx.parse_datatype("Nat");
 
         let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
         let nat_type = Term::ground_type(nat_id);
@@ -1524,7 +1524,7 @@ mod tests {
         // Π (R : Ring), R -> R -> R
         // This should unify with itself
         let mut ctx = KernelContext::new();
-        ctx.add_datatype("Ring");
+        ctx.parse_datatype("Ring");
 
         let ring_id = ctx.type_store.get_ground_id_by_name("Ring").unwrap();
         let ring_type = Term::ground_type(ring_id);
@@ -1551,7 +1551,7 @@ mod tests {
         // If we have Pi(Ring, Pi(b0, b0)) and apply the unifier,
         // the b0's should be preserved (not substituted)
         let mut ctx = KernelContext::new();
-        ctx.add_datatype("Ring");
+        ctx.parse_datatype("Ring");
 
         let ring_id = ctx.type_store.get_ground_id_by_name("Ring").unwrap();
         let ring_type = Term::ground_type(ring_id);
@@ -1578,7 +1578,7 @@ mod tests {
     fn test_unify_dependent_pi_with_free_variable() {
         // Test that a free variable of type Type can unify with a dependent Pi type
         let mut ctx = KernelContext::new();
-        ctx.add_datatype("Ring");
+        ctx.parse_datatype("Ring");
 
         let ring_id = ctx.type_store.get_ground_id_by_name("Ring").unwrap();
         let ring_type = Term::ground_type(ring_id);
@@ -1619,7 +1619,7 @@ mod tests {
         // Test unifying nested dependent Pi types:
         // Π (R : Ring), Π (S : Ring), R -> S -> R
         let mut ctx = KernelContext::new();
-        ctx.add_datatype("Ring");
+        ctx.parse_datatype("Ring");
 
         let ring_id = ctx.type_store.get_ground_id_by_name("Ring").unwrap();
         let ring_type = Term::ground_type(ring_id);

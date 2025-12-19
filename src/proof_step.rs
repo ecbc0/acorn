@@ -714,7 +714,7 @@ impl ProofStep {
     /// var_types[i] is the type string for variable x_i.
     #[cfg(test)]
     pub fn mock_with_types(s: &str, var_types: &[&str], kernel: &KernelContext) -> ProofStep {
-        let clause = kernel.make_clause(s, var_types);
+        let clause = kernel.parse_clause(s, var_types);
         Self::mock_from_clause(clause)
     }
 
@@ -812,18 +812,18 @@ mod tests {
     #[test]
     fn test_rewrite_clause_context_matches_variables() {
         let mut kctx = KernelContext::new();
-        kctx.add_constant("g0", "(Bool, Bool) -> Bool")
-            .add_constant("g1", "Bool -> Bool")
-            .add_constant("c0", "Bool");
+        kctx.parse_constant("g0", "(Bool, Bool) -> Bool")
+            .parse_constant("g1", "Bool -> Bool")
+            .parse_constant("c0", "Bool");
 
         // Pattern: g0(x0, x1) = x1
         // Context: [Bool, Bool]
-        let pattern_clause = kctx.make_clause("g0(x0, x1) = x1", &["Bool", "Bool"]);
+        let pattern_clause = kctx.parse_clause("g0(x0, x1) = x1", &["Bool", "Bool"]);
         let pattern_context = pattern_clause.get_local_context().clone();
         let pattern_step = ProofStep::mock_from_clause(pattern_clause);
 
         // Target: g1(c0) = c0 (no variables)
-        let target_clause = kctx.make_clause("g1(c0) = c0", &[]);
+        let target_clause = kctx.parse_clause("g1(c0) = c0", &[]);
         let target_step = ProofStep::mock_from_clause(target_clause);
 
         // new_subterm: g0(x0, c0)

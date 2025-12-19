@@ -334,18 +334,18 @@ mod tests {
     #[test]
     fn test_clause_set_basic_generalization() {
         let mut kctx = KernelContext::new();
-        kctx.add_constant("c0", "(Bool, Bool) -> Bool")
-            .add_constant("c1", "Bool -> Bool")
-            .add_constants(&["c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9"], "Bool");
+        kctx.parse_constant("c0", "(Bool, Bool) -> Bool")
+            .parse_constant("c1", "Bool -> Bool")
+            .parse_constants(&["c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9"], "Bool");
 
         let mut clause_set = GeneralizationSet::new();
 
         // Insert a general clause: c0(x0, c5) or c1(x0)
-        let general_clause = kctx.make_clause("c0(x0, c5) or c1(x0)", &["Bool"]);
+        let general_clause = kctx.parse_clause("c0(x0, c5) or c1(x0)", &["Bool"]);
         clause_set.insert(general_clause, 1, &kctx);
 
         // Test that a specialized version is recognized (x0 -> c6)
-        let special_clause = kctx.make_clause("c1(c6) or c0(c6, c5)", &[]);
+        let special_clause = kctx.parse_clause("c1(c6) or c0(c6, c5)", &[]);
         let result = clause_set.find_generalization(special_clause, &kctx);
         assert_eq!(result, Some(1), "Should find the generalization");
     }
@@ -353,118 +353,118 @@ mod tests {
     #[test]
     fn test_clause_set_reordered_literals() {
         let mut kctx = KernelContext::new();
-        kctx.add_constant("c0", "(Bool, Bool) -> Bool")
-            .add_constant("c1", "Bool -> Bool")
-            .add_constants(&["c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9"], "Bool");
+        kctx.parse_constant("c0", "(Bool, Bool) -> Bool")
+            .parse_constant("c1", "Bool -> Bool")
+            .parse_constants(&["c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9"], "Bool");
 
         let mut clause_set = GeneralizationSet::new();
 
         // Insert: c1(x0) or c0(x0, c5)
-        let clause = kctx.make_clause("c1(x0) or c0(x0, c5)", &["Bool"]);
+        let clause = kctx.parse_clause("c1(x0) or c0(x0, c5)", &["Bool"]);
         clause_set.insert(clause, 2, &kctx);
 
         // Test that reordered specializations are recognized (x0 -> c6)
-        let special1 = kctx.make_clause("c0(c6, c5) or c1(c6)", &[]);
+        let special1 = kctx.parse_clause("c0(c6, c5) or c1(c6)", &[]);
         assert_eq!(clause_set.find_generalization(special1, &kctx), Some(2));
 
         // Another reordering (x0 -> c7)
-        let special2 = kctx.make_clause("c1(c7) or c0(c7, c5)", &[]);
+        let special2 = kctx.parse_clause("c1(c7) or c0(c7, c5)", &[]);
         assert_eq!(clause_set.find_generalization(special2, &kctx), Some(2));
     }
 
     #[test]
     fn test_clause_set_flipped_equality() {
         let mut kctx = KernelContext::new();
-        kctx.add_constant("c1", "Bool -> Bool")
-            .add_constants(&["c5", "c6", "c7"], "Bool");
+        kctx.parse_constant("c1", "Bool -> Bool")
+            .parse_constants(&["c5", "c6", "c7"], "Bool");
 
         let mut clause_set = GeneralizationSet::new();
 
         // Insert: x0 = c5 or c1(x0)
-        let clause = kctx.make_clause("x0 = c5 or c1(x0)", &["Bool"]);
+        let clause = kctx.parse_clause("x0 = c5 or c1(x0)", &["Bool"]);
         clause_set.insert(clause, 3, &kctx);
 
         // Test that flipped equalities are recognized (x0 -> c6)
-        let special = kctx.make_clause("c6 = c5 or c1(c6)", &[]);
+        let special = kctx.parse_clause("c6 = c5 or c1(c6)", &[]);
         assert_eq!(clause_set.find_generalization(special, &kctx), Some(3));
 
         // Also test with the equality already flipped (x0 -> c7)
-        let special2 = kctx.make_clause("c5 = c7 or c1(c7)", &[]);
+        let special2 = kctx.parse_clause("c5 = c7 or c1(c7)", &[]);
         assert_eq!(clause_set.find_generalization(special2, &kctx), Some(3));
     }
 
     #[test]
     fn test_clause_set_no_generalization() {
         let mut kctx = KernelContext::new();
-        kctx.add_constant("c0", "(Bool, Bool) -> Bool")
-            .add_constant("c1", "Bool -> Bool")
-            .add_constants(&["c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9"], "Bool");
+        kctx.parse_constant("c0", "(Bool, Bool) -> Bool")
+            .parse_constant("c1", "Bool -> Bool")
+            .parse_constants(&["c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9"], "Bool");
 
         let mut clause_set = GeneralizationSet::new();
 
         // Insert a specific clause: c0(c5, c6) or c1(c7)
-        let clause = kctx.make_clause("c0(c5, c6) or c1(c7)", &[]);
+        let clause = kctx.parse_clause("c0(c5, c6) or c1(c7)", &[]);
         clause_set.insert(clause, 4, &kctx);
 
         // Test clauses that should NOT have generalizations
-        let no_match1 = kctx.make_clause("c0(c5, c7) or c1(c7)", &[]);
+        let no_match1 = kctx.parse_clause("c0(c5, c7) or c1(c7)", &[]);
         assert_eq!(clause_set.find_generalization(no_match1, &kctx), None);
 
-        let no_match2 = kctx.make_clause("c0(c6, c5) or c1(c7)", &[]);
+        let no_match2 = kctx.parse_clause("c0(c6, c5) or c1(c7)", &[]);
         assert_eq!(clause_set.find_generalization(no_match2, &kctx), None);
     }
 
     #[test]
     fn test_clause_set_multiple_variables() {
         let mut kctx = KernelContext::new();
-        kctx.add_constant("c0", "(Bool, Bool) -> Bool")
-            .add_constants(&["c5", "c6", "c7", "c8"], "Bool");
+        kctx.parse_constant("c0", "(Bool, Bool) -> Bool")
+            .parse_constants(&["c5", "c6", "c7", "c8"], "Bool");
 
         let mut clause_set = GeneralizationSet::new();
 
         // Insert: c0(x0, x1) or c0(x1, x0)
-        let clause = kctx.make_clause("c0(x0, x1) or c0(x1, x0)", &["Bool", "Bool"]);
+        let clause = kctx.parse_clause("c0(x0, x1) or c0(x1, x0)", &["Bool", "Bool"]);
         clause_set.insert(clause, 5, &kctx);
 
         // Test various specializations (x0 -> c5, x1 -> c6)
-        let special1 = kctx.make_clause("c0(c5, c6) or c0(c6, c5)", &[]);
+        let special1 = kctx.parse_clause("c0(c5, c6) or c0(c6, c5)", &[]);
         assert_eq!(clause_set.find_generalization(special1, &kctx), Some(5));
 
         // Reordered (x0 -> c7, x1 -> c8)
-        let special2 = kctx.make_clause("c0(c8, c7) or c0(c7, c8)", &[]);
+        let special2 = kctx.parse_clause("c0(c8, c7) or c0(c7, c8)", &[]);
         assert_eq!(clause_set.find_generalization(special2, &kctx), Some(5));
 
         // This should NOT match because the variable pattern is different
-        let no_match = kctx.make_clause("c0(c5, c6) or c0(c7, c8)", &[]);
+        let no_match = kctx.parse_clause("c0(c5, c6) or c0(c7, c8)", &[]);
         assert_eq!(clause_set.find_generalization(no_match, &kctx), None);
     }
 
     #[test]
     fn test_clause_set_single_literal() {
         let mut kctx = KernelContext::new();
-        kctx.add_constant("c0", "(Bool, Bool) -> Bool")
-            .add_constants(&["c5", "c6"], "Bool");
+        kctx.parse_constant("c0", "(Bool, Bool) -> Bool")
+            .parse_constants(&["c5", "c6"], "Bool");
 
         let mut clause_set = GeneralizationSet::new();
 
         // Insert single literal clauses
-        let clause1 = kctx.make_clause("c0(x0, c5)", &["Bool"]);
+        let clause1 = kctx.parse_clause("c0(x0, c5)", &["Bool"]);
         clause_set.insert(clause1, 6, &kctx);
 
-        let clause2 = kctx.make_clause("x0 = c5", &["Bool"]);
+        let clause2 = kctx.parse_clause("x0 = c5", &["Bool"]);
         clause_set.insert(clause2, 7, &kctx);
 
         // Test specializations
         assert_eq!(
-            clause_set.find_generalization(kctx.make_clause("c0(c6, c5)", &[]), &kctx),
+            clause_set.find_generalization(kctx.parse_clause("c0(c6, c5)", &[]), &kctx),
             Some(6)
         );
         assert_eq!(
-            clause_set.find_generalization(kctx.make_clause("c6 = c5", &[]), &kctx),
+            clause_set.find_generalization(kctx.parse_clause("c6 = c5", &[]), &kctx),
             Some(7)
         );
         assert_eq!(
-            clause_set.find_generalization(kctx.make_clause("c5 = c6", &[]), &kctx),
+            clause_set.find_generalization(kctx.parse_clause("c5 = c6", &[]), &kctx),
             Some(7)
         );
     }
@@ -472,61 +472,61 @@ mod tests {
     #[test]
     fn test_clause_set_negated_literals() {
         let mut kctx = KernelContext::new();
-        kctx.add_constants(&["c5", "c6", "c7", "c8"], "Bool");
+        kctx.parse_constants(&["c5", "c6", "c7", "c8"], "Bool");
 
         let mut clause_set = GeneralizationSet::new();
 
         // Insert: c5 = x0 or x1 != c6
-        let clause = kctx.make_clause("c5 = x0 or x1 != c6", &["Bool", "Bool"]);
+        let clause = kctx.parse_clause("c5 = x0 or x1 != c6", &["Bool", "Bool"]);
         clause_set.insert(clause, 1, &kctx);
 
         // Test that it matches correct specializations
-        let special1 = kctx.make_clause("c5 = c7 or c8 != c6", &[]);
+        let special1 = kctx.parse_clause("c5 = c7 or c8 != c6", &[]);
         assert_eq!(clause_set.find_generalization(special1, &kctx), Some(1));
 
-        let special2 = kctx.make_clause("c7 != c6 or c5 = c7", &[]);
+        let special2 = kctx.parse_clause("c7 != c6 or c5 = c7", &[]);
         assert_eq!(clause_set.find_generalization(special2, &kctx), Some(1));
 
-        let special3 = kctx.make_clause("c5 = c8 or c6 != c8", &[]);
+        let special3 = kctx.parse_clause("c5 = c8 or c6 != c8", &[]);
         assert_eq!(clause_set.find_generalization(special3, &kctx), Some(1));
     }
 
     #[test]
     fn test_clause_set_no_positive_negative_confusion() {
         let mut kctx = KernelContext::new();
-        kctx.add_constants(&["c5", "c6", "c7", "c8"], "Bool");
+        kctx.parse_constants(&["c5", "c6", "c7", "c8"], "Bool");
 
         let mut clause_set = GeneralizationSet::new();
 
         // Insert a clause with a positive literal
-        let positive_clause = kctx.make_clause("x0 = c5", &["Bool"]);
+        let positive_clause = kctx.parse_clause("x0 = c5", &["Bool"]);
         clause_set.insert(positive_clause, 1, &kctx);
 
         // Insert a clause with a negative literal
-        let negative_clause = kctx.make_clause("x0 != c6", &["Bool"]);
+        let negative_clause = kctx.parse_clause("x0 != c6", &["Bool"]);
         clause_set.insert(negative_clause, 2, &kctx);
 
         // Test that positive matches positive
         assert_eq!(
-            clause_set.find_generalization(kctx.make_clause("c7 = c5", &[]), &kctx),
+            clause_set.find_generalization(kctx.parse_clause("c7 = c5", &[]), &kctx),
             Some(1)
         );
 
         // Test that negative matches negative
         assert_eq!(
-            clause_set.find_generalization(kctx.make_clause("c8 != c6", &[]), &kctx),
+            clause_set.find_generalization(kctx.parse_clause("c8 != c6", &[]), &kctx),
             Some(2)
         );
 
         // Test that positive does NOT match negative
         assert_eq!(
-            clause_set.find_generalization(kctx.make_clause("c7 != c5", &[]), &kctx),
+            clause_set.find_generalization(kctx.parse_clause("c7 != c5", &[]), &kctx),
             None
         );
 
         // Test that negative does NOT match positive
         assert_eq!(
-            clause_set.find_generalization(kctx.make_clause("c8 = c6", &[]), &kctx),
+            clause_set.find_generalization(kctx.parse_clause("c8 = c6", &[]), &kctx),
             None
         );
     }
@@ -534,87 +534,87 @@ mod tests {
     #[test]
     fn test_clause_set_mixed_positive_negative() {
         let mut kctx = KernelContext::new();
-        kctx.add_constant("c0", "(Bool, Bool) -> Bool")
-            .add_constant("c1", "Bool -> Bool")
-            .add_constants(&["c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9"], "Bool");
+        kctx.parse_constant("c0", "(Bool, Bool) -> Bool")
+            .parse_constant("c1", "Bool -> Bool")
+            .parse_constants(&["c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9"], "Bool");
 
         let mut clause_set = GeneralizationSet::new();
 
         // Insert: not c1(x0) or c0(x0, x1) or x1 != c5
-        let clause = kctx.make_clause("not c1(x0) or c0(x0, x1) or x1 != c5", &["Bool", "Bool"]);
+        let clause = kctx.parse_clause("not c1(x0) or c0(x0, x1) or x1 != c5", &["Bool", "Bool"]);
         clause_set.insert(clause, 1, &kctx);
 
         // Test various specializations
-        let special1 = kctx.make_clause("not c1(c6) or c0(c6, c7) or c7 != c5", &[]);
+        let special1 = kctx.parse_clause("not c1(c6) or c0(c6, c7) or c7 != c5", &[]);
         assert_eq!(clause_set.find_generalization(special1, &kctx), Some(1));
 
-        let special2 = kctx.make_clause("c0(c8, c9) or c9 != c5 or not c1(c8)", &[]);
+        let special2 = kctx.parse_clause("c0(c8, c9) or c9 != c5 or not c1(c8)", &[]);
         assert_eq!(clause_set.find_generalization(special2, &kctx), Some(1));
 
         // Test that wrong signs don't match
-        let wrong1 = kctx.make_clause("c1(c6) or c0(c6, c7) or c7 != c5", &[]);
+        let wrong1 = kctx.parse_clause("c1(c6) or c0(c6, c7) or c7 != c5", &[]);
         assert_eq!(clause_set.find_generalization(wrong1, &kctx), None);
 
-        let wrong2 = kctx.make_clause("not c1(c6) or not c0(c6, c7) or c7 != c5", &[]);
+        let wrong2 = kctx.parse_clause("not c1(c6) or not c0(c6, c7) or c7 != c5", &[]);
         assert_eq!(clause_set.find_generalization(wrong2, &kctx), None);
     }
 
     #[test]
     fn test_clause_set_all_negative() {
         let mut kctx = KernelContext::new();
-        kctx.add_constants(&["c5", "c6", "c7", "c8"], "Bool");
+        kctx.parse_constants(&["c5", "c6", "c7", "c8"], "Bool");
 
         let mut clause_set = GeneralizationSet::new();
 
         // Insert: x0 != c5 or x1 != c6 or x0 != x1
-        let clause = kctx.make_clause("x0 != c5 or x1 != c6 or x0 != x1", &["Bool", "Bool"]);
+        let clause = kctx.parse_clause("x0 != c5 or x1 != c6 or x0 != x1", &["Bool", "Bool"]);
         clause_set.insert(clause, 1, &kctx);
 
-        let special = kctx.make_clause("c7 != c5 or c8 != c6 or c7 != c8", &[]);
+        let special = kctx.parse_clause("c7 != c5 or c8 != c6 or c7 != c8", &[]);
         assert_eq!(clause_set.find_generalization(special, &kctx), Some(1));
 
-        let special2 = kctx.make_clause("c7 != c8 or c7 != c5 or c8 != c6", &[]);
+        let special2 = kctx.parse_clause("c7 != c8 or c7 != c5 or c8 != c6", &[]);
         assert_eq!(clause_set.find_generalization(special2, &kctx), Some(1));
     }
 
     #[test]
     fn test_clause_set_boolean_negation() {
         let mut kctx = KernelContext::new();
-        kctx.add_constant("c0", "(Bool, Bool) -> Bool")
-            .add_constant("c1", "Bool -> Bool")
-            .add_constants(&["c5", "c6", "c7"], "Bool");
+        kctx.parse_constant("c0", "(Bool, Bool) -> Bool")
+            .parse_constant("c1", "Bool -> Bool")
+            .parse_constants(&["c5", "c6", "c7"], "Bool");
 
         let mut clause_set = GeneralizationSet::new();
 
         // Insert: not c0(x0, c5) or c1(x0)
-        let clause = kctx.make_clause("not c0(x0, c5) or c1(x0)", &["Bool"]);
+        let clause = kctx.parse_clause("not c0(x0, c5) or c1(x0)", &["Bool"]);
         clause_set.insert(clause, 1, &kctx);
 
-        let special = kctx.make_clause("not c0(c6, c5) or c1(c6)", &[]);
+        let special = kctx.parse_clause("not c0(c6, c5) or c1(c6)", &[]);
         assert_eq!(clause_set.find_generalization(special, &kctx), Some(1));
 
-        let special2 = kctx.make_clause("c1(c7) or not c0(c7, c5)", &[]);
+        let special2 = kctx.parse_clause("c1(c7) or not c0(c7, c5)", &[]);
         assert_eq!(clause_set.find_generalization(special2, &kctx), Some(1));
 
         // Test that signs matter
-        let wrong = kctx.make_clause("c0(c6, c5) or c1(c6)", &[]);
+        let wrong = kctx.parse_clause("c0(c6, c5) or c1(c6)", &[]);
         assert_eq!(clause_set.find_generalization(wrong, &kctx), None);
     }
 
     #[test]
     fn test_clause_set_compound_generalization() {
         let mut kctx = KernelContext::new();
-        kctx.add_constant("c0", "(Bool, Bool) -> Bool")
-            .add_constants(&["c5", "c6", "c7"], "Bool");
+        kctx.parse_constant("c0", "(Bool, Bool) -> Bool")
+            .parse_constants(&["c5", "c6", "c7"], "Bool");
 
         let mut clause_set = GeneralizationSet::new();
 
         // Insert: c0(c5, x0) = x0
-        let general = kctx.make_clause("c0(c5, x0) = x0", &["Bool"]);
+        let general = kctx.parse_clause("c0(c5, x0) = x0", &["Bool"]);
         clause_set.insert(general, 1, &kctx);
 
         // Specialization: c0(c5, c0(c6, c7)) = c0(c6, c7)
-        let special = kctx.make_clause("c0(c5, c0(c6, c7)) = c0(c6, c7)", &[]);
+        let special = kctx.parse_clause("c0(c5, c0(c6, c7)) = c0(c6, c7)", &[]);
         assert_eq!(clause_set.find_generalization(special, &kctx), Some(1));
     }
 
@@ -624,17 +624,17 @@ mod tests {
         // Pattern: not x0(c5) or x0(x1) where x0: Bool -> Bool, x1: Bool
         // Query: not c1(c5) or c1(c6) where c1: Bool -> Bool
         let mut kctx = KernelContext::new();
-        kctx.add_constant("c0", "Bool") // placeholder
-            .add_constant("c1", "Bool -> Bool")
-            .add_constants(&["c2", "c3", "c4", "c5", "c6"], "Bool");
+        kctx.parse_constant("c0", "Bool") // placeholder
+            .parse_constant("c1", "Bool -> Bool")
+            .parse_constants(&["c2", "c3", "c4", "c5", "c6"], "Bool");
 
         let mut clause_set = GeneralizationSet::new();
 
         // x0: Bool -> Bool, x1: Bool
-        let pattern = kctx.make_clause("not x0(c5) or x0(x1)", &["Bool -> Bool", "Bool"]);
+        let pattern = kctx.parse_clause("not x0(c5) or x0(x1)", &["Bool -> Bool", "Bool"]);
         clause_set.insert(pattern, 42, &kctx);
 
-        let query = kctx.make_clause("not c1(c5) or c1(c6)", &[]);
+        let query = kctx.parse_clause("not c1(c5) or c1(c6)", &[]);
         let found = clause_set.find_generalization(query, &kctx);
         assert_eq!(found, Some(42), "Should match clause with applied variable");
     }
@@ -646,17 +646,17 @@ mod tests {
         // Query: not f(c1, c5) or c1(c5)
         let mut kctx = KernelContext::new();
         // c0: (Bool -> Bool, Bool) -> Bool (higher order function)
-        kctx.add_constant("c0", "(Bool -> Bool, Bool) -> Bool")
-            .add_constant("c1", "Bool -> Bool")
-            .add_constants(&["c2", "c3", "c4", "c5", "c6"], "Bool");
+        kctx.parse_constant("c0", "(Bool -> Bool, Bool) -> Bool")
+            .parse_constant("c1", "Bool -> Bool")
+            .parse_constants(&["c2", "c3", "c4", "c5", "c6"], "Bool");
 
         let mut clause_set = GeneralizationSet::new();
 
         // x0: Bool -> Bool, x1: Bool
-        let pattern = kctx.make_clause("not c0(x0, x1) or x0(x1)", &["Bool -> Bool", "Bool"]);
+        let pattern = kctx.parse_clause("not c0(x0, x1) or x0(x1)", &["Bool -> Bool", "Bool"]);
         clause_set.insert(pattern, 42, &kctx);
 
-        let query = kctx.make_clause("not c0(c1, c5) or c1(c5)", &[]);
+        let query = kctx.parse_clause("not c0(c1, c5) or c1(c5)", &[]);
         let found = clause_set.find_generalization(query, &kctx);
         assert_eq!(
             found,
@@ -669,18 +669,18 @@ mod tests {
     fn test_clause_set_rejects_sign_mismatch() {
         // Test that signs are properly checked
         let mut kctx = KernelContext::new();
-        kctx.add_constant("c0", "(Bool -> Bool, Bool) -> Bool")
-            .add_constant("c1", "Bool -> Bool")
-            .add_constant("c5", "Bool");
+        kctx.parse_constant("c0", "(Bool -> Bool, Bool) -> Bool")
+            .parse_constant("c1", "Bool -> Bool")
+            .parse_constant("c5", "Bool");
 
         let mut clause_set = GeneralizationSet::new();
 
         // Insert pattern with POSITIVE first literal, x0: Bool -> Bool, x1: Bool
-        let pattern = kctx.make_clause("c0(x0, x1) or x0(x1)", &["Bool -> Bool", "Bool"]);
+        let pattern = kctx.parse_clause("c0(x0, x1) or x0(x1)", &["Bool -> Bool", "Bool"]);
         clause_set.insert(pattern, 42, &kctx);
 
         // Query with NEGATIVE first literal
-        let query = kctx.make_clause("not c0(c1, c5) or c1(c5)", &[]);
+        let query = kctx.parse_clause("not c0(c1, c5) or c1(c5)", &[]);
         let found = clause_set.find_generalization(query, &kctx);
         assert_eq!(found, None, "Should NOT match when signs are different");
     }
@@ -708,21 +708,21 @@ mod tests {
 
         let mut kctx = KernelContext::new();
         // A is a constant type to simulate a type parameter
-        kctx.add_datatype("A")
+        kctx.parse_datatype("A")
             // g0 takes A and returns a binary Bool function (like lte_from with type param)
-            .add_constant("g0", "A -> (Bool, Bool) -> Bool")
+            .parse_constant("g0", "A -> (Bool, Bool) -> Bool")
             // s0 is a selector: given a binary function, returns a Bool (like Synthetic)
-            .add_constant("s0", "((Bool, Bool) -> Bool) -> Bool")
+            .parse_constant("s0", "((Bool, Bool) -> Bool) -> Bool")
             // c0 is a predicate on binary functions (like is_reflexive)
-            .add_constant("c0", "((Bool, Bool) -> Bool) -> Bool")
+            .parse_constant("c0", "((Bool, Bool) -> Bool) -> Bool")
             // c1 is a constant of type A (like the type argument)
-            .add_constant("c1", "A");
+            .parse_constant("c1", "A");
 
         let mut clause_set = GeneralizationSet::new();
 
         // Pattern: not f(s0(f), s0(f)) or c0(f)
         // where f: (Bool, Bool) -> Bool (variable x0)
-        let pattern = kctx.make_clause(
+        let pattern = kctx.parse_clause(
             "not x0(s0(x0), s0(x0)) or c0(x0)",
             &["(Bool, Bool) -> Bool"],
         );
@@ -793,22 +793,22 @@ mod tests {
 
         let mut kctx = KernelContext::new();
         // T is a type (like a type parameter bound in the environment)
-        kctx.add_datatype("T")
+        kctx.parse_datatype("T")
             // g0 takes a Type, then another arg of that type, and returns (T, T) -> Bool
             // This simulates: forall T. A -> (T, T) -> Bool
-            .add_constant("g0", "T -> T -> (T, T) -> Bool")
+            .parse_constant("g0", "T -> T -> (T, T) -> Bool")
             // s0 is a selector: given a binary function, returns a T
-            .add_constant("s0", "((T, T) -> Bool) -> T")
+            .parse_constant("s0", "((T, T) -> Bool) -> T")
             // c0 is a predicate on binary functions (like is_reflexive)
-            .add_constant("c0", "((T, T) -> Bool) -> Bool")
+            .parse_constant("c0", "((T, T) -> Bool) -> Bool")
             // c1 is a constant of type T
-            .add_constant("c1", "T");
+            .parse_constant("c1", "T");
 
         let mut clause_set = GeneralizationSet::new();
 
         // Pattern: not f(s0(f), s0(f)) or c0(f)
         // where f: (T, T) -> Bool (variable x0)
-        let pattern = kctx.make_clause("not x0(s0(x0), s0(x0)) or c0(x0)", &["(T, T) -> Bool"]);
+        let pattern = kctx.parse_clause("not x0(s0(x0), s0(x0)) or c0(x0)", &["(T, T) -> Bool"]);
         clause_set.insert(pattern.clone(), 99, &kctx);
 
         // Build query: not g0(Type)(c1)(s0(...), s0(...)) or c0(g0(Type)(c1))
@@ -880,15 +880,15 @@ mod tests {
 
         let mut kctx = KernelContext::new();
         // T is a type (like a type parameter bound in the environment)
-        kctx.add_datatype("T")
+        kctx.parse_datatype("T")
             // g0 (lte_from): Type -> T -> (T, T) -> Bool
-            .add_constant("g0", "T -> T -> (T, T) -> Bool")
+            .parse_constant("g0", "T -> T -> (T, T) -> Bool")
             // g1 (is_reflexive): Type -> ((T, T) -> Bool) -> Bool
-            .add_constant("g1", "T -> ((T, T) -> Bool) -> Bool")
+            .parse_constant("g1", "T -> ((T, T) -> Bool) -> Bool")
             // s0: ((T, T) -> Bool) -> T
-            .add_constant("s0", "((T, T) -> Bool) -> T")
+            .parse_constant("s0", "((T, T) -> Bool) -> T")
             // c1 is lt: T -> T -> Bool (after type application, it's (T, T) -> Bool)
-            .add_constant("c1", "T -> T -> Bool");
+            .parse_constant("c1", "T -> T -> Bool");
 
         let mut clause_set = GeneralizationSet::new();
 
@@ -1001,14 +1001,14 @@ mod tests {
         let mut kctx = KernelContext::new();
         // Add datatypes to get the GroundTypeIds we need (0-7)
         // We need T6 (Real) and T7 (Complex)
-        kctx.add_datatype("T0"); // GroundTypeId(0)
-        kctx.add_datatype("T1"); // GroundTypeId(1)
-        kctx.add_datatype("T2"); // GroundTypeId(2)
-        kctx.add_datatype("T3"); // GroundTypeId(3)
-        kctx.add_datatype("T4"); // GroundTypeId(4)
-        kctx.add_datatype("T5"); // GroundTypeId(5)
-        kctx.add_datatype("T6"); // GroundTypeId(6) - Real
-        kctx.add_datatype("T7"); // GroundTypeId(7) - Complex
+        kctx.parse_datatype("T0"); // GroundTypeId(0)
+        kctx.parse_datatype("T1"); // GroundTypeId(1)
+        kctx.parse_datatype("T2"); // GroundTypeId(2)
+        kctx.parse_datatype("T3"); // GroundTypeId(3)
+        kctx.parse_datatype("T4"); // GroundTypeId(4)
+        kctx.parse_datatype("T5"); // GroundTypeId(5)
+        kctx.parse_datatype("T6"); // GroundTypeId(6) - Real
+        kctx.parse_datatype("T7"); // GroundTypeId(7) - Complex
 
         // Build the types manually using Term::pi() and Term::type_sort()
         // The actual types from the failing case:

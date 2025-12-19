@@ -495,8 +495,8 @@ mod tests {
     #[test]
     fn test_fingerprint() {
         let mut kctx = KernelContext::new();
-        kctx.add_constant("g0", "(Bool, Bool) -> Bool");
-        let lctx = kctx.make_local(&["Bool", "Bool"]);
+        kctx.parse_constant("g0", "(Bool, Bool) -> Bool");
+        let lctx = kctx.parse_local(&["Bool", "Bool"]);
 
         // g0: (Bool, Bool) -> Bool, x0 and x1 are Bool
         let term = Term::parse("g0(x0, x1)");
@@ -507,9 +507,9 @@ mod tests {
     fn test_fingerprint_matching() {
         let mut kctx = KernelContext::new();
         // c0, c1 are Bool; c2 is (Bool, Bool) -> Bool
-        kctx.add_constants(&["c0", "c1"], "Bool")
-            .add_constant("c2", "(Bool, Bool) -> Bool");
-        let lctx = kctx.make_local(&["Bool"]);
+        kctx.parse_constants(&["c0", "c1"], "Bool")
+            .parse_constant("c2", "(Bool, Bool) -> Bool");
+        let lctx = kctx.parse_local(&["Bool"]);
 
         let term1 = Term::parse("c2(x0, c0)");
         let term2 = Term::parse("c2(c1, c0)");
@@ -521,9 +521,9 @@ mod tests {
     fn test_fingerprint_tree() {
         let mut kctx = KernelContext::new();
         // c0, c1 are Bool; c2 is (Bool, Bool) -> Bool
-        kctx.add_constants(&["c0", "c1"], "Bool")
-            .add_constant("c2", "(Bool, Bool) -> Bool");
-        let lctx = kctx.make_local(&["Bool"]);
+        kctx.parse_constants(&["c0", "c1"], "Bool")
+            .parse_constant("c2", "(Bool, Bool) -> Bool");
+        let lctx = kctx.parse_local(&["Bool"]);
 
         let mut tree = FingerprintUnifier::new();
         let term1 = Term::parse("c2(x0, c0)");
@@ -575,7 +575,7 @@ mod tests {
         // Test that a query with a type variable can find terms with concrete types
 
         let mut kctx = KernelContext::new();
-        kctx.add_datatype("Int").add_datatype("Nat");
+        kctx.parse_datatype("Int").parse_datatype("Nat");
 
         let int_id = kctx.type_store.get_ground_id_by_name("Int").unwrap();
         let nat_id = kctx.type_store.get_ground_id_by_name("Nat").unwrap();
@@ -620,7 +620,7 @@ mod tests {
     fn test_fingerprint_unifier_stored_type_variable() {
         // Test that a concrete query can find stored terms with type variables
         let mut kctx = KernelContext::new();
-        kctx.add_datatype("Int");
+        kctx.parse_datatype("Int");
 
         let int_id = kctx.type_store.get_ground_id_by_name("Int").unwrap();
         let int_type = Term::ground_type(int_id);
@@ -658,7 +658,7 @@ mod tests {
     fn test_fingerprint_specializer_with_type_variable() {
         // Test that FingerprintSpecializer works with type variables
         let mut kctx = KernelContext::new();
-        kctx.add_datatype("Int");
+        kctx.parse_datatype("Int");
 
         let int_id = kctx.type_store.get_ground_id_by_name("Int").unwrap();
         let int_type = Term::ground_type(int_id);
@@ -758,7 +758,7 @@ mod tests {
         use crate::module::ModuleId;
 
         let mut kctx = KernelContext::new();
-        kctx.add_datatype("Int");
+        kctx.parse_datatype("Int");
 
         let int_id = kctx.type_store.get_ground_id_by_name("Int").unwrap();
         let int_type = Term::ground_type(int_id);
@@ -805,7 +805,7 @@ mod tests {
         use crate::module::ModuleId;
 
         let mut kctx = KernelContext::new();
-        kctx.add_datatype("Int");
+        kctx.parse_datatype("Int");
 
         let int_id = kctx.type_store.get_ground_id_by_name("Int").unwrap();
         let int_type = Term::ground_type(int_id);
@@ -850,7 +850,7 @@ mod tests {
         // Test that functions with dependent Pi types like Π(R: Ring), R -> R -> R
         // can be stored and retrieved from FingerprintUnifier
         let mut kctx = KernelContext::new();
-        kctx.add_typeclass("Ring");
+        kctx.parse_typeclass("Ring");
 
         // Create dependent Pi type: Π(R: Ring), R -> R -> R
         let add_type = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
@@ -876,7 +876,7 @@ mod tests {
         // Test that multiple functions with the same dependent Pi type structure
         // can be stored and found
         let mut kctx = KernelContext::new();
-        kctx.add_typeclass("Ring");
+        kctx.parse_typeclass("Ring");
 
         // Create dependent Pi type: Π(R: Ring), R -> R -> R
         let op_type = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
@@ -903,8 +903,8 @@ mod tests {
     fn test_fingerprint_unifier_dependent_pi_with_variable() {
         // Test that a type variable can unify with a dependent Pi type
         let mut kctx = KernelContext::new();
-        kctx.add_typeclass("Ring");
-        kctx.add_datatype("Bool");
+        kctx.parse_typeclass("Ring");
+        kctx.parse_datatype("Bool");
 
         // Create dependent Pi type: Π(R: Ring), R -> R -> R
         let add_type = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
@@ -938,7 +938,7 @@ mod tests {
     fn test_fingerprint_specializer_with_dependent_pi_type() {
         // Test that FingerprintSpecializer works with dependent Pi types
         let mut kctx = KernelContext::new();
-        kctx.add_typeclass("Ring");
+        kctx.parse_typeclass("Ring");
 
         // Create dependent Pi type: Π(R: Ring), R -> R -> R
         let add_type = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
@@ -968,7 +968,7 @@ mod tests {
     fn test_type_category_dependent_pi_is_arrow() {
         // Verify that dependent Pi types are categorized as Arrow
         let mut kctx = KernelContext::new();
-        kctx.add_typeclass("Ring");
+        kctx.parse_typeclass("Ring");
 
         // Create dependent Pi type: Π(R: Ring), R -> R -> R
         let dependent_pi = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
@@ -985,9 +985,9 @@ mod tests {
     fn test_fingerprint_unifier_nested_dependent_pi() {
         // Test with more complex nested dependent Pi types
         let mut kctx = KernelContext::new();
-        kctx.add_typeclass("Ring");
-        kctx.add_datatype("Nat");
-        kctx.add_type_constructor("Matrix", 3);
+        kctx.parse_typeclass("Ring");
+        kctx.parse_datatype("Nat");
+        kctx.parse_type_constructor("Matrix", 3);
 
         // Π(R: Ring), Π(n: Nat), Matrix[R, n, n] -> Matrix[R, n, n]
         let matrix_op_type =

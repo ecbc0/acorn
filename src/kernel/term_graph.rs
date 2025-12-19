@@ -1408,11 +1408,11 @@ impl TestGraph {
     fn new() -> TestGraph {
         let mut context = KernelContext::new();
         // c0-c7: Bool constants
-        context.add_constants(&["c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7"], "Bool");
+        context.parse_constants(&["c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7"], "Bool");
         // g1-g4: Bool -> Bool functions
-        context.add_constants(&["g1", "g2", "g3", "g4"], "Bool -> Bool");
+        context.parse_constants(&["g1", "g2", "g3", "g4"], "Bool -> Bool");
         // g5-g10: (Bool, Bool) -> Bool functions (replacing m0-m5)
-        context.add_constants(
+        context.parse_constants(
             &["g5", "g6", "g7", "g8", "g9", "g10"],
             "(Bool, Bool) -> Bool",
         );
@@ -1437,7 +1437,7 @@ impl TestGraph {
     }
 
     fn insert_clause_str(&mut self, s: &str, step: StepId) {
-        let clause = self.context.make_clause(s, &[]);
+        let clause = self.context.parse_clause(s, &[]);
         self.graph.insert_clause(&clause, step, &self.context);
         self.graph.validate();
     }
@@ -1461,7 +1461,7 @@ impl TestGraph {
     }
 
     fn check_clause_str(&mut self, s: &str) {
-        let clause = self.context.make_clause(s, &[]);
+        let clause = self.context.parse_clause(s, &[]);
         if !self.graph.check_clause(&clause, &self.context) {
             panic!("check_clause_str(\"{}\") failed", s);
         }

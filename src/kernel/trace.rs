@@ -155,8 +155,8 @@ mod tests {
     fn test_clause_normalization_with_equality() {
         // "c0 = c1" - equality between two constants of type BOOL
         let mut kctx = KernelContext::new();
-        kctx.add_constants(&["c0", "c1"], "Bool");
-        let clause = kctx.make_clause("c0 = c1", &[]);
+        kctx.parse_constants(&["c0", "c1"], "Bool");
+        let clause = kctx.parse_clause("c0 = c1", &[]);
         check_clause_normalization("c0 = c1", &clause, &kctx);
     }
 
@@ -164,7 +164,7 @@ mod tests {
     fn test_clause_normalization_with_variable_equality() {
         // "x0 = x1" - equality between two BOOL variables
         let kctx = KernelContext::new();
-        let clause = kctx.make_clause("x0 = x1", &["Bool", "Bool"]);
+        let clause = kctx.parse_clause("x0 = x1", &["Bool", "Bool"]);
         check_clause_normalization("x0 = x1", &clause, &kctx);
     }
 }

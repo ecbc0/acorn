@@ -264,7 +264,7 @@ mod tests {
     #[test]
     fn test_cnf_negate() {
         let kctx = KernelContext::new();
-        let lctx = kctx.make_local(&["Bool", "Bool", "Bool", "Bool"]);
+        let lctx = kctx.parse_local(&["Bool", "Bool", "Bool", "Bool"]);
 
         let cnf = CNF::parse("x0 or x1 and x2 or x3", &lctx, &kctx);
 
@@ -286,7 +286,7 @@ mod tests {
     #[test]
     fn test_as_signed_term() {
         let kctx = KernelContext::new();
-        let lctx = kctx.make_local(&["Bool", "Bool"]);
+        let lctx = kctx.parse_local(&["Bool", "Bool"]);
 
         // Positive boolean literal
         let cnf = CNF::parse("x0", &lctx, &kctx);

@@ -251,10 +251,10 @@ impl KernelContext {
     /// Add a datatype by name for testing.
     /// Returns self for chaining.
     ///
-    /// Example: `ctx.add_datatype("Int")`
+    /// Example: `ctx.parse_datatype("Int")`
     #[cfg(test)]
-    pub fn add_datatype(&mut self, name: &str) -> &mut Self {
-        self.add_type_constructor(name, 0)
+    pub fn parse_datatype(&mut self, name: &str) -> &mut Self {
+        self.parse_type_constructor(name, 0)
     }
 
     /// Add a type constructor by name with the given arity for testing.
@@ -263,9 +263,9 @@ impl KernelContext {
     /// Arity 2 means a type constructor like "Pair" (Pair[S, T]).
     /// Returns self for chaining.
     ///
-    /// Example: `ctx.add_type_constructor("List", 1)`
+    /// Example: `ctx.parse_type_constructor("List", 1)`
     #[cfg(test)]
-    pub fn add_type_constructor(&mut self, name: &str, arity: u8) -> &mut Self {
+    pub fn parse_type_constructor(&mut self, name: &str, arity: u8) -> &mut Self {
         use crate::elaborator::acorn_type::{AcornType, Datatype};
         use crate::module::ModuleId;
 
@@ -282,11 +282,11 @@ impl KernelContext {
     /// Add multiple datatypes by name for testing.
     /// Returns self for chaining.
     ///
-    /// Example: `ctx.add_datatypes(&["Int", "Nat", "Real"])`
+    /// Example: `ctx.parse_datatypes(&["Int", "Nat", "Real"])`
     #[cfg(test)]
-    pub fn add_datatypes(&mut self, names: &[&str]) -> &mut Self {
+    pub fn parse_datatypes(&mut self, names: &[&str]) -> &mut Self {
         for name in names {
-            self.add_datatype(name);
+            self.parse_datatype(name);
         }
         self
     }
@@ -294,9 +294,9 @@ impl KernelContext {
     /// Add a typeclass by name for testing.
     /// Returns self for chaining.
     ///
-    /// Example: `ctx.add_typeclass("Ring")`
+    /// Example: `ctx.parse_typeclass("Ring")`
     #[cfg(test)]
-    pub fn add_typeclass(&mut self, name: &str) -> &mut Self {
+    pub fn parse_typeclass(&mut self, name: &str) -> &mut Self {
         use crate::elaborator::acorn_type::Typeclass;
         use crate::module::ModuleId;
 
@@ -528,9 +528,9 @@ impl KernelContext {
     /// The name should be like "c0", "g0", or "s0".
     /// Returns self for chaining.
     ///
-    /// Example: `ctx.add_constant("c0", "Int").add_constant("g0", "Int -> Bool")`
+    /// Example: `ctx.parse_constant("c0", "Int").parse_constant("g0", "Int -> Bool")`
     #[cfg(test)]
-    pub fn add_constant(&mut self, name: &str, type_str: &str) -> &mut Self {
+    pub fn parse_constant(&mut self, name: &str, type_str: &str) -> &mut Self {
         let type_term = self.parse_type(type_str);
         let first_char = name.chars().next().expect("empty constant name");
         let id: u32 = name[1..].parse().expect("invalid constant id");
@@ -562,11 +562,11 @@ impl KernelContext {
     /// Add multiple constants with the same type for testing.
     /// Returns self for chaining.
     ///
-    /// Example: `ctx.add_constants(&["c0", "c1", "c2"], "Int")`
+    /// Example: `ctx.parse_constants(&["c0", "c1", "c2"], "Int")`
     #[cfg(test)]
-    pub fn add_constants(&mut self, names: &[&str], type_str: &str) -> &mut Self {
+    pub fn parse_constants(&mut self, names: &[&str], type_str: &str) -> &mut Self {
         for name in names {
-            self.add_constant(name, type_str);
+            self.parse_constant(name, type_str);
         }
         self
     }
@@ -574,9 +574,9 @@ impl KernelContext {
     /// Create a LocalContext with variables of the given types.
     /// var_types[i] is the type string for variable x_i.
     ///
-    /// Example: `ctx.make_local(&["Int", "Bool"])` creates context where x0: Int, x1: Bool
+    /// Example: `ctx.parse_local(&["Int", "Bool"])` creates context where x0: Int, x1: Bool
     #[cfg(test)]
-    pub fn make_local(&self, var_types: &[&str]) -> crate::kernel::local_context::LocalContext {
+    pub fn parse_local(&self, var_types: &[&str]) -> crate::kernel::local_context::LocalContext {
         use crate::kernel::local_context::LocalContext;
 
         let type_terms: Vec<Term> = var_types
@@ -589,9 +589,9 @@ impl KernelContext {
     /// Parse a clause string with the given variable types.
     /// var_types[i] is the type string for variable x_i.
     ///
-    /// Example: `ctx.make_clause("x0 = c0", &["Int"])` parses clause with x0: Int
+    /// Example: `ctx.parse_clause("x0 = c0", &["Int"])` parses clause with x0: Int
     #[cfg(test)]
-    pub fn make_clause(
+    pub fn parse_clause(
         &self,
         clause_str: &str,
         var_types: &[&str],
@@ -599,7 +599,7 @@ impl KernelContext {
         use crate::kernel::clause::Clause;
         use crate::kernel::literal::Literal;
 
-        let local = self.make_local(var_types);
+        let local = self.parse_local(var_types);
         let literals: Vec<Literal> = clause_str
             .split(" or ")
             .map(|part| Literal::parse(part.trim()))
@@ -650,10 +650,10 @@ mod tests {
     #[test]
     fn test_add_datatype_and_constant() {
         let mut ctx = KernelContext::new();
-        ctx.add_datatype("Int")
-            .add_constant("c0", "Int")
-            .add_constant("c1", "Int -> Bool")
-            .add_constant("c2", "(Int, Int) -> Bool");
+        ctx.parse_datatype("Int")
+            .parse_constant("c0", "Int")
+            .parse_constant("c1", "Int -> Bool")
+            .parse_constant("c2", "(Int, Int) -> Bool");
 
         // Verify c0 has type Int
         let c0_type = ctx.symbol_table.get_type(Symbol::ScopedConstant(0));
@@ -675,12 +675,12 @@ mod tests {
         use crate::kernel::atom::Atom;
 
         let mut ctx = KernelContext::new();
-        ctx.add_datatype("Int")
-            .add_type_constructor("List", 1)
-            .add_type_constructor("Pair", 2)
-            .add_constant("c0", "List[Int]")
-            .add_constant("c1", "Pair[Int, Bool]")
-            .add_constant("c2", "List[Int] -> Bool");
+        ctx.parse_datatype("Int")
+            .parse_type_constructor("List", 1)
+            .parse_type_constructor("Pair", 2)
+            .parse_constant("c0", "List[Int]")
+            .parse_constant("c1", "Pair[Int, Bool]")
+            .parse_constant("c2", "List[Int] -> Bool");
 
         // Verify List has arity 1
         let list_id = ctx.type_store.get_ground_id_by_name("List").unwrap();
@@ -719,7 +719,7 @@ mod tests {
         use crate::kernel::atom::Atom;
 
         let mut ctx = KernelContext::new();
-        ctx.add_type_constructor("List", 1);
+        ctx.parse_type_constructor("List", 1);
 
         // Test parsing T0, T1 as type variables
         let t0 = ctx.parse_type("T0");
@@ -743,7 +743,7 @@ mod tests {
         use crate::kernel::atom::Atom;
 
         let mut ctx = KernelContext::new();
-        ctx.add_datatype("Ring");
+        ctx.parse_datatype("Ring");
 
         // Π (R : Ring), R -> R -> R
         // T0 refers to the Ring-typed variable
@@ -764,9 +764,9 @@ mod tests {
         use crate::kernel::atom::Atom;
 
         let mut ctx = KernelContext::new();
-        ctx.add_datatype("Nat");
-        ctx.add_datatype("Ring");
-        ctx.add_type_constructor("Matrix", 3);
+        ctx.parse_datatype("Nat");
+        ctx.parse_datatype("Ring");
+        ctx.parse_type_constructor("Matrix", 3);
 
         // Π (R : Ring), Π (n : Nat), Matrix[R, n, n]
         // T0 = Ring (first binder), T1 = Nat (second binder)
@@ -797,7 +797,7 @@ mod tests {
     #[test]
     fn test_parse_dependent_type_with_concrete_types() {
         let mut ctx = KernelContext::new();
-        ctx.add_datatype("Nat");
+        ctx.parse_datatype("Nat");
 
         // Π (n : Nat), Nat -> Nat
         // The body mixes bound variable (T0) and concrete type (Nat)
