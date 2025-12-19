@@ -950,13 +950,13 @@ impl Term {
                 // Atomic func - just add it directly
                 new_components.extend(func_components.iter().copied());
             } else {
-                // Non-atomic func - must be wrapped in Application
+                // Non-atomic func - must be a compound term (Application or Pi)
                 match func_components[0] {
-                    TermComponent::Application { .. } => {
+                    TermComponent::Application { .. } | TermComponent::Pi { .. } => {
                         new_components.extend(func_components.iter().copied());
                     }
                     _ => panic!(
-                        "Term::new: non-atomic func should start with Application: {:?}",
+                        "Term::new: non-atomic func should start with Application or Pi: {:?}",
                         func_components
                     ),
                 }
@@ -967,13 +967,13 @@ impl Term {
                 // Atomic argument
                 new_components.push(arg.components[0]);
             } else {
-                // Compound argument - must have Application wrapper
+                // Compound argument - must be a compound term (Application or Pi)
                 match arg.components[0] {
-                    TermComponent::Application { .. } => {
+                    TermComponent::Application { .. } | TermComponent::Pi { .. } => {
                         new_components.extend(arg.components.iter().copied());
                     }
                     _ => panic!(
-                        "Term::new: non-atomic arg {} should start with Application: {:?}",
+                        "Term::new: non-atomic arg {} should start with Application or Pi: {:?}",
                         i, arg.components
                     ),
                 }
