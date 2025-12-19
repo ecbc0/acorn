@@ -21,6 +21,7 @@ use super::local_context::LocalContext;
 use super::symbol::Symbol;
 use super::term::Term;
 use super::term::{Decomposition, TermRef};
+use super::unifier::{Scope, Unifier};
 
 /// Atoms are the leaf nodes in the PDT.
 /// Types are NOT represented - only symbols and variables.
@@ -224,20 +225,20 @@ pub fn term_key_prefix() -> Vec<u8> {
 /// Stored metadata for a pattern: the types of each variable in the pattern.
 #[derive(Clone, Debug)]
 struct PatternMetadata {
-    /// For each variable i in the pattern, var_types[i] is its type.
-    var_types: Vec<Term>,
+    /// The pattern's local context, containing variable types.
+    context: LocalContext,
 }
 
 impl PatternMetadata {
     fn from_clause(clause: &Clause) -> PatternMetadata {
         PatternMetadata {
-            var_types: clause.get_local_context().get_var_types().to_vec(),
+            context: clause.get_local_context().clone(),
         }
     }
 
     fn from_local_context(lctx: &LocalContext) -> PatternMetadata {
         PatternMetadata {
-            var_types: lctx.get_var_types().to_vec(),
+            context: lctx.clone(),
         }
     }
 }
@@ -467,40 +468,72 @@ impl LiteralSet {
 /// Checks if a binding is type-compatible with the pattern variable's type.
 ///
 /// For polymorphic patterns, this checks that the bound term's type can be obtained
-/// by instantiating the pattern variable's type.
+/// by instantiating the pattern variable's type. Uses the Unifier to check if the
+/// bound type is a valid instance of the pattern type (e.g., List[Int] matches List[T]).
 fn types_compatible(
     bound_term: TermRef,
     pattern_var_type: &Term,
+    pattern_context: &LocalContext,
     query_context: &LocalContext,
     kernel_context: &KernelContext,
 ) -> bool {
     let bound_type = bound_term.get_type_with_context(query_context, kernel_context);
 
-    // For now, simple equality check.
-    // TODO: For polymorphic matching, we need to check if bound_type is an instance of pattern_var_type
-    // This will require tracking type variable bindings.
+    // Fast path: exact equality
     if bound_type == *pattern_var_type {
         return true;
     }
 
-    // If the pattern variable type is a type variable (FreeVariable), it can match anything
-    // that's a proper type (not TypeSort).
-    if let Decomposition::Atom(KernelAtom::FreeVariable(_)) = pattern_var_type.as_ref().decompose()
+    // Special case: pattern variable type is a typeclass constraint
+    // E.g., x0: Ring means x0 is a type that implements Ring
+    // If bound_term is a concrete type (like Int), check if it implements the typeclass
+    if let Decomposition::Atom(KernelAtom::Typeclass(tc_id)) = pattern_var_type.as_ref().decompose()
     {
-        // Type variable can match any concrete type
-        return true;
+        // The bound term should be a type that implements this typeclass
+        if let Some(ground_id) = bound_term.as_type_atom() {
+            return kernel_context.type_store.is_instance_of(ground_id, *tc_id);
+        }
+        // If it's a type variable, accept it (polymorphic matching)
+        if let Decomposition::Atom(KernelAtom::FreeVariable(_)) = bound_term.decompose() {
+            return true;
+        }
+        return false;
     }
 
-    // If the pattern variable type is a typeclass, the bound term's type should be a member
-    if let Decomposition::Atom(KernelAtom::Typeclass(_tc_id)) =
+    // Special case: pattern variable type is a type variable (FreeVariable)
+    // E.g., x1: x0 where x0 is a type variable. We need to check if bound_type
+    // is compatible with x0's constraints.
+    if let Decomposition::Atom(KernelAtom::FreeVariable(var_id)) =
         pattern_var_type.as_ref().decompose()
     {
-        // For now, accept any concrete type as potentially implementing the typeclass
-        // TODO: Check typeclass membership properly
-        return true;
+        // Look up what x0's type is (should be a typeclass like Ring, or Type)
+        if let Some(var_type) = pattern_context.get_var_type(*var_id as usize) {
+            if let Decomposition::Atom(KernelAtom::Typeclass(tc_id)) = var_type.as_ref().decompose()
+            {
+                // bound_type should implement this typeclass
+                if let Some(ground_id) = bound_type.as_ref().as_type_atom() {
+                    return kernel_context.type_store.is_instance_of(ground_id, *tc_id);
+                }
+            }
+            // If x0's type is Type/TypeSort (not a typeclass constraint), accept any type
+            if matches!(
+                var_type.as_ref().decompose(),
+                Decomposition::Atom(KernelAtom::Symbol(Symbol::TypeSort))
+            ) {
+                return true;
+            }
+        }
+        // Otherwise, try regular unification
     }
 
-    false
+    // Use Unifier to check if bound_type is an instance of pattern_var_type
+    // This handles cases like List[Int] matching List[T] where T is a type variable
+    let mut unifier = Unifier::new(3, kernel_context);
+    unifier.set_input_context(Scope::LEFT, pattern_context);
+    unifier.set_input_context(Scope::RIGHT, query_context);
+
+    // Try to unify pattern_var_type (LEFT) with bound_type (RIGHT)
+    unifier.unify(Scope::LEFT, pattern_var_type, Scope::RIGHT, &bound_type)
 }
 
 /// Matches a sequence of terms against patterns in the trie.
@@ -693,13 +726,20 @@ fn verify_type_compatibility(
     query_context: &LocalContext,
     kernel_context: &KernelContext,
 ) -> bool {
+    let pattern_var_types = metadata.context.get_var_types();
     for (i, &replacement) in replacements.iter().enumerate() {
-        if i >= metadata.var_types.len() {
+        if i >= pattern_var_types.len() {
             // Pattern didn't have this many variables - that's fine
             continue;
         }
-        let pattern_var_type = &metadata.var_types[i];
-        if !types_compatible(replacement, pattern_var_type, query_context, kernel_context) {
+        let pattern_var_type = &pattern_var_types[i];
+        if !types_compatible(
+            replacement,
+            pattern_var_type,
+            &metadata.context,
+            query_context,
+            kernel_context,
+        ) {
             return false;
         }
     }
@@ -847,7 +887,7 @@ mod tests {
 
     #[test]
     fn test_pdt_parameterized_type_matching() {
-        // This test fails because types_compatible() doesn't handle type instantiation.
+        // Tests that types_compatible() handles type instantiation correctly.
         //
         // Pattern: reverse(x) = x where x : List[T] (T is a type variable)
         // Query: reverse(mylist) = mylist where mylist : List[Int]
