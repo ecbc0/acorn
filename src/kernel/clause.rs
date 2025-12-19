@@ -27,20 +27,6 @@ impl Clause {
 
     /// Creates a new normalized clause.
     pub fn new(literals: Vec<Literal>, context: &LocalContext) -> Clause {
-        // Debug: validate that all variables in literals have types in context
-        #[cfg(debug_assertions)]
-        for (i, lit) in literals.iter().enumerate() {
-            for atom in lit.iter_atoms() {
-                if let crate::kernel::atom::Atom::FreeVariable(var_id) = atom {
-                    if context.get_var_type(*var_id as usize).is_none() {
-                        panic!(
-                            "Clause::new: literal {} has variable x{} but context has no type for it. Context len: {}",
-                            i, var_id, context.len()
-                        );
-                    }
-                }
-            }
-        }
         let mut c = Clause {
             literals,
             context: context.clone(),
@@ -285,20 +271,6 @@ impl Clause {
 
     /// Create a clause from literals without normalizing.
     pub fn from_literals_unnormalized(literals: Vec<Literal>, context: &LocalContext) -> Clause {
-        // Debug: validate that all variables in literals have types in context
-        #[cfg(debug_assertions)]
-        for (i, lit) in literals.iter().enumerate() {
-            for atom in lit.iter_atoms() {
-                if let crate::kernel::atom::Atom::FreeVariable(var_id) = atom {
-                    if context.get_var_type(*var_id as usize).is_none() {
-                        panic!(
-                            "Clause::from_literals_unnormalized: literal {} has variable x{} but context has no type for it. Context len: {}",
-                            i, var_id, context.len()
-                        );
-                    }
-                }
-            }
-        }
         Clause {
             literals,
             context: context.clone(),
@@ -324,6 +296,19 @@ impl Clause {
                     "Clause validation failed: variable x{} has Empty type. Clause: {}",
                     var_id, self
                 );
+            }
+
+            // Check for self-referential or forward-referencing types
+            // A variable's type can only reference lower-numbered variables
+            if !self.context.validate_variable_ordering() {
+                let mut msg = format!(
+                    "Clause validation failed: variable types have bad ordering. Clause: {}\nContext:\n",
+                    self
+                );
+                for (i, var_type) in self.context.get_var_types().iter().enumerate() {
+                    msg.push_str(&format!("  x{}: {:?}\n", i, var_type));
+                }
+                panic!("{}", msg);
             }
 
             for literal in &self.literals {
@@ -897,7 +882,7 @@ mod tests {
 
     /// Test that validation catches missing variable types in context.
     #[test]
-    #[should_panic(expected = "context has no type for it")]
+    #[should_panic(expected = "variable x0 not found")]
     fn test_validation_catches_missing_variable_type() {
         let mut kctx = KernelContext::new();
         kctx.add_constant("c0", "Bool");
