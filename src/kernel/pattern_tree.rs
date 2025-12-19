@@ -2035,54 +2035,17 @@ mod tests {
         kctx.parse_constant("c1", "Int -> Int"); // f
         kctx.parse_constants(&["c2", "c3"], "Int"); // c, d
 
-        // Build the pattern clause: add[R](x, y) = add[R](y, x)
-        // LocalContext: x0: Ring (type variable R), x1: x0 (value x), x2: x0 (value y)
-        let pattern_lctx = kctx.parse_local(&["Ring", "x0", "x0"]);
-
-        // Build add[R](x, y): ((add x0) x1) x2
-        let add_r_x_y = Term::parse("c0")
-            .apply(&[Term::parse("x0")])
-            .apply(&[Term::parse("x1")])
-            .apply(&[Term::parse("x2")]);
-
-        // Build add[R](y, x): ((add x0) x2) x1
-        let add_r_y_x = Term::parse("c0")
-            .apply(&[Term::parse("x0")])
-            .apply(&[Term::parse("x2")])
-            .apply(&[Term::parse("x1")]);
-
-        // Create the pattern clause: add[R](x, y) = add[R](y, x)
-        let pattern_clause = Clause::new(
-            vec![Literal::equals(add_r_x_y, add_r_y_x)],
-            &pattern_lctx,
-        );
+        // Pattern clause: add[R](x, y) = add[R](y, x)
+        // x0: Ring (type variable R), x1: x0 (value x), x2: x0 (value y)
+        let pattern_clause =
+            kctx.parse_clause("c0(x0, x1, x2) = c0(x0, x2, x1)", &["Ring", "x0", "x0"]);
 
         // Insert pattern into tree
         let mut tree: PatternTree<&str> = PatternTree::new();
         tree.insert_clause(&pattern_clause, "commutativity", &kctx);
 
-        // Build the query clause: add[Int](c, f(d)) = add[Int](f(d), c)
-        let query_lctx = LocalContext::empty();
-
-        let int_type = kctx.parse_type("Int");
-        let f_d = Term::parse("c1").apply(&[Term::parse("c3")]);
-
-        // add[Int](c, f(d)): ((add Int) c) f(d)
-        let add_int_c_fd = Term::parse("c0")
-            .apply(&[int_type.clone()])
-            .apply(&[Term::parse("c2")])
-            .apply(&[f_d.clone()]);
-
-        // add[Int](f(d), c): ((add Int) f(d)) c
-        let add_int_fd_c = Term::parse("c0")
-            .apply(&[int_type])
-            .apply(&[f_d])
-            .apply(&[Term::parse("c2")]);
-
-        let query_clause = Clause::new(
-            vec![Literal::equals(add_int_c_fd, add_int_fd_c)],
-            &query_lctx,
-        );
+        // Query clause: add[Int](c, f(d)) = add[Int](f(d), c)
+        let query_clause = kctx.parse_clause("c0(Int, c2, c1(c3)) = c0(Int, c1(c3), c2)", &[]);
 
         // Try to find the pattern
         let found = tree.find_clause(&query_clause, &kctx);

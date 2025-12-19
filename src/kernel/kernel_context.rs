@@ -656,6 +656,117 @@ impl KernelContext {
         LocalContext::from_types(type_terms)
     }
 
+    /// Parse a term string, resolving type names in the context.
+    ///
+    /// Supports:
+    /// - Variables: x0, x1, ...
+    /// - Scoped constants: c0, c1, ...
+    /// - Global constants: g0, g1, ...
+    /// - Type names: Int, Bool, List, etc. (looked up in TypeStore)
+    /// - Applications: f(a, b, c)
+    ///
+    /// Example: `ctx.parse_term("c0(Int, x0, x1)")` where Int is a registered type
+    #[cfg(test)]
+    pub fn parse_term(&self, s: &str) -> Term {
+        use crate::kernel::atom::Atom;
+        use crate::kernel::symbol::Symbol;
+
+        let s = s.trim();
+
+        // Check for application: head(args)
+        if let Some(first_paren) = s.find('(') {
+            // Find matching close paren and split args
+            let mut depth = 0;
+            let mut arg_starts = vec![first_paren + 1];
+            let mut close_paren = s.len() - 1;
+
+            for (i, c) in s.char_indices() {
+                match c {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            close_paren = i;
+                            break;
+                        }
+                    }
+                    ',' if depth == 1 => arg_starts.push(i + 1),
+                    _ => {}
+                }
+            }
+
+            let head = self.parse_term(&s[..first_paren]);
+            let args_str = &s[first_paren + 1..close_paren];
+
+            if args_str.trim().is_empty() {
+                return head;
+            }
+
+            // Parse args by splitting on commas at depth 0
+            let mut args = Vec::new();
+            let mut current_start = 0;
+            let mut depth = 0;
+            for (i, c) in args_str.char_indices() {
+                match c {
+                    '(' | '[' => depth += 1,
+                    ')' | ']' => depth -= 1,
+                    ',' if depth == 0 => {
+                        args.push(self.parse_term(&args_str[current_start..i]));
+                        current_start = i + 1;
+                    }
+                    _ => {}
+                }
+            }
+            args.push(self.parse_term(&args_str[current_start..]));
+
+            return head.apply(&args);
+        }
+
+        // Try standard atom parsing first (c0, x0, g0, b0, s0)
+        if let Some(atom) = Atom::parse(s) {
+            return Term::atom(atom);
+        }
+
+        // Try type names
+        if let Some(ground_id) = self.type_store.get_ground_id_by_name(s) {
+            return Term::ground_type(ground_id);
+        }
+
+        // Built-in types
+        match s {
+            "Bool" => Term::bool_type(),
+            "Empty" => Term::empty_type(),
+            "Type" => Term::type_sort(),
+            "true" => Term::atom(Atom::Symbol(Symbol::True)),
+            "false" => Term::atom(Atom::Symbol(Symbol::False)),
+            _ => panic!("Unknown term: {}", s),
+        }
+    }
+
+    /// Parse a literal string, resolving type names in the context.
+    ///
+    /// Example: `ctx.parse_literal("c0(Int, x0) = c0(Int, x1)")`
+    #[cfg(test)]
+    pub fn parse_literal(&self, s: &str) -> crate::kernel::literal::Literal {
+        use crate::kernel::literal::Literal;
+
+        let s = s.trim();
+        let (positive, inner) = if let Some(rest) = s.strip_prefix('!') {
+            (false, rest.trim())
+        } else {
+            (true, s)
+        };
+
+        // Split on " = " to find the two sides
+        if let Some(eq_pos) = inner.find(" = ") {
+            let left = self.parse_term(&inner[..eq_pos]);
+            let right = self.parse_term(&inner[eq_pos + 3..]);
+            Literal::new(positive, left, right)
+        } else {
+            panic!("Literal must contain ' = ': {}", s);
+        }
+    }
+
     /// Parse a clause string with the given variable types.
     /// var_types[i] is the type string for variable x_i.
     ///
@@ -673,6 +784,28 @@ impl KernelContext {
         let literals: Vec<Literal> = clause_str
             .split(" or ")
             .map(|part| Literal::parse(part.trim()))
+            .collect();
+        let clause = Clause::new(literals, &local);
+        clause.validate(self);
+        clause
+    }
+
+    /// Parse a clause string with type name resolution.
+    /// Like parse_clause but resolves type names (Int, Bool, etc.) in terms.
+    ///
+    /// Example: `ctx.parse_clause_with_types("c0(Int, x0) = c0(Int, x1)", &["Int", "Int"])`
+    #[cfg(test)]
+    pub fn parse_clause_with_types(
+        &self,
+        clause_str: &str,
+        var_types: &[&str],
+    ) -> crate::kernel::clause::Clause {
+        use crate::kernel::clause::Clause;
+
+        let local = self.parse_local(var_types);
+        let literals: Vec<_> = clause_str
+            .split(" or ")
+            .map(|part| self.parse_literal(part.trim()))
             .collect();
         let clause = Clause::new(literals, &local);
         clause.validate(self);
