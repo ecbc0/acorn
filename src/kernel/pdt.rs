@@ -592,38 +592,35 @@ where
     let initial_key_len = key.len();
     let first = terms[0];
     let rest = &terms[1..];
-    let head_atom = first.get_head_atom();
 
     // Case 1: the first query term could match an existing replacement (backreference)
     // This means the pattern has Variable(i) where i is an already-bound variable
-    if !head_atom.is_variable() {
-        for i in 0..replacements.len() {
-            if first == replacements[i] {
-                Edge::Atom(Atom::Variable(i as u16)).append_to(key);
-                let new_subtrie = subtrie.subtrie(key as &[u8]);
-                if !new_subtrie.is_empty() {
-                    if !find_matches_while(
-                        &new_subtrie,
-                        key,
-                        rest,
-                        local_context,
-                        kernel_context,
-                        all_metadata,
-                        stack_limit - 1,
-                        replacements,
-                        callback,
-                    ) {
-                        return false;
-                    }
+    for i in 0..replacements.len() {
+        if first == replacements[i] {
+            Edge::Atom(Atom::Variable(i as u16)).append_to(key);
+            let new_subtrie = subtrie.subtrie(key as &[u8]);
+            if !new_subtrie.is_empty() {
+                if !find_matches_while(
+                    &new_subtrie,
+                    key,
+                    rest,
+                    local_context,
+                    kernel_context,
+                    all_metadata,
+                    stack_limit - 1,
+                    replacements,
+                    callback,
+                ) {
+                    return false;
                 }
-                key.truncate(initial_key_len);
             }
+            key.truncate(initial_key_len);
         }
     }
 
     // Case 2: the first query term could match a new pattern variable
     // This means the pattern has Variable(n) where n is the next new variable
-    if !head_atom.is_variable() {
+    {
         Edge::Atom(Atom::Variable(replacements.len() as u16)).append_to(key);
         let new_subtrie = subtrie.subtrie(key as &[u8]);
         if !new_subtrie.is_empty() {
@@ -647,13 +644,15 @@ where
     }
 
     // Case 3: structural match - the pattern has the same structure as the query
+    // FreeVariables in the query should only match via Cases 1/2 (pattern variables),
+    // not via structural matching. All Variables in patterns are wildcards.
     match first.decompose() {
         Decomposition::Atom(atom) => {
             let edge_atom = match atom {
-                KernelAtom::FreeVariable(v) => {
-                    // Query has a variable - it can only match pattern variable via Cases 1/2
-                    // But we also need to try matching it as a structural Variable(v) atom
-                    Atom::Variable(*v)
+                KernelAtom::FreeVariable(_) => {
+                    // Query has a variable - it can only match pattern variables via Cases 1/2
+                    // Skip structural matching for FreeVariables
+                    None
                 }
                 KernelAtom::BoundVariable(i) => {
                     panic!(
@@ -661,26 +660,28 @@ where
                         i
                     )
                 }
-                KernelAtom::Symbol(Symbol::True) => Atom::True,
-                KernelAtom::Symbol(Symbol::False) => Atom::False,
-                KernelAtom::Symbol(s) => Atom::Symbol(*s),
+                KernelAtom::Symbol(Symbol::True) => Some(Atom::True),
+                KernelAtom::Symbol(Symbol::False) => Some(Atom::False),
+                KernelAtom::Symbol(s) => Some(Atom::Symbol(*s)),
                 KernelAtom::Typeclass(_) => return true, // Skip typeclasses in structure
             };
-            Edge::Atom(edge_atom).append_to(key);
-            let new_subtrie = subtrie.subtrie(key as &[u8]);
-            if !new_subtrie.is_empty() {
-                if !find_matches_while(
-                    &new_subtrie,
-                    key,
-                    rest,
-                    local_context,
-                    kernel_context,
-                    all_metadata,
-                    stack_limit - 1,
-                    replacements,
-                    callback,
-                ) {
-                    return false;
+            if let Some(edge_atom) = edge_atom {
+                Edge::Atom(edge_atom).append_to(key);
+                let new_subtrie = subtrie.subtrie(key as &[u8]);
+                if !new_subtrie.is_empty() {
+                    if !find_matches_while(
+                        &new_subtrie,
+                        key,
+                        rest,
+                        local_context,
+                        kernel_context,
+                        all_metadata,
+                        stack_limit - 1,
+                        replacements,
+                        callback,
+                    ) {
+                        return false;
+                    }
                 }
             }
         }
@@ -931,6 +932,57 @@ mod tests {
             found,
             Some(&"reverse_identity"),
             "Query with List[Int] should match pattern with List[T]"
+        );
+    }
+
+    #[test]
+    fn test_pdt_query_variable_matches_pattern_variable() {
+        // Tests that a FreeVariable in the query can match a pattern variable,
+        // even when the variable IDs differ.
+        //
+        // This test uses find_term_matches_while directly to avoid clause normalization.
+        //
+        // Pattern: c0(x0) where x0 is variable 0
+        // Query: c0(x1) where x1 is variable 1 (different ID)
+        //
+        // The pattern variable x0 should match the query's FreeVariable x1.
+
+        let mut kctx = KernelContext::new();
+        kctx.parse_constant("c0", "Bool -> Bool");
+
+        // Pattern: c0(x0) with x0 : Bool (variable ID 0)
+        let pattern_lctx = kctx.parse_local(&["Bool"]);
+        let pattern_term = Term::parse("c0(x0)");
+
+        let mut tree: Pdt<&str> = Pdt::new();
+        tree.insert_pair(&pattern_term, &Term::new_true(), "pattern", &pattern_lctx);
+
+        // Query: c0(x1) with x1 as variable ID 1 (different from pattern's x0)
+        // We create a context where x0 is unused and x1 is Bool
+        let query_lctx = kctx.parse_local(&["Bool", "Bool"]);
+        // Build c0(x1) manually: apply c0 to FreeVariable(1)
+        let x1 = Term::atom(KernelAtom::FreeVariable(1));
+        let query_term = Term::parse("c0").apply(&[x1]);
+
+        let mut key = Vec::new();
+        let mut replacements = vec![];
+        let mut found = false;
+
+        tree.find_term_matches_while(
+            &mut key,
+            &[query_term.as_ref(), Term::new_true().as_ref()],
+            &query_lctx,
+            &kctx,
+            &mut replacements,
+            &mut |_value_id, _replacements| {
+                found = true;
+                true
+            },
+        );
+
+        assert!(
+            found,
+            "Pattern c0(x0) should match query c0(x1) even with different variable IDs"
         );
     }
 }
