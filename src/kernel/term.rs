@@ -1589,6 +1589,26 @@ impl Term {
         Term::from_components(new_components)
     }
 
+    /// Renumber FreeVariables according to var_ids.
+    /// var_ids[new_pos] = old_id, so each FreeVariable(old_id) becomes FreeVariable(new_pos).
+    pub fn renumber_variables(&self, var_ids: &[AtomId]) -> Term {
+        let new_components = self
+            .components
+            .iter()
+            .map(|c| match c {
+                TermComponent::Atom(Atom::FreeVariable(old_id)) => {
+                    let new_id = var_ids
+                        .iter()
+                        .position(|&x| x == *old_id)
+                        .unwrap_or_else(|| panic!("Variable x{} not in var_ids", old_id));
+                    TermComponent::Atom(Atom::FreeVariable(new_id as AtomId))
+                }
+                _ => *c,
+            })
+            .collect();
+        Term::from_components(new_components)
+    }
+
     /// Renumbers synthetic atoms from the provided list into the invalid range.
     pub fn invalidate_synthetics(&self, from: &[AtomId]) -> Term {
         let new_components = self
@@ -1618,21 +1638,59 @@ impl Term {
         Term::from_components(new_components)
     }
 
-    /// Normalize variable IDs in place.
-    /// Renumbers variables to appear in order of first occurrence (0, 1, 2, ...).
-    /// The var_ids output tracks original variable IDs for use with LocalContext::remap.
-    pub fn normalize_var_ids_into(&mut self, var_ids: &mut Vec<AtomId>) {
-        for component in &mut self.components {
-            if let TermComponent::Atom(Atom::FreeVariable(i)) = component {
-                let pos = var_ids.iter().position(|&x| x == *i);
-                match pos {
-                    Some(j) => *i = j as AtomId,
-                    None => {
-                        let new_id = var_ids.len() as AtomId;
-                        var_ids.push(*i);
-                        *i = new_id;
+    /// Normalize variable IDs in place, ensuring type dependencies come first.
+    /// When a variable is encountered for the first time, any variables in its type
+    /// are added before the variable itself.
+    pub fn normalize_var_ids_with_context(
+        &mut self,
+        var_ids: &mut Vec<AtomId>,
+        context: &crate::kernel::local_context::LocalContext,
+    ) {
+        // Recursive helper to add a variable with its type dependencies first.
+        // in_progress tracks variables we're currently processing to detect cycles.
+        fn add_var(
+            var_id: AtomId,
+            var_ids: &mut Vec<AtomId>,
+            context: &crate::kernel::local_context::LocalContext,
+            in_progress: &mut Vec<AtomId>,
+        ) {
+            // Already done
+            if var_ids.contains(&var_id) {
+                return;
+            }
+            // Cycle detected
+            if in_progress.contains(&var_id) {
+                panic!(
+                    "Cycle in type dependencies: x{} appears in its own type chain",
+                    var_id
+                );
+            }
+
+            in_progress.push(var_id);
+
+            // Process type dependencies first
+            if let Some(var_type) = context.get_var_type(var_id as usize) {
+                for atom in var_type.iter_atoms() {
+                    if let Atom::FreeVariable(dep_id) = atom {
+                        add_var(*dep_id, var_ids, context, in_progress);
                     }
                 }
+            }
+
+            in_progress.pop();
+            var_ids.push(var_id);
+        }
+
+        let mut in_progress: Vec<AtomId> = Vec::new();
+
+        // Renumber variables in place
+        for component in &mut self.components {
+            if let TermComponent::Atom(Atom::FreeVariable(i)) = component {
+                let original_id = *i;
+                // Add this variable (and its dependencies) if not already added
+                add_var(original_id, var_ids, context, &mut in_progress);
+                // Renumber to the new position
+                *i = var_ids.iter().position(|&x| x == original_id).unwrap() as AtomId;
             }
         }
     }
@@ -1684,25 +1742,6 @@ impl Term {
     /// Extended KBO comparison - total ordering where only identical terms are equal.
     pub fn extended_kbo_cmp(&self, other: &Term) -> std::cmp::Ordering {
         self.as_ref().extended_kbo_cmp(&other.as_ref())
-    }
-
-    /// Normalize variable IDs in place so they appear in order of first occurrence.
-    /// The var_ids vector tracks which original variable IDs have been seen.
-    /// This mutates the term in place.
-    pub fn normalize_var_ids(&mut self, var_ids: &mut Vec<AtomId>) {
-        for component in &mut self.components {
-            if let TermComponent::Atom(Atom::FreeVariable(i)) = component {
-                let pos = var_ids.iter().position(|&x| x == *i);
-                match pos {
-                    Some(j) => *i = j as AtomId,
-                    None => {
-                        let new_id = var_ids.len() as AtomId;
-                        var_ids.push(*i);
-                        *i = new_id;
-                    }
-                }
-            }
-        }
     }
 
     /// Get the subterm at the given path.

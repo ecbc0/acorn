@@ -151,15 +151,6 @@ impl Atom {
             a => *a,
         }
     }
-
-    // Replaces free variable x_i with x_{var_map[i]}.
-    // Bound variables are left unchanged.
-    pub fn remap_free_variables(&self, var_map: &[AtomId]) -> Atom {
-        match self {
-            Atom::FreeVariable(i) => Atom::FreeVariable(var_map[*i as usize]),
-            a => *a,
-        }
-    }
 }
 
 #[cfg(test)]

@@ -35,19 +35,24 @@ impl LocalContext {
     /// - New variable 1 with the type of original variable 0
     /// - New variable 2 with the type of original variable 5
     ///
+    /// FreeVariable references within the types are also updated to point to the
+    /// new variable positions.
+    ///
     /// # Panics
     /// Panics if any variable ID in `var_ids` is out of bounds for this context.
     pub fn remap(&self, var_ids: &[AtomId]) -> LocalContext {
         let var_types: Vec<Term> = var_ids
             .iter()
             .map(|&id| {
-                self.get_var_type(id as usize).cloned().unwrap_or_else(|| {
-                    panic!(
-                        "LocalContext::remap: variable x{} not found (context has {} variables)",
-                        id,
-                        self.len()
-                    )
-                })
+                self.get_var_type(id as usize)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "LocalContext::remap: variable x{} not found (context has {} variables)",
+                            id,
+                            self.len()
+                        )
+                    })
+                    .renumber_variables(var_ids)
             })
             .collect();
 
@@ -234,6 +239,61 @@ mod tests {
     }
 
     #[test]
+    fn test_remap_updates_variable_references_in_types() {
+        use crate::kernel::atom::Atom;
+
+        // Create a context where x1's type references x0:
+        // x0 : Type
+        // x1 : List[x0] (represented as application of ground type to FreeVariable(0))
+        let type_sort = Term::type_sort();
+        let list_of_x0 = Term::type_application(ground(0), vec![Term::atom(Atom::FreeVariable(0))]);
+
+        let ctx = LocalContext::from_types(vec![type_sort.clone(), list_of_x0]);
+
+        // Original context should be valid: x1 references x0 which comes before
+        assert!(ctx.validate_variable_ordering());
+
+        // Remap to reverse the order: [1, 0]
+        // This swaps x0 and x1, so new x0 gets old x1's type, new x1 gets old x0's type
+        // The variable references in types must be updated to point to new positions
+        let remapped = ctx.remap(&[1, 0]);
+
+        // Verify the types have correctly updated variable references:
+        // new x0 should have type List[x1] (updated from List[x0])
+        // Without the fix, this would still be List[x0], creating a self-reference!
+        let expected_x0_type =
+            Term::type_application(ground(0), vec![Term::atom(Atom::FreeVariable(1))]);
+        assert_eq!(remapped.get_var_type(0), Some(&expected_x0_type));
+
+        // new x1 should have type Type (no variable references to update)
+        assert_eq!(remapped.get_var_type(1), Some(&type_sort));
+
+        // Note: The resulting context has a forward reference (x0 references x1),
+        // which is invalid for clause construction. The caller (clause normalization)
+        // is responsible for passing var_ids in an order that satisfies type dependencies.
+    }
+
+    #[test]
+    fn test_remap_preserves_valid_ordering() {
+        use crate::kernel::atom::Atom;
+
+        // Create a context with a valid type dependency: x1 depends on x0
+        // x0 : Type
+        // x1 : List[x0]
+        let type_sort = Term::type_sort();
+        let list_of_x0 = Term::type_application(ground(0), vec![Term::atom(Atom::FreeVariable(0))]);
+        let ctx = LocalContext::from_types(vec![type_sort.clone(), list_of_x0.clone()]);
+
+        // Remap keeping the same order: [0, 1]
+        let remapped = ctx.remap(&[0, 1]);
+
+        // The context should remain valid
+        assert!(remapped.validate_variable_ordering());
+        assert_eq!(remapped.get_var_type(0), Some(&type_sort));
+        assert_eq!(remapped.get_var_type(1), Some(&list_of_x0));
+    }
+
+    #[test]
     fn test_validate_variable_ordering_valid() {
         use crate::kernel::atom::Atom;
 
@@ -306,5 +366,47 @@ mod tests {
 
         // x2 doesn't exist
         assert_eq!(ctx.get_typeclass_constraint(2), None);
+    }
+
+    #[test]
+    fn test_normalize_puts_type_dependency_first() {
+        use crate::kernel::atom::Atom;
+
+        // Context where x0's type is x1 (a type variable):
+        // x0 : x1
+        // x1 : Type
+        let type_of_x0 = Term::atom(Atom::FreeVariable(1)); // x0's type is x1
+        let type_of_x1 = Term::type_sort(); // x1 is a type variable
+        let ctx = LocalContext::from_types(vec![type_of_x0, type_of_x1]);
+
+        // This context has bad ordering: x0's type references x1 which comes after
+        assert!(!ctx.validate_variable_ordering());
+
+        // Create a term that just contains x0: f(x0)
+        let mut term = Term::new(
+            Atom::Symbol(crate::kernel::symbol::Symbol::GlobalConstant(0)),
+            vec![Term::atom(Atom::FreeVariable(0))],
+        );
+
+        // Normalize the term with context awareness
+        let mut var_ids = vec![];
+        term.normalize_var_ids_with_context(&mut var_ids, &ctx);
+
+        // var_ids should be [1, 0] - x1 comes first (it's the type dependency), then x0
+        assert_eq!(var_ids, vec![1, 0]);
+
+        // The term should now reference x1 (the new position of original x0)
+        assert_eq!(term.to_string(), "g0(x1)");
+
+        // Remap the context
+        let new_ctx = ctx.remap(&var_ids);
+
+        // New context should be valid: x0 : Type, x1 : x0
+        assert!(new_ctx.validate_variable_ordering());
+        assert_eq!(new_ctx.get_var_type(0), Some(&Term::type_sort()));
+        assert_eq!(
+            new_ctx.get_var_type(1),
+            Some(&Term::atom(Atom::FreeVariable(0)))
+        );
     }
 }

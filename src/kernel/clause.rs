@@ -80,9 +80,12 @@ impl Clause {
 
         // Normalize variable IDs and track flips, rebuilding the context.
         // var_ids will contain the original variable IDs in their new order.
+        // We use normalize_var_ids_with_context to ensure type dependencies come first:
+        // when a variable is first encountered, any variables in its type are added
+        // before the variable itself.
         let mut var_ids = vec![];
         for i in 0..output_literals.len() {
-            if output_literals[i].normalize_var_ids_into(&mut var_ids) {
+            if output_literals[i].normalize_var_ids_with_context(&mut var_ids, context) {
                 // We flipped literal i. Update the trace.
                 for t in &mut trace {
                     if let LiteralTrace::Output { index, flipped } = t {
@@ -159,7 +162,7 @@ impl Clause {
         let mut var_ids = vec![];
         let input_context = self.context.clone();
         for literal in &mut self.literals {
-            literal.normalize_var_ids_into(&mut var_ids);
+            literal.normalize_var_ids_with_context(&mut var_ids, &input_context);
         }
         self.context = input_context.remap(&var_ids);
     }
@@ -263,8 +266,12 @@ impl Clause {
         let mut var_ids = vec![];
         let input_context = self.context.clone();
         for literal in &mut self.literals {
-            literal.left.normalize_var_ids_into(&mut var_ids);
-            literal.right.normalize_var_ids_into(&mut var_ids);
+            literal
+                .left
+                .normalize_var_ids_with_context(&mut var_ids, &input_context);
+            literal
+                .right
+                .normalize_var_ids_with_context(&mut var_ids, &input_context);
         }
         self.context = input_context.remap(&var_ids);
     }
@@ -359,7 +366,7 @@ impl Clause {
         // Now renumber variables again based on the new literal order
         let mut var_ids = vec![];
         for lit in &mut literals {
-            lit.normalize_var_ids_into(&mut var_ids);
+            lit.normalize_var_ids_with_context(&mut var_ids, &self.context);
         }
 
         Clause {

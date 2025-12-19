@@ -161,24 +161,18 @@ impl Literal {
         std::mem::swap(&mut self.left, &mut self.right);
     }
 
-    /// Normalize variable IDs in place so they appear in order of first occurrence.
+    /// Normalize variable IDs in place, ensuring type dependencies come first.
+    /// When a variable is encountered for the first time, any variables in its type
+    /// are added before the variable itself. This ensures the resulting ordering
+    /// satisfies type dependency constraints.
     /// Returns true if the literal was flipped during normalization.
-    pub fn normalize_var_ids(&mut self, var_ids: &mut Vec<AtomId>) -> bool {
-        self.left.normalize_var_ids(var_ids);
-        self.right.normalize_var_ids(var_ids);
-        if needs_to_flip(&self.left, &self.right) {
-            self.flip();
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Normalize variable IDs in place so they appear in order of first occurrence.
-    /// Returns true if the literal was flipped during normalization.
-    pub fn normalize_var_ids_into(&mut self, var_ids: &mut Vec<AtomId>) -> bool {
-        self.left.normalize_var_ids_into(var_ids);
-        self.right.normalize_var_ids_into(var_ids);
+    pub fn normalize_var_ids_with_context(
+        &mut self,
+        var_ids: &mut Vec<AtomId>,
+        context: &LocalContext,
+    ) -> bool {
+        self.left.normalize_var_ids_with_context(var_ids, context);
+        self.right.normalize_var_ids_with_context(var_ids, context);
         if needs_to_flip(&self.left, &self.right) {
             self.flip();
             true
@@ -241,9 +235,9 @@ impl Literal {
     pub fn normalized_reversed(&self, input_context: &LocalContext) -> (Term, Term, LocalContext) {
         let mut var_ids: Vec<AtomId> = vec![];
         let mut right = self.right.clone();
-        right.normalize_var_ids_into(&mut var_ids);
+        right.normalize_var_ids_with_context(&mut var_ids, input_context);
         let mut left = self.left.clone();
-        left.normalize_var_ids_into(&mut var_ids);
+        left.normalize_var_ids_with_context(&mut var_ids, input_context);
         let output_context = input_context.remap(&var_ids);
         (right, left, output_context)
     }
