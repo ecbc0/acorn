@@ -1634,15 +1634,10 @@ mod tests {
     #[test]
     fn test_key_from_parameterized_type_with_variable() {
         // List[T0] should encode as: Application + Type(List) + Variable(0)
-        // (using unified structure encoding)
-        use crate::kernel::symbol::Symbol;
-
         let mut kctx = KernelContext::new();
         kctx.parse_type_constructor("List", 1);
-        let list_id = kctx.type_store.get_ground_id_by_name("List").unwrap();
 
-        let type_var = Term::atom(KernelAtom::FreeVariable(0));
-        let list_t0 = Term::new(KernelAtom::Symbol(Symbol::Type(list_id)), vec![type_var]);
+        let list_t0 = kctx.parse_type("List[T0]");
         let mut key = Vec::new();
         key_from_type(&list_t0, &mut key);
 
@@ -1656,9 +1651,8 @@ mod tests {
     #[test]
     fn test_key_from_arrow_type_with_variables() {
         // T0 -> T1 should encode as: Arrow + Variable(0) + Variable(1)
-        let t0 = Term::atom(KernelAtom::FreeVariable(0));
-        let t1 = Term::atom(KernelAtom::FreeVariable(1));
-        let arrow_type = Term::pi(t0, t1);
+        let kctx = KernelContext::new();
+        let arrow_type = kctx.parse_type("T0 -> T1");
 
         let mut key = Vec::new();
         key_from_type(&arrow_type, &mut key);
@@ -1676,16 +1670,15 @@ mod tests {
         // This test verifies the key encoding produces matching keys for identical type structures.
         let kctx = KernelContext::new();
 
-        // Create LocalContext: x0 : Type (a type variable)
-        let type_type = Term::type_sort();
-        let type_var_x0 = Term::atom(KernelAtom::FreeVariable(0));
-        let lctx = LocalContext::from_types(vec![type_type.clone(), type_var_x0.clone()]);
+        // Create LocalContext: x0 : Type, x1 : x0 (x1 has a type variable as its type)
+        let lctx = LocalContext::from_types(vec![
+            Term::type_sort(),
+            Term::parse("x0"), // x1's type is x0, a type variable
+        ]);
 
         // Generate keys for the same pattern twice
-        let x1 = Term::atom(KernelAtom::FreeVariable(1));
+        let x1 = Term::parse("x1");
         let key1 = key_from_term(&x1, &lctx, &kctx);
-
-        // Generate key for an equivalent pattern (same structure)
         let key2 = key_from_term(&x1, &lctx, &kctx);
 
         // Keys should be identical
@@ -1708,17 +1701,9 @@ mod tests {
     #[test]
     fn test_key_from_type_typeclass() {
         // Typeclass constraint should encode as Atom(Typeclass(id))
-        use crate::elaborator::acorn_type::Typeclass;
-        use crate::module::ModuleId;
-
         let mut kctx = KernelContext::new();
-
-        // Register a typeclass
-        let monoid = Typeclass {
-            module_id: ModuleId(0),
-            name: "Monoid".to_string(),
-        };
-        let monoid_id = kctx.type_store.add_typeclass(&monoid);
+        kctx.parse_typeclass("Monoid");
+        let monoid_id = kctx.type_store.get_typeclass_id_by_name("Monoid").unwrap();
 
         // Create a type term for the typeclass
         let typeclass_type = Term::typeclass(monoid_id);
@@ -1734,24 +1719,16 @@ mod tests {
     #[test]
     fn test_pattern_tree_with_typeclass_constraint() {
         // Test that a term with typeclass-constrained type encodes correctly
-        use crate::elaborator::acorn_type::Typeclass;
-        use crate::module::ModuleId;
-
         let mut kctx = KernelContext::new();
-
-        // Register a typeclass
-        let monoid = Typeclass {
-            module_id: ModuleId(0),
-            name: "Monoid".to_string(),
-        };
-        let monoid_id = kctx.type_store.add_typeclass(&monoid);
+        kctx.parse_typeclass("Monoid");
+        let monoid_id = kctx.type_store.get_typeclass_id_by_name("Monoid").unwrap();
 
         // Create LocalContext: x0 has type Monoid (typeclass constraint)
         let typeclass_type = Term::typeclass(monoid_id);
         let lctx = LocalContext::from_types(vec![typeclass_type.clone()]);
 
         // Generate key for x0 which has typeclass constraint
-        let x0 = Term::atom(KernelAtom::FreeVariable(0));
+        let x0 = Term::parse("x0");
         let key = key_from_term(&x0, &lctx, &kctx);
 
         // Verify the key contains the typeclass encoding
