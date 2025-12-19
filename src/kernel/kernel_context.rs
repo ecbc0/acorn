@@ -308,6 +308,33 @@ impl KernelContext {
         self
     }
 
+    /// Register a datatype as an instance of a typeclass.
+    /// Automatically registers the datatype if it doesn't exist yet.
+    ///
+    /// Example: `ctx.parse_instance("Int", "Ring")` makes Int an instance of Ring.
+    #[cfg(test)]
+    pub fn parse_instance(&mut self, datatype_name: &str, typeclass_name: &str) -> &mut Self {
+        use crate::elaborator::acorn_type::{AcornType, Datatype};
+        use crate::module::ModuleId;
+
+        // Register the datatype if it doesn't exist
+        if self.type_store.get_ground_id_by_name(datatype_name).is_none() {
+            self.parse_datatype(datatype_name);
+        }
+
+        let datatype = Datatype {
+            module_id: ModuleId(0),
+            name: datatype_name.to_string(),
+        };
+        let acorn_type = AcornType::Data(datatype, vec![]);
+        let typeclass_id = self
+            .type_store
+            .get_typeclass_id_by_name(typeclass_name)
+            .unwrap_or_else(|| panic!("Unknown typeclass: {}", typeclass_name));
+        self.type_store.add_type_instance(&acorn_type, typeclass_id);
+        self
+    }
+
     /// Parse a type string like "Bool", "Int", "Int -> Bool", "(Int, Int) -> Bool",
     /// "List[Int]", "Pair[Int, Bool]", or "T0" (type variable).
     /// Looks up datatype names in the TypeStore.
@@ -356,16 +383,26 @@ impl KernelContext {
             // Build applied type: TypeConstructor(param1, param2, ...)
             Term::new(Atom::Symbol(Symbol::Type(ground_id)), type_args)
         } else if s.starts_with('T') && s.len() > 1 && s[1..].chars().all(|c| c.is_ascii_digit()) {
-            // Type variable: "T0", "T1", etc. - represented as Variable in the term
+            // Type variable: "T0", "T1", etc. - represented as FreeVariable in the term
             let var_id: u16 = s[1..].parse().expect("invalid type variable id");
             Term::atom(Atom::FreeVariable(var_id))
+        } else if s.starts_with('x') && s.len() > 1 && s[1..].chars().all(|c| c.is_ascii_digit()) {
+            // Variable reference: "x0", "x1", etc. - for dependent types where a value's type
+            // is another variable. Same representation as T0, T1 (FreeVariable).
+            let var_id: u16 = s[1..].parse().expect("invalid variable id");
+            Term::atom(Atom::FreeVariable(var_id))
         } else {
-            // Simple type name
+            // Simple type name - try various lookups
             match s {
                 "Bool" => Term::bool_type(),
                 "Empty" => Term::empty_type(),
+                "Type" => Term::type_sort(),
                 _ => {
-                    // Look up in TypeStore by name
+                    // Try typeclass first
+                    if let Some(tc_id) = self.type_store.get_typeclass_id_by_name(s) {
+                        return Term::typeclass(tc_id);
+                    }
+                    // Then try ground type in TypeStore
                     self.type_store
                         .get_ground_id_by_name(s)
                         .map(Term::ground_type)
@@ -567,6 +604,39 @@ impl KernelContext {
     pub fn parse_constants(&mut self, names: &[&str], type_str: &str) -> &mut Self {
         for name in names {
             self.parse_constant(name, type_str);
+        }
+        self
+    }
+
+    /// Add a polymorphic constant with a dependent type.
+    ///
+    /// Example: `ctx.parse_polymorphic_constant("c0", &["Ring"], "T0 -> T0 -> T0")`
+    /// creates a constant c0 with type `Π(R: Ring). R -> R -> R`
+    #[cfg(test)]
+    pub fn parse_polymorphic_constant(
+        &mut self,
+        name: &str,
+        binder_types: &[&str],
+        body: &str,
+    ) -> &mut Self {
+        let type_term = self.parse_dependent_type(binder_types, body);
+        let first_char = name.chars().next().expect("empty constant name");
+        let id: u32 = name[1..].parse().expect("invalid constant id");
+
+        match first_char {
+            'c' => {
+                while self.symbol_table.num_scoped_constants() <= id {
+                    self.symbol_table.add_scoped_constant(Term::empty_type());
+                }
+                self.symbol_table.set_scoped_constant_type(id, type_term);
+            }
+            'g' => {
+                while self.symbol_table.num_global_constants() <= id {
+                    self.symbol_table.add_global_constant(Term::empty_type());
+                }
+                self.symbol_table.set_global_constant_type(id, type_term);
+            }
+            _ => panic!("polymorphic constant name must start with 'c' or 'g'"),
         }
         self
     }

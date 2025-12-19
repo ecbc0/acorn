@@ -2016,4 +2016,81 @@ mod tests {
         assert!(debug_add.contains("Arrow") && debug_mul.contains("Arrow"));
         assert!(debug_add.contains("BoundVariable(0)") && debug_mul.contains("BoundVariable(0)"));
     }
+
+    #[test]
+    fn test_polymorphic_clause_matching() {
+        // Test: Pattern is `add[R](x, y) = add[R](y, x)` for any R: Ring
+        // Query is `add[Int](c, f(d)) = add[Int](f(d), c)` where Int: Ring
+        // The query should match the pattern.
+
+        let mut kctx = KernelContext::new();
+
+        // Register Ring typeclass and mark Int as implementing Ring
+        kctx.parse_typeclass("Ring").parse_instance("Int", "Ring");
+
+        // Create `add` with polymorphic type: Π(R: Ring). R -> R -> R
+        kctx.parse_polymorphic_constant("c0", &["Ring"], "T0 -> T0 -> T0"); // add
+
+        // Create constants for the query
+        kctx.parse_constant("c1", "Int -> Int"); // f
+        kctx.parse_constants(&["c2", "c3"], "Int"); // c, d
+
+        // Build the pattern clause: add[R](x, y) = add[R](y, x)
+        // LocalContext: x0: Ring (type variable R), x1: x0 (value x), x2: x0 (value y)
+        let pattern_lctx = kctx.parse_local(&["Ring", "x0", "x0"]);
+
+        // Build add[R](x, y): ((add x0) x1) x2
+        let add_r_x_y = Term::parse("c0")
+            .apply(&[Term::parse("x0")])
+            .apply(&[Term::parse("x1")])
+            .apply(&[Term::parse("x2")]);
+
+        // Build add[R](y, x): ((add x0) x2) x1
+        let add_r_y_x = Term::parse("c0")
+            .apply(&[Term::parse("x0")])
+            .apply(&[Term::parse("x2")])
+            .apply(&[Term::parse("x1")]);
+
+        // Create the pattern clause: add[R](x, y) = add[R](y, x)
+        let pattern_clause = Clause::new(
+            vec![Literal::equals(add_r_x_y, add_r_y_x)],
+            &pattern_lctx,
+        );
+
+        // Insert pattern into tree
+        let mut tree: PatternTree<&str> = PatternTree::new();
+        tree.insert_clause(&pattern_clause, "commutativity", &kctx);
+
+        // Build the query clause: add[Int](c, f(d)) = add[Int](f(d), c)
+        let query_lctx = LocalContext::empty();
+
+        let int_type = kctx.parse_type("Int");
+        let f_d = Term::parse("c1").apply(&[Term::parse("c3")]);
+
+        // add[Int](c, f(d)): ((add Int) c) f(d)
+        let add_int_c_fd = Term::parse("c0")
+            .apply(&[int_type.clone()])
+            .apply(&[Term::parse("c2")])
+            .apply(&[f_d.clone()]);
+
+        // add[Int](f(d), c): ((add Int) f(d)) c
+        let add_int_fd_c = Term::parse("c0")
+            .apply(&[int_type])
+            .apply(&[f_d])
+            .apply(&[Term::parse("c2")]);
+
+        let query_clause = Clause::new(
+            vec![Literal::equals(add_int_c_fd, add_int_fd_c)],
+            &query_lctx,
+        );
+
+        // Try to find the pattern
+        let found = tree.find_clause(&query_clause, &kctx);
+
+        assert_eq!(
+            found,
+            Some(&"commutativity"),
+            "Query should match the polymorphic commutativity pattern"
+        );
+    }
 }
