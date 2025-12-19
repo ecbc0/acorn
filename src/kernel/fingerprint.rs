@@ -847,15 +847,15 @@ mod tests {
 
     #[test]
     fn test_fingerprint_unifier_with_dependent_pi_type() {
-        // Test that functions with dependent Pi types like Π(R: Ring), R -> R -> R
+        // Test that functions with dependent Pi types like Π(R: Ring). R -> R -> R
         // can be stored and retrieved from FingerprintUnifier
         let mut kctx = KernelContext::new();
         kctx.parse_typeclass("Ring");
 
-        // Create dependent Pi type: Π(R: Ring), R -> R -> R
-        let add_type = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
+        // Create dependent Pi type: Π(R: Ring). R -> R -> R
+        let add_type = kctx.parse_pi("R: Ring", "R -> R -> R");
 
-        // c0 : Π(R: Ring), R -> R -> R (the 'add' function)
+        // c0 : Π(R: Ring). R -> R -> R (the 'add' function)
         kctx.symbol_table.add_scoped_constant(add_type.clone());
 
         let mut tree = FingerprintUnifier::new();
@@ -878,10 +878,10 @@ mod tests {
         let mut kctx = KernelContext::new();
         kctx.parse_typeclass("Ring");
 
-        // Create dependent Pi type: Π(R: Ring), R -> R -> R
-        let op_type = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
+        // Create dependent Pi type: Π(R: Ring). R -> R -> R
+        let op_type = kctx.parse_pi("R: Ring", "R -> R -> R");
 
-        // c0 : add, c1 : mul, both with type Π(R: Ring), R -> R -> R
+        // c0 : add, c1 : mul, both with type Π(R: Ring). R -> R -> R
         kctx.symbol_table.add_scoped_constant(op_type.clone());
         kctx.symbol_table.add_scoped_constant(op_type.clone());
 
@@ -906,10 +906,10 @@ mod tests {
         kctx.parse_typeclass("Ring");
         kctx.parse_datatype("Bool");
 
-        // Create dependent Pi type: Π(R: Ring), R -> R -> R
-        let add_type = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
+        // Create dependent Pi type: Π(R: Ring). R -> R -> R
+        let add_type = kctx.parse_pi("R: Ring", "R -> R -> R");
 
-        // c0 : Π(R: Ring), R -> R -> R
+        // c0 : Π(R: Ring). R -> R -> R
         kctx.symbol_table.add_scoped_constant(add_type.clone());
 
         // x0 is a type variable (could be any type)
@@ -940,10 +940,10 @@ mod tests {
         let mut kctx = KernelContext::new();
         kctx.parse_typeclass("Ring");
 
-        // Create dependent Pi type: Π(R: Ring), R -> R -> R
-        let add_type = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
+        // Create dependent Pi type: Π(R: Ring). R -> R -> R
+        let add_type = kctx.parse_pi("R: Ring", "R -> R -> R");
 
-        // c0 : Π(R: Ring), R -> R -> R
+        // c0 : Π(R: Ring). R -> R -> R
         kctx.symbol_table.add_scoped_constant(add_type.clone());
 
         let mut spec = FingerprintSpecializer::new();
@@ -970,8 +970,8 @@ mod tests {
         let mut kctx = KernelContext::new();
         kctx.parse_typeclass("Ring");
 
-        // Create dependent Pi type: Π(R: Ring), R -> R -> R
-        let dependent_pi = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
+        // Create dependent Pi type: Π(R: Ring). R -> R -> R
+        let dependent_pi = kctx.parse_pi("R: Ring", "R -> R -> R");
 
         let category = TypeCategory::from_type_term(&dependent_pi);
         assert_eq!(
@@ -989,9 +989,8 @@ mod tests {
         kctx.parse_datatype("Nat");
         kctx.parse_type_constructor("Matrix", 3);
 
-        // Π(R: Ring), Π(n: Nat), Matrix[R, n, n] -> Matrix[R, n, n]
-        let matrix_op_type =
-            kctx.parse_dependent_type(&["Ring", "Nat"], "Matrix[T0, T1, T1] -> Matrix[T0, T1, T1]");
+        // Π(R: Ring). Π(n: Nat). Matrix[R, n, n] -> Matrix[R, n, n]
+        let matrix_op_type = kctx.parse_pi("R: Ring, n: Nat", "Matrix[R, n, n] -> Matrix[R, n, n]");
 
         // c0 : matrix operation with nested dependent type
         kctx.symbol_table

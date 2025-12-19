@@ -1921,7 +1921,7 @@ mod tests {
         kctx.parse_typeclass("Ring").parse_instance("Int", "Ring");
 
         // Create `add` with polymorphic type: Π(R: Ring). R -> R -> R
-        kctx.parse_polymorphic_constant("c0", &["Ring"], "T0 -> T0 -> T0"); // add
+        kctx.parse_polymorphic_constant("c0", "R: Ring", "R -> R -> R"); // add
 
         // Create constants for the query
         kctx.parse_constant("c1", "Int -> Int"); // f
