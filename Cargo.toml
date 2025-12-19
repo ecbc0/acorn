@@ -45,8 +45,6 @@ assert_fs = "1.1.2"
 validate = []
 # Skip monomorphization. This keeps propositions in their polymorphic form.
 polymorphic = []
-# Panic if bound variables are inserted into the pattern tree.
-unbind = []
 
 [lib]
 doctest = false

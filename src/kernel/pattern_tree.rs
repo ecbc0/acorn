@@ -98,14 +98,16 @@ pub fn replace_term_variables(
 
 /// Atoms are the leaf nodes in the pattern tree.
 /// Both term variables and type variables are represented as Variable(idx).
+///
+/// NOTE: BoundVariables are NOT supported in the pattern tree. All bound variables
+/// must be converted to free variables before clauses are inserted into the tree.
+/// The symbol table may contain types with BoundVariables (for polymorphic constants),
+/// but when computing result types for clause terms, substitution eliminates them.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Atom {
     /// Pattern variable, numbered by first occurrence in the path.
     /// Used for both term variables and type variables.
     Variable(AtomId),
-
-    /// De Bruijn bound variable (for Pi types).
-    BoundVariable(u16),
 
     /// Named constants and functions.
     Symbol(Symbol),
@@ -164,7 +166,6 @@ const ATOM_FALSE: u8 = 13;
 const ATOM_SYMBOL_EMPTY: u8 = 14;
 const ATOM_SYMBOL_BOOL: u8 = 15;
 const ATOM_SYMBOL_TYPESORT: u8 = 16;
-const ATOM_BOUND_VARIABLE: u8 = 17;
 
 impl Edge {
     /// Returns the discriminant byte for this edge.
@@ -176,7 +177,6 @@ impl Edge {
             Edge::LiteralForm(false) => LITERAL_NEGATIVE,
             Edge::Atom(atom) => match atom {
                 Atom::Variable(_) => ATOM_VARIABLE,
-                Atom::BoundVariable(_) => ATOM_BOUND_VARIABLE,
                 Atom::True => ATOM_TRUE,
                 Atom::False => ATOM_FALSE,
                 Atom::Type0 => ATOM_TYPE0,
@@ -198,19 +198,11 @@ impl Edge {
     /// Appends the byte representation of this edge to the vector.
     /// Each edge is 3 bytes: discriminant + 2 bytes for ID (if applicable).
     pub fn append_to(&self, v: &mut Vec<u8>) {
-        #[cfg(feature = "unbind")]
-        if let Edge::Atom(Atom::BoundVariable(i)) = self {
-            panic!(
-                "BoundVariable({}) cannot be inserted into pattern tree with 'unbind' feature",
-                i
-            );
-        }
         v.push(self.discriminant());
         let id: u16 = match self {
             Edge::Application | Edge::Arrow | Edge::LiteralForm(_) => 0,
             Edge::Atom(atom) => match atom {
                 Atom::Variable(i) => *i,
-                Atom::BoundVariable(i) => *i,
                 Atom::True => 0,
                 Atom::False => 0,
                 Atom::Type0 => 0,
@@ -250,7 +242,6 @@ impl Edge {
             ATOM_SYMBOL_EMPTY => Edge::Atom(Atom::Symbol(Symbol::Empty)),
             ATOM_SYMBOL_BOOL => Edge::Atom(Atom::Symbol(Symbol::Bool)),
             ATOM_SYMBOL_TYPESORT => Edge::Atom(Atom::Symbol(Symbol::TypeSort)),
-            ATOM_BOUND_VARIABLE => Edge::Atom(Atom::BoundVariable(id)),
             _ => panic!("invalid edge discriminant: {}", byte1),
         }
     }
@@ -326,8 +317,12 @@ fn key_from_structure(term: TermRef, key: &mut Vec<u8>) {
         Decomposition::Atom(atom) => {
             let encoded_atom = match atom {
                 KernelAtom::FreeVariable(i) => Atom::Variable(*i),
-                KernelAtom::BoundVariable(i) => Atom::BoundVariable(*i),
-                // Handle Type atoms specially to match expected encoding
+                KernelAtom::BoundVariable(i) => {
+                    panic!(
+                        "BoundVariable({}) in pattern tree key - should have been substituted",
+                        i
+                    )
+                }
                 KernelAtom::Symbol(Symbol::Type(t)) => Atom::Type(*t),
                 KernelAtom::Symbol(Symbol::True) => Atom::True,
                 KernelAtom::Symbol(Symbol::False) => Atom::False,
@@ -418,7 +413,6 @@ fn key_from_term_type(
     }
 
     // Now encode the result type
-    #[cfg(feature = "unbind")]
     if result_type.has_bound_variable() {
         panic!(
             "Result type contains BoundVariable.\n\
@@ -466,7 +460,12 @@ fn key_from_term_structure(
         Decomposition::Atom(head) => {
             let atom = match head {
                 KernelAtom::FreeVariable(v) => Atom::Variable(*v),
-                KernelAtom::BoundVariable(i) => Atom::BoundVariable(*i),
+                KernelAtom::BoundVariable(i) => {
+                    panic!(
+                        "BoundVariable({}) in pattern tree term - should have been substituted",
+                        i
+                    )
+                }
                 KernelAtom::Symbol(Symbol::True) => Atom::True,
                 KernelAtom::Symbol(Symbol::False) => Atom::False,
                 KernelAtom::Symbol(Symbol::Type(t)) => Atom::Type(*t),
@@ -908,7 +907,12 @@ where
             // Atomic function: emit the atom directly (no type prefix)
             let edge_atom = match atom {
                 KernelAtom::FreeVariable(v) => Atom::Variable(*v),
-                KernelAtom::BoundVariable(i) => Atom::BoundVariable(*i),
+                KernelAtom::BoundVariable(i) => {
+                    panic!(
+                        "BoundVariable({}) in pattern tree search - should have been substituted",
+                        i
+                    )
+                }
                 KernelAtom::Symbol(Symbol::True) => Atom::True,
                 KernelAtom::Symbol(Symbol::False) => Atom::False,
                 KernelAtom::Symbol(Symbol::Type(t)) => Atom::Type(*t),
@@ -1083,7 +1087,12 @@ where
             // Atomic term: match the atom directly
             let edge_atom = match atom {
                 KernelAtom::FreeVariable(v) => Atom::Variable(*v),
-                KernelAtom::BoundVariable(i) => Atom::BoundVariable(*i),
+                KernelAtom::BoundVariable(i) => {
+                    panic!(
+                        "BoundVariable({}) in pattern tree search - should have been substituted",
+                        i
+                    )
+                }
                 KernelAtom::Symbol(Symbol::True) => Atom::True,
                 KernelAtom::Symbol(Symbol::False) => Atom::False,
                 KernelAtom::Symbol(Symbol::Type(t)) => Atom::Type(*t),
@@ -1897,149 +1906,6 @@ mod tests {
         assert_eq!(tree.values.len(), 2, "Both terms should be in the tree");
         assert_eq!(tree.values[0], 1);
         assert_eq!(tree.values[1], 2);
-    }
-
-    #[test]
-    #[cfg(not(feature = "unbind"))]
-    fn test_key_from_dependent_pi_type() {
-        // Test: Π(R: Ring), R -> R -> R encodes correctly
-        // This is the type of a polymorphic function like `add`
-        let mut kctx = KernelContext::new();
-        kctx.parse_typeclass("Ring");
-
-        let dependent_pi = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
-
-        let mut key = Vec::new();
-        key_from_type(&dependent_pi, &mut key);
-
-        // Should not panic, and should produce a valid encoding
-        let debug = Edge::debug_bytes(&key);
-
-        // Should contain Arrow edges for the Pi types
-        assert!(
-            debug.contains("Arrow"),
-            "Dependent Pi type should encode with Arrow: {}",
-            debug
-        );
-
-        // Should contain BoundVariable(0) for the bound type variable
-        assert!(
-            debug.contains("BoundVariable(0)"),
-            "Should contain bound variable b0: {}",
-            debug
-        );
-    }
-
-    #[test]
-    #[cfg(not(feature = "unbind"))]
-    fn test_key_from_nested_dependent_pi() {
-        // Test: Π(R: Ring), Π(n: Nat), Matrix[R, n, n]
-        // More complex dependent type with multiple binders
-        let mut kctx = KernelContext::new();
-        kctx.parse_typeclass("Ring");
-        kctx.parse_datatype("Nat");
-        kctx.parse_type_constructor("Matrix", 3);
-
-        let nested_pi = kctx.parse_dependent_type(&["Ring", "Nat"], "Matrix[T0, T1, T1]");
-
-        let mut key = Vec::new();
-        key_from_type(&nested_pi, &mut key);
-
-        let debug = Edge::debug_bytes(&key);
-
-        // Should contain both BoundVariable(0) and BoundVariable(1)
-        assert!(
-            debug.contains("BoundVariable(0)"),
-            "Should contain b0: {}",
-            debug
-        );
-        assert!(
-            debug.contains("BoundVariable(1)"),
-            "Should contain b1: {}",
-            debug
-        );
-    }
-
-    #[test]
-    #[cfg(not(feature = "unbind"))]
-    fn test_pattern_tree_with_dependent_pi_function_type() {
-        // Test pattern tree insertion for a function whose type is a dependent Pi type
-        // e.g., `add : Π(R: Ring), R -> R -> R`
-        let mut kctx = KernelContext::new();
-        kctx.parse_typeclass("Ring");
-
-        // Create the dependent Pi type: Π(R: Ring), R -> R -> R
-        let add_type = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
-
-        // Create constant `add` with this type
-        kctx.symbol_table.add_scoped_constant(add_type.clone());
-
-        // Create term: c0 (the `add` function)
-        let add_term = Term::atom(KernelAtom::Symbol(Symbol::ScopedConstant(0)));
-
-        // Generate key - should not panic
-        let key = key_from_term(&add_term, &LocalContext::empty(), &kctx);
-
-        // Verify key contains expected structure
-        let debug = Edge::debug_bytes(&key);
-        assert!(
-            debug.contains("Arrow"),
-            "add's type should encode with Arrow: {}",
-            debug
-        );
-        assert!(
-            debug.contains("BoundVariable(0)"),
-            "add's type should contain b0: {}",
-            debug
-        );
-
-        // Test actual pattern tree insertion
-        let mut tree: PatternTree<usize> = PatternTree::new();
-        tree.insert_term(&add_term, 1, &LocalContext::empty(), &kctx);
-
-        // Verify insertion
-        assert_eq!(tree.values.len(), 1, "add should be in the tree");
-        assert_eq!(tree.values[0], 1);
-    }
-
-    #[test]
-    #[cfg(not(feature = "unbind"))]
-    fn test_pattern_tree_match_dependent_pi_functions() {
-        // Test that two functions with the same dependent Pi type structure
-        // can be found in the pattern tree
-        let mut kctx = KernelContext::new();
-        kctx.parse_typeclass("Ring");
-
-        // Create the dependent Pi type: Π(R: Ring), R -> R -> R
-        let op_type = kctx.parse_dependent_type(&["Ring"], "T0 -> T0 -> T0");
-
-        // Create two constants with this type: c0 = add, c1 = mul
-        kctx.symbol_table.add_scoped_constant(op_type.clone());
-        kctx.symbol_table.add_scoped_constant(op_type.clone());
-
-        let add_term = Term::atom(KernelAtom::Symbol(Symbol::ScopedConstant(0)));
-        let mul_term = Term::atom(KernelAtom::Symbol(Symbol::ScopedConstant(1)));
-
-        // Insert both into the pattern tree
-        let mut tree: PatternTree<&str> = PatternTree::new();
-        tree.insert_term(&add_term, "add", &LocalContext::empty(), &kctx);
-        tree.insert_term(&mul_term, "mul", &LocalContext::empty(), &kctx);
-
-        // Verify both were inserted
-        assert_eq!(tree.values.len(), 2, "Both ops should be in the tree");
-
-        // Both should have the same type encoding (up to the head atom)
-        let key_add = key_from_term(&add_term, &LocalContext::empty(), &kctx);
-        let key_mul = key_from_term(&mul_term, &LocalContext::empty(), &kctx);
-
-        // The keys differ only in the head atom (c0 vs c1), but the type portion should be identical
-        // Both start with the head atom, then the type encoding follows
-        let debug_add = Edge::debug_bytes(&key_add);
-        let debug_mul = Edge::debug_bytes(&key_mul);
-
-        // Both should have the same Arrow and BoundVariable structure
-        assert!(debug_add.contains("Arrow") && debug_mul.contains("Arrow"));
-        assert!(debug_add.contains("BoundVariable(0)") && debug_mul.contains("BoundVariable(0)"));
     }
 
     #[test]
