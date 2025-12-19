@@ -5,7 +5,10 @@ use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
+#[cfg(not(feature = "pdt"))]
 use crate::kernel::pattern_tree::PatternTree;
+#[cfg(feature = "pdt")]
+use crate::kernel::pdt::PatternTree;
 use crate::kernel::term::{Decomposition, TermRef};
 
 /// The GeneralizationSet stores general clauses in a way that allows us to quickly check whether

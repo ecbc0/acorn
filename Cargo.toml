@@ -45,6 +45,9 @@ assert_fs = "1.1.2"
 validate = []
 # Skip monomorphization. This keeps propositions in their polymorphic form.
 polymorphic = []
+# Use Perfect Discrimination Tree (PDT) instead of PatternTree for matching.
+# PDT ignores types during matching and handles polymorphic patterns correctly.
+pdt = []
 
 [lib]
 doctest = false

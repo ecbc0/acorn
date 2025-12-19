@@ -8,7 +8,10 @@ use crate::kernel::inference;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
+#[cfg(not(feature = "pdt"))]
 use crate::kernel::pattern_tree::LiteralSet;
+#[cfg(feature = "pdt")]
+use crate::kernel::pdt::LiteralSet;
 use crate::kernel::term::{PathStep, Term};
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::unifier::{Scope, Unifier};
