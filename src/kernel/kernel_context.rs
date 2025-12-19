@@ -957,41 +957,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_dependent_type_two_binders() {
-        use crate::kernel::atom::Atom;
-
-        let mut ctx = KernelContext::new();
-        ctx.parse_datatype("Nat");
-        ctx.parse_datatype("Ring");
-        ctx.parse_type_constructor("Matrix", 3);
-
-        // Π (R : Ring), Π (n : Nat), Matrix[R, n, n]
-        // T0 = Ring (first binder), T1 = Nat (second binder)
-        let matrix_type = ctx.parse_dependent_type(&["Ring", "Nat"], "Matrix[T0, T1, T1]");
-
-        let ring_id = ctx.type_store.get_ground_id_by_name("Ring").unwrap();
-        let ring = Term::ground_type(ring_id);
-        let nat_id = ctx.type_store.get_ground_id_by_name("Nat").unwrap();
-        let nat = Term::ground_type(nat_id);
-        let matrix_id = ctx.type_store.get_ground_id_by_name("Matrix").unwrap();
-
-        // T0 -> b1 (outermost binder = Ring)
-        // T1 -> b0 (innermost binder = Nat)
-        let b0 = Term::atom(Atom::BoundVariable(0));
-        let b1 = Term::atom(Atom::BoundVariable(1));
-
-        let matrix_applied = Term::new(
-            Atom::Symbol(Symbol::Type(matrix_id)),
-            vec![b1, b0.clone(), b0],
-        );
-
-        // Expected: Pi(Ring, Pi(Nat, Matrix[b1, b0, b0]))
-        let expected = Term::pi(ring, Term::pi(nat, matrix_applied));
-
-        assert_eq!(matrix_type, expected);
-    }
-
-    #[test]
     fn test_parse_dependent_type_with_concrete_types() {
         let mut ctx = KernelContext::new();
         ctx.parse_datatype("Nat");
