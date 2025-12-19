@@ -732,18 +732,27 @@ impl KernelContext {
             return Term::ground_type(ground_id);
         }
 
-        // Built-in types
+        // Built-in types and constants
         match s {
             "Bool" => Term::bool_type(),
             "Empty" => Term::empty_type(),
             "Type" => Term::type_sort(),
             "true" => Term::atom(Atom::Symbol(Symbol::True)),
             "false" => Term::atom(Atom::Symbol(Symbol::False)),
-            _ => panic!("Unknown term: {}", s),
+            _ => {
+                // Fall back to Term::parse for anything else
+                Term::parse(s)
+            }
         }
     }
 
     /// Parse a literal string, resolving type names in the context.
+    ///
+    /// Supports:
+    /// - Equality: `"a = b"`
+    /// - Inequality: `"a != b"`
+    /// - Positive predicate: `"P(x)"`
+    /// - Negative predicate: `"not P(x)"`
     ///
     /// Example: `ctx.parse_literal("c0(Int, x0) = c0(Int, x1)")`
     #[cfg(test)]
@@ -751,19 +760,23 @@ impl KernelContext {
         use crate::kernel::literal::Literal;
 
         let s = s.trim();
-        let (positive, inner) = if let Some(rest) = s.strip_prefix('!') {
-            (false, rest.trim())
-        } else {
-            (true, s)
-        };
 
-        // Split on " = " to find the two sides
-        if let Some(eq_pos) = inner.find(" = ") {
-            let left = self.parse_term(&inner[..eq_pos]);
-            let right = self.parse_term(&inner[eq_pos + 3..]);
-            Literal::new(positive, left, right)
+        if s.contains(" != ") {
+            let mut parts = s.split(" != ");
+            let left = self.parse_term(parts.next().unwrap());
+            let right = self.parse_term(parts.next().unwrap());
+            Literal::not_equals(left, right)
+        } else if s.contains(" = ") {
+            let mut parts = s.split(" = ");
+            let left = self.parse_term(parts.next().unwrap());
+            let right = self.parse_term(parts.next().unwrap());
+            Literal::equals(left, right)
+        } else if let Some(rest) = s.strip_prefix("not ") {
+            let term = self.parse_term(rest);
+            Literal::negative(term)
         } else {
-            panic!("Literal must contain ' = ': {}", s);
+            let term = self.parse_term(s);
+            Literal::positive(term)
         }
     }
 
@@ -773,29 +786,6 @@ impl KernelContext {
     /// Example: `ctx.parse_clause("x0 = c0", &["Int"])` parses clause with x0: Int
     #[cfg(test)]
     pub fn parse_clause(
-        &self,
-        clause_str: &str,
-        var_types: &[&str],
-    ) -> crate::kernel::clause::Clause {
-        use crate::kernel::clause::Clause;
-        use crate::kernel::literal::Literal;
-
-        let local = self.parse_local(var_types);
-        let literals: Vec<Literal> = clause_str
-            .split(" or ")
-            .map(|part| Literal::parse(part.trim()))
-            .collect();
-        let clause = Clause::new(literals, &local);
-        clause.validate(self);
-        clause
-    }
-
-    /// Parse a clause string with type name resolution.
-    /// Like parse_clause but resolves type names (Int, Bool, etc.) in terms.
-    ///
-    /// Example: `ctx.parse_clause_with_types("c0(Int, x0) = c0(Int, x1)", &["Int", "Int"])`
-    #[cfg(test)]
-    pub fn parse_clause_with_types(
         &self,
         clause_str: &str,
         var_types: &[&str],
