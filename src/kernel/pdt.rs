@@ -844,4 +844,55 @@ mod tests {
             "Query should match the polymorphic commutativity pattern"
         );
     }
+
+    #[test]
+    fn test_pdt_parameterized_type_matching() {
+        // This test fails because types_compatible() doesn't handle type instantiation.
+        //
+        // Pattern: reverse(x) = x where x : List[T] (T is a type variable)
+        // Query: reverse(mylist) = mylist where mylist : List[Int]
+        //
+        // The pattern variable x has type List[T] (a parameterized type with type variable).
+        // The query term mylist has type List[Int] (a concrete instantiation).
+        //
+        // For this to match, we need to recognize that List[Int] is an instance of List[T]
+        // by binding T -> Int. The current simple equality check fails because:
+        // - List[T] != List[Int]
+        // - List[T] is not a FreeVariable atom (it's an Application)
+        //
+        // This requires implementing proper type instantiation checking (the first TODO).
+
+        let mut kctx = KernelContext::new();
+
+        // Set up types
+        kctx.parse_datatype("Int");
+        kctx.parse_type_constructor("List", 1);
+
+        // reverse : forall T. List[T] -> List[T]
+        kctx.parse_polymorphic_constant("c0", "T: Type", "List[T] -> List[T]"); // reverse
+
+        // mylist : List[Int]
+        kctx.parse_constant("c1", "List[Int]"); // mylist
+
+        let mut tree: Pdt<&str> = Pdt::new();
+
+        // Pattern clause: reverse[T](x) = x where T: Type, x : List[T]
+        // x0 is a type variable T (type: Type)
+        // x1 has type List[x0] = List[T]
+        let pattern_clause = kctx.parse_clause("c0(x0, x1) = x1", &["Type", "List[x0]"]);
+        tree.insert_clause(&pattern_clause, "reverse_identity", &kctx);
+
+        // Query clause: reverse[Int](mylist) = mylist where mylist : List[Int]
+        let query_clause = kctx.parse_clause("c0(Int, c1) = c1", &[]);
+
+        let found = tree.find_clause(&query_clause, &kctx);
+
+        // This should match with T -> Int, x -> mylist
+        // Currently fails because List[T] != List[Int] and we don't do type instantiation
+        assert_eq!(
+            found,
+            Some(&"reverse_identity"),
+            "Query with List[Int] should match pattern with List[T]"
+        );
+    }
 }
