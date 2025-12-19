@@ -340,6 +340,14 @@ impl ActiveSet {
             let u_subterms = u.rewritable_subterms_with_paths();
 
             for (path, u_subterm) in u_subterms {
+                // Skip subterms whose types contain BoundVariables (e.g., bare polymorphic constants).
+                // These can't be meaningfully rewritten without type instantiation.
+                let subterm_type =
+                    u_subterm.get_type_with_context(LocalContext::empty_ref(), kernel_context);
+                if subterm_type.has_bound_variable() {
+                    continue;
+                }
+
                 let u_subterm_id = if let Some(id) = self.subterm_map.get(&u_subterm) {
                     // We already have data for this subterm.
                     *id

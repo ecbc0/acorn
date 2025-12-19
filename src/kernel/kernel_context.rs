@@ -318,7 +318,11 @@ impl KernelContext {
         use crate::module::ModuleId;
 
         // Register the datatype if it doesn't exist
-        if self.type_store.get_ground_id_by_name(datatype_name).is_none() {
+        if self
+            .type_store
+            .get_ground_id_by_name(datatype_name)
+            .is_none()
+        {
             self.parse_datatype(datatype_name);
         }
 
