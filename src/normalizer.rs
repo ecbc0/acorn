@@ -65,7 +65,7 @@ struct SyntheticKey {
     /// How many synthetic atoms are defined here.
     num_atoms: usize,
 
-    /// Cnf form of the proposition that we defines these synthetic atoms.
+    /// CNF form of the proposition that we defines these synthetic atoms.
     /// Here, the synthetic atoms have been remapped to the invalid range,
     /// in order to normalize away the specific choice of synthetic ids.
     clauses: Vec<Clause>,

@@ -7,11 +7,11 @@ use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::Term;
 
-/// A Cnf (Conjunctive Normal Form) formula represented as a vector of clauses,
+/// A CNF (Conjunctive Normal Form) formula represented as a vector of clauses,
 /// where each clause is a vector of literals.
 ///
-/// An empty Cnf (no clauses) represents "true".
-/// A Cnf containing an empty clause represents "false".
+/// An empty CNF (no clauses) represents "true".
+/// A CNF containing an empty clause represents "false".
 ///
 /// Note that these clauses are different from the "Clause" object because they are not
 /// individually normalized. Variable ids have the same meaning across all clauses.
@@ -19,12 +19,12 @@ use crate::kernel::term::Term;
 pub struct Cnf(Vec<Vec<Literal>>);
 
 impl Cnf {
-    /// Creates a new Cnf from a vector of clauses.
+    /// Creates a new CNF from a vector of clauses.
     fn new(clauses: Vec<Vec<Literal>>) -> Self {
         Cnf(clauses)
     }
 
-    /// Creates an empty Cnf representing "true".
+    /// Creates an empty CNF representing "true".
     pub fn true_value() -> Self {
         Cnf(vec![])
     }
@@ -33,7 +33,7 @@ impl Cnf {
         self.0.is_empty()
     }
 
-    /// Creates a Cnf with an empty clause representing "false".
+    /// Creates a CNF with an empty clause representing "false".
     pub fn false_value() -> Self {
         Cnf(vec![vec![]])
     }
@@ -52,7 +52,7 @@ impl Cnf {
         }
     }
 
-    /// Creates a Cnf from a single literal.
+    /// Creates a CNF from a single literal.
     pub fn from_literal(literal: Literal) -> Self {
         if literal.is_true_value() {
             Self::true_value()
@@ -63,7 +63,7 @@ impl Cnf {
         }
     }
 
-    /// The 'and' of two Cnf formulas.
+    /// The 'and' of two CNF formulas.
     /// Simply concatenates the clauses from both formulas.
     pub fn and(mut self, other: Cnf) -> Self {
         self.0.extend(other.0);
@@ -78,7 +78,7 @@ impl Cnf {
         result
     }
 
-    /// The 'or' of two Cnf formulas.
+    /// The 'or' of two CNF formulas.
     /// Applies the distributive law: (A ∧ B) ∨ (C ∧ D) = (A ∨ C) ∧ (A ∨ D) ∧ (B ∨ C) ∧ (B ∨ D)
     pub fn or(self, other: Cnf) -> Self {
         let mut result_clauses = vec![];
@@ -185,7 +185,7 @@ impl Cnf {
         }
     }
 
-    /// Returns Some((term, positive)) if this Cnf can be converted into a single signed term.
+    /// Returns Some((term, positive)) if this CNF can be converted into a single signed term.
     /// Returns None otherwise.
     /// A boolean literal "foo" or "not foo" can be converted to (foo, true) or (foo, false).
     pub fn as_signed_term(&self) -> Option<(&Term, bool)> {
@@ -200,7 +200,7 @@ impl Cnf {
         }
     }
 
-    /// Convert an if-then-else structure among literals into Cnf.
+    /// Convert an if-then-else structure among literals into CNF.
     pub fn literal_if(condition: Literal, consequence: Literal, alternative: Literal) -> Self {
         Cnf::new(vec![
             vec![condition.negate(), consequence],
@@ -208,7 +208,7 @@ impl Cnf {
         ])
     }
 
-    /// Convert an if a { b } else { c } structure among Cnf formulas into Cnf.
+    /// Convert an if a { b } else { c } structure among CNF formulas into CNF.
     pub fn cnf_if(a: Literal, b: Cnf, c: Cnf) -> Self {
         let not_a_lit = Cnf::from_literal(a.negate());
         let a_lit = Cnf::from_literal(a);
@@ -217,7 +217,7 @@ impl Cnf {
         a_imp_b.and(not_a_imp_c)
     }
 
-    /// Parse a Cnf formula from a string.
+    /// Parse a CNF formula from a string.
     /// The string should be in the format "clause1 and clause2 and ..."
     /// where each clause is "literal1 or literal2 or ...".
     pub fn parse(s: &str, _local: &LocalContext, _kernel: &KernelContext) -> Self {

@@ -4,7 +4,7 @@ use crate::kernel::literal::Literal;
 use crate::kernel::term::Term;
 
 // An ExtendedTerm is like a term in the sense that a comparison between two of them can be converted
-// into a Cnf formula.
+// into a CNF formula.
 // They can be Boolean or have non-Boolean types.
 #[derive(Clone, Debug)]
 pub enum ExtendedTerm {
@@ -88,7 +88,7 @@ impl ExtendedTerm {
         }
     }
 
-    /// Convert an equality comparison between this ExtendedTerm and a Term into Cnf.
+    /// Convert an equality comparison between this ExtendedTerm and a Term into CNF.
     fn eq_term_to_cnf(self, term: Term, negate: bool) -> Result<Cnf, String> {
         match self {
             ExtendedTerm::Term(left) => {
@@ -107,7 +107,7 @@ impl ExtendedTerm {
         }
     }
 
-    /// Convert an equality comparison between two ExtendedTerms into Cnf.
+    /// Convert an equality comparison between two ExtendedTerms into CNF.
     pub fn eq_to_cnf(self, other: ExtendedTerm, negate: bool) -> Result<Cnf, String> {
         match (self, other) {
             (left, ExtendedTerm::Term(right)) => left.eq_term_to_cnf(right, negate),
