@@ -79,16 +79,16 @@ impl RewriteStep {
     }
 }
 
-/// The goal of the TermGraph is to find a contradiction.
+/// The goal of the EqualityGraph is to find a contradiction.
 /// When we do, we need to explain to the outside world why this is actually a contradiction.
-/// The TermGraphContradiction encodes this.
+/// The EqualityGraphContradiction encodes this.
 ///
 /// Warning!
 /// Currently this can only represent contradictions that come from a series of rewrites.
 /// In particular, it can't represent contradictions that use clause reduction.
 /// So, beware.
 #[derive(Debug, Eq, PartialEq)]
-pub struct TermGraphContradiction {
+pub struct EqualityGraphContradiction {
     /// Every contradiction is based on one inequality, plus a set of rewrites that turn
     /// one site of the inequality into the other.
     pub inequality_id: usize,
@@ -250,13 +250,13 @@ enum SemanticOperation {
     InsertClause(ClauseId),
 }
 
-/// The TermGraph stores concrete terms, along with relationships between them that represent
+/// The EqualityGraph stores concrete terms, along with relationships between them that represent
 /// equality, inequality, and subterm relationships.
 ///
 /// This version uses binary application (lambda calculus style) internally:
 /// f(a, b, c) is represented as (((f a) b) c)
 #[derive(Clone)]
-pub struct TermGraph {
+pub struct EqualityGraph {
     // terms maps TermId to TermInfo.
     terms: Vec<TermInfo>,
 
@@ -290,15 +290,15 @@ pub struct TermGraph {
     contradiction_info: Option<(TermId, TermId, StepId)>,
 }
 
-impl Default for TermGraph {
+impl Default for EqualityGraph {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl TermGraph {
-    pub fn new() -> TermGraph {
-        TermGraph {
+impl EqualityGraph {
+    pub fn new() -> EqualityGraph {
+        EqualityGraph {
             terms: Vec::new(),
             groups: Vec::new(),
             applications: Vec::new(),
@@ -352,11 +352,11 @@ impl TermGraph {
 
     /// Used to explain which steps lead to a contradiction.
     /// Returns None if there is no contradiction trace.
-    pub fn get_contradiction_trace(&self) -> Option<TermGraphContradiction> {
+    pub fn get_contradiction_trace(&self) -> Option<EqualityGraphContradiction> {
         let (term1, term2, inequality_id) = self.contradiction_info?;
         let mut rewrite_chain = vec![];
         self.expand_steps(term1, term2, &mut rewrite_chain);
-        Some(TermGraphContradiction {
+        Some(EqualityGraphContradiction {
             inequality_id: inequality_id.get(),
             rewrite_chain,
         })
@@ -512,7 +512,10 @@ impl TermGraph {
             }
             TermDecomposition::Pi(_, _) => {
                 // Pi types in term graph - not typically expected, panic for now
-                panic!("Pi types should not be inserted into TermGraph: {}", term);
+                panic!(
+                    "Pi types should not be inserted into EqualityGraph: {}",
+                    term
+                );
             }
         };
         self.process_pending();
@@ -1396,10 +1399,10 @@ impl TermGraph {
     }
 }
 
-/// A test wrapper that combines a TermGraph with its KernelContext.
+/// A test wrapper that combines a EqualityGraph with its KernelContext.
 #[cfg(test)]
 struct TestGraph {
-    graph: TermGraph,
+    graph: EqualityGraph,
     context: KernelContext,
 }
 
@@ -1417,7 +1420,7 @@ impl TestGraph {
             "(Bool, Bool) -> Bool",
         );
         TestGraph {
-            graph: TermGraph::new(),
+            graph: EqualityGraph::new(),
             context,
         }
     }
@@ -1905,7 +1908,7 @@ mod tests {
     }
 
     // Test partial application congruence: if f(a) = g(c), then f(a, b) = g(c, b).
-    // This works in TermGraph because f(a, b) is represented as ((f a) b),
+    // This works in EqualityGraph because f(a, b) is represented as ((f a) b),
     // and g(c, b) is represented as ((g c) b). When we set (f a) = (g c),
     // congruence closure propagates this to make ((f a) b) = ((g c) b).
     #[test]

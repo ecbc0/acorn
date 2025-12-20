@@ -1,10 +1,10 @@
 use crate::kernel::atom::AtomId;
-use crate::kernel::cnf::CNF;
+use crate::kernel::cnf::Cnf;
 use crate::kernel::literal::Literal;
 use crate::kernel::term::Term;
 
 // An ExtendedTerm is like a term in the sense that a comparison between two of them can be converted
-// into a CNF formula.
+// into a Cnf formula.
 // They can be Boolean or have non-Boolean types.
 #[derive(Clone, Debug)]
 pub enum ExtendedTerm {
@@ -88,17 +88,17 @@ impl ExtendedTerm {
         }
     }
 
-    /// Convert an equality comparison between this ExtendedTerm and a Term into CNF.
-    fn eq_term_to_cnf(self, term: Term, negate: bool) -> Result<CNF, String> {
+    /// Convert an equality comparison between this ExtendedTerm and a Term into Cnf.
+    fn eq_term_to_cnf(self, term: Term, negate: bool) -> Result<Cnf, String> {
         match self {
             ExtendedTerm::Term(left) => {
                 let literal = Literal::new(!negate, left, term);
-                Ok(CNF::from_literal(literal))
+                Ok(Cnf::from_literal(literal))
             }
             ExtendedTerm::If(cond, then_t, else_t) => {
                 let then_lit = Literal::new(!negate, then_t, term.clone());
                 let else_lit = Literal::new(!negate, else_t, term);
-                Ok(CNF::literal_if(cond, then_lit, else_lit))
+                Ok(Cnf::literal_if(cond, then_lit, else_lit))
             }
             ExtendedTerm::Lambda(_, t) => Err(format!(
                 "comparison to {} should have been normalized upstream",
@@ -107,8 +107,8 @@ impl ExtendedTerm {
         }
     }
 
-    /// Convert an equality comparison between two ExtendedTerms into CNF.
-    pub fn eq_to_cnf(self, other: ExtendedTerm, negate: bool) -> Result<CNF, String> {
+    /// Convert an equality comparison between two ExtendedTerms into Cnf.
+    pub fn eq_to_cnf(self, other: ExtendedTerm, negate: bool) -> Result<Cnf, String> {
         match (self, other) {
             (left, ExtendedTerm::Term(right)) => left.eq_term_to_cnf(right, negate),
             (ExtendedTerm::Term(left), right) => right.eq_term_to_cnf(left, negate),

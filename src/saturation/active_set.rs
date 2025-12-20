@@ -12,7 +12,7 @@ use crate::kernel::pdt::LiteralSet;
 use crate::kernel::term::{PathStep, Term};
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::unifier::{Scope, Unifier};
-use crate::kernel::{StepId, TermGraph};
+use crate::kernel::{EqualityGraph, StepId};
 use crate::proof_step::{
     BooleanReductionInfo, EqualityFactoringInfo, EqualityResolutionInfo, ExtensionalityInfo,
     InjectivityInfo, ProofStep, Rule, Truthiness,
@@ -40,7 +40,7 @@ pub struct ActiveSet {
     negative_res_targets: FingerprintUnifier<ResolutionTarget>,
 
     // A graph that encodes equalities and inequalities between terms.
-    pub graph: TermGraph,
+    pub graph: EqualityGraph,
 
     // Information about every subterm that appears in an activated concrete literal,
     // except "true".
@@ -114,7 +114,7 @@ impl ActiveSet {
             literal_set: LiteralSet::new(),
             positive_res_targets: FingerprintUnifier::new(),
             negative_res_targets: FingerprintUnifier::new(),
-            graph: TermGraph::new(),
+            graph: EqualityGraph::new(),
             subterms: vec![],
             subterm_map: HashMap::new(),
             subterm_unifier: FingerprintUnifier::new(),

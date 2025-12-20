@@ -13,7 +13,7 @@ use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::TermGraphContradiction;
+use crate::kernel::EqualityGraphContradiction;
 use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::project::Project;
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
@@ -302,7 +302,7 @@ impl SaturationProver {
         Ok(cert)
     }
 
-    fn report_term_graph_contradiction(&mut self, contradiction: TermGraphContradiction) {
+    fn report_equality_graph_contradiction(&mut self, contradiction: EqualityGraphContradiction) {
         let mut active_ids = vec![];
         let mut passive_ids = vec![];
         let mut new_clauses = HashSet::new();
@@ -452,7 +452,7 @@ impl SaturationProver {
         // First regular contradictions (in the loop above), then term graph.
 
         if let Some(contradiction) = self.active_set.graph.get_contradiction_trace() {
-            self.report_term_graph_contradiction(contradiction);
+            self.report_equality_graph_contradiction(contradiction);
             return true;
         }
 

@@ -7,35 +7,35 @@ use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::Term;
 
-/// A CNF (Conjunctive Normal Form) formula represented as a vector of clauses,
+/// A Cnf (Conjunctive Normal Form) formula represented as a vector of clauses,
 /// where each clause is a vector of literals.
 ///
-/// An empty CNF (no clauses) represents "true".
-/// A CNF containing an empty clause represents "false".
+/// An empty Cnf (no clauses) represents "true".
+/// A Cnf containing an empty clause represents "false".
 ///
 /// Note that these clauses are different from the "Clause" object because they are not
 /// individually normalized. Variable ids have the same meaning across all clauses.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CNF(Vec<Vec<Literal>>);
+pub struct Cnf(Vec<Vec<Literal>>);
 
-impl CNF {
-    /// Creates a new CNF from a vector of clauses.
+impl Cnf {
+    /// Creates a new Cnf from a vector of clauses.
     fn new(clauses: Vec<Vec<Literal>>) -> Self {
-        CNF(clauses)
+        Cnf(clauses)
     }
 
-    /// Creates an empty CNF representing "true".
+    /// Creates an empty Cnf representing "true".
     pub fn true_value() -> Self {
-        CNF(vec![])
+        Cnf(vec![])
     }
 
     pub fn is_true_value(&self) -> bool {
         self.0.is_empty()
     }
 
-    /// Creates a CNF with an empty clause representing "false".
+    /// Creates a Cnf with an empty clause representing "false".
     pub fn false_value() -> Self {
-        CNF(vec![vec![]])
+        Cnf(vec![vec![]])
     }
 
     pub fn is_false_value(&self) -> bool {
@@ -46,41 +46,41 @@ impl CNF {
         for lits in &self.0 {
             for lit in lits {
                 if !lit.is_normalized() {
-                    panic!("CNF contains non-normalized literal: {}", lit);
+                    panic!("Cnf contains non-normalized literal: {}", lit);
                 }
             }
         }
     }
 
-    /// Creates a CNF from a single literal.
+    /// Creates a Cnf from a single literal.
     pub fn from_literal(literal: Literal) -> Self {
         if literal.is_true_value() {
             Self::true_value()
         } else if literal.is_false_value() {
             Self::false_value()
         } else {
-            CNF(vec![vec![literal]])
+            Cnf(vec![vec![literal]])
         }
     }
 
-    /// The 'and' of two CNF formulas.
+    /// The 'and' of two Cnf formulas.
     /// Simply concatenates the clauses from both formulas.
-    pub fn and(mut self, other: CNF) -> Self {
+    pub fn and(mut self, other: Cnf) -> Self {
         self.0.extend(other.0);
         self
     }
 
-    pub fn and_all(formulas: impl Iterator<Item = CNF>) -> Self {
-        let mut result = CNF::true_value();
+    pub fn and_all(formulas: impl Iterator<Item = Cnf>) -> Self {
+        let mut result = Cnf::true_value();
         for formula in formulas {
             result = result.and(formula);
         }
         result
     }
 
-    /// The 'or' of two CNF formulas.
+    /// The 'or' of two Cnf formulas.
     /// Applies the distributive law: (A ∧ B) ∨ (C ∧ D) = (A ∨ C) ∧ (A ∨ D) ∧ (B ∨ C) ∧ (B ∨ D)
-    pub fn or(self, other: CNF) -> Self {
+    pub fn or(self, other: Cnf) -> Self {
         let mut result_clauses = vec![];
         for left_clause in &self.0 {
             for right_clause in &other.0 {
@@ -89,11 +89,11 @@ impl CNF {
                 result_clauses.push(combined_clause);
             }
         }
-        CNF(result_clauses)
+        Cnf(result_clauses)
     }
 
-    pub fn or_all(formulas: impl Iterator<Item = CNF>) -> Self {
-        let mut result = CNF::false_value();
+    pub fn or_all(formulas: impl Iterator<Item = Cnf>) -> Self {
+        let mut result = Cnf::false_value();
         for formula in formulas {
             result = result.or(formula);
         }
@@ -103,10 +103,10 @@ impl CNF {
     // Note that this causes exponential blowup.
     // Think of the input formula as And(Or(...)).
     // To negate it, it's Negate(And(Or(...))), which is equivalent to Or(And(Negate(...))).
-    pub fn negate(&self) -> CNF {
-        CNF::or_all(
+    pub fn negate(&self) -> Cnf {
+        Cnf::or_all(
             self.0.iter().map(|clause| {
-                CNF::and_all(clause.iter().map(|lit| CNF::from_literal(lit.negate())))
+                Cnf::and_all(clause.iter().map(|lit| Cnf::from_literal(lit.negate())))
             }),
         )
     }
@@ -153,7 +153,7 @@ impl CNF {
 
     // If these CNFs each represent a single signed term, and they are negations of each other,
     // return this term's signed term form.
-    pub fn match_negated(&self, other: &CNF) -> Option<(&Term, bool)> {
+    pub fn match_negated(&self, other: &Cnf) -> Option<(&Term, bool)> {
         let (self_term, self_sign) = self.as_signed_term()?;
         let (other_term, other_sign) = other.as_signed_term()?;
         if self_term == other_term && self_sign != other_sign {
@@ -185,7 +185,7 @@ impl CNF {
         }
     }
 
-    /// Returns Some((term, positive)) if this CNF can be converted into a single signed term.
+    /// Returns Some((term, positive)) if this Cnf can be converted into a single signed term.
     /// Returns None otherwise.
     /// A boolean literal "foo" or "not foo" can be converted to (foo, true) or (foo, false).
     pub fn as_signed_term(&self) -> Option<(&Term, bool)> {
@@ -200,24 +200,24 @@ impl CNF {
         }
     }
 
-    /// Convert an if-then-else structure among literals into CNF.
+    /// Convert an if-then-else structure among literals into Cnf.
     pub fn literal_if(condition: Literal, consequence: Literal, alternative: Literal) -> Self {
-        CNF::new(vec![
+        Cnf::new(vec![
             vec![condition.negate(), consequence],
             vec![condition, alternative],
         ])
     }
 
-    /// Convert an if a { b } else { c } structure among CNF formulas into CNF.
-    pub fn cnf_if(a: Literal, b: CNF, c: CNF) -> Self {
-        let not_a_lit = CNF::from_literal(a.negate());
-        let a_lit = CNF::from_literal(a);
+    /// Convert an if a { b } else { c } structure among Cnf formulas into Cnf.
+    pub fn cnf_if(a: Literal, b: Cnf, c: Cnf) -> Self {
+        let not_a_lit = Cnf::from_literal(a.negate());
+        let a_lit = Cnf::from_literal(a);
         let not_a_imp_c = a_lit.or(c);
         let a_imp_b = not_a_lit.or(b);
         a_imp_b.and(not_a_imp_c)
     }
 
-    /// Parse a CNF formula from a string.
+    /// Parse a Cnf formula from a string.
     /// The string should be in the format "clause1 and clause2 and ..."
     /// where each clause is "literal1 or literal2 or ...".
     pub fn parse(s: &str, _local: &LocalContext, _kernel: &KernelContext) -> Self {
@@ -230,11 +230,11 @@ impl CNF {
                     .collect()
             })
             .collect();
-        CNF::new(clauses)
+        Cnf::new(clauses)
     }
 }
 
-impl fmt::Display for CNF {
+impl fmt::Display for Cnf {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.is_true_value() {
             write!(f, "true")
@@ -266,11 +266,11 @@ mod tests {
         let kctx = KernelContext::new();
         let lctx = kctx.parse_local(&["Bool", "Bool", "Bool", "Bool"]);
 
-        let cnf = CNF::parse("x0 or x1 and x2 or x3", &lctx, &kctx);
+        let cnf = Cnf::parse("x0 or x1 and x2 or x3", &lctx, &kctx);
 
         let negated = cnf.negate();
 
-        let expected = CNF::parse(
+        let expected = Cnf::parse(
             "\
         not x0 or not x2 and \
         not x0 or not x3 and \
@@ -289,27 +289,27 @@ mod tests {
         let lctx = kctx.parse_local(&["Bool", "Bool"]);
 
         // Positive boolean literal
-        let cnf = CNF::parse("x0", &lctx, &kctx);
+        let cnf = Cnf::parse("x0", &lctx, &kctx);
         let (term, positive) = cnf.as_signed_term().unwrap();
         assert_eq!(term, &Term::parse("x0"));
         assert_eq!(positive, true);
 
         // Negative boolean literal
-        let cnf = CNF::parse("not x0", &lctx, &kctx);
+        let cnf = Cnf::parse("not x0", &lctx, &kctx);
         let (term, positive) = cnf.as_signed_term().unwrap();
         assert_eq!(term, &Term::parse("x0"));
         assert_eq!(positive, false);
 
         // Equality - should return None
-        let cnf = CNF::parse("x0 = x1", &lctx, &kctx);
+        let cnf = Cnf::parse("x0 = x1", &lctx, &kctx);
         assert_eq!(cnf.as_signed_term(), None);
 
         // Multiple clauses - should return None
-        let cnf = CNF::parse("x0 and x1", &lctx, &kctx);
+        let cnf = Cnf::parse("x0 and x1", &lctx, &kctx);
         assert_eq!(cnf.as_signed_term(), None);
 
         // Disjunction - should return None
-        let cnf = CNF::parse("x0 or x1", &lctx, &kctx);
+        let cnf = Cnf::parse("x0 or x1", &lctx, &kctx);
         assert_eq!(cnf.as_signed_term(), None);
     }
 }

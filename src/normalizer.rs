@@ -15,7 +15,7 @@ use crate::elaborator::proposition::Proposition;
 use crate::elaborator::source::{Source, SourceType};
 use crate::kernel::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
 use crate::kernel::clause::Clause;
-use crate::kernel::cnf::CNF;
+use crate::kernel::cnf::Cnf;
 use crate::kernel::extended_term::ExtendedTerm;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
@@ -65,7 +65,7 @@ struct SyntheticKey {
     /// How many synthetic atoms are defined here.
     num_atoms: usize,
 
-    /// CNF form of the proposition that we defines these synthetic atoms.
+    /// Cnf form of the proposition that we defines these synthetic atoms.
     /// Here, the synthetic atoms have been remapped to the invalid range,
     /// in order to normalize away the specific choice of synthetic ids.
     clauses: Vec<Clause>,
@@ -411,7 +411,7 @@ impl NormalizerView<'_> {
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
         context: &mut LocalContext,
-    ) -> Result<CNF, String> {
+    ) -> Result<Cnf, String> {
         match value {
             AcornValue::ForAll(qs, sub) => {
                 if !negate {
@@ -478,9 +478,9 @@ impl NormalizerView<'_> {
             AcornValue::Try(_, _) => Err("try operator not yet implemented".to_string()),
             AcornValue::Bool(value) => {
                 if *value ^ negate {
-                    Ok(CNF::true_value())
+                    Ok(Cnf::true_value())
                 } else {
-                    Ok(CNF::false_value())
+                    Ok(Cnf::false_value())
                 }
             }
             AcornValue::IfThenElse(cond_value, then_value, else_value) => {
@@ -493,7 +493,7 @@ impl NormalizerView<'_> {
                     self.value_to_cnf(then_value, negate, stack, next_var_id, synth, context)?;
                 let else_cnf =
                     self.value_to_cnf(else_value, negate, stack, next_var_id, synth, context)?;
-                Ok(CNF::cnf_if(cond_lit, then_cnf, else_cnf))
+                Ok(Cnf::cnf_if(cond_lit, then_cnf, else_cnf))
             }
             AcornValue::Application(app) => {
                 let mut arg_exts = vec![];
@@ -521,7 +521,7 @@ impl NormalizerView<'_> {
                     .value_to_extended_term(value, stack, next_var_id, synth, context)?
                     .to_term()?;
                 let literal = Literal::from_signed_term(term, !negate);
-                Ok(CNF::from_literal(literal))
+                Ok(Cnf::from_literal(literal))
             }
             AcornValue::Match(..) => Err("match in unexpected position".to_string()),
         }
@@ -536,7 +536,7 @@ impl NormalizerView<'_> {
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
         context: &mut LocalContext,
-    ) -> Result<CNF, String> {
+    ) -> Result<Cnf, String> {
         if let AcornValue::Lambda(_, return_value) = function {
             let mut arg_terms = vec![];
             for arg in args {
@@ -565,7 +565,7 @@ impl NormalizerView<'_> {
         match extended {
             ExtendedTerm::Term(term) => {
                 let literal = Literal::from_signed_term(term, !negate);
-                Ok(CNF::from_literal(literal))
+                Ok(Cnf::from_literal(literal))
             }
             _ => Err("unhandled case: non-term application".to_string()),
         }
@@ -582,7 +582,7 @@ impl NormalizerView<'_> {
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
         context: &mut LocalContext,
-    ) -> Result<CNF, String> {
+    ) -> Result<Cnf, String> {
         for quant in quants {
             #[cfg(feature = "polymorphic")]
             let type_term = self
@@ -689,7 +689,7 @@ impl NormalizerView<'_> {
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
         context: &mut LocalContext,
-    ) -> Result<CNF, String> {
+    ) -> Result<Cnf, String> {
         let skolem_terms = self.make_skolem_terms(quants, stack, synthesized, context)?;
         let len = skolem_terms.len();
         for skolem_term in skolem_terms {
@@ -715,7 +715,7 @@ impl NormalizerView<'_> {
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
         context: &mut LocalContext,
-    ) -> Result<CNF, String> {
+    ) -> Result<Cnf, String> {
         let left =
             self.value_to_cnf(left, negate_left, stack, next_var_id, synthesized, context)?;
         let right = self.value_to_cnf(
@@ -741,7 +741,7 @@ impl NormalizerView<'_> {
         next_var_id: &mut AtomId,
         synthesized: &mut Vec<AtomId>,
         context: &mut LocalContext,
-    ) -> Result<CNF, String> {
+    ) -> Result<Cnf, String> {
         let left =
             self.value_to_cnf(left, negate_left, stack, next_var_id, synthesized, context)?;
         let right = self.value_to_cnf(
@@ -766,10 +766,10 @@ impl NormalizerView<'_> {
         next_var_id: &mut AtomId,
         synth: &mut Vec<AtomId>,
         context: &mut LocalContext,
-    ) -> Result<CNF, String> {
+    ) -> Result<Cnf, String> {
         if let AcornValue::Match(scrutinee, cases) = right {
             // TODO: don't clone values here
-            let mut answer = CNF::true_value();
+            let mut answer = Cnf::true_value();
             for (vars, pattern, result) in cases {
                 // The meaning of the branch is:
                 //   scrutinee = pattern implies left (negate=) result
@@ -854,7 +854,7 @@ impl NormalizerView<'_> {
                             let positive = left_sign != right_sign;
                             let literal =
                                 Literal::new(positive, left_term.clone(), right_term.clone());
-                            return Ok(CNF::from_literal(literal));
+                            return Ok(Cnf::from_literal(literal));
                         }
                     }
 
@@ -908,7 +908,7 @@ impl NormalizerView<'_> {
                         // Both sides are simple, so we can return a single literal.
                         let positive = left_sign == right_sign;
                         let literal = Literal::new(positive, left_term.clone(), right_term.clone());
-                        return Ok(CNF::from_literal(literal));
+                        return Ok(Cnf::from_literal(literal));
                     }
                 }
 
@@ -956,7 +956,7 @@ impl NormalizerView<'_> {
                     // Both sides are terms, so we can do a simple equality or inequality
                     let positive = (left_sign == right_sign) ^ negate;
                     let literal = Literal::new(positive, left_term, right_term);
-                    return Ok(CNF::from_literal(literal));
+                    return Ok(Cnf::from_literal(literal));
                 }
             }
 
@@ -1286,7 +1286,7 @@ impl NormalizerView<'_> {
     /// we add clauses for s <-> C, which is (s -> C) and (C -> s).
     fn synthesize_literal_from_cnf(
         &mut self,
-        cnf: CNF,
+        cnf: Cnf,
         stack: &Vec<TermBinding>,
         synth: &mut Vec<AtomId>,
         context: &LocalContext,

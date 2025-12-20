@@ -16,7 +16,7 @@ use crate::kernel::clause::Clause;
 use crate::kernel::generalization_set::GeneralizationSet;
 use crate::kernel::inference;
 use crate::kernel::kernel_context::KernelContext;
-use crate::kernel::{StepId, TermGraph};
+use crate::kernel::{EqualityGraph, StepId};
 use crate::normalizer::{Normalizer, NormalizerView};
 use crate::project::Project;
 use crate::syntax::expression::Declaration;
@@ -27,7 +27,7 @@ use tracing::trace;
 #[derive(Debug, Clone)]
 pub enum StepReason {
     /// Proven by the term graph (concrete reasoning via congruence closure and propositional logic).
-    TermGraph,
+    EqualityGraph,
 
     /// An assumption based on normalizing a statement elsewhere in the code.
     /// The source points to the location of the assumption.
@@ -68,7 +68,7 @@ pub enum StepReason {
 impl StepReason {
     pub fn description(&self) -> String {
         match self {
-            StepReason::TermGraph => "simplification".to_string(),
+            StepReason::EqualityGraph => "simplification".to_string(),
             StepReason::Assumption(source) | StepReason::Skolemization(source) => {
                 source.description()
             }
@@ -120,13 +120,13 @@ pub struct CertificateStep {
 /// The types of single-step we support are:
 ///
 ///   Exact substitutions into a known theorem. Handled by the GeneralizationSet.
-///   "Congruence closure" of equalities and subterm relationships. Handled by the TermGraph.
-///   Propositional calculus on concrete literals. Handled by the TermGraph.
+///   "Congruence closure" of equalities and subterm relationships. Handled by the EqualityGraph.
+///   Propositional calculus on concrete literals. Handled by the EqualityGraph.
 ///   Introducing variables for existential quantifiers. Handled weirdly through a Normalizer.
 #[derive(Clone)]
 pub struct Checker {
     /// For deductions among concrete clauses.
-    term_graph: TermGraph,
+    term_graph: EqualityGraph,
 
     /// For looking up specializations of clauses with free variables.
     generalization_set: Arc<GeneralizationSet>,
@@ -145,7 +145,7 @@ pub struct Checker {
 impl Checker {
     pub fn new() -> Checker {
         Checker {
-            term_graph: TermGraph::new(),
+            term_graph: EqualityGraph::new(),
             generalization_set: Arc::new(GeneralizationSet::new()),
             direct_contradiction: false,
             past_boolean_reductions: HashSet::new(),
@@ -250,7 +250,7 @@ impl Checker {
         // Check the term graph for concrete evaluation
         if self.term_graph.check_clause(clause, kernel_context) {
             trace!(clause = %clause, result = "term_graph", "checking clause");
-            return Some(StepReason::TermGraph);
+            return Some(StepReason::EqualityGraph);
         }
 
         // If not found in term graph, check if there's a generalization in the clause set
