@@ -326,4 +326,101 @@ mod tests {
         let rewrites = tree.get_rewrites(&func_term, 0, &query_lctx, &kctx);
         assert_eq!(rewrites.len(), 0);
     }
+
+    #[test]
+    fn test_rewrite_tree_polymorphic_forward() {
+        // Test forward rewriting with polymorphic types.
+        // Pattern: g0(T, x) = x where T: Type, x: T
+        // Query: g0(T1, c1) should rewrite to c1
+
+        let mut kctx = KernelContext::new();
+        kctx.parse_datatype("T1");
+        kctx.parse_polymorphic_constant("g0", "T: Type", "T -> T");
+        kctx.parse_constant("c1", "T1");
+
+        let mut tree = RewriteTree::new();
+        let pattern_clause = kctx.parse_clause("g0(x0, x1) = x1", &["Type", "x0"]);
+        tree.insert_literal(
+            0,
+            &pattern_clause.literals[0],
+            pattern_clause.get_local_context(),
+            &kctx,
+        );
+
+        let query_lctx = kctx.parse_local(&[]);
+        let query_term = kctx.parse_term("g0(T1, c1)");
+        let rewrites = tree.get_rewrites(&query_term, 0, &query_lctx, &kctx);
+
+        assert_eq!(rewrites.len(), 1);
+        assert_eq!(rewrites[0].term, kctx.parse_term("c1"));
+    }
+
+    #[test]
+    fn test_rewrite_tree_polymorphic_nested() {
+        // Test forward rewriting with nested polymorphic functions.
+        // Pattern: g1(T, g0(T, x)) = x
+        // Query: g1(T1, g0(T1, c1)) should rewrite to c1
+
+        let mut kctx = KernelContext::new();
+        kctx.parse_datatype("T1");
+        kctx.parse_polymorphic_constant("g0", "T: Type", "T -> T");
+        kctx.parse_polymorphic_constant("g1", "T: Type", "T -> T");
+        kctx.parse_constant("c1", "T1");
+
+        let mut tree = RewriteTree::new();
+        let pattern_clause = kctx.parse_clause("g1(x0, g0(x0, x1)) = x1", &["Type", "x0"]);
+        tree.insert_literal(
+            0,
+            &pattern_clause.literals[0],
+            pattern_clause.get_local_context(),
+            &kctx,
+        );
+
+        let query_lctx = kctx.parse_local(&[]);
+        let query_term = kctx.parse_term("g1(T1, g0(T1, c1))");
+        let rewrites = tree.get_rewrites(&query_term, 0, &query_lctx, &kctx);
+
+        assert_eq!(rewrites.len(), 1);
+        assert_eq!(rewrites[0].term, kctx.parse_term("c1"));
+    }
+
+    #[test]
+    fn test_rewrite_tree_polymorphic_backwards() {
+        // Test backwards rewriting with polymorphic types.
+        //
+        // Pattern: g0(T, x) = x where T: Type, x: T
+        // Backwards rewrite: x -> g0(T, x)
+        //
+        // When we rewrite c1 (type T1) backwards, T should be inferred from
+        // the type of the matched term. Result should be g0(T1, c1).
+
+        let mut kctx = KernelContext::new();
+        kctx.parse_datatype("T1");
+        kctx.parse_polymorphic_constant("g0", "T: Type", "T -> T");
+        kctx.parse_constant("c1", "T1");
+
+        let mut tree = RewriteTree::new();
+        let pattern_clause = kctx.parse_clause("g0(x0, x1) = x1", &["Type", "x0"]);
+        tree.insert_literal(
+            0,
+            &pattern_clause.literals[0],
+            pattern_clause.get_local_context(),
+            &kctx,
+        );
+
+        // Query: c1 (for backwards rewrite)
+        let query_lctx = kctx.parse_local(&[]);
+        let query_term = kctx.parse_term("c1");
+        let rewrites = tree.get_rewrites(&query_term, 0, &query_lctx, &kctx);
+
+        // Should find a backwards rewrite
+        assert_eq!(rewrites.len(), 1, "Should find one backwards rewrite");
+
+        // The type variable T should be inferred from c1's type (T1)
+        let expected = kctx.parse_term("g0(T1, c1)");
+        assert_eq!(
+            rewrites[0].term, expected,
+            "Backwards rewrite should infer type variable from matched term's type"
+        );
+    }
 }
