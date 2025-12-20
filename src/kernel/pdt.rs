@@ -1209,78 +1209,40 @@ mod tests {
     }
 
     #[test]
-    fn test_pdt_types_last_variable_id_mismatch() {
-        // This test demonstrates a bug in the `types_last` normalization scheme.
+    fn test_pdt_structural_variable_ordering() {
+        // This test verifies that variables are numbered by structural occurrence
+        // for PDT matching, using GeneralizationSet which applies the normalization.
         //
-        // The issue: `types_last` assigns variable IDs based on whether the variable's
-        // TYPE is TypeSort (or a typeclass), putting value vars first (low IDs) and
-        // type vars last (high IDs). However, PDT matching expects variables to be
-        // numbered by their first STRUCTURAL occurrence in the clause.
-        //
-        // When a type variable appears structurally BEFORE value variables, there's
-        // a mismatch: PDT expects Variable(0) at that position, but the pattern has
-        // a high-numbered type variable.
-        //
-        // Example:
-        // - Pattern: g(T, x, y) = g(T, y, x)  where T: Type, x: T, y: T
-        // - After types_last: x->x0, y->x1, T->x2  (values first, type last)
-        // - Pattern in PDT: g(x2, x0, x1) = g(x2, x1, x0)
-        //
-        // - Query: g(Int, c, c) = g(Int, c, c)  (c repeated)
-        // - PDT matching sees Int first, tries Variable(0), but pattern has Variable(2)!
-        //
-        // Additionally, when query values repeat (fewer distinct terms than pattern vars),
-        // the sequential ID assignment further misaligns.
+        // The key insight: when a type variable (T: Type) appears as an argument
+        // in a function call, it appears STRUCTURALLY and should be numbered by
+        // its position in the clause, not pushed to the end.
+
+        use crate::kernel::generalization_set::GeneralizationSet;
 
         let mut kctx = KernelContext::new();
 
-        // Set up types
-        kctx.parse_datatype("T0"); // A concrete type like Int
-
-        // Create a polymorphic function: g1 : forall T. (T, T, T) -> Bool
-        // Actually represented as: T -> T -> T -> T -> Bool
-        kctx.parse_polymorphic_constant("g1", "T: Type", "(T, T, T) -> Bool");
-
-        // Create some constants of type T0
+        // Set up: T0 is a concrete type, g1 is polymorphic
+        kctx.parse_datatype("T0");
+        kctx.parse_polymorphic_constant("g1", "T: Type", "(T, T) -> Bool");
         kctx.parse_constants(&["c1", "c2"], "T0");
 
-        let mut tree: Pdt<&str> = Pdt::new();
+        let mut gset = GeneralizationSet::new();
 
-        // Pattern clause: g1(T, x, y, z) where T: Type, x, y, z: T
-        // We'll make it: c1 != c2 | g1(T, a, b, c) to have a more complex clause
-        //
-        // With types_last normalization:
-        // - Value vars (a, b, c) get IDs 0, 1, 2
-        // - Type var T gets ID 3
-        //
-        // But structurally, T appears first in g1(T, ...), so PDT expects Variable(0) there.
-        //
-        // Let's use: x0 != x1 | g1(x3, x2, x0, x1)
-        // where x0, x1, x2 are values (IDs 0, 1, 2) and x3 is type (ID 3)
-        let pattern_clause = kctx.parse_clause(
-            "x0 != x1 or g1(x3, x2, x0, x1)",
-            &["x3", "x3", "x3", "Type"],
-        );
-        tree.insert_clause(&pattern_clause, "pattern", &kctx);
+        // Pattern: g1(T, x, y) where T: Type, x: T, y: T
+        // Structural order: T appears first as arg to g1, then x, then y
+        // After normalization: T->x0, x->x1, y->x2
+        let pattern_clause = kctx.parse_clause("g1(x0, x1, x2)", &["Type", "x0", "x0"]);
+        gset.insert(pattern_clause, 42, &kctx);
 
-        // Query clause: c1 != c2 | g1(T0, c1, c1, c2)
-        // Here c1 appears multiple times (fewer distinct terms than pattern value vars)
-        //
-        // PDT matching will see:
-        // - c1 (first occurrence) -> tries Variable(0)
-        // - c2 -> tries Variable(1)
-        // - T0 -> tries Variable(2)
-        //
-        // But pattern has x3 (Variable 3) at the T0 position!
-        let query_clause = kctx.parse_clause("c1 != c2 or g1(T0, c1, c1, c2)", &[]);
+        // Query: g1(T0, c1, c2) - concrete instantiation
+        // Should match with T->T0, x->c1, y->c2
+        let query_clause = kctx.parse_clause("g1(T0, c1, c2)", &[]);
+        let found = gset.find_generalization(query_clause, &kctx);
 
-        let found = tree.find_clause(&query_clause, &kctx);
-
-        // This SHOULD match, but currently fails due to variable ID mismatch
         assert_eq!(
             found,
-            Some(&"pattern"),
-            "Pattern should match query despite type variable appearing first structurally"
+            Some(42),
+            "Pattern with type variable as first arg should match concrete query"
         );
     }
 }

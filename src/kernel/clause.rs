@@ -277,41 +277,50 @@ impl Clause {
         self.context = input_context.remap(&var_ids);
     }
 
-    /// Normalize variable IDs with type variables getting higher IDs.
+    /// Normalize variable IDs for PDT-based matching.
     ///
-    /// Non-type variables are numbered by first structural occurrence.
-    /// Type variables (those whose type is TypeSort) get IDs after all non-type variables.
+    /// Variables are numbered by first structural occurrence in the clause terms.
+    /// Variables that only appear in type annotations (not in the terms themselves)
+    /// get IDs after all structural variables.
     ///
-    /// This is used for generalization matching where we need the PDT's expected
-    /// ordering (first structurally-occurring variable is Variable(0)).
+    /// This is used for generalization matching where the PDT matching algorithm
+    /// expects the first structurally-occurring variable to be Variable(0).
     pub fn normalize_var_ids_types_last(&mut self) {
-        let mut var_ids: Vec<u16> = vec![];
-        let mut type_var_ids: Vec<u16> = vec![];
+        let mut structural_var_ids: Vec<u16> = vec![];
         let input_context = self.context.clone();
 
-        // First pass: collect variable IDs, separating type vars from non-type vars
-        for literal in &mut self.literals {
-            literal.left.normalize_var_ids_types_last(
-                &mut var_ids,
-                &mut type_var_ids,
-                &input_context,
-            );
-            literal.right.normalize_var_ids_types_last(
-                &mut var_ids,
-                &mut type_var_ids,
-                &input_context,
-            );
+        // First pass: collect variable IDs from terms in structural order
+        for literal in &self.literals {
+            literal
+                .left
+                .collect_structural_var_ids(&mut structural_var_ids);
+            literal
+                .right
+                .collect_structural_var_ids(&mut structural_var_ids);
         }
 
-        // Second pass: apply the renumbering
-        for literal in &mut self.literals {
-            literal.left.apply_var_renumbering(&var_ids, &type_var_ids);
-            literal.right.apply_var_renumbering(&var_ids, &type_var_ids);
+        // Second pass: collect variables from context that only appear in types
+        // (not in the structural terms)
+        let mut type_only_var_ids: Vec<u16> = vec![];
+        for var_id in 0..input_context.len() as u16 {
+            if !structural_var_ids.contains(&var_id) {
+                type_only_var_ids.push(var_id);
+            }
         }
 
-        // Rebuild context: non-type vars first, then type vars
-        let mut all_var_ids = var_ids.clone();
-        all_var_ids.extend(type_var_ids);
+        // Third pass: apply the renumbering
+        for literal in &mut self.literals {
+            literal
+                .left
+                .apply_var_renumbering(&structural_var_ids, &type_only_var_ids);
+            literal
+                .right
+                .apply_var_renumbering(&structural_var_ids, &type_only_var_ids);
+        }
+
+        // Rebuild context: structural vars first (for PDT), then type-only vars
+        let mut all_var_ids = structural_var_ids.clone();
+        all_var_ids.extend(type_only_var_ids);
         self.context = input_context.remap(&all_var_ids);
     }
 

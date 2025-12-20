@@ -1695,45 +1695,21 @@ impl Term {
         }
     }
 
-    /// Normalize variable IDs with type-level variables getting higher IDs.
+    /// Collect variable IDs from this term in structural order.
     ///
-    /// Variables are numbered by first structural occurrence, but type-level variables
-    /// (those whose type is TypeSort or a Typeclass) get IDs after all value variables.
+    /// Variables are numbered by first structural occurrence. This is used for
+    /// generalization matching where the PDT matching algorithm expects the first
+    /// structurally-occurring variable to be Variable(0).
     ///
-    /// This is used for generalization matching where we need a consistent ordering
-    /// that doesn't depend on type dependencies. The PDT matching algorithm expects
-    /// the first structurally-occurring variable to be Variable(0), regardless of
-    /// whether its type depends on another variable.
-    ///
-    /// The `type_var_ids` accumulates type variables encountered, and `var_ids`
-    /// accumulates non-type variables. After processing, type variables are appended
-    /// to `var_ids` so they get higher IDs.
-    pub fn normalize_var_ids_types_last(
-        &mut self,
-        var_ids: &mut Vec<AtomId>,
-        type_var_ids: &mut Vec<AtomId>,
-        context: &crate::kernel::local_context::LocalContext,
-    ) {
-        for component in &mut self.components {
+    /// The `var_ids` accumulates all variables encountered in structural order.
+    /// Variables that only appear in type annotations (not in terms) are handled
+    /// separately at the clause level.
+    pub fn collect_structural_var_ids(&self, var_ids: &mut Vec<AtomId>) {
+        for component in &self.components {
             if let TermComponent::Atom(Atom::FreeVariable(i)) = component {
                 let original_id = *i;
-
-                // Check if this is a type-level variable (type is TypeSort or a Typeclass)
-                let is_type_var = context
-                    .get_var_type(original_id as usize)
-                    .map_or(false, |t| {
-                        let t_ref = t.as_ref();
-                        t_ref.is_type_sort() || t_ref.as_typeclass().is_some()
-                    });
-
-                if is_type_var {
-                    if !type_var_ids.contains(&original_id) {
-                        type_var_ids.push(original_id);
-                    }
-                } else {
-                    if !var_ids.contains(&original_id) {
-                        var_ids.push(original_id);
-                    }
+                if !var_ids.contains(&original_id) {
+                    var_ids.push(original_id);
                 }
             }
         }
