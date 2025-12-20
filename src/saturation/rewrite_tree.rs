@@ -1,13 +1,12 @@
 // The RewriteTree stores a set of potential rewrites.
 // A given pattern can be rewritten to multiple different output terms.
 
-use crate::kernel::atom::AtomId;
+use crate::kernel::atom::{Atom as KernelAtom, AtomId};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::pdt::{replace_term_variables, term_key_prefix, Pdt};
-use crate::kernel::term::Term;
-use crate::kernel::term::TermRef;
+use crate::kernel::term::{Decomposition, Term, TermRef};
 
 // Each term can correspond with multiple RewriteValues.
 // This is the internal representation of the pattern, before it has been applied to a term.
@@ -42,6 +41,49 @@ pub struct Rewrite {
     // The context for variables in the rewritten term.
     // This is important for backwards rewrites where the context may differ from the original pattern.
     pub context: LocalContext,
+}
+
+/// Extends structural replacements with inferred type variable bindings.
+///
+/// When a pattern variable's type is itself a type variable, and we've matched
+/// the pattern variable to a concrete term, we can infer the type variable's
+/// value from the matched term's type.
+///
+/// Example: Pattern variable x0 has type x1 where x1: Type.
+/// If we match x0 → c1 where c1: T1, then x1 should be bound to T1.
+fn extend_with_type_bindings(
+    replacements: &[TermRef],
+    pattern_context: &LocalContext,
+    query_context: &LocalContext,
+    kernel_context: &KernelContext,
+) -> Vec<Term> {
+    // Start with the structural replacements
+    let mut extended: Vec<Term> = replacements.iter().map(|r| r.to_owned()).collect();
+
+    // For each structural replacement, check if its type references a type variable
+    for (i, replacement) in replacements.iter().enumerate() {
+        if let Some(var_type) = pattern_context.get_var_type(i) {
+            // If the pattern variable's type is a FreeVariable (type variable)
+            if let Decomposition::Atom(KernelAtom::FreeVariable(type_var_id)) =
+                var_type.as_ref().decompose()
+            {
+                let type_var_idx = *type_var_id as usize;
+                // Ensure we have space for this type variable binding
+                if type_var_idx >= extended.len() {
+                    extended.resize(type_var_idx + 1, Term::empty_type());
+                }
+                // Only infer if we haven't already bound this type variable
+                if extended[type_var_idx].as_ref().is_empty_type() {
+                    // Bind the type variable to the type of the matched term
+                    let replacement_type =
+                        replacement.get_type_with_context(query_context, kernel_context);
+                    extended[type_var_idx] = replacement_type;
+                }
+            }
+        }
+    }
+
+    extended
 }
 
 #[derive(Clone)]
@@ -103,13 +145,29 @@ impl RewriteTree {
         );
 
         if !literal.right.is_true() {
-            let (right, left, reversed_context) = literal.normalized_reversed(local_context);
+            let (mut right, mut left, reversed_context) =
+                literal.normalized_reversed(local_context);
+
+            // The PDT expects variables numbered by structural occurrence order (0, 1, 2, ...),
+            // but normalized_reversed uses type-dependency ordering. We need to renumber
+            // variables structurally for PDT matching to work correctly.
+            let mut structural_var_ids: Vec<AtomId> = vec![];
+            right.collect_structural_var_ids(&mut structural_var_ids);
+            left.collect_structural_var_ids(&mut structural_var_ids);
+
+            // Renumber variables in both terms
+            right.apply_var_renumbering(&structural_var_ids, &[]);
+            left.apply_var_renumbering(&structural_var_ids, &[]);
+
+            // Remap the context to match the new variable ordering
+            let structural_context = reversed_context.remap(&structural_var_ids);
+
             self.insert_terms(
                 pattern_id,
                 &right,
                 &left,
                 false,
-                &reversed_context,
+                &structural_context,
                 kernel_context,
             );
         }
@@ -136,10 +194,21 @@ impl RewriteTree {
             &mut replacements,
             &mut |value_id, replacements| {
                 for value in &self.tree.values[value_id] {
+                    // Extend replacements with inferred type variable bindings.
+                    // When a pattern variable's type is a type variable, we infer
+                    // the type variable's value from the matched term's type.
+                    let extended = extend_with_type_bindings(
+                        replacements,
+                        &value.output_context,
+                        local_context,
+                        kernel_context,
+                    );
+                    let extended_refs: Vec<TermRef> = extended.iter().map(|t| t.as_ref()).collect();
+
                     let (new_term, new_context) = replace_term_variables(
                         &value.output,
                         &value.output_context,
-                        replacements,
+                        &extended_refs,
                         local_context,
                         Some(next_var),
                     );
@@ -331,12 +400,13 @@ mod tests {
     fn test_rewrite_tree_polymorphic_forward() {
         // Test forward rewriting with polymorphic types.
         // Pattern: g0(T, x) = x where T: Type, x: T
-        // Query: g0(T1, c1) should rewrite to c1
+        // Query: g0(Foo, c1) should rewrite to c1
 
         let mut kctx = KernelContext::new();
-        kctx.parse_datatype("T1");
+        // Use "Foo" instead of "T1" to avoid conflict with type variable syntax (T0, T1, etc.)
+        kctx.parse_datatype("Foo");
         kctx.parse_polymorphic_constant("g0", "T: Type", "T -> T");
-        kctx.parse_constant("c1", "T1");
+        kctx.parse_constant("c1", "Foo");
 
         let mut tree = RewriteTree::new();
         let pattern_clause = kctx.parse_clause("g0(x0, x1) = x1", &["Type", "x0"]);
@@ -348,24 +418,27 @@ mod tests {
         );
 
         let query_lctx = kctx.parse_local(&[]);
-        let query_term = kctx.parse_term("g0(T1, c1)");
+        let query_term = kctx.parse_term("g0(Foo, c1)");
         let rewrites = tree.get_rewrites(&query_term, 0, &query_lctx, &kctx);
 
-        assert_eq!(rewrites.len(), 1);
-        assert_eq!(rewrites[0].term, kctx.parse_term("c1"));
+        // Filter for forward rewrites only (backwards rewrites also match but produce different results)
+        let forward_rewrites: Vec<_> = rewrites.iter().filter(|r| r.forwards).collect();
+        assert_eq!(forward_rewrites.len(), 1);
+        assert_eq!(forward_rewrites[0].term, kctx.parse_term("c1"));
     }
 
     #[test]
     fn test_rewrite_tree_polymorphic_nested() {
         // Test forward rewriting with nested polymorphic functions.
         // Pattern: g1(T, g0(T, x)) = x
-        // Query: g1(T1, g0(T1, c1)) should rewrite to c1
+        // Query: g1(Foo, g0(Foo, c1)) should rewrite to c1
 
         let mut kctx = KernelContext::new();
-        kctx.parse_datatype("T1");
+        // Use "Foo" instead of "T1" to avoid conflict with type variable syntax (T0, T1, etc.)
+        kctx.parse_datatype("Foo");
         kctx.parse_polymorphic_constant("g0", "T: Type", "T -> T");
         kctx.parse_polymorphic_constant("g1", "T: Type", "T -> T");
-        kctx.parse_constant("c1", "T1");
+        kctx.parse_constant("c1", "Foo");
 
         let mut tree = RewriteTree::new();
         let pattern_clause = kctx.parse_clause("g1(x0, g0(x0, x1)) = x1", &["Type", "x0"]);
@@ -377,11 +450,13 @@ mod tests {
         );
 
         let query_lctx = kctx.parse_local(&[]);
-        let query_term = kctx.parse_term("g1(T1, g0(T1, c1))");
+        let query_term = kctx.parse_term("g1(Foo, g0(Foo, c1))");
         let rewrites = tree.get_rewrites(&query_term, 0, &query_lctx, &kctx);
 
-        assert_eq!(rewrites.len(), 1);
-        assert_eq!(rewrites[0].term, kctx.parse_term("c1"));
+        // Filter for forward rewrites only (backwards rewrites also match but produce different results)
+        let forward_rewrites: Vec<_> = rewrites.iter().filter(|r| r.forwards).collect();
+        assert_eq!(forward_rewrites.len(), 1);
+        assert_eq!(forward_rewrites[0].term, kctx.parse_term("c1"));
     }
 
     #[test]
@@ -391,13 +466,14 @@ mod tests {
         // Pattern: g0(T, x) = x where T: Type, x: T
         // Backwards rewrite: x -> g0(T, x)
         //
-        // When we rewrite c1 (type T1) backwards, T should be inferred from
-        // the type of the matched term. Result should be g0(T1, c1).
+        // When we rewrite c1 (type Foo) backwards, T should be inferred from
+        // the type of the matched term. Result should be g0(Foo, c1).
 
         let mut kctx = KernelContext::new();
-        kctx.parse_datatype("T1");
+        // Use "Foo" instead of "T1" to avoid conflict with type variable syntax (T0, T1, etc.)
+        kctx.parse_datatype("Foo");
         kctx.parse_polymorphic_constant("g0", "T: Type", "T -> T");
-        kctx.parse_constant("c1", "T1");
+        kctx.parse_constant("c1", "Foo");
 
         let mut tree = RewriteTree::new();
         let pattern_clause = kctx.parse_clause("g0(x0, x1) = x1", &["Type", "x0"]);
@@ -416,8 +492,8 @@ mod tests {
         // Should find a backwards rewrite
         assert_eq!(rewrites.len(), 1, "Should find one backwards rewrite");
 
-        // The type variable T should be inferred from c1's type (T1)
-        let expected = kctx.parse_term("g0(T1, c1)");
+        // The type variable T should be inferred from c1's type (Foo)
+        let expected = kctx.parse_term("g0(Foo, c1)");
         assert_eq!(
             rewrites[0].term, expected,
             "Backwards rewrite should infer type variable from matched term's type"
