@@ -320,6 +320,20 @@ impl Clause {
 
             for literal in &self.literals {
                 literal.validate_type(&self.context, kernel_context);
+
+                // Check that literals don't contain bound variables
+                if literal.left.has_bound_variable() {
+                    panic!(
+                        "Clause validation failed: left side of literal contains bound variable. Literal: {}",
+                        literal
+                    );
+                }
+                if literal.right.has_bound_variable() {
+                    panic!(
+                        "Clause validation failed: right side of literal contains bound variable. Literal: {}",
+                        literal
+                    );
+                }
             }
         }
     }
