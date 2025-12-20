@@ -25,7 +25,7 @@
   `time cargo run --profile release -- reprove real.double_sum`
 
   This is important to do if we are doing something performance-sensitive, like altering the basic Term
-  structure, or changing how one of the key TermGraph / PatternTree / FingerprintX data structures work.
+  structure, or changing how one of the key TermGraph / Pdt / FingerprintX data structures work.
 
 - A "full reprove" is slow, but sometimes finds obscure bugs that nothing else finds. We generally
   only want to do this when the user asks for it:

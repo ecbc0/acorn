@@ -5,7 +5,7 @@ use crate::kernel::atom::AtomId;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::pdt::{replace_term_variables, term_key_prefix, PatternTree};
+use crate::kernel::pdt::{replace_term_variables, term_key_prefix, Pdt};
 use crate::kernel::term::Term;
 use crate::kernel::term::TermRef;
 
@@ -46,14 +46,12 @@ pub struct Rewrite {
 
 #[derive(Clone)]
 pub struct RewriteTree {
-    tree: PatternTree<Vec<RewriteValue>>,
+    tree: Pdt<Vec<RewriteValue>>,
 }
 
 impl RewriteTree {
     pub fn new() -> RewriteTree {
-        RewriteTree {
-            tree: PatternTree::new(),
-        }
+        RewriteTree { tree: Pdt::new() }
     }
 
     // Inserts one direction.
@@ -76,7 +74,7 @@ impl RewriteTree {
             output: output_term.clone(),
             output_context: local_context.clone(),
         };
-        PatternTree::insert_or_append(
+        Pdt::insert_or_append(
             &mut self.tree,
             input_term,
             value,

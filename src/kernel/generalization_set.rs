@@ -5,7 +5,7 @@ use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::pdt::PatternTree;
+use crate::kernel::pdt::Pdt;
 use crate::kernel::term::{Decomposition, TermRef};
 
 /// The GeneralizationSet stores general clauses in a way that allows us to quickly check whether
@@ -13,14 +13,12 @@ use crate::kernel::term::{Decomposition, TermRef};
 #[derive(Clone)]
 pub struct GeneralizationSet {
     /// Stores an id for each clause.
-    tree: PatternTree<usize>,
+    tree: Pdt<usize>,
 }
 
 impl GeneralizationSet {
     pub fn new() -> GeneralizationSet {
-        GeneralizationSet {
-            tree: PatternTree::new(),
-        }
+        GeneralizationSet { tree: Pdt::new() }
     }
 
     /// Inserts a clause into the set, reordering it in every way that is KBO-nonincreasing.

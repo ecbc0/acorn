@@ -2,7 +2,7 @@
 //
 // Key design decisions:
 // 1. Types are NOT encoded in keys - matching is purely structural
-// 2. Variables are numbered by first occurrence (same as PatternTree)
+// 2. Variables are numbered by first occurrence (same as Pdt)
 // 3. When inserting a pattern, we store the types of each pattern variable
 // 4. When matching, we find structural matches first, then verify type compatibility
 //
@@ -44,7 +44,7 @@ enum Atom {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Edge {
     /// Application: followed by function, argument.
-    /// Note: unlike PatternTree, we don't encode domain type.
+    /// Note: we don't encode domain type.
     Application,
 
     /// Arrow (Pi type): followed by input type, output type.
@@ -549,7 +549,7 @@ fn types_compatible(
 
 /// Matches a sequence of terms against patterns in the trie.
 ///
-/// Unlike PatternTree, this matches purely on structure (ignoring types).
+/// This matches purely on structure (ignoring types).
 /// After finding a structural match, it verifies type compatibility.
 ///
 /// The key insight is that we navigate the trie by trying different edges:
@@ -860,10 +860,6 @@ pub fn replace_term_variables(
     let result_context = LocalContext::from_types(output_types);
     (result_term, result_context)
 }
-
-/// Type alias to allow using Pdt with the same name as PatternTree.
-/// This enables feature-flag-based switching.
-pub type PatternTree<T> = Pdt<T>;
 
 #[cfg(test)]
 mod tests {
