@@ -10,7 +10,6 @@ pub mod inference;
 pub mod kernel_context;
 pub mod literal;
 pub mod local_context;
-pub mod pattern_tree;
 pub mod pdt;
 pub mod symbol;
 pub mod symbol_table;

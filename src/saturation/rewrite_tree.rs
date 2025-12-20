@@ -5,9 +5,6 @@ use crate::kernel::atom::AtomId;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
-#[cfg(not(feature = "pdt"))]
-use crate::kernel::pattern_tree::{replace_term_variables, term_key_prefix, PatternTree};
-#[cfg(feature = "pdt")]
 use crate::kernel::pdt::{replace_term_variables, term_key_prefix, PatternTree};
 use crate::kernel::term::Term;
 use crate::kernel::term::TermRef;

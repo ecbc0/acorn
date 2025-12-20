@@ -784,8 +784,82 @@ fn verify_type_compatibility(
 }
 
 /// Replaces variables in a term with corresponding replacement terms.
-/// (Re-exported from pattern_tree for API compatibility)
-pub use super::pattern_tree::replace_term_variables;
+///
+/// This function takes a term with pattern variables and replaces each variable
+/// with the corresponding replacement term. Variables that don't have a replacement
+/// are shifted by the `shift` amount (if provided).
+///
+/// Returns the replaced term and an updated local context with the types of any
+/// shifted variables.
+pub fn replace_term_variables(
+    term: &Term,
+    term_context: &LocalContext,
+    replacements: &[TermRef],
+    replacement_context: &LocalContext,
+    shift: Option<AtomId>,
+) -> (Term, LocalContext) {
+    let mut output_types: Vec<Term> = replacement_context.get_var_types().to_vec();
+
+    fn replace_recursive(
+        term: TermRef,
+        term_context: &LocalContext,
+        replacements: &[TermRef],
+        shift: Option<AtomId>,
+        output_types: &mut Vec<Term>,
+    ) -> Term {
+        match term.decompose() {
+            Decomposition::Atom(KernelAtom::FreeVariable(var_id)) => {
+                let idx = *var_id as usize;
+                if idx < replacements.len() {
+                    // Replace with the replacement term
+                    replacements[idx].to_owned()
+                } else {
+                    // Shift the variable
+                    let new_var_id = match shift {
+                        Some(s) => *var_id + s,
+                        None => panic!("no replacement for variable x{}", var_id),
+                    };
+                    // Track the type for the shifted variable
+                    let new_idx = new_var_id as usize;
+                    let var_type = term_context
+                        .get_var_type(idx)
+                        .cloned()
+                        .expect("variable type not found in term_context");
+                    if new_idx >= output_types.len() {
+                        output_types.resize(new_idx + 1, Term::empty_type());
+                    }
+                    output_types[new_idx] = var_type;
+                    Term::atom(KernelAtom::FreeVariable(new_var_id))
+                }
+            }
+            Decomposition::Atom(_) => term.to_owned(),
+            Decomposition::Application(func, arg) => {
+                let replaced_func =
+                    replace_recursive(func, term_context, replacements, shift, output_types);
+                let replaced_arg =
+                    replace_recursive(arg, term_context, replacements, shift, output_types);
+                replaced_func.apply(&[replaced_arg])
+            }
+            Decomposition::Pi(input, output) => {
+                let replaced_input =
+                    replace_recursive(input, term_context, replacements, shift, output_types);
+                let replaced_output =
+                    replace_recursive(output, term_context, replacements, shift, output_types);
+                Term::pi(replaced_input, replaced_output)
+            }
+        }
+    }
+
+    let result_term = replace_recursive(
+        term.as_ref(),
+        term_context,
+        replacements,
+        shift,
+        &mut output_types,
+    );
+    let result_context = LocalContext::from_types(output_types);
+    (result_term, result_context)
+}
 
 /// Type alias to allow using Pdt with the same name as PatternTree.
 /// This enables feature-flag-based switching.
