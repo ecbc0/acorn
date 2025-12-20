@@ -47,6 +47,10 @@ enum Edge {
     /// Note: unlike PatternTree, we don't encode domain type.
     Application,
 
+    /// Arrow (Pi type): followed by input type, output type.
+    /// Used when function types appear as values (e.g., id[Bool -> Bool]).
+    Arrow,
+
     /// A leaf atom.
     Atom(Atom),
 
@@ -68,12 +72,14 @@ const ATOM_SYMBOL_EMPTY: u8 = 9;
 const ATOM_SYMBOL_BOOL: u8 = 10;
 const ATOM_SYMBOL_TYPESORT: u8 = 11;
 const ATOM_SYMBOL_TYPE: u8 = 12;
+const ARROW: u8 = 13;
 
 impl Edge {
     /// Returns the discriminant byte for this edge.
     fn discriminant(&self) -> u8 {
         match self {
             Edge::Application => APPLICATION,
+            Edge::Arrow => ARROW,
             Edge::LiteralForm(true) => LITERAL_POSITIVE,
             Edge::LiteralForm(false) => LITERAL_NEGATIVE,
             Edge::Atom(atom) => match atom {
@@ -98,7 +104,7 @@ impl Edge {
     fn append_to(&self, v: &mut Vec<u8>) {
         v.push(self.discriminant());
         let id: u16 = match self {
-            Edge::Application | Edge::LiteralForm(_) => 0,
+            Edge::Application | Edge::Arrow | Edge::LiteralForm(_) => 0,
             Edge::Atom(atom) => match atom {
                 Atom::Variable(i) => *i,
                 Atom::True | Atom::False => 0,
@@ -121,6 +127,7 @@ impl Edge {
         let id = u16::from_ne_bytes([byte2, byte3]);
         match byte1 {
             APPLICATION => Edge::Application,
+            ARROW => Edge::Arrow,
             LITERAL_POSITIVE => Edge::LiteralForm(true),
             LITERAL_NEGATIVE => Edge::LiteralForm(false),
             ATOM_VARIABLE => Edge::Atom(Atom::Variable(id)),
@@ -183,8 +190,12 @@ fn key_from_term_structure(term: TermRef, key: &mut Vec<u8>) {
             key_from_term_structure(func, key);
             key_from_term_structure(arg, key);
         }
-        Decomposition::Pi(_, _) => {
-            panic!("Pi types should not appear in PDT term structure encoding");
+        Decomposition::Pi(input, output) => {
+            // Pi types can appear as values when polymorphic functions are applied to function types
+            // e.g., id[Bool -> Bool](not) has (Bool -> Bool) as a subterm
+            Edge::Arrow.append_to(key);
+            key_from_term_structure(input, key);
+            key_from_term_structure(output, key);
         }
     }
 }
@@ -711,8 +722,33 @@ where
                 }
             }
         }
-        Decomposition::Pi(_, _) => {
-            panic!("Pi types should not appear in PDT matching");
+        Decomposition::Pi(input, output) => {
+            // Pi types can appear as values when polymorphic functions are applied to function types
+            // e.g., id[Bool -> Bool](not) has (Bool -> Bool) as a subterm
+            Edge::Arrow.append_to(key);
+            let new_subtrie = subtrie.subtrie(key as &[u8]);
+
+            if !new_subtrie.is_empty() {
+                // Build new terms: [input, output, ...rest]
+                let mut new_terms: Vec<TermRef<'a>> = Vec::with_capacity(2 + rest.len());
+                new_terms.push(input);
+                new_terms.push(output);
+                new_terms.extend_from_slice(rest);
+
+                if !find_matches_while(
+                    &new_subtrie,
+                    key,
+                    &new_terms,
+                    local_context,
+                    kernel_context,
+                    all_metadata,
+                    stack_limit - 1,
+                    replacements,
+                    callback,
+                ) {
+                    return false;
+                }
+            }
         }
     }
 
@@ -763,6 +799,7 @@ mod tests {
     fn test_edge_roundtrip() {
         let edges = vec![
             Edge::Application,
+            Edge::Arrow,
             Edge::LiteralForm(true),
             Edge::LiteralForm(false),
             Edge::Atom(Atom::Variable(0)),
@@ -983,6 +1020,61 @@ mod tests {
         assert!(
             found,
             "Pattern c0(x0) should match query c0(x1) even with different variable IDs"
+        );
+    }
+
+    #[test]
+    fn test_pdt_pi_type_as_value() {
+        // Tests that PDT can handle Pi types (function types) appearing as values.
+        //
+        // Example: A polymorphic function `id[T](x: T) -> T` applied to a function type:
+        //   id[Bool -> Bool](not)
+        //
+        // The type argument `Bool -> Bool` is a Pi type appearing as a VALUE,
+        // not just as a type annotation.
+
+        let mut kctx = KernelContext::new();
+
+        // Create a polymorphic function that takes a type argument
+        // c0 : Type -> Bool (takes a type, returns Bool)
+        kctx.parse_constant("c0", "Type -> Bool");
+
+        // Pattern: c0(x0) where x0 : Type (x0 is a type variable)
+        let pattern_lctx = kctx.parse_local(&["Type"]);
+        let pattern_term = kctx.parse_term("c0(x0)");
+
+        let mut tree: Pdt<&str> = Pdt::new();
+        tree.insert_pair(&pattern_term, &Term::new_true(), "pattern", &pattern_lctx);
+
+        // Query: c0(Bool -> Bool) - applying to a function type (Pi type)
+        // Use parse_type to create the function type properly
+        let func_type = kctx.parse_type("Bool -> Bool");
+
+        // Now apply c0 to this function type
+        let c0 = kctx.parse_term("c0");
+        let query_term = c0.apply(&[func_type]);
+        let query_lctx = kctx.parse_local(&[]);
+
+        let mut key = Vec::new();
+        let mut replacements = vec![];
+        let mut found = false;
+
+        tree.find_term_matches_while(
+            &mut key,
+            &[query_term.as_ref(), Term::new_true().as_ref()],
+            &query_lctx,
+            &kctx,
+            &mut replacements,
+            &mut |_value_id, _replacements| {
+                found = true;
+                true
+            },
+        );
+
+        // This should match: pattern variable x0 (of type Type) matches the Pi type Bool -> Bool
+        assert!(
+            found,
+            "Pattern c0(x0: Type) should match query c0(Bool -> Bool)"
         );
     }
 }
