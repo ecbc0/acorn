@@ -262,6 +262,7 @@ impl Clause {
 
     /// Normalize variable IDs without flipping literals.
     /// Also rebuilds the context to match the renumbered variables.
+    /// Uses type-aware ordering (type dependencies come first).
     pub fn normalize_var_ids_no_flip(&mut self) {
         let mut var_ids = vec![];
         let input_context = self.context.clone();
@@ -274,6 +275,44 @@ impl Clause {
                 .normalize_var_ids_with_context(&mut var_ids, &input_context);
         }
         self.context = input_context.remap(&var_ids);
+    }
+
+    /// Normalize variable IDs with type variables getting higher IDs.
+    ///
+    /// Non-type variables are numbered by first structural occurrence.
+    /// Type variables (those whose type is TypeSort) get IDs after all non-type variables.
+    ///
+    /// This is used for generalization matching where we need the PDT's expected
+    /// ordering (first structurally-occurring variable is Variable(0)).
+    pub fn normalize_var_ids_types_last(&mut self) {
+        let mut var_ids: Vec<u16> = vec![];
+        let mut type_var_ids: Vec<u16> = vec![];
+        let input_context = self.context.clone();
+
+        // First pass: collect variable IDs, separating type vars from non-type vars
+        for literal in &mut self.literals {
+            literal.left.normalize_var_ids_types_last(
+                &mut var_ids,
+                &mut type_var_ids,
+                &input_context,
+            );
+            literal.right.normalize_var_ids_types_last(
+                &mut var_ids,
+                &mut type_var_ids,
+                &input_context,
+            );
+        }
+
+        // Second pass: apply the renumbering
+        for literal in &mut self.literals {
+            literal.left.apply_var_renumbering(&var_ids, &type_var_ids);
+            literal.right.apply_var_renumbering(&var_ids, &type_var_ids);
+        }
+
+        // Rebuild context: non-type vars first, then type vars
+        let mut all_var_ids = var_ids.clone();
+        all_var_ids.extend(type_var_ids);
+        self.context = input_context.remap(&all_var_ids);
     }
 
     /// Create a clause from literals without normalizing.

@@ -94,15 +94,8 @@ pub fn sub_invariant_term_cmp(
     local_context: &LocalContext,
     kernel_context: &KernelContext,
 ) -> Option<Ordering> {
-    // Compare the types, because these won't be changed by substitution.
-    let type_cmp = left
-        .get_type_with_context(local_context, kernel_context)
-        .cmp(&right.get_type_with_context(local_context, kernel_context));
-    if type_cmp != Ordering::Equal {
-        return Some(type_cmp);
-    }
-
-    // Compare the signs
+    // Compare the signs first, because signs are completely stable under substitution.
+    // This ensures positive/negative literals sort consistently regardless of type variables.
     let neg_cmp = left_neg.cmp(&right_neg);
     if neg_cmp != Ordering::Equal {
         return Some(neg_cmp);
@@ -113,7 +106,7 @@ pub fn sub_invariant_term_cmp(
         return None;
     }
 
-    // Compare the term types.
+    // Compare the term types. This is stable because we've already excluded variable terms.
     let type_cmp = left
         .get_type_with_context(local_context, kernel_context)
         .cmp(&right.get_type_with_context(local_context, kernel_context));
@@ -239,7 +232,7 @@ fn all_generalized_orders(
         // Base case: we've built a complete permutation
         if current.len() == literals.len() {
             let mut clause = Clause::from_literals_unnormalized(current.clone(), local_context);
-            clause.normalize_var_ids_no_flip();
+            clause.normalize_var_ids_types_last();
             output.push(clause);
             return;
         }
@@ -316,9 +309,9 @@ fn specialized_form(mut clause: Clause, kernel_context: &KernelContext) -> Claus
     // Then, sort the literals using our comparison function
     // Since this is for concrete clauses, we can unwrap the comparison
     clause.literals.sort_by(|a, b| {
-        sub_invariant_literal_cmp(a, b, &local_context, kernel_context)
-            .expect("Concrete literals should always be comparable")
-            .reverse() // Reverse to get non-increasing order
+        let cmp = sub_invariant_literal_cmp(a, b, &local_context, kernel_context)
+            .expect("Concrete literals should always be comparable");
+        cmp.reverse() // Reverse to get non-increasing order
     });
 
     clause.normalize_var_ids_no_flip();
@@ -1169,6 +1162,97 @@ mod tests {
             found,
             Some(42),
             "Should match pattern with x0->c1, x1->c2, x2->c3"
+        );
+    }
+
+    /// Test that type variables in patterns don't break generalization matching.
+    ///
+    /// This test captures a bug where type-aware variable normalization causes
+    /// pattern matching to fail. The issue is:
+    ///
+    /// Pattern: `x1 != x2 or g0(x0, x1, x2)` where x0: Type, x1: x0, x2: x0
+    /// Query: `c1 != c1 or g0(T0, c1, c1)` where c1: T0
+    ///
+    /// The structural order puts x1 first (in the inequality), but type-aware
+    /// normalization puts x0 first (since x1's type depends on x0), causing
+    /// x1 to get renumbered to Variable(1) instead of Variable(0).
+    ///
+    /// The PDT matching algorithm expects Variable(0) at the first term position,
+    /// so the match fails.
+    #[test]
+    fn test_type_variable_ordering() {
+        let mut kctx = KernelContext::new();
+        kctx.parse_datatype("T0");
+
+        // g0: Type -> T -> T -> Bool (polymorphic predicate)
+        kctx.parse_polymorphic_constant("g0", "T: Type", "(T, T) -> Bool");
+
+        // c1, c2: T0 (concrete values)
+        kctx.parse_constant("c1", "T0");
+        kctx.parse_constant("c2", "T0");
+
+        let mut clause_set = GeneralizationSet::new();
+
+        // Pattern clause: x1 != x2 or g0(x0, x1, x2)
+        // where x0: Type, x1: x0, x2: x0
+        //
+        // Structurally, x1 appears first (in the inequality left side).
+        // But type-aware normalization will renumber x0 first since x1's type is x0.
+        let pattern_clause = kctx.parse_clause("x1 != x2 or g0(x0, x1, x2)", &["Type", "x0", "x0"]);
+        clause_set.insert(pattern_clause, 42, &kctx);
+
+        // Query clause: c1 != c2 or g0(T0, c1, c2)
+        let query_clause = kctx.parse_clause("c1 != c2 or g0(T0, c1, c2)", &[]);
+
+        // This should match! The pattern generalizes the query with:
+        // x0 -> T0, x1 -> c1, x2 -> c2
+        let found = clause_set.find_generalization(query_clause, &kctx);
+        assert_eq!(
+            found,
+            Some(42),
+            "Pattern with type variable should match concrete query"
+        );
+    }
+
+    /// Test that typeclass-constrained variables (like R: Ring) get higher IDs
+    /// than value variables, similar to type variables (T: Type).
+    ///
+    /// This is the same scenario as test_type_variable_ordering but with
+    /// a typeclass constraint instead of Type.
+    #[test]
+    fn test_typeclass_variable_ordering() {
+        let mut kctx = KernelContext::new();
+        kctx.parse_datatype("Int");
+        kctx.parse_typeclass("Ring");
+        kctx.parse_instance("Int", "Ring");
+
+        // g0: Ring -> R -> R -> Bool (polymorphic predicate with typeclass constraint)
+        kctx.parse_polymorphic_constant("g0", "R: Ring", "(R, R) -> Bool");
+
+        // c1, c2: Int (concrete values)
+        kctx.parse_constant("c1", "Int");
+        kctx.parse_constant("c2", "Int");
+
+        let mut clause_set = GeneralizationSet::new();
+
+        // Pattern clause: x1 != x2 or g0(x0, x1, x2)
+        // where x0: Ring, x1: x0, x2: x0
+        //
+        // Structurally, x1 appears first (in the inequality left side).
+        // But type-aware normalization would renumber x0 first since x1's type is x0.
+        let pattern_clause = kctx.parse_clause("x1 != x2 or g0(x0, x1, x2)", &["Ring", "x0", "x0"]);
+        clause_set.insert(pattern_clause, 42, &kctx);
+
+        // Query clause: c1 != c2 or g0(Int, c1, c2)
+        let query_clause = kctx.parse_clause("c1 != c2 or g0(Int, c1, c2)", &[]);
+
+        // This should match! The pattern generalizes the query with:
+        // x0 -> Int, x1 -> c1, x2 -> c2
+        let found = clause_set.find_generalization(query_clause, &kctx);
+        assert_eq!(
+            found,
+            Some(42),
+            "Pattern with typeclass variable should match concrete query"
         );
     }
 }
