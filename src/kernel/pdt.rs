@@ -1077,4 +1077,64 @@ mod tests {
             "Pattern c0(x0: Type) should match query c0(Bool -> Bool)"
         );
     }
+
+    #[test]
+    fn test_pdt_curried_variable_matches_partial_application() {
+        // Test that PDT can match a partial application against a function variable.
+        // This is a key capability of curried representation.
+        //
+        // c0 : (Bool, Bool) -> Bool (2-arg function)
+        // c1 : Bool -> Bool (1-arg function)
+        // c5, c6 : Bool
+        //
+        // Pattern: x0(c6) where x0 : Bool -> Bool
+        // Query: c0(c5, c6) = ((Bool, Bool) -> Bool)(Bool, Bool) = Bool
+        //
+        // In curried form:
+        // - c0(c5, c6) becomes Application(Application(c0, c5), c6)
+        // - x0(c6) becomes Application(x0, c6)
+        //
+        // The match should succeed with x0 = c0(c5), which has type Bool -> Bool.
+        let mut kctx = KernelContext::new();
+        kctx.parse_constant("c0", "(Bool, Bool) -> Bool")
+            .parse_constant("c1", "Bool -> Bool")
+            .parse_constants(&["c5", "c6"], "Bool");
+
+        // x0: Bool -> Bool
+        let lctx = kctx.parse_local(&["Bool -> Bool"]);
+
+        let mut tree: Pdt<usize> = Pdt::new();
+
+        // Insert pattern: x0(c6) = c5
+        let pattern_left = kctx.parse_term("x0(c6)");
+        let pattern_right = kctx.parse_term("c5");
+        tree.insert_pair(&pattern_left, &pattern_right, 42, &lctx);
+
+        // First verify that the partial application c0(c5) has type Bool -> Bool
+        let partial_app = kctx.parse_term("c0(c5)");
+        let partial_type = partial_app.get_type_with_context(&lctx, &kctx);
+        let x0_type = lctx.get_var_type(0);
+        assert_eq!(
+            partial_type,
+            *x0_type.unwrap(),
+            "c0(c5) should have the same type as x0 (Bool -> Bool)"
+        );
+
+        // Query: c0(c5, c6) = c5
+        // c0(c5) is a partial application of type Bool -> Bool, which should match x0
+        let query_lctx = kctx.parse_local(&[]);
+        let query_left = kctx.parse_term("c0(c5, c6)");
+        let query_right = kctx.parse_term("c5");
+        let found = tree.find_pair(&query_left, &query_right, &query_lctx, &kctx);
+
+        // The PDT should find this match because:
+        // - c0(c5, c6) curries to Application(Application(c0, c5), c6)
+        // - Pattern x0(c6) curries to Application(x0, c6)
+        // - x0 (a variable of type Bool -> Bool) can match Application(c0, c5)
+        assert_eq!(
+            found,
+            Some(&42),
+            "Curried matching should allow variable to match partial application"
+        );
+    }
 }
