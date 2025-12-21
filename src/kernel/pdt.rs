@@ -11,6 +11,8 @@
 // - Query: add[Int](c, d) encodes as the same structure
 // - After finding the match, we verify that the type bindings are compatible
 
+use std::collections::HashMap;
+
 use qp_trie::{Entry, SubTrie, Trie};
 
 use super::atom::{Atom as KernelAtom, AtomId};
@@ -810,7 +812,9 @@ pub fn replace_term_variables(
         match term.decompose() {
             Decomposition::Atom(KernelAtom::FreeVariable(var_id)) => {
                 let idx = *var_id as usize;
-                if idx < replacements.len() {
+                // Check if we have a replacement (non-empty) for this variable
+                let has_replacement = idx < replacements.len() && !replacements[idx].is_empty_type();
+                if has_replacement {
                     // Replace with the replacement term
                     replacements[idx].to_owned()
                 } else {
@@ -859,6 +863,153 @@ pub fn replace_term_variables(
     );
     let result_context = LocalContext::from_types(output_types);
     (result_term, result_context)
+}
+
+/// Substitutes variables in a term using explicit binding and remapping maps.
+///
+/// - `bindings`: Maps pattern variable IDs to their replacement terms (concrete values or types)
+/// - `var_remap`: Maps unbound pattern variable IDs to new output variable IDs
+///
+/// Every variable in the term must be either in bindings or var_remap.
+pub fn substitute_term(
+    term: &Term,
+    bindings: &HashMap<AtomId, Term>,
+    var_remap: &HashMap<AtomId, AtomId>,
+) -> Term {
+    fn substitute_recursive(
+        term: TermRef,
+        bindings: &HashMap<AtomId, Term>,
+        var_remap: &HashMap<AtomId, AtomId>,
+    ) -> Term {
+        match term.decompose() {
+            Decomposition::Atom(KernelAtom::FreeVariable(var_id)) => {
+                if let Some(replacement) = bindings.get(var_id) {
+                    replacement.clone()
+                } else if let Some(&new_var_id) = var_remap.get(var_id) {
+                    Term::atom(KernelAtom::FreeVariable(new_var_id))
+                } else {
+                    panic!(
+                        "Variable x{} has no binding or remap. Bindings: {:?}, Remap: {:?}",
+                        var_id,
+                        bindings.keys().collect::<Vec<_>>(),
+                        var_remap
+                    );
+                }
+            }
+            Decomposition::Atom(_) => term.to_owned(),
+            Decomposition::Application(func, arg) => {
+                let new_func = substitute_recursive(func, bindings, var_remap);
+                let new_arg = substitute_recursive(arg, bindings, var_remap);
+                new_func.apply(&[new_arg])
+            }
+            Decomposition::Pi(input, output) => {
+                let new_input = substitute_recursive(input, bindings, var_remap);
+                let new_output = substitute_recursive(output, bindings, var_remap);
+                Term::pi(new_input, new_output)
+            }
+        }
+    }
+
+    substitute_recursive(term.as_ref(), bindings, var_remap)
+}
+
+/// Computes the var_remap and output context for unbound variables.
+///
+/// Given:
+/// - `output_term`: The term we're substituting into
+/// - `pattern_context`: Types of pattern variables
+/// - `bindings`: Already-known bindings for pattern variables
+/// - `start_var_id`: The first variable ID to use for new output variables
+///
+/// Returns:
+/// - `var_remap`: Maps unbound pattern var IDs to new output var IDs
+/// - `output_context`: LocalContext with types for the new output variables
+///
+/// Variables are ordered so that type dependencies come first (type variables before
+/// variables whose type references other variables).
+pub fn compute_unbound_var_remap(
+    output_term: &Term,
+    pattern_context: &LocalContext,
+    bindings: &HashMap<AtomId, Term>,
+    start_var_id: AtomId,
+) -> (HashMap<AtomId, AtomId>, LocalContext) {
+    // Collect all variables in the output term
+    let mut unbound_vars: Vec<AtomId> = Vec::new();
+    for atom in output_term.iter_atoms() {
+        if let super::atom::Atom::FreeVariable(var_id) = atom {
+            if !bindings.contains_key(var_id) && !unbound_vars.contains(var_id) {
+                unbound_vars.push(*var_id);
+            }
+        }
+    }
+
+    if unbound_vars.is_empty() {
+        return (HashMap::new(), LocalContext::empty_ref().clone());
+    }
+
+    // Sort unbound variables by type dependency:
+    // Type variables (those with type=Type) come before value variables
+    // (those whose type references other variables)
+    let is_type_sort = |t: &Term| -> bool {
+        matches!(
+            t.as_ref().decompose(),
+            Decomposition::Atom(KernelAtom::Symbol(Symbol::TypeSort))
+        )
+    };
+
+    // Partition into type vars and value vars
+    let mut type_vars: Vec<AtomId> = Vec::new();
+    let mut value_vars: Vec<AtomId> = Vec::new();
+    for var_id in &unbound_vars {
+        if let Some(var_type) = pattern_context.get_var_type(*var_id as usize) {
+            if is_type_sort(var_type) {
+                type_vars.push(*var_id);
+            } else {
+                value_vars.push(*var_id);
+            }
+        } else {
+            // No type info, treat as value var
+            value_vars.push(*var_id);
+        }
+    }
+
+    // Build var_remap: type vars first, then value vars
+    // Start from start_var_id to avoid conflicts with existing variables
+    let mut var_remap: HashMap<AtomId, AtomId> = HashMap::new();
+    let mut next_output_var: AtomId = start_var_id;
+
+    for var_id in &type_vars {
+        var_remap.insert(*var_id, next_output_var);
+        next_output_var += 1;
+    }
+    for var_id in &value_vars {
+        var_remap.insert(*var_id, next_output_var);
+        next_output_var += 1;
+    }
+
+    // Build output context: for each new output var, compute its type
+    // by substituting into the pattern variable's type
+    // The output context needs entries for all variables from 0 to max_output_var
+    let max_output_var = next_output_var;
+    let mut output_types: Vec<Term> = Vec::with_capacity(max_output_var as usize);
+    for _ in 0..max_output_var {
+        output_types.push(Term::empty_type());
+    }
+
+    // Process in order of output var ID (type vars first, so dependencies are satisfied)
+    let mut ordered_vars: Vec<(AtomId, AtomId)> = var_remap.iter().map(|(&k, &v)| (k, v)).collect();
+    ordered_vars.sort_by_key(|(_, output_id)| *output_id);
+
+    for (pattern_var, output_var) in ordered_vars {
+        if let Some(pattern_type) = pattern_context.get_var_type(pattern_var as usize) {
+            // Substitute into the type using bindings and var_remap
+            let output_type = substitute_term(pattern_type, bindings, &var_remap);
+            output_types[output_var as usize] = output_type;
+        }
+    }
+
+    let output_context = LocalContext::from_types(output_types);
+    (var_remap, output_context)
 }
 
 #[cfg(test)]
