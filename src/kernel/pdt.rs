@@ -813,7 +813,8 @@ pub fn replace_term_variables(
             Decomposition::Atom(KernelAtom::FreeVariable(var_id)) => {
                 let idx = *var_id as usize;
                 // Check if we have a replacement (non-empty) for this variable
-                let has_replacement = idx < replacements.len() && !replacements[idx].is_empty_type();
+                let has_replacement =
+                    idx < replacements.len() && !replacements[idx].is_empty_type();
                 if has_replacement {
                     // Replace with the replacement term
                     replacements[idx].to_owned()

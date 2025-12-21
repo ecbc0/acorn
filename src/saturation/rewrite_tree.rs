@@ -531,8 +531,10 @@ mod tests {
         // Pattern: g1(T, U, g0(T, U, x, y)) = x
         // In normalized form: g1(x0, x1, g0(x0, x1, x2, x3)) = x2
         // where x0: Type, x1: Type, x2: x0, x3: x1
-        let pattern_clause =
-            kctx.parse_clause("g1(x0, x1, g0(x0, x1, x2, x3)) = x2", &["Type", "Type", "x0", "x1"]);
+        let pattern_clause = kctx.parse_clause(
+            "g1(x0, x1, g0(x0, x1, x2, x3)) = x2",
+            &["Type", "Type", "x0", "x1"],
+        );
         tree.insert_literal(
             0,
             &pattern_clause.literals[0],
@@ -586,9 +588,12 @@ mod tests {
             // The result type of g1(T, U, ...) should be T, which should be Foo.
             let expected_type = kctx.parse_type("Foo");
             assert_eq!(
-                term_type, expected_type,
+                term_type,
+                expected_type,
                 "Rewritten term should have type Foo. Got: {:?}. Term: {}. Context: {:?}",
-                term_type, rewrite.term, rewrite.context.get_var_types()
+                term_type,
+                rewrite.term,
+                rewrite.context.get_var_types()
             );
         }
     }

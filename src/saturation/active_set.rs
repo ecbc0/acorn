@@ -1227,4 +1227,70 @@ mod tests {
         set.find_resolutions(&step, &mut results, &kctx);
         assert_eq!(results.len(), 0);
     }
+
+    /// Test that polymorphic rewriting produces well-typed clauses.
+    /// This tests a bug where backwards rewriting a concrete term with a polymorphic pattern
+    /// produces a clause where the left and right sides have mismatched types.
+    ///
+    /// BUG: This test currently fails because the rewrite tree produces ill-typed literals
+    /// when backwards rewriting with polymorphic patterns. The rewrite substitutes type
+    /// variables (like x0, x1) into positions that expect ground types, resulting in
+    /// type mismatches like `g1(g1(Type, x0, ...), T1, ...) = c1` where the left side
+    /// has type involving FreeVariables but c1 has a ground type.
+    #[test]
+    #[ignore] // TODO: Fix the polymorphic backwards rewrite bug
+    fn test_polymorphic_backwards_rewrite_type_consistency() {
+        let mut kctx = KernelContext::new();
+        // Use names that don't start with 'T' to avoid collision with type variable syntax
+        kctx.parse_datatype("Foo");
+        kctx.parse_datatype("Bar");
+        // Pair is a parameterized type: Pair[T, U]
+        kctx.parse_type_constructor("Pair", 2);
+
+        // g0 = Pair.new: (T: Type) -> (U: Type) -> T -> U -> Pair[T, U]
+        kctx.parse_polymorphic_constant("g0", "T: Type, U: Type", "T -> U -> Pair[T, U]");
+        // g1 = Pair.first: (T: Type) -> (U: Type) -> Pair[T, U] -> T
+        kctx.parse_polymorphic_constant("g1", "T: Type, U: Type", "Pair[T, U] -> T");
+        // g2 = Pair.second: (T: Type) -> (U: Type) -> Pair[T, U] -> U
+        kctx.parse_polymorphic_constant("g2", "T: Type, U: Type", "Pair[T, U] -> U");
+        kctx.parse_constant("c1", "Foo");
+        kctx.parse_constant("c2", "Bar");
+
+        let mut set = ActiveSet::new();
+
+        // Add the polymorphic axiom for first: g1(x0, x1, g0(x0, x1, x2, x3)) = x2
+        // This is: Pair.first(T, U, Pair.new(T, U, t, u)) = t
+        // Context: x0: Type, x1: Type, x2: x0, x3: x1
+        let first_axiom = kctx.parse_clause(
+            "g1(x0, x1, g0(x0, x1, x2, x3)) = x2",
+            &["Type", "Type", "x0", "x1"],
+        );
+        let mut first_step = ProofStep::mock_from_clause(first_axiom);
+        first_step.truthiness = Truthiness::Factual;
+        set.activate(first_step, &kctx);
+
+        // Add the polymorphic axiom for second: g2(x0, x1, g0(x0, x1, x2, x3)) = x3
+        // This is: Pair.second(T, U, Pair.new(T, U, t, u)) = u
+        let second_axiom = kctx.parse_clause(
+            "g2(x0, x1, g0(x0, x1, x2, x3)) = x3",
+            &["Type", "Type", "x0", "x1"],
+        );
+        let mut second_step = ProofStep::mock_from_clause(second_axiom);
+        second_step.truthiness = Truthiness::Factual;
+        set.activate(second_step, &kctx);
+
+        // Now activate a concrete target: Pair.first(Foo, Bar, Pair.new(Foo, Bar, c1, c2)) = c1
+        // This triggers backwards rewriting which produces ill-typed clauses
+        let target_clause = kctx.parse_clause("g1(Foo, Bar, g0(Foo, Bar, c1, c2)) = c1", &[]);
+        let mut target_step = ProofStep::mock_from_clause(target_clause);
+        target_step.truthiness = Truthiness::Counterfactual;
+
+        // Use full activate which also does simplification
+        let (_, result) = set.activate(target_step, &kctx);
+
+        // Validate all generated clauses - this will catch type mismatches
+        for ps in &result {
+            ps.clause.validate(&kctx);
+        }
+    }
 }

@@ -278,8 +278,12 @@ impl Literal {
                 .get_type_with_context(local_context, kernel_context);
             if left_type != right_type {
                 panic!(
-                    "Literal type mismatch: {} has type {:?} but {} has type {:?}",
-                    self.left, left_type, self.right, right_type
+                    "Literal type mismatch: {} has type {:?} but {} has type {:?}\n  Context: {:?}",
+                    self.left,
+                    left_type,
+                    self.right,
+                    right_type,
+                    local_context.get_var_types()
                 );
             }
         }
