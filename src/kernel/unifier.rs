@@ -436,6 +436,15 @@ impl<'a> Unifier<'a> {
         if atom1 == atom2 {
             return true;
         }
+        // Special case: Typeclass is compatible with TypeSort
+        // A Typeclass constraint is a refinement of TypeSort, not a different type.
+        // When unifying types, Typeclass(X) should match TypeSort.
+        if matches!(atom1, Atom::Typeclass(_)) && matches!(atom2, Atom::Symbol(Symbol::TypeSort)) {
+            return true;
+        }
+        if matches!(atom2, Atom::Typeclass(_)) && matches!(atom1, Atom::Symbol(Symbol::TypeSort)) {
+            return true;
+        }
         false
     }
 

@@ -484,6 +484,21 @@ impl TypeStore {
             }
         }
 
+        // Handle Typeclass - these are used as type constraints in polymorphic mode
+        if type_term.as_ref().is_atomic() {
+            if let Atom::Typeclass(tc_id) = type_term.as_ref().get_head_atom() {
+                // Convert back to a Typeclass. We need to look up the name.
+                if let Some(typeclass) = self.id_to_typeclass.get(tc_id.as_u16() as usize) {
+                    // Return as a type variable constrained to this typeclass
+                    let type_param = TypeParam {
+                        name: "S".to_string(), // Generic name for the constrained type
+                        typeclass: Some(typeclass.clone()),
+                    };
+                    return AcornType::Variable(type_param);
+                }
+            }
+        }
+
         panic!("Unexpected type Term structure: {:?}", type_term);
     }
 

@@ -100,9 +100,14 @@ pub struct Normalizer {
     kernel_context: KernelContext,
 
     /// Current type variable mapping for polymorphic normalization.
-    /// Maps type parameter names to their allocated FreeVariable ids.
+    /// Maps type parameter names to (variable id, type).
+    /// The type is either TypeSort (unconstrained) or Typeclass (constrained).
     #[cfg(feature = "polymorphic")]
-    type_var_map: Option<HashMap<String, AtomId>>,
+    type_var_map: Option<HashMap<String, (AtomId, Term)>>,
+
+    /// Just the name->id part of type_var_map, for use with to_type_term_with_vars.
+    #[cfg(feature = "polymorphic")]
+    type_var_id_map: Option<HashMap<String, AtomId>>,
 }
 
 impl Normalizer {
@@ -115,13 +120,9 @@ impl Normalizer {
             kernel_context: KernelContext::new(),
             #[cfg(feature = "polymorphic")]
             type_var_map: None,
+            #[cfg(feature = "polymorphic")]
+            type_var_id_map: None,
         }
-    }
-
-    /// Get the current type variable map for polymorphic normalization.
-    #[cfg(feature = "polymorphic")]
-    fn type_var_map(&self) -> Option<&HashMap<String, AtomId>> {
-        self.type_var_map.as_ref()
     }
 
     pub fn get_synthetic_type(&self, id: AtomId) -> AcornType {
@@ -172,7 +173,7 @@ impl Normalizer {
         let type_term = self
             .kernel_context
             .type_store
-            .to_type_term_with_vars(&atom_type, self.type_var_map.as_ref());
+            .to_type_term_with_vars(&atom_type, self.type_var_id_map.as_ref());
         #[cfg(not(feature = "polymorphic"))]
         let type_term = self.kernel_context.type_store.to_type_term(&atom_type);
         self.declare_synthetic_atom_with_type_term(type_term)
@@ -248,7 +249,7 @@ impl Normalizer {
         let type_term = self
             .kernel_context
             .type_store
-            .to_type_term_with_vars(acorn_type, self.type_var_map.as_ref());
+            .to_type_term_with_vars(acorn_type, self.type_var_id_map.as_ref());
         #[cfg(not(feature = "polymorphic"))]
         let type_term = self.kernel_context.type_store.to_type_term(acorn_type);
         Atom::Symbol(self.kernel_context.symbol_table.add_constant(
@@ -309,9 +310,16 @@ impl NormalizerView<'_> {
         &self.as_ref().kernel_context
     }
 
-    /// Get the current type variable map for polymorphic normalization.
+    /// Get a map from type parameter names to variable IDs.
+    /// This is used with to_type_term_with_vars.
     #[cfg(feature = "polymorphic")]
     fn type_var_map(&self) -> Option<&HashMap<String, AtomId>> {
+        self.as_ref().type_var_id_map.as_ref()
+    }
+
+    /// Get the full type variable map including type constraints.
+    #[cfg(feature = "polymorphic")]
+    fn type_var_map_with_types(&self) -> Option<&HashMap<String, (AtomId, Term)>> {
         self.as_ref().type_var_map.as_ref()
     }
 
@@ -335,11 +343,14 @@ impl NormalizerView<'_> {
 
                 // In polymorphic mode, pre-allocate space for type variables
                 #[cfg(feature = "polymorphic")]
-                let mut next_var_id = if let Some(type_var_map) = self.type_var_map() {
-                    // Pre-populate local_context with Type entries for each type variable
-                    // Type variables are of kind Type (i.e., they are types)
-                    for _ in 0..type_var_map.len() {
-                        local_context.push_type(Term::type_sort());
+                let mut next_var_id = if let Some(type_var_map) = self.type_var_map_with_types() {
+                    // Pre-populate local_context with the type of each type variable.
+                    // The type is either TypeSort (unconstrained) or Typeclass (constrained).
+                    // We need to iterate in order of variable ID.
+                    let mut entries: Vec<_> = type_var_map.values().collect();
+                    entries.sort_by_key(|(id, _)| *id);
+                    for (_, var_type) in entries {
+                        local_context.push_type(var_type.clone());
                     }
                     type_var_map.len() as AtomId
                 } else {
@@ -1790,19 +1801,37 @@ impl Normalizer {
             };
 
             for (value, type_params, source) in propositions {
-                // Build type_var_map from type parameters
-                let type_var_map: HashMap<String, AtomId> = type_params
+                // Build type_var_map from type parameters.
+                // Each type parameter gets a variable ID and a type (TypeSort or Typeclass).
+                let type_var_map: HashMap<String, (AtomId, Term)> = type_params
                     .iter()
                     .enumerate()
-                    .map(|(i, p)| (p.name.clone(), i as AtomId))
+                    .map(|(i, p)| {
+                        let var_type = if let Some(tc) = &p.typeclass {
+                            // Type parameter has a typeclass constraint
+                            let tc_id = self.kernel_context.type_store.add_typeclass(tc);
+                            Term::typeclass(tc_id)
+                        } else {
+                            // Unconstrained type parameter
+                            Term::type_sort()
+                        };
+                        (p.name.clone(), (i as AtomId, var_type))
+                    })
                     .collect();
 
-                // Set the type_var_map before normalization
-                self.type_var_map = if type_var_map.is_empty() {
-                    None
+                // Set the type_var_map and type_var_id_map before normalization
+                if type_var_map.is_empty() {
+                    self.type_var_map = None;
+                    self.type_var_id_map = None;
                 } else {
-                    Some(type_var_map)
-                };
+                    // Build the id-only map for to_type_term_with_vars
+                    let id_map: HashMap<String, AtomId> = type_var_map
+                        .iter()
+                        .map(|(name, (id, _))| (name.clone(), *id))
+                        .collect();
+                    self.type_var_id_map = Some(id_map);
+                    self.type_var_map = Some(type_var_map);
+                }
                 let ctype = if source.truthiness() == Truthiness::Factual {
                     NewConstantType::Global
                 } else {
@@ -1835,8 +1864,9 @@ impl Normalizer {
                     steps.push(step);
                 }
 
-                // Clear type_var_map after processing this proposition
+                // Clear type_var_map and type_var_id_map after processing this proposition
                 self.type_var_map = None;
+                self.type_var_id_map = None;
             }
         }
 
