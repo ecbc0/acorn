@@ -1897,14 +1897,25 @@ impl Normalizer {
         &mut self,
         goal: &Goal,
     ) -> Result<(NormalizedGoal, Vec<ProofStep>), BuildError> {
+        use crate::elaborator::proposition::Proposition;
+        use std::sync::Arc;
+
         let prop = &goal.proposition;
         let (hypo, counterfactual) = prop.value.clone().negate_goal();
         let mut steps = vec![];
         if let Some(hypo) = hypo {
-            let fact = Fact::proposition(hypo, prop.source.clone());
+            // Preserve type parameters when creating hypothesis fact
+            let hypo_prop = Proposition::new(hypo, prop.params.clone(), prop.source.clone());
+            let fact = Fact::Proposition(Arc::new(hypo_prop));
             steps.extend(self.normalize_fact(fact)?);
         }
-        let fact = Fact::proposition(counterfactual.clone(), prop.source.as_negated_goal());
+        // Preserve type parameters when creating counterfactual fact
+        let counterfactual_prop = Proposition::new(
+            counterfactual.clone(),
+            prop.params.clone(),
+            prop.source.as_negated_goal(),
+        );
+        let fact = Fact::Proposition(Arc::new(counterfactual_prop));
         steps.extend(self.normalize_fact(fact)?);
 
         let ng = NormalizedGoal {
