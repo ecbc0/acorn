@@ -492,6 +492,21 @@ fn types_compatible(
 ) -> bool {
     let bound_type = bound_term.get_type_with_context(query_context, kernel_context);
 
+    // Universe level check: prevent matching TypeSort itself against type variables.
+    // When pattern_var_type is TypeSort (meaning we expect a type like Foo, Nat),
+    // we should reject if bound_term IS TypeSort itself (the type of types).
+    // This prevents universe polymorphism issues where Type gets substituted
+    // into positions expecting concrete types.
+    if matches!(
+        pattern_var_type.as_ref().decompose(),
+        Decomposition::Atom(KernelAtom::Symbol(Symbol::TypeSort))
+    ) && matches!(
+        bound_term.decompose(),
+        Decomposition::Atom(KernelAtom::Symbol(Symbol::TypeSort))
+    ) {
+        return false;
+    }
+
     // Fast path: exact equality
     if bound_type == *pattern_var_type {
         return true;
@@ -528,12 +543,26 @@ fn types_compatible(
                     return kernel_context.type_store.is_instance_of(ground_id, *tc_id);
                 }
             }
-            // If x0's type is Type/TypeSort (not a typeclass constraint), accept any type
+            // If x0's type is Type/TypeSort (not a typeclass constraint), check universe level.
+            // x0: TypeSort means x0 is a type variable that can be bound to types like Foo, Nat.
+            // For a value x1: x0 to match bound_term, bound_type must be a concrete type
+            // (like Foo), NOT TypeSort itself.
+            //
+            // Example:
+            // - c1: Foo where Foo: TypeSort → bound_type = Foo → valid (c1 is a value)
+            // - Foo: TypeSort → bound_type = TypeSort → invalid (Foo is a type, not a value)
             if matches!(
                 var_type.as_ref().decompose(),
                 Decomposition::Atom(KernelAtom::Symbol(Symbol::TypeSort))
             ) {
-                return true;
+                // Reject if bound_type IS TypeSort (meaning bound_term is a type, not a value)
+                if matches!(
+                    bound_type.as_ref().decompose(),
+                    Decomposition::Atom(KernelAtom::Symbol(Symbol::TypeSort))
+                ) {
+                    return false; // Reject: bound_term is a type, not a value
+                }
+                return true; // Accept: bound_type is a concrete type like Foo
             }
         }
         // Otherwise, try regular unification
@@ -1396,5 +1425,111 @@ mod tests {
             Some(42),
             "Pattern with type variable as first arg should match concrete query"
         );
+    }
+
+    #[test]
+    fn test_pdt_type_level_term_should_not_match_value_pattern_variable() {
+        // Tests that a type-level term should NOT match a pattern variable of type x0
+        // where x0: Type (i.e., a value-level pattern variable).
+        //
+        // Pattern: c0(x0, x1) where x0: Type, x1: x0
+        //          x0 is a type variable, x1 is a VALUE of type x0
+        // Query:   c0(Foo, Foo) where Foo: Type
+        //          The second Foo is a TYPE, not a value!
+        //
+        // This should NOT match because:
+        // - x1 is a value pattern variable (x1: x0)
+        // - Foo (query's second arg) is a type (Foo: Type)
+        // - Types cannot match value pattern variables
+
+        let mut kctx = KernelContext::new();
+        kctx.parse_datatype("Foo");
+
+        // c0 : forall T: Type. T -> Bool
+        kctx.parse_polymorphic_constant("c0", "T: Type", "T -> Bool");
+
+        // Pattern: c0(x0, x1) where x0: Type, x1: x0
+        let pattern_lctx = kctx.parse_local(&["Type", "x0"]);
+        let pattern_term = kctx.parse_term("c0(x0, x1)");
+
+        let mut tree: Pdt<&str> = Pdt::new();
+        tree.insert_pair(&pattern_term, &Term::new_true(), "pattern", &pattern_lctx);
+
+        // Query: c0(Foo, Foo) where first Foo is type arg, second Foo is... also Foo (a type!)
+        // This is a type-level query: we're using Foo (a type) where a value is expected.
+        let query_lctx = LocalContext::empty();
+        let query_term = kctx.parse_term("c0(Foo, Foo)");
+
+        let mut key = Vec::new();
+        let mut replacements = vec![];
+        let mut found = false;
+
+        tree.find_term_matches_while(
+            &mut key,
+            &[query_term.as_ref(), Term::new_true().as_ref()],
+            &query_lctx,
+            &kctx,
+            &mut replacements,
+            &mut |_value_id, _replacements| {
+                found = true;
+                true
+            },
+        );
+
+        // The second Foo (a type) should NOT match x1 (a value of type x0).
+        assert!(
+            !found,
+            "Type-level term Foo should NOT match value pattern variable x1: x0"
+        );
+    }
+
+    #[test]
+    fn test_pdt_typesort_should_not_match_type_variable() {
+        // Tests that TypeSort (Type itself) should NOT match a pattern type variable.
+        //
+        // Pattern: c0(x0) where x0: Type (TypeSort)
+        //          x0 is a type variable that can be bound to types like Foo, Nat
+        // Query:   c0(Type) where Type is the type of types (TypeSort)
+        //
+        // This should NOT match because:
+        // - x0: TypeSort means x0 is expected to be a concrete type like Foo
+        // - Type (TypeSort) is the meta-type, not a concrete type
+        // - Allowing this would cause universe polymorphism issues
+
+        let mut kctx = KernelContext::new();
+        kctx.parse_datatype("Foo");
+
+        // c0 : forall T: Type. T -> Bool
+        kctx.parse_polymorphic_constant("c0", "T: Type", "T -> Bool");
+
+        // Pattern: c0(x0) where x0: Type (TypeSort)
+        let pattern_lctx = kctx.parse_local(&["Type"]);
+        let pattern_term = kctx.parse_term("c0(x0)");
+
+        let mut tree: Pdt<&str> = Pdt::new();
+        tree.insert_pair(&pattern_term, &Term::new_true(), "pattern", &pattern_lctx);
+
+        // Query: c0(Type) where Type is TypeSort
+        let query_lctx = LocalContext::empty();
+        let query_term = kctx.parse_term("c0(Type)");
+
+        let mut key = Vec::new();
+        let mut replacements = vec![];
+        let mut found = false;
+
+        tree.find_term_matches_while(
+            &mut key,
+            &[query_term.as_ref(), Term::new_true().as_ref()],
+            &query_lctx,
+            &kctx,
+            &mut replacements,
+            &mut |_value_id, _replacements| {
+                found = true;
+                true
+            },
+        );
+
+        // TypeSort should NOT match x0 (a type variable expecting concrete types)
+        assert!(!found, "TypeSort should NOT match type variable x0: Type");
     }
 }

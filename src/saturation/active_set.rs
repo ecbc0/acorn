@@ -1238,7 +1238,6 @@ mod tests {
     /// type mismatches like `g1(g1(Type, x0, ...), T1, ...) = c1` where the left side
     /// has type involving FreeVariables but c1 has a ground type.
     #[test]
-    #[ignore] // TODO: Fix the polymorphic backwards rewrite bug
     fn test_polymorphic_backwards_rewrite_type_consistency() {
         let mut kctx = KernelContext::new();
         // Use names that don't start with 'T' to avoid collision with type variable syntax
