@@ -2295,4 +2295,23 @@ impl Normalizer {
         }
         panic!("no theorem named {}", name);
     }
+
+    /// Returns all normalized clauses from the environment. Just for testing purposes.
+    #[cfg(test)]
+    pub fn get_all_clauses(
+        &mut self,
+        env: &crate::elaborator::environment::Environment,
+    ) -> Vec<crate::kernel::clause::Clause> {
+        let mut clauses = vec![];
+        for node in &env.nodes {
+            if let Some(fact) = node.get_fact() {
+                if let Ok(steps) = self.normalize_fact(fact) {
+                    for step in steps {
+                        clauses.push(step.clause);
+                    }
+                }
+            }
+        }
+        clauses
+    }
 }

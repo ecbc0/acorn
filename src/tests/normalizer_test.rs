@@ -865,3 +865,49 @@ fn test_if_then_else_with_forall_condition() {
         ],
     );
 }
+
+/// Test that typeclass method axioms have typeclass constraints in their LocalContext.
+///
+/// When a typeclass like `Singleton` has a method `value: S`, the polymorphic axiom
+/// should have type variable x0 with type `Singleton` (the typeclass), NOT `TypeSort`.
+#[test]
+#[cfg(feature = "polymorphic")]
+fn test_typeclass_method_has_typeclass_constraint_in_context() {
+    use crate::kernel::atom::Atom;
+    use crate::kernel::term::Decomposition;
+
+    let mut env = Environment::test();
+    let mut norm = Normalizer::new();
+
+    env.add(
+        r#"
+        typeclass S: Singleton {
+            value: S
+
+            unique(x: S) {
+                x = S.value
+            }
+        }
+        "#,
+    );
+
+    // The unique axiom normalizes to: Singleton.value(x0) = x1
+    // where x0 is the type parameter and x1: x0 is the value.
+    // x0's type should be Typeclass(Singleton), NOT TypeSort.
+    let clauses = norm.get_all_clauses(&env);
+    assert_eq!(clauses.len(), 1, "Expected exactly one clause");
+
+    let clause = &clauses[0];
+    let ctx = clause.get_local_context();
+    let x0_type = ctx.get_var_type(0).expect("x0 should have a type");
+
+    // x0 should have type Typeclass(Singleton), not TypeSort
+    assert!(
+        matches!(
+            x0_type.as_ref().decompose(),
+            Decomposition::Atom(Atom::Typeclass(_))
+        ),
+        "x0 should have Typeclass constraint, not TypeSort. Got: {:?}",
+        ctx.get_var_types()
+    );
+}
