@@ -1324,6 +1324,72 @@ mod tests {
     }
 
     #[test]
+    fn test_unify_typeclass_variable_rejects_typesort() {
+        // Test: x0 with type Monoid should NOT unify with TypeSort
+        // TypeSort is the "type of types" (a kind), not a type that implements any typeclass.
+        // This was a bug where backwards rewriting produced ill-typed terms like g1(g1(Type)).
+        use crate::elaborator::acorn_type::Typeclass;
+        use crate::module::ModuleId;
+
+        let mut ctx = KernelContext::new();
+
+        // Register a Monoid typeclass
+        let monoid = Typeclass {
+            module_id: ModuleId(0),
+            name: "Monoid".to_string(),
+        };
+        let monoid_id = ctx.type_store.add_typeclass(&monoid);
+
+        // x0 has typeclass constraint Monoid (its "type" is the typeclass)
+        let typeclass_type = Term::typeclass(monoid_id);
+        let local_ctx = LocalContext::from_types(vec![typeclass_type.clone()]);
+
+        let x0 = Term::atom(Atom::FreeVariable(0));
+        let type_sort = Term::type_sort();
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(local_ctx.clone())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+        u.set_output_var_types(vec![type_sort.clone()]);
+
+        // x0: Monoid should NOT unify with TypeSort
+        // TypeSort is not a type - it's a kind (the type of types)
+        let result = u.unify(Scope::LEFT, &x0, Scope::RIGHT, &type_sort);
+        assert!(
+            !result,
+            "x0: Monoid should NOT unify with TypeSort - TypeSort is a kind, not a type"
+        );
+    }
+
+    #[test]
+    fn test_unify_type_variable_rejects_typesort() {
+        // Test: x0 with type TypeSort (a type variable) should NOT unify with TypeSort itself
+        // x0: TypeSort means x0 can be any type like Nat, Bool, etc.
+        // TypeSort is NOT a type - it's the kind of types.
+        // This prevents universe-level confusion.
+        let ctx = KernelContext::new();
+
+        // x0 has type TypeSort (i.e., x0 is a type variable)
+        let local_ctx = LocalContext::from_types(vec![Term::type_sort()]);
+
+        let x0 = Term::atom(Atom::FreeVariable(0));
+        let type_sort = Term::type_sort();
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(local_ctx.clone())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+        u.set_output_var_types(vec![type_sort.clone()]);
+
+        // x0: TypeSort should NOT unify with TypeSort
+        // TypeSort is a kind, not a type, so it can't be bound to a type variable
+        let result = u.unify(Scope::LEFT, &x0, Scope::RIGHT, &type_sort);
+        assert!(
+            !result,
+            "x0: TypeSort should NOT unify with TypeSort - TypeSort is a kind, not a type"
+        );
+    }
+
+    #[test]
     fn test_unify_typeclass_variables_compatible() {
         // Test: two variables with the same typeclass constraint can unify
         use crate::elaborator::acorn_type::Typeclass;
