@@ -3,7 +3,6 @@ use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
-#[cfg(test)]
 use crate::kernel::symbol::Symbol;
 use crate::kernel::term::{Decomposition, Term, TermRef};
 use crate::kernel::variable_map::VariableMap;
@@ -343,6 +342,35 @@ impl<'a> Unifier<'a> {
             .get_var_type(var_id as usize)
             .cloned()
             .expect("Variable should have type in LocalContext");
+
+        // Universe level check: when var_type is TypeSort (meaning this is a type variable
+        // that should be bound to types like Foo, Nat), we should only accept proper types,
+        // not value-level expressions that happen to return Type.
+        //
+        // Valid: Type symbols (Foo, Bool, Empty), type variables (FreeVariable)
+        // Invalid: TypeSort itself, function applications (GlobalConstant, ScopedConstant)
+        if matches!(
+            var_type.as_ref().decompose(),
+            Decomposition::Atom(Atom::Symbol(Symbol::TypeSort))
+        ) {
+            match term.as_ref().get_head_atom() {
+                // Accept: proper types and type variables
+                Atom::Symbol(Symbol::Type(_))
+                | Atom::Symbol(Symbol::Bool)
+                | Atom::Symbol(Symbol::Empty)
+                | Atom::FreeVariable(_) => {
+                    // OK - these are proper types
+                }
+                Atom::Symbol(Symbol::TypeSort) => {
+                    // Reject: TypeSort itself shouldn't match a type variable
+                    return false;
+                }
+                _ => {
+                    // Reject: value-level expressions (GlobalConstant, ScopedConstant, etc.)
+                    return false;
+                }
+            }
+        }
 
         // Check if this variable has a typeclass constraint.
         // If its type is a typeclass (e.g., Monoid), the term must be of a type
