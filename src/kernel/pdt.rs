@@ -492,19 +492,38 @@ fn types_compatible(
 ) -> bool {
     let bound_type = bound_term.get_type_with_context(query_context, kernel_context);
 
-    // Universe level check: prevent matching TypeSort itself against type variables.
-    // When pattern_var_type is TypeSort (meaning we expect a type like Foo, Nat),
-    // we should reject if bound_term IS TypeSort itself (the type of types).
-    // This prevents universe polymorphism issues where Type gets substituted
-    // into positions expecting concrete types.
+    // Universe level check: when pattern_var_type is TypeSort (expecting a type like Foo, Nat),
+    // we should only accept proper types, not value-level expressions that compute to Type.
+    //
+    // Valid matches:
+    // - Type symbols: Foo, Bool, Empty (Symbol::Type, Symbol::Bool, Symbol::Empty)
+    // - Type constructor applications: List[Int] (Symbol::Type applied to args)
+    //
+    // Invalid matches:
+    // - TypeSort itself (would cause universe polymorphism issues)
+    // - Value functions returning Type: second[T, Type, p] returns Type if U=Type
     if matches!(
         pattern_var_type.as_ref().decompose(),
         Decomposition::Atom(KernelAtom::Symbol(Symbol::TypeSort))
-    ) && matches!(
-        bound_term.decompose(),
-        Decomposition::Atom(KernelAtom::Symbol(Symbol::TypeSort))
     ) {
-        return false;
+        // Check that bound_term is a proper type, not a value-level expression
+        match bound_term.get_head_atom() {
+            // Type-level terms: type symbols and type constructors
+            KernelAtom::Symbol(Symbol::Type(_))
+            | KernelAtom::Symbol(Symbol::Bool)
+            | KernelAtom::Symbol(Symbol::Empty)
+            | KernelAtom::FreeVariable(_) => {
+                // Accept: proper types and type variables
+            }
+            KernelAtom::Symbol(Symbol::TypeSort) => {
+                // Reject: TypeSort itself shouldn't match a type variable
+                return false;
+            }
+            _ => {
+                // Reject: value-level expressions (GlobalConstant, ScopedConstant, etc.)
+                return false;
+            }
+        }
     }
 
     // Fast path: exact equality

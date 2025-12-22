@@ -1649,4 +1649,57 @@ mod tests {
             "Nested dependent Pi type should unify with itself"
         );
     }
+
+    #[test]
+    fn test_type_variable_should_not_unify_with_value_returning_type() {
+        // Test that a type variable (x0: TypeSort) should NOT unify with a value-level
+        // expression that returns Type.
+        //
+        // This is the bug in polymorphic backwards rewriting: when a pattern has a type
+        // variable like x0: TypeSort, it should only be bound to proper types (like Foo, Nat),
+        // not to value-level expressions that happen to return Type.
+        //
+        // Example of the bug:
+        // - Pattern: f(x0, a) where x0: TypeSort
+        // - Target: f(getType(c0), a) where getType: Foo -> Type
+        // - x0 gets bound to getType(c0), which is WRONG
+        // - x0 should only bind to proper type symbols, not function applications
+
+        let mut ctx = KernelContext::new();
+        ctx.parse_datatype("Foo");
+
+        let foo_id = ctx.type_store.get_ground_id_by_name("Foo").unwrap();
+        let foo_type = Term::ground_type(foo_id);
+        let type_sort = Term::type_sort();
+
+        // Create a function getType: Foo -> Type
+        // This is a value-level function that returns a type
+        let foo_to_type = Term::pi(foo_type.clone(), type_sort.clone());
+        ctx.symbol_table.add_global_constant(foo_to_type);
+
+        // Create c0: Foo
+        ctx.symbol_table.add_scoped_constant(foo_type.clone());
+
+        // getType(c0) is a value-level expression that returns Type
+        let c0 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(0)));
+        let get_type_c0 = Term::new(Atom::Symbol(Symbol::GlobalConstant(0)), vec![c0.clone()]);
+
+        // x0 is a type variable (x0: TypeSort)
+        let lctx = LocalContext::from_types(vec![type_sort.clone()]);
+        let x0 = Term::atom(Atom::FreeVariable(0));
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(lctx)));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+        u.set_output_var_types(vec![type_sort.clone()]);
+
+        // x0: TypeSort should NOT unify with getType(c0)
+        // Even though getType(c0) has type Type (= TypeSort), it's a value-level expression,
+        // not a proper type like Foo or Nat.
+        let result = u.unify(Scope::LEFT, &x0, Scope::RIGHT, &get_type_c0);
+        assert!(
+            !result,
+            "Type variable x0: TypeSort should NOT unify with value-level expression getType(c0)"
+        );
+    }
 }
