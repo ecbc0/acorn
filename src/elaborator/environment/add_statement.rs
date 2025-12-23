@@ -597,6 +597,20 @@ impl Environment {
         statement: &Statement,
         vss: &VariableSatisfyStatement,
     ) -> error::Result<()> {
+        // Handle type parameters for polymorphic variable satisfy
+        if self.depth > 0 && !vss.type_params.is_empty() {
+            return Err(vss.declarations[0]
+                .token()
+                .error("parameterized constants may only be defined at the top level"));
+        }
+
+        let local_type_params = self
+            .evaluator(project)
+            .evaluate_type_params(&vss.type_params)?;
+        for param in &local_type_params {
+            self.bindings.add_arbitrary_type(param.clone());
+        }
+
         // First, evaluate the type expressions with token tracking
         for declaration in &vss.declarations {
             if let Declaration::Typed(_, type_expr) = declaration {
@@ -616,16 +630,17 @@ impl Environment {
         )?;
         let general_claim = AcornValue::Exists(quant_types.clone(), Box::new(general_claim_value));
         let source = Source::anonymous(self.module_id, statement.range(), self.depth);
-        let general_prop = Proposition::monomorphic(general_claim, source);
+        let general_prop = Proposition::new(general_claim, local_type_params.clone(), source);
         let index = self.add_node(Node::claim(project, self, general_prop));
         self.add_node_lines(index, &statement.range());
 
-        // Define the quantifiers as constants
+        // For the specific claim, we need monomorphic constants with arbitrary types
+        // so they can be resolved. Add temporary constants without type params.
         for (quant_name, quant_type) in quant_names.iter().zip(quant_types.iter()) {
             let def_str = format!("{}: {}", quant_name, quant_type);
             self.bindings.add_unqualified_constant(
                 quant_name,
-                vec![],
+                vec![], // No type params - makes it resolvable with arbitrary types
                 quant_type.clone(),
                 None,
                 None,
@@ -640,8 +655,36 @@ impl Environment {
             .evaluator(project)
             .evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
         let source = Source::anonymous(self.module_id, statement.range(), self.depth);
-        let specific_prop = Proposition::monomorphic(specific_claim, source);
+        let specific_prop = Proposition::new(specific_claim, local_type_params.clone(), source);
         self.add_node(Node::structural(project, self, specific_prop));
+
+        // Remove the temporary monomorphic constants
+        for quant_name in &quant_names {
+            self.bindings
+                .remove_constant(&ConstantName::unqualified(self.module_id, quant_name));
+        }
+
+        // Clean up the arbitrary types
+        for param in local_type_params.iter().rev() {
+            self.bindings.remove_type(&param.name);
+        }
+
+        // Now define the polymorphic constants for external use (with type params)
+        for (quant_name, quant_type) in quant_names.iter().zip(quant_types.iter()) {
+            // Genericize the type so it uses Variable instead of Arbitrary
+            let generic_type = quant_type.clone().genericize(&local_type_params);
+            let def_str = format!("{}: {}", quant_name, generic_type);
+            self.bindings.add_unqualified_constant(
+                quant_name,
+                local_type_params.clone(),
+                generic_type,
+                None,
+                None,
+                vec![],
+                None,
+                def_str,
+            );
+        }
 
         Ok(())
     }
@@ -656,6 +699,13 @@ impl Environment {
         self.bindings
             .check_unqualified_name_available(fss.name_token.text(), statement)?;
 
+        // Handle type parameters for polymorphic function satisfy
+        if self.depth > 0 && !fss.type_params.is_empty() {
+            return Err(fss
+                .name_token
+                .error("parameterized functions may only be defined at the top level"));
+        }
+
         // Figure out the range for this function definition.
         // It's smaller than the whole function statement because it doesn't
         // include the proof block.
@@ -664,17 +714,18 @@ impl Environment {
             end: fss.satisfy_token.end_pos(),
         };
 
-        let (_, mut arg_names, mut arg_types, condition, _) = self.bindings.evaluate_scoped_value(
-            &[],
-            &fss.declarations,
-            None,
-            &fss.condition,
-            None,
-            None,
-            None,
-            project,
-            Some(&mut self.token_map),
-        )?;
+        let (type_params, mut arg_names, mut arg_types, condition, _) =
+            self.bindings.evaluate_scoped_value(
+                &fss.type_params,
+                &fss.declarations,
+                None,
+                &fss.condition,
+                None,
+                None,
+                None,
+                project,
+                Some(&mut self.token_map),
+            )?;
 
         let unbound_condition = condition.ok_or_else(|| statement.error("missing condition"))?;
         if unbound_condition.get_type() != AcornType::Bool {
@@ -695,7 +746,7 @@ impl Environment {
         let block = Block::new(
             project,
             &self,
-            vec![],
+            type_params.clone(),
             block_args,
             BlockParams::FunctionSatisfy(
                 unbound_condition.clone(),
@@ -708,12 +759,14 @@ impl Environment {
         )?;
 
         // We define this function not with an equality, but via the condition.
+        // For polymorphic functions, we need to genericize the type.
         let function_type = AcornType::functional(arg_types.clone(), return_type);
+        let generic_function_type = function_type.clone().genericize(&type_params);
         let doc_comments = self.take_doc_comments();
         self.bindings.add_unqualified_constant(
             fss.name_token.text(),
-            vec![],
-            function_type.clone(),
+            type_params.clone(),
+            generic_function_type.clone(),
             None,
             None,
             doc_comments,
@@ -721,12 +774,16 @@ impl Environment {
             statement.to_string(),
         );
         let const_name = ConstantName::unqualified(self.module_id, fss.name_token.text());
-        // Non-generic: generic_type equals instance_type
+        // Build the condition with arbitrary types first, then genericize for the external prop
+        let type_args: Vec<_> = type_params
+            .iter()
+            .map(|p| AcornType::Arbitrary(p.clone()))
+            .collect();
         let function_constant = AcornValue::constant(
             const_name,
-            vec![],
+            type_args,
+            generic_function_type,
             function_type.clone(),
-            function_type,
             vec![],
         );
         let function_term = AcornValue::apply(
@@ -738,16 +795,20 @@ impl Environment {
                 .collect(),
         );
         let return_bound = unbound_condition.bind_values(num_args, num_args, &[function_term]);
-        let external_condition = AcornValue::ForAll(arg_types, Box::new(return_bound));
+        let arb_condition = AcornValue::ForAll(arg_types, Box::new(return_bound));
+
+        // Genericize for the external proposition (converts Arbitrary to Variable)
+        let external_condition = arb_condition.genericize(&type_params);
+        let generic_constant = function_constant.genericize(&type_params);
 
         let source = Source::constant_definition(
             self.module_id,
             definition_range,
             self.depth,
-            function_constant,
+            generic_constant,
             fss.name_token.text(),
         );
-        let prop = Proposition::monomorphic(external_condition, source);
+        let prop = Proposition::new(external_condition, type_params, source);
 
         let index = self.add_node(Node::block(project, self, block, Some(prop)));
         self.add_node_lines(index, &statement.range());

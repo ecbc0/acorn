@@ -178,8 +178,11 @@ impl Block {
                 // In the block, we need to prove this goal in bound form, so bind args to it.
                 // The partial goal has variables 0..args.len() bound to the block's args,
                 // but there is one last variable that needs to be existentially quantified.
-                let partial_goal = unbound_goal.clone().bind_values(0, 0, &internal_args);
-                let bound_goal = AcornValue::exists(vec![return_type.clone()], partial_goal);
+                let partial_goal = unbound_goal
+                    .clone()
+                    .bind_values(0, 0, &internal_args)
+                    .to_arbitrary();
+                let bound_goal = AcornValue::exists(vec![return_type.to_arbitrary()], partial_goal);
                 assert!(!bound_goal.has_generic());
                 let source = Source::block_goal(env.module_id, range, subenv.depth);
                 let prop = Proposition::monomorphic(bound_goal, source);

@@ -337,6 +337,38 @@ mod tests {
     }
 
     #[test]
+    fn test_polymorphic_variable_satisfy_statement() {
+        ok(indoc! {"
+        let foo[T]: T satisfy {
+            bar(foo)
+        }"});
+    }
+
+    #[test]
+    fn test_polymorphic_variable_satisfy_with_typeclass() {
+        ok(indoc! {"
+        let foo[T: Monoid]: T satisfy {
+            foo = T.identity
+        }"});
+    }
+
+    #[test]
+    fn test_polymorphic_function_satisfy_statement() {
+        ok(indoc! {"
+        let flip[T](a: T) -> b: T satisfy {
+            a = b
+        }"});
+    }
+
+    #[test]
+    fn test_polymorphic_function_satisfy_with_typeclass() {
+        ok(indoc! {"
+        let combine[T: Monoid](a: T, b: T) -> r: T satisfy {
+            r = a.mul(b)
+        }"});
+    }
+
+    #[test]
     fn test_if_statement() {
         ok(indoc! {"
         if x > 1 {

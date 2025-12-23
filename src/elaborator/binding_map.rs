@@ -1111,7 +1111,7 @@ impl BindingMap {
     }
 
     /// Be really careful about this, it seems likely to break things.
-    fn remove_constant(&mut self, constant_name: &ConstantName) {
+    pub fn remove_constant(&mut self, constant_name: &ConstantName) {
         if let ConstantName::Unqualified(_, word) = constant_name {
             // Remove the unqualified name from the list of unqualified names.
             self.unqualified.remove(word);

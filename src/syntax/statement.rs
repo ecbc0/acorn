@@ -109,7 +109,12 @@ pub struct IfStatement {
 ///   let a: Nat satisfy {
 ///     a > 0
 ///   }
+/// It can also be polymorphic:
+///   let foo[T]: T satisfy {
+///     bar(foo)
+///   }
 pub struct VariableSatisfyStatement {
+    pub type_params: Vec<TypeParamExpr>,
     pub declarations: Vec<Declaration>,
     pub condition: Expression,
 }
@@ -118,9 +123,16 @@ pub struct VariableSatisfyStatement {
 /// by giving a condition that the output of the function obeys, and claiming that
 /// there is such a function.
 /// It's like a combination of a "define" and a "theorem".
+/// It can also be polymorphic:
+///   let flip[T](a: T) -> b: T satisfy {
+///     a = b
+///   }
 pub struct FunctionSatisfyStatement {
     /// Name of the new function.
     pub name_token: Token,
+
+    /// Type parameters for polymorphic function satisfy.
+    pub type_params: Vec<TypeParamExpr>,
 
     /// The declarations are mostly arguments to the function, but the last one is the return
     /// value of the function.
@@ -476,12 +488,14 @@ fn parse_theorem_statement(
 fn complete_variable_satisfy(
     keyword: Token,
     tokens: &mut TokenIter,
+    type_params: Vec<TypeParamExpr>,
     declarations: Vec<Declaration>,
 ) -> Result<Statement> {
     tokens.expect_type(TokenType::LeftBrace)?;
     let (condition, last_token) =
         Expression::parse_value(tokens, Terminator::Is(TokenType::RightBrace))?;
     let es = VariableSatisfyStatement {
+        type_params,
         declarations,
         condition,
     };
@@ -500,8 +514,9 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> 
         Some(token) => {
             if token.token_type == TokenType::LeftParen {
                 // This is a parenthesized let..satisfy.
+                // No type params for multi-variable satisfy.
                 let (declarations, _) = parse_args(tokens, TokenType::Satisfy)?;
-                return complete_variable_satisfy(keyword, tokens, declarations);
+                return complete_variable_satisfy(keyword, tokens, vec![], declarations);
             }
         }
         None => return Err(tokens.error("unexpected end of file")),
@@ -535,16 +550,34 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> 
         }
     }
 
+    // Check for type params before checking for '(' to handle polymorphic function satisfy
+    // like: let flip[T](a: T) -> b: T satisfy {...}
+    let early_type_params = if let Some(token) = tokens.peek() {
+        if token.token_type == TokenType::LeftBracket || token.token_type == TokenType::LessThan {
+            TypeParamExpr::parse_list(tokens)?
+        } else {
+            vec![]
+        }
+    } else {
+        vec![]
+    };
+
     if let Some(token) = tokens.peek() {
         if token.token_type == TokenType::LeftParen {
             // This could be either:
             // 1. A destructuring statement: let f(a) = value or let Pair.new(a, b) = value
             // 2. A function satisfy statement: let f(a) -> T satisfy {...}
             // Use peek_line to determine which one
+            // Note: destructuring doesn't support type params, so if we have type params,
+            // it must be a function satisfy.
 
             match tokens.peek_line(TokenType::Equals, TokenType::RightArrow) {
                 Some(TokenType::Equals) => {
                     // This is a destructuring statement
+                    if !early_type_params.is_empty() {
+                        return Err(first_name_token
+                            .error("destructuring statements don't support type parameters"));
+                    }
                     tokens.next(); // consume '('
 
                     // Collect argument names
@@ -609,6 +642,7 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> 
                     if !matches!(function_expr, Expression::Singleton(_)) {
                         return Err(first_name_token.error("function satisfy statements only support simple function names, not dot expressions"));
                     }
+                    // Use the type params we already parsed
                     tokens.next(); // consume '('
                     let mut declarations = Declaration::parse_list(tokens)?;
                     tokens.expect_type(TokenType::RightArrow)?;
@@ -621,6 +655,7 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> 
                     let (body, last_token) = parse_by_block(right_brace, tokens)?;
                     let fss = FunctionSatisfyStatement {
                         name_token: first_name_token.clone(),
+                        type_params: early_type_params,
                         declarations,
                         satisfy_token,
                         condition,
@@ -654,7 +689,12 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> 
         }
     }
 
-    let type_params = TypeParamExpr::parse_list(tokens)?;
+    // Use type params we may have already parsed, or parse them now
+    let type_params = if early_type_params.is_empty() {
+        TypeParamExpr::parse_list(tokens)?
+    } else {
+        early_type_params
+    };
 
     // Check if there's a colon (type annotation) or equals (type inference)
     let next_token = tokens.expect_token()?;
@@ -669,6 +709,7 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> 
                 return complete_variable_satisfy(
                     keyword,
                     tokens,
+                    type_params,
                     vec![Declaration::Typed(first_name_token, type_expr)],
                 );
             }
@@ -1658,7 +1699,16 @@ impl Statement {
             StatementInfo::VariableSatisfy(vss) => {
                 let mut doc = allocator.text("let ");
                 if vss.declarations.len() == 1 {
-                    doc = doc.append(vss.declarations[0].pretty_ref(allocator, false));
+                    // For single-variable, output: let name[T]: Type
+                    if let Declaration::Typed(name_token, type_expr) = &vss.declarations[0] {
+                        doc = doc.append(allocator.text(name_token.text()));
+                        doc = write_type_params_pretty(allocator, doc, &vss.type_params);
+                        doc = doc
+                            .append(allocator.text(": "))
+                            .append(type_expr.pretty_ref(allocator, false));
+                    } else {
+                        doc = doc.append(vss.declarations[0].pretty_ref(allocator, false));
+                    }
                 } else {
                     doc = write_args_pretty(allocator, doc, &vss.declarations);
                 }
@@ -1677,6 +1727,7 @@ impl Statement {
                 let mut doc = allocator
                     .text("let ")
                     .append(allocator.text(fss.name_token.text()));
+                doc = write_type_params_pretty(allocator, doc, &fss.type_params);
                 let i = fss.declarations.len() - 1;
                 doc = write_args_pretty(allocator, doc, &fss.declarations[..i]);
                 doc = doc

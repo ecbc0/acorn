@@ -1901,3 +1901,47 @@ fn test_prelude_auto_import() {
     // This should work because prelude is auto-imported
     p.expect_ok("main");
 }
+
+#[test]
+fn test_polymorphic_variable_satisfy() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        inductive List[T] {
+            nil
+            cons(T, List[T])
+        }
+        // Define a polymorphic witness using variable satisfy
+        let witness[T]: List[T] satisfy {
+            witness = List.nil[T]
+        }
+        // Use the polymorphic witness at a concrete type
+        let bool_witness: List[Bool] = witness[Bool]
+        theorem test_witness {
+            bool_witness = List.nil[Bool]
+        }
+    "#,
+    );
+    p.expect_ok("main");
+}
+
+#[test]
+fn test_polymorphic_function_satisfy() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        // Define a polymorphic identity function using function satisfy
+        let identity[T](x: T) -> r: T satisfy {
+            r = x
+        }
+        // Use the polymorphic function at a concrete type
+        let bool_id: Bool = identity[Bool](true)
+        theorem test_identity {
+            bool_id = true
+        }
+    "#,
+    );
+    p.expect_ok("main");
+}
