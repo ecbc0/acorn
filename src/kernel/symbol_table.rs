@@ -237,7 +237,10 @@ impl SymbolTable {
         // Now add all constants (types are now registered)
         value.for_each_constant(&mut |c| {
             if self.get_symbol(&c.name).is_none() {
-                let is_polymorphic = !c.type_param_names.is_empty();
+                // A constant is polymorphic if either:
+                // - type_param_names is non-empty (the constant definition has type parameters)
+                // - params is non-empty (this is an instance of a polymorphic constant)
+                let is_polymorphic = !c.type_param_names.is_empty() || !c.params.is_empty();
                 let var_type = if !is_polymorphic {
                     // Non-polymorphic: use instance_type directly
                     type_store
@@ -245,9 +248,38 @@ impl SymbolTable {
                         .expect("type should be valid")
                 } else {
                     // Polymorphic: use generic_type (which has Variable types) to compute
-                    // the polymorphic type term. Create Variable params from type_param_names.
-                    let variable_params: Vec<AcornType> = c
-                        .type_param_names
+                    // the polymorphic type term.
+                    //
+                    // Extract type param names. If type_param_names is provided, use that.
+                    // Otherwise, extract variable names from generic_type.
+                    let type_param_names: Vec<String> = if !c.type_param_names.is_empty() {
+                        c.type_param_names.clone()
+                    } else {
+                        // Extract variable names from generic_type
+                        // Use a simple struct that implements ErrorContext
+                        struct NoContext;
+                        impl crate::elaborator::error::ErrorContext for NoContext {
+                            fn error(&self, msg: &str) -> crate::elaborator::error::Error {
+                                let empty_token = crate::syntax::token::Token::empty();
+                                crate::elaborator::error::Error::new(
+                                    &empty_token,
+                                    &empty_token,
+                                    msg,
+                                )
+                            }
+                        }
+                        let mut vars = std::collections::HashMap::new();
+                        // Ignore errors - we just want to collect variable names
+                        let _ = c.generic_type.find_type_vars(&mut vars, &NoContext);
+                        // Convert to a sorted list of names for deterministic order
+                        let mut names: Vec<_> = vars.keys().cloned().collect();
+                        names.sort();
+                        names
+                    };
+
+                    let num_type_params = type_param_names.len();
+
+                    let variable_params: Vec<AcornType> = type_param_names
                         .iter()
                         .map(|name| {
                             AcornType::Variable(TypeParam {
@@ -263,7 +295,7 @@ impl SymbolTable {
 
                     // Wrap in Pi(Type, ...) for each type parameter (from outermost to innermost)
                     let mut result = body_type;
-                    for _ in (0..c.type_param_names.len()).rev() {
+                    for _ in (0..num_type_params).rev() {
                         result = Term::pi(Term::type_sort(), result);
                     }
                     result
@@ -272,11 +304,33 @@ impl SymbolTable {
 
                 // Store polymorphic info for later use in denormalization
                 if is_polymorphic {
+                    // Determine type param names (use provided or extract from generic_type)
+                    let type_param_names: Vec<String> = if !c.type_param_names.is_empty() {
+                        c.type_param_names.clone()
+                    } else {
+                        // Extract variable names from generic_type
+                        struct NoContext;
+                        impl crate::elaborator::error::ErrorContext for NoContext {
+                            fn error(&self, msg: &str) -> crate::elaborator::error::Error {
+                                let empty_token = crate::syntax::token::Token::empty();
+                                crate::elaborator::error::Error::new(
+                                    &empty_token,
+                                    &empty_token,
+                                    msg,
+                                )
+                            }
+                        }
+                        let mut vars = std::collections::HashMap::new();
+                        let _ = c.generic_type.find_type_vars(&mut vars, &NoContext);
+                        let mut names: Vec<_> = vars.keys().cloned().collect();
+                        names.sort();
+                        names
+                    };
+
                     // Convert Arbitrary types to Variable types in generic_type
                     // The ConstantInstance we're visiting may have Arbitrary types,
                     // but we need Variable types for proper instantiation.
-                    let params_for_genericize: Vec<TypeParam> = c
-                        .type_param_names
+                    let params_for_genericize: Vec<TypeParam> = type_param_names
                         .iter()
                         .map(|name| TypeParam {
                             name: name.clone(),
@@ -290,7 +344,7 @@ impl SymbolTable {
                         c.name.clone(),
                         PolymorphicInfo {
                             generic_type: generic_type_with_variables,
-                            type_param_names: c.type_param_names.clone(),
+                            type_param_names,
                         },
                     );
                 }

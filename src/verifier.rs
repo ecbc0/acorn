@@ -1180,12 +1180,10 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Function type expected but not found")]
-    fn test_verifier_polymorphic_function_satisfy_crash() {
+    fn test_verifier_polymorphic_function_satisfy() {
         let (acornlib, src, _) = setup();
 
-        // This test demonstrates a crash when proving theorems about
-        // polymorphic function satisfy results
+        // Test polymorphic function satisfy with a theorem proving it works
         src.child("main.ac")
             .write_str(
                 r#"
@@ -1194,7 +1192,7 @@ mod tests {
                     r = x
                 }
 
-                // This theorem causes a crash in the prover
+                // Prove that identity returns its input
                 theorem identity_true {
                     identity[Bool](true) = true
                 }
@@ -1210,7 +1208,15 @@ mod tests {
         .unwrap();
         verifier.builder.check_hashes = false;
 
-        // This will panic with "Function type expected but not found"
-        let _ = verifier.run();
+        let result = verifier.run();
+        assert!(
+            result.is_ok(),
+            "Verifier should successfully verify polymorphic function satisfy: {:?}",
+            result
+        );
+
+        let output = result.unwrap();
+        assert_eq!(output.status, BuildStatus::Good);
+        assert!(output.metrics.goals_success >= 1);
     }
 }
