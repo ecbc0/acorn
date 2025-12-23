@@ -10,6 +10,7 @@ use walkdir::WalkDir;
 
 use crate::build_cache::BuildCache;
 use crate::certificate::Certificate;
+use crate::checker::StepReason;
 use crate::code_generator::{self, CodeGenerator};
 use crate::elaborator::acorn_type::{AcornType, Datatype, Typeclass};
 use crate::elaborator::acorn_value::AcornValue;
@@ -20,9 +21,10 @@ use crate::elaborator::fact::Fact;
 use crate::elaborator::goal::Goal;
 use crate::elaborator::named_entity::NamedEntity;
 use crate::elaborator::names::ConstantName;
-use crate::interfaces::Location;
+use crate::interfaces::{GoalInfo, Location, Step};
 use crate::module::{LoadState, Module, ModuleDescriptor, ModuleId};
 use crate::processor::Processor;
+use crate::syntax::statement::Statement;
 use crate::syntax::token::Token;
 use crate::syntax::token_map::TokenInfo;
 
@@ -1355,11 +1357,7 @@ impl Project {
         goal: &crate::elaborator::goal::Goal,
         goal_env: &crate::elaborator::environment::Environment,
         cursor: &crate::elaborator::node::NodeCursor,
-    ) -> crate::interfaces::GoalInfo {
-        use crate::checker::StepReason;
-        use crate::interfaces::{GoalInfo, Location, Step};
-        use crate::syntax::statement::Statement;
-
+    ) -> GoalInfo {
         let goal_name = goal.name.clone();
 
         // Check if there's a verified certificate for this goal

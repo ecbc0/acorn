@@ -10,8 +10,10 @@ use crate::build_cache::BuildCache;
 use crate::certificate::{Certificate, CertificateStore, CertificateWorklist};
 use crate::elaborator::environment::Environment;
 use crate::elaborator::error::Error as ElaborationError;
+use crate::elaborator::fact::Fact;
 use crate::elaborator::goal::Goal;
-use crate::elaborator::node::NodeCursor;
+use crate::elaborator::node::{Node, NodeCursor};
+use crate::elaborator::source::SourceType;
 use crate::generative::generative_prover::GenerativeProverConfig;
 use crate::generative::goal_context::GoalContext;
 use crate::generative::training_data_writer::TrainingDataWriter;
@@ -827,10 +829,6 @@ impl<'a> Builder<'a> {
     ) -> Result<(), BuildError> {
         // In strict mode, reject any use of the axiom keyword
         if self.strict {
-            use crate::elaborator::fact::Fact;
-            use crate::elaborator::node::Node;
-            use crate::elaborator::source::SourceType;
-
             for node in &env.nodes {
                 if let Node::Structural(Fact::Proposition(prop)) = node {
                     if matches!(prop.source.source_type, SourceType::Axiom(_)) {

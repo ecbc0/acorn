@@ -19,6 +19,7 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::{EqualityGraph, StepId};
 use crate::normalizer::{Normalizer, NormalizerView};
 use crate::project::Project;
+use crate::proof_step::Rule;
 use crate::syntax::expression::Declaration;
 use crate::syntax::statement::{Statement, StatementInfo};
 use tracing::trace;
@@ -487,7 +488,6 @@ impl Checker {
         normalizer: &mut crate::normalizer::Normalizer,
     ) -> Result<(), Error> {
         trace!("inserting goal {} (line {})", goal.name, goal.first_line);
-        use crate::proof_step::Rule;
 
         let source = &goal.proposition.source;
         let (_, steps) = normalizer.normalize_goal(goal).map_err(|e| e.message)?;

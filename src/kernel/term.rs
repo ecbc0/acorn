@@ -386,7 +386,6 @@ impl<'a> TermRef<'a> {
 
     /// Check if this term contains any synthetic atoms.
     pub fn has_synthetic(&self) -> bool {
-        use crate::kernel::symbol::Symbol;
         for component in self.components {
             if let TermComponent::Atom(Atom::Symbol(Symbol::Synthetic(_))) = component {
                 return true;

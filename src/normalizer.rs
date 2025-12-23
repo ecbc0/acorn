@@ -10,7 +10,6 @@ use crate::elaborator::goal::Goal;
 use crate::elaborator::names::ConstantName;
 #[cfg(feature = "polymorphic")]
 use crate::elaborator::potential_value::PotentialValue;
-#[cfg(feature = "polymorphic")]
 use crate::elaborator::proposition::Proposition;
 use crate::elaborator::source::{Source, SourceType};
 use crate::kernel::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
@@ -1302,9 +1301,6 @@ impl NormalizerView<'_> {
         synth: &mut Vec<AtomId>,
         context: &LocalContext,
     ) -> Result<Literal, String> {
-        use crate::elaborator::acorn_type::AcornType;
-        use crate::kernel::atom::Atom;
-
         // Create a new synthetic boolean atom with the appropriate function type
         // based on free variables in the stack
         let mut arg_types = vec![];
@@ -1387,9 +1383,6 @@ impl NormalizerView<'_> {
                 // For atom s representing "if cond then then_term else else_term":
                 // (cond -> s = then_term) and (not cond -> s = else_term)
                 // Which is (not cond or s = then_term) and (cond or s = else_term)
-
-                use crate::elaborator::acorn_type::AcornType;
-                use crate::kernel::atom::Atom;
 
                 // Determine the type of the result (should be same as then_term and else_term)
                 let result_closed_type =
@@ -1897,9 +1890,6 @@ impl Normalizer {
         &mut self,
         goal: &Goal,
     ) -> Result<(NormalizedGoal, Vec<ProofStep>), BuildError> {
-        use crate::elaborator::proposition::Proposition;
-        use std::sync::Arc;
-
         let prop = &goal.proposition;
         let (hypo, counterfactual) = prop.value.clone().negate_goal();
         let mut steps = vec![];

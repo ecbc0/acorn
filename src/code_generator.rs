@@ -8,7 +8,7 @@ use crate::elaborator::acorn_value::{AcornValue, BinaryOp, ConstantInstance};
 use crate::elaborator::binding_map::BindingMap;
 use crate::elaborator::names::{ConstantName, DefinedName};
 use crate::elaborator::type_unifier::TypeclassRegistry;
-use crate::kernel::atom::AtomId;
+use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
@@ -349,7 +349,6 @@ impl CodeGenerator<'_> {
     }
 
     fn add_arbitrary_for_term(&mut self, term: &Term, local_context: &LocalContext) {
-        use crate::kernel::atom::Atom;
         match term.as_ref().decompose() {
             Decomposition::Atom(Atom::FreeVariable(var_id)) => {
                 // For a variable term, get its type from the local context.
