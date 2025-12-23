@@ -1118,4 +1118,99 @@ mod tests {
         assert_eq!(output.status, BuildStatus::Good);
         assert!(output.metrics.goals_success >= 1);
     }
+
+    #[test]
+    fn test_verifier_polymorphic_variable_satisfy() {
+        let (acornlib, src, _) = setup();
+
+        // Test polymorphic variable satisfy
+        // We define identity1 first to help prove the existence claim,
+        // then define identity2 via polymorphic variable satisfy
+        src.child("main.ac")
+            .write_str(
+                r#"
+                // Define identity1 the old-fashioned way
+                define identity1[T](x: T) -> T { x }
+
+                // Prove that identity1 is indeed an identity function (for Bool)
+                theorem identity1_property {
+                    forall(x: Bool) { identity1[Bool](x) = x }
+                }
+
+                // Now define identity2 using polymorphic variable satisfy
+                // The prover should be able to use identity1 to prove existence
+                let identity2[T]: T -> T satisfy {
+                    forall(x: T) { identity2(x) = x }
+                }
+
+                // Prove that identity2 returns its input
+                theorem identity2_true {
+                    identity2[Bool](true) = true
+                }
+                "#,
+            )
+            .unwrap();
+
+        let mut verifier = Verifier::new(
+            acornlib.path().to_path_buf(),
+            ProjectConfig::default(),
+            None,
+        )
+        .unwrap();
+        verifier.builder.check_hashes = false;
+
+        let result = verifier.run();
+        assert!(
+            result.is_ok(),
+            "Verifier should successfully elaborate polymorphic variable satisfy: {:?}",
+            result
+        );
+
+        let output = result.unwrap();
+        // The elaboration works, but the prover currently can't prove the polymorphic
+        // existence claim. This test verifies the syntax is correct.
+        // Status will be Warning (not Good) until prover handles polymorphic existence better.
+        assert!(
+            output.status == BuildStatus::Good || output.status == BuildStatus::Warning,
+            "Expected Good or Warning status, got {:?}",
+            output.status
+        );
+        // At minimum, identity1_property should be proved
+        assert!(output.metrics.goals_success >= 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Function type expected but not found")]
+    fn test_verifier_polymorphic_function_satisfy_crash() {
+        let (acornlib, src, _) = setup();
+
+        // This test demonstrates a crash when proving theorems about
+        // polymorphic function satisfy results
+        src.child("main.ac")
+            .write_str(
+                r#"
+                // Define a polymorphic identity function using function satisfy
+                let identity[T](x: T) -> r: T satisfy {
+                    r = x
+                }
+
+                // This theorem causes a crash in the prover
+                theorem identity_true {
+                    identity[Bool](true) = true
+                }
+                "#,
+            )
+            .unwrap();
+
+        let mut verifier = Verifier::new(
+            acornlib.path().to_path_buf(),
+            ProjectConfig::default(),
+            None,
+        )
+        .unwrap();
+        verifier.builder.check_hashes = false;
+
+        // This will panic with "Function type expected but not found"
+        let _ = verifier.run();
+    }
 }
