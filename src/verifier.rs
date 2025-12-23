@@ -1077,4 +1077,45 @@ mod tests {
             "module_b should have 2 certs (b_theorem_1 and b_theorem_2)"
         );
     }
+
+    #[test]
+    fn test_verifier_function_satisfy() {
+        let (acornlib, src, _) = setup();
+
+        // Create a file with a function satisfy and prove it works correctly
+        src.child("main.ac")
+            .write_str(
+                r#"
+                // Define an identity function using function satisfy
+                let identity(x: Bool) -> r: Bool satisfy {
+                    r = x
+                }
+
+                // Prove that identity returns its input
+                theorem identity_true {
+                    identity(true) = true
+                }
+                "#,
+            )
+            .unwrap();
+
+        let mut verifier = Verifier::new(
+            acornlib.path().to_path_buf(),
+            ProjectConfig::default(),
+            None,
+        )
+        .unwrap();
+        verifier.builder.check_hashes = false;
+
+        let result = verifier.run();
+        assert!(
+            result.is_ok(),
+            "Verifier should successfully verify function satisfy: {:?}",
+            result
+        );
+
+        let output = result.unwrap();
+        assert_eq!(output.status, BuildStatus::Good);
+        assert!(output.metrics.goals_success >= 1);
+    }
 }
