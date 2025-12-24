@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::elaborator::acorn_type::AcornType;
 use crate::elaborator::acorn_value::{AcornValue, ConstantInstance};
@@ -7,6 +7,7 @@ use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::symbol::Symbol;
 use crate::kernel::term::Term;
 use crate::kernel::type_store::TypeStore;
+use crate::kernel::types::GroundTypeId;
 
 #[derive(Clone, Copy, Debug)]
 pub enum NewConstantType {
@@ -62,6 +63,10 @@ pub struct SymbolTable {
     /// Maps a type to the first symbol registered with that type.
     /// Used to get an element of a particular type (e.g., for instantiating universal quantifiers).
     type_to_element: HashMap<Term, Symbol>,
+
+    /// Type constructors known to be inhabited for any type arguments.
+    /// For example, if we have `nil: forall[T]. List[T]`, then List is in this set.
+    inhabited_type_constructors: HashSet<GroundTypeId>,
 }
 
 impl SymbolTable {
@@ -76,12 +81,48 @@ impl SymbolTable {
             synthetic_types: vec![],
             polymorphic_info: HashMap::new(),
             type_to_element: HashMap::new(),
+            inhabited_type_constructors: HashSet::new(),
         }
     }
 
     /// Record a symbol as an element of a type (only if no element exists for that type yet).
     fn record_element(&mut self, var_type: Term, symbol: Symbol) {
+        // Also track inhabited type constructors for polymorphic types.
+        // If var_type is Pi(Type, ...) or Pi(Typeclass, ...), the return type's
+        // ground type constructor is inhabited for any type arguments.
+        self.record_inhabited_type_constructor(&var_type);
+
         self.type_to_element.entry(var_type).or_insert(symbol);
+    }
+
+    /// If the type is a polymorphic type (Pi with Type/Typeclass inputs),
+    /// record its return type's ground type constructor as inhabited.
+    fn record_inhabited_type_constructor(&mut self, var_type: &Term) {
+        let mut current = var_type.as_ref();
+
+        // Strip off Pi types with Type or Typeclass inputs
+        loop {
+            if let Some((input, output)) = current.split_pi() {
+                let head = input.get_head_atom();
+                // Check if the input is Type or Typeclass
+                if matches!(head, Atom::Symbol(Symbol::TypeSort) | Atom::Typeclass(_)) {
+                    current = output;
+                    continue;
+                }
+            }
+            break;
+        }
+
+        // Now current is the "return type" after stripping type/typeclass Pis.
+        // If its head is a ground type, record it as inhabited.
+        if let Atom::Symbol(Symbol::Type(ground_id)) = current.get_head_atom() {
+            self.inhabited_type_constructors.insert(*ground_id);
+        }
+    }
+
+    /// Check if a type constructor is known to be inhabited for any type arguments.
+    pub fn is_type_constructor_inhabited(&self, ground_id: GroundTypeId) -> bool {
+        self.inhabited_type_constructors.contains(&ground_id)
     }
 
     /// Get a symbol of a particular type, if one has been registered.
