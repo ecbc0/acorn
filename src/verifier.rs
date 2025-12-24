@@ -1123,29 +1123,23 @@ mod tests {
     fn test_verifier_polymorphic_variable_satisfy() {
         let (acornlib, src, _) = setup();
 
-        // Test polymorphic variable satisfy
-        // We define identity1 first to help prove the existence claim,
-        // then define identity2 via polymorphic variable satisfy
         src.child("main.ac")
             .write_str(
                 r#"
-                // Define identity1 the old-fashioned way
-                define identity1[T](x: T) -> T { x }
-
-                // Prove that identity1 is indeed an identity function (for Bool)
-                theorem identity1_property {
-                    forall(x: Bool) { identity1[Bool](x) = x }
+                typeclass Z: Zero {
+                    0: Z
                 }
 
-                // Now define identity2 using polymorphic variable satisfy
-                // The prover should be able to use identity1 to prove existence
-                let identity2[T]: T -> T satisfy {
-                    forall(x: T) { identity2(x) = x }
+                let zero1[Z: Zero]: Z satisfy {
+                    zero1 = Z.0
                 }
 
-                // Prove that identity2 returns its input
-                theorem identity2_true {
-                    identity2[Bool](true) = true
+                let zero2[Z: Zero]: Z satisfy {
+                    zero2 = Z.0
+                }
+
+                theorem goal[Z: Zero] {
+                    zero1[Z] = zero2[Z]
                 }
                 "#,
             )
@@ -1167,16 +1161,11 @@ mod tests {
         );
 
         let output = result.unwrap();
-        // The elaboration works, but the prover currently can't prove the polymorphic
-        // existence claim. This test verifies the syntax is correct.
-        // Status will be Warning (not Good) until prover handles polymorphic existence better.
         assert!(
-            output.status == BuildStatus::Good || output.status == BuildStatus::Warning,
-            "Expected Good or Warning status, got {:?}",
+            output.status == BuildStatus::Good,
+            "Expected Good status, got {:?}",
             output.status
         );
-        // At minimum, identity1_property should be proved
-        assert!(output.metrics.goals_success >= 1);
     }
 
     #[test]
