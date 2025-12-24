@@ -1226,3 +1226,15 @@ fn test_prover_cannot_use_instance_backwards() {
     "#;
     verify_fails(text);
 }
+
+#[test]
+fn test_cannot_inhabit_arbitrary_type() {
+    // You should not be able to prove that every type has an element
+    // just by satisfying "true".
+    let text = r#"
+    let inhabitant[T]: T satisfy {
+        true
+    }
+    "#;
+    verify_fails(text);
+}
