@@ -58,6 +58,10 @@ pub struct SymbolTable {
     /// Maps polymorphic constant names to their generic type info.
     /// Used to properly denormalize constants.
     polymorphic_info: HashMap<ConstantName, PolymorphicInfo>,
+
+    /// Maps a type to the first symbol registered with that type.
+    /// Used to get an element of a particular type (e.g., for instantiating universal quantifiers).
+    type_to_element: HashMap<Term, Symbol>,
 }
 
 impl SymbolTable {
@@ -71,7 +75,18 @@ impl SymbolTable {
             instance_to_symbol: HashMap::new(),
             synthetic_types: vec![],
             polymorphic_info: HashMap::new(),
+            type_to_element: HashMap::new(),
         }
+    }
+
+    /// Record a symbol as an element of a type (only if no element exists for that type yet).
+    fn record_element(&mut self, var_type: Term, symbol: Symbol) {
+        self.type_to_element.entry(var_type).or_insert(symbol);
+    }
+
+    /// Get a symbol of a particular type, if one has been registered.
+    pub fn get_element_of_type(&self, var_type: &Term) -> Option<Symbol> {
+        self.type_to_element.get(var_type).copied()
     }
 
     pub fn get_symbol(&self, name: &ConstantName) -> Option<Symbol> {
@@ -161,8 +176,10 @@ impl SymbolTable {
     /// Declare a new synthetic atom with the given type.
     pub fn declare_synthetic(&mut self, var_type: Term) -> Symbol {
         let atom_id = self.synthetic_types.len() as AtomId;
+        let symbol = Symbol::Synthetic(atom_id);
+        self.record_element(var_type.clone(), symbol);
         self.synthetic_types.push(var_type);
-        Symbol::Synthetic(atom_id)
+        symbol
     }
 
     /// Add a scoped constant with the given type, without a name.
@@ -171,9 +188,11 @@ impl SymbolTable {
     #[cfg(test)]
     pub fn add_scoped_constant(&mut self, var_type: Term) -> Symbol {
         let atom_id = self.scoped_constant_types.len() as AtomId;
+        let symbol = Symbol::ScopedConstant(atom_id);
+        self.record_element(var_type.clone(), symbol);
         self.scoped_constants.push(None);
         self.scoped_constant_types.push(var_type);
-        Symbol::ScopedConstant(atom_id)
+        symbol
     }
 
     /// Add a global constant with the given type, without a name.
@@ -182,9 +201,11 @@ impl SymbolTable {
     #[cfg(test)]
     pub fn add_global_constant(&mut self, var_type: Term) -> Symbol {
         let atom_id = self.global_constant_types.len() as AtomId;
+        let symbol = Symbol::GlobalConstant(atom_id);
+        self.record_element(var_type.clone(), symbol);
         self.global_constants.push(None);
         self.global_constant_types.push(var_type);
-        Symbol::GlobalConstant(atom_id)
+        symbol
     }
 
     /// Assigns an id to this (module, name) pair if it doesn't already have one.
@@ -205,16 +226,17 @@ impl SymbolTable {
             NewConstantType::Local => {
                 let atom_id = self.scoped_constant_types.len() as AtomId;
                 self.scoped_constants.push(Some(name.clone()));
-                self.scoped_constant_types.push(var_type);
+                self.scoped_constant_types.push(var_type.clone());
                 Symbol::ScopedConstant(atom_id)
             }
             NewConstantType::Global => {
                 let atom_id = self.global_constant_types.len() as AtomId;
                 self.global_constants.push(Some(name.clone()));
-                self.global_constant_types.push(var_type);
+                self.global_constant_types.push(var_type.clone());
                 Symbol::GlobalConstant(atom_id)
             }
         };
+        self.record_element(var_type, symbol);
         self.name_to_symbol.insert(name, symbol);
         symbol
     }
