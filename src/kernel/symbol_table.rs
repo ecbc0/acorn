@@ -237,7 +237,7 @@ impl SymbolTable {
         // Now add all constants (types are now registered)
         value.for_each_constant(&mut |c| {
             if self.get_symbol(&c.name).is_none() {
-                // A constant is polymorphic if either:
+                // A constant is polymorphic if:
                 // - type_param_names is non-empty (the constant definition has type parameters)
                 // - params is non-empty (this is an instance of a polymorphic constant)
                 let is_polymorphic = !c.type_param_names.is_empty() || !c.params.is_empty();
@@ -247,16 +247,15 @@ impl SymbolTable {
                         .get_type_term(&c.instance_type)
                         .expect("type should be valid")
                 } else {
-                    // Polymorphic: use generic_type (which has Variable types) to compute
-                    // the polymorphic type term.
+                    // Polymorphic: compute the polymorphic type term.
                     //
-                    // Extract type param names. If type_param_names is provided, use that.
-                    // Otherwise, extract variable names from generic_type.
+                    // Extract type param names. Priority:
+                    // 1. If type_param_names is provided, use that
+                    // 2. Otherwise, extract from generic_type (Variable types)
                     let type_param_names: Vec<String> = if !c.type_param_names.is_empty() {
                         c.type_param_names.clone()
                     } else {
                         // Extract variable names from generic_type
-                        // Use a simple struct that implements ErrorContext
                         struct NoContext;
                         impl crate::elaborator::error::ErrorContext for NoContext {
                             fn error(&self, msg: &str) -> crate::elaborator::error::Error {
@@ -269,9 +268,7 @@ impl SymbolTable {
                             }
                         }
                         let mut vars = std::collections::HashMap::new();
-                        // Ignore errors - we just want to collect variable names
                         let _ = c.generic_type.find_type_vars(&mut vars, &NoContext);
-                        // Convert to a sorted list of names for deterministic order
                         let mut names: Vec<_> = vars.keys().cloned().collect();
                         names.sort();
                         names
@@ -289,9 +286,12 @@ impl SymbolTable {
                         })
                         .collect();
 
-                    // Convert generic_type to a term with bound variables
+                    // Use generic_type which should have Variable types for polymorphic constants
+                    let type_for_term = c.generic_type.clone();
+
+                    // Convert to a term with bound variables
                     let body_type =
-                        type_store.to_polymorphic_type_term(&c.generic_type, &variable_params);
+                        type_store.to_polymorphic_type_term(&type_for_term, &variable_params);
 
                     // Wrap in Pi(Type, ...) for each type parameter (from outermost to innermost)
                     let mut result = body_type;
@@ -300,7 +300,7 @@ impl SymbolTable {
                     }
                     result
                 };
-                self.add_constant(c.name.clone(), ctype, var_type);
+                let _symbol = self.add_constant(c.name.clone(), ctype, var_type.clone());
 
                 // Store polymorphic info for later use in denormalization
                 if is_polymorphic {

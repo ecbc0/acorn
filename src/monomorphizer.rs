@@ -255,10 +255,26 @@ impl Monomorphizer {
             return;
         }
 
+        // Check if the proposition has only Arbitrary types (no Variable types).
+        // Such propositions represent statements about a fixed abstract type in the current
+        // context and should be output directly - they don't need instantiation.
+        if !proposition.value.has_generic() {
+            // No Variable types, so this is effectively monomorphic.
+            // Output it directly, ignoring the params (which correspond to Arbitrary types).
+            let mp = MonomorphicProposition {
+                value: proposition.value.clone(),
+                source: proposition.source.clone(),
+            };
+            self.output.push(mp);
+            return;
+        }
+
+        // Find constants with generic types (Variable types) that need instantiation
         let mut generic_constants = vec![];
         proposition
             .value
             .find_constants(&|c| c.has_generic(), &mut generic_constants);
+
         if generic_constants.is_empty() {
             // We can never instantiate this, anyway.
             return;

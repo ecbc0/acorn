@@ -628,48 +628,16 @@ impl Environment {
             &vss.condition,
             Some(&AcornType::Bool),
         )?;
-        let general_claim = AcornValue::Exists(quant_types.clone(), Box::new(general_claim_value));
+        let general_claim =
+            AcornValue::Exists(quant_types.clone(), Box::new(general_claim_value.clone()));
         let source = Source::anonymous(self.module_id, statement.range(), self.depth);
         let general_prop = Proposition::new(general_claim, local_type_params.clone(), source);
         let index = self.add_node(Node::claim(project, self, general_prop));
         self.add_node_lines(index, &statement.range());
 
-        // For the specific claim, we need monomorphic constants with arbitrary types
-        // so they can be resolved. Add temporary constants without type params.
-        for (quant_name, quant_type) in quant_names.iter().zip(quant_types.iter()) {
-            let def_str = format!("{}: {}", quant_name, quant_type);
-            self.bindings.add_unqualified_constant(
-                quant_name,
-                vec![], // No type params - makes it resolvable with arbitrary types
-                quant_type.clone(),
-                None,
-                None,
-                vec![],
-                None,
-                def_str,
-            );
-        }
-
-        // We can then assume the specific existence claim with the named constants
-        let specific_claim = self
-            .evaluator(project)
-            .evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
-        let source = Source::anonymous(self.module_id, statement.range(), self.depth);
-        let specific_prop = Proposition::new(specific_claim, local_type_params.clone(), source);
-        self.add_node(Node::structural(project, self, specific_prop));
-
-        // Remove the temporary monomorphic constants
-        for quant_name in &quant_names {
-            self.bindings
-                .remove_constant(&ConstantName::unqualified(self.module_id, quant_name));
-        }
-
-        // Clean up the arbitrary types
-        for param in local_type_params.iter().rev() {
-            self.bindings.remove_type(&param.name);
-        }
-
-        // Now define the polymorphic constants for external use (with type params)
+        // Define the polymorphic constants.
+        // Like function satisfy, we build constant values with Arbitrary types for internal use.
+        let mut constant_values = Vec::new();
         for (quant_name, quant_type) in quant_names.iter().zip(quant_types.iter()) {
             // Genericize the type so it uses Variable instead of Arbitrary
             let generic_type = quant_type.clone().genericize(&local_type_params);
@@ -677,13 +645,44 @@ impl Environment {
             self.bindings.add_unqualified_constant(
                 quant_name,
                 local_type_params.clone(),
-                generic_type,
+                generic_type.clone(),
                 None,
                 None,
                 vec![],
                 None,
                 def_str,
             );
+
+            // Build constant value with Arbitrary types (like function satisfy does)
+            let const_name = ConstantName::unqualified(self.module_id, quant_name);
+            let type_args: Vec<_> = local_type_params
+                .iter()
+                .map(|p| AcornType::Arbitrary(p.clone()))
+                .collect();
+            // Note: constant() args are (name, params, instance_type, generic_type, type_param_names)
+            let constant_value = AcornValue::constant(
+                const_name,
+                type_args,
+                quant_type.clone(), // instance_type: the type with Arbitrary types
+                generic_type,       // generic_type: the type with Variable types
+                vec![],
+            );
+            constant_values.push(constant_value);
+        }
+
+        // For the specific claim, substitute the constants into the condition.
+        // The general_claim_value has variables bound at indices 0, 1, etc.
+        let num_vars = quant_names.len() as AtomId;
+        let specific_claim_value = general_claim_value.bind_values(0, num_vars, &constant_values);
+        // Genericize for the external proposition (converts Arbitrary to Variable)
+        let external_claim = specific_claim_value.genericize(&local_type_params);
+        let source = Source::anonymous(self.module_id, statement.range(), self.depth);
+        let specific_prop = Proposition::new(external_claim, local_type_params.clone(), source);
+        self.add_node(Node::structural(project, self, specific_prop));
+
+        // Clean up the arbitrary types (but keep the polymorphic constants)
+        for param in local_type_params.iter().rev() {
+            self.bindings.remove_type(&param.name);
         }
 
         Ok(())

@@ -334,9 +334,16 @@ impl<'a> TermRef<'a> {
                 let func_type = func.get_type_with_context(local_context, kernel_context);
                 // For dependent types, we need to substitute the argument into the output type
                 let arg_term = arg.to_owned();
-                func_type
-                    .type_apply_with_arg(&arg_term)
-                    .expect("Function type expected but not found during type application")
+                func_type.type_apply_with_arg(&arg_term).unwrap_or_else(|| {
+                    panic!(
+                        "Function type expected but not found during type application.\n\
+                         func = {}\n\
+                         func_type = {}\n\
+                         arg = {}\n\
+                         self = {}",
+                        func, func_type, arg, self
+                    )
+                })
             }
             Decomposition::Pi(_, _) => {
                 // Pi types are themselves types - this is used when the term IS a type

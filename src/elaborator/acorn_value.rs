@@ -245,7 +245,7 @@ impl ConstantInstance {
         self.same_name(new_params, instance_type)
     }
 
-    fn has_arbitrary(&self) -> bool {
+    pub fn has_arbitrary(&self) -> bool {
         self.params.iter().any(|t| t.has_arbitrary())
     }
 

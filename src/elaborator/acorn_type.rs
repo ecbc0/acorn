@@ -598,6 +598,49 @@ impl AcornType {
         }
     }
 
+    /// Collects all Arbitrary type parameters from this type.
+    pub fn collect_arbitrary_params(&self, params: &mut Vec<TypeParam>) {
+        match self {
+            AcornType::Arbitrary(param) => {
+                if !params.iter().any(|p| p.name == param.name) {
+                    params.push(param.clone());
+                }
+            }
+            AcornType::Function(ftype) => {
+                for arg_type in &ftype.arg_types {
+                    arg_type.collect_arbitrary_params(params);
+                }
+                ftype.return_type.collect_arbitrary_params(params);
+            }
+            AcornType::Data(_, type_params) => {
+                for t in type_params {
+                    t.collect_arbitrary_params(params);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Converts all Arbitrary types to Variable types.
+    pub fn arbitrary_to_variable(&self) -> AcornType {
+        match self {
+            AcornType::Arbitrary(param) => AcornType::Variable(param.clone()),
+            AcornType::Function(ftype) => AcornType::functional(
+                ftype
+                    .arg_types
+                    .iter()
+                    .map(|t| t.arbitrary_to_variable())
+                    .collect(),
+                ftype.return_type.arbitrary_to_variable(),
+            ),
+            AcornType::Data(dt, params) => AcornType::Data(
+                dt.clone(),
+                params.iter().map(|t| t.arbitrary_to_variable()).collect(),
+            ),
+            _ => self.clone(),
+        }
+    }
+
     /// Replaces occurrences of a specific datatype with a type Variable.
     /// Used to abstract over a concrete type to get the generic form.
     pub fn abstract_over_datatype(&self, datatype: &Datatype, param: TypeParam) -> AcornType {
