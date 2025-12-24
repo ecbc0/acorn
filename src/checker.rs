@@ -330,25 +330,49 @@ impl Checker {
                 let types = decls.iter().map(|(_, ty)| ty.clone()).collect();
                 let exists_value = AcornValue::exists(types, condition_value.clone());
 
-                let (source, synthetic_atoms) =
-                    match normalizer.to_mut().get_synthetic_definition(&exists_value) {
-                        Some(def) => {
-                            // Found an existing synthetic definition
-                            (def.source.clone(), Some(def.atoms.clone()))
+                let (source, synthetic_atoms) = match normalizer
+                    .to_mut()
+                    .get_synthetic_definition(&exists_value)
+                {
+                    Some(def) => {
+                        // Found an existing synthetic definition
+                        (def.source.clone(), Some(def.atoms.clone()))
+                    }
+                    None => {
+                        // No synthetic definition found
+                        if condition_value != AcornValue::Bool(true) {
+                            // Non-trivial condition must match a synthetic definition
+                            return Err(Error::GeneratedBadCode(format!(
+                                "statement '{}' does not match any synthetic definition",
+                                code
+                            )));
                         }
-                        None => {
-                            // No synthetic definition found
-                            if condition_value != AcornValue::Bool(true) {
-                                // Non-trivial condition must match a synthetic definition
+
+                        // Trivial condition requires the type to be inhabited
+                        // "let x: T satisfy { true }" only works if we know the type has an element
+                        for (name, acorn_type) in &decls {
+                            let type_term = kernel_context
+                                .type_store
+                                .get_type_term(acorn_type)
+                                .map_err(|e| {
+                                    Error::GeneratedBadCode(format!(
+                                        "cannot convert type '{}' to term: {}",
+                                        acorn_type, e
+                                    ))
+                                })?;
+                            if !kernel_context.provably_inhabited(&type_term) {
                                 return Err(Error::GeneratedBadCode(format!(
-                                    "statement '{}' does not match any synthetic definition",
-                                    code
-                                )));
+                                        "cannot create witness '{}' of type '{}' with trivial condition: \
+                                         type is not provably inhabited",
+                                        name, acorn_type
+                                    )));
                             }
-                            // Trivial case: no source or synthetic atoms
-                            (None, None)
                         }
-                    };
+
+                        // Trivial case: no source or synthetic atoms
+                        (None, None)
+                    }
+                };
 
                 // Add all the variables in decls to the bindings and the normalizer
                 if let Some(atoms) = &synthetic_atoms {

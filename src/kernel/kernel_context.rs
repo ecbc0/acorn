@@ -1,7 +1,6 @@
 use crate::kernel::atom::Atom;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::symbol_table::SymbolTable;
-#[cfg(test)]
 use crate::kernel::term::Term;
 use crate::kernel::type_store::TypeStore;
 
@@ -44,6 +43,13 @@ impl KernelContext {
                 typeclass.name.clone()
             }
         }
+    }
+
+    /// Returns true if we've proven that the given type has at least one element.
+    /// This is a conservative check - it may return false for types that are inhabited
+    /// but where we haven't explicitly registered an inhabitant.
+    pub fn provably_inhabited(&self, var_type: &Term) -> bool {
+        self.symbol_table.get_element_of_type(var_type).is_some()
     }
 
     /// Creates a test KernelContext with pre-populated scoped constants (c0, c1, ..., c{n-1})
