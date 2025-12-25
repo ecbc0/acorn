@@ -1240,3 +1240,32 @@ fn test_cannot_inhabit_arbitrary_type() {
     let result = verify(text);
     assert!(result.is_err(), "Expected an error, but got {:?}", result);
 }
+
+#[test]
+fn test_cannot_inhabit_arbitrary_type_self_equality() {
+    // Self-equality is always true, so this is equivalent to "true".
+    // It should still be rejected.
+    let text = r#"
+    let inhabitant[T]: T satisfy {
+        inhabitant = inhabitant
+    }
+    "#;
+    let result = verify(text);
+    assert!(result.is_err(), "Expected an error, but got {:?}", result);
+}
+
+#[test]
+fn test_cannot_inhabit_arbitrary_type_const_true() {
+    // This should be rejected because T might not be inhabited.
+    let text = r#"
+    define const_true[T](x: T) -> Bool {
+        true
+    }
+
+    let inhabitant[T]: T satisfy {
+        const_true(inhabitant)
+    }
+    "#;
+    let result = verify(text);
+    assert!(result.is_err(), "Expected an error, but got {:?}", result);
+}
