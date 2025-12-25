@@ -49,17 +49,27 @@ impl KernelContext {
     /// This is a conservative check - it may return false for types that are inhabited
     /// but where we haven't explicitly registered an inhabitant.
     pub fn provably_inhabited(&self, var_type: &Term) -> bool {
-        // First, check for an exact type match
-        if self.symbol_table.get_element_of_type(var_type).is_some() {
-            return true;
+        match var_type.as_ref().get_head_atom() {
+            // Bool is inhabited (true, false)
+            Atom::Symbol(Symbol::Bool) => return true,
+
+            // TypeSort is inhabited (any type can be used as a value of type Type)
+            Atom::Symbol(Symbol::TypeSort) => return true,
+
+            // Check if the type's head is a type constructor known to be inhabited.
+            // For example, List[T] is inhabited if we have nil: forall[T]. List[T].
+            Atom::Symbol(Symbol::Type(ground_id)) => {
+                if self.symbol_table.is_type_constructor_inhabited(*ground_id) {
+                    return true;
+                }
+            }
+
+            _ => {}
         }
 
-        // Second, check if the type's head is a type constructor known to be inhabited.
-        // For example, List[T] is inhabited if we have nil: forall[T]. List[T].
-        if let Atom::Symbol(Symbol::Type(ground_id)) = var_type.as_ref().get_head_atom() {
-            if self.symbol_table.is_type_constructor_inhabited(*ground_id) {
-                return true;
-            }
+        // Check for an exact type match
+        if self.symbol_table.get_element_of_type(var_type).is_some() {
+            return true;
         }
 
         false

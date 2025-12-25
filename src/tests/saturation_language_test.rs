@@ -1236,5 +1236,7 @@ fn test_cannot_inhabit_arbitrary_type() {
         true
     }
     "#;
-    verify_fails(text);
+    // This should fail during normalization because T is not provably inhabited
+    let result = verify(text);
+    assert!(result.is_err(), "Expected an error, but got {:?}", result);
 }

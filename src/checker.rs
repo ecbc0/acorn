@@ -423,7 +423,7 @@ impl Checker {
 
                     // The NormalizerView::Ref prevents us from accidentally mutating the normalizer here.
                     let mut view = NormalizerView::Ref(&normalizer);
-                    let clauses = view.nice_value_to_clauses(&value, &mut vec![])?;
+                    let clauses = view.nice_value_to_clauses(&value, &mut vec![], false)?;
                     for clause in clauses {
                         self.insert_clause(
                             &clause,

@@ -324,15 +324,20 @@ impl NormalizerView<'_> {
 
     /// Wrapper around value_to_cnf.
     /// Note that this only works on values that have already been "cleaned up" to some extent.
+    /// If check_dropped_vars is true, verifies that any forall variables that get dropped
+    /// during normalization have provably inhabited types.
     pub fn nice_value_to_clauses(
         &mut self,
         value: &AcornValue,
         synthesized: &mut Vec<AtomId>,
+        check_dropped_vars: bool,
     ) -> Result<Vec<Clause>, String> {
         match value {
             AcornValue::Binary(BinaryOp::And, left, right) => {
-                let mut left_clauses = self.nice_value_to_clauses(left, synthesized)?;
-                let right_clauses = self.nice_value_to_clauses(right, synthesized)?;
+                let mut left_clauses =
+                    self.nice_value_to_clauses(left, synthesized, check_dropped_vars)?;
+                let right_clauses =
+                    self.nice_value_to_clauses(right, synthesized, check_dropped_vars)?;
                 left_clauses.extend(right_clauses);
                 Ok(left_clauses)
             }
@@ -342,21 +347,22 @@ impl NormalizerView<'_> {
 
                 // In polymorphic mode, pre-allocate space for type variables
                 #[cfg(feature = "polymorphic")]
-                let mut next_var_id = if let Some(type_var_map) = self.type_var_map_with_types() {
-                    // Pre-populate local_context with the type of each type variable.
-                    // The type is either TypeSort (unconstrained) or Typeclass (constrained).
-                    // We need to iterate in order of variable ID.
-                    let mut entries: Vec<_> = type_var_map.values().collect();
-                    entries.sort_by_key(|(id, _)| *id);
-                    for (_, var_type) in entries {
-                        local_context.push_type(var_type.clone());
-                    }
-                    type_var_map.len() as AtomId
-                } else {
-                    0
-                };
+                let (mut next_var_id, num_type_params) =
+                    if let Some(type_var_map) = self.type_var_map_with_types() {
+                        // Pre-populate local_context with the type of each type variable.
+                        // The type is either TypeSort (unconstrained) or Typeclass (constrained).
+                        // We need to iterate in order of variable ID.
+                        let mut entries: Vec<_> = type_var_map.values().collect();
+                        entries.sort_by_key(|(id, _)| *id);
+                        for (_, var_type) in entries {
+                            local_context.push_type(var_type.clone());
+                        }
+                        (type_var_map.len() as AtomId, type_var_map.len())
+                    } else {
+                        (0, 0)
+                    };
                 #[cfg(not(feature = "polymorphic"))]
-                let mut next_var_id = 0;
+                let (mut next_var_id, num_type_params) = (0, 0);
 
                 let cnf = self.value_to_cnf(
                     &value,
@@ -366,9 +372,59 @@ impl NormalizerView<'_> {
                     synthesized,
                     &mut local_context,
                 )?;
-                Ok(cnf.into_clauses(&local_context))
+                let clauses = cnf.into_clauses(&local_context);
+
+                // Check for dropped forall variables with uninhabited types.
+                // Skip type parameter variables (first num_type_params entries) since they
+                // represent universally quantified types, not existential claims.
+                if check_dropped_vars {
+                    self.check_dropped_variable_types(&local_context, &clauses, num_type_params)?;
+                }
+
+                Ok(clauses)
             }
         }
+    }
+
+    /// Checks that any forall variables dropped during normalization have provably inhabited types.
+    /// This prevents unsound proofs where vacuous foralls over empty types are eliminated.
+    /// Skips the first `skip_vars` entries which are type parameters (universally quantified types).
+    fn check_dropped_variable_types(
+        &self,
+        original_context: &LocalContext,
+        clauses: &[Clause],
+        skip_vars: usize,
+    ) -> Result<(), String> {
+        use std::collections::HashSet;
+
+        // Collect all types that appear in ANY clause's context.
+        // A type is only "dropped" if it doesn't appear in any clause at all.
+        let mut all_clause_types: HashSet<&Term> = HashSet::new();
+        for clause in clauses {
+            let clause_ctx = clause.get_local_context();
+            for i in 0..clause_ctx.len() {
+                if let Some(var_type) = clause_ctx.get_var_type(i) {
+                    all_clause_types.insert(var_type);
+                }
+            }
+        }
+
+        // Check each type in the original context, skipping type parameters
+        for var_id in skip_vars..original_context.len() {
+            if let Some(var_type) = original_context.get_var_type(var_id) {
+                // If this type doesn't appear in ANY clause, all variables of this type were dropped
+                if !all_clause_types.contains(var_type) {
+                    if !self.kernel_context().provably_inhabited(var_type) {
+                        return Err(format!(
+                            "forall variable of uninhabited type '{}' was eliminated",
+                            var_type
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// This returns clauses that are denormalized in the sense that they sort literals,
@@ -1610,6 +1666,8 @@ impl Normalizer {
         ctype: NewConstantType,
         source: &Source,
     ) -> Result<Vec<Clause>, String> {
+        use crate::elaborator::source::SourceType;
+
         self.kernel_context.symbol_table.add_from(
             &value,
             ctype,
@@ -1620,9 +1678,14 @@ impl Normalizer {
         // Maybe we can inline lambdas instead of expanding them.
         let value = value.expand_lambdas(0);
 
+        // Check for dropped forall variables only when normalizing negated goals.
+        // This prevents unsound proofs like `let x: T satisfy { true }` where T is uninhabited.
+        let check_dropped_vars = matches!(source.source_type, SourceType::NegatedGoal);
+
         let mut skolem_ids = vec![];
         let mut mut_view = NormalizerView::Mut(self);
-        let clauses = mut_view.nice_value_to_clauses(&value, &mut skolem_ids)?;
+        let clauses =
+            mut_view.nice_value_to_clauses(&value, &mut skolem_ids, check_dropped_vars)?;
 
         // For any of the created ids that have not been defined yet, the output
         // clauses will be their definition.
@@ -1891,6 +1954,7 @@ impl Normalizer {
         goal: &Goal,
     ) -> Result<(NormalizedGoal, Vec<ProofStep>), BuildError> {
         let prop = &goal.proposition;
+
         let (hypo, counterfactual) = prop.value.clone().negate_goal();
         let mut steps = vec![];
         if let Some(hypo) = hypo {
