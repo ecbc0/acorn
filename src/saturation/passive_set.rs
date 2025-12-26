@@ -211,8 +211,33 @@ impl PassiveSet {
                 Entry::Occupied(e) => {
                     let (existing_positive, existing_id) = e.get();
                     if *existing_positive != literal.positive {
-                        // We have a contradiction.
-                        self.contradiction = Some((*existing_id, id));
+                        // Potential contradiction - but only valid if all types are inhabited.
+                        // If any type might be empty, both foralls could be vacuously true.
+                        let new_context = step.clause.get_local_context();
+                        let existing_context = self.clauses[*existing_id]
+                            .as_ref()
+                            .map(|(s, _)| s.clause.get_local_context());
+
+                        let all_inhabited = if let Some(existing_ctx) = existing_context {
+                            // Check all types in both contexts are provably inhabited
+                            let new_inhabited = (0..new_context.len()).all(|i| {
+                                new_context
+                                    .get_var_type(i)
+                                    .is_none_or(|t| kernel_context.provably_inhabited(t))
+                            });
+                            let existing_inhabited = (0..existing_ctx.len()).all(|i| {
+                                existing_ctx
+                                    .get_var_type(i)
+                                    .is_none_or(|t| kernel_context.provably_inhabited(t))
+                            });
+                            new_inhabited && existing_inhabited
+                        } else {
+                            false
+                        };
+
+                        if all_inhabited {
+                            self.contradiction = Some((*existing_id, id));
+                        }
                     }
                 }
                 Entry::Vacant(entry) => {
@@ -328,6 +353,28 @@ impl PassiveSet {
             ) else {
                 continue;
             };
+
+            // If simplification produced an impossible (empty) clause, we need to verify
+            // that all variable types are provably inhabited before accepting it as a
+            // real contradiction. When types might be empty, both forall clauses could
+            // be vacuously true with no actual contradiction.
+            if new_clause.is_impossible() {
+                let activated_inhabited = (0..local_context.len()).all(|i| {
+                    local_context
+                        .get_var_type(i)
+                        .is_none_or(|t| kernel_context.provably_inhabited(t))
+                });
+                let passive_inhabited = (0..passive_context.len()).all(|i| {
+                    passive_context
+                        .get_var_type(i)
+                        .is_none_or(|t| kernel_context.provably_inhabited(t))
+                });
+                if !activated_inhabited || !passive_inhabited {
+                    // Type might be empty, so this isn't a real contradiction.
+                    continue;
+                }
+            }
+
             let short_steps = &[(activated_id, activated_step)];
             new_steps.push(ProofStep::simplified(step, short_steps, new_clause, traces));
         }

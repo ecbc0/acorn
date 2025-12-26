@@ -1257,6 +1257,9 @@ fn test_cannot_inhabit_arbitrary_type_self_equality() {
 #[test]
 fn test_cannot_inhabit_arbitrary_type_const_true() {
     // This should be rejected because T might not be inhabited.
+    // Unlike the other tests, this one is NOT caught during normalization because
+    // the variable is still used in const_true(inhabitant). Instead, the prover
+    // correctly refuses to conclude a contradiction from foralls over uninhabited types.
     let text = r#"
     define const_true[T](x: T) -> Bool {
         true
@@ -1266,6 +1269,5 @@ fn test_cannot_inhabit_arbitrary_type_const_true() {
         const_true(inhabitant)
     }
     "#;
-    let result = verify(text);
-    assert!(result.is_err(), "Expected an error, but got {:?}", result);
+    verify_fails(text);
 }
