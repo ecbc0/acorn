@@ -1271,3 +1271,18 @@ fn test_cannot_inhabit_arbitrary_type_const_true() {
     "#;
     verify_fails(text);
 }
+
+#[test]
+fn test_can_inhabit_arbitrary_type_of_typeclass() {
+    // This should be accepted, since any arbitrary P: Pointed is inhabited.
+    let text = r#"
+    typeclass P: Pointed {
+        point: P
+    }
+
+    let inhabitant[P: Pointed]: P satisfy {
+        true
+    }
+    "#;
+    verify_succeeds(text);
+}
