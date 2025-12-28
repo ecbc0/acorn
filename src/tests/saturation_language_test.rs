@@ -1305,3 +1305,17 @@ fn test_can_inhabit_arbitrary_type_of_extended_typeclass() {
     "#;
     verify_succeeds(text);
 }
+
+#[test]
+fn test_can_inhabit_function_type_when_codomain_inhabited() {
+    let text = r#"
+    typeclass P: Pointed {
+        point: P
+    }
+
+    let inhabitant[P: Pointed, Q]: Q -> P satisfy {
+        true
+    }
+    "#;
+    verify_succeeds(text);
+}
