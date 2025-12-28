@@ -1286,3 +1286,22 @@ fn test_can_inhabit_arbitrary_type_of_typeclass() {
     "#;
     verify_succeeds(text);
 }
+
+#[test]
+fn test_can_inhabit_arbitrary_type_of_extended_typeclass() {
+    // This should be accepted, since any arbitrary P: Pointed is inhabited.
+    let text = r#"
+    typeclass P: Pointed {
+        point: P
+    }
+
+    typeclass Q: Qux extends Pointed {
+        foo: Q -> Bool
+    }
+
+    let inhabitant[Q: Qux]: Q satisfy {
+        true
+    }
+    "#;
+    verify_succeeds(text);
+}
