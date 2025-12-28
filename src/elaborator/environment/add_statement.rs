@@ -1815,21 +1815,10 @@ impl Environment {
             vec![]
         };
 
-        if let Some(extends_set) = self.bindings.get_extends_set(&typeclass) {
-            // Create a node for the extends relationship.
-            let source = Source {
-                module_id: self.module_id,
-                range: statement.range(),
-                source_type: SourceType::Extends(typeclass_name.to_string()),
-                importable: true,
-                depth: self.depth,
-            };
-            let extends_fact = Fact::Extends(typeclass.clone(), extends_set.clone(), source);
-            self.add_node(Node::Structural(extends_fact));
-        }
-
         // Define all the constants that are in the typeclass.
-        // Only applicable for block syntax, not no-block syntax
+        // Only applicable for block syntax, not no-block syntax.
+        // Track whether any constant has the instance type (proving the typeclass provides inhabitants).
+        let mut provides_inhabitants = false;
         if !type_params.is_empty() {
             let type_param = &type_params[0]; // For block syntax, there's exactly one type param
             for (attr_name, type_expr, doc_comments) in &ts.constants {
@@ -1845,6 +1834,15 @@ impl Environment {
                 }
                 let arb_type = self.evaluator(project).evaluate_type(type_expr)?;
                 let var_type = arb_type.genericize(&type_params);
+
+                // Check if this constant's type is exactly the instance type.
+                // For example, `point: P` in `typeclass P: Pointed`.
+                if let AcornType::Variable(tp) = &var_type {
+                    if tp.name == type_param.name {
+                        provides_inhabitants = true;
+                    }
+                }
+
                 let defined_name = DefinedName::typeclass_attr(&typeclass, attr_name.text());
                 self.bindings
                     .check_defined_name_available(&defined_name, attr_name)?;
@@ -1863,6 +1861,24 @@ impl Environment {
                 self.bindings
                     .mark_typeclass_attr_required(&typeclass, &attr_name.text());
             }
+        }
+
+        if let Some(extends_set) = self.bindings.get_extends_set(&typeclass) {
+            // Create a node for the extends relationship.
+            let source = Source {
+                module_id: self.module_id,
+                range: statement.range(),
+                source_type: SourceType::Extends(typeclass_name.to_string()),
+                importable: true,
+                depth: self.depth,
+            };
+            let extends_fact = Fact::Extends(
+                typeclass.clone(),
+                extends_set.clone(),
+                provides_inhabitants,
+                source,
+            );
+            self.add_node(Node::Structural(extends_fact));
         }
 
         // Add a node for each typeclass condition.

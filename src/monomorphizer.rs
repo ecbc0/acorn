@@ -222,7 +222,8 @@ impl Monomorphizer {
             Fact::Proposition(proposition) => {
                 self.add_proposition(proposition);
             }
-            Fact::Extends(tc, base_set, _) => {
+            Fact::Extends(tc, base_set, _, _) => {
+                // The bool (provides_inhabitants) is handled by the normalizer
                 self.add_extends(tc, base_set);
             }
             Fact::Instance(datatype, typeclass, _) => {

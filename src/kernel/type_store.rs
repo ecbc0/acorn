@@ -276,7 +276,14 @@ impl TypeStore {
             }
 
             AcornType::Arbitrary(type_param) => {
-                // Arbitrary types must be registered
+                // In polymorphic mode, check if this arbitrary type corresponds to a type parameter.
+                // If so, convert it to a FreeVariable just like we do for Variable types.
+                if let Some(map) = type_var_map {
+                    if let Some(&var_id) = map.get(&type_param.name) {
+                        return Term::atom(Atom::FreeVariable(var_id));
+                    }
+                }
+                // Otherwise, use the registered ground type
                 let ground_id = self
                     .arbitrary_to_ground_id
                     .get(type_param)
@@ -590,6 +597,17 @@ impl TypeStore {
             .map_or(false, |extends| extends.contains(&base_id))
     }
 
+    /// Get all typeclasses that a given typeclass extends (directly or transitively).
+    pub fn get_typeclass_extends(
+        &self,
+        typeclass_id: TypeclassId,
+    ) -> impl Iterator<Item = TypeclassId> + '_ {
+        self.typeclass_extends
+            .get(typeclass_id.as_u16() as usize)
+            .into_iter()
+            .flat_map(|extends| extends.iter().copied())
+    }
+
     /// Creates a Term representing a typeclass.
     /// This is used when a type variable is constrained to a typeclass.
     pub fn typeclass_to_term(&self, typeclass_id: TypeclassId) -> Term {
@@ -601,6 +619,22 @@ impl TypeStore {
         self.typeclass_instances
             .get(typeclass_id.as_u16() as usize)
             .map_or(false, |instances| instances.contains(&ground_id))
+    }
+
+    /// Get the typeclass constraint for a ground type, if it represents an arbitrary type
+    /// with a typeclass constraint.
+    /// Returns the TypeclassId if the ground type is an arbitrary type with a typeclass.
+    pub fn get_arbitrary_typeclass(&self, ground_id: GroundTypeId) -> Option<TypeclassId> {
+        // Look through arbitrary_to_ground_id to find if this ground_id is an arbitrary type
+        for (type_param, &gid) in &self.arbitrary_to_ground_id {
+            if gid == ground_id {
+                // Found it - check if it has a typeclass constraint
+                if let Some(tc) = &type_param.typeclass {
+                    return self.typeclass_to_id.get(tc).copied();
+                }
+            }
+        }
+        None
     }
 }
 

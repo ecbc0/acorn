@@ -62,6 +62,33 @@ impl KernelContext {
                 if self.symbol_table.is_type_constructor_inhabited(*ground_id) {
                     return true;
                 }
+                // In non-polymorphic mode, check if this ground type is an arbitrary type
+                // with a typeclass constraint that makes it inhabited.
+                if let Some(tc_id) = self.type_store.get_arbitrary_typeclass(*ground_id) {
+                    if self.symbol_table.is_typeclass_inhabited(tc_id) {
+                        return true;
+                    }
+                    // Also check if this typeclass extends a typeclass that provides inhabitants.
+                    for base_id in self.type_store.get_typeclass_extends(tc_id) {
+                        if self.symbol_table.is_typeclass_inhabited(base_id) {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            // Check if this is a typeclass-constrained type variable.
+            // For example, P: Pointed is inhabited if Pointed has a constant like point: P.
+            Atom::Typeclass(tc_id) => {
+                if self.symbol_table.is_typeclass_inhabited(*tc_id) {
+                    return true;
+                }
+                // Also check if this typeclass extends a typeclass that provides inhabitants.
+                for base_id in self.type_store.get_typeclass_extends(*tc_id) {
+                    if self.symbol_table.is_typeclass_inhabited(base_id) {
+                        return true;
+                    }
+                }
             }
 
             _ => {}

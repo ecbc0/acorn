@@ -414,11 +414,28 @@ impl NormalizerView<'_> {
             if let Some(var_type) = original_context.get_var_type(var_id) {
                 // If this type doesn't appear in ANY clause, all variables of this type were dropped
                 if !all_clause_types.contains(var_type) {
-                    if !self.kernel_context().provably_inhabited(var_type) {
-                        return Err(format!(
-                            "forall variable of uninhabited type '{}' was eliminated",
-                            var_type
-                        ));
+                    // Check if the type is provably inhabited.
+                    // If the type is a free variable (representing a type parameter), we need to
+                    // check the constraint on that type parameter instead.
+                    let type_to_check = if let Some(type_param_id) = var_type.atomic_variable() {
+                        // This is a type variable (like x0 representing P: Pointed).
+                        // Look up its constraint in the original context.
+                        if (type_param_id as usize) < skip_vars {
+                            original_context.get_var_type(type_param_id as usize)
+                        } else {
+                            Some(var_type)
+                        }
+                    } else {
+                        Some(var_type)
+                    };
+
+                    if let Some(t) = type_to_check {
+                        if !self.kernel_context().provably_inhabited(t) {
+                            return Err(format!(
+                                "forall variable of uninhabited type '{}' was eliminated",
+                                var_type
+                            ));
+                        }
                     }
                 }
             }
@@ -1779,13 +1796,20 @@ impl Normalizer {
                     .type_store
                     .add_type_instance(&acorn_type, typeclass_id);
             }
-            Fact::Extends(typeclass, base_set, _) => {
+            Fact::Extends(typeclass, base_set, provides_inhabitants, _) => {
                 let tc_id = self.kernel_context.type_store.add_typeclass(typeclass);
                 for base in base_set {
                     let base_id = self.kernel_context.type_store.add_typeclass(base);
                     self.kernel_context
                         .type_store
                         .add_typeclass_extends(tc_id, base_id);
+                }
+                // If the typeclass has a constant of the instance type (e.g., point: P),
+                // mark it as providing inhabitants.
+                if *provides_inhabitants {
+                    self.kernel_context
+                        .symbol_table
+                        .mark_typeclass_inhabited(tc_id);
                 }
             }
             _ => {}

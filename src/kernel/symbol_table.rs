@@ -7,7 +7,7 @@ use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::symbol::Symbol;
 use crate::kernel::term::Term;
 use crate::kernel::type_store::TypeStore;
-use crate::kernel::types::GroundTypeId;
+use crate::kernel::types::{GroundTypeId, TypeclassId};
 
 #[derive(Clone, Copy, Debug)]
 pub enum NewConstantType {
@@ -67,6 +67,10 @@ pub struct SymbolTable {
     /// Type constructors known to be inhabited for any type arguments.
     /// For example, if we have `nil: forall[T]. List[T]`, then List is in this set.
     inhabited_type_constructors: HashSet<GroundTypeId>,
+
+    /// Typeclasses that are known to provide inhabitants for their instance types.
+    /// For example, if we have `point: forall[P: Pointed]. P`, then Pointed is in this set.
+    inhabited_typeclasses: HashSet<TypeclassId>,
 }
 
 impl SymbolTable {
@@ -82,6 +86,7 @@ impl SymbolTable {
             polymorphic_info: HashMap::new(),
             type_to_element: HashMap::new(),
             inhabited_type_constructors: HashSet::new(),
+            inhabited_typeclasses: HashSet::new(),
         }
     }
 
@@ -97,17 +102,35 @@ impl SymbolTable {
 
     /// If the type is a polymorphic type (Pi with Type/Typeclass inputs),
     /// record its return type's ground type constructor as inhabited.
+    /// Also tracks typeclasses that provide inhabitants for their instance types.
     fn record_inhabited_type_constructor(&mut self, var_type: &Term) {
         let mut current = var_type.as_ref();
+        let mut depth = 0; // Track how many Pi levels we've descended
 
         // Strip off Pi types with Type or Typeclass inputs
         loop {
             if let Some((input, output)) = current.split_pi() {
                 let head = input.get_head_atom();
                 // Check if the input is Type or Typeclass
-                if matches!(head, Atom::Symbol(Symbol::TypeSort) | Atom::Typeclass(_)) {
-                    current = output;
-                    continue;
+                match head {
+                    Atom::Symbol(Symbol::TypeSort) => {
+                        current = output;
+                        depth += 1;
+                        continue;
+                    }
+                    Atom::Typeclass(tc_id) => {
+                        // Check if the output is just the bound variable (x_depth).
+                        // This means the function returns a value of the typeclass-constrained type,
+                        // proving that the typeclass makes its instance type inhabited.
+                        // For example: point: forall[P: Pointed]. P has type Pi(Typeclass(Pointed), x0)
+                        if output.atomic_variable() == Some(depth) {
+                            self.inhabited_typeclasses.insert(*tc_id);
+                        }
+                        current = output;
+                        depth += 1;
+                        continue;
+                    }
+                    _ => {}
                 }
             }
             break;
@@ -123,6 +146,16 @@ impl SymbolTable {
     /// Check if a type constructor is known to be inhabited for any type arguments.
     pub fn is_type_constructor_inhabited(&self, ground_id: GroundTypeId) -> bool {
         self.inhabited_type_constructors.contains(&ground_id)
+    }
+
+    /// Check if a typeclass is known to provide inhabitants for its instance types.
+    pub fn is_typeclass_inhabited(&self, tc_id: TypeclassId) -> bool {
+        self.inhabited_typeclasses.contains(&tc_id)
+    }
+
+    /// Mark a typeclass as providing inhabitants for its instance types.
+    pub fn mark_typeclass_inhabited(&mut self, tc_id: TypeclassId) {
+        self.inhabited_typeclasses.insert(tc_id);
     }
 
     /// Get a symbol of a particular type, if one has been registered.
@@ -312,13 +345,11 @@ impl SymbolTable {
                 } else {
                     // Polymorphic: compute the polymorphic type term.
                     //
-                    // Extract type param names. Priority:
-                    // 1. If type_param_names is provided, use that
+                    // Extract type params. Priority:
+                    // 1. If type_param_names is provided, extract TypeParams from generic_type
+                    //    using those names (to get typeclass constraints)
                     // 2. Otherwise, extract from generic_type (Variable types)
-                    let type_param_names: Vec<String> = if !c.type_param_names.is_empty() {
-                        c.type_param_names.clone()
-                    } else {
-                        // Extract variable names from generic_type
+                    let type_params: Vec<TypeParam> = {
                         struct NoContext;
                         impl crate::elaborator::error::ErrorContext for NoContext {
                             fn error(&self, msg: &str) -> crate::elaborator::error::Error {
@@ -332,21 +363,29 @@ impl SymbolTable {
                         }
                         let mut vars = std::collections::HashMap::new();
                         let _ = c.generic_type.find_type_vars(&mut vars, &NoContext);
-                        let mut names: Vec<_> = vars.keys().cloned().collect();
-                        names.sort();
-                        names
+
+                        if !c.type_param_names.is_empty() {
+                            // Use provided order, but get typeclass info from vars if available
+                            c.type_param_names
+                                .iter()
+                                .map(|name| {
+                                    vars.get(name).cloned().unwrap_or_else(|| TypeParam {
+                                        name: name.clone(),
+                                        typeclass: None,
+                                    })
+                                })
+                                .collect()
+                        } else {
+                            // Sort by name for consistency
+                            let mut params: Vec<_> = vars.values().cloned().collect();
+                            params.sort_by(|a, b| a.name.cmp(&b.name));
+                            params
+                        }
                     };
 
-                    let num_type_params = type_param_names.len();
-
-                    let variable_params: Vec<AcornType> = type_param_names
+                    let variable_params: Vec<AcornType> = type_params
                         .iter()
-                        .map(|name| {
-                            AcornType::Variable(TypeParam {
-                                name: name.clone(),
-                                typeclass: None,
-                            })
-                        })
+                        .map(|p| AcornType::Variable(p.clone()))
                         .collect();
 
                     // Use generic_type which should have Variable types for polymorphic constants
@@ -356,10 +395,17 @@ impl SymbolTable {
                     let body_type =
                         type_store.to_polymorphic_type_term(&type_for_term, &variable_params);
 
-                    // Wrap in Pi(Type, ...) for each type parameter (from outermost to innermost)
+                    // Wrap in Pi for each type parameter (from outermost to innermost).
+                    // Use Pi(Typeclass, ...) for constrained params, Pi(Type, ...) for unconstrained.
                     let mut result = body_type;
-                    for _ in (0..num_type_params).rev() {
-                        result = Term::pi(Term::type_sort(), result);
+                    for param in type_params.iter().rev() {
+                        let input_type = if let Some(tc) = &param.typeclass {
+                            let tc_id = type_store.add_typeclass(tc);
+                            Term::typeclass(tc_id)
+                        } else {
+                            Term::type_sort()
+                        };
+                        result = Term::pi(input_type, result);
                     }
                     result
                 };

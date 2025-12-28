@@ -16,7 +16,8 @@ pub enum Fact {
     Proposition(Arc<Proposition>),
 
     /// The first typeclass extends this set of typeclasses.
-    Extends(Typeclass, HashSet<Typeclass>, Source),
+    /// The bool indicates whether the typeclass provides inhabitants (has a constant of the instance type).
+    Extends(Typeclass, HashSet<Typeclass>, bool, Source),
 
     /// The fact that this class is an instance of this typeclass.
     Instance(Datatype, Typeclass, Source),
@@ -31,7 +32,7 @@ impl fmt::Display for Fact {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Fact::Proposition(p) => write!(f, "prop: {}", p.source.description()),
-            Fact::Extends(tc, base_set, _) => {
+            Fact::Extends(tc, base_set, _, _) => {
                 if base_set.is_empty() {
                     write!(f, "{} extends nothing", tc.name)
                 } else {
@@ -56,7 +57,7 @@ impl Fact {
     pub fn source(&self) -> &Source {
         match self {
             Fact::Proposition(p) => &p.source,
-            Fact::Extends(_, _, source) => source,
+            Fact::Extends(_, _, _, source) => source,
             Fact::Instance(_, _, source) => source,
             Fact::Definition(_, _, source) => source,
         }
