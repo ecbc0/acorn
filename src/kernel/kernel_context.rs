@@ -49,6 +49,12 @@ impl KernelContext {
     /// This is a conservative check - it may return false for types that are inhabited
     /// but where we haven't explicitly registered an inhabitant.
     pub fn provably_inhabited(&self, var_type: &Term) -> bool {
+        // Check for function types first - a function type A -> B is inhabited
+        // if the codomain B is inhabited (we can create a constant function).
+        if let Some((_, codomain)) = var_type.as_ref().split_pi() {
+            return self.provably_inhabited(&codomain.to_owned());
+        }
+
         match var_type.as_ref().get_head_atom() {
             // Bool is inhabited (true, false)
             Atom::Symbol(Symbol::Bool) => return true,
