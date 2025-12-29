@@ -1319,3 +1319,17 @@ fn test_can_inhabit_function_type_when_codomain_inhabited() {
     "#;
     verify_succeeds(text);
 }
+
+#[test]
+fn test_cannot_inhabit_function_type_when_only_domain_inhabited() {
+    let text = r#"
+    typeclass P: Pointed {
+        point: P
+    }
+
+    let inhabitant[P: Pointed, Q]: P -> Q satisfy {
+        true
+    }
+    "#;
+    verify_fails(text);
+}
