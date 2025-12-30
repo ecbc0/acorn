@@ -1236,9 +1236,8 @@ fn test_cannot_inhabit_arbitrary_type() {
         true
     }
     "#;
-    // This should fail during normalization because T is not provably inhabited
-    let result = verify(text);
-    assert!(result.is_err(), "Expected an error, but got {:?}", result);
+    // This should fail because T is not provably inhabited
+    verify_fails(text);
 }
 
 #[test]
@@ -1250,8 +1249,7 @@ fn test_cannot_inhabit_arbitrary_type_self_equality() {
         inhabitant = inhabitant
     }
     "#;
-    let result = verify(text);
-    assert!(result.is_err(), "Expected an error, but got {:?}", result);
+    verify_fails(text);
 }
 
 #[test]

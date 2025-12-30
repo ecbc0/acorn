@@ -377,8 +377,18 @@ impl NormalizerView<'_> {
                 // Check for dropped forall variables with uninhabited types.
                 // Skip type parameter variables (first num_type_params entries) since they
                 // represent universally quantified types, not existential claims.
-                if check_dropped_vars {
-                    self.check_dropped_variable_types(&local_context, &clauses, num_type_params)?;
+                // If an uninhabited type is found, this statement is vacuously true (for foralls)
+                // or unprovable (for existentials). Return empty clauses to indicate this.
+                // For facts: vacuously true facts add no information, so empty is correct.
+                // For negated goals: the original goal becomes unprovable, causing Exhausted.
+                if check_dropped_vars
+                    && self.has_uninhabited_dropped_variable(
+                        &local_context,
+                        &clauses,
+                        num_type_params,
+                    )
+                {
+                    return Ok(vec![]);
                 }
 
                 Ok(clauses)
@@ -386,15 +396,16 @@ impl NormalizerView<'_> {
         }
     }
 
-    /// Checks that any forall variables dropped during normalization have provably inhabited types.
+    /// Checks if any forall variables dropped during normalization have uninhabited types.
     /// This prevents unsound proofs where vacuous foralls over empty types are eliminated.
     /// Skips the first `skip_vars` entries which are type parameters (universally quantified types).
-    fn check_dropped_variable_types(
+    /// Returns true if an uninhabited type was found (meaning the formula is unprovable).
+    fn has_uninhabited_dropped_variable(
         &self,
         original_context: &LocalContext,
         clauses: &[Clause],
         skip_vars: usize,
-    ) -> Result<(), String> {
+    ) -> bool {
         use std::collections::HashSet;
 
         // Collect all types that appear in ANY clause's context.
@@ -431,17 +442,14 @@ impl NormalizerView<'_> {
 
                     if let Some(t) = type_to_check {
                         if !self.kernel_context().provably_inhabited(t) {
-                            return Err(format!(
-                                "forall variable of uninhabited type '{}' was eliminated",
-                                var_type
-                            ));
+                            return true;
                         }
                     }
                 }
             }
         }
 
-        Ok(())
+        false
     }
 
     /// This returns clauses that are denormalized in the sense that they sort literals,
