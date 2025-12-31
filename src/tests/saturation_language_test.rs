@@ -1331,3 +1331,13 @@ fn test_cannot_inhabit_function_type_when_only_domain_inhabited() {
     "#;
     verify_fails(text);
 }
+
+#[test]
+fn test_can_inhabit_identity_function_type() {
+    let text = r#"
+    let inhabitant[T]: T -> T satisfy {
+        true
+    }
+    "#;
+    verify_succeeds(text);
+}
