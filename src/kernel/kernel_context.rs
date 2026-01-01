@@ -49,9 +49,15 @@ impl KernelContext {
     /// This is a conservative check - it may return false for types that are inhabited
     /// but where we haven't explicitly registered an inhabitant.
     pub fn provably_inhabited(&self, var_type: &Term) -> bool {
-        // Check for function types first - a function type A -> B is inhabited
-        // if the codomain B is inhabited (we can create a constant function).
-        if let Some((_, codomain)) = var_type.as_ref().split_pi() {
+        // Check for function types first.
+        // A function type A -> B is inhabited if:
+        // 1. The codomain B is inhabited (we can create a constant function), OR
+        // 2. The domain A equals the codomain B (the identity function exists)
+        if let Some((domain, codomain)) = var_type.as_ref().split_pi() {
+            if domain == codomain {
+                // Identity function always exists: T -> T is inhabited for any T
+                return true;
+            }
             return self.provably_inhabited(&codomain.to_owned());
         }
 
