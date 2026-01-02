@@ -1341,3 +1341,17 @@ fn test_can_inhabit_identity_function_type() {
     "#;
     verify_succeeds(text);
 }
+
+#[test]
+fn test_can_inhabit_list_type() {
+    let text = r#"
+    inductive List[T] {
+        cons(List[T])
+        nil
+    }
+    let inhabitant[T]: List[T] satisfy {
+        true
+    }
+    "#;
+    verify_succeeds(text);
+}
