@@ -1827,6 +1827,16 @@ impl Normalizer {
 
         #[cfg(not(feature = "polymorphic"))]
         {
+            // Register constants from the fact even before monomorphization.
+            // This ensures type constructors are marked as inhabited immediately.
+            if let Fact::Proposition(prop) = &fact {
+                self.kernel_context.symbol_table.add_from(
+                    &prop.value,
+                    NewConstantType::Global,
+                    &mut self.kernel_context.type_store,
+                );
+            }
+
             self.monomorphizer.add_fact(fact);
             for proposition in self.monomorphizer.take_output() {
                 let ctype = if proposition.source.truthiness() == Truthiness::Factual {
