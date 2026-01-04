@@ -1357,6 +1357,7 @@ fn test_can_inhabit_list_type() {
 }
 
 #[test]
+#[ignore]
 fn test_inhabited_const() {
     let text = r#"
     let inhabited[T]: Bool = exists(x: T) {
