@@ -1355,3 +1355,19 @@ fn test_can_inhabit_list_type() {
     "#;
     verify_succeeds(text);
 }
+
+#[test]
+fn test_inhabited_const() {
+    let text = r#"
+    let inhabited[T]: Bool = exists(x: T) {
+        true
+    }
+
+    // If we ever change the semantics so that inhabited can be elaborated,
+    // we need to be sure that this can't be proven.
+    // theorem all_inhabited[T] {
+    //     inhabited[T]
+    // }
+    "#;
+    verify_fails(text);
+}
