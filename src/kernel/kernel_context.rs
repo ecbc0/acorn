@@ -1,4 +1,5 @@
 use crate::kernel::atom::Atom;
+use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::symbol_table::SymbolTable;
 use crate::kernel::term::Term;
@@ -48,7 +49,14 @@ impl KernelContext {
     /// Returns true if we've proven that the given type has at least one element.
     /// This is a conservative check - it may return false for types that are inhabited
     /// but where we haven't explicitly registered an inhabitant.
-    pub fn provably_inhabited(&self, var_type: &Term) -> bool {
+    ///
+    /// The optional `local_context` parameter is used in polymorphic mode to look up
+    /// constraints on type variables (e.g., to determine that P: Pointed is inhabited).
+    pub fn provably_inhabited(
+        &self,
+        var_type: &Term,
+        local_context: Option<&LocalContext>,
+    ) -> bool {
         // Check for function types first.
         // A function type A -> B is inhabited if:
         // 1. The codomain B is inhabited (we can create a constant function), OR
@@ -58,7 +66,23 @@ impl KernelContext {
                 // Identity function always exists: T -> T is inhabited for any T
                 return true;
             }
-            return self.provably_inhabited(&codomain.to_owned());
+            return self.provably_inhabited(&codomain.to_owned(), local_context);
+        }
+
+        // In polymorphic mode, check if this is a type variable with a constraint.
+        // For example, if var_type is FreeVariable(0) representing P: Pointed,
+        // look up the constraint (Pointed) in the local context.
+        if let Some(var_id) = var_type.atomic_variable() {
+            if let Some(ctx) = local_context {
+                if let Some(constraint_type) = ctx.get_var_type(var_id as usize) {
+                    // If the constraint is TypeSort, this is an unconstrained type variable.
+                    // Unconstrained types are NOT provably inhabited (could be empty).
+                    if constraint_type.as_ref().is_type_sort() {
+                        return false;
+                    }
+                    return self.provably_inhabited(constraint_type, local_context);
+                }
+            }
         }
 
         match var_type.as_ref().get_head_atom() {

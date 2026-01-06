@@ -221,14 +221,14 @@ impl PassiveSet {
                         let all_inhabited = if let Some(existing_ctx) = existing_context {
                             // Check all types in both contexts are provably inhabited
                             let new_inhabited = (0..new_context.len()).all(|i| {
-                                new_context
-                                    .get_var_type(i)
-                                    .is_none_or(|t| kernel_context.provably_inhabited(t))
+                                new_context.get_var_type(i).is_none_or(|t| {
+                                    kernel_context.provably_inhabited(t, Some(new_context))
+                                })
                             });
                             let existing_inhabited = (0..existing_ctx.len()).all(|i| {
-                                existing_ctx
-                                    .get_var_type(i)
-                                    .is_none_or(|t| kernel_context.provably_inhabited(t))
+                                existing_ctx.get_var_type(i).is_none_or(|t| {
+                                    kernel_context.provably_inhabited(t, Some(existing_ctx))
+                                })
                             });
                             new_inhabited && existing_inhabited
                         } else {
@@ -362,12 +362,12 @@ impl PassiveSet {
                 let activated_inhabited = (0..local_context.len()).all(|i| {
                     local_context
                         .get_var_type(i)
-                        .is_none_or(|t| kernel_context.provably_inhabited(t))
+                        .is_none_or(|t| kernel_context.provably_inhabited(t, Some(&local_context)))
                 });
                 let passive_inhabited = (0..passive_context.len()).all(|i| {
-                    passive_context
-                        .get_var_type(i)
-                        .is_none_or(|t| kernel_context.provably_inhabited(t))
+                    passive_context.get_var_type(i).is_none_or(|t| {
+                        kernel_context.provably_inhabited(t, Some(&passive_context))
+                    })
                 });
                 if !activated_inhabited || !passive_inhabited {
                     // Type might be empty, so this isn't a real contradiction.

@@ -445,7 +445,10 @@ impl NormalizerView<'_> {
                         if t.as_ref().is_type_sort() {
                             return true;
                         }
-                        if !self.kernel_context().provably_inhabited(t) {
+                        if !self
+                            .kernel_context()
+                            .provably_inhabited(t, Some(original_context))
+                        {
                             return true;
                         }
                     }

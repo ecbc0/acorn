@@ -360,7 +360,7 @@ impl Checker {
                                         acorn_type, e
                                     ))
                                 })?;
-                            if !kernel_context.provably_inhabited(&type_term) {
+                            if !kernel_context.provably_inhabited(&type_term, None) {
                                 return Err(Error::GeneratedBadCode(format!(
                                         "cannot create witness '{}' of type '{}' with trivial condition: \
                                          type is not provably inhabited",
