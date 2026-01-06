@@ -441,6 +441,10 @@ impl NormalizerView<'_> {
                     };
 
                     if let Some(t) = type_to_check {
+                        // TypeSort means unconstrained type variable - it could be empty
+                        if t.as_ref().is_type_sort() {
+                            return true;
+                        }
                         if !self.kernel_context().provably_inhabited(t) {
                             return true;
                         }
