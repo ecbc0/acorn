@@ -98,8 +98,10 @@ fn rename_type_vars_in_value(value: &AcornValue, rename_map: &HashMap<String, St
 
             // If the original params is empty but the instance_type has type variables
             // that we're renaming, we need to add those as params so they get included
-            // in the generated code (e.g., s0[T0] instead of just s0)
-            let new_params = if c.params.is_empty() {
+            // in the generated code (e.g., foo[T0] instead of just foo).
+            // BUT: Don't do this for synthetics - they're defined with let s0[T0]: ... satisfy { }
+            // and the s0 inside the body shouldn't have [T0] because it's already bound.
+            let new_params = if c.params.is_empty() && !c.name.is_synthetic() {
                 // Extract type vars from instance_type and use renamed versions as params
                 let type_vars = collect_type_var_names(&c.instance_type);
                 type_vars.iter()
@@ -1207,7 +1209,8 @@ mod tests {
             .define_synthetics(synthetic_ids, normalizer, &mut codes)
             .unwrap();
 
-        let expected = "let s0[T0]: T0 satisfy { not goal[T0] or foo(s0[T0]) and forall(x0: T0) { not foo(v1) or goal[T0] } }";
+        // Note: v1 vs x0 mismatch is a pre-existing naming bug in denormalize
+        let expected = "let s0[T0]: T0 satisfy { not goal[T0] or foo(s0) and forall(x0: T0) { not foo(v1) or goal[T0] } }";
         assert_eq!(codes[0], expected);
     }
 
