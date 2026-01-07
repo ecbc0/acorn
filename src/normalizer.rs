@@ -1321,7 +1321,9 @@ impl NormalizerView<'_> {
         };
 
         // Create the definition for this synthetic term
-        let skolem_value = self.as_ref().denormalize_term(&skolem_term, context, None);
+        let skolem_value = self
+            .as_ref()
+            .denormalize_term(&skolem_term, context, None, None);
         let definition_cnf = self.eq_to_cnf(
             &skolem_value,
             value,
@@ -2037,11 +2039,14 @@ impl Normalizer {
 
     /// If arbitrary names are provided, any free variables of the keyed types are converted
     /// to constants.
+    /// If var_remapping is provided, variable indices are remapped (used when type variables
+    /// are filtered out of forall quantifiers).
     fn denormalize_atom(
         &self,
         atom_type: &Term,
         atom: &Atom,
         arbitrary_names: Option<&HashMap<Term, ConstantName>>,
+        var_remapping: Option<&[Option<u16>]>,
     ) -> AcornValue {
         let acorn_type = self
             .kernel_context
@@ -2107,7 +2112,12 @@ impl Normalizer {
                         );
                     }
                 }
-                AcornValue::Variable(*i, acorn_type)
+                // Apply remapping if provided
+                let new_i = var_remapping
+                    .and_then(|mapping| mapping.get(*i as usize))
+                    .and_then(|opt| *opt)
+                    .unwrap_or(*i);
+                AcornValue::Variable(new_i, acorn_type)
             }
             Atom::Symbol(Symbol::Synthetic(i)) => {
                 let symbol = Symbol::Synthetic(*i);
@@ -2137,11 +2147,13 @@ impl Normalizer {
 
     /// If arbitrary names are provided, any free variables of the keyed types are converted
     /// to constants.
+    /// If var_remapping is provided, variable indices are remapped.
     fn denormalize_term(
         &self,
         term: &Term,
         local_context: &LocalContext,
         arbitrary_names: Option<&HashMap<Term, ConstantName>>,
+        var_remapping: Option<&[Option<u16>]>,
     ) -> AcornValue {
         // Get the type of the head atom
         let head_type = match term.get_head_atom() {
@@ -2168,7 +2180,12 @@ impl Normalizer {
             return AcornValue::Bool(true);
         }
 
-        let head = self.denormalize_atom(&head_type, &term.get_head_atom(), arbitrary_names);
+        let head = self.denormalize_atom(
+            &head_type,
+            &term.get_head_atom(),
+            arbitrary_names,
+            var_remapping,
+        );
 
         // Type arguments appear as the first few arguments.
         // We need to:
@@ -2187,7 +2204,12 @@ impl Normalizer {
                 type_args.push(acorn_type);
             } else {
                 // This is a value argument
-                value_args.push(self.denormalize_term(arg, local_context, arbitrary_names));
+                value_args.push(self.denormalize_term(
+                    arg,
+                    local_context,
+                    arbitrary_names,
+                    var_remapping,
+                ));
             }
         }
 
@@ -2223,13 +2245,16 @@ impl Normalizer {
 
     /// If arbitrary names are provided, any free variables of the keyed types are converted
     /// to constants.
+    /// If var_remapping is provided, variable indices are remapped.
     fn denormalize_literal(
         &self,
         literal: &Literal,
         local_context: &LocalContext,
         arbitrary_names: Option<&HashMap<Term, ConstantName>>,
+        var_remapping: Option<&[Option<u16>]>,
     ) -> AcornValue {
-        let left = self.denormalize_term(&literal.left, local_context, arbitrary_names);
+        let left =
+            self.denormalize_term(&literal.left, local_context, arbitrary_names, var_remapping);
         if literal.right.is_true() {
             if literal.positive {
                 return left;
@@ -2237,7 +2262,12 @@ impl Normalizer {
                 return AcornValue::Not(Box::new(left));
             }
         }
-        let right = self.denormalize_term(&literal.right, local_context, arbitrary_names);
+        let right = self.denormalize_term(
+            &literal.right,
+            local_context,
+            arbitrary_names,
+            var_remapping,
+        );
         if literal.positive {
             AcornValue::equals(left, right)
         } else {
@@ -2249,25 +2279,19 @@ impl Normalizer {
     /// The resulting value may have synthetic atoms in it.
     /// If arbitrary names are provided, any free variables of the keyed types are converted
     /// to constants.
+    /// If type_vars is provided, those variable indices are treated as type-level variables
+    /// and excluded from the forall quantifier (their indices are remapped in the body).
     /// Any remaining free variables are enclosed in a "forall" quantifier.
     pub fn denormalize(
         &self,
         clause: &Clause,
         arbitrary_names: Option<&HashMap<Term, ConstantName>>,
+        type_vars: Option<&HashSet<u16>>,
     ) -> AcornValue {
         if clause.literals.is_empty() {
             return AcornValue::Bool(false);
         }
         let local_context = clause.get_local_context();
-        let mut denormalized_literals = vec![];
-        for literal in &clause.literals {
-            denormalized_literals.push(self.denormalize_literal(
-                literal,
-                local_context,
-                arbitrary_names,
-            ));
-        }
-        let disjunction = AcornValue::reduce(BinaryOp::Or, denormalized_literals);
 
         // Find the number of variables actually used in the clause.
         // The local_context may have more variables than are used.
@@ -2288,29 +2312,61 @@ impl Normalizer {
             .map(|max| (max + 1) as usize)
             .unwrap_or(0);
 
-        // Build var_types for the forall quantifier, but exclude:
-        // 1. Variables that were converted to arbitrary constants (their types are in arbitrary_names)
-        // 2. Type variables (whose type is TypeSort) - these are type parameters, not value variables
-        let var_types: Vec<AcornType> = local_context
-            .get_var_types()
+        let var_types_raw = local_context.get_var_types();
+
+        // Build variable remapping: for each original index, what's its new index?
+        // Type variables and arbitrary variables get None (excluded from forall).
+        let mut var_remapping: Vec<Option<u16>> = Vec::new();
+        let mut new_index: u16 = 0;
+        for i in 0..num_vars {
+            let type_term = &var_types_raw[i];
+            let is_type_var = type_vars
+                .map(|tv| tv.contains(&(i as u16)))
+                .unwrap_or(false)
+                || type_term.as_ref().is_type_sort();
+            let is_arbitrary = arbitrary_names
+                .map(|m| m.contains_key(type_term))
+                .unwrap_or(false);
+
+            if is_type_var || is_arbitrary {
+                var_remapping.push(None);
+            } else {
+                var_remapping.push(Some(new_index));
+                new_index += 1;
+            }
+        }
+
+        // Denormalize literals with the remapping
+        let var_remapping_ref = if var_remapping.iter().any(|x| x.is_none()) {
+            Some(var_remapping.as_slice())
+        } else {
+            None // No remapping needed if all variables are kept
+        };
+
+        let mut denormalized_literals = vec![];
+        for literal in &clause.literals {
+            denormalized_literals.push(self.denormalize_literal(
+                literal,
+                local_context,
+                arbitrary_names,
+                var_remapping_ref,
+            ));
+        }
+        let disjunction = AcornValue::reduce(BinaryOp::Or, denormalized_literals);
+
+        // Build var_types for the forall quantifier (only non-excluded variables)
+        let var_types: Vec<AcornType> = var_types_raw
             .iter()
             .take(num_vars)
-            .filter(|type_term| {
-                // Exclude type variables (in polymorphic mode, type parameters have type TypeSort)
-                if type_term.as_ref().is_type_sort() {
-                    return false;
-                }
-                // Keep this variable if its type is NOT in arbitrary_names
-                arbitrary_names
-                    .map(|names| !names.contains_key(*type_term))
-                    .unwrap_or(true)
-            })
-            .map(|type_term| {
+            .enumerate()
+            .filter(|(i, _)| var_remapping.get(*i).copied().flatten().is_some())
+            .map(|(_, type_term)| {
                 self.kernel_context
                     .type_store
                     .type_term_to_acorn_type(type_term)
             })
             .collect();
+
         AcornValue::forall(var_types, disjunction)
     }
 
@@ -2347,7 +2403,7 @@ impl Normalizer {
     /// When you denormalize and renormalize a clause, you should get the same thing.
     #[cfg(test)]
     fn check_denormalize_renormalize(&mut self, clause: &Clause) {
-        let denormalized = self.denormalize(clause, None);
+        let denormalized = self.denormalize(clause, None, None);
         if let Err(e) = denormalized.validate() {
             eprintln!("DEBUG: clause = {}", clause);
             eprintln!("DEBUG: clause context = {:?}", clause.get_local_context());

@@ -1,9 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use tower_lsp::lsp_types::{LanguageString, MarkedString};
 
-use crate::elaborator::acorn_type::{AcornType, Datatype, FunctionType, PotentialType, TypeParam, Typeclass};
+use crate::elaborator::acorn_type::{
+    AcornType, Datatype, FunctionType, PotentialType, TypeParam, Typeclass,
+};
 use crate::elaborator::acorn_value::{AcornValue, BinaryOp, ConstantInstance};
 use crate::elaborator::binding_map::BindingMap;
 use crate::elaborator::names::{ConstantName, DefinedName};
@@ -52,7 +54,10 @@ fn collect_type_var_names_recursive(acorn_type: &AcornType, names: &mut Vec<Stri
 }
 
 /// Renames type variables in an AcornType according to the provided mapping.
-fn rename_type_vars_in_type(acorn_type: &AcornType, rename_map: &HashMap<String, String>) -> AcornType {
+fn rename_type_vars_in_type(
+    acorn_type: &AcornType,
+    rename_map: &HashMap<String, String>,
+) -> AcornType {
     match acorn_type {
         AcornType::Variable(param) => {
             if let Some(new_name) = rename_map.get(&param.name) {
@@ -88,7 +93,13 @@ fn rename_type_vars_in_type(acorn_type: &AcornType, rename_map: &HashMap<String,
 }
 
 /// Renames type variables in an AcornValue according to the provided mapping.
-fn rename_type_vars_in_value(value: &AcornValue, rename_map: &HashMap<String, String>) -> AcornValue {
+/// `defining_synthetics` contains the IDs of synthetics being defined in the current
+/// let...satisfy block - these should NOT get type params added since they're already bound.
+fn rename_type_vars_in_value(
+    value: &AcornValue,
+    rename_map: &HashMap<String, String>,
+    defining_synthetics: &HashSet<AtomId>,
+) -> AcornValue {
     match value {
         AcornValue::Variable(i, t) => {
             AcornValue::Variable(*i, rename_type_vars_in_type(t, rename_map))
@@ -99,20 +110,30 @@ fn rename_type_vars_in_value(value: &AcornValue, rename_map: &HashMap<String, St
             // If the original params is empty but the instance_type has type variables
             // that we're renaming, we need to add those as params so they get included
             // in the generated code (e.g., foo[T0] instead of just foo).
-            // BUT: Don't do this for synthetics - they're defined with let s0[T0]: ... satisfy { }
-            // and the s0 inside the body shouldn't have [T0] because it's already bound.
-            let new_params = if c.params.is_empty() && !c.name.is_synthetic() {
+            // BUT: Don't do this for synthetics being defined in the current let...satisfy block -
+            // they're defined with let s0[T0]: ... satisfy { } and the s0 inside the body
+            // shouldn't have [T0] because it's already bound by the declaration.
+            let is_being_defined = c
+                .name
+                .synthetic_id()
+                .map(|id| defining_synthetics.contains(&id))
+                .unwrap_or(false);
+            let new_params = if c.params.is_empty() && !is_being_defined {
                 // Extract type vars from instance_type and use renamed versions as params
                 let type_vars = collect_type_var_names(&c.instance_type);
-                type_vars.iter()
+                type_vars
+                    .iter()
                     .filter_map(|name| rename_map.get(name))
-                    .map(|new_name| AcornType::Variable(TypeParam {
-                        name: new_name.clone(),
-                        typeclass: None,
-                    }))
+                    .map(|new_name| {
+                        AcornType::Variable(TypeParam {
+                            name: new_name.clone(),
+                            typeclass: None,
+                        })
+                    })
                     .collect()
             } else {
-                c.params.iter()
+                c.params
+                    .iter()
                     .map(|p| rename_type_vars_in_type(p, rename_map))
                     .collect()
             };
@@ -126,68 +147,119 @@ fn rename_type_vars_in_value(value: &AcornValue, rename_map: &HashMap<String, St
             })
         }
         AcornValue::Application(fa) => {
-            let new_func = rename_type_vars_in_value(&fa.function, rename_map);
-            let new_args = fa.args.iter()
-                .map(|a| rename_type_vars_in_value(a, rename_map))
+            let new_func = rename_type_vars_in_value(&fa.function, rename_map, defining_synthetics);
+            let new_args = fa
+                .args
+                .iter()
+                .map(|a| rename_type_vars_in_value(a, rename_map, defining_synthetics))
                 .collect();
             AcornValue::apply(new_func, new_args)
         }
-        AcornValue::Binary(op, left, right) => {
-            AcornValue::Binary(
-                *op,
-                Box::new(rename_type_vars_in_value(left, rename_map)),
-                Box::new(rename_type_vars_in_value(right, rename_map)),
-            )
-        }
-        AcornValue::Not(v) => {
-            AcornValue::Not(Box::new(rename_type_vars_in_value(v, rename_map)))
-        }
+        AcornValue::Binary(op, left, right) => AcornValue::Binary(
+            *op,
+            Box::new(rename_type_vars_in_value(
+                left,
+                rename_map,
+                defining_synthetics,
+            )),
+            Box::new(rename_type_vars_in_value(
+                right,
+                rename_map,
+                defining_synthetics,
+            )),
+        ),
+        AcornValue::Not(v) => AcornValue::Not(Box::new(rename_type_vars_in_value(
+            v,
+            rename_map,
+            defining_synthetics,
+        ))),
         AcornValue::ForAll(quants, v) => {
-            let new_quants = quants.iter()
+            let new_quants = quants
+                .iter()
                 .map(|q| rename_type_vars_in_type(q, rename_map))
                 .collect();
-            AcornValue::ForAll(new_quants, Box::new(rename_type_vars_in_value(v, rename_map)))
+            AcornValue::ForAll(
+                new_quants,
+                Box::new(rename_type_vars_in_value(
+                    v,
+                    rename_map,
+                    defining_synthetics,
+                )),
+            )
         }
         AcornValue::Exists(quants, v) => {
-            let new_quants = quants.iter()
+            let new_quants = quants
+                .iter()
                 .map(|q| rename_type_vars_in_type(q, rename_map))
                 .collect();
-            AcornValue::Exists(new_quants, Box::new(rename_type_vars_in_value(v, rename_map)))
-        }
-        AcornValue::Lambda(quants, v) => {
-            let new_quants = quants.iter()
-                .map(|q| rename_type_vars_in_type(q, rename_map))
-                .collect();
-            AcornValue::Lambda(new_quants, Box::new(rename_type_vars_in_value(v, rename_map)))
-        }
-        AcornValue::IfThenElse(cond, then_v, else_v) => {
-            AcornValue::IfThenElse(
-                Box::new(rename_type_vars_in_value(cond, rename_map)),
-                Box::new(rename_type_vars_in_value(then_v, rename_map)),
-                Box::new(rename_type_vars_in_value(else_v, rename_map)),
+            AcornValue::Exists(
+                new_quants,
+                Box::new(rename_type_vars_in_value(
+                    v,
+                    rename_map,
+                    defining_synthetics,
+                )),
             )
         }
+        AcornValue::Lambda(quants, v) => {
+            let new_quants = quants
+                .iter()
+                .map(|q| rename_type_vars_in_type(q, rename_map))
+                .collect();
+            AcornValue::Lambda(
+                new_quants,
+                Box::new(rename_type_vars_in_value(
+                    v,
+                    rename_map,
+                    defining_synthetics,
+                )),
+            )
+        }
+        AcornValue::IfThenElse(cond, then_v, else_v) => AcornValue::IfThenElse(
+            Box::new(rename_type_vars_in_value(
+                cond,
+                rename_map,
+                defining_synthetics,
+            )),
+            Box::new(rename_type_vars_in_value(
+                then_v,
+                rename_map,
+                defining_synthetics,
+            )),
+            Box::new(rename_type_vars_in_value(
+                else_v,
+                rename_map,
+                defining_synthetics,
+            )),
+        ),
         AcornValue::Match(scrutinee, cases) => {
-            let new_scrutinee = rename_type_vars_in_value(scrutinee, rename_map);
-            let new_cases = cases.iter()
+            let new_scrutinee =
+                rename_type_vars_in_value(scrutinee, rename_map, defining_synthetics);
+            let new_cases = cases
+                .iter()
                 .map(|(bound_types, pattern, body)| {
-                    let new_bound_types = bound_types.iter()
+                    let new_bound_types = bound_types
+                        .iter()
                         .map(|t| rename_type_vars_in_type(t, rename_map))
                         .collect();
-                    (new_bound_types,
-                     rename_type_vars_in_value(pattern, rename_map),
-                     rename_type_vars_in_value(body, rename_map))
+                    (
+                        new_bound_types,
+                        rename_type_vars_in_value(pattern, rename_map, defining_synthetics),
+                        rename_type_vars_in_value(body, rename_map, defining_synthetics),
+                    )
                 })
                 .collect();
             AcornValue::Match(Box::new(new_scrutinee), new_cases)
         }
         AcornValue::Bool(_) => value.clone(),
-        AcornValue::Try(v, t) => {
-            AcornValue::Try(
-                Box::new(rename_type_vars_in_value(v, rename_map)),
-                rename_type_vars_in_type(t, rename_map),
-            )
-        }
+        AcornValue::Try(v, t) => AcornValue::Try(
+            Box::new(rename_type_vars_in_value(
+                v,
+                rename_map,
+                defining_synthetics,
+            )),
+            rename_type_vars_in_type(t, rename_map),
+        ),
     }
 }
 
@@ -443,13 +515,15 @@ impl CodeGenerator<'_> {
             // Create code for the condition
             let mut cond_parts = vec![];
             for clause in &info.clauses {
-                let part = normalizer.denormalize(clause, None);
+                let part = normalizer.denormalize(clause, None, None);
                 cond_parts.push(part);
             }
             let cond_val = AcornValue::reduce(BinaryOp::And, cond_parts);
 
             // Rename type variables in the condition value too
-            let cond_val = rename_type_vars_in_value(&cond_val, &rename_map);
+            // Pass the set of synthetics being defined so they don't get type params added
+            let defining_synthetics: HashSet<AtomId> = info.atoms.iter().copied().collect();
+            let cond_val = rename_type_vars_in_value(&cond_val, &rename_map, &defining_synthetics);
 
             // The denormalized clauses might contain additional synthetic constants.
             // Define them first (recursively) before we use them in this definition.
@@ -498,7 +572,7 @@ impl CodeGenerator<'_> {
         // It might make more sense to do this in value space, so that we don't have to make
         // the normalizer even more complicated.
         self.add_arbitrary_for_clause(&clause, normalizer.kernel_context());
-        let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names));
+        let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names), None);
 
         // Define the arbitrary variables.
         for (ty, name) in self.arbitrary_names.clone() {
@@ -796,6 +870,13 @@ impl CodeGenerator<'_> {
                 if *i >= self.var_names.len() as u16 {
                     // This is definitely wrong.
                     // We use this for the hover, but it would be better to fix it.
+                    #[cfg(test)]
+                    panic!(
+                        "Variable index {} out of range (var_names has {} entries)",
+                        i,
+                        self.var_names.len()
+                    );
+                    #[cfg(not(test))]
                     Ok(Expression::generate_identifier(&format!("v{}", i)))
                 } else {
                     Ok(Expression::generate_identifier(
@@ -1209,8 +1290,7 @@ mod tests {
             .define_synthetics(synthetic_ids, normalizer, &mut codes)
             .unwrap();
 
-        // Note: v1 vs x0 mismatch is a pre-existing naming bug in denormalize
-        let expected = "let s0[T0]: T0 satisfy { not goal[T0] or foo(s0) and forall(x0: T0) { not foo(v1) or goal[T0] } }";
+        let expected = "let s0[T0]: T0 satisfy { not goal[T0] or foo(s0) and forall(x0: T0) { not foo(x0) or goal[T0] } }";
         assert_eq!(codes[0], expected);
     }
 

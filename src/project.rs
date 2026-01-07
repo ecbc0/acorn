@@ -616,9 +616,15 @@ impl Project {
         // First add the main hover content
         let main_content = match &info.entity {
             NamedEntity::Value(value) => {
-                // For partial applications, show the base function instead
-                let base_value = value.unapply();
-                gen.value_to_marked(base_value)?
+                // For variables, use the token text as the name
+                if let AcornValue::Variable(_, t) = value {
+                    let type_expr = gen.type_to_expr(&t)?;
+                    CodeGenerator::marked(format!("{}: {}", info.text, type_expr))
+                } else {
+                    // For partial applications, show the base function instead
+                    let base_value = value.unapply();
+                    gen.value_to_marked(base_value)?
+                }
             }
             NamedEntity::UnresolvedValue(unresolved) => {
                 let generic = unresolved.clone().to_generic_value();

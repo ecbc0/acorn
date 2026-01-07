@@ -74,7 +74,7 @@ impl Processor {
         }
         let steps = self.normalizer.normalize_fact(fact)?;
         for step in &steps {
-            let denormalized = self.normalizer.denormalize(&step.clause, None);
+            let denormalized = self.normalizer.denormalize(&step.clause, None, None);
             trace!(clause = %denormalized, "proof step");
         }
         let kernel_context = self.normalizer.kernel_context();
@@ -110,7 +110,7 @@ impl Processor {
         let (ng, steps) = self.normalizer.normalize_goal(goal)?;
         debug!(goal = %goal.proposition.value, "setting goal");
         for step in &steps {
-            let denormalized = self.normalizer.denormalize(&step.clause, None);
+            let denormalized = self.normalizer.denormalize(&step.clause, None, None);
             trace!(clause = %denormalized, "proof step");
         }
         let kernel_context = self.normalizer.kernel_context();
