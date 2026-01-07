@@ -198,4 +198,35 @@ impl Processor {
         let normalizer = Cow::Owned(normalizer);
         checker.clean_cert(cert, project, bindings, normalizer)
     }
+
+    /// Creates a test Processor from code containing a theorem named "goal".
+    /// Loads facts and sets up the goal, which triggers normalization.
+    /// Returns the Processor (which owns the Normalizer) and the BindingMap.
+    #[cfg(test)]
+    pub fn test_goal(code: &str) -> (Processor, BindingMap) {
+        use crate::module::LoadState;
+
+        let mut p = Project::new_mock();
+        p.mock("/mock/main.ac", code);
+
+        let module_id = p.load_module_by_name("main").expect("load failed");
+        let env = match p.get_module_by_id(module_id) {
+            LoadState::Ok(env) => env,
+            LoadState::Error(e) => panic!("error: {}", e),
+            _ => panic!("no module"),
+        };
+
+        let cursor = env.get_node_by_goal_name("goal");
+        let facts = cursor.usable_facts(&p);
+        let goal = cursor.goal().unwrap();
+        let goal_env = cursor.goal_env().unwrap();
+
+        let mut processor = Processor::new();
+        for fact in facts {
+            processor.add_fact(fact).unwrap();
+        }
+        processor.set_goal(&goal, &p).unwrap();
+
+        (processor, goal_env.bindings.clone())
+    }
 }

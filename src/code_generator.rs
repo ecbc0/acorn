@@ -3,7 +3,7 @@ use std::fmt;
 
 use tower_lsp::lsp_types::{LanguageString, MarkedString};
 
-use crate::elaborator::acorn_type::{AcornType, Datatype, PotentialType, Typeclass};
+use crate::elaborator::acorn_type::{AcornType, Datatype, FunctionType, PotentialType, TypeParam, Typeclass};
 use crate::elaborator::acorn_value::{AcornValue, BinaryOp, ConstantInstance};
 use crate::elaborator::binding_map::BindingMap;
 use crate::elaborator::names::{ConstantName, DefinedName};
@@ -22,6 +22,173 @@ use crate::syntax::token::TokenType;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Collects type variable names from an AcornType in order of first appearance.
+fn collect_type_var_names(acorn_type: &AcornType) -> Vec<String> {
+    let mut names = Vec::new();
+    collect_type_var_names_recursive(acorn_type, &mut names);
+    names
+}
+
+fn collect_type_var_names_recursive(acorn_type: &AcornType, names: &mut Vec<String>) {
+    match acorn_type {
+        AcornType::Variable(param) => {
+            if !names.contains(&param.name) {
+                names.push(param.name.clone());
+            }
+        }
+        AcornType::Data(_, params) => {
+            for p in params {
+                collect_type_var_names_recursive(p, names);
+            }
+        }
+        AcornType::Function(ft) => {
+            for arg in &ft.arg_types {
+                collect_type_var_names_recursive(arg, names);
+            }
+            collect_type_var_names_recursive(&ft.return_type, names);
+        }
+        _ => {}
+    }
+}
+
+/// Renames type variables in an AcornType according to the provided mapping.
+fn rename_type_vars_in_type(acorn_type: &AcornType, rename_map: &HashMap<String, String>) -> AcornType {
+    match acorn_type {
+        AcornType::Variable(param) => {
+            if let Some(new_name) = rename_map.get(&param.name) {
+                AcornType::Variable(TypeParam {
+                    name: new_name.clone(),
+                    typeclass: param.typeclass.clone(),
+                })
+            } else {
+                acorn_type.clone()
+            }
+        }
+        AcornType::Data(datatype, params) => {
+            let new_params = params
+                .iter()
+                .map(|p| rename_type_vars_in_type(p, rename_map))
+                .collect();
+            AcornType::Data(datatype.clone(), new_params)
+        }
+        AcornType::Function(ft) => {
+            let new_args = ft
+                .arg_types
+                .iter()
+                .map(|a| rename_type_vars_in_type(a, rename_map))
+                .collect();
+            let new_ret = rename_type_vars_in_type(&ft.return_type, rename_map);
+            AcornType::Function(FunctionType {
+                arg_types: new_args,
+                return_type: Box::new(new_ret),
+            })
+        }
+        _ => acorn_type.clone(),
+    }
+}
+
+/// Renames type variables in an AcornValue according to the provided mapping.
+fn rename_type_vars_in_value(value: &AcornValue, rename_map: &HashMap<String, String>) -> AcornValue {
+    match value {
+        AcornValue::Variable(i, t) => {
+            AcornValue::Variable(*i, rename_type_vars_in_type(t, rename_map))
+        }
+        AcornValue::Constant(c) => {
+            let new_instance_type = rename_type_vars_in_type(&c.instance_type, rename_map);
+
+            // If the original params is empty but the instance_type has type variables
+            // that we're renaming, we need to add those as params so they get included
+            // in the generated code (e.g., s0[T0] instead of just s0)
+            let new_params = if c.params.is_empty() {
+                // Extract type vars from instance_type and use renamed versions as params
+                let type_vars = collect_type_var_names(&c.instance_type);
+                type_vars.iter()
+                    .filter_map(|name| rename_map.get(name))
+                    .map(|new_name| AcornType::Variable(TypeParam {
+                        name: new_name.clone(),
+                        typeclass: None,
+                    }))
+                    .collect()
+            } else {
+                c.params.iter()
+                    .map(|p| rename_type_vars_in_type(p, rename_map))
+                    .collect()
+            };
+
+            AcornValue::Constant(ConstantInstance {
+                name: c.name.clone(),
+                params: new_params,
+                instance_type: new_instance_type,
+                generic_type: c.generic_type.clone(),
+                type_param_names: c.type_param_names.clone(),
+            })
+        }
+        AcornValue::Application(fa) => {
+            let new_func = rename_type_vars_in_value(&fa.function, rename_map);
+            let new_args = fa.args.iter()
+                .map(|a| rename_type_vars_in_value(a, rename_map))
+                .collect();
+            AcornValue::apply(new_func, new_args)
+        }
+        AcornValue::Binary(op, left, right) => {
+            AcornValue::Binary(
+                *op,
+                Box::new(rename_type_vars_in_value(left, rename_map)),
+                Box::new(rename_type_vars_in_value(right, rename_map)),
+            )
+        }
+        AcornValue::Not(v) => {
+            AcornValue::Not(Box::new(rename_type_vars_in_value(v, rename_map)))
+        }
+        AcornValue::ForAll(quants, v) => {
+            let new_quants = quants.iter()
+                .map(|q| rename_type_vars_in_type(q, rename_map))
+                .collect();
+            AcornValue::ForAll(new_quants, Box::new(rename_type_vars_in_value(v, rename_map)))
+        }
+        AcornValue::Exists(quants, v) => {
+            let new_quants = quants.iter()
+                .map(|q| rename_type_vars_in_type(q, rename_map))
+                .collect();
+            AcornValue::Exists(new_quants, Box::new(rename_type_vars_in_value(v, rename_map)))
+        }
+        AcornValue::Lambda(quants, v) => {
+            let new_quants = quants.iter()
+                .map(|q| rename_type_vars_in_type(q, rename_map))
+                .collect();
+            AcornValue::Lambda(new_quants, Box::new(rename_type_vars_in_value(v, rename_map)))
+        }
+        AcornValue::IfThenElse(cond, then_v, else_v) => {
+            AcornValue::IfThenElse(
+                Box::new(rename_type_vars_in_value(cond, rename_map)),
+                Box::new(rename_type_vars_in_value(then_v, rename_map)),
+                Box::new(rename_type_vars_in_value(else_v, rename_map)),
+            )
+        }
+        AcornValue::Match(scrutinee, cases) => {
+            let new_scrutinee = rename_type_vars_in_value(scrutinee, rename_map);
+            let new_cases = cases.iter()
+                .map(|(bound_types, pattern, body)| {
+                    let new_bound_types = bound_types.iter()
+                        .map(|t| rename_type_vars_in_type(t, rename_map))
+                        .collect();
+                    (new_bound_types,
+                     rename_type_vars_in_value(pattern, rename_map),
+                     rename_type_vars_in_value(body, rename_map))
+                })
+                .collect();
+            AcornValue::Match(Box::new(new_scrutinee), new_cases)
+        }
+        AcornValue::Bool(_) => value.clone(),
+        AcornValue::Try(v, t) => {
+            AcornValue::Try(
+                Box::new(rename_type_vars_in_value(v, rename_map)),
+                rename_type_vars_in_type(t, rename_map),
+            )
+        }
+    }
+}
+
 pub struct CodeGenerator<'a> {
     /// Bindings for the module we are generating code in.
     bindings: &'a BindingMap,
@@ -34,6 +201,9 @@ pub struct CodeGenerator<'a> {
 
     /// We use variables named s0, s1, s2, etc for synthetic atoms.
     next_s: u32,
+
+    /// We use variables named T0, T1, T2, etc for type parameters.
+    next_t: u32,
 
     /// The names we have assigned to stack variables so far.
     var_names: Vec<String>,
@@ -54,6 +224,7 @@ impl CodeGenerator<'_> {
             next_x: 0,
             next_k: 0,
             next_s: 0,
+            next_t: 0,
             var_names: vec![],
             synthetic_names: HashMap::new(),
             arbitrary_names: HashMap::new(),
@@ -229,13 +400,39 @@ impl CodeGenerator<'_> {
                 continue;
             }
 
-            // Create code for the declaration
-            let mut decl_parts = vec![];
-            for (name, ty) in decl {
-                let ty_code = self.type_to_code(&ty)?;
-                decl_parts.push(format!("{}: {}", name, ty_code));
+            // Collect all type variables from the declaration types and build a rename map
+            let mut all_type_vars = Vec::new();
+            for (_, ty) in &decl {
+                for var_name in collect_type_var_names(ty) {
+                    if !all_type_vars.contains(&var_name) {
+                        all_type_vars.push(var_name);
+                    }
+                }
             }
-            let decl = if decl_parts.len() > 1 {
+
+            // Build rename map: x0 -> T0, x1 -> T1, etc.
+            let mut rename_map = HashMap::new();
+            let mut type_param_names = Vec::new();
+            for old_name in &all_type_vars {
+                let new_name = self.bindings.next_indexed_var('T', &mut self.next_t);
+                rename_map.insert(old_name.clone(), new_name.clone());
+                type_param_names.push(new_name);
+            }
+
+            // Create code for the declaration with renamed types
+            let mut decl_parts = vec![];
+            for (name, ty) in &decl {
+                let renamed_ty = rename_type_vars_in_type(ty, &rename_map);
+                let ty_code = self.type_to_code(&renamed_ty)?;
+                // Add type parameters to the name if there are any
+                let name_with_params = if type_param_names.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{}[{}]", name, type_param_names.join(", "))
+                };
+                decl_parts.push(format!("{}: {}", name_with_params, ty_code));
+            }
+            let decl_str = if decl_parts.len() > 1 {
                 format!("({})", decl_parts.join(", "))
             } else {
                 decl_parts.join("")
@@ -249,6 +446,9 @@ impl CodeGenerator<'_> {
             }
             let cond_val = AcornValue::reduce(BinaryOp::And, cond_parts);
 
+            // Rename type variables in the condition value too
+            let cond_val = rename_type_vars_in_value(&cond_val, &rename_map);
+
             // The denormalized clauses might contain additional synthetic constants.
             // Define them first (recursively) before we use them in this definition.
             let additional_synthetic_ids = cond_val.find_synthetics();
@@ -258,7 +458,7 @@ impl CodeGenerator<'_> {
 
             let cond = self.value_to_code(&cond_val)?;
 
-            let let_statement = format!("let {} satisfy {{ {} }}", decl, cond);
+            let let_statement = format!("let {} satisfy {{ {} }}", decl_str, cond);
             codes.push(let_statement);
         }
         Ok(())
@@ -984,6 +1184,32 @@ impl From<String> for Error {
 #[cfg(test)]
 mod tests {
     use crate::project::Project;
+
+    #[test]
+    #[cfg(feature = "polymorphic")]
+    fn test_polymorphic_synthetic_declaration() {
+        use super::CodeGenerator;
+        use crate::processor::Processor;
+
+        let (processor, bindings) = Processor::test_goal(
+            r#"
+            let foo[T]: T -> Bool = axiom
+            theorem goal[T] { exists(t: T) { foo(t) } }
+            "#,
+        );
+
+        let normalizer = processor.normalizer();
+        let synthetic_ids = normalizer.get_synthetic_ids();
+
+        let mut generator = CodeGenerator::new(&bindings);
+        let mut codes = vec![];
+        generator
+            .define_synthetics(synthetic_ids, normalizer, &mut codes)
+            .unwrap();
+
+        let expected = "let s0[T0]: T0 satisfy { not goal[T0] or foo(s0[T0]) and forall(x0: T0) { not foo(v1) or goal[T0] } }";
+        assert_eq!(codes[0], expected);
+    }
 
     #[test]
     fn test_code_generation() {

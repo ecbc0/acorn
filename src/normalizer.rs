@@ -132,6 +132,12 @@ impl Normalizer {
             .type_term_to_acorn_type(type_term)
     }
 
+    /// Returns all synthetic atom IDs that have been defined.
+    #[cfg(test)]
+    pub fn get_synthetic_ids(&self) -> Vec<AtomId> {
+        self.synthetic_definitions.keys().copied().collect()
+    }
+
     pub fn kernel_context(&self) -> &KernelContext {
         &self.kernel_context
     }
