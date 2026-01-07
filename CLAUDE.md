@@ -11,7 +11,7 @@
 
   This verifies the code in `~/acornlib`, which you can inspect to figure out verification failures.
 
-- If a unit test breaks, but just in the prover, we should try to add another,
+- If a unit test breaks, but just in the verifier or prover, we should try to add another,
   narrower unit test, that catches the problem in the underlying data structure.
 
 - If we run into an error during reverification, to debug it, it can help to

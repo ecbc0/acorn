@@ -1292,6 +1292,45 @@ mod tests {
 
         let expected = "let s0[T0]: T0 satisfy { not goal[T0] or foo(s0) and forall(x0: T0) { not foo(x0) or goal[T0] } }";
         assert_eq!(codes[0], expected);
+
+        // The generated code should be checkable
+        processor.test_check_code(&codes[0], &bindings);
+    }
+
+    #[test]
+    #[cfg(feature = "polymorphic")]
+    fn test_polymorphic_synthetic_with_multi_arg_function() {
+        use super::CodeGenerator;
+        use crate::processor::Processor;
+
+        // Use a pattern that creates a synthetic with type ((T0, T0) -> Bool) -> T0
+        // The is_reflexive pattern has forall inside, which when negated becomes
+        // exists(t: T) { not f(t, t) } where t depends on f, giving synthetic type
+        // ((T, T) -> Bool) -> T
+        let (processor, bindings) = Processor::test_goal(
+            r#"
+            define is_reflexive[T](f: (T, T) -> Bool) -> Bool {
+                forall(t: T) { f(t, t) }
+            }
+            theorem goal[T](f: (T, T) -> Bool) { is_reflexive(f) }
+            "#,
+        );
+
+        let normalizer = processor.normalizer();
+        let synthetic_ids = normalizer.get_synthetic_ids();
+
+        let mut generator = CodeGenerator::new(&bindings);
+        let mut codes = vec![];
+        generator
+            .define_synthetics(synthetic_ids, normalizer, &mut codes)
+            .unwrap();
+
+        // The synthetic should have type ((T0, T0) -> Bool) -> T0
+        let expected = "let s0[T0]: ((T0, T0) -> Bool) -> T0 satisfy { forall(x0: (T0, T0) -> Bool, x1: T0) { not is_reflexive[T0](x0) or x0(x1, x1) } and forall(x2: (T0, T0) -> Bool) { not x2(s0(x2), s0(x2)) or is_reflexive[T0](x2) } }";
+        assert_eq!(codes[0], expected);
+
+        // The generated code should be checkable
+        processor.test_check_code(&codes[0], &bindings);
     }
 
     #[test]
