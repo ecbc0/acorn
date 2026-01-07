@@ -107,6 +107,10 @@ enum Decomposition {
     // Binary application: (func arg)
     // For f(a, b, c), this is stored as ((((f) a) b) c)
     Application(TermId, TermId),
+
+    // Pi type (function type), treated as an opaque atom.
+    // Not used for structural equality reasoning - just stores the marker.
+    Pi,
 }
 
 #[derive(Clone)]
@@ -288,6 +292,10 @@ pub struct EqualityGraph {
     // When set, this indicates that the provided step sets these terms to be unequal.
     // But there is a chain of rewrites that proves that they are equal. This is a contradiction.
     contradiction_info: Option<(TermId, TermId, StepId)>,
+
+    // Maps Pi types (function types) to their TermIds.
+    // Pi types are treated as opaque atoms - we don't decompose them structurally.
+    pi_map: HashMap<Term, TermId>,
 }
 
 impl Default for EqualityGraph {
@@ -308,6 +316,7 @@ impl EqualityGraph {
             pending: Vec::new(),
             has_contradiction: false,
             contradiction_info: None,
+            pi_map: HashMap::new(),
         }
     }
 
@@ -326,7 +335,8 @@ impl EqualityGraph {
                 self.decompositions.get(&key).copied()
             }
             TermDecomposition::Pi(_, _) => {
-                panic!("Pi types should not be inserted into term graph");
+                // Pi types are looked up in pi_map
+                self.pi_map.get(term).copied()
             }
         }
     }
@@ -442,6 +452,34 @@ impl EqualityGraph {
         term_id
     }
 
+    // Inserts a Pi type (function type) into the graph.
+    // Pi types are treated as opaque atoms - no structural decomposition.
+    // Uses pi_map for lookup to ensure identical Pi types get the same TermId.
+    fn insert_pi(&mut self, pi_term: Term) -> TermId {
+        if let Some(&id) = self.pi_map.get(&pi_term) {
+            return id;
+        }
+
+        // Create new term and group (similar to insert_atom)
+        let term_id = TermId(self.terms.len() as u32);
+        let group_id = GroupId(self.groups.len() as u32);
+        let term_info = TermInfo {
+            term: pi_term.clone(),
+            group: group_id,
+            decomp: Decomposition::Pi,
+            adjacent: vec![],
+        };
+        self.terms.push(term_info);
+        let group_info = PossibleGroupInfo::Info(GroupInfo {
+            terms: vec![term_id],
+            applications: vec![],
+            inequalities: HashMap::new(),
+        });
+        self.groups.push(group_info);
+        self.pi_map.insert(pi_term, term_id);
+        term_id
+    }
+
     // Adds a application relationship.
     // If we should combine groups, add them to the pending list.
     fn insert_group_application(&mut self, func: GroupId, arg: GroupId, result_term: TermId) {
@@ -511,11 +549,8 @@ impl EqualityGraph {
                 self.insert_application(func_id, arg_id)
             }
             TermDecomposition::Pi(_, _) => {
-                // Pi types in term graph - not typically expected, panic for now
-                panic!(
-                    "Pi types should not be inserted into EqualityGraph: {}",
-                    term
-                );
+                // Pi types are treated as opaque atoms
+                self.insert_pi(term.clone())
             }
         };
         self.process_pending();
@@ -1988,5 +2023,35 @@ mod tests {
         g.set_eq(b, d, StepId(1));
 
         g.assert_eq(n1, n2);
+    }
+
+    // Test that Pi types (function types) can be inserted into the graph
+    #[test]
+    fn test_insert_pi_type() {
+        let mut graph = EqualityGraph::new();
+        let kctx = KernelContext::new();
+
+        let bool_type = Term::bool_type();
+        let type_sort = Term::type_sort();
+
+        // Create Pi types: Bool -> Bool
+        let pi1 = Term::pi(bool_type.clone(), bool_type.clone());
+        let pi2 = Term::pi(bool_type.clone(), bool_type.clone());
+        // Create a different Pi type: Type -> Bool
+        let pi3 = Term::pi(type_sort.clone(), bool_type.clone());
+
+        let id1 = graph.insert_term(&pi1, &kctx);
+        let id2 = graph.insert_term(&pi2, &kctx);
+        let id3 = graph.insert_term(&pi3, &kctx);
+
+        // Same Pi types should get same TermId
+        assert_eq!(id1, id2, "Same Pi types should get same TermId");
+        // Different Pi types should get different TermIds
+        assert_ne!(id1, id3, "Different Pi types should get different TermIds");
+
+        // Also verify get_term_id works
+        assert_eq!(graph.get_term_id(&pi1), Some(id1));
+        assert_eq!(graph.get_term_id(&pi2), Some(id2));
+        assert_eq!(graph.get_term_id(&pi3), Some(id3));
     }
 }
