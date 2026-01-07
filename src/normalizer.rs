@@ -2282,13 +2282,18 @@ impl Normalizer {
             .map(|max| (max + 1) as usize)
             .unwrap_or(0);
 
-        // Build var_types for the forall quantifier, but exclude any variables that
-        // were converted to arbitrary constants (their types are in arbitrary_names).
+        // Build var_types for the forall quantifier, but exclude:
+        // 1. Variables that were converted to arbitrary constants (their types are in arbitrary_names)
+        // 2. Type variables (whose type is TypeSort) - these are type parameters, not value variables
         let var_types: Vec<AcornType> = local_context
             .get_var_types()
             .iter()
             .take(num_vars)
             .filter(|type_term| {
+                // Exclude type variables (in polymorphic mode, type parameters have type TypeSort)
+                if type_term.as_ref().is_type_sort() {
+                    return false;
+                }
                 // Keep this variable if its type is NOT in arbitrary_names
                 arbitrary_names
                     .map(|names| !names.contains_key(*type_term))

@@ -399,10 +399,12 @@ impl TypeStore {
             return AcornType::Empty;
         }
         // TypeSort is the "type of types" - it's a kind, not a type.
-        // When we encounter it (e.g., as the type of a type variable), we use Empty as a placeholder.
-        // This is a workaround for polymorphic mode where type variables have type TypeSort.
+        // It should not be converted to an AcornType.
         if type_term.as_ref().is_type_sort() {
-            return AcornType::Empty;
+            panic!(
+                "type_term_to_acorn_type: TypeSort cannot be converted to AcornType. \
+                 TypeSort is the type of types, not a value type."
+            );
         }
 
         // Check for user-defined ground type
