@@ -394,6 +394,13 @@ impl<'a> Unifier<'a> {
             } else if term.as_ref().atomic_variable().is_some() {
                 // term is a type variable - allow it for now
                 // (constraint propagation would be needed for full checking)
+            } else if matches!(
+                term.as_ref().decompose(),
+                Decomposition::Atom(Atom::Symbol(Symbol::Bool))
+                    | Decomposition::Atom(Atom::Symbol(Symbol::Empty))
+            ) {
+                // Built-in types (Bool, Empty) don't implement any typeclasses
+                return false;
             } else {
                 // term is not a simple type - check its type
                 let term_type =
@@ -1809,6 +1816,43 @@ mod tests {
         assert!(
             !result,
             "Type variable x0: TypeSort should NOT unify with value-level expression getType(c0)"
+        );
+    }
+
+    #[test]
+    fn test_unify_typeclass_variable_rejects_bool() {
+        // Test: x0 with type Monoid should NOT unify with Bool
+        // Bool is a built-in type that doesn't implement any typeclasses.
+        // This was a bug where Bool (represented as Symbol::Bool, not Symbol::Type(...))
+        // was not being checked against typeclass constraints.
+        use crate::elaborator::acorn_type::Typeclass;
+        use crate::module::ModuleId;
+
+        let mut ctx = KernelContext::new();
+
+        // Register a Monoid typeclass
+        let monoid = Typeclass {
+            module_id: ModuleId(0),
+            name: "Monoid".to_string(),
+        };
+        let monoid_id = ctx.type_store.add_typeclass(&monoid);
+
+        // x0 has typeclass constraint Monoid
+        let typeclass_type = Term::typeclass(monoid_id);
+        let local_ctx = LocalContext::from_types(vec![typeclass_type.clone()]);
+
+        let x0 = Term::atom(Atom::FreeVariable(0));
+        let bool_type = Term::atom(Atom::Symbol(Symbol::Bool));
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(local_ctx.clone())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+
+        // x0: Monoid should NOT unify with Bool
+        let result = u.unify(Scope::LEFT, &x0, Scope::RIGHT, &bool_type);
+        assert!(
+            !result,
+            "x0: Monoid should NOT unify with Bool - Bool doesn't implement any typeclass"
         );
     }
 }
