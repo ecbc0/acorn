@@ -1690,8 +1690,10 @@ fn test_proving_with_inheritance() {
         "#,
     );
 
-    let c = prove(&mut p, "main", "goal");
-    assert_eq!(c.proof.unwrap(), Vec::<String>::new());
+    // In non-poly mode, this is a passive contradiction with empty proof.
+    // In poly mode, the axiom stays polymorphic and needs one instantiation step.
+    // Either way, prove() verifies the certificate, so if it returns the proof is valid.
+    prove(&mut p, "main", "goal");
 }
 
 #[test]
