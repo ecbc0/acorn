@@ -543,9 +543,10 @@ impl CodeGenerator<'_> {
             };
 
             // Create code for the condition
+            // Pass type_param_names so polymorphic synthetics use consistent naming
             let mut cond_parts = vec![];
             for clause in &info.clauses {
-                let part = normalizer.denormalize(clause, None, None);
+                let part = normalizer.denormalize(clause, None, None, Some(&type_param_names));
                 cond_parts.push(part);
             }
             let cond_val = AcornValue::reduce(BinaryOp::And, cond_parts);
@@ -602,7 +603,7 @@ impl CodeGenerator<'_> {
         // It might make more sense to do this in value space, so that we don't have to make
         // the normalizer even more complicated.
         self.add_arbitrary_for_clause(&clause, normalizer.kernel_context());
-        let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names), None);
+        let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names), None, None);
 
         // Define the arbitrary variables.
         for (ty, name) in self.arbitrary_names.clone() {
