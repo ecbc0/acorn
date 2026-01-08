@@ -106,10 +106,18 @@ pub fn sub_invariant_term_cmp(
         return None;
     }
 
-    // Compare the term types. This is stable because we've already excluded variable terms.
-    let type_cmp = left
-        .get_type_with_context(local_context, kernel_context)
-        .cmp(&right.get_type_with_context(local_context, kernel_context));
+    // Compare the term types, but only if neither type involves a free variable.
+    // If either type contains a FreeVariable, the comparison is not stable
+    // under substitution (because FreeVariable ordering differs from Symbol ordering).
+    // BoundVariables are stable - they only appear in type signatures (like dependent types)
+    // and don't change during variable substitution.
+    let left_type = left.get_type_with_context(local_context, kernel_context);
+    let right_type = right.get_type_with_context(local_context, kernel_context);
+    if left_type.has_free_variable() || right_type.has_free_variable() {
+        // Types involve free variables, comparison not stable under substitution
+        return None;
+    }
+    let type_cmp = left_type.cmp(&right_type);
     if type_cmp != Ordering::Equal {
         return Some(type_cmp);
     }
@@ -1182,14 +1190,16 @@ mod tests {
     #[test]
     fn test_type_variable_ordering() {
         let mut kctx = KernelContext::new();
-        kctx.parse_datatype("T0");
+        // Use "Foo" instead of "T0" to avoid conflict with type variable naming convention
+        // ("T0" would be parsed as FreeVariable(0) in type positions)
+        kctx.parse_datatype("Foo");
 
         // g0: Type -> T -> T -> Bool (polymorphic predicate)
         kctx.parse_polymorphic_constant("g0", "T: Type", "(T, T) -> Bool");
 
-        // c1, c2: T0 (concrete values)
-        kctx.parse_constant("c1", "T0");
-        kctx.parse_constant("c2", "T0");
+        // c1, c2: Foo (concrete values)
+        kctx.parse_constant("c1", "Foo");
+        kctx.parse_constant("c2", "Foo");
 
         let mut clause_set = GeneralizationSet::new();
 
@@ -1201,8 +1211,8 @@ mod tests {
         let pattern_clause = kctx.parse_clause("x1 != x2 or g0(x0, x1, x2)", &["Type", "x0", "x0"]);
         clause_set.insert(pattern_clause, 42, &kctx);
 
-        // Query clause: c1 != c2 or g0(T0, c1, c2)
-        let query_clause = kctx.parse_clause("c1 != c2 or g0(T0, c1, c2)", &[]);
+        // Query clause: c1 != c2 or g0(Foo, c1, c2)
+        let query_clause = kctx.parse_clause("c1 != c2 or g0(Foo, c1, c2)", &[]);
 
         // This should match! The pattern generalizes the query with:
         // x0 -> T0, x1 -> c1, x2 -> c2

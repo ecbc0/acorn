@@ -760,4 +760,122 @@ mod tests {
         let mut checker = TestChecker::with_clauses(&["c0 or c1 or c2", "not c0 or c1", "not c2"]);
         checker.check_clause_str("c1");
     }
+
+    #[test]
+    fn test_checker_typeclass_generalization() {
+        // This test reproduces the exact bug from test_proving_with_default_required_attribute.
+        //
+        // From debug output of the failing test:
+        // - Inserted: g4(x0) or g3(x0) = g2(x0) with x0: Typeclass(0)
+        //   Only 1 form generated (stays as-is)
+        // - Searched: g4(T0) or g3(T0) = g2(T0) with T0 = GroundTypeId(0)
+        //   Specialized form: g3(T0) = g2(T0) or g4(T0) (reordered!)
+        //
+        // The bug: literals get reordered in specialized form but the general form
+        // doesn't have that ordering stored.
+
+        use crate::elaborator::acorn_type::{AcornType, Datatype, Typeclass};
+        use crate::kernel::atom::Atom;
+        use crate::kernel::generalization_set::GeneralizationSet;
+        use crate::kernel::literal::Literal;
+        use crate::kernel::local_context::LocalContext;
+        use crate::kernel::symbol::Symbol;
+        use crate::kernel::term::Term;
+        use crate::module::ModuleId;
+
+        let mut kctx = KernelContext::new();
+
+        // Create typeclass Arf (TypeclassId(0))
+        let arf_tc = Typeclass {
+            module_id: ModuleId(0),
+            name: "Arf".to_string(),
+        };
+        let arf_tc_id = kctx.type_store.add_typeclass(&arf_tc);
+
+        // Create ground type Foo (GroundTypeId(0)) that implements Arf
+        kctx.parse_datatype("Foo");
+        let foo_id = kctx.type_store.get_ground_id_by_name("Foo").unwrap();
+        let foo_datatype = Datatype {
+            module_id: ModuleId(0),
+            name: "Foo".to_string(),
+        };
+        kctx.type_store
+            .add_type_instance(&AcornType::Data(foo_datatype, vec![]), arf_tc_id);
+
+        // Set up function types to match the real test:
+        // - g4 (diff): Arf -> Bool
+        // - g3 (Arf.foo): (A: Arf) -> A (dependent - returns value of the type parameter)
+        // - g2 (Arf.bar): (A: Arf) -> A (dependent - returns value of the type parameter)
+        //
+        // For dependent types, the output uses BoundVariable(0) to refer to the input.
+        // When applied, type_apply_with_arg substitutes the argument.
+        //
+        // When applied to type variable x0:
+        // - g4(x0) has type Bool
+        // - g3(x0) has type x0 (the type variable)
+        //
+        // When applied to ground type Foo (T0):
+        // - g4(T0) has type Bool
+        // - g3(T0) has type Foo (T0)
+        //
+        // In sub_invariant_term_cmp:
+        // - Comparing Bool vs x0 (type variable) returns None (head is variable)
+        // - Comparing Bool vs Foo (ground type) returns Some(ordering)
+        let arf_type = Term::typeclass(arf_tc_id);
+
+        // g4: Arf -> Bool (non-dependent)
+        let g4_type = Term::pi(arf_type.clone(), Term::bool_type());
+
+        // g3, g2: (A: Arf) -> A (dependent type using BoundVariable)
+        // BoundVariable(0) refers to the input A
+        let bound_var = Term::atom(Atom::BoundVariable(0));
+        let g3_type = Term::pi(arf_type.clone(), bound_var.clone());
+        let g2_type = Term::pi(arf_type.clone(), bound_var.clone());
+
+        kctx.symbol_table.add_global_constant(g4_type.clone()); // g0 (unused)
+        kctx.symbol_table.add_global_constant(g4_type.clone()); // g1 (unused)
+        kctx.symbol_table.add_global_constant(g2_type); // g2
+        kctx.symbol_table.add_global_constant(g3_type); // g3
+        kctx.symbol_table.add_global_constant(g4_type); // g4
+
+        // Create general clause: g4(x0) or g3(x0) = g2(x0) where x0: Arf
+        let general_clause = kctx.parse_clause("g4(x0) or g3(x0) = g2(x0)", &["Arf"]);
+
+        // Create special clause: g4(Foo) or g3(Foo) = g2(Foo)
+        let foo_term = Term::ground_type(foo_id);
+        let special_clause = Clause::new(
+            vec![
+                Literal::new(
+                    true,
+                    Term::new(
+                        Atom::Symbol(Symbol::GlobalConstant(4)),
+                        vec![foo_term.clone()],
+                    ),
+                    Term::new_true(),
+                ),
+                Literal::new(
+                    true,
+                    Term::new(
+                        Atom::Symbol(Symbol::GlobalConstant(3)),
+                        vec![foo_term.clone()],
+                    ),
+                    Term::new(
+                        Atom::Symbol(Symbol::GlobalConstant(2)),
+                        vec![foo_term.clone()],
+                    ),
+                ),
+            ],
+            &LocalContext::empty(),
+        );
+
+        // Test at the GeneralizationSet level
+        let mut gen_set = GeneralizationSet::new();
+        gen_set.insert(general_clause.clone(), 0, &kctx);
+
+        let result = gen_set.find_generalization(special_clause.clone(), &kctx);
+        assert!(
+            result.is_some(),
+            "GeneralizationSet should find the general clause as a match for the special clause"
+        );
+    }
 }
