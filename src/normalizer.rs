@@ -68,9 +68,6 @@ impl std::fmt::Display for SyntheticDefinition {
 /// and this is the format used in both definition and lookup paths.
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 struct SyntheticKey {
-    /// How many synthetic atoms are defined here.
-    num_atoms: usize,
-
     /// The types of the synthetic atoms.
     synthetic_types: Vec<Term>,
 
@@ -86,8 +83,7 @@ impl std::fmt::Display for SyntheticKey {
         let clauses_str: Vec<String> = self.clauses.iter().map(|c| c.to_string()).collect();
         write!(
             f,
-            "SyntheticKey(num_atoms: {}, types: [{}], clauses: {})",
-            self.num_atoms,
+            "SyntheticKey(types: [{}], clauses: {})",
             types_str.join(", "),
             clauses_str.join(" and ")
         )
@@ -259,7 +255,6 @@ impl Normalizer {
             .map(|c| c.instantiate_invalid_synthetics_with_skip(num_definitions, num_type_vars))
             .collect();
         let key = SyntheticKey {
-            num_atoms: num_definitions,
             synthetic_types,
             clauses,
         };
@@ -329,9 +324,7 @@ impl Normalizer {
             .iter()
             .map(|c| c.invalidate_synthetics(&atoms))
             .collect();
-        let num_atoms = atoms.len();
         let key = SyntheticKey {
-            num_atoms,
             synthetic_types: synthetic_types.clone(),
             clauses: key_clauses,
         };
@@ -1485,7 +1478,6 @@ impl NormalizerView<'_> {
             .map(|c| c.invalidate_synthetics(&[skolem_id]))
             .collect();
         let key = SyntheticKey {
-            num_atoms: 1,
             synthetic_types: vec![synthetic_type.clone()],
             clauses: key_clauses,
         };
