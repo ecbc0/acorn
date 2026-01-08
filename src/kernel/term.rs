@@ -2104,15 +2104,18 @@ impl Term {
         }
     }
 
-    /// Convert FreeVariables to BoundVariables for type parameter binding.
+    /// Convert FreeVariables to BoundVariables for type parameter binding,
+    /// and shift existing BoundVariables up to make room.
     ///
     /// When creating a polymorphic type like `Π(TypeSort, T)` where T is a type parameter,
     /// `to_type_term_with_vars` creates T as FreeVariable(0). But inside a Pi type,
-    /// the bound variable should be BoundVariable(0).
+    /// the bound variable should be BoundVariable(n-1) (for the outermost of n type params).
     ///
-    /// This function converts FreeVariable(i) to BoundVariable(n-1-i) for i < n,
-    /// where n is the number of type parameters. The reversal is because Pi binders
-    /// are nested from outermost to innermost.
+    /// This function:
+    /// 1. Shifts existing BoundVariables up by n (to make room for new binders)
+    /// 2. Converts FreeVariable(i) to BoundVariable(n-1-i) for i < n
+    ///
+    /// After calling this, the term can be wrapped with n Pi types for the type parameters.
     pub fn convert_free_to_bound(&self, num_type_params: u16) -> Term {
         if num_type_params == 0 {
             return self.clone();
@@ -2123,14 +2126,19 @@ impl Term {
     fn convert_free_to_bound_impl(&self, num_type_params: u16) -> Term {
         match self.as_ref().decompose() {
             Decomposition::Atom(atom) => {
-                if let Atom::FreeVariable(i) = atom {
-                    if *i < num_type_params {
+                match atom {
+                    Atom::FreeVariable(i) if *i < num_type_params => {
                         // FreeVariable(i) -> BoundVariable(n-1-i)
+                        // This places type param 0 at the outermost binder position
                         let bound_id = num_type_params - 1 - *i;
-                        return Term::atom(Atom::BoundVariable(bound_id));
+                        Term::atom(Atom::BoundVariable(bound_id))
                     }
+                    Atom::BoundVariable(i) => {
+                        // Shift existing BoundVariables up to make room for new binders
+                        Term::atom(Atom::BoundVariable(*i + num_type_params))
+                    }
+                    _ => self.clone(),
                 }
-                self.clone()
             }
             Decomposition::Application(func_ref, arg_ref) => {
                 let func = func_ref.to_owned();

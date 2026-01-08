@@ -279,14 +279,24 @@ impl Normalizer {
     // This weird two-step is necessary since we need to do some constructions
     // before we actually have the definition.
     fn declare_synthetic_atom(&mut self, atom_type: AcornType) -> Result<AtomId, String> {
-        #[cfg(feature = "polymorphic")]
-        let type_term = self
+        let mut term = self
             .kernel_context
             .type_store
             .to_type_term_with_vars(&atom_type, self.type_var_id_map.as_ref());
-        #[cfg(not(feature = "polymorphic"))]
-        let type_term = self.kernel_context.type_store.to_type_term(&atom_type);
-        self.declare_synthetic_atom_with_type_term(type_term)
+        // Wrap with Pi for type parameters and convert FreeVariables to BoundVariables
+        let type_var_kinds: Vec<Term> = if let Some(type_var_map) = &self.type_var_map {
+            let mut entries: Vec<_> = type_var_map.values().collect();
+            entries.sort_by_key(|(id, _)| *id);
+            entries.iter().map(|(_, kind)| kind.clone()).collect()
+        } else {
+            vec![]
+        };
+        let num_type_params = type_var_kinds.len() as u16;
+        term = term.convert_free_to_bound(num_type_params);
+        for kind in type_var_kinds.iter().rev() {
+            term = Term::pi(kind.clone(), term);
+        }
+        self.declare_synthetic_atom_with_type_term(term)
     }
 
     /// Declare a synthetic atom with a type already in Term form.
@@ -426,7 +436,7 @@ impl NormalizerView<'_> {
 
     /// Get a map from type parameter names to variable IDs.
     /// This is used with to_type_term_with_vars.
-    #[cfg(feature = "polymorphic")]
+    /// In non-polymorphic mode, this always returns None.
     fn type_var_map(&self) -> Option<&HashMap<String, AtomId>> {
         self.as_ref().type_var_id_map.as_ref()
     }
@@ -894,26 +904,33 @@ impl NormalizerView<'_> {
             }
         }
 
+        // Convert FreeVariables in value argument types to BoundVariables.
+        // Type parameter kinds (TypeSort/Typeclass) don't need conversion.
+        // In non-polymorphic mode, num_type_params is 0 so conversion is a no-op.
+        let num_type_params = self.type_var_map().map_or(0, |m| m.len()) as u16;
+        let arg_type_terms: Vec<Term> = arg_type_terms
+            .into_iter()
+            .map(|t| {
+                if t.as_ref().is_type_param_kind() {
+                    t // Type parameter kinds don't need conversion
+                } else {
+                    t.convert_free_to_bound(num_type_params)
+                }
+            })
+            .collect();
+
         let mut output = vec![];
         for t in skolem_types {
             // Each existential quantifier needs a new skolem atom.
             // The skolem term is that atom applied to the free variables on the stack.
 
-            // Convert the result type to a Term
-            #[cfg(feature = "polymorphic")]
-            let result_type_term = {
-                let mut term = self
-                    .type_store()
-                    .to_type_term_with_vars(t, self.type_var_map());
-                // Convert FreeVariables for type params to BoundVariables.
-                // to_type_term_with_vars creates FreeVariable(i) for type parameter i,
-                // but inside the Pi type, these should be BoundVariable(n-1-i).
-                let num_type_params = self.type_var_map().map_or(0, |m| m.len()) as u16;
-                term = term.convert_free_to_bound(num_type_params);
-                term
-            };
-            #[cfg(not(feature = "polymorphic"))]
-            let result_type_term = self.type_store().to_type_term(t);
+            // Convert the result type to a Term.
+            // to_type_term_with_vars creates FreeVariable(i) for type parameter i,
+            // but inside the Pi type, these should be BoundVariable(n-1-i).
+            let result_type_term = self
+                .type_store()
+                .to_type_term_with_vars(t, self.type_var_map())
+                .convert_free_to_bound(num_type_params);
 
             // Build the function type as a Term: arg1 -> arg2 -> ... -> result
             // using Term::pi for curried form
