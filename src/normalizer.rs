@@ -112,11 +112,11 @@ pub struct Normalizer {
     /// Current type variable mapping for polymorphic normalization.
     /// Maps type parameter names to (variable id, type).
     /// The type is either TypeSort (unconstrained) or Typeclass (constrained).
-    #[cfg(feature = "polymorphic")]
+    /// In non-polymorphic mode, this is always None.
     type_var_map: Option<HashMap<String, (AtomId, Term)>>,
 
     /// Just the name->id part of type_var_map, for use with to_type_term_with_vars.
-    #[cfg(feature = "polymorphic")]
+    /// In non-polymorphic mode, this is always None.
     type_var_id_map: Option<HashMap<String, AtomId>>,
 }
 
@@ -128,9 +128,7 @@ impl Normalizer {
             synthetic_definitions: HashMap::new(),
             synthetic_map: HashMap::new(),
             kernel_context: KernelContext::new(),
-            #[cfg(feature = "polymorphic")]
             type_var_map: None,
-            #[cfg(feature = "polymorphic")]
             type_var_id_map: None,
         }
     }
@@ -227,44 +225,33 @@ impl Normalizer {
             return None;
         };
 
-        // In polymorphic mode, skip the type variables when replacing existentials
-        #[cfg(feature = "polymorphic")]
+        // Skip the type variables when replacing existentials
         let num_type_vars = self.type_var_map.as_ref().map_or(0, |m| m.len());
-        #[cfg(not(feature = "polymorphic"))]
-        let num_type_vars = 0;
 
-        // Convert quantifier types to type terms, including polymorphic wrapper
-        #[cfg(feature = "polymorphic")]
-        let synthetic_types: Vec<Term> = {
-            // Get type variable kinds in sorted order (same as make_skolem_terms)
-            let type_var_kinds: Vec<Term> = if let Some(type_var_map) = &self.type_var_map {
-                let mut entries: Vec<_> = type_var_map.values().collect();
-                entries.sort_by_key(|(id, _)| *id);
-                entries.iter().map(|(_, kind)| kind.clone()).collect()
-            } else {
-                vec![]
-            };
-
-            quant_types
-                .iter()
-                .map(|t| {
-                    // First convert the base type
-                    let mut type_term = self
-                        .kernel_context
-                        .type_store
-                        .to_type_term_with_vars(t, self.type_var_id_map.as_ref());
-                    // Wrap with Pi types for each type variable (same as make_skolem_terms)
-                    for kind in type_var_kinds.iter().rev() {
-                        type_term = Term::pi(kind.clone(), type_term);
-                    }
-                    type_term
-                })
-                .collect()
+        // Convert quantifier types to type terms, including polymorphic wrapper if applicable
+        // Get type variable kinds in sorted order (same as make_skolem_terms)
+        let type_var_kinds: Vec<Term> = if let Some(type_var_map) = &self.type_var_map {
+            let mut entries: Vec<_> = type_var_map.values().collect();
+            entries.sort_by_key(|(id, _)| *id);
+            entries.iter().map(|(_, kind)| kind.clone()).collect()
+        } else {
+            vec![]
         };
-        #[cfg(not(feature = "polymorphic"))]
+
         let synthetic_types: Vec<Term> = quant_types
             .iter()
-            .map(|t| self.kernel_context.type_store.to_type_term(t))
+            .map(|t| {
+                // First convert the base type
+                let mut type_term = self
+                    .kernel_context
+                    .type_store
+                    .to_type_term_with_vars(t, self.type_var_id_map.as_ref());
+                // Wrap with Pi types for each type variable (same as make_skolem_terms)
+                for kind in type_var_kinds.iter().rev() {
+                    type_term = Term::pi(kind.clone(), type_term);
+                }
+                type_term
+            })
             .collect();
 
         let clauses: Vec<Clause> = uninstantiated
