@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::elaborator::acorn_type::{AcornType, Datatype, FunctionType, TypeParam, Typeclass};
 use crate::kernel::atom::{Atom, AtomId};
+use crate::kernel::symbol::Symbol;
 use crate::kernel::term::Term;
 use crate::kernel::types::{GroundTypeId, TypeclassId};
 
@@ -502,7 +503,7 @@ impl TypeStore {
 
         // Handle Typeclass - these are used as type constraints in polymorphic mode
         if type_term.as_ref().is_atomic() {
-            if let Atom::Typeclass(tc_id) = type_term.as_ref().get_head_atom() {
+            if let Atom::Symbol(Symbol::Typeclass(tc_id)) = type_term.as_ref().get_head_atom() {
                 // Convert back to a Typeclass. We need to look up the name.
                 if let Some(typeclass) = self.id_to_typeclass.get(tc_id.as_u16() as usize) {
                     // Return as a type variable constrained to this typeclass
@@ -620,7 +621,7 @@ impl TypeStore {
     /// Creates a Term representing a typeclass.
     /// This is used when a type variable is constrained to a typeclass.
     pub fn typeclass_to_term(&self, typeclass_id: TypeclassId) -> Term {
-        Term::atom(Atom::Typeclass(typeclass_id))
+        Term::atom(Atom::Symbol(Symbol::Typeclass(typeclass_id)))
     }
 
     /// Checks if a ground type is an instance of a typeclass.

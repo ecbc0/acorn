@@ -39,7 +39,7 @@ impl KernelContext {
             Atom::BoundVariable(i) => format!("b{}", i),
             Atom::Symbol(Symbol::Synthetic(i)) => format!("s{}", i),
             Atom::Symbol(Symbol::Type(t)) => format!("T{}", t.as_u16()),
-            Atom::Typeclass(tc) => {
+            Atom::Symbol(Symbol::Typeclass(tc)) => {
                 let typeclass = self.type_store.get_typeclass(*tc);
                 typeclass.name.clone()
             }
@@ -115,7 +115,7 @@ impl KernelContext {
 
             // Check if this is a typeclass-constrained type variable.
             // For example, P: Pointed is inhabited if Pointed has a constant like point: P.
-            Atom::Typeclass(tc_id) => {
+            Atom::Symbol(Symbol::Typeclass(tc_id)) => {
                 if self.symbol_table.is_typeclass_inhabited(*tc_id) {
                     return true;
                 }

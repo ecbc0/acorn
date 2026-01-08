@@ -72,7 +72,7 @@ impl LocalContext {
 
     /// Returns the typeclass constraint if the variable's type is a typeclass.
     /// When a type variable is constrained to a typeclass (e.g., `M: Monoid`),
-    /// its type in the context is stored as `Atom::Typeclass(monoid_id)`.
+    /// its type in the context is stored as `Symbol::Typeclass(monoid_id)`.
     pub fn get_typeclass_constraint(&self, var_id: usize) -> Option<TypeclassId> {
         self.var_types
             .get(var_id)

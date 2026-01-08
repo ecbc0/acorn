@@ -74,7 +74,8 @@ const ATOM_SYMBOL_EMPTY: u8 = 9;
 const ATOM_SYMBOL_BOOL: u8 = 10;
 const ATOM_SYMBOL_TYPESORT: u8 = 11;
 const ATOM_SYMBOL_TYPE: u8 = 12;
-const ARROW: u8 = 13;
+const ATOM_SYMBOL_TYPECLASS: u8 = 13;
+const ARROW: u8 = 14;
 
 impl Edge {
     /// Returns the discriminant byte for this edge.
@@ -94,6 +95,7 @@ impl Edge {
                 Atom::Symbol(Symbol::Bool) => ATOM_SYMBOL_BOOL,
                 Atom::Symbol(Symbol::TypeSort) => ATOM_SYMBOL_TYPESORT,
                 Atom::Symbol(Symbol::Type(_)) => ATOM_SYMBOL_TYPE,
+                Atom::Symbol(Symbol::Typeclass(_)) => ATOM_SYMBOL_TYPECLASS,
                 Atom::Symbol(Symbol::GlobalConstant(_)) => ATOM_SYMBOL_GLOBAL,
                 Atom::Symbol(Symbol::ScopedConstant(_)) => ATOM_SYMBOL_SCOPED,
                 Atom::Symbol(Symbol::Synthetic(_)) => ATOM_SYMBOL_SYNTHETIC,
@@ -115,6 +117,7 @@ impl Edge {
                 Atom::Symbol(Symbol::Bool) => 0,
                 Atom::Symbol(Symbol::TypeSort) => 0,
                 Atom::Symbol(Symbol::Type(t)) => t.as_u16(),
+                Atom::Symbol(Symbol::Typeclass(tc)) => tc.as_u16(),
                 Atom::Symbol(Symbol::GlobalConstant(c)) => *c,
                 Atom::Symbol(Symbol::ScopedConstant(c)) => *c,
                 Atom::Symbol(Symbol::Synthetic(s)) => *s,
@@ -142,6 +145,9 @@ impl Edge {
             ATOM_SYMBOL_BOOL => Edge::Atom(Atom::Symbol(Symbol::Bool)),
             ATOM_SYMBOL_TYPESORT => Edge::Atom(Atom::Symbol(Symbol::TypeSort)),
             ATOM_SYMBOL_TYPE => Edge::Atom(Atom::Symbol(Symbol::Type(GroundTypeId::new(id)))),
+            ATOM_SYMBOL_TYPECLASS => Edge::Atom(Atom::Symbol(Symbol::Typeclass(
+                super::types::TypeclassId::new(id),
+            ))),
             _ => panic!("invalid PDT edge discriminant: {}", byte1),
         }
     }
@@ -178,11 +184,11 @@ fn key_from_term_structure(term: TermRef, key: &mut Vec<u8>) {
                 }
                 KernelAtom::Symbol(Symbol::True) => Atom::True,
                 KernelAtom::Symbol(Symbol::False) => Atom::False,
-                KernelAtom::Symbol(s) => Atom::Symbol(*s),
-                KernelAtom::Typeclass(_) => {
+                KernelAtom::Symbol(Symbol::Typeclass(_)) => {
                     // Typeclasses are handled as part of type-checking, not structure
                     panic!("Typeclass in PDT term structure - should be in type context")
                 }
+                KernelAtom::Symbol(s) => Atom::Symbol(*s),
             };
             Edge::Atom(edge_atom).append_to(key);
         }
@@ -534,7 +540,8 @@ fn types_compatible(
     // Special case: pattern variable type is a typeclass constraint
     // E.g., x0: Ring means x0 is a type that implements Ring
     // If bound_term is a concrete type (like Int), check if it implements the typeclass
-    if let Decomposition::Atom(KernelAtom::Typeclass(tc_id)) = pattern_var_type.as_ref().decompose()
+    if let Decomposition::Atom(KernelAtom::Symbol(Symbol::Typeclass(tc_id))) =
+        pattern_var_type.as_ref().decompose()
     {
         // The bound term should be a type that implements this typeclass
         if let Some(ground_id) = bound_term.as_type_atom() {
@@ -555,7 +562,8 @@ fn types_compatible(
     {
         // Look up what x0's type is (should be a typeclass like Ring, or Type)
         if let Some(var_type) = pattern_context.get_var_type(*var_id as usize) {
-            if let Decomposition::Atom(KernelAtom::Typeclass(tc_id)) = var_type.as_ref().decompose()
+            if let Decomposition::Atom(KernelAtom::Symbol(Symbol::Typeclass(tc_id))) =
+                var_type.as_ref().decompose()
             {
                 // bound_type should implement this typeclass
                 if let Some(ground_id) = bound_type.as_ref().as_type_atom() {
@@ -723,8 +731,8 @@ where
                 }
                 KernelAtom::Symbol(Symbol::True) => Some(Atom::True),
                 KernelAtom::Symbol(Symbol::False) => Some(Atom::False),
+                KernelAtom::Symbol(Symbol::Typeclass(_)) => return true, // Skip typeclasses in structure
                 KernelAtom::Symbol(s) => Some(Atom::Symbol(*s)),
-                KernelAtom::Typeclass(_) => return true, // Skip typeclasses in structure
             };
             if let Some(edge_atom) = edge_atom {
                 Edge::Atom(edge_atom).append_to(key);

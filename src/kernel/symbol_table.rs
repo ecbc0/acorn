@@ -118,7 +118,7 @@ impl SymbolTable {
                         depth += 1;
                         continue;
                     }
-                    Atom::Typeclass(tc_id) => {
+                    Atom::Symbol(Symbol::Typeclass(tc_id)) => {
                         // Check if the output is just the bound variable (x_depth).
                         // This means the function returns a value of the typeclass-constrained type,
                         // proving that the typeclass makes its instance type inhabited.
@@ -181,9 +181,11 @@ impl SymbolTable {
     pub fn get_type(&self, symbol: Symbol) -> &Term {
         match symbol {
             Symbol::True | Symbol::False => Term::bool_type_ref(),
-            Symbol::Empty | Symbol::Bool | Symbol::TypeSort | Symbol::Type(_) => {
-                Term::type_sort_ref()
-            }
+            Symbol::Empty
+            | Symbol::Bool
+            | Symbol::TypeSort
+            | Symbol::Type(_)
+            | Symbol::Typeclass(_) => Term::type_sort_ref(),
             Symbol::Synthetic(i) => &self.synthetic_types[i as usize],
             Symbol::GlobalConstant(i) => &self.global_constant_types[i as usize],
             Symbol::ScopedConstant(i) => &self.scoped_constant_types[i as usize],
@@ -195,7 +197,9 @@ impl SymbolTable {
     pub fn get_symbol_type(&self, symbol: Symbol, type_store: &TypeStore) -> Term {
         let result = match symbol {
             Symbol::True | Symbol::False => Term::bool_type(),
-            Symbol::Empty | Symbol::Bool | Symbol::TypeSort => Term::type_sort(),
+            Symbol::Empty | Symbol::Bool | Symbol::TypeSort | Symbol::Typeclass(_) => {
+                Term::type_sort()
+            }
             Symbol::Type(ground_id) => type_store.get_type_kind(ground_id),
             Symbol::Synthetic(i) => self.synthetic_types[i as usize].clone(),
             Symbol::GlobalConstant(i) => self.global_constant_types[i as usize].clone(),

@@ -3,7 +3,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use super::atom::AtomId;
-use super::types::GroundTypeId;
+use super::types::{GroundTypeId, TypeclassId};
 
 /// A Symbol represents named constants, functions, and primitive values in the environment.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -29,6 +29,11 @@ pub enum Symbol {
     // Note: Empty, Bool, and TypeSort are NOT GroundTypeIds - they have their own variants.
     Type(GroundTypeId),
 
+    // A typeclass used as a type constraint for type variables.
+    // When a type variable x has type Typeclass(Monoid), it means x is constrained to
+    // types that implement Monoid.
+    Typeclass(TypeclassId),
+
     // Synthetic atoms are created by the normalizer to handle expressions that cannot be converted
     // to CNF directly.
     // These don't have a name in the environment, so you need to create a definition before
@@ -52,6 +57,7 @@ impl fmt::Display for Symbol {
             Symbol::Bool => write!(f, "Bool"),
             Symbol::TypeSort => write!(f, "Type"),
             Symbol::Type(t) => write!(f, "T{}", t.as_u16()),
+            Symbol::Typeclass(tc) => write!(f, "tc{}", tc.as_u16()),
             Symbol::Synthetic(i) => write!(f, "s{}", i),
             Symbol::GlobalConstant(i) => write!(f, "g{}", i),
             Symbol::ScopedConstant(i) => write!(f, "c{}", i),

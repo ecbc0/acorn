@@ -2392,7 +2392,7 @@ impl Normalizer {
             | Atom::Symbol(Symbol::TypeSort) => {
                 panic!("Type symbols should not appear in open terms")
             }
-            Atom::Typeclass(_) => {
+            Atom::Symbol(Symbol::Typeclass(_)) => {
                 panic!("Typeclass atoms should not appear in open terms")
             }
             Atom::BoundVariable(_) => {
@@ -2419,13 +2419,13 @@ impl Normalizer {
                 .get_var_type(*i as usize)
                 .cloned()
                 .expect("Variable should have type in LocalContext"),
+            Atom::Symbol(Symbol::Typeclass(_)) => {
+                panic!("Typeclass atoms should not appear as head of terms")
+            }
             Atom::Symbol(symbol) => self
                 .kernel_context
                 .symbol_table
                 .get_symbol_type(*symbol, &self.kernel_context.type_store),
-            Atom::Typeclass(_) => {
-                panic!("Typeclass atoms should not appear as head of terms")
-            }
             Atom::BoundVariable(_) => {
                 panic!("BoundVariable atoms should not appear as head of terms")
             }

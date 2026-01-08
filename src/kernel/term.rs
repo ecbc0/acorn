@@ -276,7 +276,7 @@ impl<'a> TermRef<'a> {
             return None;
         }
         match self.get_head_atom() {
-            Atom::Typeclass(tc) => Some(*tc),
+            Atom::Symbol(Symbol::Typeclass(tc)) => Some(*tc),
             _ => None,
         }
     }
@@ -336,9 +336,6 @@ impl<'a> TermRef<'a> {
                 Atom::Symbol(symbol) => kernel_context
                     .symbol_table
                     .get_symbol_type(*symbol, &kernel_context.type_store),
-                // A typeclass atom represents a typeclass-as-type constraint.
-                // Its kind is Type (typeclasses categorize types).
-                Atom::Typeclass(_) => Term::type_sort(),
             },
             Decomposition::Application(func, arg) => {
                 // The function has type A -> B, so the application has type B
@@ -580,7 +577,7 @@ impl<'a> TermRef<'a> {
                     weight1 += 1;
                     weight2 += 4 * t.as_u16() as u32;
                 }
-                TermComponent::Atom(Atom::Typeclass(tc)) => {
+                TermComponent::Atom(Atom::Symbol(Symbol::Typeclass(tc))) => {
                     // Typeclass atoms contribute to weight similarly to types
                     weight1 += 1;
                     weight2 += 4 * tc.as_u16() as u32;
@@ -1126,7 +1123,7 @@ impl Term {
 
     /// Create a Term representing a typeclass (used as a type constraint).
     pub fn typeclass(typeclass_id: TypeclassId) -> Term {
-        Term::atom(Atom::Typeclass(typeclass_id))
+        Term::atom(Atom::Symbol(Symbol::Typeclass(typeclass_id)))
     }
 
     /// Returns a Term for the Bool type.
