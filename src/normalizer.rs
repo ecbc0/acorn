@@ -33,10 +33,13 @@ pub struct SyntheticDefinition {
     /// Each of these should be present in clauses.
     pub atoms: Vec<AtomId>,
 
+    /// The types of the synthetic atoms (one per atom).
+    /// For polymorphic synthetics, these types may contain FreeVariable references
+    /// to type parameters.
+    pub synthetic_types: Vec<Term>,
+
     /// The clauses are true by construction and describe the synthetic atoms.
-    /// We do need a definition to be a bunch of clauses instead of just one, even
-    /// for "let x = ___" type definitions, because it might be a value that expands
-    /// to multiple clauses.
+    /// Each clause has its own LocalContext since normalization renumbers variables.
     pub clauses: Vec<Clause>,
 
     /// The source location where this synthetic definition originated.
@@ -45,13 +48,14 @@ pub struct SyntheticDefinition {
 
 impl std::fmt::Display for SyntheticDefinition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Join all the clauses with "and"
+        let types_str: Vec<String> = self.synthetic_types.iter().map(|t| t.to_string()).collect();
         let clauses_str: Vec<String> = self.clauses.iter().map(|c| c.to_string()).collect();
-        let clauses = clauses_str.join(" and ");
         write!(
             f,
-            "SyntheticDefinition(atoms: {:?}, clauses: {})",
-            self.atoms, clauses
+            "SyntheticDefinition(atoms: {:?}, types: [{}], clauses: {})",
+            self.atoms,
+            types_str.join(", "),
+            clauses_str.join(" and ")
         )
     }
 }
@@ -59,12 +63,18 @@ impl std::fmt::Display for SyntheticDefinition {
 /// The SyntheticKey normalizes out the specific choice of id for the synthetic atoms
 /// in the SyntheticDefinition.
 /// This lets us check if two different synthetic atoms would be "defined the same way".
+///
+/// Note: Uses Vec<Clause> for matching because clauses have been individually normalized
+/// and this is the format used in both definition and lookup paths.
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 struct SyntheticKey {
     /// How many synthetic atoms are defined here.
     num_atoms: usize,
 
-    /// CNF form of the proposition that we defines these synthetic atoms.
+    /// The types of the synthetic atoms.
+    synthetic_types: Vec<Term>,
+
+    /// Clauses that define the synthetic atoms.
     /// Here, the synthetic atoms have been remapped to the invalid range,
     /// in order to normalize away the specific choice of synthetic ids.
     clauses: Vec<Clause>,
@@ -72,13 +82,14 @@ struct SyntheticKey {
 
 impl std::fmt::Display for SyntheticKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Join all the clauses with "and"
+        let types_str: Vec<String> = self.synthetic_types.iter().map(|t| t.to_string()).collect();
         let clauses_str: Vec<String> = self.clauses.iter().map(|c| c.to_string()).collect();
-        let clauses = clauses_str.join(" and ");
         write!(
             f,
-            "SyntheticKey(num_atoms: {}, clauses: {})",
-            self.num_atoms, clauses
+            "SyntheticKey(num_atoms: {}, types: [{}], clauses: {})",
+            self.num_atoms,
+            types_str.join(", "),
+            clauses_str.join(" and ")
         )
     }
 }
@@ -203,12 +214,13 @@ impl Normalizer {
         &self,
         value: &AcornValue,
     ) -> Option<&Arc<SyntheticDefinition>> {
-        let (num_definitions, alt_value) = match value {
+        let (num_definitions, alt_value, quant_types) = match value {
             AcornValue::Exists(quants, subvalue) => (
                 quants.len(),
                 AcornValue::ForAll(quants.clone(), subvalue.clone()),
+                quants.clone(),
             ),
-            _ => (0, value.clone()),
+            _ => (0, value.clone(), vec![]),
         };
         let mut view = NormalizerView::Ref(self);
         let Ok(uninstantiated) = view.value_to_denormalized_clauses(&alt_value) else {
@@ -221,13 +233,48 @@ impl Normalizer {
         #[cfg(not(feature = "polymorphic"))]
         let num_type_vars = 0;
 
-        let clauses = uninstantiated
+        // Convert quantifier types to type terms, including polymorphic wrapper
+        #[cfg(feature = "polymorphic")]
+        let synthetic_types: Vec<Term> = {
+            // Get type variable kinds in sorted order (same as make_skolem_terms)
+            let type_var_kinds: Vec<Term> = if let Some(type_var_map) = &self.type_var_map {
+                let mut entries: Vec<_> = type_var_map.values().collect();
+                entries.sort_by_key(|(id, _)| *id);
+                entries.iter().map(|(_, kind)| kind.clone()).collect()
+            } else {
+                vec![]
+            };
+
+            quant_types
+                .iter()
+                .map(|t| {
+                    // First convert the base type
+                    let mut type_term = self
+                        .kernel_context
+                        .type_store
+                        .to_type_term_with_vars(t, self.type_var_id_map.as_ref());
+                    // Wrap with Pi types for each type variable (same as make_skolem_terms)
+                    for kind in type_var_kinds.iter().rev() {
+                        type_term = Term::pi(kind.clone(), type_term);
+                    }
+                    type_term
+                })
+                .collect()
+        };
+        #[cfg(not(feature = "polymorphic"))]
+        let synthetic_types: Vec<Term> = quant_types
+            .iter()
+            .map(|t| self.kernel_context.type_store.to_type_term(t))
+            .collect();
+
+        let clauses: Vec<Clause> = uninstantiated
             .iter()
             .map(|c| c.instantiate_invalid_synthetics_with_skip(num_definitions, num_type_vars))
             .collect();
         let key = SyntheticKey {
-            clauses,
             num_atoms: num_definitions,
+            synthetic_types,
+            clauses,
         };
         self.synthetic_map.get(&key)
     }
@@ -267,6 +314,7 @@ impl Normalizer {
     fn define_synthetic_atoms(
         &mut self,
         atoms: Vec<AtomId>,
+        synthetic_types: Vec<Term>,
         clauses: Vec<Clause>,
         source: Option<Source>,
     ) -> Result<(), String> {
@@ -290,18 +338,20 @@ impl Normalizer {
         }
 
         // In the synthetic key, we normalize synthetic ids by renumbering them.
-        let synthetic_key_form: Vec<_> = clauses
+        let key_clauses: Vec<Clause> = clauses
             .iter()
             .map(|c| c.invalidate_synthetics(&atoms))
             .collect();
         let num_atoms = atoms.len();
         let key = SyntheticKey {
-            clauses: synthetic_key_form,
             num_atoms,
+            synthetic_types: synthetic_types.clone(),
+            clauses: key_clauses,
         };
         let info = Arc::new(SyntheticDefinition {
-            clauses,
             atoms: atoms.clone(),
+            synthetic_types,
+            clauses,
             source,
         });
         for atom in &atoms {
@@ -1419,6 +1469,13 @@ impl NormalizerView<'_> {
             return Err("internal error: skolem term is not synthetic".to_string());
         };
 
+        // Get the type of the synthetic atom from the symbol table
+        let synthetic_type = self
+            .kernel_context()
+            .symbol_table
+            .get_type(Symbol::Synthetic(skolem_id))
+            .clone();
+
         // Create the definition for this synthetic term
         let skolem_value = self
             .as_ref()
@@ -1432,16 +1489,18 @@ impl NormalizerView<'_> {
             synth,
             context,
         )?;
-        let clauses = definition_cnf.clone().into_clauses(context);
 
         // Check if an equivalent definition already exists
-        let synthetic_key_form: Vec<_> = clauses
+        // Convert CNF to clauses for the key lookup
+        let clauses = definition_cnf.clone().into_clauses(context);
+        let key_clauses: Vec<Clause> = clauses
             .iter()
             .map(|c| c.invalidate_synthetics(&[skolem_id]))
             .collect();
         let key = SyntheticKey {
-            clauses: synthetic_key_form,
             num_atoms: 1,
+            synthetic_types: vec![synthetic_type.clone()],
+            clauses: key_clauses,
         };
 
         if let Some(existing_def) = self.as_ref().synthetic_map.get(&key) {
@@ -1453,8 +1512,13 @@ impl NormalizerView<'_> {
         } else {
             // Define the new synthetic atom
             // No source available here since we're synthesizing during normalization
-            self.as_mut()?
-                .define_synthetic_atoms(vec![skolem_id], clauses, None)?;
+            let clauses = definition_cnf.into_clauses(context);
+            self.as_mut()?.define_synthetic_atoms(
+                vec![skolem_id],
+                vec![synthetic_type],
+                clauses,
+                None,
+            )?;
             Ok(skolem_term)
         }
     }
@@ -1524,35 +1588,37 @@ impl NormalizerView<'_> {
         let atom_id = self.as_mut()?.declare_synthetic_atom(atom_type.clone())?;
         synth.push(atom_id);
 
+        // Get the synthetic type from the symbol table
+        let synthetic_type = self
+            .kernel_context()
+            .symbol_table
+            .get_type(Symbol::Synthetic(atom_id))
+            .clone();
+
         let atom = Atom::Symbol(Symbol::Synthetic(atom_id));
         let synth_term = Term::new(atom, args);
         let synth_lit = Literal::from_signed_term(synth_term.clone(), true);
 
-        // Create defining clauses for: s <-> C
+        // Create defining CNF for: s <-> C
         // This is (s -> C) and (C -> s)
         // Which is (not s or C) and (not C or s)
-        let mut defining_clauses = vec![];
 
-        // For (not s or C):
-        // C is a conjunction of clauses, so we add (not s or Ci) for each clause Ci
-        for clause_lits in cnf.clone().into_iter() {
-            let mut new_clause_lits = vec![synth_lit.negate()];
-            new_clause_lits.extend(clause_lits);
-            defining_clauses.push(Clause::new(new_clause_lits, context));
-        }
+        // For (not s or C): add not_s to each clause in C
+        let not_s_implies_c = Cnf::from_literal(synth_lit.negate()).or(cnf.clone());
 
-        // For (not C or s):
-        // We negate C and add s to each resulting clause
-        let neg_cnf = cnf.negate();
-        for clause_lits in neg_cnf.into_iter() {
-            let mut new_clause_lits = clause_lits;
-            new_clause_lits.push(synth_lit.clone());
-            defining_clauses.push(Clause::new(new_clause_lits, context));
-        }
+        // For (C -> s): which is (not C or s)
+        let c_implies_s = cnf.negate().or(Cnf::from_literal(synth_lit.clone()));
+
+        let defining_cnf = not_s_implies_c.and(c_implies_s);
 
         // Add the definition
-        self.as_mut()?
-            .define_synthetic_atoms(vec![atom_id], defining_clauses, None)?;
+        let clauses = defining_cnf.into_clauses(context);
+        self.as_mut()?.define_synthetic_atoms(
+            vec![atom_id],
+            vec![synthetic_type],
+            clauses,
+            None,
+        )?;
 
         Ok(synth_lit)
     }
@@ -1636,24 +1702,39 @@ impl NormalizerView<'_> {
                 let atom_id = self.as_mut()?.declare_synthetic_atom(atom_type.clone())?;
                 synth.push(atom_id);
 
+                // Get the synthetic type from the symbol table
+                let synthetic_type = self
+                    .kernel_context()
+                    .symbol_table
+                    .get_type(Symbol::Synthetic(atom_id))
+                    .clone();
+
                 let atom = Atom::Symbol(Symbol::Synthetic(atom_id));
                 let synth_term = Term::new(atom, args);
 
-                // Create defining clauses for the if-expression
+                // Create defining CNF for the if-expression
                 // (not cond or synth_term = then_term) and (cond or synth_term = else_term)
-                let mut defining_clauses = vec![];
 
                 // First clause: not cond or synth_term = then_term
                 let then_eq = Literal::new(true, synth_term.clone(), then_term);
-                defining_clauses.push(Clause::new(vec![cond_lit.negate(), then_eq], local_context));
+                let first_clause =
+                    Cnf::from_literal(cond_lit.negate()).or(Cnf::from_literal(then_eq));
 
                 // Second clause: cond or synth_term = else_term
                 let else_eq = Literal::new(true, synth_term.clone(), else_term);
-                defining_clauses.push(Clause::new(vec![cond_lit.clone(), else_eq], local_context));
+                let second_clause =
+                    Cnf::from_literal(cond_lit.clone()).or(Cnf::from_literal(else_eq));
+
+                let defining_cnf = first_clause.and(second_clause);
 
                 // Add the definition
-                self.as_mut()?
-                    .define_synthetic_atoms(vec![atom_id], defining_clauses, None)?;
+                let clauses = defining_cnf.into_clauses(local_context);
+                self.as_mut()?.define_synthetic_atoms(
+                    vec![atom_id],
+                    vec![synthetic_type],
+                    clauses,
+                    None,
+                )?;
 
                 Ok(synth_term)
             }
@@ -1842,7 +1923,23 @@ impl Normalizer {
 
         if !undefined_ids.is_empty() {
             // We have to define the skolem atoms that were declared during skolemization.
-            self.define_synthetic_atoms(undefined_ids, clauses.clone(), Some(source.clone()))?;
+            // Get the types for these synthetic atoms from the symbol table.
+            let synthetic_types: Vec<Term> = undefined_ids
+                .iter()
+                .map(|id| {
+                    self.kernel_context
+                        .symbol_table
+                        .get_type(Symbol::Synthetic(*id))
+                        .clone()
+                })
+                .collect();
+
+            self.define_synthetic_atoms(
+                undefined_ids,
+                synthetic_types,
+                clauses.clone(),
+                Some(source.clone()),
+            )?;
         }
 
         output.extend(clauses.into_iter());
