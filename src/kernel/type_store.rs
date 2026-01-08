@@ -417,10 +417,11 @@ impl TypeStore {
         if let Some((input, output)) = type_term.as_ref().split_pi() {
             // Pi type: convert to function type
             // Pi(A, Pi(B, C)) becomes (A, B) -> C
-            // But Pi(Type, ...) is a dependent type for polymorphic functions - skip the Type argument
+            // But Pi(Type, ...) and Pi(Typeclass, ...) are dependent types for polymorphic functions
+            // - skip type parameter kinds since they're not value arguments
             let input_owned = input.to_owned();
-            let mut arg_types = if input_owned.as_ref().is_type_sort() {
-                vec![] // Skip Type arguments (they're type parameters, not value arguments)
+            let mut arg_types = if input_owned.as_ref().is_type_param_kind() {
+                vec![] // Skip type parameter kinds (they're not value arguments)
             } else {
                 vec![self.type_term_to_acorn_type(&input_owned)]
             };
@@ -429,8 +430,8 @@ impl TypeStore {
             let mut current_output = output.to_owned();
             while let Some((next_input, next_output)) = current_output.as_ref().split_pi() {
                 let next_input_owned = next_input.to_owned();
-                // Skip Type arguments in nested Pi types too
-                if !next_input_owned.as_ref().is_type_sort() {
+                // Skip type parameter kinds in nested Pi types too
+                if !next_input_owned.as_ref().is_type_param_kind() {
                     arg_types.push(self.type_term_to_acorn_type(&next_input_owned));
                 }
                 current_output = next_output.to_owned();

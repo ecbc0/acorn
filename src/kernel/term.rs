@@ -281,6 +281,17 @@ impl<'a> TermRef<'a> {
         }
     }
 
+    /// Returns true if this is a Typeclass kind.
+    pub fn is_typeclass(&self) -> bool {
+        self.as_typeclass().is_some()
+    }
+
+    /// Returns true if this represents a type parameter kind (either TypeSort or a Typeclass).
+    /// Type parameters with these kinds are not value arguments.
+    pub fn is_type_param_kind(&self) -> bool {
+        self.is_type_sort() || self.is_typeclass()
+    }
+
     /// Returns true if this is the Bool type.
     pub fn is_bool_type(&self) -> bool {
         self.is_atomic() && matches!(self.get_head_atom(), Atom::Symbol(Symbol::Bool))

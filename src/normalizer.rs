@@ -2432,7 +2432,8 @@ impl Normalizer {
         };
 
         // Type arguments appear as terms. Skip them in denormalization.
-        if head_type.as_ref().is_type_sort() {
+        // TypeSort is for unconstrained type params, Typeclass is for constrained type params.
+        if head_type.as_ref().is_type_param_kind() {
             // This is a type argument - don't try to denormalize it as a value
             // Return a placeholder that won't be used (the caller should handle type args specially)
             return AcornValue::Bool(true);
@@ -2457,7 +2458,8 @@ impl Normalizer {
 
         for arg in term.args().iter() {
             let arg_type = arg.get_type_with_context(local_context, &self.kernel_context);
-            if arg_type.as_ref().is_type_sort() {
+            // TypeSort is for unconstrained type params, Typeclass is for constrained type params
+            if arg_type.as_ref().is_type_param_kind() {
                 // This is a type argument - convert it to an AcornType
                 let acorn_type = self.kernel_context.type_store.type_term_to_acorn_type(arg);
                 type_args.push(acorn_type);
@@ -2589,10 +2591,12 @@ impl Normalizer {
         let mut new_index: u16 = 0;
         for i in 0..num_vars {
             let type_term = &var_types_raw[i];
+            // A variable is a type variable if it's in the explicit type_vars set,
+            // or if its kind is TypeSort (unconstrained type param) or a Typeclass (constrained type param)
             let is_type_var = type_vars
                 .map(|tv| tv.contains(&(i as u16)))
                 .unwrap_or(false)
-                || type_term.as_ref().is_type_sort();
+                || type_term.as_ref().is_type_param_kind();
             let is_arbitrary = arbitrary_names
                 .map(|m| m.contains_key(type_term))
                 .unwrap_or(false);

@@ -504,23 +504,48 @@ impl CodeGenerator<'_> {
 
             // Build rename map: x0 -> T or T0, x1 -> T1, etc.
             // Use original names if available (in polymorphic mode), otherwise generate fresh names.
+            // Also track typeclass constraints for each type parameter.
             let mut rename_map = HashMap::new();
             let mut type_param_names = Vec::new();
+            let mut type_param_constraints: Vec<Option<String>> = Vec::new();
             for old_name in &all_type_vars {
                 // Try to extract the variable ID from the name (e.g., "x0" -> 0)
                 #[cfg(feature = "polymorphic")]
-                let original_name = old_name
+                let var_id = old_name
                     .strip_prefix("x")
-                    .and_then(|s| s.parse::<u16>().ok())
-                    .and_then(|id| var_id_to_name.get(&id).cloned());
+                    .and_then(|s| s.parse::<u16>().ok());
+
+                #[cfg(feature = "polymorphic")]
+                let original_name = var_id.and_then(|id| var_id_to_name.get(&id).cloned());
 
                 #[cfg(not(feature = "polymorphic"))]
                 let original_name: Option<String> = None;
+
+                #[cfg(not(feature = "polymorphic"))]
+                let var_id: Option<u16> = None;
 
                 let new_name = original_name
                     .unwrap_or_else(|| self.bindings.next_indexed_var('T', &mut self.next_t));
                 rename_map.insert(old_name.clone(), new_name.clone());
                 type_param_names.push(new_name);
+
+                // Look up the typeclass constraint from info.type_vars
+                let constraint = if let Some(id) = var_id {
+                    info.type_vars
+                        .get(id as usize)
+                        .and_then(|term| term.as_ref().as_typeclass())
+                        .map(|tc_id| {
+                            normalizer
+                                .kernel_context()
+                                .type_store
+                                .get_typeclass(tc_id)
+                                .name
+                                .clone()
+                        })
+                } else {
+                    None
+                };
+                type_param_constraints.push(constraint);
             }
 
             // Create code for the declaration with renamed types
@@ -532,7 +557,19 @@ impl CodeGenerator<'_> {
                 let name_with_params = if type_param_names.is_empty() {
                     name.clone()
                 } else {
-                    format!("{}[{}]", name, type_param_names.join(", "))
+                    // Format each type param with its constraint (if any)
+                    let param_strs: Vec<String> = type_param_names
+                        .iter()
+                        .zip(type_param_constraints.iter())
+                        .map(|(name, constraint)| {
+                            if let Some(tc_name) = constraint {
+                                format!("{}: {}", name, tc_name)
+                            } else {
+                                name.clone()
+                            }
+                        })
+                        .collect();
+                    format!("{}[{}]", name, param_strs.join(", "))
                 };
                 decl_parts.push(format!("{}: {}", name_with_params, ty_code));
             }
