@@ -545,6 +545,8 @@ fn types_compatible(
     {
         // The bound term should be a type that implements this typeclass
         if let Some(ground_id) = bound_term.as_type_atom() {
+            // is_instance_of handles both explicit instances and arbitrary types with
+            // compatible typeclass constraints
             return kernel_context.type_store.is_instance_of(ground_id, *tc_id);
         }
         // If it's a type variable, accept it (polymorphic matching)
@@ -567,6 +569,8 @@ fn types_compatible(
             {
                 // bound_type should implement this typeclass
                 if let Some(ground_id) = bound_type.as_ref().as_type_atom() {
+                    // is_instance_of handles both explicit instances and arbitrary types with
+                    // compatible typeclass constraints
                     return kernel_context.type_store.is_instance_of(ground_id, *tc_id);
                 }
             }

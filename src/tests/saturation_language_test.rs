@@ -802,6 +802,44 @@ fn test_prover_can_use_typeclass_theorems() {
     verify_succeeds(text);
 }
 
+// Simpler test: polymorphic goal using polymorphic axiom (no typeclass)
+#[test]
+fn test_polymorphic_goal_with_polymorphic_axiom_no_typeclass() {
+    let text = r#"
+    define foo[T](x: T) -> Bool {
+        axiom
+    }
+
+    axiom always_foo[T](x: T) {
+        foo(x)
+    }
+
+    theorem goal[T](a: T) {
+        foo(a)
+    }
+    "#;
+    verify_succeeds(text);
+}
+
+// Simpler test: polymorphic goal using polymorphic axiom (with typeclass)
+#[test]
+fn test_polymorphic_goal_with_external_axiom() {
+    let text = r#"
+    typeclass F: Foo {
+        foo: F -> Bool
+    }
+
+    axiom always_foo[F: Foo](x: F) {
+        x.foo
+    }
+
+    theorem goal[G: Foo](a: G) {
+        a.foo
+    }
+    "#;
+    verify_succeeds(text);
+}
+
 #[test]
 fn test_prover_handling_typeclasses() {
     let text = r#"

@@ -625,10 +625,29 @@ impl TypeStore {
     }
 
     /// Checks if a ground type is an instance of a typeclass.
+    /// This handles two cases:
+    /// 1. The ground type was explicitly registered as an instance of the typeclass
+    /// 2. The ground type is an arbitrary type with a compatible typeclass constraint
     pub fn is_instance_of(&self, ground_id: GroundTypeId, typeclass_id: TypeclassId) -> bool {
-        self.typeclass_instances
+        // First check explicit instances
+        if self
+            .typeclass_instances
             .get(typeclass_id.as_u16() as usize)
             .map_or(false, |instances| instances.contains(&ground_id))
+        {
+            return true;
+        }
+
+        // Also check if this is an arbitrary type with a compatible typeclass constraint
+        if let Some(arb_tc_id) = self.get_arbitrary_typeclass(ground_id) {
+            // The arbitrary type's constraint is compatible if it's the same typeclass
+            // or if it extends the required typeclass
+            if arb_tc_id == typeclass_id || self.typeclass_extends(arb_tc_id, typeclass_id) {
+                return true;
+            }
+        }
+
+        false
     }
 
     /// Get the typeclass constraint for a ground type, if it represents an arbitrary type
@@ -906,5 +925,55 @@ mod tests {
 
         // Nat should not be an instance (we didn't add it)
         assert!(!store.is_instance_of(nat_id, monoid_id));
+    }
+
+    #[test]
+    fn test_is_instance_of_with_arbitrary_type() {
+        // Tests that is_instance_of correctly handles arbitrary types
+        // that have typeclass constraints.
+        //
+        // This is the core bug fix: when we have an arbitrary type G: Foo,
+        // is_instance_of(G, Foo) should return true.
+        use crate::elaborator::acorn_type::{TypeParam, Typeclass};
+        use crate::module::ModuleId;
+
+        let mut store = TypeStore::new();
+
+        // Register the Foo typeclass
+        let foo_typeclass = Typeclass {
+            module_id: ModuleId(0),
+            name: "Foo".to_string(),
+        };
+        let foo_tc_id = store.add_typeclass(&foo_typeclass);
+
+        // Create arbitrary type G with Foo typeclass constraint
+        let g_type_param = TypeParam {
+            name: "G".to_string(),
+            typeclass: Some(foo_typeclass.clone()),
+        };
+        let g_type = AcornType::Arbitrary(g_type_param.clone());
+        store.add_type(&g_type);
+
+        // Get the ground ID for the arbitrary type via the arbitrary_to_ground_id map
+        let g_ground_id = *store.arbitrary_to_ground_id.get(&g_type_param).unwrap();
+
+        // G: Foo should be considered an instance of Foo
+        assert!(
+            store.is_instance_of(g_ground_id, foo_tc_id),
+            "Arbitrary type G: Foo should be an instance of Foo"
+        );
+
+        // Register another typeclass that G doesn't implement
+        let bar_typeclass = Typeclass {
+            module_id: ModuleId(0),
+            name: "Bar".to_string(),
+        };
+        let bar_tc_id = store.add_typeclass(&bar_typeclass);
+
+        // G should NOT be an instance of Bar
+        assert!(
+            !store.is_instance_of(g_ground_id, bar_tc_id),
+            "Arbitrary type G: Foo should NOT be an instance of Bar"
+        );
     }
 }
