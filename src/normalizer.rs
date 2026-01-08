@@ -33,13 +33,18 @@ pub struct SyntheticDefinition {
     /// Each of these should be present in clauses.
     pub atoms: Vec<AtomId>,
 
+    /// The kinds of the type variables (e.g., Type for unconstrained type params).
+    /// These are "pinned" as x0, x1, ... in all clauses.
+    /// Empty in non-polymorphic mode.
+    pub type_vars: Vec<Term>,
+
     /// The types of the synthetic atoms (one per atom).
     /// For polymorphic synthetics, these types may contain FreeVariable references
-    /// to type parameters.
+    /// to the pinned type parameters.
     pub synthetic_types: Vec<Term>,
 
     /// The clauses are true by construction and describe the synthetic atoms.
-    /// Each clause has its own LocalContext since normalization renumbers variables.
+    /// Type variables are pinned at x0, x1, ... across all clauses.
     pub clauses: Vec<Clause>,
 
     /// The source location where this synthetic definition originated.
@@ -48,12 +53,14 @@ pub struct SyntheticDefinition {
 
 impl std::fmt::Display for SyntheticDefinition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let type_vars_str: Vec<String> = self.type_vars.iter().map(|t| t.to_string()).collect();
         let types_str: Vec<String> = self.synthetic_types.iter().map(|t| t.to_string()).collect();
         let clauses_str: Vec<String> = self.clauses.iter().map(|c| c.to_string()).collect();
         write!(
             f,
-            "SyntheticDefinition(atoms: {:?}, types: [{}], clauses: {})",
+            "SyntheticDefinition(atoms: {:?}, type_vars: [{}], types: [{}], clauses: {})",
             self.atoms,
+            type_vars_str.join(", "),
             types_str.join(", "),
             clauses_str.join(" and ")
         )
@@ -68,22 +75,28 @@ impl std::fmt::Display for SyntheticDefinition {
 /// and this is the format used in both definition and lookup paths.
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 struct SyntheticKey {
+    /// The kinds of the type variables (e.g., Type for unconstrained type params).
+    /// These are "pinned" as x0, x1, ... in all clauses.
+    type_vars: Vec<Term>,
+
     /// The types of the synthetic atoms.
     synthetic_types: Vec<Term>,
 
     /// Clauses that define the synthetic atoms.
     /// Here, the synthetic atoms have been remapped to the invalid range,
-    /// in order to normalize away the specific choice of synthetic ids.
+    /// and type variables are pinned at x0, x1, ...
     clauses: Vec<Clause>,
 }
 
 impl std::fmt::Display for SyntheticKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let type_vars_str: Vec<String> = self.type_vars.iter().map(|t| t.to_string()).collect();
         let types_str: Vec<String> = self.synthetic_types.iter().map(|t| t.to_string()).collect();
         let clauses_str: Vec<String> = self.clauses.iter().map(|c| c.to_string()).collect();
         write!(
             f,
-            "SyntheticKey(types: [{}], clauses: {})",
+            "SyntheticKey(type_vars: [{}], types: [{}], clauses: {})",
+            type_vars_str.join(", "),
             types_str.join(", "),
             clauses_str.join(" and ")
         )
@@ -255,6 +268,7 @@ impl Normalizer {
             .map(|c| c.instantiate_invalid_synthetics_with_skip(num_definitions, num_type_vars))
             .collect();
         let key = SyntheticKey {
+            type_vars: type_var_kinds.clone(),
             synthetic_types,
             clauses,
         };
@@ -296,6 +310,7 @@ impl Normalizer {
     fn define_synthetic_atoms(
         &mut self,
         atoms: Vec<AtomId>,
+        type_vars: Vec<Term>,
         synthetic_types: Vec<Term>,
         clauses: Vec<Clause>,
         source: Option<Source>,
@@ -325,11 +340,13 @@ impl Normalizer {
             .map(|c| c.invalidate_synthetics(&atoms))
             .collect();
         let key = SyntheticKey {
+            type_vars: type_vars.clone(),
             synthetic_types: synthetic_types.clone(),
             clauses: key_clauses,
         };
         let info = Arc::new(SyntheticDefinition {
             atoms: atoms.clone(),
+            type_vars,
             synthetic_types,
             clauses,
             source,
@@ -418,6 +435,19 @@ impl NormalizerView<'_> {
     #[cfg(feature = "polymorphic")]
     fn type_var_map_with_types(&self) -> Option<&HashMap<String, (AtomId, Term)>> {
         self.as_ref().type_var_map.as_ref()
+    }
+
+    /// Get the kinds of type variables in sorted order by their IDs.
+    /// Returns the types (e.g., Type) that each type variable has.
+    /// Empty in non-polymorphic mode.
+    fn get_type_var_kinds(&self) -> Vec<Term> {
+        if let Some(type_var_map) = &self.as_ref().type_var_map {
+            let mut entries: Vec<_> = type_var_map.values().collect();
+            entries.sort_by_key(|(id, _)| *id);
+            entries.iter().map(|(_, kind)| kind.clone()).collect()
+        } else {
+            vec![]
+        }
     }
 
     /// Wrapper around value_to_cnf.
@@ -1472,12 +1502,14 @@ impl NormalizerView<'_> {
 
         // Check if an equivalent definition already exists
         // Convert CNF to clauses for the key lookup
+        let type_vars = self.get_type_var_kinds();
         let clauses = definition_cnf.clone().into_clauses(context);
         let key_clauses: Vec<Clause> = clauses
             .iter()
             .map(|c| c.invalidate_synthetics(&[skolem_id]))
             .collect();
         let key = SyntheticKey {
+            type_vars: type_vars.clone(),
             synthetic_types: vec![synthetic_type.clone()],
             clauses: key_clauses,
         };
@@ -1494,6 +1526,7 @@ impl NormalizerView<'_> {
             let clauses = definition_cnf.into_clauses(context);
             self.as_mut()?.define_synthetic_atoms(
                 vec![skolem_id],
+                type_vars,
                 vec![synthetic_type],
                 clauses,
                 None,
@@ -1591,9 +1624,11 @@ impl NormalizerView<'_> {
         let defining_cnf = not_s_implies_c.and(c_implies_s);
 
         // Add the definition
+        let type_vars = self.get_type_var_kinds();
         let clauses = defining_cnf.into_clauses(context);
         self.as_mut()?.define_synthetic_atoms(
             vec![atom_id],
+            type_vars,
             vec![synthetic_type],
             clauses,
             None,
@@ -1707,9 +1742,11 @@ impl NormalizerView<'_> {
                 let defining_cnf = first_clause.and(second_clause);
 
                 // Add the definition
+                let type_vars = self.get_type_var_kinds();
                 let clauses = defining_cnf.into_clauses(local_context);
                 self.as_mut()?.define_synthetic_atoms(
                     vec![atom_id],
+                    type_vars,
                     vec![synthetic_type],
                     clauses,
                     None,
@@ -1902,6 +1939,15 @@ impl Normalizer {
 
         if !undefined_ids.is_empty() {
             // We have to define the skolem atoms that were declared during skolemization.
+            // Get type_vars from the normalizer's type_var_map
+            let type_vars: Vec<Term> = if let Some(type_var_map) = &self.type_var_map {
+                let mut entries: Vec<_> = type_var_map.values().collect();
+                entries.sort_by_key(|(id, _)| *id);
+                entries.iter().map(|(_, kind)| kind.clone()).collect()
+            } else {
+                vec![]
+            };
+
             // Get the types for these synthetic atoms from the symbol table.
             let synthetic_types: Vec<Term> = undefined_ids
                 .iter()
@@ -1915,6 +1961,7 @@ impl Normalizer {
 
             self.define_synthetic_atoms(
                 undefined_ids,
+                type_vars,
                 synthetic_types,
                 clauses.clone(),
                 Some(source.clone()),

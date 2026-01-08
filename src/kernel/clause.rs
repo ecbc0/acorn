@@ -35,6 +35,24 @@ impl Clause {
         c
     }
 
+    /// Creates a new normalized clause, keeping the first `pinned` variables at their
+    /// original positions (x0, x1, ..., x_{pinned-1}).
+    ///
+    /// This is useful for synthetic keys where type variables need to stay consistent
+    /// across all clauses in a definition.
+    pub fn new_with_pinned_vars(
+        literals: Vec<Literal>,
+        context: &LocalContext,
+        pinned: usize,
+    ) -> Clause {
+        let mut c = Clause {
+            literals,
+            context: context.clone(),
+        };
+        c.normalize_with_pinned(pinned);
+        c
+    }
+
     /// Normalizes literals into a clause, creating a trace of where each one is sent.
     /// Tracks flips that occur during variable ID normalization.
     pub fn normalize_with_trace(
@@ -149,17 +167,33 @@ impl Clause {
     /// Removes any duplicate or impossible literals.
     /// An empty clause indicates an impossible clause.
     pub fn normalize(&mut self) {
+        self.normalize_with_pinned(0);
+    }
+
+    /// Normalizes the clause, keeping the first `pinned` variables at their
+    /// original positions (x0, x1, ..., x_{pinned-1}).
+    pub fn normalize_with_pinned(&mut self, pinned: usize) {
         self.literals.retain(|lit| !lit.is_impossible());
         self.literals.sort();
         self.literals.dedup();
-        self.normalize_var_ids();
+        self.normalize_var_ids_with_pinned(pinned);
     }
 
     /// Normalizes the variable IDs in the literals.
     /// This may flip literals, so keep in mind it will break any trace.
     /// Also rebuilds the context to match the renumbered variables.
     pub fn normalize_var_ids(&mut self) {
-        let mut var_ids = vec![];
+        self.normalize_var_ids_with_pinned(0);
+    }
+
+    /// Normalizes the variable IDs in the literals, keeping the first `pinned` variables
+    /// at their original positions (x0, x1, ..., x_{pinned-1}).
+    ///
+    /// This is useful for synthetic keys where type variables need to stay consistent
+    /// across all clauses in a definition.
+    pub fn normalize_var_ids_with_pinned(&mut self, pinned: usize) {
+        // Pre-populate with pinned variable IDs (0, 1, ..., pinned-1)
+        let mut var_ids: Vec<AtomId> = (0..pinned as AtomId).collect();
         let input_context = self.context.clone();
         for literal in &mut self.literals {
             literal.normalize_var_ids_with_context(&mut var_ids, &input_context);
@@ -402,7 +436,8 @@ impl Clause {
     }
 
     /// Replace `num_to_replace` free variables (starting after `skip` variables) with invalid
-    /// synthetic atoms. Variables before `skip` (typically type variables) are preserved.
+    /// synthetic atoms. Variables before `skip` (typically type variables) are preserved and
+    /// "pinned" at their original positions (x0, x1, ..., x_{skip-1}).
     pub fn instantiate_invalid_synthetics_with_skip(
         &self,
         num_to_replace: usize,
@@ -428,13 +463,21 @@ impl Clause {
             new_types.push(types[i].clone());
         }
         let new_context = LocalContext::from_types(new_types);
-        Clause::new(new_literals, &new_context).canonicalize()
+        // Use pinned normalization to keep type variables (x0..x_{skip-1}) at their positions
+        Clause::new_with_pinned_vars(new_literals, &new_context, skip)
+            .canonicalize_with_pinned(skip)
     }
 
     /// Returns a canonical form of this clause with literals in deterministic order.
     /// This is used for SyntheticKey matching where we need clauses to match
     /// regardless of variable naming in the source.
     fn canonicalize(&self) -> Clause {
+        self.canonicalize_with_pinned(0)
+    }
+
+    /// Returns a canonical form of this clause with literals in deterministic order,
+    /// keeping the first `pinned` variables at their original positions.
+    fn canonicalize_with_pinned(&self, pinned: usize) -> Clause {
         // The clause has already been through Clause::new, so variables are renumbered.
         // But literals might be in different order if the stable sort didn't break ties.
         // Re-sort using total ordering now that variables are normalized.
@@ -442,7 +485,8 @@ impl Clause {
         literals.sort();
 
         // Now renumber variables again based on the new literal order
-        let mut var_ids = vec![];
+        // Pre-populate with pinned variable IDs (0, 1, ..., pinned-1)
+        let mut var_ids: Vec<AtomId> = (0..pinned as AtomId).collect();
         for lit in &mut literals {
             lit.normalize_var_ids_with_context(&mut var_ids, &self.context);
         }
