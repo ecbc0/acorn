@@ -292,6 +292,22 @@ impl<'a> TermRef<'a> {
         self.is_type_sort() || self.is_typeclass()
     }
 
+    /// Counts the number of leading Pi types where the input is a type parameter kind.
+    /// This is used to detect polymorphic functions/synthetics.
+    /// For example: Pi(TypeSort, Pi(Typeclass, X)) has 2 type parameters.
+    pub fn count_type_params(&self) -> usize {
+        match self.split_pi() {
+            Some((input, output)) => {
+                if input.is_type_param_kind() {
+                    1 + output.count_type_params()
+                } else {
+                    0
+                }
+            }
+            None => 0,
+        }
+    }
+
     /// Returns true if this is the Bool type.
     pub fn is_bool_type(&self) -> bool {
         self.is_atomic() && matches!(self.get_head_atom(), Atom::Symbol(Symbol::Bool))
@@ -2087,6 +2103,51 @@ impl Term {
             }
         }
     }
+
+    /// Convert FreeVariables to BoundVariables for type parameter binding.
+    ///
+    /// When creating a polymorphic type like `Π(TypeSort, T)` where T is a type parameter,
+    /// `to_type_term_with_vars` creates T as FreeVariable(0). But inside a Pi type,
+    /// the bound variable should be BoundVariable(0).
+    ///
+    /// This function converts FreeVariable(i) to BoundVariable(n-1-i) for i < n,
+    /// where n is the number of type parameters. The reversal is because Pi binders
+    /// are nested from outermost to innermost.
+    pub fn convert_free_to_bound(&self, num_type_params: u16) -> Term {
+        if num_type_params == 0 {
+            return self.clone();
+        }
+        self.convert_free_to_bound_impl(num_type_params)
+    }
+
+    fn convert_free_to_bound_impl(&self, num_type_params: u16) -> Term {
+        match self.as_ref().decompose() {
+            Decomposition::Atom(atom) => {
+                if let Atom::FreeVariable(i) = atom {
+                    if *i < num_type_params {
+                        // FreeVariable(i) -> BoundVariable(n-1-i)
+                        let bound_id = num_type_params - 1 - *i;
+                        return Term::atom(Atom::BoundVariable(bound_id));
+                    }
+                }
+                self.clone()
+            }
+            Decomposition::Application(func_ref, arg_ref) => {
+                let func = func_ref.to_owned();
+                let arg = arg_ref.to_owned();
+                let new_func = func.convert_free_to_bound_impl(num_type_params);
+                let new_arg = arg.convert_free_to_bound_impl(num_type_params);
+                new_func.apply(&[new_arg])
+            }
+            Decomposition::Pi(input_ref, output_ref) => {
+                let input = input_ref.to_owned();
+                let output = output_ref.to_owned();
+                let new_input = input.convert_free_to_bound_impl(num_type_params);
+                let new_output = output.convert_free_to_bound_impl(num_type_params);
+                Term::pi(new_input, new_output)
+            }
+        }
+    }
 }
 
 impl fmt::Display for Term {
@@ -2359,5 +2420,50 @@ mod tests {
         let neither = Term::parse("c0(c1)");
         assert!(!neither.has_free_variable());
         assert!(!neither.has_bound_variable());
+    }
+
+    /// Test that polymorphic type application works correctly.
+    ///
+    /// When we have a polymorphic type `Π(TypeSort, T)` where T is the type parameter,
+    /// applying it to a concrete type `Int` should give us `Int`.
+    ///
+    /// With BoundVariable(0), this works correctly.
+    #[test]
+    fn test_polymorphic_type_application() {
+        // The correct representation: Pi(TypeSort, BoundVariable(0))
+        // When we apply this to a concrete type, we should get that type back.
+        let correct_type = Term::pi(Term::type_sort(), Term::atom(Atom::BoundVariable(0)));
+        let concrete_type = Term::parse("c0"); // Some concrete type
+
+        let result = correct_type.type_apply_with_arg(&concrete_type);
+        assert!(result.is_some());
+        assert_eq!(
+            format!("{}", result.unwrap()),
+            "c0",
+            "Applying Pi(TypeSort, b0) to c0 should give c0"
+        );
+    }
+
+    /// Test that FreeVariables in Pi types don't get substituted.
+    ///
+    /// This test documents current behavior: type_apply_with_arg only substitutes
+    /// BoundVariables, not FreeVariables. This is correct behavior for type_apply_with_arg.
+    ///
+    /// The implication is that polymorphic types must use BoundVariable(0) for the
+    /// return type, not FreeVariable(0).
+    #[test]
+    fn test_free_variable_not_substituted_in_type_apply() {
+        // Pi(TypeSort, FreeVariable(0)) - FreeVariable doesn't get substituted
+        let pi_with_free = Term::pi(Term::type_sort(), Term::atom(Atom::FreeVariable(0)));
+        let concrete_type = Term::parse("c0");
+
+        let result = pi_with_free.type_apply_with_arg(&concrete_type);
+        assert!(result.is_some());
+        // FreeVariable(0) is returned unchanged - this is expected behavior
+        assert_eq!(
+            format!("{}", result.unwrap()),
+            "x0",
+            "FreeVariables are not substituted by type_apply_with_arg"
+        );
     }
 }

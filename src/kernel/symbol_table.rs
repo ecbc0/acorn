@@ -248,11 +248,31 @@ impl SymbolTable {
     /// Set the type for a synthetic at a given index.
     #[cfg(test)]
     pub fn set_synthetic_type(&mut self, id: u32, var_type: Term) {
+        #[cfg(any(test, feature = "validate"))]
+        if var_type.has_free_variable() {
+            panic!(
+                "Symbol type contains free variable: {}. \
+                 Symbol types should use BoundVariable for parameters bound by Pi.",
+                var_type
+            );
+        }
         self.synthetic_types[id as usize] = var_type;
     }
 
     /// Declare a new synthetic atom with the given type.
     pub fn declare_synthetic(&mut self, var_type: Term) -> Symbol {
+        // Symbol types should be closed - no free variables allowed.
+        // Free variables in a type like Π(T, x0) indicate a bug where BoundVariable
+        // should have been used instead.
+        #[cfg(any(test, feature = "validate"))]
+        if var_type.has_free_variable() {
+            panic!(
+                "Symbol type contains free variable: {}. \
+                 Symbol types should use BoundVariable for parameters bound by Pi.",
+                var_type
+            );
+        }
+
         let atom_id = self.synthetic_types.len() as AtomId;
         let symbol = Symbol::Synthetic(atom_id);
         self.record_element(var_type.clone(), symbol);

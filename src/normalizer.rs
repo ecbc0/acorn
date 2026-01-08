@@ -901,9 +901,17 @@ impl NormalizerView<'_> {
 
             // Convert the result type to a Term
             #[cfg(feature = "polymorphic")]
-            let result_type_term = self
-                .type_store()
-                .to_type_term_with_vars(t, self.type_var_map());
+            let result_type_term = {
+                let mut term = self
+                    .type_store()
+                    .to_type_term_with_vars(t, self.type_var_map());
+                // Convert FreeVariables for type params to BoundVariables.
+                // to_type_term_with_vars creates FreeVariable(i) for type parameter i,
+                // but inside the Pi type, these should be BoundVariable(n-1-i).
+                let num_type_params = self.type_var_map().map_or(0, |m| m.len()) as u16;
+                term = term.convert_free_to_bound(num_type_params);
+                term
+            };
             #[cfg(not(feature = "polymorphic"))]
             let result_type_term = self.type_store().to_type_term(t);
 
@@ -2351,20 +2359,13 @@ impl Normalizer {
                     .type_term_to_acorn_type(type_term);
                 let name = ConstantName::Synthetic(*i);
 
-                // In polymorphic mode, check if the type contains type variables (FreeVariables)
-                // which indicate this is a polymorphic synthetic
+                // In polymorphic mode, check if the type has leading type parameter Pis
+                // (Pi types where the input is TypeSort or a Typeclass)
                 #[cfg(feature = "polymorphic")]
                 {
-                    // Count FreeVariables in the type term to determine number of type params
-                    let mut max_var_id: Option<AtomId> = None;
-                    for atom in type_term.iter_atoms() {
-                        if let Atom::FreeVariable(id) = atom {
-                            max_var_id = Some(max_var_id.map_or(*id, |m| m.max(*id)));
-                        }
-                    }
-                    if let Some(max_id) = max_var_id {
+                    let num_type_params = type_term.as_ref().count_type_params();
+                    if num_type_params > 0 {
                         // This is a polymorphic synthetic - use provided names or generate defaults
-                        let num_type_params = (max_id + 1) as usize;
                         let names: Vec<String> = if let Some(provided) = type_param_names {
                             // Use the provided names (computed by code_generator)
                             provided[..num_type_params].to_vec()
