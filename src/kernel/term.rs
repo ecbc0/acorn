@@ -1631,17 +1631,70 @@ impl Term {
     /// Replace the first `num_to_replace` variables with invalid synthetic atoms, adjusting
     /// the subsequent variable ids accordingly.
     pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> Term {
-        let new_components = self
-            .components
-            .iter()
-            .map(|component| match component {
-                TermComponent::Atom(atom) => {
-                    TermComponent::Atom(atom.instantiate_invalid_synthetics(num_to_replace))
+        self.instantiate_invalid_synthetics_with_skip(num_to_replace, 0)
+    }
+
+    /// Replace `num_to_replace` free variables (starting after `skip` variables) with invalid
+    /// synthetic atoms. Variables before `skip` are preserved (they're type variables in
+    /// polymorphic mode). In polymorphic mode, synthetics are applied to the type variables.
+    pub fn instantiate_invalid_synthetics_with_skip(
+        &self,
+        num_to_replace: usize,
+        skip: usize,
+    ) -> Term {
+        use crate::kernel::atom::INVALID_SYNTHETIC_ID;
+
+        match self.as_ref().decompose() {
+            Decomposition::Atom(atom) => match atom {
+                Atom::FreeVariable(i) => {
+                    let idx = *i as usize;
+                    if idx < skip {
+                        // Before skip range: preserve type variables unchanged
+                        self.clone()
+                    } else if idx < skip + num_to_replace {
+                        // In replacement range: convert to invalid synthetic
+                        // The synthetic is applied to all type variables (first `skip` vars)
+                        let synthetic_id = (INVALID_SYNTHETIC_ID as usize + idx - skip) as AtomId;
+                        let synthetic_atom = Atom::Symbol(Symbol::Synthetic(synthetic_id));
+                        if skip == 0 {
+                            Term::atom(synthetic_atom)
+                        } else {
+                            // Apply the synthetic to all type variables
+                            let type_var_args: Vec<Term> = (0..skip as AtomId)
+                                .map(|var_id| Term::new_variable(var_id))
+                                .collect();
+                            Term::new(synthetic_atom, type_var_args)
+                        }
+                    } else {
+                        // After replacement range: shift down by num_to_replace
+                        Term::new_variable((idx - num_to_replace) as AtomId)
+                    }
                 }
-                c => *c,
-            })
-            .collect();
-        Term::from_components(new_components)
+                _ => self.clone(),
+            },
+            Decomposition::Application(func, arg) => {
+                let new_func = func
+                    .to_owned()
+                    .instantiate_invalid_synthetics_with_skip(num_to_replace, skip);
+                let new_arg = arg
+                    .to_owned()
+                    .instantiate_invalid_synthetics_with_skip(num_to_replace, skip);
+                Term::new(*new_func.get_head_atom(), {
+                    let mut args = new_func.args();
+                    args.push(new_arg);
+                    args
+                })
+            }
+            Decomposition::Pi(input, output) => {
+                let new_input = input
+                    .to_owned()
+                    .instantiate_invalid_synthetics_with_skip(num_to_replace, skip);
+                let new_output = output
+                    .to_owned()
+                    .instantiate_invalid_synthetics_with_skip(num_to_replace, skip);
+                Term::pi(new_input, new_output)
+            }
+        }
     }
 
     /// Normalize variable IDs in place, ensuring type dependencies come first.

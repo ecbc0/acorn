@@ -290,14 +290,13 @@ impl ConstantInstance {
     ) -> Option<ConstantInstance> {
         let id = self.name.synthetic_id()?;
         let name = synthetic_names.get(&id)?;
-        assert!(self.params.is_empty());
-        // Non-generic constant: generic_type equals instance_type
+        // Handle both polymorphic and non-polymorphic synthetics
         Some(ConstantInstance {
             name: ConstantName::unqualified(module_id, name),
-            params: vec![],
+            params: self.params.clone(),
             instance_type: self.instance_type.clone(),
-            generic_type: self.instance_type.clone(),
-            type_param_names: vec![],
+            generic_type: self.generic_type.clone(),
+            type_param_names: self.type_param_names.clone(),
         })
     }
 }

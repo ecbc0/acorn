@@ -398,19 +398,35 @@ impl Clause {
 
     /// Replace the first `num_to_replace` variables with invalid synthetic atoms.
     pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> Clause {
+        self.instantiate_invalid_synthetics_with_skip(num_to_replace, 0)
+    }
+
+    /// Replace `num_to_replace` free variables (starting after `skip` variables) with invalid
+    /// synthetic atoms. Variables before `skip` (typically type variables) are preserved.
+    pub fn instantiate_invalid_synthetics_with_skip(
+        &self,
+        num_to_replace: usize,
+        skip: usize,
+    ) -> Clause {
         let new_literals: Vec<Literal> = self
             .literals
             .iter()
-            .map(|lit| lit.instantiate_invalid_synthetics(num_to_replace))
+            .map(|lit| lit.instantiate_invalid_synthetics_with_skip(num_to_replace, skip))
             .collect();
-        // The context needs to be adjusted - the first num_to_replace var types are removed
-        let new_types: Vec<_> = self
-            .context
-            .get_var_types()
-            .iter()
-            .skip(num_to_replace)
-            .cloned()
-            .collect();
+        // The context needs to be adjusted:
+        // - Keep the first `skip` types (type variables)
+        // - Remove the next `num_to_replace` types (existential variables becoming synthetics)
+        // - Keep the rest (shifted down)
+        let types = self.context.get_var_types();
+        let mut new_types = Vec::new();
+        // Keep types before skip (type variables)
+        for i in 0..skip.min(types.len()) {
+            new_types.push(types[i].clone());
+        }
+        // Skip the replacement range, keep the rest
+        for i in (skip + num_to_replace)..types.len() {
+            new_types.push(types[i].clone());
+        }
         let new_context = LocalContext::from_types(new_types);
         Clause::new(new_literals, &new_context).canonicalize()
     }

@@ -438,6 +438,12 @@ impl TypeStore {
 
             let return_type = self.type_term_to_acorn_type(&current_output);
 
+            // If we skipped all type arguments, just return the return type
+            // (this happens with polymorphic constants that only have type params)
+            if arg_types.is_empty() {
+                return return_type;
+            }
+
             let ft = FunctionType {
                 arg_types,
                 return_type: Box::new(return_type),

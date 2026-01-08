@@ -1706,11 +1706,13 @@ impl BindingMap {
         source: &dyn ErrorContext,
         token_map: Option<&mut TokenMap>,
     ) -> error::Result<AcornValue> {
-        // Evaluate the arguments
+        // Evaluate the arguments as generic values, allowing unresolved constants
+        // to be converted to their generic form. This is needed for type inference
+        // when arguments may contain in-scope type variables.
         let mut args = vec![];
         let mut evaluator = Evaluator::new(project, self, token_map);
         for arg_expr in &arg_exprs {
-            let arg = evaluator.evaluate_value_with_stack(stack, arg_expr, None)?;
+            let arg = evaluator.evaluate_as_generic_value(stack, arg_expr)?;
             args.push(arg);
         }
 

@@ -132,6 +132,19 @@ impl Normalizer {
             .type_term_to_acorn_type(type_term)
     }
 
+    /// Returns a mapping from variable IDs to original type param names.
+    /// This is used to preserve original type param names when generating code.
+    #[cfg(feature = "polymorphic")]
+    pub fn get_var_id_to_name_map(&self) -> HashMap<AtomId, String> {
+        let mut result = HashMap::new();
+        if let Some(type_var_map) = &self.type_var_map {
+            for (name, (id, _)) in type_var_map {
+                result.insert(*id, name.clone());
+            }
+        }
+        result
+    }
+
     /// Returns all synthetic atom IDs that have been defined.
     #[cfg(test)]
     pub fn get_synthetic_ids(&self) -> Vec<AtomId> {
@@ -140,6 +153,48 @@ impl Normalizer {
 
     pub fn kernel_context(&self) -> &KernelContext {
         &self.kernel_context
+    }
+
+    /// Sets up the type variable map for polymorphic checking.
+    /// This allows type parameters like T0, T1 to be recognized during value conversion.
+    #[cfg(feature = "polymorphic")]
+    pub fn set_type_var_map(&mut self, type_params: &[crate::elaborator::acorn_type::TypeParam]) {
+        use crate::kernel::term::Term;
+
+        if type_params.is_empty() {
+            self.type_var_map = None;
+            self.type_var_id_map = None;
+            return;
+        }
+
+        let type_var_map: HashMap<String, (AtomId, Term)> = type_params
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let var_type = if let Some(tc) = &p.typeclass {
+                    let tc_id = self.kernel_context.type_store.add_typeclass(tc);
+                    Term::typeclass(tc_id)
+                } else {
+                    Term::type_sort()
+                };
+                (p.name.clone(), (i as AtomId, var_type))
+            })
+            .collect();
+
+        let id_map: HashMap<String, AtomId> = type_var_map
+            .iter()
+            .map(|(name, (id, _))| (name.clone(), *id))
+            .collect();
+
+        self.type_var_map = Some(type_var_map);
+        self.type_var_id_map = Some(id_map);
+    }
+
+    /// Clears the type variable map after polymorphic checking.
+    #[cfg(feature = "polymorphic")]
+    pub fn clear_type_var_map(&mut self) {
+        self.type_var_map = None;
+        self.type_var_id_map = None;
     }
 
     /// Gets a synthetic definition for a value, if one exists.
@@ -159,9 +214,16 @@ impl Normalizer {
         let Ok(uninstantiated) = view.value_to_denormalized_clauses(&alt_value) else {
             return None;
         };
+
+        // In polymorphic mode, skip the type variables when replacing existentials
+        #[cfg(feature = "polymorphic")]
+        let num_type_vars = self.type_var_map.as_ref().map_or(0, |m| m.len());
+        #[cfg(not(feature = "polymorphic"))]
+        let num_type_vars = 0;
+
         let clauses = uninstantiated
             .iter()
-            .map(|c| c.instantiate_invalid_synthetics(num_definitions))
+            .map(|c| c.instantiate_invalid_synthetics_with_skip(num_definitions, num_type_vars))
             .collect();
         let key = SyntheticKey {
             clauses,
@@ -475,11 +537,29 @@ impl NormalizerView<'_> {
     ) -> Result<Vec<Clause>, String> {
         let mut output = vec![];
         let mut context = LocalContext::empty();
+
+        // In polymorphic mode, pre-allocate space for type variables
+        // This ensures value variable IDs don't collide with type variable IDs
+        #[cfg(feature = "polymorphic")]
+        let mut next_var_id = if let Some(type_var_map) = self.type_var_map_with_types() {
+            // Pre-populate local_context with the type of each type variable.
+            let mut entries: Vec<_> = type_var_map.values().collect();
+            entries.sort_by_key(|(id, _)| *id);
+            for (_, var_type) in entries {
+                context.push_type(var_type.clone());
+            }
+            type_var_map.len() as AtomId
+        } else {
+            0
+        };
+        #[cfg(not(feature = "polymorphic"))]
+        let mut next_var_id = 0;
+
         let cnf = self.value_to_cnf(
             &value,
             false,
             &mut vec![],
-            &mut 0,
+            &mut next_var_id,
             &mut vec![],
             &mut context,
         )?;
@@ -722,6 +802,25 @@ impl NormalizerView<'_> {
         // Keep arg_type_terms as Terms to avoid round-trip conversion
         let mut arg_type_terms: Vec<Term> = vec![];
         let mut seen_vars = std::collections::HashSet::new();
+
+        // In polymorphic mode, synthetics are polymorphic constants.
+        // Type variables appear in the term, and TypeSort appears in the type.
+        // This is the same pattern as other polymorphic constants: the type is
+        // Pi(Type, Pi(Type, ... actual_type ...)) where each Type is skipped when
+        // converting to AcornType, giving the user-facing type without type params.
+        #[cfg(feature = "polymorphic")]
+        if let Some(type_var_map) = self.type_var_map_with_types() {
+            // Sort entries by var_id to ensure consistent ordering
+            let mut entries: Vec<_> = type_var_map.values().collect();
+            entries.sort_by_key(|(id, _)| *id);
+            for (var_id, var_type) in entries {
+                let var_term = Term::new_variable(*var_id);
+                args.push(var_term);
+                // Type variables have their kind (Type or typeclass) as their type in the Pi
+                arg_type_terms.push(var_type.clone());
+                seen_vars.insert(*var_id);
+            }
+        }
 
         for binding in stack.iter() {
             // Use collect_vars with the context to get variable types
@@ -2127,7 +2226,34 @@ impl Normalizer {
                     .type_store
                     .type_term_to_acorn_type(type_term);
                 let name = ConstantName::Synthetic(*i);
-                // Non-generic: generic_type equals instance_type
+
+                // In polymorphic mode, check if the type contains type variables (FreeVariables)
+                // which indicate this is a polymorphic synthetic
+                #[cfg(feature = "polymorphic")]
+                {
+                    // Count FreeVariables in the type term to determine number of type params
+                    let mut max_var_id: Option<AtomId> = None;
+                    for atom in type_term.iter_atoms() {
+                        if let Atom::FreeVariable(id) = atom {
+                            max_var_id = Some(max_var_id.map_or(*id, |m| m.max(*id)));
+                        }
+                    }
+                    if let Some(max_id) = max_var_id {
+                        // This is a polymorphic synthetic - create type param names
+                        let num_type_params = (max_id + 1) as usize;
+                        let type_param_names: Vec<String> =
+                            (0..num_type_params).map(|i| format!("T{}", i)).collect();
+                        return AcornValue::constant(
+                            name,
+                            vec![],
+                            acorn_type.clone(),
+                            acorn_type,
+                            type_param_names,
+                        );
+                    }
+                }
+
+                // Non-polymorphic: generic_type equals instance_type
                 AcornValue::constant(name, vec![], acorn_type.clone(), acorn_type, vec![])
             }
             Atom::Symbol(Symbol::Type(_))

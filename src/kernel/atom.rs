@@ -138,14 +138,32 @@ impl Atom {
     /// the subsequent variable ids accordingly.
     /// Bound variables are left unchanged.
     pub fn instantiate_invalid_synthetics(&self, num_to_replace: usize) -> Atom {
+        self.instantiate_invalid_synthetics_with_skip(num_to_replace, 0)
+    }
+
+    /// Replace `num_to_replace` free variables (starting after `skip` variables) with invalid
+    /// synthetic atoms. Variables before `skip` are preserved, variables in the replacement
+    /// range become invalid synthetics, and variables after are shifted down.
+    pub fn instantiate_invalid_synthetics_with_skip(
+        &self,
+        num_to_replace: usize,
+        skip: usize,
+    ) -> Atom {
         match self {
             Atom::FreeVariable(i) => {
-                if (*i as usize) < num_to_replace {
+                let idx = *i as usize;
+                if idx < skip {
+                    // Before skip range: preserve type variables unchanged
+                    *self
+                } else if idx < skip + num_to_replace {
+                    // In replacement range: convert to invalid synthetic
+                    // The synthetic id is based on position within the replacement range
                     Atom::Symbol(Symbol::Synthetic(
-                        (INVALID_SYNTHETIC_ID as usize + *i as usize) as AtomId,
+                        (INVALID_SYNTHETIC_ID as usize + idx - skip) as AtomId,
                     ))
                 } else {
-                    Atom::FreeVariable(*i - num_to_replace as AtomId)
+                    // After replacement range: shift down by num_to_replace
+                    Atom::FreeVariable((idx - num_to_replace) as AtomId)
                 }
             }
             a => *a,

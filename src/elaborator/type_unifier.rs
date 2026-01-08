@@ -169,7 +169,17 @@ impl<'a> TypeUnifier<'a> {
                     }
                 }
                 // Occurs check: reject cyclic types like T = List[T]
+                // But allow identity (T = T) - if instance_type is exactly Arbitrary(param)
                 if instance_type.has_arbitrary_type_param(param) {
+                    // Allow identity mapping: T -> Arbitrary(T) is fine, it's not cyclic
+                    if let AcornType::Arbitrary(p) = instance_type {
+                        if p == param {
+                            // This is T = T, add to mapping so type inference knows T was inferred
+                            self.mapping
+                                .insert(param.name.clone(), instance_type.clone());
+                            return Ok(());
+                        }
+                    }
                     return Err(Error::Other);
                 }
                 self.mapping
@@ -257,11 +267,6 @@ impl<'a> TypeUnifier<'a> {
             unresolved.generic_type.clone()
         } else if let AcornType::Function(unresolved_function_type) = &unresolved.generic_type {
             for (i, arg) in combined_args.iter().enumerate() {
-                if arg.has_generic() {
-                    return Err(
-                        source.error(&format!("argument {} ({}) has unresolved type", i, arg))
-                    );
-                }
                 let arg_type: &AcornType = match &unresolved_function_type.arg_types.get(i) {
                     Some(t) => t,
                     None => {

@@ -118,7 +118,10 @@ fn rename_type_vars_in_value(
                 .synthetic_id()
                 .map(|id| defining_synthetics.contains(&id))
                 .unwrap_or(false);
-            let new_params = if c.params.is_empty() && !is_being_defined {
+            let new_params = if is_being_defined {
+                // For synthetics being defined, don't include type params - they're already in scope
+                vec![]
+            } else if c.params.is_empty() {
                 // Extract type vars from instance_type and use renamed versions as params
                 let type_vars = collect_type_var_names(&c.instance_type);
                 type_vars
@@ -416,6 +419,16 @@ impl CodeGenerator<'_> {
         }
     }
 
+    /// Check if a constant name is a replaced synthetic (after replace_synthetics was called).
+    /// This is needed because replaced synthetics have Unqualified names like "s0", "s1", etc.
+    fn is_replaced_synthetic(&self, name: &ConstantName) -> bool {
+        if let ConstantName::Unqualified(_, word) = name {
+            self.synthetic_names.values().any(|s| s == word)
+        } else {
+            false
+        }
+    }
+
     /// Adds parameters, if there are any, to an expression representing a type.
     fn parametrize_expr(&self, base_expr: Expression, params: &[AcornType]) -> Result<Expression> {
         if params.is_empty() {
@@ -484,11 +497,28 @@ impl CodeGenerator<'_> {
                 }
             }
 
-            // Build rename map: x0 -> T0, x1 -> T1, etc.
+            // In polymorphic mode, try to use the original type param names from the normalizer
+            // This ensures the synthetic definition uses the same names as the goal context.
+            #[cfg(feature = "polymorphic")]
+            let var_id_to_name = normalizer.get_var_id_to_name_map();
+
+            // Build rename map: x0 -> T or T0, x1 -> T1, etc.
+            // Use original names if available (in polymorphic mode), otherwise generate fresh names.
             let mut rename_map = HashMap::new();
             let mut type_param_names = Vec::new();
             for old_name in &all_type_vars {
-                let new_name = self.bindings.next_indexed_var('T', &mut self.next_t);
+                // Try to extract the variable ID from the name (e.g., "x0" -> 0)
+                #[cfg(feature = "polymorphic")]
+                let original_name = old_name
+                    .strip_prefix("x")
+                    .and_then(|s| s.parse::<u16>().ok())
+                    .and_then(|id| var_id_to_name.get(&id).cloned());
+
+                #[cfg(not(feature = "polymorphic"))]
+                let original_name: Option<String> = None;
+
+                let new_name = original_name
+                    .unwrap_or_else(|| self.bindings.next_indexed_var('T', &mut self.next_t));
                 rename_map.insert(old_name.clone(), new_name.clone());
                 type_param_names.push(new_name);
             }
@@ -980,7 +1010,11 @@ impl CodeGenerator<'_> {
                 // For overridden typeclass attributes, we need explicit parameters
                 // to distinguish from the datatype's own attributes
                 let inferrable = if let AcornValue::Constant(c) = fa.function.as_ref() {
-                    if let ConstantName::TypeclassAttribute(typeclass, attr_name) = &c.name {
+                    // Synthetics can't have explicit type params in the syntax
+                    // Check both original synthetics and replaced ones (now named s0, s1, etc.)
+                    if c.name.is_synthetic() || self.is_replaced_synthetic(&c.name) {
+                        true
+                    } else if let ConstantName::TypeclassAttribute(typeclass, attr_name) = &c.name {
                         if let AcornType::Data(datatype, _) = &receiver_type {
                             if self.bindings.is_instance_of(datatype, typeclass) {
                                 let datatype_attr_name =
@@ -1120,10 +1154,15 @@ impl CodeGenerator<'_> {
 
                 let const_expr = self.const_to_expr(&c)?;
 
-                if !inferrable && !c.params.is_empty() {
+                // Synthetics can't have explicit type params in the syntax
+                // Check both original synthetics and replaced ones (now named s0, s1, etc.)
+                let is_synthetic_const =
+                    c.name.is_synthetic() || self.is_replaced_synthetic(&c.name);
+                if !inferrable && !c.params.is_empty() && !is_synthetic_const {
                     self.parametrize_expr(const_expr, &c.params)
                 } else {
                     // We don't need to parametrize because it can be inferred
+                    // (or it's a synthetic where type params are implicit)
                     Ok(const_expr)
                 }
             }

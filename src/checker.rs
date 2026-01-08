@@ -12,6 +12,8 @@ use crate::elaborator::names::ConstantName;
 use crate::elaborator::potential_value::PotentialValue;
 use crate::elaborator::source::Source;
 use crate::elaborator::stack::Stack;
+#[cfg(feature = "polymorphic")]
+use crate::elaborator::unresolved_constant::UnresolvedConstant;
 use crate::kernel::clause::Clause;
 use crate::kernel::generalization_set::GeneralizationSet;
 use crate::kernel::inference;
@@ -297,6 +299,15 @@ impl Checker {
 
         match statement.statement {
             StatementInfo::VariableSatisfy(vss) => {
+                // Bind type parameters first so they're available when evaluating types
+                let type_params = evaluator.evaluate_type_params(&vss.type_params)?;
+                for param in &type_params {
+                    bindings.to_mut().add_arbitrary_type(param.clone());
+                }
+
+                // Re-create evaluator with updated bindings
+                let mut evaluator = Evaluator::new(project, bindings, None);
+
                 // Create an exists value from the let...satisfy statement
                 // The declarations become the existential quantifiers
                 let mut decls = vec![];
@@ -329,6 +340,10 @@ impl Checker {
                 // Create an exists value and check if it matches any existing synthetic definition
                 let types = decls.iter().map(|(_, ty)| ty.clone()).collect();
                 let exists_value = AcornValue::exists(types, condition_value.clone());
+
+                // Set up type variable map for polymorphic checking
+                #[cfg(feature = "polymorphic")]
+                normalizer.to_mut().set_type_var_map(&type_params);
 
                 let (source, synthetic_atoms) = match normalizer
                     .to_mut()
@@ -380,19 +395,60 @@ impl Checker {
                     for (i, (name, acorn_type)) in decls.iter().enumerate() {
                         let synthetic_id = atoms[i];
                         let synthetic_cname = ConstantName::Synthetic(synthetic_id);
-                        // Non-generic: generic_type equals instance_type
-                        let value = AcornValue::constant(
-                            synthetic_cname.clone(),
-                            vec![],
-                            acorn_type.clone(),
-                            acorn_type.clone(),
-                            vec![],
-                        );
+
+                        // In polymorphic mode, make the synthetic a polymorphic constant
+                        // so that type parameters can be inferred when it's used.
+                        #[cfg(feature = "polymorphic")]
+                        let (param_names, generic_type) = if !type_params.is_empty() {
+                            // Create type param names from the type_params
+                            let names: Vec<String> =
+                                type_params.iter().map(|p| p.name.clone()).collect();
+                            // The generic type uses the type params as Variables
+                            (names, acorn_type.clone())
+                        } else {
+                            (vec![], acorn_type.clone())
+                        };
+                        #[cfg(not(feature = "polymorphic"))]
+                        let (param_names, generic_type) = (vec![], acorn_type.clone());
+
                         let user_cname = ConstantName::unqualified(bindings.module_id(), name);
+
+                        // For polymorphic synthetics, use Unresolved so type inference works
+                        #[cfg(feature = "polymorphic")]
+                        let potential_value = if !type_params.is_empty() {
+                            PotentialValue::Unresolved(UnresolvedConstant {
+                                name: synthetic_cname.clone(),
+                                params: type_params.clone(),
+                                generic_type: acorn_type.clone(),
+                                args: vec![],
+                            })
+                        } else {
+                            let value = AcornValue::constant(
+                                synthetic_cname.clone(),
+                                vec![],
+                                acorn_type.clone(),
+                                generic_type,
+                                param_names,
+                            );
+                            PotentialValue::Resolved(value)
+                        };
+
+                        #[cfg(not(feature = "polymorphic"))]
+                        let potential_value = {
+                            let value = AcornValue::constant(
+                                synthetic_cname.clone(),
+                                vec![],
+                                acorn_type.clone(),
+                                generic_type,
+                                param_names,
+                            );
+                            PotentialValue::Resolved(value)
+                        };
+
                         bindings.to_mut().add_constant_alias(
                             user_cname,
                             synthetic_cname,
-                            PotentialValue::Resolved(value),
+                            potential_value,
                             vec![],
                             None,
                         );
@@ -432,6 +488,10 @@ impl Checker {
                         );
                     }
                 }
+
+                // Clear the type variable map after polymorphic checking is complete
+                #[cfg(feature = "polymorphic")]
+                normalizer.to_mut().clear_type_var_map();
 
                 // Record this step
                 let reason = match source {

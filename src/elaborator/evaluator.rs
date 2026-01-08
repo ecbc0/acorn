@@ -873,6 +873,18 @@ impl<'a> Evaluator<'a> {
         potential.as_value(expression)
     }
 
+    /// Evaluates an expression as a generic value, converting unresolved constants
+    /// to their generic form. This is useful for type inference when we need to
+    /// pass arguments that may have in-scope type variables.
+    pub fn evaluate_as_generic_value(
+        &mut self,
+        stack: &mut Stack,
+        expression: &Expression,
+    ) -> error::Result<AcornValue> {
+        let potential = self.evaluate_potential_value(stack, expression, None)?;
+        Ok(potential.to_generic_value())
+    }
+
     /// Evaluates an expression that could describe a value, but could also describe
     /// a constant with an unresolved type.
     fn evaluate_potential_value(
