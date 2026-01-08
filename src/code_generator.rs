@@ -53,6 +53,72 @@ fn collect_type_var_names_recursive(acorn_type: &AcornType, names: &mut Vec<Stri
     }
 }
 
+/// Collects all type variable names from an AcornValue.
+fn collect_type_var_names_from_value(value: &AcornValue) -> Vec<String> {
+    let mut names = Vec::new();
+    collect_type_var_names_from_value_recursive(value, &mut names);
+    names
+}
+
+fn collect_type_var_names_from_value_recursive(value: &AcornValue, names: &mut Vec<String>) {
+    match value {
+        AcornValue::Variable(_, t) => {
+            collect_type_var_names_recursive(t, names);
+        }
+        AcornValue::Constant(c) => {
+            collect_type_var_names_recursive(&c.instance_type, names);
+            for p in &c.params {
+                collect_type_var_names_recursive(p, names);
+            }
+        }
+        AcornValue::Application(fa) => {
+            collect_type_var_names_from_value_recursive(&fa.function, names);
+            for arg in &fa.args {
+                collect_type_var_names_from_value_recursive(arg, names);
+            }
+        }
+        AcornValue::Binary(_, left, right) => {
+            collect_type_var_names_from_value_recursive(left, names);
+            collect_type_var_names_from_value_recursive(right, names);
+        }
+        AcornValue::Not(v) => {
+            collect_type_var_names_from_value_recursive(v, names);
+        }
+        AcornValue::ForAll(quants, v) | AcornValue::Exists(quants, v) => {
+            for q in quants {
+                collect_type_var_names_recursive(q, names);
+            }
+            collect_type_var_names_from_value_recursive(v, names);
+        }
+        AcornValue::Lambda(args, body) => {
+            for t in args {
+                collect_type_var_names_recursive(t, names);
+            }
+            collect_type_var_names_from_value_recursive(body, names);
+        }
+        AcornValue::IfThenElse(cond, t, f) => {
+            collect_type_var_names_from_value_recursive(cond, names);
+            collect_type_var_names_from_value_recursive(t, names);
+            collect_type_var_names_from_value_recursive(f, names);
+        }
+        AcornValue::Try(inner, unwrapped_type) => {
+            collect_type_var_names_from_value_recursive(inner, names);
+            collect_type_var_names_recursive(unwrapped_type, names);
+        }
+        AcornValue::Match(scrutinee, cases) => {
+            collect_type_var_names_from_value_recursive(scrutinee, names);
+            for (bound_types, pattern, result) in cases {
+                for t in bound_types {
+                    collect_type_var_names_recursive(t, names);
+                }
+                collect_type_var_names_from_value_recursive(pattern, names);
+                collect_type_var_names_from_value_recursive(result, names);
+            }
+        }
+        AcornValue::Bool(_) => {}
+    }
+}
+
 /// Renames type variables in an AcornType according to the provided mapping.
 fn rename_type_vars_in_type(
     acorn_type: &AcornType,
@@ -487,7 +553,17 @@ impl CodeGenerator<'_> {
                 continue;
             }
 
-            // Collect all type variables from the declaration types and build a rename map
+            // Denormalize clauses first so we can collect all type variable names
+            let mut cond_parts = vec![];
+            for clause in &info.clauses {
+                let part = normalizer.denormalize(clause, None, None, None);
+                cond_parts.push(part);
+            }
+            let cond_val = AcornValue::reduce(BinaryOp::And, cond_parts);
+
+            // Collect all type variables from BOTH declaration types AND condition value
+            // Declaration types may use "T{i}" naming (from BoundVariable)
+            // Condition may use "x{i}" naming (from FreeVariable)
             let mut all_type_vars = Vec::new();
             for (_, ty) in &decl {
                 for var_name in collect_type_var_names(ty) {
@@ -496,56 +572,70 @@ impl CodeGenerator<'_> {
                     }
                 }
             }
+            for var_name in collect_type_var_names_from_value(&cond_val) {
+                if !all_type_vars.contains(&var_name) {
+                    all_type_vars.push(var_name);
+                }
+            }
 
             // In polymorphic mode, try to use the original type param names from the normalizer
             // This ensures the synthetic definition uses the same names as the goal context.
             #[cfg(feature = "polymorphic")]
-            let var_id_to_name = normalizer.get_var_id_to_name_map();
+            let var_id_to_orig_name = normalizer.get_var_id_to_name_map();
+            #[cfg(not(feature = "polymorphic"))]
+            let var_id_to_orig_name: HashMap<AtomId, String> = HashMap::new();
 
-            // Build rename map: x0 -> T or T0, x1 -> T1, etc.
-            // Use original names if available (in polymorphic mode), otherwise generate fresh names.
-            // Also track typeclass constraints for each type parameter.
+            // Build rename map: x0 -> T or T0, T0 -> T0, etc.
+            // Both "x0" and "T0" represent var_id 0 and should map to the same new name.
+            // Track which var_ids we've already assigned names to.
             let mut rename_map = HashMap::new();
+            let mut var_id_to_new_name: HashMap<u16, String> = HashMap::new();
             let mut type_param_names = Vec::new();
             let mut type_param_constraints: Vec<Option<String>> = Vec::new();
+
             for old_name in &all_type_vars {
-                // Try to extract the variable ID from the name (e.g., "x0" -> 0)
-                #[cfg(feature = "polymorphic")]
+                // Try to extract the variable ID from the name (e.g., "x0" -> 0 or "T0" -> 0)
                 let var_id = old_name
                     .strip_prefix("x")
+                    .or_else(|| old_name.strip_prefix("T"))
                     .and_then(|s| s.parse::<u16>().ok());
 
-                #[cfg(feature = "polymorphic")]
-                let original_name = var_id.and_then(|id| var_id_to_name.get(&id).cloned());
+                // Check if we've already assigned a new name for this var_id
+                let new_name = if let Some(id) = var_id {
+                    if let Some(existing_name) = var_id_to_new_name.get(&id) {
+                        // Reuse the existing name for this var_id
+                        existing_name.clone()
+                    } else {
+                        // Get original name or generate new one
+                        let name = var_id_to_orig_name.get(&id).cloned().unwrap_or_else(|| {
+                            self.bindings.next_indexed_var('T', &mut self.next_t)
+                        });
+                        var_id_to_new_name.insert(id, name.clone());
 
-                #[cfg(not(feature = "polymorphic"))]
-                let original_name: Option<String> = None;
+                        // Add to type_param_names and look up constraint
+                        type_param_names.push(name.clone());
+                        let constraint = info
+                            .type_vars
+                            .get(id as usize)
+                            .and_then(|term| term.as_ref().as_typeclass())
+                            .map(|tc_id| {
+                                normalizer
+                                    .kernel_context()
+                                    .type_store
+                                    .get_typeclass(tc_id)
+                                    .name
+                                    .clone()
+                            });
+                        type_param_constraints.push(constraint);
 
-                #[cfg(not(feature = "polymorphic"))]
-                let var_id: Option<u16> = None;
-
-                let new_name = original_name
-                    .unwrap_or_else(|| self.bindings.next_indexed_var('T', &mut self.next_t));
-                rename_map.insert(old_name.clone(), new_name.clone());
-                type_param_names.push(new_name);
-
-                // Look up the typeclass constraint from info.type_vars
-                let constraint = if let Some(id) = var_id {
-                    info.type_vars
-                        .get(id as usize)
-                        .and_then(|term| term.as_ref().as_typeclass())
-                        .map(|tc_id| {
-                            normalizer
-                                .kernel_context()
-                                .type_store
-                                .get_typeclass(tc_id)
-                                .name
-                                .clone()
-                        })
+                        name
+                    }
                 } else {
-                    None
+                    // No var_id found, just use the old name
+                    old_name.clone()
                 };
-                type_param_constraints.push(constraint);
+
+                rename_map.insert(old_name.clone(), new_name);
             }
 
             // Create code for the declaration with renamed types
@@ -579,16 +669,7 @@ impl CodeGenerator<'_> {
                 decl_parts.join("")
             };
 
-            // Create code for the condition
-            // Pass type_param_names so polymorphic synthetics use consistent naming
-            let mut cond_parts = vec![];
-            for clause in &info.clauses {
-                let part = normalizer.denormalize(clause, None, None, Some(&type_param_names));
-                cond_parts.push(part);
-            }
-            let cond_val = AcornValue::reduce(BinaryOp::And, cond_parts);
-
-            // Rename type variables in the condition value too
+            // Rename type variables in the condition value
             // Pass the set of synthetics being defined so they don't get type params added
             let defining_synthetics: HashSet<AtomId> = info.atoms.iter().copied().collect();
             let cond_val = rename_type_vars_in_value(&cond_val, &rename_map, &defining_synthetics);

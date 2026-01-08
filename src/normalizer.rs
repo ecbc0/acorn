@@ -247,6 +247,7 @@ impl Normalizer {
             vec![]
         };
 
+        let num_type_params = type_var_kinds.len() as u16;
         let synthetic_types: Vec<Term> = quant_types
             .iter()
             .map(|t| {
@@ -255,7 +256,9 @@ impl Normalizer {
                     .kernel_context
                     .type_store
                     .to_type_term_with_vars(t, self.type_var_id_map.as_ref());
-                // Wrap with Pi types for each type variable (same as make_skolem_terms)
+                // Convert FreeVariables to BoundVariables (same as make_skolem_terms)
+                type_term = type_term.convert_free_to_bound(num_type_params);
+                // Wrap with Pi types for each type variable
                 for kind in type_var_kinds.iter().rev() {
                     type_term = Term::pi(kind.clone(), type_term);
                 }
