@@ -1339,6 +1339,40 @@ mod tests {
 
     #[test]
     #[cfg(feature = "polymorphic")]
+    fn test_polymorphic_synthetic_with_typeclass() {
+        use super::CodeGenerator;
+        use crate::processor::Processor;
+
+        // Similar to test_polymorphic_synthetic_declaration but with a typeclass constraint
+        let (processor, bindings) = Processor::test_goal(
+            r#"
+            typeclass M: Magma {
+                mul: (M, M) -> M
+            }
+            let foo[T: Magma]: T -> Bool = axiom
+            theorem goal[T: Magma] { exists(t: T) { foo(t) } }
+            "#,
+        );
+
+        let normalizer = processor.normalizer();
+        let synthetic_ids = normalizer.get_synthetic_ids();
+
+        let mut generator = CodeGenerator::new(&bindings);
+        let mut codes = vec![];
+        generator
+            .define_synthetics(synthetic_ids, normalizer, &mut codes)
+            .unwrap();
+
+        // The synthetic should have the typeclass constraint
+        let expected = "let s0[T0: Magma]: T0 satisfy { not goal[T0] or foo(s0) and forall(x0: T0) { not foo(x0) or goal[T0] } }";
+        assert_eq!(codes[0], expected);
+
+        // The generated code should be checkable
+        processor.test_check_code(&codes[0], &bindings);
+    }
+
+    #[test]
+    #[cfg(feature = "polymorphic")]
     fn test_polymorphic_synthetic_with_multi_arg_function() {
         use super::CodeGenerator;
         use crate::processor::Processor;
