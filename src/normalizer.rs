@@ -2056,8 +2056,21 @@ impl Normalizer {
                 let left_term = view.force_simple_value_to_term(left, &vec![])?;
                 let right_term = view.force_simple_value_to_term(right, &vec![])?;
                 let literal = Literal::new(true, left_term, right_term);
-                // Empty context is fine since there are no variables (empty stack)
-                let clause = Clause::new(vec![literal], LocalContext::empty_ref());
+
+                // Build a LocalContext with type variables if present.
+                let local_context = if let Some(type_var_map) = &self.type_var_map {
+                    let mut ctx = LocalContext::empty();
+                    let mut entries: Vec<_> = type_var_map.values().collect();
+                    entries.sort_by_key(|(id, _)| *id);
+                    for (_, var_type) in entries {
+                        ctx.push_type(var_type.clone());
+                    }
+                    ctx
+                } else {
+                    LocalContext::empty()
+                };
+
+                let clause = Clause::new(vec![literal], &local_context);
                 clauses.push(clause);
             }
         }

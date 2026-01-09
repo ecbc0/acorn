@@ -865,3 +865,28 @@ fn test_if_then_else_with_forall_condition() {
         ],
     );
 }
+
+/// Test that normalizing a polymorphic theorem with type parameters in the goal doesn't crash.
+/// This test catches a bug where the LocalContext was empty when clause normalization tried
+/// to remap variables for type parameters.
+#[test]
+#[cfg(feature = "polymorphic")]
+fn test_polymorphic_type_params_in_goal() {
+    let mut env = Environment::test();
+    env.add(
+        r#"
+        // Define a simple identity function with two equivalent definitions
+        define id1[T](x: T) -> T { x }
+        define id2[T](x: T) -> T { x }
+
+        // This theorem has type parameter [T] that appears directly in the goal
+        theorem id_equivalence[T] {
+            id1[T] = id2[T]
+        }
+        "#,
+    );
+    let mut norm = Normalizer::new();
+    // We don't check the exact clauses - we just verify normalization doesn't crash
+    let clauses = norm.get_all_clauses(&env);
+    assert!(!clauses.is_empty(), "Should have normalized clauses");
+}
