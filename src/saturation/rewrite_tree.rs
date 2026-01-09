@@ -634,6 +634,31 @@ mod tests {
     }
 
     #[test]
+    fn test_rewrite_tree_type_only_variable() {
+        // Test inserting a literal where a type variable only appears in another
+        // variable's type, not in any term.
+        //
+        // Pattern: x0(x1) = x0(x1)
+        // where x0: (Foo -> x2), x1: Foo, x2: Type
+        //
+        // x2 is a type variable that only appears in x0's type (the return type
+        // of the function), not in the term x0(x1). When insert_literal reverses
+        // this and collects structural_var_ids, x2 is missing, causing remap to fail.
+
+        let mut kctx = KernelContext::new();
+        kctx.parse_datatype("Foo");
+
+        let mut tree = RewriteTree::new();
+        let pattern_clause = kctx.parse_clause("x0(x1) = x0(x1)", &["Foo -> x2", "Foo", "Type"]);
+        tree.insert_literal(
+            0,
+            &pattern_clause.literals[0],
+            pattern_clause.get_local_context(),
+            &kctx,
+        );
+    }
+
+    #[test]
     fn test_rewrite_tree_function_typed_pattern_variable() {
         // Test backwards rewriting with function-typed pattern variables.
         // This is the "compose" pattern: compose(T, U, V, f: U->V, g: T->U)(x: T) = f(g(x))
