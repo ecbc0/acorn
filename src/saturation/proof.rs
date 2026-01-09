@@ -738,3 +738,189 @@ impl<'a> Proof<'a> {
         Ok((answer, unifier_output_context))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::kernel::kernel_context::KernelContext;
+    use crate::kernel::trace::LiteralTrace;
+    use crate::proof_step::{ProofStep, Rule};
+    use crate::saturation::active_set::ActiveSet;
+
+    /// Test that resolution followed by simplification has consistent traces.
+    ///
+    /// This tests a bug where ResolutionInfo doesn't store the post-resolution literals,
+    /// causing reconstruct_trace to use the original long clause literals instead of
+    /// the literals after the resolution unifier was applied.
+    ///
+    /// The scenario:
+    /// - Long clause: not g0(x) or g1(x) = c0  (x is a variable)
+    /// - Short clause: g0(g2(c1))  (concrete, resolves with first literal, binds x->g2(c1))
+    /// - Resolution gives: g1(g2(c1)) = c0
+    /// - Simplification clause: g1(g2(x)) != c0  (eliminates g1(g2(c1)) = c0)
+    /// - Result: empty clause (contradiction)
+    ///
+    /// The bug: The trace is built based on the post-resolution clause [g1(g2(c1)) = c0],
+    /// but ResolutionInfo only stores short_id and long_id. When reconstruct_trace is called,
+    /// it uses long_clause.literals [not g0(x), g1(x) = c0] which don't match the trace
+    /// that was built for the post-resolution literals.
+    #[test]
+    fn test_resolution_with_simplification_trace() {
+        let mut kctx = KernelContext::new();
+        kctx.parse_constant("g0", "Bool -> Bool")
+            .parse_constant("g1", "Bool -> Bool")
+            .parse_constant("g2", "Bool -> Bool")
+            .parse_constant("c0", "Bool")
+            .parse_constant("c1", "Bool");
+
+        // Long clause (step 0): not g0(x) or g1(x) = c0
+        // First literal is negative (g0(x) != true), second is positive (g1(x) = c0)
+        let long_clause = kctx.parse_clause("not g0(x0) or g1(x0) = c0", &["Bool"]);
+        let long_step = ProofStep::mock_from_clause(long_clause);
+
+        // Short clause (step 1): g0(g2(c1))
+        // This resolves with the first literal of long clause, binding x0 -> g2(c1)
+        let short_clause = kctx.parse_clause("g0(g2(c1))", &[]);
+        let mut short_step = ProofStep::mock_from_clause(short_clause);
+        short_step.truthiness = crate::proof_step::Truthiness::Hypothetical;
+
+        // Simplification clause (step 2): g1(g2(x)) != c0
+        // This can eliminate g1(g2(c1)) = c0 from the resolution result
+        let simp_clause = kctx.parse_clause("g1(g2(x0)) != c0", &["Bool"]);
+        let simp_step = ProofStep::mock_from_clause(simp_clause);
+
+        // Build the active set
+        // Order is important: we activate long_step and simp_step first,
+        // then call find_resolutions with short_step (which will use next_id = 2)
+        let mut active_set = ActiveSet::new();
+        active_set.activate(long_step.clone(), &kctx); // Step 0
+        active_set.activate(simp_step.clone(), &kctx); // Step 1
+
+        // Find resolutions - short_step will get ID 2 (next_id)
+        let mut resolution_results = vec![];
+        active_set.find_resolutions(&short_step, &mut resolution_results, &kctx);
+
+        // Now activate short_step so it gets ID 2 (matching what find_resolutions used)
+        active_set.activate(short_step.clone(), &kctx); // Step 2
+
+        // Should have at least one resolution result
+        assert!(
+            !resolution_results.is_empty(),
+            "Resolution should produce at least one result. Long: {}, Short: {}",
+            long_step.clause,
+            short_step.clause
+        );
+
+        let resolution_step = resolution_results.into_iter().next().unwrap();
+
+        // The resolution step should have a trace
+        assert!(
+            resolution_step.trace.is_some(),
+            "Resolution step should have a trace"
+        );
+
+        // Now simplify the resolution result using the active set
+        let simplified_step = active_set.simplify(resolution_step.clone(), &kctx);
+
+        // The simplification should succeed (or not change the step)
+        let final_step = simplified_step.unwrap_or(resolution_step);
+
+        // Verify we got the expected structure
+        assert!(
+            final_step.clause.is_impossible(),
+            "Expected empty clause after resolution + simplification, got: {}",
+            final_step.clause
+        );
+
+        // Get the resolution info
+        let resolution_info = match &final_step.rule {
+            Rule::Resolution(info) => info,
+            other => panic!("Expected Resolution rule, got {:?}", other),
+        };
+
+        // The trace should have entries for the long clause's literals
+        let trace = final_step.trace.as_ref().expect("Expected trace");
+        let traces = trace.as_slice();
+
+        // Here's the key invariant that should hold but doesn't due to the bug:
+        // The trace was built based on the POST-resolution clause, which has
+        // only ONE literal (g1(g2(c1)) = c0) - the first literal was eliminated by resolution.
+        //
+        // But ResolutionInfo only stores long_id, and reconstruct_step uses
+        // long_clause.literals which has TWO literals.
+        //
+        // The trace length should match what reconstruct_step expects (long_clause.literals.len())
+        // but the trace was built for post-resolution literals.
+
+        // Get the long clause that reconstruct_step would use
+        let long_clause_for_reconstruction = &active_set.get_step(resolution_info.long_id).clause;
+        let long_literal_count = long_clause_for_reconstruction.literals.len();
+
+        // The trace has entries for all the original literals, which is correct.
+        // But the issue is the second literal in the trace (the one that got simplified)
+        // refers to a simplification that was applied to a POST-RESOLUTION literal,
+        // not the original literal.
+        assert_eq!(
+            traces.len(),
+            long_literal_count,
+            "Trace should have same length as long clause literals"
+        );
+
+        // Find the simplification trace entry
+        let simp_trace_idx = traces
+            .iter()
+            .position(|t| matches!(t, LiteralTrace::Eliminated { step, .. } if *step == 1));
+        let simp_trace_idx = simp_trace_idx.expect("Expected to find simplification trace entry");
+
+        // The simplification was applied to literal at index `simp_trace_idx` of the long clause.
+        // The trace says: "literal simp_trace_idx was eliminated by simp_step".
+        //
+        // For reconstruction to work, the original literal must be unifiable with the
+        // simplification literal. But the simplification was actually done on the
+        // POST-resolution literal (with the unifier applied), not the original.
+        //
+        // The invariant we check: can the original literal and simplification literal
+        // actually be unified? If they can't, the trace is inconsistent and reconstruction
+        // will fail.
+
+        let original_literal = &long_clause_for_reconstruction.literals[simp_trace_idx];
+        let simp_literal = &simp_step.clause.literals[0];
+
+        // Try to unify the original literal with the simplification literal.
+        // This is what reconstruct_trace does.
+        use crate::kernel::variable_map::VariableMap;
+        let original_context = long_clause_for_reconstruction.get_local_context();
+        let simp_context = simp_step.clause.get_local_context();
+
+        let mut var_map = VariableMap::new();
+        let can_match_left = var_map.match_terms(
+            simp_literal.left.as_ref(),
+            original_literal.left.as_ref(),
+            simp_context,
+            original_context,
+            &kctx,
+        );
+        let can_match_right = can_match_left
+            && var_map.match_terms(
+                simp_literal.right.as_ref(),
+                original_literal.right.as_ref(),
+                simp_context,
+                original_context,
+                &kctx,
+            );
+
+        // This assertion should pass if the trace is consistent.
+        // Currently it fails because the trace references a simplification that was
+        // done on the post-resolution literal, not the original literal.
+        assert!(
+            can_match_right,
+            "Trace is inconsistent: the simplification clause cannot be unified with the \
+             original literal it claims to eliminate.\n\
+             Original literal: {}\n\
+             Simplification literal: {}\n\
+             This is the bug: ResolutionInfo doesn't store post-resolution literals, \
+             so reconstruct_trace uses the original long clause literals which don't \
+             match the simplifications that were applied to the post-resolution literals.",
+            original_literal, simp_literal
+        );
+    }
+}
