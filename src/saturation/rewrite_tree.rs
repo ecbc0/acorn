@@ -193,6 +193,24 @@ impl RewriteTree {
             right.collect_structural_var_ids(&mut structural_var_ids);
             left.collect_structural_var_ids(&mut structural_var_ids);
 
+            // Also collect type variables that only appear in the types of structural variables.
+            // These "phantom" type variables don't appear in terms but are needed when remapping
+            // the context. We iterate until no new variables are found.
+            let mut i = 0;
+            while i < structural_var_ids.len() {
+                let var_id = structural_var_ids[i];
+                if let Some(var_type) = reversed_context.get_var_type(var_id as usize) {
+                    for atom in var_type.iter_atoms() {
+                        if let KernelAtom::FreeVariable(dep_id) = atom {
+                            if !structural_var_ids.contains(dep_id) {
+                                structural_var_ids.push(*dep_id);
+                            }
+                        }
+                    }
+                }
+                i += 1;
+            }
+
             // Renumber variables in both terms
             right.apply_var_renumbering(&structural_var_ids, &[]);
             left.apply_var_renumbering(&structural_var_ids, &[]);
