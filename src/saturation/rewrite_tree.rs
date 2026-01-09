@@ -597,4 +597,78 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_rewrite_tree_function_typed_pattern_variable() {
+        // Test backwards rewriting with function-typed pattern variables.
+        // This is the "compose" pattern: compose(T, U, V, f: U->V, g: T->U)(x: T) = f(g(x))
+        //
+        // Pattern: g0(T, U, V, f, g, x) = f(g(x))
+        //   where T: Type, U: Type, V: Type
+        //   f: U -> V
+        //   g: T -> U
+        //   x: T
+        //
+        // Query: c0(c1(c2)) where c0: Foo -> Foo, c1: Foo -> Foo, c2: Foo
+        // Backwards rewrite should produce: g0(Foo, Foo, Foo, c0, c1, c2)
+        //
+        // The bug: when pattern variable f has type (U -> V), we need to infer
+        // U and V from the type of the matched term c0. Currently build_bindings
+        // only infers type variables when the pattern variable's type IS a type
+        // variable, not when it CONTAINS type variables.
+
+        let mut kctx = KernelContext::new();
+        kctx.parse_datatype("Foo");
+        // g0 = compose: (T: Type) -> (U: Type) -> (V: Type) -> (U -> V) -> (T -> U) -> T -> V
+        kctx.parse_polymorphic_constant(
+            "g0",
+            "T: Type, U: Type, V: Type",
+            "(U -> V) -> (T -> U) -> T -> V",
+        );
+        kctx.parse_constant("c0", "Foo -> Foo"); // like h
+        kctx.parse_constant("c1", "Foo -> Foo"); // like k
+        kctx.parse_constant("c2", "Foo");        // like y
+
+        let mut tree = RewriteTree::new();
+
+        // Pattern: g0(x0, x1, x2, x3, x4, x5) = x3(x4(x5))
+        // where x0: Type, x1: Type, x2: Type, x3: (x1 -> x2), x4: (x0 -> x1), x5: x0
+        let pattern_clause = kctx.parse_clause(
+            "g0(x0, x1, x2, x3, x4, x5) = x3(x4(x5))",
+            &["Type", "Type", "Type", "x1 -> x2", "x0 -> x1", "x0"],
+        );
+        tree.insert_literal(
+            0,
+            &pattern_clause.literals[0],
+            pattern_clause.get_local_context(),
+            &kctx,
+        );
+
+        // Query: c0(c1(c2)) (for backwards rewrite)
+        let query_lctx = kctx.parse_local(&[]);
+        let query_term = kctx.parse_term("c0(c1(c2))");
+        let rewrites = tree.get_rewrites(&query_term, 0, &query_lctx, &kctx);
+
+        // Should find a backwards rewrite
+        let backwards_rewrites: Vec<_> = rewrites.iter().filter(|r| !r.forwards).collect();
+        assert!(
+            !backwards_rewrites.is_empty(),
+            "Should find at least one backwards rewrite"
+        );
+
+        // Verify the rewritten term is well-typed (this is where the bug manifests)
+        for rewrite in &backwards_rewrites {
+            // This should not panic - if type variables weren't properly inferred,
+            // get_type_with_context will fail with "Function type expected"
+            let term_type = rewrite.term.get_type_with_context(&rewrite.context, &kctx);
+
+            // The result should have type Foo (same as c0(c1(c2)))
+            let expected_type = kctx.parse_type("Foo");
+            assert_eq!(
+                term_type, expected_type,
+                "Backwards rewrite of c0(c1(c2)) should have type Foo. Term: {}. Context: {:?}",
+                rewrite.term, rewrite.context.get_var_types()
+            );
+        }
+    }
 }
