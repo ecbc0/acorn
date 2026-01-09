@@ -910,14 +910,21 @@ impl NormalizerView<'_> {
         // Convert FreeVariables in value argument types to BoundVariables.
         // Type parameter kinds (TypeSort/Typeclass) don't need conversion.
         // In non-polymorphic mode, num_type_params is 0 so conversion is a no-op.
+        //
+        // Each arg type is converted at a depth that accounts for how many OTHER
+        // non-type-param arg Pis will enclose it in the final type structure.
+        // For arg at position i (0-indexed among non-type-param args), depth = i.
         let num_type_params = self.type_var_map().map_or(0, |m| m.len()) as u16;
+        let mut non_type_param_index = 0u16;
         let arg_type_terms: Vec<Term> = arg_type_terms
             .into_iter()
             .map(|t| {
                 if t.as_ref().is_type_param_kind() {
                     t // Type parameter kinds don't need conversion
                 } else {
-                    t.convert_free_to_bound(num_type_params)
+                    let depth = non_type_param_index;
+                    non_type_param_index += 1;
+                    t.convert_free_to_bound_with_depth(num_type_params, depth)
                 }
             })
             .collect();

@@ -449,7 +449,11 @@ impl TypeStore {
                 vec![] // Skip type parameter kinds (they're not value arguments)
             } else {
                 // Process input at current local depth (input is before entering this Pi's binder)
-                vec![self.type_term_to_acorn_type_with_local(&input_owned, outer_depth, local_depth)]
+                vec![self.type_term_to_acorn_type_with_local(
+                    &input_owned,
+                    outer_depth,
+                    local_depth,
+                )]
             };
 
             // Track depths:
@@ -484,8 +488,11 @@ impl TypeStore {
             }
 
             // Process return type at current depths
-            let return_type =
-                self.type_term_to_acorn_type_with_local(&current_output, current_outer, current_local);
+            let return_type = self.type_term_to_acorn_type_with_local(
+                &current_output,
+                current_outer,
+                current_local,
+            );
 
             // If we skipped all type arguments, just return the return type
             // (this happens with polymorphic constants that only have type params)
@@ -504,7 +511,8 @@ impl TypeStore {
         if let Some((head, args)) = type_term.as_ref().split_application_multi() {
             // Type application like List[Int]
             // Extract the datatype from head (must be a ground type)
-            let base_type = self.type_term_to_acorn_type_with_local(&head, outer_depth, local_depth);
+            let base_type =
+                self.type_term_to_acorn_type_with_local(&head, outer_depth, local_depth);
             let datatype = match &base_type {
                 AcornType::Data(dt, params) if params.is_empty() => dt.clone(),
                 _ => panic!(
@@ -529,10 +537,25 @@ impl TypeStore {
                 // BoundVariable(i) at local_depth d refers to:
                 // - If i < d: a function argument binder (shouldn't happen for types in type positions)
                 // - If i >= d: an outer binder at index (i - d), which is a type parameter
-                let type_param_index = if *i >= local_depth {
-                    *i - local_depth
+                //
+                // De Bruijn indices go innermost to outermost, but type params are numbered
+                // outermost to innermost (T0, T1, ...). So we need to invert:
+                // - outer_index = i - local_depth (which outer binder, 0 = innermost skipped)
+                // - type_param_index = (outer_depth - 1) - outer_index
+                //
+                // Example: 2 type params (outer_depth = 2)
+                // - BoundVariable(0) at local_depth 0: outer_index = 0, type_param_index = 1 (T1)
+                // - BoundVariable(1) at local_depth 0: outer_index = 1, type_param_index = 0 (T0)
+                let type_param_index = if *i >= local_depth && outer_depth > 0 {
+                    let outer_index = *i - local_depth;
+                    if outer_index < outer_depth {
+                        outer_depth - 1 - outer_index
+                    } else {
+                        // Refers to something beyond the skipped type params
+                        outer_index
+                    }
                 } else {
-                    // This shouldn't happen in well-formed types, but handle it gracefully
+                    // Fallback for i < local_depth (shouldn't happen in well-formed types)
                     *i
                 };
                 let type_param = TypeParam {
@@ -1079,7 +1102,11 @@ mod tests {
                 match &ft.arg_types[0] {
                     AcornType::Function(inner_ft) => {
                         // Should have 2 arguments, both T0
-                        assert_eq!(inner_ft.arg_types.len(), 2, "Inner function should have 2 args");
+                        assert_eq!(
+                            inner_ft.arg_types.len(),
+                            2,
+                            "Inner function should have 2 args"
+                        );
 
                         // Both args should be T0 (same type variable)
                         for (i, arg) in inner_ft.arg_types.iter().enumerate() {

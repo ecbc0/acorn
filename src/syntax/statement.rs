@@ -527,7 +527,12 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> 
                 // This is a parenthesized let..satisfy.
                 // Type params were already parsed above (if any).
                 let (declarations, _) = parse_args(tokens, TokenType::Satisfy)?;
-                return complete_variable_satisfy(keyword, tokens, shared_type_params, declarations);
+                return complete_variable_satisfy(
+                    keyword,
+                    tokens,
+                    shared_type_params,
+                    declarations,
+                );
             }
         }
         None => return Err(tokens.error("unexpected end of file")),

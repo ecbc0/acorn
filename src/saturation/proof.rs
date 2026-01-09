@@ -337,7 +337,10 @@ impl<'a> Proof<'a> {
                         eprintln!("DEBUG: Unification failed!");
                         eprintln!("  from_pat: {}", from_pat);
                         eprintln!("  target_subterm: {}", target_subterm);
-                        eprintln!("  pattern context: {:?}", pattern_clause.get_local_context());
+                        eprintln!(
+                            "  pattern context: {:?}",
+                            pattern_clause.get_local_context()
+                        );
                         eprintln!("  target context: {:?}", target_clause.get_local_context());
                         panic!("unification failed");
                     }
