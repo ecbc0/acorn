@@ -415,7 +415,7 @@ async fn main() {
                 }
             };
 
-            match project.handle_selection(&path, line) {
+            match project.handle_selection(&path, line - 1) {
                 Ok((goal_infos, _range)) => {
                     if goal_infos.is_empty() {
                         println!("No goals found at this location.");
