@@ -333,7 +333,14 @@ impl<'a> Proof<'a> {
                     unifier.set_input_context(pattern_scope, pattern_clause.get_local_context());
                     let target_scope = unifier.add_scope();
                     unifier.set_input_context(target_scope, target_clause.get_local_context());
-                    assert!(unifier.unify(pattern_scope, from_pat, target_scope, &target_subterm));
+                    if !unifier.unify(pattern_scope, from_pat, target_scope, &target_subterm) {
+                        eprintln!("DEBUG: Unification failed!");
+                        eprintln!("  from_pat: {}", from_pat);
+                        eprintln!("  target_subterm: {}", target_subterm);
+                        eprintln!("  pattern context: {:?}", pattern_clause.get_local_context());
+                        eprintln!("  target context: {:?}", target_clause.get_local_context());
+                        panic!("unification failed");
+                    }
                     assert!(unifier.unify(pattern_scope, to_pat, conc_scope, &rewritten_subterm));
 
                     // Report the concrete pattern

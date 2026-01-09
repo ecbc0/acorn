@@ -392,6 +392,28 @@ impl TypeStore {
     /// Convert a type Term back to an AcornType.
     /// This is the inverse of `to_type_term`.
     pub fn type_term_to_acorn_type(&self, type_term: &Term) -> AcornType {
+        self.type_term_to_acorn_type_impl(type_term, 0)
+    }
+
+    /// Helper for type_term_to_acorn_type that tracks depth.
+    ///
+    /// `outer_depth` is the number of type param Pis we've skipped at the outer level.
+    /// `local_depth` is the number of Pi binders we've entered within the current function type.
+    ///
+    /// For BoundVariable(i):
+    /// - If i < local_depth: refers to a local function arg binder
+    /// - If i >= local_depth: refers to an outer type param at index (i - local_depth)
+    fn type_term_to_acorn_type_impl(&self, type_term: &Term, outer_depth: u16) -> AcornType {
+        self.type_term_to_acorn_type_with_local(&type_term, outer_depth, 0)
+    }
+
+    /// Inner helper that also tracks local depth within function types.
+    fn type_term_to_acorn_type_with_local(
+        &self,
+        type_term: &Term,
+        outer_depth: u16,
+        local_depth: u16,
+    ) -> AcornType {
         // Check for built-in types first
         if type_term.as_ref().is_bool_type() {
             return AcornType::Bool;
@@ -421,24 +443,49 @@ impl TypeStore {
             // But Pi(Type, ...) and Pi(Typeclass, ...) are dependent types for polymorphic functions
             // - skip type parameter kinds since they're not value arguments
             let input_owned = input.to_owned();
-            let mut arg_types = if input_owned.as_ref().is_type_param_kind() {
+            let is_type_param = input_owned.as_ref().is_type_param_kind();
+
+            let mut arg_types = if is_type_param {
                 vec![] // Skip type parameter kinds (they're not value arguments)
             } else {
-                vec![self.type_term_to_acorn_type(&input_owned)]
+                // Process input at current local depth (input is before entering this Pi's binder)
+                vec![self.type_term_to_acorn_type_with_local(&input_owned, outer_depth, local_depth)]
             };
 
-            // Uncurry nested Pi types
+            // Track depths:
+            // - Type param Pis increment outer_depth
+            // - Function arg Pis increment local_depth
+            let (mut current_outer, mut current_local) = if is_type_param {
+                (outer_depth + 1, local_depth)
+            } else {
+                (outer_depth, local_depth + 1)
+            };
             let mut current_output = output.to_owned();
+
+            // Uncurry nested Pi types
             while let Some((next_input, next_output)) = current_output.as_ref().split_pi() {
                 let next_input_owned = next_input.to_owned();
+                let is_next_type_param = next_input_owned.as_ref().is_type_param_kind();
                 // Skip type parameter kinds in nested Pi types too
-                if !next_input_owned.as_ref().is_type_param_kind() {
-                    arg_types.push(self.type_term_to_acorn_type(&next_input_owned));
+                if !is_next_type_param {
+                    // Process input at current local depth
+                    arg_types.push(self.type_term_to_acorn_type_with_local(
+                        &next_input_owned,
+                        current_outer,
+                        current_local,
+                    ));
+                }
+                if is_next_type_param {
+                    current_outer += 1;
+                } else {
+                    current_local += 1;
                 }
                 current_output = next_output.to_owned();
             }
 
-            let return_type = self.type_term_to_acorn_type(&current_output);
+            // Process return type at current depths
+            let return_type =
+                self.type_term_to_acorn_type_with_local(&current_output, current_outer, current_local);
 
             // If we skipped all type arguments, just return the return type
             // (this happens with polymorphic constants that only have type params)
@@ -457,7 +504,7 @@ impl TypeStore {
         if let Some((head, args)) = type_term.as_ref().split_application_multi() {
             // Type application like List[Int]
             // Extract the datatype from head (must be a ground type)
-            let base_type = self.type_term_to_acorn_type(&head);
+            let base_type = self.type_term_to_acorn_type_with_local(&head, outer_depth, local_depth);
             let datatype = match &base_type {
                 AcornType::Data(dt, params) if params.is_empty() => dt.clone(),
                 _ => panic!(
@@ -469,7 +516,7 @@ impl TypeStore {
             // Convert parameter types
             let params: Vec<AcornType> = args
                 .iter()
-                .map(|arg| self.type_term_to_acorn_type(arg))
+                .map(|arg| self.type_term_to_acorn_type_with_local(arg, outer_depth, local_depth))
                 .collect();
 
             return AcornType::Data(datatype, params);
@@ -479,9 +526,17 @@ impl TypeStore {
         // Convert to type variable for display purposes
         if type_term.as_ref().is_atomic() {
             if let Atom::BoundVariable(i) = type_term.as_ref().get_head_atom() {
-                // Create a synthetic type variable for display purposes
+                // BoundVariable(i) at local_depth d refers to:
+                // - If i < d: a function argument binder (shouldn't happen for types in type positions)
+                // - If i >= d: an outer binder at index (i - d), which is a type parameter
+                let type_param_index = if *i >= local_depth {
+                    *i - local_depth
+                } else {
+                    // This shouldn't happen in well-formed types, but handle it gracefully
+                    *i
+                };
                 let type_param = TypeParam {
-                    name: format!("T{}", i),
+                    name: format!("T{}", type_param_index),
                     typeclass: None,
                 };
                 return AcornType::Variable(type_param);
@@ -975,5 +1030,89 @@ mod tests {
             !store.is_instance_of(g_ground_id, bar_tc_id),
             "Arbitrary type G: Foo should NOT be an instance of Bar"
         );
+    }
+
+    #[test]
+    fn test_type_term_to_acorn_type_nested_bound_variables() {
+        // Tests that BoundVariables at different depths in a type term
+        // are correctly identified as referring to the same type parameter.
+        //
+        // The type Pi(Type, Pi(Pi(b0, Pi(b1, Bool)), b1)) represents:
+        //   forall T. ((T -> T -> Bool) -> T)
+        // where b0, b1, and the final b1 all refer to the type parameter T.
+        //
+        // Converting to AcornType should give: ((T0, T0) -> Bool) -> T0
+        // NOT: ((T0, T1) -> Bool) -> T1 (which would incorrectly treat them as different params)
+
+        use super::*;
+        use crate::kernel::atom::Atom;
+        use crate::kernel::term::Term;
+
+        let store = TypeStore::new();
+
+        // Build Pi(Type, Pi(Pi(b0, Pi(b1, Bool)), b1))
+        // Start from the inside out:
+        // - Bool
+        let bool_term = Term::bool_type();
+        // - Pi(b1, Bool) - b1 at this depth (inside Pi(b0, ...)) refers to outer Type
+        let b1 = Term::atom(Atom::BoundVariable(1));
+        let pi_b1_bool = Term::pi(b1.clone(), bool_term);
+        // - Pi(b0, Pi(b1, Bool)) - b0 at this depth refers to outer Type
+        let b0 = Term::atom(Atom::BoundVariable(0));
+        let arg_type = Term::pi(b0, pi_b1_bool);
+        // - Pi(arg_type, b1) - b1 at this depth (output of middle Pi) refers to Type
+        let middle_pi = Term::pi(arg_type, b1);
+        // - Pi(Type, middle_pi)
+        let type_sort = Term::type_sort();
+        let full_type = Term::pi(type_sort, middle_pi);
+
+        // Convert to AcornType
+        let acorn_type = store.type_term_to_acorn_type(&full_type);
+
+        // Verify the structure: ((T0, T0) -> Bool) -> T0
+        match &acorn_type {
+            AcornType::Function(ft) => {
+                // Should have 1 argument (the function (T0, T0) -> Bool)
+                assert_eq!(ft.arg_types.len(), 1, "Expected 1 arg type");
+
+                // The argument should be a function type
+                match &ft.arg_types[0] {
+                    AcornType::Function(inner_ft) => {
+                        // Should have 2 arguments, both T0
+                        assert_eq!(inner_ft.arg_types.len(), 2, "Inner function should have 2 args");
+
+                        // Both args should be T0 (same type variable)
+                        for (i, arg) in inner_ft.arg_types.iter().enumerate() {
+                            match arg {
+                                AcornType::Variable(tp) => {
+                                    assert_eq!(
+                                        tp.name, "T0",
+                                        "Arg {} should be T0, got {}",
+                                        i, tp.name
+                                    );
+                                }
+                                _ => panic!("Expected Variable, got {:?}", arg),
+                            }
+                        }
+
+                        // Return type should be Bool
+                        assert!(
+                            matches!(*inner_ft.return_type, AcornType::Bool),
+                            "Inner return should be Bool"
+                        );
+                    }
+                    _ => panic!("Expected inner Function type, got {:?}", ft.arg_types[0]),
+                }
+
+                // Return type should be T0
+                match ft.return_type.as_ref() {
+                    AcornType::Variable(tp) => {
+                        assert_eq!(tp.name, "T0", "Return type should be T0, got {}", tp.name);
+                    }
+                    _ => panic!("Expected return Variable, got {:?}", ft.return_type),
+                }
+            }
+            _ => panic!("Expected Function type, got {:?}", acorn_type),
+        }
     }
 }

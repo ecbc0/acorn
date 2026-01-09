@@ -638,34 +638,45 @@ impl CodeGenerator<'_> {
                 rename_map.insert(old_name.clone(), new_name);
             }
 
+            // Build the type params string (shared across all synthetics)
+            let type_params_str = if type_param_names.is_empty() {
+                String::new()
+            } else {
+                let param_strs: Vec<String> = type_param_names
+                    .iter()
+                    .zip(type_param_constraints.iter())
+                    .map(|(name, constraint)| {
+                        if let Some(tc_name) = constraint {
+                            format!("{}: {}", name, tc_name)
+                        } else {
+                            name.clone()
+                        }
+                    })
+                    .collect();
+                format!("[{}]", param_strs.join(", "))
+            };
+
             // Create code for the declaration with renamed types
             let mut decl_parts = vec![];
             for (name, ty) in &decl {
                 let renamed_ty = rename_type_vars_in_type(ty, &rename_map);
                 let ty_code = self.type_to_code(&renamed_ty)?;
-                // Add type parameters to the name if there are any
-                let name_with_params = if type_param_names.is_empty() {
-                    name.clone()
-                } else {
-                    // Format each type param with its constraint (if any)
-                    let param_strs: Vec<String> = type_param_names
-                        .iter()
-                        .zip(type_param_constraints.iter())
-                        .map(|(name, constraint)| {
-                            if let Some(tc_name) = constraint {
-                                format!("{}: {}", name, tc_name)
-                            } else {
-                                name.clone()
-                            }
-                        })
-                        .collect();
-                    format!("{}[{}]", name, param_strs.join(", "))
-                };
-                decl_parts.push(format!("{}: {}", name_with_params, ty_code));
+                decl_parts.push(format!("{}: {}", name, ty_code));
             }
+
+            // For single synthetic: let s0[T0]: type satisfy { ... }
+            // For multiple synthetics: let [T0] (s0: type0, s1: type1) satisfy { ... }
             let decl_str = if decl_parts.len() > 1 {
-                format!("({})", decl_parts.join(", "))
+                // Multiple synthetics: type params go before the tuple
+                format!("{} ({})", type_params_str, decl_parts.join(", "))
+            } else if !type_params_str.is_empty() {
+                // Single synthetic with type params: type params go after the name
+                let (name, ty) = &decl[0];
+                let renamed_ty = rename_type_vars_in_type(ty, &rename_map);
+                let ty_code = self.type_to_code(&renamed_ty)?;
+                format!("{}{}: {}", name, type_params_str, ty_code)
             } else {
+                // Single synthetic without type params
                 decl_parts.join("")
             };
 

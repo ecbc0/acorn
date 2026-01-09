@@ -930,10 +930,13 @@ impl NormalizerView<'_> {
             // Convert the result type to a Term.
             // to_type_term_with_vars creates FreeVariable(i) for type parameter i,
             // but inside the Pi type, these should be BoundVariable(n-1-i).
+            // The result will be wrapped inside (arg_type_terms.len() - num_type_params) non-type-param
+            // Pis before the type param Pis. So convert at that depth.
+            let non_type_param_args = arg_type_terms.len() - num_type_params as usize;
             let result_type_term = self
                 .type_store()
                 .to_type_term_with_vars(t, self.type_var_map())
-                .convert_free_to_bound(num_type_params);
+                .convert_free_to_bound_with_depth(num_type_params, non_type_param_args as u16);
 
             // Build the function type as a Term: arg1 -> arg2 -> ... -> result
             // using Term::pi for curried form

@@ -358,7 +358,7 @@ impl<'a> TermRef<'a> {
                 let func_type = func.get_type_with_context(local_context, kernel_context);
                 // For dependent types, we need to substitute the argument into the output type
                 let arg_term = arg.to_owned();
-                func_type.type_apply_with_arg(&arg_term).unwrap_or_else(|| {
+                let result = func_type.type_apply_with_arg(&arg_term).unwrap_or_else(|| {
                     panic!(
                         "Function type expected but not found during type application.\n\
                          func = {}\n\
@@ -367,7 +367,8 @@ impl<'a> TermRef<'a> {
                          self = {}",
                         func, func_type, arg, self
                     )
-                })
+                });
+                result
             }
             Decomposition::Pi(_, _) => {
                 // Pi types are themselves types - this is used when the term IS a type
@@ -2117,24 +2118,38 @@ impl Term {
     ///
     /// After calling this, the term can be wrapped with n Pi types for the type parameters.
     pub fn convert_free_to_bound(&self, num_type_params: u16) -> Term {
+        self.convert_free_to_bound_with_depth(num_type_params, 0)
+    }
+
+    /// Convert FreeVariables to BoundVariables with explicit depth.
+    ///
+    /// Use this when the converted term will be placed inside `depth` additional
+    /// Pi binders before wrapping with type param Pis. For example, if building
+    /// a function type `arg -> result` and then wrapping with type params, the
+    /// result type should be converted with depth=1.
+    pub fn convert_free_to_bound_with_depth(&self, num_type_params: u16, depth: u16) -> Term {
         if num_type_params == 0 {
             return self.clone();
         }
-        self.convert_free_to_bound_impl(num_type_params)
+        self.convert_free_to_bound_at_depth(num_type_params, depth)
     }
 
-    fn convert_free_to_bound_impl(&self, num_type_params: u16) -> Term {
-        match self.as_ref().decompose() {
+    /// Convert FreeVariables to BoundVariables, accounting for binding depth.
+    /// `depth` is the number of Pi binders we've entered (excluding the ones we'll add for type params).
+    fn convert_free_to_bound_at_depth(&self, num_type_params: u16, depth: u16) -> Term {
+        let result = match self.as_ref().decompose() {
             Decomposition::Atom(atom) => {
                 match atom {
                     Atom::FreeVariable(i) if *i < num_type_params => {
-                        // FreeVariable(i) -> BoundVariable(n-1-i)
-                        // This places type param 0 at the outermost binder position
-                        let bound_id = num_type_params - 1 - *i;
+                        // FreeVariable(i) -> BoundVariable at appropriate depth
+                        // The type params will be added as outer Pi binders.
+                        // At the current depth, we need to skip `depth` binders to reach the type params.
+                        // Type param 0 is the outermost, so it's at index (depth + num_type_params - 1 - i)
+                        let bound_id = depth + num_type_params - 1 - *i;
                         Term::atom(Atom::BoundVariable(bound_id))
                     }
                     Atom::BoundVariable(i) => {
-                        // Shift existing BoundVariables up to make room for new binders
+                        // Shift existing BoundVariables up to make room for new type param binders
                         Term::atom(Atom::BoundVariable(*i + num_type_params))
                     }
                     _ => self.clone(),
@@ -2143,18 +2158,21 @@ impl Term {
             Decomposition::Application(func_ref, arg_ref) => {
                 let func = func_ref.to_owned();
                 let arg = arg_ref.to_owned();
-                let new_func = func.convert_free_to_bound_impl(num_type_params);
-                let new_arg = arg.convert_free_to_bound_impl(num_type_params);
+                let new_func = func.convert_free_to_bound_at_depth(num_type_params, depth);
+                let new_arg = arg.convert_free_to_bound_at_depth(num_type_params, depth);
                 new_func.apply(&[new_arg])
             }
             Decomposition::Pi(input_ref, output_ref) => {
                 let input = input_ref.to_owned();
                 let output = output_ref.to_owned();
-                let new_input = input.convert_free_to_bound_impl(num_type_params);
-                let new_output = output.convert_free_to_bound_impl(num_type_params);
+                // Input is at the same depth
+                let new_input = input.convert_free_to_bound_at_depth(num_type_params, depth);
+                // Output is one level deeper due to the Pi's binder
+                let new_output = output.convert_free_to_bound_at_depth(num_type_params, depth + 1);
                 Term::pi(new_input, new_output)
             }
-        }
+        };
+        result
     }
 }
 

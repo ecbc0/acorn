@@ -510,13 +510,24 @@ fn complete_variable_satisfy(
 /// Parses a statement where the "let" keyword has already been found.
 /// This might not be a LetStatement because multiple statement types can start with "let".
 fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> Result<Statement> {
+    // Check for shared type params at the start: let [T0] (s0: ..., s1: ...) satisfy { ... }
+    let shared_type_params = match tokens.peek() {
+        Some(token)
+            if token.token_type == TokenType::LeftBracket
+                || token.token_type == TokenType::LessThan =>
+        {
+            TypeParamExpr::parse_list(tokens)?
+        }
+        _ => vec![],
+    };
+
     match tokens.peek() {
         Some(token) => {
             if token.token_type == TokenType::LeftParen {
                 // This is a parenthesized let..satisfy.
-                // No type params for multi-variable satisfy.
+                // Type params were already parsed above (if any).
                 let (declarations, _) = parse_args(tokens, TokenType::Satisfy)?;
-                return complete_variable_satisfy(keyword, tokens, vec![], declarations);
+                return complete_variable_satisfy(keyword, tokens, shared_type_params, declarations);
             }
         }
         None => return Err(tokens.error("unexpected end of file")),
