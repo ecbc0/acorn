@@ -1524,10 +1524,24 @@ impl NormalizerView<'_> {
             .get_type(Symbol::Synthetic(skolem_id))
             .clone();
 
-        // Create the definition for this synthetic term
-        let skolem_value = self
-            .as_ref()
-            .denormalize_term(&skolem_term, context, None, None, None);
+        // Create the definition for this synthetic term.
+        // Build a var_remapping to convert term var_ids to stack positions.
+        // The stack uses 0-based position indexing, but term variables use unique IDs.
+        // When denormalizing, FreeVariable(id) needs to become Variable(stack_position).
+        let max_var_id = stack
+            .iter()
+            .filter_map(|b| b.term().as_ref().atomic_variable())
+            .max()
+            .unwrap_or(0) as usize;
+        let mut var_remapping: Vec<Option<u16>> = vec![None; max_var_id + 1];
+        for (pos, binding) in stack.iter().enumerate() {
+            if let Some(var_id) = binding.term().as_ref().atomic_variable() {
+                var_remapping[var_id as usize] = Some(pos as u16);
+            }
+        }
+        let skolem_value =
+            self.as_ref()
+                .denormalize_term(&skolem_term, context, None, Some(&var_remapping), None);
         let definition_cnf = self.eq_to_cnf(
             &skolem_value,
             value,
@@ -1711,7 +1725,11 @@ impl NormalizerView<'_> {
                 let mut seen_vars = std::collections::HashSet::new();
 
                 // Collect free variables from the condition literal
+                // Skip type parameters (TypeSort or Typeclass) - they're not value arguments
                 for (var_id, closed_type) in cond_lit.left.collect_vars(local_context) {
+                    if closed_type.as_ref().is_type_param_kind() {
+                        continue;
+                    }
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(var_id);
                         args.push(var_term);
@@ -1719,6 +1737,9 @@ impl NormalizerView<'_> {
                     }
                 }
                 for (var_id, closed_type) in cond_lit.right.collect_vars(local_context) {
+                    if closed_type.as_ref().is_type_param_kind() {
+                        continue;
+                    }
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(var_id);
                         args.push(var_term);
@@ -1728,6 +1749,9 @@ impl NormalizerView<'_> {
 
                 // Collect free variables from the then branch
                 for (var_id, closed_type) in then_term.collect_vars(local_context) {
+                    if closed_type.as_ref().is_type_param_kind() {
+                        continue;
+                    }
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(var_id);
                         args.push(var_term);
@@ -1737,6 +1761,9 @@ impl NormalizerView<'_> {
 
                 // Collect free variables from the else branch
                 for (var_id, closed_type) in else_term.collect_vars(local_context) {
+                    if closed_type.as_ref().is_type_param_kind() {
+                        continue;
+                    }
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(var_id);
                         args.push(var_term);
@@ -1846,11 +1873,16 @@ impl NormalizerView<'_> {
                     context,
                 )
             }
-            AcornValue::Variable(i, _) => {
+            AcornValue::Variable(i, var_type) => {
                 if (*i as usize) < stack.len() {
                     Ok(ExtendedTerm::Term(stack[*i as usize].term().clone()))
                 } else {
-                    Err(format!("variable {} out of range in extended term", i))
+                    Err(format!(
+                        "variable {} (type {}) out of range in extended term (stack len {})",
+                        i,
+                        var_type,
+                        stack.len()
+                    ))
                 }
             }
             AcornValue::Constant(c) => {
@@ -1896,9 +1928,10 @@ impl NormalizerView<'_> {
                 }
 
                 // Evaluate the body with the lambda arguments on the stack
-                let body_term = self
-                    .value_to_extended_term(body, stack, next_var_id, synth, context)?
-                    .to_term()?;
+                let body_ext =
+                    self.value_to_extended_term(body, stack, next_var_id, synth, context)?;
+                // Convert to Term, synthesizing if needed for If expressions
+                let body_term = self.extended_term_to_term(body_ext, context, synth)?;
 
                 // Pop the lambda arguments from the stack
                 for _ in arg_types {

@@ -425,13 +425,18 @@ impl<'a> Unifier<'a> {
         } else {
             // Normal type unification (no typeclass constraint)
             let term_type = term.get_type_with_context(&self.output_context, self.kernel_context);
-            if !self.unify_internal(
-                var_scope,
-                var_type.as_ref(),
-                Scope::OUTPUT,
-                term_type.as_ref(),
-            ) {
-                return false;
+            // Skip type unification if the term type has BoundVariables (polymorphic type).
+            // BoundVariables indicate a polymorphic type that hasn't been fully instantiated,
+            // and we can't meaningfully unify such types in this context.
+            if !term_type.has_bound_variable() {
+                if !self.unify_internal(
+                    var_scope,
+                    var_type.as_ref(),
+                    Scope::OUTPUT,
+                    term_type.as_ref(),
+                ) {
+                    return false;
+                }
             }
         }
 

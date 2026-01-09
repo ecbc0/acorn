@@ -410,3 +410,43 @@ fn test_conjunction_goal() {
 //     "#;
 //     verify_succeeds(text);
 // }
+
+// This test exercises bugs where structures with methods containing
+// nested lambdas with if-then-else expressions would crash during normalization.
+// The issues were:
+// 1. Lambda bodies containing IfThenElse weren't being converted to Terms properly
+//    (the Lambda case called .to_term() but IfThenElse returns ExtendedTerm::If)
+// 2. Type parameters were incorrectly being collected as value arguments for
+//    synthesized atoms representing if-expressions
+#[test]
+#[cfg(feature = "polymorphic")]
+fn test_lambda_with_if_then_else() {
+    // Test that definitions with if-then-else inside lambdas are processed correctly.
+    let text = r#"
+    type Nat: axiom
+    let zero: Nat = axiom
+    let suc: Nat -> Nat = axiom
+
+    structure Counter {
+        count: Bool -> Nat
+    }
+
+    define increment(counter: Counter, item: Bool) -> Counter {
+        Counter.new(function(x: Bool) {
+            if x = item {
+                suc(counter.count(x))
+            } else {
+                counter.count(x)
+            }
+        })
+    }
+
+    let c: Counter = axiom
+
+    // Verify the increment function can be used
+    theorem goal {
+        increment(c, true) = increment(c, true)
+    }
+    "#;
+    verify_succeeds(text);
+}
