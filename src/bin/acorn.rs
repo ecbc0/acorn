@@ -145,6 +145,10 @@ enum Command {
             value_name = "MODEL_DIR"
         )]
         generative: Option<String>,
+
+        /// Exit immediately on the first verification failure
+        #[clap(long, help = "Exit immediately on the first verification failure.")]
+        fail_fast: bool,
     },
 
     /// Display proof details for a specific line
@@ -334,6 +338,7 @@ async fn main() {
             target,
             line,
             generative,
+            fail_fast,
         }) => {
             // Create a config that disables both reading and writing to the cache
             let config = ProjectConfig {
@@ -364,6 +369,7 @@ async fn main() {
             verifier.line = line;
             verifier.builder.reverify = false; // Run search like verify does
             verifier.builder.check_hashes = false; // Don't skip based on hashes
+            verifier.exit_on_warning = fail_fast;
 
             match verifier.run() {
                 Err(e) => {
