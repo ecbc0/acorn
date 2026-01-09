@@ -45,14 +45,57 @@ pub struct Rewrite {
     pub context: LocalContext,
 }
 
+/// Recursively extracts type variable bindings by matching a pattern type against a concrete type.
+///
+/// For example, if pattern_type is `Pi(x1, x2)` (a function from x1 to x2) and
+/// concrete_type is `Pi(Foo, Foo)`, this will bind x1 -> Foo and x2 -> Foo.
+fn extract_type_bindings(
+    pattern_type: TermRef,
+    concrete_type: TermRef,
+    bindings: &mut HashMap<AtomId, Term>,
+) {
+    match pattern_type.decompose() {
+        Decomposition::Atom(KernelAtom::FreeVariable(var_id)) => {
+            // Pattern type is a type variable - bind it if not already bound
+            if !bindings.contains_key(var_id) {
+                bindings.insert(*var_id, concrete_type.to_owned());
+            }
+        }
+        Decomposition::Pi(pattern_input, pattern_output) => {
+            // Pattern type is a function type - recursively match input and output
+            if let Decomposition::Pi(concrete_input, concrete_output) = concrete_type.decompose() {
+                extract_type_bindings(pattern_input, concrete_input, bindings);
+                extract_type_bindings(pattern_output, concrete_output, bindings);
+            }
+        }
+        Decomposition::Application(pattern_func, pattern_arg) => {
+            // Pattern type is an applied type constructor like List[x0]
+            // Decomposition gives (func, last_arg) for curried applications
+            if let Decomposition::Application(concrete_func, concrete_arg) =
+                concrete_type.decompose()
+            {
+                // Recursively match both the function part and the argument
+                extract_type_bindings(pattern_func, concrete_func, bindings);
+                extract_type_bindings(pattern_arg, concrete_arg, bindings);
+            }
+        }
+        Decomposition::Atom(_) => {
+            // Pattern type is a concrete atom (not a variable) - nothing to bind
+        }
+    }
+}
+
 /// Builds bindings from structural replacements, including inferred type variable bindings.
 ///
-/// When a pattern variable's type is itself a type variable, and we've matched
-/// the pattern variable to a concrete term, we can infer the type variable's
-/// value from the matched term's type.
+/// When a pattern variable's type contains type variables, and we've matched
+/// the pattern variable to a concrete term, we can infer the type variables'
+/// values from the matched term's type.
 ///
-/// Example: Pattern variable x0 has type x1 where x1: Type.
-/// If we match x0 → c1 where c1: T1, then x1 should be bound to T1.
+/// Example 1: Pattern variable x0 has type x1 where x1: Type.
+/// If we match x0 → c1 where c1: Foo, then x1 should be bound to Foo.
+///
+/// Example 2: Pattern variable x0 has type (x1 -> x2) where x1, x2: Type.
+/// If we match x0 → f where f: Foo -> Bar, then x1 -> Foo and x2 -> Bar.
 ///
 /// Returns a HashMap mapping pattern variable IDs to their replacement terms.
 fn build_bindings(
@@ -71,18 +114,10 @@ fn build_bindings(
     // Infer type variable bindings from the types of matched terms
     for (i, replacement) in structural_replacements.iter().enumerate() {
         if let Some(var_type) = pattern_context.get_var_type(i) {
-            // If the pattern variable's type is a FreeVariable (type variable)
-            if let Decomposition::Atom(KernelAtom::FreeVariable(type_var_id)) =
-                var_type.as_ref().decompose()
-            {
-                // Only infer if we haven't already bound this type variable
-                if !bindings.contains_key(type_var_id) {
-                    // Bind the type variable to the type of the matched term
-                    let replacement_type =
-                        replacement.get_type_with_context(query_context, kernel_context);
-                    bindings.insert(*type_var_id, replacement_type);
-                }
-            }
+            // Get the type of the replacement term
+            let replacement_type = replacement.get_type_with_context(query_context, kernel_context);
+            // Recursively extract type variable bindings by matching pattern type to concrete type
+            extract_type_bindings(var_type.as_ref(), replacement_type.as_ref(), &mut bindings);
         }
     }
 
@@ -627,7 +662,7 @@ mod tests {
         );
         kctx.parse_constant("c0", "Foo -> Foo"); // like h
         kctx.parse_constant("c1", "Foo -> Foo"); // like k
-        kctx.parse_constant("c2", "Foo");        // like y
+        kctx.parse_constant("c2", "Foo"); // like y
 
         let mut tree = RewriteTree::new();
 
@@ -665,9 +700,11 @@ mod tests {
             // The result should have type Foo (same as c0(c1(c2)))
             let expected_type = kctx.parse_type("Foo");
             assert_eq!(
-                term_type, expected_type,
+                term_type,
+                expected_type,
                 "Backwards rewrite of c0(c1(c2)) should have type Foo. Term: {}. Context: {:?}",
-                rewrite.term, rewrite.context.get_var_types()
+                rewrite.term,
+                rewrite.context.get_var_types()
             );
         }
     }
