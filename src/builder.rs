@@ -119,6 +119,9 @@ pub struct Builder<'a> {
 
     /// The verb to use in failure messages (e.g., "verified", "reverified", "reproved").
     pub operation_verb: &'static str,
+
+    /// Timeout in seconds for proof search. Defaults to 5.0.
+    pub timeout_secs: f32,
 }
 
 /// Metrics collected during a build.
@@ -348,6 +351,7 @@ impl<'a> Builder<'a> {
             prover_config,
             cert_override: None,
             operation_verb: "verified",
+            timeout_secs: 5.0,
         }
     }
 
@@ -756,7 +760,13 @@ impl<'a> Builder<'a> {
         let processor = Rc::make_mut(&mut processor);
         processor.set_goal(goal, self.project)?;
         let start = std::time::Instant::now();
-        let outcome = processor.search(ProverMode::Interactive, self.project, &env.bindings);
+        let outcome = processor.search(
+            ProverMode::Interactive {
+                timeout_secs: self.timeout_secs,
+            },
+            self.project,
+            &env.bindings,
+        );
         if outcome == Outcome::Success {
             match processor.make_cert(self.project, &env.bindings, self.verbose) {
                 Ok(cert) => {

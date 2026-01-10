@@ -11,10 +11,11 @@ use crate::project::Project;
 use crate::proof_step::ProofStep;
 
 /// Mode controlling proof search behavior
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ProverMode {
     /// About as long as a human is willing to wait for a proof.
-    Interactive,
+    /// The timeout_secs parameter controls how long to search before giving up.
+    Interactive { timeout_secs: f32 },
 
     /// A fast search that only uses shallow steps, for testing.
     Test,

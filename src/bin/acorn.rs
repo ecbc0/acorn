@@ -93,6 +93,14 @@ enum Command {
             help = "Reject any use of the axiom keyword."
         )]
         strict: bool,
+
+        /// Timeout in seconds for proof search (default: 5)
+        #[clap(
+            long,
+            help = "Timeout in seconds for proof search.",
+            value_name = "SECONDS"
+        )]
+        timeout: Option<f32>,
     },
 
     /// Reverify all goals, erroring if any goal requires a search
@@ -149,6 +157,14 @@ enum Command {
         /// Exit immediately on the first verification failure
         #[clap(long, help = "Exit immediately on the first verification failure.")]
         fail_fast: bool,
+
+        /// Timeout in seconds for proof search (default: 5)
+        #[clap(
+            long,
+            help = "Timeout in seconds for proof search.",
+            value_name = "SECONDS"
+        )]
+        timeout: Option<f32>,
     },
 
     /// Display proof details for a specific line
@@ -260,6 +276,7 @@ async fn main() {
             nohash,
             line,
             strict,
+            timeout,
         }) => {
             let mut verifier = match Verifier::new(current_dir, ProjectConfig::default(), target) {
                 Ok(v) => v,
@@ -274,6 +291,9 @@ async fn main() {
             verifier.builder.reverify = false;
             verifier.builder.strict = strict;
             verifier.builder.check_hashes = !nohash && !strict;
+            if let Some(t) = timeout {
+                verifier.builder.timeout_secs = t;
+            }
 
             match verifier.run() {
                 Err(e) => {
@@ -340,6 +360,7 @@ async fn main() {
             line,
             generative,
             fail_fast,
+            timeout,
         }) => {
             // Create a config that disables both reading and writing to the cache
             let config = ProjectConfig {
@@ -372,6 +393,9 @@ async fn main() {
             verifier.builder.check_hashes = false; // Don't skip based on hashes
             verifier.builder.operation_verb = "reproved";
             verifier.exit_on_warning = fail_fast;
+            if let Some(t) = timeout {
+                verifier.builder.timeout_secs = t;
+            }
 
             match verifier.run() {
                 Err(e) => {

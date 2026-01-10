@@ -500,7 +500,7 @@ impl crate::prover::Prover for SaturationProver {
 
         // Convert mode to actual parameters
         let (activation_limit, seconds, shallow_only) = match mode {
-            ProverMode::Interactive => (2000, 5.0, false),
+            ProverMode::Interactive { timeout_secs } => (2000, timeout_secs, false),
             ProverMode::Test => (500, 0.3, true),
         };
         // Special test behavior: if we're in test mode and trying to prove "test_hang",
