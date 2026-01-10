@@ -472,7 +472,8 @@ fn test_typechecking_try_bool_fails() {
 
 #[test]
 fn test_functional_type_inference() {
-    // TODO: this should work without explicitly providing the types for `compose``
+    // Type inference should unify A -> (B -> C) with E -> F by setting E = A and F = B -> C.
+    // This works because un-curried function types are re-curried during unification.
     let mut env = Environment::test();
     env.add(
         r#"
@@ -483,7 +484,7 @@ fn test_functional_type_inference() {
         }
 
         theorem goal[T, V](f: (T -> V) -> V, g: T -> (T -> V)) {
-            compose[T, T -> V, V](f, g) = compose[T, T -> V, V](f, g)
+            compose(f, g) = compose(f, g)
         }
         "#,
     );

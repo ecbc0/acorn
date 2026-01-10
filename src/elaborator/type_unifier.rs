@@ -186,12 +186,38 @@ impl<'a> TypeUnifier<'a> {
                     .insert(param.name.clone(), instance_type.clone());
             }
             (AcornType::Function(f), AcornType::Function(g)) => {
-                if f.arg_types.len() != g.arg_types.len() {
-                    return Err(Error::Other);
-                }
-                self.match_instance(&f.return_type, &g.return_type)?;
-                for (f_arg_type, g_arg_type) in f.arg_types.iter().zip(&g.arg_types) {
-                    self.match_instance(f_arg_type, g_arg_type)?;
+                if f.arg_types.len() < g.arg_types.len() {
+                    // Generic has fewer args than instance. This can happen when:
+                    // - Generic is `A -> B` where B is a type variable
+                    // - Instance is `A -> (C -> D)` which un-curries to `(A, C) -> D`
+                    // We should unify B with `C -> D` (the re-curried remainder).
+                    for (f_arg, g_arg) in f.arg_types.iter().zip(&g.arg_types) {
+                        self.match_instance(f_arg, g_arg)?;
+                    }
+                    // Re-curry the remaining args of g into a function type
+                    let remaining_args = g.arg_types[f.arg_types.len()..].to_vec();
+                    let curried_remainder =
+                        AcornType::functional(remaining_args, (*g.return_type).clone());
+                    self.match_instance(&f.return_type, &curried_remainder)?;
+                } else if f.arg_types.len() > g.arg_types.len() {
+                    // Generic has more args than instance. This can happen when:
+                    // - Generic is `(A, B) -> C` (un-curried from `A -> (B -> C)`)
+                    // - Instance is `A -> D` where D is a type variable
+                    // We should unify `B -> C` (the re-curried remainder) with D.
+                    for (f_arg, g_arg) in f.arg_types.iter().zip(&g.arg_types) {
+                        self.match_instance(f_arg, g_arg)?;
+                    }
+                    // Re-curry the remaining args of f into a function type
+                    let remaining_args = f.arg_types[g.arg_types.len()..].to_vec();
+                    let curried_remainder =
+                        AcornType::functional(remaining_args, (*f.return_type).clone());
+                    self.match_instance(&curried_remainder, &g.return_type)?;
+                } else {
+                    // Same number of args
+                    self.match_instance(&f.return_type, &g.return_type)?;
+                    for (f_arg_type, g_arg_type) in f.arg_types.iter().zip(&g.arg_types) {
+                        self.match_instance(f_arg_type, g_arg_type)?;
+                    }
                 }
             }
             (AcornType::Data(g_class, g_params), AcornType::Data(i_class, i_params)) => {

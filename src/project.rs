@@ -229,7 +229,7 @@ impl Project {
     // It can be either:
     //   - a parent directory named "acornlib" (with acorn.toml)
     //   - a parent directory containing "acorn.toml"
-    //   - a directory named "acornlib" next to one named "acorn" (with acorn.toml)
+    //   - a directory named "acornlib" next to one named "acorn" or "acorn{n}" (with acorn.toml)
     // Returns (src_dir, build_dir) where src_dir is src/, build_dir is build/
     pub fn find_local_acorn_library(start: &Path) -> Option<(PathBuf, PathBuf)> {
         let mut current = Some(start);
@@ -245,11 +245,15 @@ impl Project {
                 return Self::check_acornlib_layout(path);
             }
 
-            // Check if path has a sibling named acornlib (only if current dir is "acorn")
-            if path.ends_with("acorn") {
-                let library_path = path.with_file_name("acornlib");
-                if library_path.is_dir() {
-                    return Self::check_acornlib_layout(&library_path);
+            // Check if path has a sibling named acornlib (if current dir is "acorn" or "acorn{n}")
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name == "acorn"
+                    || (name.starts_with("acorn") && name[5..].chars().all(|c| c.is_ascii_digit()))
+                {
+                    let library_path = path.with_file_name("acornlib");
+                    if library_path.is_dir() {
+                        return Self::check_acornlib_layout(&library_path);
+                    }
                 }
             }
 
