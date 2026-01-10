@@ -307,6 +307,7 @@ async fn main() {
             verifier.line = line;
             verifier.builder.reverify = true;
             verifier.builder.check_hashes = false;
+            verifier.builder.operation_verb = "reverified";
 
             // Parse and set the certificate override if provided
             if let Some(cert_json) = cert {
@@ -369,6 +370,7 @@ async fn main() {
             verifier.line = line;
             verifier.builder.reverify = false; // Run search like verify does
             verifier.builder.check_hashes = false; // Don't skip based on hashes
+            verifier.builder.operation_verb = "reproved";
             verifier.exit_on_warning = fail_fast;
 
             match verifier.run() {

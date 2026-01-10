@@ -116,6 +116,9 @@ pub struct Builder<'a> {
     /// When set, use this certificate instead of the cached one for single-goal verification.
     /// Only used when single_goal is also set.
     pub cert_override: Option<Certificate>,
+
+    /// The verb to use in failure messages (e.g., "verified", "reverified", "reproved").
+    pub operation_verb: &'static str,
 }
 
 /// Metrics collected during a build.
@@ -344,6 +347,7 @@ impl<'a> Builder<'a> {
             training_output: None,
             prover_config,
             cert_override: None,
+            operation_verb: "verified",
         }
     }
 
@@ -479,18 +483,27 @@ impl<'a> Builder<'a> {
                 }
                 self.log_verified(goal.first_line, goal.last_line);
             }
-            Outcome::Exhausted => self.log_warning(&goal, "could not be verified (exhaustion)"),
+            Outcome::Exhausted => self.log_warning(
+                &goal,
+                &format!("could not be {} (exhaustion)", self.operation_verb),
+            ),
             Outcome::Inconsistent => self.log_warning(&goal, "- prover found an inconsistency"),
             Outcome::Timeout => self.log_warning(
                 &goal,
-                &format!("could not be verified (timeout after {})", elapsed_str),
+                &format!(
+                    "could not be {} (timeout after {})",
+                    self.operation_verb, elapsed_str
+                ),
             ),
             Outcome::Interrupted => {
                 // Should this really be an error?
                 let error = BuildError::goal(&goal, "was interrupted");
                 self.log_build_error(&error);
             }
-            Outcome::Constrained => self.log_warning(&goal, "could not be verified (constraints)"),
+            Outcome::Constrained => self.log_warning(
+                &goal,
+                &format!("could not be {} (constraints)", self.operation_verb),
+            ),
         }
     }
 
