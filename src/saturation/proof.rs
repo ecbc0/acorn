@@ -581,19 +581,221 @@ impl<'a> Proof<'a> {
                 self.add_var_map(base_id, map, LocalContext::empty(), concrete_steps);
             }
             Rule::Resolution(info) => {
+                // For Resolution, we do custom reconstruction because the trace was
+                // built for post-resolution literals, but simplifications reference
+                // those post-resolution literals (not the original long_clause literals).
+                //
+                // We handle this by:
+                // 1. For Eliminated entries that reference the short clause: use long_clause literal
+                // 2. For Eliminated entries that reference simplification steps: use post-resolution literal
+                // 3. For Output entries: use post-resolution literal (mapped to conclusion)
+
                 let long_id = ProofStepId::Active(info.long_id);
                 let long_clause = self.get_clause(long_id)?;
-                let (var_maps, output_context) = self.reconstruct_trace(
-                    &long_clause.literals,
-                    long_clause.get_local_context(),
-                    traces.as_slice(),
-                    &step.clause,
+                let short_id = ProofStepId::Active(info.short_id);
+                let short_clause = self.get_clause(short_id)?;
+                let traces_slice = traces.as_slice();
+
+                // Build a unifier that handles all scopes
+                let output_context = conclusion_map.build_output_context(conclusion_map_context);
+                let (mut unifier, conc_scope) = Unifier::with_map(
                     conclusion_map,
-                    conclusion_map_context,
-                    concrete_steps,
-                )?;
-                for map in var_maps {
-                    self.add_var_map(long_id, map, output_context.clone(), concrete_steps);
+                    self.normalizer.kernel_context(),
+                    output_context,
+                );
+                unifier.set_input_context(conc_scope, step.clause.get_local_context());
+
+                let long_scope = unifier.add_scope();
+                unifier.set_input_context(long_scope, long_clause.get_local_context());
+
+                let post_res_scope = unifier.add_scope();
+                unifier.set_input_context(post_res_scope, &info.context);
+
+                let short_scope = if short_clause.literals.len() == 1 {
+                    let scope = unifier.add_scope();
+                    unifier.set_input_context(scope, short_clause.get_local_context());
+                    Some(scope)
+                } else {
+                    None
+                };
+
+                // Track simplification scopes - each occurrence needs its own scope
+                // because the same simp step might eliminate multiple literals with
+                // different substitutions.
+                let mut simp_scopes: Vec<(usize, Scope)> = Vec::new();
+
+                // Process each long_clause literal according to the trace
+                for (i, (res_trace, final_trace)) in info
+                    .resolution_trace
+                    .iter()
+                    .zip(traces_slice.iter())
+                    .enumerate()
+                {
+                    match res_trace {
+                        LiteralTrace::Eliminated { flipped, .. } => {
+                            // This literal was resolved with the short clause
+                            if let Some(short_scope) = short_scope {
+                                let long_lit = &long_clause.literals[i];
+                                let short_lit = &short_clause.literals[0];
+                                if !unifier.unify_literals(
+                                    long_scope,
+                                    long_lit,
+                                    short_scope,
+                                    short_lit,
+                                    *flipped,
+                                ) {
+                                    return Err(Error::internal(format!(
+                                        "failed to unify resolved literal {} with short clause {}",
+                                        long_lit, short_lit
+                                    )));
+                                }
+                            }
+                        }
+                        LiteralTrace::Output {
+                            index: post_res_idx,
+                            flipped: res_flip,
+                        } => {
+                            // Unify long_clause[i] with post_res[post_res_idx]
+                            let long_lit = &long_clause.literals[i];
+                            let post_res_lit = &info.literals[*post_res_idx];
+                            if !unifier.unify_literals(
+                                long_scope,
+                                long_lit,
+                                post_res_scope,
+                                post_res_lit,
+                                *res_flip,
+                            ) {
+                                return Err(Error::internal(format!(
+                                    "failed to unify long clause literal {} with post-resolution literal {}",
+                                    long_lit, post_res_lit
+                                )));
+                            }
+
+                            // Now handle what happened to this post-resolution literal
+                            match final_trace {
+                                LiteralTrace::Output {
+                                    index: final_idx,
+                                    flipped: final_flip,
+                                } => {
+                                    // Post-res literal made it to the conclusion
+                                    // Combine the flips: long→post_res was res_flip, but we're now
+                                    // relating post_res→conclusion
+                                    let conc_lit = &step.clause.literals[*final_idx];
+                                    if !unifier.unify_literals(
+                                        post_res_scope,
+                                        post_res_lit,
+                                        conc_scope,
+                                        conc_lit,
+                                        *final_flip != *res_flip,
+                                    ) {
+                                        return Err(Error::internal(format!(
+                                            "failed to unify post-res literal {} with conclusion {}",
+                                            post_res_lit, conc_lit
+                                        )));
+                                    }
+                                }
+                                LiteralTrace::Eliminated {
+                                    step: simp_id,
+                                    flipped: _,
+                                } => {
+                                    // Post-res literal was eliminated by simplification.
+                                    let simp_step_id = ProofStepId::Active(*simp_id);
+                                    let simp_clause = self.get_clause(simp_step_id)?;
+                                    if simp_clause.literals.len() == 1 {
+                                        // Create a new scope for this occurrence
+                                        let simp_scope = unifier.add_scope();
+                                        unifier.set_input_context(
+                                            simp_scope,
+                                            simp_clause.get_local_context(),
+                                        );
+                                        simp_scopes.push((*simp_id, simp_scope));
+                                        let simp_lit = &simp_clause.literals[0];
+
+                                        // Determine the correct flip by checking which orientation
+                                        // would allow the terms to match. Use VariableMap::match_terms
+                                        // which doesn't modify state.
+                                        // We need to check BOTH sides of the literal.
+                                        use crate::kernel::variable_map::VariableMap;
+                                        let post_res_ctx = &info.context;
+                                        let simp_ctx = simp_clause.get_local_context();
+
+                                        // Try non-flipped: simp.left ~ post_res.left, simp.right ~ post_res.right
+                                        let mut vm = VariableMap::new();
+                                        let non_flipped_works = vm.match_terms(
+                                            simp_lit.left.as_ref(),
+                                            post_res_lit.left.as_ref(),
+                                            simp_ctx,
+                                            post_res_ctx,
+                                            self.normalizer.kernel_context(),
+                                        ) && vm.match_terms(
+                                            simp_lit.right.as_ref(),
+                                            post_res_lit.right.as_ref(),
+                                            simp_ctx,
+                                            post_res_ctx,
+                                            self.normalizer.kernel_context(),
+                                        );
+
+                                        // Try flipped: simp.right ~ post_res.left, simp.left ~ post_res.right
+                                        let mut vm2 = VariableMap::new();
+                                        let flipped_works = vm2.match_terms(
+                                            simp_lit.right.as_ref(),
+                                            post_res_lit.left.as_ref(),
+                                            simp_ctx,
+                                            post_res_ctx,
+                                            self.normalizer.kernel_context(),
+                                        ) && vm2.match_terms(
+                                            simp_lit.left.as_ref(),
+                                            post_res_lit.right.as_ref(),
+                                            simp_ctx,
+                                            post_res_ctx,
+                                            self.normalizer.kernel_context(),
+                                        );
+
+                                        let flip_to_use = if non_flipped_works {
+                                            false
+                                        } else if flipped_works {
+                                            true
+                                        } else {
+                                            return Err(Error::internal(format!(
+                                                "failed to determine flip for post-res {} with simp {}",
+                                                post_res_lit, simp_lit
+                                            )));
+                                        };
+
+                                        if !unifier.unify_literals(
+                                            post_res_scope,
+                                            post_res_lit,
+                                            simp_scope,
+                                            simp_lit,
+                                            flip_to_use,
+                                        ) {
+                                            return Err(Error::internal(format!(
+                                                "failed to unify post-res literal {} with simp literal {} (flip={})",
+                                                post_res_lit, simp_lit, flip_to_use
+                                            )));
+                                        }
+                                    }
+                                }
+                                LiteralTrace::Impossible => {}
+                            }
+                        }
+                        LiteralTrace::Impossible => {}
+                    }
+                }
+
+                // Extract all maps and add to concrete_steps
+                let (all_maps, output_ctx) = unifier.into_maps_with_context();
+                for (scope, var_map) in all_maps {
+                    if scope == long_scope {
+                        self.add_var_map(long_id, var_map, output_ctx.clone(), concrete_steps);
+                    } else if Some(scope) == short_scope {
+                        self.add_var_map(short_id, var_map, output_ctx.clone(), concrete_steps);
+                    } else if let Some((simp_id, _)) = simp_scopes.iter().find(|(_, s)| *s == scope)
+                    {
+                        let simp_step_id = ProofStepId::Active(*simp_id);
+                        self.add_var_map(simp_step_id, var_map, output_ctx.clone(), concrete_steps);
+                    }
+                    // conc_scope and post_res_scope are not added to concrete_steps
                 }
             }
             Rule::Specialization(info) => {
@@ -851,14 +1053,15 @@ mod tests {
         // The trace length should match what reconstruct_step expects (long_clause.literals.len())
         // but the trace was built for post-resolution literals.
 
-        // Get the long clause that reconstruct_step would use
+        // Verify ResolutionInfo now stores post-resolution literals
+        assert!(
+            !resolution_info.literals.is_empty(),
+            "ResolutionInfo should store post-resolution literals"
+        );
+
+        // The trace has entries for all the original literals
         let long_clause_for_reconstruction = &active_set.get_step(resolution_info.long_id).clause;
         let long_literal_count = long_clause_for_reconstruction.literals.len();
-
-        // The trace has entries for all the original literals, which is correct.
-        // But the issue is the second literal in the trace (the one that got simplified)
-        // refers to a simplification that was applied to a POST-RESOLUTION literal,
-        // not the original literal.
         assert_eq!(
             traces.len(),
             long_literal_count,
@@ -871,56 +1074,48 @@ mod tests {
             .position(|t| matches!(t, LiteralTrace::Eliminated { step, .. } if *step == 1));
         let simp_trace_idx = simp_trace_idx.expect("Expected to find simplification trace entry");
 
-        // The simplification was applied to literal at index `simp_trace_idx` of the long clause.
-        // The trace says: "literal simp_trace_idx was eliminated by simp_step".
-        //
-        // For reconstruction to work, the original literal must be unifiable with the
-        // simplification literal. But the simplification was actually done on the
-        // POST-resolution literal (with the unifier applied), not the original.
-        //
-        // The invariant we check: can the original literal and simplification literal
-        // actually be unified? If they can't, the trace is inconsistent and reconstruction
-        // will fail.
-
-        let original_literal = &long_clause_for_reconstruction.literals[simp_trace_idx];
+        // Find the corresponding post-resolution literal using the resolution_trace.
+        // The resolution_trace maps original literal indices to post-resolution literal indices.
+        let post_res_index = match &resolution_info.resolution_trace[simp_trace_idx] {
+            LiteralTrace::Output { index, .. } => *index,
+            other => panic!(
+                "Expected Output trace for simplified literal, got {:?}",
+                other
+            ),
+        };
+        let post_res_literal = &resolution_info.literals[post_res_index];
         let simp_literal = &simp_step.clause.literals[0];
 
-        // Try to unify the original literal with the simplification literal.
-        // This is what reconstruct_trace does.
+        // The post-resolution literal should be unifiable with the simplification literal.
+        // This is what our fix enables - we now use post-resolution literals for reconstruction.
         use crate::kernel::variable_map::VariableMap;
-        let original_context = long_clause_for_reconstruction.get_local_context();
+        let post_res_context = &resolution_info.context;
         let simp_context = simp_step.clause.get_local_context();
 
         let mut var_map = VariableMap::new();
         let can_match_left = var_map.match_terms(
             simp_literal.left.as_ref(),
-            original_literal.left.as_ref(),
+            post_res_literal.left.as_ref(),
             simp_context,
-            original_context,
+            post_res_context,
             &kctx,
         );
         let can_match_right = can_match_left
             && var_map.match_terms(
                 simp_literal.right.as_ref(),
-                original_literal.right.as_ref(),
+                post_res_literal.right.as_ref(),
                 simp_context,
-                original_context,
+                post_res_context,
                 &kctx,
             );
 
-        // This assertion should pass if the trace is consistent.
-        // Currently it fails because the trace references a simplification that was
-        // done on the post-resolution literal, not the original literal.
         assert!(
             can_match_right,
-            "Trace is inconsistent: the simplification clause cannot be unified with the \
-             original literal it claims to eliminate.\n\
-             Original literal: {}\n\
+            "Post-resolution literal should be unifiable with simplification literal.\n\
+             Post-resolution literal: {}\n\
              Simplification literal: {}\n\
-             This is the bug: ResolutionInfo doesn't store post-resolution literals, \
-             so reconstruct_trace uses the original long clause literals which don't \
-             match the simplifications that were applied to the post-resolution literals.",
-            original_literal, simp_literal
+             This verifies the fix: ResolutionInfo now stores post-resolution literals.",
+            post_res_literal, simp_literal
         );
     }
 }

@@ -316,9 +316,26 @@ impl ActiveSet {
 
         // Gather the output data
         let context = unifier.take_output_context();
+
+        // Store post-resolution literals and trace for reconstruction.
+        // These are needed because simplification operates on post-resolution literals,
+        // but the composed trace maps from original long_clause literals.
+        let resolution_literals = literals.clone();
+        let resolution_context = context.clone();
+        let resolution_trace = incremental_trace.clone();
+
         let (clause, trace) =
             Clause::new_with_trace(literals, ClauseTrace::new(incremental_trace), &context);
-        let mut step = ProofStep::resolution(long_id, long_step, short_id, short_step, clause);
+        let mut step = ProofStep::resolution(
+            long_id,
+            long_step,
+            short_id,
+            short_step,
+            clause,
+            resolution_literals,
+            resolution_context,
+            resolution_trace,
+        );
         step.trace = Some(trace);
         Some(step)
     }

@@ -73,6 +73,19 @@ pub struct ResolutionInfo {
     /// The long clause will usually have more than one literal. It can have just one literal
     /// if we're finding a contradiction.
     pub long_id: usize,
+
+    /// The literals immediately after resolution (before any simplification).
+    /// These have the resolution unifier applied.
+    pub literals: Vec<Literal>,
+
+    /// The local context for the post-resolution literals.
+    pub context: LocalContext,
+
+    /// Maps long_clause literals to post-resolution literals.
+    /// Each entry corresponds to a long_clause literal:
+    /// - Eliminated { step: short_id } for the resolved literal
+    /// - Output { index } for literals kept in post-resolution
+    pub resolution_trace: Vec<LiteralTrace>,
 }
 
 /// Information about a specialization.
@@ -498,8 +511,17 @@ impl ProofStep {
         short_id: usize,
         short_step: &ProofStep,
         clause: Clause,
+        literals: Vec<Literal>,
+        context: LocalContext,
+        resolution_trace: Vec<LiteralTrace>,
     ) -> ProofStep {
-        let rule = Rule::Resolution(ResolutionInfo { short_id, long_id });
+        let rule = Rule::Resolution(ResolutionInfo {
+            short_id,
+            long_id,
+            literals,
+            context,
+            resolution_trace,
+        });
 
         let truthiness = short_step.truthiness.combine(long_step.truthiness);
         let proof_size = short_step.proof_size + long_step.proof_size + 1;
