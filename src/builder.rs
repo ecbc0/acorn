@@ -788,6 +788,11 @@ impl<'a> Builder<'a> {
             loop {
                 self.verify_node(Rc::clone(&processor), cursor, new_certs, worklist)?;
 
+                // Early exit if we have a warning and exit_on_warning is enabled
+                if self.exit_on_warning && !self.status.is_good() {
+                    break;
+                }
+
                 if let Some(fact) = cursor.node().get_fact() {
                     Rc::make_mut(&mut processor).add_fact(fact)?;
                 }
@@ -877,6 +882,11 @@ impl<'a> Builder<'a> {
                         &mut new_certs,
                         &mut worklist,
                     )?;
+
+                    // Early exit if we have a warning and exit_on_warning is enabled
+                    if self.exit_on_warning && !self.status.is_good() {
+                        break;
+                    }
                 } else {
                     self.log_verified(cursor.node().first_line(), cursor.node().last_line());
                 }
