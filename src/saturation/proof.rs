@@ -696,9 +696,11 @@ impl<'a> Proof<'a> {
                                 }
                                 LiteralTrace::Eliminated {
                                     step: simp_id,
-                                    flipped: _,
+                                    flipped: composed_flip,
                                 } => {
                                     // Post-res literal was eliminated by simplification.
+                                    // The composed_flip is the flip from long_clause[i] to the simp literal.
+                                    // We need the flip from post_res to simp, which is composed_flip XOR res_flip.
                                     let simp_step_id = ProofStepId::Active(*simp_id);
                                     let simp_clause = self.get_clause(simp_step_id)?;
                                     if simp_clause.literals.len() == 1 {
@@ -711,57 +713,9 @@ impl<'a> Proof<'a> {
                                         simp_scopes.push((*simp_id, simp_scope));
                                         let simp_lit = &simp_clause.literals[0];
 
-                                        // Determine the correct flip by checking which orientation
-                                        // would allow the terms to match. Use VariableMap::match_terms
-                                        // which doesn't modify state.
-                                        // We need to check BOTH sides of the literal.
-                                        use crate::kernel::variable_map::VariableMap;
-                                        let post_res_ctx = &info.context;
-                                        let simp_ctx = simp_clause.get_local_context();
-
-                                        // Try non-flipped: simp.left ~ post_res.left, simp.right ~ post_res.right
-                                        let mut vm = VariableMap::new();
-                                        let non_flipped_works = vm.match_terms(
-                                            simp_lit.left.as_ref(),
-                                            post_res_lit.left.as_ref(),
-                                            simp_ctx,
-                                            post_res_ctx,
-                                            self.normalizer.kernel_context(),
-                                        ) && vm.match_terms(
-                                            simp_lit.right.as_ref(),
-                                            post_res_lit.right.as_ref(),
-                                            simp_ctx,
-                                            post_res_ctx,
-                                            self.normalizer.kernel_context(),
-                                        );
-
-                                        // Try flipped: simp.right ~ post_res.left, simp.left ~ post_res.right
-                                        let mut vm2 = VariableMap::new();
-                                        let flipped_works = vm2.match_terms(
-                                            simp_lit.right.as_ref(),
-                                            post_res_lit.left.as_ref(),
-                                            simp_ctx,
-                                            post_res_ctx,
-                                            self.normalizer.kernel_context(),
-                                        ) && vm2.match_terms(
-                                            simp_lit.left.as_ref(),
-                                            post_res_lit.right.as_ref(),
-                                            simp_ctx,
-                                            post_res_ctx,
-                                            self.normalizer.kernel_context(),
-                                        );
-
-                                        let flip_to_use = if non_flipped_works {
-                                            false
-                                        } else if flipped_works {
-                                            true
-                                        } else {
-                                            return Err(Error::internal(format!(
-                                                "failed to determine flip for post-res {} with simp {}",
-                                                post_res_lit, simp_lit
-                                            )));
-                                        };
-
+                                        // XOR the composed flip with res_flip to get the flip
+                                        // from post_res to simp (same pattern as the Output case above)
+                                        let flip_to_use = *composed_flip != *res_flip;
                                         if !unifier.unify_literals(
                                             post_res_scope,
                                             post_res_lit,
@@ -945,7 +899,7 @@ impl<'a> Proof<'a> {
 mod tests {
     use crate::kernel::kernel_context::KernelContext;
     use crate::kernel::trace::LiteralTrace;
-    use crate::proof_step::{ProofStep, Rule};
+    use crate::proof_step::{ProofStep, Rule, Truthiness};
     use crate::saturation::active_set::ActiveSet;
 
     /// Test that resolution followed by simplification has consistent traces.
@@ -1116,6 +1070,114 @@ mod tests {
              Simplification literal: {}\n\
              This verifies the fix: ResolutionInfo now stores post-resolution literals.",
             post_res_literal, simp_literal
+        );
+    }
+
+    /// Test that resolution with polymorphic simplification uses traced flip correctly.
+    ///
+    /// This tests a bug where the flip determination in reconstruct_step tries to compute
+    /// the flip dynamically using match_terms, rather than using the flip value already
+    /// stored in the trace. This fails when both the post-resolution literal and the
+    /// simplification literal have variables.
+    ///
+    /// The scenario:
+    /// - Long clause: not g0(x0) or not g1(x0, g2(x0))  (negative literals with variable)
+    /// - Short clause: g0(c0)  (concrete, resolves with first literal, binds x0->c0)
+    /// - Resolution gives: not g1(c0, g2(c0))
+    /// - Simplification clause: g1(x0, g2(x0))  (pattern with variable, eliminates the neg lit)
+    /// - Result: empty clause (contradiction)
+    ///
+    /// The bug: When reconstructing the proof, the code tries to determine if the
+    /// simplification literal needs to be flipped relative to the post-resolution literal.
+    /// It uses match_terms to test both orientations, but this fails when both literals
+    /// have variables (different variable IDs). The fix is to use the `flipped` value
+    /// that was already computed and stored in the trace.
+    #[test]
+    fn test_resolution_simplification_with_polymorphic_flip() {
+        let mut kctx = KernelContext::new();
+        kctx.parse_constant("g0", "Bool -> Bool")
+            .parse_constant("g1", "(Bool, Bool) -> Bool")
+            .parse_constant("g2", "Bool -> Bool")
+            .parse_constant("c0", "Bool");
+
+        // Long clause (step 0): not g0(x0) or not g1(x0, g2(x0))
+        let long_clause = kctx.parse_clause("not g0(x0) or not g1(x0, g2(x0))", &["Bool"]);
+        let mut long_step = ProofStep::mock_from_clause(long_clause);
+        long_step.truthiness = Truthiness::Factual;
+
+        // Simplification clause (step 1): g1(x0, g2(x0))
+        // This pattern will eliminate `not g1(c0, g2(c0))` from the resolution result
+        let simp_clause = kctx.parse_clause("g1(x0, g2(x0))", &["Bool"]);
+        let simp_step = ProofStep::mock_from_clause(simp_clause);
+
+        // Short clause (step 2): g0(c0)
+        // This resolves with the first literal of long clause, binding x0 -> c0
+        let short_clause = kctx.parse_clause("g0(c0)", &[]);
+        let mut short_step = ProofStep::mock_from_clause(short_clause);
+        short_step.truthiness = Truthiness::Hypothetical;
+
+        // Build the active set
+        let mut active_set = ActiveSet::new();
+        active_set.activate(long_step.clone(), &kctx); // Step 0
+        active_set.activate(simp_step.clone(), &kctx); // Step 1
+
+        // Find resolutions - short_step will get ID 2 (next_id)
+        let mut resolution_results = vec![];
+        active_set.find_resolutions(&short_step, &mut resolution_results, &kctx);
+
+        // Now activate short_step
+        active_set.activate(short_step.clone(), &kctx); // Step 2
+
+        assert!(
+            !resolution_results.is_empty(),
+            "Resolution should produce at least one result"
+        );
+
+        let resolution_step = resolution_results.into_iter().next().unwrap();
+
+        // Now simplify the resolution result using the active set
+        let simplified_step = active_set.simplify(resolution_step.clone(), &kctx);
+
+        // The simplification should succeed and produce an empty clause
+        let final_step = simplified_step.unwrap_or(resolution_step);
+        assert!(
+            final_step.clause.is_impossible(),
+            "Expected empty clause after resolution + simplification, got: {}",
+            final_step.clause
+        );
+
+        // Get the resolution info
+        let resolution_info = match &final_step.rule {
+            Rule::Resolution(info) => info,
+            other => panic!("Expected Resolution rule, got {:?}", other),
+        };
+
+        // The trace should have a simplification entry with the flipped value set
+        let trace = final_step.trace.as_ref().expect("Expected trace");
+        let traces = trace.as_slice();
+
+        // Find the simplification trace entry (step 1)
+        let simp_trace = traces
+            .iter()
+            .find(|t| matches!(t, LiteralTrace::Eliminated { step: 1, .. }));
+        assert!(
+            simp_trace.is_some(),
+            "Expected to find simplification trace entry for step 1"
+        );
+
+        // Verify that the trace captures the flip information
+        let simp_trace = simp_trace.unwrap();
+        if let LiteralTrace::Eliminated { step, flipped } = simp_trace {
+            assert_eq!(*step, 1, "Simplification should reference step 1");
+            // The flipped value should be correctly tracked (false in this case because
+            // g1(x0, g2(x0)) matches g1(c0, g2(c0)) without flipping)
+            assert!(!flipped, "The simplification literal should not be flipped");
+        }
+
+        // Verify the post-resolution literal exists
+        assert!(
+            !resolution_info.literals.is_empty(),
+            "ResolutionInfo should store post-resolution literals"
         );
     }
 }
