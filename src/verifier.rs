@@ -856,6 +856,84 @@ mod tests {
     }
 
     #[test]
+    fn test_manifest_preserved_when_reproving_single_module() {
+        // This test mimics the `reprove <module> --write-cache` command behavior.
+        // The key difference from verify is: read_cache: false, write_cache: true
+        let (acornlib, src, build) = setup();
+
+        // Create two modules
+        src.child("module_a.ac")
+            .write_str(
+                r#"
+                type Nat: axiom
+                theorem a_theorem(x: Nat) {
+                    x = x
+                }
+                "#,
+            )
+            .unwrap();
+
+        src.child("module_b.ac")
+            .write_str(
+                r#"
+                type Nat: axiom
+                theorem b_theorem(x: Nat) {
+                    x = x
+                }
+                "#,
+            )
+            .unwrap();
+
+        // Phase 1: Verify all modules normally - manifest should have two entries
+        let mut verifier1 = Verifier::new(
+            acornlib.path().to_path_buf(),
+            ProjectConfig::default(),
+            None,
+        )
+        .unwrap();
+        verifier1.builder.check_hashes = false;
+        let output1 = verifier1.run().unwrap();
+        assert_eq!(output1.status, BuildStatus::Good);
+
+        // Check manifest has two entries
+        let manifest_file = build.child("manifest.json");
+        assert!(manifest_file.exists(), "manifest.json should exist");
+        let manifest_content = std::fs::read_to_string(manifest_file.path()).unwrap();
+        let manifest: crate::manifest::Manifest = serde_json::from_str(&manifest_content).unwrap();
+        assert_eq!(
+            manifest.modules.len(),
+            2,
+            "manifest should have 2 entries after verifying both modules"
+        );
+
+        // Phase 2: Reprove only module_a with reprove-style config (read_cache: false, write_cache: true)
+        // This is what `reprove module_a --write-cache` does
+        let reprove_config = ProjectConfig {
+            use_filesystem: true,
+            read_cache: false,
+            write_cache: true,
+        };
+        let mut verifier2 = Verifier::new(
+            acornlib.path().to_path_buf(),
+            reprove_config,
+            Some("module_a".to_string()),
+        )
+        .unwrap();
+        verifier2.builder.check_hashes = false;
+        let output2 = verifier2.run().unwrap();
+        assert_eq!(output2.status, BuildStatus::Good);
+
+        // Check manifest STILL has two entries
+        let manifest_content = std::fs::read_to_string(manifest_file.path()).unwrap();
+        let manifest: crate::manifest::Manifest = serde_json::from_str(&manifest_content).unwrap();
+        assert_eq!(
+            manifest.modules.len(),
+            2,
+            "manifest should still have 2 entries after reproving only module_a"
+        );
+    }
+
+    #[test]
     fn test_deleted_module_removed_from_manifest_on_full_verify() {
         let (acornlib, src, build) = setup();
 

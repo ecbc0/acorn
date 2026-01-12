@@ -205,8 +205,10 @@ impl Project {
         build_dir: PathBuf,
         config: ProjectConfig,
     ) -> Result<Project, ProjectError> {
-        // Load the build cache
-        let build_cache = if config.read_cache {
+        // Load the build cache.
+        // We need to load it when reading (to use cached certs) OR when writing (to preserve
+        // manifest entries from other modules during partial builds).
+        let build_cache = if config.read_cache || config.write_cache {
             BuildCache::load(build_dir.clone())?
         } else {
             BuildCache::new(build_dir.clone())
