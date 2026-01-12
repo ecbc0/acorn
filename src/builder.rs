@@ -932,7 +932,11 @@ impl<'a> Builder<'a> {
             }
         }
 
-        let mut worklist = self.project.build_cache.make_worklist(target);
+        let mut worklist = if self.project.config.read_cache {
+            self.project.build_cache.make_worklist(target)
+        } else {
+            CertificateWorklist::new(CertificateStore { certs: vec![] })
+        };
         let mut new_certs = vec![];
 
         if !env.nodes.is_empty() {
