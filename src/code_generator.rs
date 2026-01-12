@@ -792,6 +792,12 @@ impl CodeGenerator<'_> {
                     .get_var_type(*var_id as usize)
                     .cloned()
                     .expect("Variable should have type in LocalContext");
+                // Skip type variables (those whose type is TypeSort or a typeclass).
+                // Type variables are type-level parameters, not value-level, so they
+                // don't need arbitrary value definitions in certificates.
+                if var_type.as_ref().is_type_param_kind() {
+                    return;
+                }
                 if !self.arbitrary_names.contains_key(&var_type) {
                     // Generate a name for this arbitrary value
                     let name = self.bindings.next_indexed_var('s', &mut self.next_s);
