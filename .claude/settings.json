@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo test:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(grep:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo run:*)",
+      "Bash(RUST_BACKTRACE=1 cargo run:*)",
+      "Bash(RUST_LOG=* cargo run:*)",
+      "Read(~/acornlib/**)"
+    ]
+  }
+}
