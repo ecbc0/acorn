@@ -106,14 +106,21 @@ impl VariableMap {
         special_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> bool {
-        if general.get_type_with_context(general_context, kernel_context)
-            != special.get_type_with_context(special_context, kernel_context)
-        {
-            return false;
-        }
-
+        // Type checking is only needed when matching a variable to a term.
+        // For other cases (atom vs atom, application vs application), if the
+        // subterms match structurally, their types are guaranteed to match.
         match (general.decompose(), special.decompose()) {
-            (Decomposition::Atom(Atom::FreeVariable(i)), _) => self.match_var(*i, special),
+            (Decomposition::Atom(Atom::FreeVariable(i)), _) => {
+                // When matching a variable, we must verify type compatibility.
+                // Get the variable's type directly from the context (cheap lookup)
+                // rather than computing it via get_type_with_context.
+                let var_type = general_context.get_var_type(*i as usize).unwrap();
+                let special_type = special.get_type_with_context(special_context, kernel_context);
+                if var_type != &special_type {
+                    return false;
+                }
+                self.match_var(*i, special)
+            }
             (Decomposition::Atom(g_atom), Decomposition::Atom(s_atom)) => {
                 self.match_atoms(g_atom, s_atom)
             }

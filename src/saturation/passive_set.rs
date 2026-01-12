@@ -65,11 +65,8 @@ fn pair_specializes(
     left2: &Term,
     right2: &Term,
 ) -> bool {
-    if left1.get_type_with_context(general_context, kernel_context)
-        != left2.get_type_with_context(special_context, kernel_context)
-    {
-        return false;
-    }
+    // Note: type checking is done inside match_terms when matching variables,
+    // so we don't need a separate top-level type check here.
     let mut var_map = VariableMap::new();
     var_map.match_terms(
         left1.as_ref(),
