@@ -290,6 +290,8 @@ impl<'a> Unifier<'a> {
         for i in 0..self.maps.len() {
             self.maps[i].apply_to_all(|t| t.replace_variable(id, &term));
         }
+        // Also update the output_context's stored types to replace the variable
+        self.output_context.replace_variable(id, &term);
         self.maps[Scope::OUTPUT.get()].set(id, term);
         true
     }
@@ -440,7 +442,11 @@ impl<'a> Unifier<'a> {
             }
         }
 
-        self.set_mapping(var_scope, var_id, term.clone());
+        // After type unification, apply any output substitutions to get the final term.
+        // Type unification may have called remap() which substitutes output variables,
+        // but those substitutions aren't reflected in our local `term` variable.
+        let final_term = self.apply(Scope::OUTPUT, term);
+        self.set_mapping(var_scope, var_id, final_term);
         true
     }
 
@@ -1858,6 +1864,64 @@ mod tests {
         assert!(
             !result,
             "x0: Monoid should NOT unify with Bool - Bool doesn't implement any typeclass"
+        );
+    }
+
+    #[test]
+    fn test_type_variable_substitution_in_mapping() {
+        // This test verifies that when type unification remaps a type variable,
+        // the mapping for term variables is properly updated.
+        //
+        // Scenario:
+        // - x0: TypeSort (a type variable)
+        // - x1: List[x0] (a term whose type depends on x0)
+        // - c0: List[Bool] (a concrete term)
+        // - Unify x1 with c0
+        // - This should map x0 -> Bool and x1 -> c0
+        // - After apply, we should get c0, not something with unresolved type variables
+        //
+        // The bug was: after type unification mapped x0 -> Bool, the mapping for x1
+        // still contained references to the output type variable instead of Bool.
+        let mut ctx = KernelContext::new();
+        ctx.parse_type_constructor("List", 1);
+
+        let list_id = ctx.type_store.get_ground_id_by_name("List").unwrap();
+
+        // List[Bool]
+        let list_bool = Term::new(Atom::Symbol(Symbol::Type(list_id)), vec![Term::bool_type()]);
+
+        // c0: List[Bool]
+        ctx.symbol_table.add_scoped_constant(list_bool.clone());
+        let c0 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(0)));
+
+        // x0: TypeSort, x1: List[x0]
+        let list_x0 = Term::new(
+            Atom::Symbol(Symbol::Type(list_id)),
+            vec![Term::atom(Atom::FreeVariable(0))],
+        );
+        let local_ctx = LocalContext::from_types(vec![Term::type_sort(), list_x0]);
+
+        let x1 = Term::atom(Atom::FreeVariable(1));
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(local_ctx)));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+
+        // Unify x1: List[x0] with c0: List[Bool]
+        assert!(u.unify(Scope::LEFT, &x1, Scope::RIGHT, &c0));
+
+        // After unification, applying to x1 should give c0
+        let result = u.apply(Scope::LEFT, &x1);
+        assert_eq!(
+            result, c0,
+            "After unifying x1: List[x0] with c0: List[Bool], apply(x1) should give c0"
+        );
+
+        // The result should have type List[Bool], not List[x0]
+        let result_type = result.get_type_with_context(&u.output_context, &ctx);
+        assert_eq!(
+            result_type, list_bool,
+            "Result type should be List[Bool], not contain unresolved type variables"
         );
     }
 }

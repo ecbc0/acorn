@@ -113,6 +113,15 @@ impl LocalContext {
         self.var_types.is_empty()
     }
 
+    /// Replaces all occurrences of a variable in the stored types with the given term.
+    /// This is used when unification discovers that an output variable should be
+    /// replaced with a concrete term.
+    pub fn replace_variable(&mut self, var_id: AtomId, replacement: &Term) {
+        for var_type in &mut self.var_types {
+            *var_type = var_type.replace_variable(var_id, replacement);
+        }
+    }
+
     /// Create a new LocalContext from types.
     pub fn from_types(var_types: Vec<Term>) -> LocalContext {
         LocalContext { var_types }
