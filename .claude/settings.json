@@ -8,6 +8,7 @@
       "Bash(cargo run:*)",
       "Bash(RUST_BACKTRACE=1 cargo run:*)",
       "Bash(RUST_LOG=* cargo run:*)",
+      "Bash(RUST_LOG=* RUST_BACKTRACE=1 cargo run:*)",
       "Read(~/acornlib/**)"
     ]
   }
