@@ -13,6 +13,49 @@ use clap::{Parser, Subcommand};
 use mimalloc::MiMalloc;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
+/// Parse target and line from various syntaxes:
+/// - MODULE:LINE (colon-separated)
+/// - MODULE LINE (positional)
+/// - MODULE --line LINE (flag-based)
+///
+/// Returns (target, line) where line is Some if specified by any method.
+fn parse_target_and_line(
+    target: Option<String>,
+    line_positional: Option<u32>,
+    line_flag: Option<u32>,
+) -> Result<(Option<String>, Option<u32>), String> {
+    // Check for colon syntax in target
+    if let Some(ref t) = target {
+        if let Some(colon_pos) = t.rfind(':') {
+            let module_part = &t[..colon_pos];
+            let line_part = &t[colon_pos + 1..];
+
+            // Try to parse the part after colon as a line number
+            if let Ok(line) = line_part.parse::<u32>() {
+                // Colon syntax found - check for conflicts
+                if line_positional.is_some() || line_flag.is_some() {
+                    return Err(
+                        "cannot specify line both in target (MODULE:LINE) and separately"
+                            .to_string(),
+                    );
+                }
+                return Ok((Some(module_part.to_string()), Some(line)));
+            }
+        }
+    }
+
+    // Check for conflicts between positional and flag
+    if line_positional.is_some() && line_flag.is_some() {
+        return Err(
+            "cannot specify line both as positional argument and with --line flag".to_string(),
+        );
+    }
+
+    // Use positional if provided, otherwise flag
+    let line = line_positional.or(line_flag);
+    Ok((target, line))
+}
+
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
@@ -67,12 +110,16 @@ enum Command {
 
     /// Verify theorems and proofs (default)
     Verify {
-        /// Target module or file to verify (can be a filename or module name)
+        /// Target module or file to verify (can be a filename, module name, or module:line)
         #[clap(
             value_name = "TARGET",
-            help = "Module or filename to verify. If not provided, verifies all files in the library. If \"-\" is provided, it reads from stdin."
+            help = "Module or filename to verify. Supports TARGET:LINE syntax. If not provided, verifies all files in the library. If \"-\" is provided, it reads from stdin."
         )]
         target: Option<String>,
+
+        /// Line number as positional argument (alternative to --line)
+        #[clap(value_name = "LINE")]
+        line_positional: Option<u32>,
 
         /// Don't skip goals based on hash checks
         #[clap(long, help = "Don't skip goals based on hash checks.")]
@@ -80,11 +127,11 @@ enum Command {
 
         /// Search for a proof at a specific line number (requires target)
         #[clap(
-            long,
+            long = "line",
             help = "Search for a proof at a specific line number.",
             value_name = "LINE"
         )]
-        line: Option<u32>,
+        line_flag: Option<u32>,
 
         /// Reject any use of the axiom keyword
         #[clap(
@@ -105,22 +152,26 @@ enum Command {
 
     /// Reverify all goals, erroring if any goal requires a search
     Reverify {
-        /// Target module or file to reverify (can be a filename or module name)
+        /// Target module or file to reverify (can be a filename, module name, or module:line)
         #[clap(
             value_name = "TARGET",
-            help = "Module or filename to reverify. If not provided, reverifies all files in the library."
+            help = "Module or filename to reverify. Supports TARGET:LINE syntax. If not provided, reverifies all files in the library."
         )]
         target: Option<String>,
 
+        /// Line number as positional argument (alternative to --line)
+        #[clap(value_name = "LINE")]
+        line_positional: Option<u32>,
+
         /// Search for a proof at a specific line number (requires target)
         #[clap(
-            long,
+            long = "line",
             help = "Search for a proof at a specific line number.",
             value_name = "LINE"
         )]
-        line: Option<u32>,
+        line_flag: Option<u32>,
 
-        /// Use a specific certificate instead of the cached one (requires --line)
+        /// Use a specific certificate instead of the cached one (requires line)
         #[clap(
             long,
             help = "Use a specific certificate (JSON format) instead of the cached one.",
@@ -129,22 +180,26 @@ enum Command {
         cert: Option<String>,
     },
 
-    /// Re-prove goals without using the cache (neither reads from nor writes to cache)
+    /// Re-prove goals without using the cache
     Reprove {
-        /// Target module or file to reprove (can be a filename or module name)
+        /// Target module or file to reprove (can be a filename, module name, or module:line)
         #[clap(
             value_name = "TARGET",
-            help = "Module or filename to reprove. If not provided, reproves all files in the library."
+            help = "Module or filename to reprove. Supports TARGET:LINE syntax. If not provided, reproves all files in the library."
         )]
         target: Option<String>,
 
+        /// Line number as positional argument (alternative to --line)
+        #[clap(value_name = "LINE")]
+        line_positional: Option<u32>,
+
         /// Search for a proof at a specific line number (requires target)
         #[clap(
-            long,
+            long = "line",
             help = "Search for a proof at a specific line number.",
             value_name = "LINE"
         )]
-        line: Option<u32>,
+        line_flag: Option<u32>,
 
         /// Use the generative prover instead of the saturation prover
         #[clap(
@@ -165,17 +220,25 @@ enum Command {
             value_name = "SECONDS"
         )]
         timeout: Option<f32>,
+
+        /// Write results to the cache
+        #[clap(long, help = "Write reproved results to the cache.")]
+        write_cache: bool,
     },
 
     /// Display proof details for a specific line
     Select {
-        /// Module or file to select from
+        /// Module or file to select from (can be module name, filename, or module:line)
         #[clap(value_name = "MODULE")]
         module: String,
 
-        /// Line number to select
+        /// Line number as positional argument (alternative to --line or :LINE suffix)
         #[clap(value_name = "LINE")]
-        line: u32,
+        line_positional: Option<u32>,
+
+        /// Line number to select
+        #[clap(long = "line", help = "Line number to select.", value_name = "LINE")]
+        line_flag: Option<u32>,
     },
 
     /// Remove redundant claims from a module or entire project
@@ -273,11 +336,20 @@ async fn main() {
 
         Some(Command::Verify {
             target,
+            line_positional,
             nohash,
-            line,
+            line_flag,
             strict,
             timeout,
         }) => {
+            let (target, line) = match parse_target_and_line(target, line_positional, line_flag) {
+                Ok(result) => result,
+                Err(e) => {
+                    println!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            };
+
             let mut verifier = match Verifier::new(current_dir, ProjectConfig::default(), target) {
                 Ok(v) => v,
                 Err(e) => {
@@ -308,10 +380,23 @@ async fn main() {
             }
         }
 
-        Some(Command::Reverify { target, line, cert }) => {
+        Some(Command::Reverify {
+            target,
+            line_positional,
+            line_flag,
+            cert,
+        }) => {
+            let (target, line) = match parse_target_and_line(target, line_positional, line_flag) {
+                Ok(result) => result,
+                Err(e) => {
+                    println!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            };
+
             // Validate that cert requires line
             if cert.is_some() && line.is_none() {
-                println!("Error: --cert requires --line to be set");
+                println!("Error: --cert requires a line number to be set");
                 std::process::exit(1);
             }
 
@@ -357,16 +442,26 @@ async fn main() {
 
         Some(Command::Reprove {
             target,
-            line,
+            line_positional,
+            line_flag,
             generative,
             fail_fast,
             timeout,
+            write_cache,
         }) => {
-            // Create a config that disables both reading and writing to the cache
+            let (target, line) = match parse_target_and_line(target, line_positional, line_flag) {
+                Ok(result) => result,
+                Err(e) => {
+                    println!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            // Reprove doesn't read from cache; optionally writes with --write-cache
             let config = ProjectConfig {
                 use_filesystem: true,
                 read_cache: false,
-                write_cache: false,
+                write_cache,
             };
 
             // Create the prover config based on the --generative flag
@@ -410,7 +505,32 @@ async fn main() {
             }
         }
 
-        Some(Command::Select { module, line }) => {
+        Some(Command::Select {
+            module,
+            line_positional,
+            line_flag,
+        }) => {
+            let (module, line) =
+                match parse_target_and_line(Some(module), line_positional, line_flag) {
+                    Ok((Some(m), l)) => (m, l),
+                    Ok((None, _)) => {
+                        println!("Error: module is required");
+                        std::process::exit(1);
+                    }
+                    Err(e) => {
+                        println!("Error: {}", e);
+                        std::process::exit(1);
+                    }
+                };
+
+            let line = match line {
+                Some(l) => l,
+                None => {
+                    println!("Error: line number is required for select command");
+                    std::process::exit(1);
+                }
+            };
+
             let mut project = Project::new_local(&current_dir, ProjectConfig::default())
                 .unwrap_or_else(|e| {
                     println!("Error loading project: {}", e);
