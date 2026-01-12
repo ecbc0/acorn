@@ -4,8 +4,17 @@ use crate::elaborator::acorn_type::AcornType;
 use crate::kernel::atom::AtomId;
 
 /// A representation of the variables on the stack.
+///
+/// This uses "de Bruijn levels" (not "de Bruijn indices"). The difference:
+/// - De Bruijn indices: Variable(0) is the innermost/most-recent binder
+/// - De Bruijn levels: Variable(0) is the outermost/first binder (what we use)
+///
+/// When a new variable is inserted, it gets index = current stack length.
+/// So the first variable inserted gets index 0, the second gets index 1, etc.
+/// This means when you add a wrapper binder around an expression, all existing
+/// variable references need to be shifted up (see insert_stack in acorn_value.rs).
 pub struct Stack {
-    /// Maps the name of the variable to their depth and their type.
+    /// Maps the name of the variable to their level and their type.
     vars: HashMap<String, (AtomId, AcornType)>,
 }
 

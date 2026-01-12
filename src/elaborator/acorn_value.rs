@@ -306,7 +306,10 @@ impl ConstantInstance {
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum AcornValue {
     /// A variable that is bound to a value on the stack.
-    /// Represented by (stack index, type).
+    /// Represented by (stack level, type).
+    ///
+    /// This uses "de Bruijn levels" (not indices). Variable(0) refers to the
+    /// FIRST/OUTERMOST binder, not the innermost. See stack.rs for details.
     Variable(AtomId, AcornType),
 
     Constant(ConstantInstance),
@@ -814,6 +817,12 @@ impl AcornValue {
     /// This moves the value from a context that has 'index' stack entries, to one that
     /// has 'index + increment' entries.
     /// Every reference at index or higher should be incremented by increment.
+    ///
+    /// Because this codebase uses de Bruijn levels (not indices), when you wrap a value
+    /// in a new binder, you need to shift ALL existing variable references up. For example,
+    /// if you have `Exists([Bool], Variable(0, Bool))` and wrap it in `ForAll([Foo], ...)`,
+    /// the inner Variable(0) must become Variable(1) so it still refers to the Bool from
+    /// the Exists, not the new Foo from the ForAll.
     pub fn insert_stack(self, index: AtomId, increment: AtomId) -> AcornValue {
         if increment == 0 {
             return self;
