@@ -290,7 +290,33 @@ impl<'a> Unifier<'a> {
         for i in 0..self.maps.len() {
             self.maps[i].apply_to_all(|t| t.replace_variable(id, &term));
         }
-        // Also update the output_context's stored types to replace the variable
+
+        // Handle the case where remapping would create a self-referential type.
+        // When we replace x_id with term in all types, if term contains some variable x_j,
+        // and x_j's type contained x_id, then x_j's type would now contain x_j (via term).
+        // To fix this, before replacing, we substitute x_id with x_id's TYPE (not term)
+        // in x_j's type.
+        //
+        // Example: x0's type is x1, x1's type is TypeSort. We remap x1 -> Pi(x0, Bool).
+        // Without fix: x0's type becomes Pi(x0, Bool) - self-referential!
+        // With fix: first set x0's type to TypeSort (x1's type), then do replacement.
+        if let Some(id_type) = self.output_context.get_var_type(id as usize).cloned() {
+            // For each variable that term references, check if its type would become self-referential
+            for var_in_term in term.iter_atoms() {
+                if let Atom::FreeVariable(var_id) = var_in_term {
+                    if let Some(var_type) = self.output_context.get_var_type(*var_id as usize) {
+                        if var_type.has_variable(id) {
+                            // var_id's type references id. After replacement, it would contain var_id.
+                            // Substitute id with id's TYPE instead of with term.
+                            let new_var_type = var_type.replace_variable(id, &id_type);
+                            self.output_context.set_type(*var_id as usize, new_var_type);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Now safe to replace the variable in all other types
         self.output_context.replace_variable(id, &term);
         self.maps[Scope::OUTPUT.get()].set(id, term);
         true
@@ -1922,6 +1948,55 @@ mod tests {
         assert_eq!(
             result_type, list_bool,
             "Result type should be List[Bool], not contain unresolved type variables"
+        );
+    }
+
+    #[test]
+    fn test_remap_avoids_self_referential_types() {
+        // This test verifies that remap() correctly handles the case where
+        // remapping would create a self-referential type.
+        //
+        // Scenario:
+        // - output x0 has type x1 (its type IS whatever type x1 represents)
+        // - output x1 has type TypeSort (x1 is a type variable)
+        // - We remap x1 -> x0
+        // - Without the fix: x0's type becomes x0 (self-referential!)
+        // - With the fix: x0's type becomes TypeSort (x1's type propagated)
+        //
+        // This bug caused "Cycle in type dependencies" panics in polymorphic mode.
+        let ctx = KernelContext::new();
+
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(LocalContext::empty())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+
+        // Manually set up output context to simulate the problematic state:
+        // x0: x1 (x0's type is "the type that x1 represents")
+        // x1: TypeSort (x1 is a type variable)
+        u.output_context
+            .set_type(0, Term::atom(Atom::FreeVariable(1)));
+        u.output_context.set_type(1, Term::type_sort());
+
+        // Also set up the OUTPUT map so x1 has no mapping yet
+        u.maps[Scope::OUTPUT.get()].push_none(); // x0
+        u.maps[Scope::OUTPUT.get()].push_none(); // x1
+
+        // Now simulate what happens when we unify output x1 with output x0
+        // This calls remap(1, x0)
+        let x0 = Term::atom(Atom::FreeVariable(0));
+        let result = u.unify_variable(Scope::OUTPUT, 1, Scope::OUTPUT, &x0);
+        assert!(result, "Unification should succeed");
+
+        // After remap, x0's type should be TypeSort, not x0
+        let x0_type = u.output_context.get_var_type(0).unwrap();
+        assert_eq!(
+            *x0_type,
+            Term::type_sort(),
+            "x0's type should be TypeSort after remap, not self-referential"
+        );
+        assert!(
+            !x0_type.has_variable(0),
+            "x0's type should not contain x0 (would be self-referential)"
         );
     }
 }
