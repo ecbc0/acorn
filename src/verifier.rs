@@ -31,6 +31,15 @@ impl VerifierOutput {
     }
 }
 
+/// Represents a line selection for verification: either a single line or a range.
+#[derive(Clone, Debug)]
+pub enum LineSelection {
+    /// A single line number (1-based, external)
+    Single(u32),
+    /// A range of lines, inclusive (1-based, external)
+    Range(u32, u32),
+}
+
 /// The Verifier manages the run of a single build.
 /// It creates its own project.
 pub struct Verifier {
@@ -41,9 +50,9 @@ pub struct Verifier {
     /// If None, all modules are verified.
     target: Option<String>,
 
-    /// Optional external line number (1-based) to verify a single goal.
+    /// Optional line selection (1-based, external) to verify specific goal(s).
     /// If this is set, target must be as well.
-    pub line: Option<u32>,
+    pub line_selection: Option<LineSelection>,
 
     /// When this flag is set, verification exits immediately upon encountering any warning.
     /// This is useful for operations like the cleaner where any warning means the change
@@ -122,7 +131,7 @@ impl Verifier {
         Ok(Self {
             project_ptr,
             target: target.clone(),
-            line: None,
+            line_selection: None,
             exit_on_warning: false,
             events,
             builder,
@@ -132,14 +141,23 @@ impl Verifier {
     /// Returns VerifierOutput on success or clean failure.
     /// Returns an error string if verification fails during setup.
     pub fn run(mut self) -> Result<VerifierOutput, String> {
-        // If a specific line is provided along with a target, set up single goal verification
-        if let Some(line) = self.line {
+        // If a specific line selection is provided along with a target, set up goal filtering
+        if let Some(ref line_sel) = self.line_selection {
             let Some(target) = &self.target else {
-                panic!("line set without target");
+                panic!("line_selection set without target");
             };
-            // line is the external line number (1-based)
-            if let Err(e) = self.builder.set_single_goal(target, line) {
-                return Err(format!("Failed to set single goal: {}", e));
+            // line values are external line numbers (1-based)
+            match line_sel {
+                LineSelection::Single(line) => {
+                    if let Err(e) = self.builder.set_single_goal(target, *line) {
+                        return Err(format!("Failed to set single goal: {}", e));
+                    }
+                }
+                LineSelection::Range(start, end) => {
+                    if let Err(e) = self.builder.set_goal_range(target, *start, *end) {
+                        return Err(format!("Failed to set goal range: {}", e));
+                    }
+                }
             }
         }
 

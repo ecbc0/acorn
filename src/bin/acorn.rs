@@ -8,38 +8,74 @@ use acorn::generative::generative_prover::GenerativeProverConfig;
 use acorn::module::ModuleDescriptor;
 use acorn::project::{Project, ProjectConfig};
 use acorn::server::{run_server, ServerArgs};
-use acorn::verifier::Verifier;
+use acorn::verifier::{LineSelection as VerifierLineSelection, Verifier};
 use clap::{Parser, Subcommand};
 use mimalloc::MiMalloc;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
+/// Represents a line selection: either a single line or a range.
+#[derive(Clone, Debug)]
+pub enum LineSelection {
+    /// A single line number (1-based, external)
+    Single(u32),
+    /// A range of lines, inclusive (1-based, external)
+    Range(u32, u32),
+}
+
 /// Parse target and line from various syntaxes:
-/// - MODULE:LINE (colon-separated)
+/// - MODULE:LINE (colon-separated, single line)
+/// - MODULE:START-END (colon-separated, line range)
 /// - MODULE LINE (positional)
 /// - MODULE --line LINE (flag-based)
 ///
-/// Returns (target, line) where line is Some if specified by any method.
+/// Returns (target, line_selection) where line_selection is Some if specified by any method.
 fn parse_target_and_line(
     target: Option<String>,
     line_positional: Option<u32>,
     line_flag: Option<u32>,
-) -> Result<(Option<String>, Option<u32>), String> {
+) -> Result<(Option<String>, Option<LineSelection>), String> {
     // Check for colon syntax in target
     if let Some(ref t) = target {
         if let Some(colon_pos) = t.rfind(':') {
             let module_part = &t[..colon_pos];
             let line_part = &t[colon_pos + 1..];
 
-            // Try to parse the part after colon as a line number
-            if let Ok(line) = line_part.parse::<u32>() {
-                // Colon syntax found - check for conflicts
-                if line_positional.is_some() || line_flag.is_some() {
+            // Check for conflicts first
+            if line_positional.is_some() || line_flag.is_some() {
+                // Only error if the colon syntax actually has a valid line/range
+                if line_part.parse::<u32>().is_ok() || line_part.contains('-') {
                     return Err(
                         "cannot specify line both in target (MODULE:LINE) and separately"
                             .to_string(),
                     );
                 }
-                return Ok((Some(module_part.to_string()), Some(line)));
+            }
+
+            // Try to parse as a range (START-END)
+            if let Some(dash_pos) = line_part.find('-') {
+                let start_part = &line_part[..dash_pos];
+                let end_part = &line_part[dash_pos + 1..];
+
+                if let (Ok(start), Ok(end)) = (start_part.parse::<u32>(), end_part.parse::<u32>()) {
+                    if start > end {
+                        return Err(format!(
+                            "invalid line range: start ({}) must be <= end ({})",
+                            start, end
+                        ));
+                    }
+                    return Ok((
+                        Some(module_part.to_string()),
+                        Some(LineSelection::Range(start, end)),
+                    ));
+                }
+            }
+
+            // Try to parse as a single line number
+            if let Ok(line) = line_part.parse::<u32>() {
+                return Ok((
+                    Some(module_part.to_string()),
+                    Some(LineSelection::Single(line)),
+                ));
             }
         }
     }
@@ -52,7 +88,7 @@ fn parse_target_and_line(
     }
 
     // Use positional if provided, otherwise flag
-    let line = line_positional.or(line_flag);
+    let line = line_positional.or(line_flag).map(LineSelection::Single);
     Ok((target, line))
 }
 
@@ -182,10 +218,10 @@ enum Command {
 
     /// Re-prove goals without using the cache
     Reprove {
-        /// Target module or file to reprove (can be a filename, module name, or module:line)
+        /// Target module or file to reprove (can be a filename, module name, module:line, or module:start-end)
         #[clap(
             value_name = "TARGET",
-            help = "Module or filename to reprove. Supports TARGET:LINE syntax. If not provided, reproves all files in the library."
+            help = "Module or filename to reprove. Supports TARGET:LINE and TARGET:START-END syntax for single line or line range. If not provided, reproves all files in the library."
         )]
         target: Option<String>,
 
@@ -342,12 +378,23 @@ async fn main() {
             strict,
             timeout,
         }) => {
-            let (target, line) = match parse_target_and_line(target, line_positional, line_flag) {
+            let (target, line_sel) = match parse_target_and_line(target, line_positional, line_flag)
+            {
                 Ok(result) => result,
                 Err(e) => {
                     println!("Error: {}", e);
                     std::process::exit(1);
                 }
+            };
+
+            // Verify command doesn't support line ranges
+            let line_selection = match line_sel {
+                Some(LineSelection::Single(line)) => Some(VerifierLineSelection::Single(line)),
+                Some(LineSelection::Range(_, _)) => {
+                    println!("Error: verify command does not support line ranges");
+                    std::process::exit(1);
+                }
+                None => None,
             };
 
             let mut verifier = match Verifier::new(current_dir, ProjectConfig::default(), target) {
@@ -358,8 +405,8 @@ async fn main() {
                 }
             };
 
-            verifier.builder.verbose = line.is_some();
-            verifier.line = line;
+            verifier.builder.verbose = line_selection.is_some();
+            verifier.line_selection = line_selection;
             verifier.builder.reverify = false;
             verifier.builder.strict = strict;
             verifier.builder.check_hashes = !nohash && !strict;
@@ -386,7 +433,8 @@ async fn main() {
             line_flag,
             cert,
         }) => {
-            let (target, line) = match parse_target_and_line(target, line_positional, line_flag) {
+            let (target, line_sel) = match parse_target_and_line(target, line_positional, line_flag)
+            {
                 Ok(result) => result,
                 Err(e) => {
                     println!("Error: {}", e);
@@ -394,8 +442,18 @@ async fn main() {
                 }
             };
 
+            // Reverify command doesn't support line ranges
+            let line_selection = match line_sel {
+                Some(LineSelection::Single(line)) => Some(VerifierLineSelection::Single(line)),
+                Some(LineSelection::Range(_, _)) => {
+                    println!("Error: reverify command does not support line ranges");
+                    std::process::exit(1);
+                }
+                None => None,
+            };
+
             // Validate that cert requires line
-            if cert.is_some() && line.is_none() {
+            if cert.is_some() && line_selection.is_none() {
                 println!("Error: --cert requires a line number to be set");
                 std::process::exit(1);
             }
@@ -408,8 +466,8 @@ async fn main() {
                 }
             };
 
-            verifier.builder.verbose = line.is_some();
-            verifier.line = line;
+            verifier.builder.verbose = line_selection.is_some();
+            verifier.line_selection = line_selection;
             verifier.builder.reverify = true;
             verifier.builder.check_hashes = false;
             verifier.builder.operation_verb = "reverified";
@@ -449,12 +507,22 @@ async fn main() {
             timeout,
             write_cache,
         }) => {
-            let (target, line) = match parse_target_and_line(target, line_positional, line_flag) {
+            let (target, line_sel) = match parse_target_and_line(target, line_positional, line_flag)
+            {
                 Ok(result) => result,
                 Err(e) => {
                     println!("Error: {}", e);
                     std::process::exit(1);
                 }
+            };
+
+            // Convert to verifier's LineSelection type - reprove supports both single lines and ranges
+            let line_selection = match line_sel {
+                Some(LineSelection::Single(line)) => Some(VerifierLineSelection::Single(line)),
+                Some(LineSelection::Range(start, end)) => {
+                    Some(VerifierLineSelection::Range(start, end))
+                }
+                None => None,
             };
 
             // Reprove doesn't read from cache; optionally writes with --write-cache
@@ -482,8 +550,8 @@ async fn main() {
                     }
                 };
 
-            verifier.builder.verbose = line.is_some();
-            verifier.line = line;
+            verifier.builder.verbose = line_selection.is_some();
+            verifier.line_selection = line_selection;
             verifier.builder.reverify = false; // Run search like verify does
             verifier.builder.check_hashes = false; // Don't skip based on hashes
             verifier.builder.operation_verb = "reproved";
@@ -510,7 +578,7 @@ async fn main() {
             line_positional,
             line_flag,
         }) => {
-            let (module, line) =
+            let (module, line_sel) =
                 match parse_target_and_line(Some(module), line_positional, line_flag) {
                     Ok((Some(m), l)) => (m, l),
                     Ok((None, _)) => {
@@ -523,8 +591,13 @@ async fn main() {
                     }
                 };
 
-            let line = match line {
-                Some(l) => l,
+            // Select command doesn't support line ranges
+            let line = match line_sel {
+                Some(LineSelection::Single(l)) => l,
+                Some(LineSelection::Range(_, _)) => {
+                    println!("Error: select command does not support line ranges");
+                    std::process::exit(1);
+                }
                 None => {
                     println!("Error: line number is required for select command");
                     std::process::exit(1);

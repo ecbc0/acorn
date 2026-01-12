@@ -34,6 +34,20 @@ pub enum ProverConfig {
     Generative(GenerativeProverConfig),
 }
 
+/// Filter for which goals to verify.
+/// Line numbers are internal (0-based).
+#[derive(Clone, Debug)]
+pub enum GoalFilter {
+    /// Verify only the goal at this exact line.
+    SingleLine { module: ModuleDescriptor, line: u32 },
+    /// Verify goals whose first_line falls within [start, end] (inclusive).
+    LineRange {
+        module: ModuleDescriptor,
+        start: u32,
+        end: u32,
+    },
+}
+
 /// The Builder contains all the mutable state for a single build.
 /// This is separate from the Project because you can read information from the Project from other
 /// threads while a build is ongoing, but a Builder is only used by the build itself.
@@ -94,10 +108,9 @@ pub struct Builder<'a> {
     /// Used to trim unused certs if the final build status is Good.
     used_cert_counts: HashMap<ModuleDescriptor, usize>,
 
-    /// When this is set, the builder only builds a single goal.
-    /// We specify goal by (module, line number).
-    /// This is an internal line number, which starts at 0.
-    pub single_goal: Option<(ModuleDescriptor, u32)>,
+    /// When this is set, the builder only builds goals matching the filter.
+    /// Line numbers are internal (0-based).
+    pub goal_filter: Option<GoalFilter>,
 
     /// The verbose flag makes us print miscellaneous debug output.
     /// Don't set it from within the language server.
@@ -344,7 +357,7 @@ impl<'a> Builder<'a> {
             current_module_good: true,
             build_cache: None,
             used_cert_counts: HashMap::new(),
-            single_goal: None,
+            goal_filter: None,
             verbose: false,
             cancellation_token,
             training_output: None,
@@ -637,7 +650,43 @@ impl<'a> Builder<'a> {
             .ok_or_else(|| format!("No descriptor found for module '{}'", target))?
             .clone();
 
-        self.single_goal = Some((module_descriptor, internal_line_number));
+        self.goal_filter = Some(GoalFilter::SingleLine {
+            module: module_descriptor,
+            line: internal_line_number,
+        });
+        Ok(())
+    }
+
+    /// Sets the builder to only build goals within a line range.
+    /// Takes a target module name and external line numbers (1-based), inclusive.
+    /// Verifies goals whose first_line falls within [start, end].
+    /// Requires that the target module is already loaded.
+    pub fn set_goal_range(
+        &mut self,
+        target: &str,
+        external_start: u32,
+        external_end: u32,
+    ) -> Result<(), String> {
+        // Convert from 1-based (external) to 0-based (internal) line numbers
+        let internal_start = external_start - 1;
+        let internal_end = external_end - 1;
+
+        let module_id = self
+            .project
+            .get_module_id_by_name(target)
+            .ok_or_else(|| format!("Module '{}' not found", target))?;
+
+        let module_descriptor = self
+            .project
+            .get_module_descriptor(module_id)
+            .ok_or_else(|| format!("No descriptor found for module '{}'", target))?
+            .clone();
+
+        self.goal_filter = Some(GoalFilter::LineRange {
+            module: module_descriptor,
+            start: internal_start,
+            end: internal_end,
+        });
         Ok(())
     }
 
@@ -832,8 +881,14 @@ impl<'a> Builder<'a> {
 
         assert!(cursor.node().has_goal());
         let goal = cursor.goal().unwrap();
-        if let Some((_, line)) = self.single_goal {
-            if goal.first_line != line {
+        if let Some(ref filter) = self.goal_filter {
+            let matches = match filter {
+                GoalFilter::SingleLine { line, .. } => goal.first_line == *line,
+                GoalFilter::LineRange { start, end, .. } => {
+                    goal.first_line >= *start && goal.first_line <= *end
+                }
+            };
+            if !matches {
                 // This isn't the goal we're looking for.
                 return Ok(());
             }
@@ -930,7 +985,7 @@ impl<'a> Builder<'a> {
             self.module_proving_good(target)
         };
 
-        if self.single_goal.is_some() {
+        if self.goal_filter.is_some() {
             return Ok(());
         }
 
@@ -1035,8 +1090,13 @@ impl<'a> Builder<'a> {
 
         // The second pass is the "proving phase".
         for (target, env) in targets.into_iter().zip(envs) {
-            if let Some((ref m, _)) = self.single_goal {
-                if m != target {
+            // Skip modules that don't match the goal filter
+            if let Some(ref filter) = self.goal_filter {
+                let filter_module = match filter {
+                    GoalFilter::SingleLine { module, .. } => module,
+                    GoalFilter::LineRange { module, .. } => module,
+                };
+                if filter_module != target {
                     continue;
                 }
             }
@@ -1058,8 +1118,8 @@ impl<'a> Builder<'a> {
                 continue;
             }
 
-            // Log module name when doing whole-project reprove (not reverify, not reading cache, no single goal)
-            if self.single_goal.is_none() && !self.check_hashes && !self.reverify {
+            // Log module name when doing whole-project reprove (not reverify, not reading cache, no goal filter)
+            if self.goal_filter.is_none() && !self.check_hashes && !self.reverify {
                 self.log_global(format!("reproving: {}", target));
             }
 
@@ -1164,7 +1224,7 @@ impl<'a> Builder<'a> {
         // There's a lot of conditions for when we actually write to the cache
         // We save certificates even when there are warnings (partially verified modules)
         // so that selection requests can show proofs for individual verified statements
-        if !self.status.is_error() && self.project.config.write_cache && self.single_goal.is_none()
+        if !self.status.is_error() && self.project.config.write_cache && self.goal_filter.is_none()
         {
             self.build_cache
         } else {

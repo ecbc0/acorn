@@ -17,6 +17,7 @@
       "Bash(time target/fastdev/profile_reverify:*)",
       "Bash(perf record:*)",
       "Bash(perf report:*)",
+      "Bash(wc:*)",
       "Read(~/acornlib/**)"
     ]
   }
