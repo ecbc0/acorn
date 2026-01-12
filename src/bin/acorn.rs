@@ -180,7 +180,7 @@ enum Command {
         cert: Option<String>,
     },
 
-    /// Re-prove goals without using the cache (neither reads from nor writes to cache)
+    /// Re-prove goals without using the cache
     Reprove {
         /// Target module or file to reprove (can be a filename, module name, or module:line)
         #[clap(
@@ -220,6 +220,10 @@ enum Command {
             value_name = "SECONDS"
         )]
         timeout: Option<f32>,
+
+        /// Write results to the cache
+        #[clap(long, help = "Write reproved results to the cache.")]
+        write_cache: bool,
     },
 
     /// Display proof details for a specific line
@@ -443,6 +447,7 @@ async fn main() {
             generative,
             fail_fast,
             timeout,
+            write_cache,
         }) => {
             let (target, line) = match parse_target_and_line(target, line_positional, line_flag) {
                 Ok(result) => result,
@@ -452,11 +457,11 @@ async fn main() {
                 }
             };
 
-            // Create a config that disables both reading and writing to the cache
+            // Reprove doesn't read from cache; optionally writes with --write-cache
             let config = ProjectConfig {
                 use_filesystem: true,
                 read_cache: false,
-                write_cache: false,
+                write_cache,
             };
 
             // Create the prover config based on the --generative flag
