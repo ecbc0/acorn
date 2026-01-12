@@ -699,8 +699,16 @@ impl AcornType {
 
     /// Computes the variance of a type parameter in this type.
     /// The `positive` parameter tracks whether we're in a positive or negative position.
-    /// This does NOT recurse into other datatypes - it only checks immediate structure.
-    pub fn compute_variance(&self, param: &TypeParam, positive: bool) -> Variance {
+    /// The `variance_lookup` function provides variance information for nested datatypes.
+    pub fn compute_variance_with_lookup<'a, F>(
+        &self,
+        param: &TypeParam,
+        positive: bool,
+        variance_lookup: &F,
+    ) -> Variance
+    where
+        F: Fn(&Datatype) -> Option<&'a Vec<Variance>>,
+    {
         match self {
             AcornType::Variable(p) | AcornType::Arbitrary(p) => {
                 if p == param {
@@ -713,12 +721,48 @@ impl AcornType {
                     Variance::None
                 }
             }
-            AcornType::Data(_, type_args) => {
-                // Check if param appears in type arguments (staying in same polarity)
-                // We don't recurse into the datatype definition, just check the arguments
+            AcornType::Data(datatype, type_args) => {
                 let mut combined = Variance::None;
-                for arg in type_args {
-                    combined = combined.merge(arg.compute_variance(param, positive));
+
+                // If we have variance information for this datatype, use it
+                if let Some(variances) = variance_lookup(datatype) {
+                    for (i, arg) in type_args.iter().enumerate() {
+                        // Determine the effective polarity based on the nested datatype's variance
+                        let arg_positive = if i < variances.len() {
+                            match &variances[i] {
+                                Variance::Negative => !positive, // Flip polarity for contravariant
+                                Variance::Both => {
+                                    // Invariant: param appears in both positions if it's here
+                                    let variance = arg.compute_variance_with_lookup(
+                                        param,
+                                        true,
+                                        variance_lookup,
+                                    );
+                                    if variance != Variance::None {
+                                        combined = combined.merge(Variance::Both);
+                                    }
+                                    continue;
+                                }
+                                Variance::Positive | Variance::None => positive,
+                            }
+                        } else {
+                            positive
+                        };
+                        combined = combined.merge(arg.compute_variance_with_lookup(
+                            param,
+                            arg_positive,
+                            variance_lookup,
+                        ));
+                    }
+                } else {
+                    // No variance info available, assume covariant
+                    for arg in type_args {
+                        combined = combined.merge(arg.compute_variance_with_lookup(
+                            param,
+                            positive,
+                            variance_lookup,
+                        ));
+                    }
                 }
                 combined
             }
@@ -726,13 +770,28 @@ impl AcornType {
                 // Function arguments are in NEGATIVE position, return is in POSITIVE position
                 let mut combined = Variance::None;
                 for arg_type in &ftype.arg_types {
-                    combined = combined.merge(arg_type.compute_variance(param, !positive));
+                    combined = combined.merge(arg_type.compute_variance_with_lookup(
+                        param,
+                        !positive,
+                        variance_lookup,
+                    ));
                 }
-                combined = combined.merge(ftype.return_type.compute_variance(param, positive));
+                combined = combined.merge(ftype.return_type.compute_variance_with_lookup(
+                    param,
+                    positive,
+                    variance_lookup,
+                ));
                 combined
             }
             AcornType::Bool | AcornType::Empty => Variance::None,
         }
+    }
+
+    /// Computes the variance of a type parameter in this type.
+    /// The `positive` parameter tracks whether we're in a positive or negative position.
+    /// This version does NOT look up variance for nested datatypes.
+    pub fn compute_variance(&self, param: &TypeParam, positive: bool) -> Variance {
+        self.compute_variance_with_lookup(param, positive, &|_| None)
     }
 
     /// Returns whether this type is a function type.

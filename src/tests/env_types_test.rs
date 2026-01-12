@@ -489,3 +489,36 @@ fn test_functional_type_inference() {
         "#,
     );
 }
+
+#[test]
+fn test_nested_contravariant_structure() {
+    let mut env = Environment::test();
+
+    // Define Set with T in contravariant position
+    env.add(
+        r#"
+        structure Set[T] {
+            contains: T -> Bool
+        }
+        "#,
+    );
+
+    // Define Wrapper that wraps Set (should make U contravariant in Wrapper)
+    env.add(
+        r#"
+        structure Wrapper[U] {
+            field: Set[U]
+        }
+        "#,
+    );
+
+    // This should be rejected (Bad appears in negative position via Set)
+    env.bad(
+        r#"
+        inductive Bad {
+            base
+            rec(Wrapper[Bad])
+        }
+        "#,
+    );
+}

@@ -866,7 +866,11 @@ impl Environment {
             .map(|param| {
                 let mut combined = Variance::None;
                 for field_type in &field_types {
-                    combined = combined.merge(field_type.compute_variance(param, true));
+                    combined = combined.merge(field_type.compute_variance_with_lookup(
+                        param,
+                        true,
+                        &|dt| self.bindings.get_datatype_variances(dt),
+                    ));
                 }
                 combined
             })
@@ -1160,7 +1164,11 @@ impl Environment {
                 let mut combined = Variance::None;
                 for (_, type_list, _) in &constructors {
                     for arg_type in type_list {
-                        combined = combined.merge(arg_type.compute_variance(param, true));
+                        combined = combined.merge(arg_type.compute_variance_with_lookup(
+                            param,
+                            true,
+                            &|dt| self.bindings.get_datatype_variances(dt),
+                        ));
                     }
                 }
                 combined
