@@ -531,17 +531,22 @@ impl Token {
     }
 
     pub fn start_pos(&self) -> Position {
+        let text_before = &self.line[..self.start as usize];
+        let utf16_offset = text_before.encode_utf16().count() as u32;
         Position {
             line: self.line_number,
-            character: self.start,
+            character: utf16_offset,
         }
     }
 
     // One spot after the last character in the token.
     pub fn end_pos(&self) -> Position {
+        let end_byte = (self.start + self.len) as usize;
+        let text_before_end = &self.line[..end_byte];
+        let utf16_offset = text_before_end.encode_utf16().count() as u32;
         Position {
             line: self.line_number,
-            character: (self.start + self.len),
+            character: utf16_offset,
         }
     }
 
