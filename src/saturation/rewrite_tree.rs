@@ -49,23 +49,35 @@ pub struct Rewrite {
 ///
 /// For example, if pattern_type is `Pi(x1, x2)` (a function from x1 to x2) and
 /// concrete_type is `Pi(Foo, Foo)`, this will bind x1 -> Foo and x2 -> Foo.
+///
+/// Returns false if there's an inconsistency (a type variable would need to be bound to
+/// two different concrete types), true otherwise.
 fn extract_type_bindings(
     pattern_type: TermRef,
     concrete_type: TermRef,
     bindings: &mut HashMap<AtomId, Term>,
-) {
+) -> bool {
     match pattern_type.decompose() {
         Decomposition::Atom(KernelAtom::FreeVariable(var_id)) => {
             // Pattern type is a type variable - bind it if not already bound
-            if !bindings.contains_key(var_id) {
+            if let Some(existing_binding) = bindings.get(var_id) {
+                // Check consistency: the existing binding must match the new concrete type
+                if *existing_binding != concrete_type.to_owned() {
+                    return false;
+                }
+            } else {
                 bindings.insert(*var_id, concrete_type.to_owned());
             }
         }
         Decomposition::Pi(pattern_input, pattern_output) => {
             // Pattern type is a function type - recursively match input and output
             if let Decomposition::Pi(concrete_input, concrete_output) = concrete_type.decompose() {
-                extract_type_bindings(pattern_input, concrete_input, bindings);
-                extract_type_bindings(pattern_output, concrete_output, bindings);
+                if !extract_type_bindings(pattern_input, concrete_input, bindings) {
+                    return false;
+                }
+                if !extract_type_bindings(pattern_output, concrete_output, bindings) {
+                    return false;
+                }
             }
         }
         Decomposition::Application(pattern_func, pattern_arg) => {
@@ -75,14 +87,19 @@ fn extract_type_bindings(
                 concrete_type.decompose()
             {
                 // Recursively match both the function part and the argument
-                extract_type_bindings(pattern_func, concrete_func, bindings);
-                extract_type_bindings(pattern_arg, concrete_arg, bindings);
+                if !extract_type_bindings(pattern_func, concrete_func, bindings) {
+                    return false;
+                }
+                if !extract_type_bindings(pattern_arg, concrete_arg, bindings) {
+                    return false;
+                }
             }
         }
         Decomposition::Atom(_) => {
             // Pattern type is a concrete atom (not a variable) - nothing to bind
         }
     }
+    true
 }
 
 /// Builds bindings from structural replacements, including inferred type variable bindings.
@@ -97,13 +114,15 @@ fn extract_type_bindings(
 /// Example 2: Pattern variable x0 has type (x1 -> x2) where x1, x2: Type.
 /// If we match x0 → f where f: Foo -> Bar, then x1 -> Foo and x2 -> Bar.
 ///
-/// Returns a HashMap mapping pattern variable IDs to their replacement terms.
+/// Returns None if there's a type variable inconsistency (e.g., same type variable
+/// would need to bind to different concrete types). Otherwise returns a HashMap
+/// mapping pattern variable IDs to their replacement terms.
 fn build_bindings(
     structural_replacements: &[TermRef],
     pattern_context: &LocalContext,
     query_context: &LocalContext,
     kernel_context: &KernelContext,
-) -> HashMap<AtomId, Term> {
+) -> Option<HashMap<AtomId, Term>> {
     let mut bindings: HashMap<AtomId, Term> = HashMap::new();
 
     // Add structural replacements to bindings
@@ -117,11 +136,13 @@ fn build_bindings(
             // Get the type of the replacement term
             let replacement_type = replacement.get_type_with_context(query_context, kernel_context);
             // Recursively extract type variable bindings by matching pattern type to concrete type
-            extract_type_bindings(var_type.as_ref(), replacement_type.as_ref(), &mut bindings);
+            if !extract_type_bindings(var_type.as_ref(), replacement_type.as_ref(), &mut bindings) {
+                return None;
+            }
         }
     }
 
-    bindings
+    Some(bindings)
 }
 
 #[derive(Clone)]
@@ -251,12 +272,16 @@ impl RewriteTree {
             &mut |value_id, replacements| {
                 for value in &self.tree.values[value_id] {
                     // Step 1: Build bindings from structural replacements + inferred type bindings
-                    let bindings = build_bindings(
+                    // Skip this rewrite if there's a type variable inconsistency
+                    let bindings = match build_bindings(
                         replacements,
                         &value.output_context,
                         local_context,
                         kernel_context,
-                    );
+                    ) {
+                        Some(b) => b,
+                        None => continue, // Type variable inconsistency - skip this rewrite
+                    };
 
                     // Step 2: Compute var_remap and output context for unbound variables
                     let (var_remap, new_context) = compute_unbound_var_remap(
@@ -750,5 +775,55 @@ mod tests {
                 rewrite.context.get_var_types()
             );
         }
+    }
+
+    #[test]
+    fn test_type_variable_consistency() {
+        // Test that rewrites are rejected when type variables would need inconsistent bindings.
+        //
+        // Pattern: g5(x0, x1, x2, x3) = x1(x2(x3))
+        //   where x0: Type, x1: x0 -> x0, x2: x0 -> x0, x3: x0
+        //
+        // Query: g5(Foo, g0, g1, c0)
+        //   where g0: Foo -> Foo, g1: Bar -> Bar, c0: Foo
+        //
+        // This should NOT match because:
+        // - x1 matches g0 (type Foo -> Foo), inferring x0 = Foo
+        // - x2 matches g1 (type Bar -> Bar), which would require x0 = Bar
+        // - x0 cannot be both Foo and Bar
+
+        let mut kctx = KernelContext::new();
+        kctx.parse_datatype("Foo");
+        kctx.parse_datatype("Bar");
+        kctx.parse_polymorphic_constant("g5", "T: Type", "(T -> T) -> (T -> T) -> T -> T");
+        kctx.parse_constant("g0", "Foo -> Foo");
+        kctx.parse_constant("g1", "Bar -> Bar");
+        kctx.parse_constant("c0", "Foo");
+
+        let mut tree = RewriteTree::new();
+
+        // Pattern: g5(x0, x1, x2, x3) = x1(x2(x3))
+        let pattern_clause = kctx.parse_clause(
+            "g5(x0, x1, x2, x3) = x1(x2(x3))",
+            &["Type", "x0 -> x0", "x0 -> x0", "x0"],
+        );
+        tree.insert_literal(
+            0,
+            &pattern_clause.literals[0],
+            pattern_clause.get_local_context(),
+            &kctx,
+        );
+
+        // Query with type mismatch
+        let query_lctx = kctx.parse_local(&[]);
+        let query_term = kctx.parse_term("g5(Foo, g0, g1, c0)");
+        let rewrites = tree.get_rewrites(&query_term, 0, &query_lctx, &kctx);
+
+        // Should find NO rewrites because g1: Bar -> Bar doesn't match x0 -> x0 where x0 = Foo
+        assert_eq!(
+            rewrites.len(),
+            0,
+            "Should not find any rewrites when function types don't match"
+        );
     }
 }
