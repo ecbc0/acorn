@@ -676,6 +676,7 @@ impl EqualityGraph {
                 // We found a contradiction.
                 self.has_contradiction = true;
                 self.contradiction_info = Some(value);
+                continue;
             }
             if !unequal_info.inequalities.contains_key(&new_group) {
                 unequal_info.inequalities.insert(new_group, value);
@@ -700,7 +701,8 @@ impl EqualityGraph {
             new_info.terms.extend(old_info.terms);
             new_info.applications.extend(keep_applications);
             for (group, value) in old_info.inequalities {
-                if !new_info.inequalities.contains_key(&group) {
+                // Skip new_group to avoid marking a group as unequal to itself
+                if group != new_group && !new_info.inequalities.contains_key(&group) {
                     new_info.inequalities.insert(group, value);
                 }
             }
@@ -2053,5 +2055,48 @@ mod tests {
         assert_eq!(graph.get_term_id(&pi1), Some(id1));
         assert_eq!(graph.get_term_id(&pi2), Some(id2));
         assert_eq!(graph.get_term_id(&pi3), Some(id3));
+    }
+
+    // Test that merging two groups that are marked as unequal:
+    // 1. Correctly detects a contradiction
+    // 2. Does not mark a group as unequal to itself
+    #[test]
+    fn test_merge_unequal_groups_no_self_inequality() {
+        let mut g = TestGraph::new();
+
+        // Create two terms
+        let a = g.insert_term_str("c1");
+        let b = g.insert_term_str("c2");
+
+        // Mark them as not equal
+        g.set_terms_not_equal(a, b, StepId(0));
+        assert!(!g.has_contradiction());
+
+        // Get the group IDs before merging
+        let group_a = g.get_group_id(a);
+        let group_b = g.get_group_id(b);
+
+        // Verify they have each other in their inequalities
+        {
+            let info_a = g.graph.get_group_info(group_a);
+            let info_b = g.graph.get_group_info(group_b);
+            assert!(info_a.inequalities.contains_key(&group_b));
+            assert!(info_b.inequalities.contains_key(&group_a));
+        }
+
+        // Now set them equal - this should detect a contradiction
+        g.set_eq(a, b, StepId(1));
+        assert!(g.has_contradiction());
+
+        // Find the surviving group (both terms now point to the same group)
+        let surviving_group = g.get_group_id(a);
+        assert_eq!(g.get_group_id(b), surviving_group);
+
+        // Critical check: the surviving group should NOT have itself in its inequalities
+        let surviving_info = g.graph.get_group_info(surviving_group);
+        assert!(
+            !surviving_info.inequalities.contains_key(&surviving_group),
+            "Group should never be marked as unequal to itself"
+        );
     }
 }
