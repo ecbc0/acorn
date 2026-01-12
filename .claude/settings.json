@@ -4,6 +4,7 @@
       "Bash(cargo test:*)",
       "Bash(cargo fmt:*)",
       "Bash(grep:*)",
+      "Bash(ls:*)",
       "Bash(cargo check:*)",
       "Bash(cargo build:*)",
       "Bash(cargo run:*)",

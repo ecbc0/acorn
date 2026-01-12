@@ -3,8 +3,8 @@
 //
 // To profile using samply:
 //
-//   cargo build --bin=profile_verify --profile=fastdev
-//   samply record target/fastdev/profile_verify
+//   cargo build --bin=profile_reverify --profile=fastdev
+//   samply record target/fastdev/profile_reverify
 
 use acorn::{project::ProjectConfig, verifier::Verifier};
 use mimalloc::MiMalloc;
