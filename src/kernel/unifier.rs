@@ -424,6 +424,11 @@ impl<'a> Unifier<'a> {
             if term.as_ref().is_type_sort() {
                 return false;
             }
+            // Reject Pi types (function kinds like Type -> Type).
+            // These are higher kinds, not types that can implement typeclasses.
+            if matches!(term.as_ref().decompose(), Decomposition::Pi(_, _)) {
+                return false;
+            }
             // Check if the term itself is a ground type symbol (like MyType)
             if let Some(ground_id) = term.as_ref().as_type_atom() {
                 // term IS a type (like MyType) - check if it implements the typeclass
@@ -2044,6 +2049,36 @@ mod tests {
         assert!(
             !result,
             "OUTPUT x0: (Bool -> Bool) should NOT unify with c5: Bool - types are incompatible"
+        );
+    }
+
+    /// Test that Pi types (function kinds like Type -> Type) are rejected
+    /// when unifying with a variable that has a typeclass constraint.
+    /// This prevents higher-kinded type constructors from being used where
+    /// a type implementing a typeclass is expected.
+    #[test]
+    fn test_typeclass_rejects_pi_types() {
+        let mut kctx = KernelContext::new();
+        kctx.parse_typeclass("MyClass");
+
+        // x0 has type MyClass (typeclass constraint)
+        let local = kctx.parse_local(&["MyClass"]);
+        let empty_local = LocalContext::empty();
+
+        // Type -> Type is a Pi type (kind of type constructors like List)
+        let type_to_type = Term::pi(Term::type_sort(), Term::type_sort());
+
+        let mut u = Unifier::new(3, &kctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(local)));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(empty_local)));
+
+        // Try to unify x0 (typeclass constraint) with Type -> Type (Pi type)
+        // This should FAIL because Pi types are not types that can implement typeclasses
+        let x0 = Term::atom(Atom::FreeVariable(0));
+        let result = u.unify(Scope::LEFT, &x0, Scope::RIGHT, &type_to_type);
+        assert!(
+            !result,
+            "Variable with typeclass constraint should NOT unify with Pi type (Type -> Type)"
         );
     }
 }

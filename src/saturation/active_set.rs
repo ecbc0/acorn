@@ -533,6 +533,22 @@ impl ActiveSet {
                         continue;
                     }
 
+                    // Validate the rewrite using the unifier to check typeclass constraints.
+                    // The PDT finds structural matches but doesn't validate typeclass constraints.
+                    let pattern_literal = &pattern_step.clause.literals[0];
+                    let s = if rewrite.forwards {
+                        &pattern_literal.left
+                    } else {
+                        &pattern_literal.right
+                    };
+                    let mut unifier = Unifier::new(3, kernel_context);
+                    unifier.set_input_context(Scope::LEFT, pattern_step.clause.get_local_context());
+                    unifier.set_input_context(Scope::RIGHT, LocalContext::empty_ref());
+                    if !unifier.unify(Scope::LEFT, s, Scope::RIGHT, &u_subterm) {
+                        // Typeclass constraint not satisfied - skip this rewrite
+                        continue;
+                    }
+
                     let ps = ProofStep::rewrite(
                         rewrite.pattern_id,
                         &pattern_step,
@@ -553,13 +569,26 @@ impl ActiveSet {
                         let right_type = lit.right.get_type_with_context(ctx, kernel_context);
                         if left_type != right_type {
                             eprintln!("Type mismatch in rewrite step (activate_rewrite_target):");
+                            eprintln!("  Pattern id: {}", rewrite.pattern_id);
                             eprintln!("  Pattern step: {}", pattern_step.clause);
+                            eprintln!(
+                                "  Pattern context: {:?}",
+                                pattern_step.clause.get_local_context()
+                            );
+                            eprintln!("  Target id: {}", target_id);
                             eprintln!("  Target step: {}", target_step.clause);
+                            eprintln!(
+                                "  Target context: {:?}",
+                                target_step.clause.get_local_context()
+                            );
                             eprintln!("  Target left: {}", target_left);
                             eprintln!("  Path: {:?}", path);
+                            eprintln!("  Subterm being rewritten: {}", u_subterm);
                             eprintln!("  Forwards: {}", rewrite.forwards);
                             eprintln!("  New subterm: {}", rewrite.term);
+                            eprintln!("  Rewrite context: {:?}", rewrite.context);
                             eprintln!("  Result clause: {}", ps.clause);
+                            eprintln!("  Result context: {:?}", ps.clause.get_local_context());
                             eprintln!("  Literal {}: {}", i, lit);
                             eprintln!("  Left type: {:?}", left_type);
                             eprintln!("  Right type: {:?}", right_type);
