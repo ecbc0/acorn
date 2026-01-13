@@ -359,6 +359,13 @@ impl<'a> Unifier<'a> {
                 return false;
             }
 
+            if term.has_bound_variable() {
+                // BoundVariables only match structurally with identical BoundVariables.
+                // They cannot unify with FreeVariables. This can happen during Pi type
+                // unification when the output of one Pi contains a BoundVariable.
+                return false;
+            }
+
             // Type check for OUTPUT variables: verify types are compatible before remapping.
             // This catches cases like trying to unify a function variable (type A -> B)
             // with a polymorphic constant (type Type -> T) that have incompatible signatures.
@@ -2044,6 +2051,55 @@ mod tests {
         assert!(
             !result,
             "OUTPUT x0: (Bool -> Bool) should NOT unify with c5: Bool - types are incompatible"
+        );
+    }
+
+    #[test]
+    fn test_unify_with_prior_mapping_and_bound_variable() {
+        // Regression test for panic during type unification when Pi types are involved.
+        //
+        // When unifying Pi types like `(x: T) -> x` and `(y: U) -> U`, we recursively
+        // unify the outputs. The first has BoundVariable(0), the second has a FreeVariable.
+        // If the FreeVariable already has a mapping to an OUTPUT variable, we end up calling
+        // unify_variable(OUTPUT, var_id, OUTPUT, BoundVariable), which tries to get the
+        // type of the BoundVariable and panics.
+        //
+        // This is a legitimate code path that should fail gracefully, not panic.
+        let ctx = test_ctx();
+
+        // Set up: x0 and x1 in LEFT both have type Type (they're type variables)
+        let local_ctx = LocalContext::from_types(vec![Term::type_sort(), Term::type_sort()]);
+        let mut u = Unifier::new(3, &ctx);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(local_ctx.clone())));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(local_ctx)));
+        u.set_output_var_types(vec![Term::type_sort(), Term::type_sort()]);
+
+        // First, create a mapping: unify x0 (LEFT) with x1 (LEFT)
+        // This creates output variable x0 and maps both input variables to it.
+        // This simulates what happens during type unification when two type variables
+        // are unified.
+        let x0 = Term::atom(Atom::FreeVariable(0));
+        let x1 = Term::atom(Atom::FreeVariable(1));
+        assert!(u.unify(Scope::LEFT, &x0, Scope::LEFT, &x1));
+
+        // Now simulate what happens when unifying outputs of Pi types:
+        // - One Pi type has output BoundVariable(0) (refers to its input parameter)
+        // - The other has output x0 which is already mapped to an OUTPUT variable
+        //
+        // The unification path:
+        // 1. We try to unify x0 with BoundVariable(0)
+        // 2. x0 has a prior mapping to output variable
+        // 3. unify_internal(OUTPUT, output_var, OUTPUT, BoundVariable) is called
+        // 4. This calls unify_variable(OUTPUT, var_id, OUTPUT, BoundVariable)
+        // 5. BUG: tries to get_type_with_context on BoundVariable, which panics
+        let bound_var = Term::atom(Atom::BoundVariable(0));
+        let result = u.unify(Scope::LEFT, &x0, Scope::LEFT, &bound_var);
+
+        // Should fail gracefully (BoundVariables can't unify with FreeVariables),
+        // not panic.
+        assert!(
+            !result,
+            "Unifying mapped variable with BoundVariable should fail, not panic"
         );
     }
 }
