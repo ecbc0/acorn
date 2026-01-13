@@ -78,7 +78,8 @@ impl ClauseTrace {
             let LiteralTrace::Output { index, flipped } = self.0[i] else {
                 continue;
             };
-            self.0[i] = other.0[index].clone();
+            let other_entry = other.0[index].clone();
+            self.0[i] = other_entry;
             if flipped {
                 self.0[i].flip();
             }

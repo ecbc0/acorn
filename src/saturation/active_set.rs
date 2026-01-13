@@ -1,6 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
+use super::proof::ProofResolver;
+#[cfg(any(test, feature = "validate"))]
+use super::proof::{reconstruct_step, ConcreteStep, ConcreteStepId};
 use super::rewrite_tree::{Rewrite, RewriteTree};
+use crate::code_generator::Error;
 use crate::kernel::clause::Clause;
 use crate::kernel::clause_set::TermId;
 use crate::kernel::fingerprint::FingerprintUnifier;
@@ -12,10 +16,12 @@ use crate::kernel::pdt::LiteralSet;
 use crate::kernel::term::{PathStep, Term};
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::unifier::{Scope, Unifier};
+#[cfg(any(test, feature = "validate"))]
+use crate::kernel::variable_map::VariableMap;
 use crate::kernel::{EqualityGraph, StepId};
 use crate::proof_step::{
     BooleanReductionInfo, EqualityFactoringInfo, EqualityResolutionInfo, ExtensionalityInfo,
-    InjectivityInfo, ProofStep, Rule, Truthiness,
+    InjectivityInfo, ProofStep, ProofStepId, Rule, Truthiness,
 };
 
 /// The ActiveSet stores a bunch of clauses that are indexed for various efficient lookups.
@@ -104,6 +110,73 @@ struct SubtermLocation {
     // Uses PathStep::Function/Argument to navigate the curried term structure.
     // An empty path means the root, so the whole term is the relevant subterm.
     path: Vec<PathStep>,
+}
+
+/// A context for validating proof steps using the ActiveSet.
+/// Implements ProofResolver to allow using the same reconstruction logic
+/// for validation at creation time.
+pub struct ValidationContext<'a> {
+    active_set: &'a ActiveSet,
+    kernel_context: &'a KernelContext,
+    /// A pending step that's about to be added to the active set.
+    /// This allows validation to reference the activating step before it's actually added.
+    pending_step: Option<(usize, &'a Clause)>,
+}
+
+impl<'a> ValidationContext<'a> {
+    pub fn new(active_set: &'a ActiveSet, kernel_context: &'a KernelContext) -> Self {
+        ValidationContext {
+            active_set,
+            kernel_context,
+            pending_step: None,
+        }
+    }
+
+    /// Create a validation context that includes a pending step.
+    /// The pending step will be available at the given ID even though it's not yet in the active set.
+    pub fn with_pending_step(
+        active_set: &'a ActiveSet,
+        kernel_context: &'a KernelContext,
+        pending_id: usize,
+        pending_clause: &'a Clause,
+    ) -> Self {
+        ValidationContext {
+            active_set,
+            kernel_context,
+            pending_step: Some((pending_id, pending_clause)),
+        }
+    }
+}
+
+impl ProofResolver for ValidationContext<'_> {
+    fn get_clause(&self, id: ProofStepId) -> Result<&Clause, Error> {
+        match id {
+            ProofStepId::Active(i) => {
+                // First check if this is the pending step
+                if let Some((pending_id, pending_clause)) = self.pending_step {
+                    if i == pending_id {
+                        return Ok(pending_clause);
+                    }
+                }
+                // Otherwise look in the active set
+                self.active_set
+                    .steps
+                    .get(i)
+                    .map(|s| &s.clause)
+                    .ok_or_else(|| Error::internal(format!("step {} not found in active set", i)))
+            }
+            ProofStepId::Passive(_) => Err(Error::internal(
+                "passive steps not available during validation",
+            )),
+            ProofStepId::Final => Err(Error::internal(
+                "final step not available during validation",
+            )),
+        }
+    }
+
+    fn kernel_context(&self) -> &KernelContext {
+        self.kernel_context
+    }
 }
 
 impl ActiveSet {
@@ -787,6 +860,65 @@ impl ActiveSet {
         }
     }
 
+    /// Validates that a ProofStep's stored information is self-consistent.
+    /// Uses the same logic as proof reconstruction to verify that the trace
+    /// correctly describes how the clause was derived.
+    ///
+    /// This is used to catch bugs in trace composition early, rather than
+    /// during proof reconstruction.
+    #[cfg(any(test, feature = "validate"))]
+    pub fn validate_step(
+        &self,
+        step: &ProofStep,
+        kernel_context: &KernelContext,
+    ) -> Result<(), Error> {
+        let ctx = ValidationContext::new(self, kernel_context);
+        let conclusion_map = VariableMap::new();
+        let conclusion_context = step.clause.get_local_context();
+        let mut concrete_steps: HashMap<ConcreteStepId, ConcreteStep> = HashMap::new();
+
+        // Use a placeholder ID since the step isn't activated yet
+        let id = ProofStepId::Active(self.len());
+
+        reconstruct_step(
+            &ctx,
+            id,
+            step,
+            conclusion_map,
+            conclusion_context,
+            &mut concrete_steps,
+        )
+    }
+
+    /// Validates a proof step, including a pending step that's about to be added.
+    /// The pending step will be available at pending_id even though it's not yet in the active set.
+    #[cfg(any(test, feature = "validate"))]
+    pub fn validate_step_with_pending(
+        &self,
+        step: &ProofStep,
+        kernel_context: &KernelContext,
+        pending_id: usize,
+        pending_clause: &Clause,
+    ) -> Result<(), Error> {
+        let ctx =
+            ValidationContext::with_pending_step(self, kernel_context, pending_id, pending_clause);
+        let conclusion_map = VariableMap::new();
+        let conclusion_context = step.clause.get_local_context();
+        let mut concrete_steps: HashMap<ConcreteStepId, ConcreteStep> = HashMap::new();
+
+        // Use a placeholder ID since the step isn't activated yet
+        let id = ProofStepId::Active(self.len());
+
+        reconstruct_step(
+            &ctx,
+            id,
+            step,
+            conclusion_map,
+            conclusion_context,
+            &mut concrete_steps,
+        )
+    }
+
     /// Simplifies the clause based on both structural rules and the active set.
     /// If the result is redundant given what's already known, return None.
     /// Specializations are allowed, though, even if they're redundant.
@@ -855,7 +987,20 @@ impl ActiveSet {
         if self.is_known_long_clause(&clause) {
             return None;
         }
-        Some(ProofStep::simplified(step, &new_rules, clause, trace))
+        let result = ProofStep::simplified(step, &new_rules, clause, trace);
+
+        // Validate the simplified step when the validate feature is enabled
+        #[cfg(any(test, feature = "validate"))]
+        if let Err(e) = self.validate_step(&result, kernel_context) {
+            panic!(
+                "Invalid proof step after simplification: {}\nStep clause: {}\nStep rule: {}",
+                e,
+                result.clause,
+                result.rule.name()
+            );
+        }
+
+        Some(result)
     }
 
     fn add_resolution_targets(

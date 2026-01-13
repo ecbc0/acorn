@@ -1,3 +1,4 @@
+use super::active_set::ActiveSet;
 use super::features::Features;
 use super::score::Score;
 use super::scorer::{default_scorer, Scorer};
@@ -282,6 +283,7 @@ impl PassiveSet {
         activated_id: usize,
         activated_step: &ProofStep,
         local_context: &LocalContext,
+        active_set: &ActiveSet,
         kernel_context: &KernelContext,
         left: &Term,
         right: &Term,
@@ -373,7 +375,29 @@ impl PassiveSet {
             }
 
             let short_steps = &[(activated_id, activated_step)];
-            new_steps.push(ProofStep::simplified(step, short_steps, new_clause, traces));
+            let simplified = ProofStep::simplified(step, short_steps, new_clause, traces);
+
+            // Validate the simplified step when the validate feature is enabled
+            // Include the activating step as a pending step since it's not in the active set yet
+            // Skip validation for steps without traces (like mock steps in tests)
+            #[cfg(any(test, feature = "validate"))]
+            if simplified.trace.is_some() {
+                if let Err(e) = active_set.validate_step_with_pending(
+                    &simplified,
+                    kernel_context,
+                    activated_id,
+                    &activated_step.clause,
+                ) {
+                    panic!(
+                        "Invalid proof step after passive simplification: {}\nStep clause: {}\nStep rule: {}",
+                        e,
+                        simplified.clause,
+                        simplified.rule.name()
+                    );
+                }
+            }
+
+            new_steps.push(simplified);
         }
 
         self.push_batch(new_steps, kernel_context);
@@ -403,6 +427,7 @@ impl PassiveSet {
         &mut self,
         activated_id: usize,
         step: &ProofStep,
+        active_set: &ActiveSet,
         kernel_context: &KernelContext,
     ) {
         assert!(step.clause.literals.len() == 1);
@@ -412,6 +437,7 @@ impl PassiveSet {
             activated_id,
             &step,
             local_context,
+            active_set,
             kernel_context,
             &literal.left,
             &literal.right,
@@ -424,6 +450,7 @@ impl PassiveSet {
                 activated_id,
                 &step,
                 &reversed_context,
+                active_set,
                 kernel_context,
                 &right,
                 &left,
@@ -475,7 +502,8 @@ mod tests {
         // This should match *both* the literals in our existing clause.
         // x0 is a Bool variable that matches both c1 and c2.
         let clause2 = kctx.parse_clause("not g0(c0, x0)", &["Bool"]);
-        passive_set.simplify(3, &ProofStep::mock_from_clause(clause2), &kctx);
+        let active_set = ActiveSet::new();
+        passive_set.simplify(3, &ProofStep::mock_from_clause(clause2), &active_set, &kctx);
 
         let step = passive_set.pop().unwrap();
         assert_eq!(step.clause.to_string(), "<empty>");
