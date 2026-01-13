@@ -98,20 +98,22 @@ fn make_simplified(
     left: &Term,
     right: &Term,
     positive: bool,
-    flipped: bool,
-    index: usize,
+    caller_flipped: bool,
+    _index: usize,
     literals: Vec<Literal>,
     trace: Option<ClauseTrace>,
 ) -> Option<(Clause, Option<ClauseTrace>)> {
-    if literals[index].positive == positive {
-        return None;
-    }
+    // Note: When caller_flipped is true, left and right have already been swapped
+    // by the caller. So any flip we compute here is relative to the swapped order.
+    // The final flip must be XORed with caller_flipped to get the flip relative
+    // to the original activating literal orientation.
     let mut new_literals = vec![];
     let mut incremental_trace = vec![];
-    for (i, literal) in literals.into_iter().enumerate() {
-        let (eliminated, literal_flipped) = if i == index {
-            (true, flipped)
-        } else if pair_specializes(
+    for literal in literals.into_iter() {
+        // Check both directions consistently for all literals.
+        // The flip value must be determined by which direction actually matches,
+        // not by which direction was used to find the initial match.
+        let (eliminated, match_flipped) = if pair_specializes(
             activated_context,
             passive_context,
             kernel_context,
@@ -145,6 +147,8 @@ fn make_simplified(
             (false, false)
         };
         if eliminated {
+            // XOR with caller_flipped to get the flip relative to original orientation
+            let literal_flipped = match_flipped != caller_flipped;
             incremental_trace.push(LiteralTrace::Eliminated {
                 step: activated_id,
                 flipped: literal_flipped,
