@@ -287,6 +287,7 @@ impl PassiveSet {
         activated_id: usize,
         activated_step: &ProofStep,
         local_context: &LocalContext,
+        #[cfg_attr(not(any(test, feature = "validate")), allow(unused_variables))]
         active_set: &ActiveSet,
         kernel_context: &KernelContext,
         left: &Term,

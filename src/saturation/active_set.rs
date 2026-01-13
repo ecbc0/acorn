@@ -399,6 +399,35 @@ impl ActiveSet {
 
         let (clause, trace) =
             Clause::new_with_trace(literals, ClauseTrace::new(incremental_trace), &context);
+
+        // Debug: validate resolution output before creating step
+        // Note: use clause.get_local_context() because literals have been renormalized
+        #[cfg(feature = "validate")]
+        for (i, literal) in clause.literals.iter().enumerate() {
+            let left_type = literal
+                .left
+                .get_type_with_context(clause.get_local_context(), kernel_context);
+            let right_type = literal
+                .right
+                .get_type_with_context(clause.get_local_context(), kernel_context);
+            if left_type != right_type {
+                eprintln!("RESOLUTION PRODUCED TYPE MISMATCH:");
+                eprintln!("  Short clause (id={}): {}", short_id, short_clause);
+                eprintln!("  Short context: {:?}", short_clause.get_local_context());
+                eprintln!("  Long clause (id={}): {}", long_id, long_clause);
+                eprintln!("  Long context: {:?}", long_clause.get_local_context());
+                eprintln!("  Long index (eliminated): {}", long_index);
+                eprintln!("  Short index (eliminated): {}", short_index);
+                eprintln!("  Flipped: {}", flipped);
+                eprintln!("  Pre-normalization context: {:?}", context);
+                eprintln!("  Result clause: {}", clause);
+                eprintln!("  Result context: {:?}", clause.get_local_context());
+                eprintln!("  Literal {}: {}", i, literal);
+                eprintln!("  Left type: {:?}", left_type);
+                eprintln!("  Right type: {:?}", right_type);
+            }
+        }
+
         let mut step = ProofStep::resolution(
             long_id,
             long_step,
@@ -1433,6 +1462,103 @@ mod tests {
         let mut results = vec![];
         set.find_resolutions(&step, &mut results, &kctx);
         assert_eq!(results.len(), 0);
+    }
+
+    /// Test that resolution with function variables and polymorphic constants produces
+    /// well-typed clauses.
+    ///
+    /// This tests a bug where resolution between:
+    /// - Long clause with function variables (x0, x1: Real -> Real) and value variable (x2: Real)
+    ///   containing literal like x0(x2) = x1(x2)
+    /// - Short clause with polymorphic constant (g2: T -> T applied to Real)
+    ///
+    /// The bug: When x1(x2) is unified with g2(Real), the unifier incorrectly allows
+    /// x1 = g2 and x2 = Real (a TYPE symbol), even though x2 should be a VALUE of type Real.
+    /// This results in the output clause having a type mismatch: the left side has type Real,
+    /// but the right side has a complex unevaluated type expression.
+    ///
+    #[test]
+    fn test_resolution_rejects_function_variable_with_polymorphic_type_argument() {
+        let mut kctx = KernelContext::new();
+        kctx.parse_datatype("Real");
+
+        // g2: (T: Type) -> T (polymorphic constant returning a value of type T)
+        kctx.parse_polymorphic_constant("g2", "T: Type", "T");
+
+        // g7: (T: Type) -> Type -> something -> T -> T
+        // (a function that takes type params and returns a value)
+        kctx.parse_polymorphic_constant("g7", "T: Type, U: Type", "Real -> T -> U");
+
+        // g236: Real -> Real
+        kctx.parse_constant("g236", "Real -> Real");
+
+        // c1: Real
+        kctx.parse_constant("c1", "Real");
+
+        // g162: (Real -> Real) -> (Real -> Real) -> Real
+        // (takes two functions and returns a value)
+        kctx.parse_constant("g162", "(Real -> Real) -> (Real -> Real) -> Real");
+
+        // s204: (Real -> Real) -> (Real -> Real) -> Real
+        // (similar to g162)
+        kctx.parse_constant("s204", "(Real -> Real) -> (Real -> Real) -> Real");
+
+        // g223: (Real -> Real) -> Bool (predicate on functions)
+        kctx.parse_constant("g223", "(Real -> Real) -> Bool");
+
+        let mut set = ActiveSet::new();
+
+        // Long clause: x0(g162(s204(x0, x1))) != x1(g162(s204(x0, x1))) or
+        //              not g223(x0) or not g223(x1) or x0(x2) = x1(x2)
+        // Context: x0: Real -> Real, x1: Real -> Real, x2: Real
+        let long_clause = kctx.parse_clause(
+            "x0(g162(s204(x0, x1))) != x1(g162(s204(x0, x1))) or not g223(x0) or not g223(x1) or x0(x2) = x1(x2)",
+            &["Real -> Real", "Real -> Real", "Real"],
+        );
+        let mut long_step = ProofStep::mock_from_clause(long_clause);
+        long_step.truthiness = Truthiness::Factual;
+        set.activate(long_step, &kctx);
+
+        // Short clause: g7(x0, Real, g236(c1), x1) != g2(Real)
+        // Context: x0: Type, x1: x0 (value of type x0)
+        let short_clause =
+            kctx.parse_clause("g7(x0, Real, g236(c1), x1) != g2(Real)", &["Type", "x0"]);
+        let mut short_step = ProofStep::mock_from_clause(short_clause);
+        short_step.truthiness = Truthiness::Counterfactual;
+
+        let mut results = vec![];
+        set.find_resolutions(&short_step, &mut results, &kctx);
+
+        // If resolution succeeds, validate that all result clauses are well-typed
+        // BUG: Currently resolution produces ill-typed clauses where the right side
+        // of a literal has a complex unevaluated type expression instead of Real
+        for (i, ps) in results.iter().enumerate() {
+            for (j, lit) in ps.clause.literals.iter().enumerate() {
+                let left_type = lit
+                    .left
+                    .get_type_with_context(ps.clause.get_local_context(), &kctx);
+                let right_type = lit
+                    .right
+                    .get_type_with_context(ps.clause.get_local_context(), &kctx);
+                assert_eq!(
+                    left_type,
+                    right_type,
+                    "Resolution with function variables produced ill-typed clause.\n\
+                     Result clause {}: {}\n\
+                     Literal {}: {}\n\
+                     Left type: {:?}\n\
+                     Right type: {:?}\n\
+                     Context: {:?}",
+                    i,
+                    ps.clause,
+                    j,
+                    lit,
+                    left_type,
+                    right_type,
+                    ps.clause.get_local_context().get_var_types()
+                );
+            }
+        }
     }
 
     /// Test that polymorphic rewriting produces well-typed clauses.

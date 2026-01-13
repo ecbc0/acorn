@@ -21,10 +21,6 @@ struct RewriteValue {
     // For an s = t rule, "forwards" is rewriting s -> t, "backwards" is rewriting t -> s
     forwards: bool,
 
-    // The pattern that we are rewriting *from* (stored in PDT key, kept here for debugging).
-    #[cfg(feature = "validate")]
-    input: Term,
-
     // The pattern that we are rewriting into.
     // The pattern that we are rewriting *from* is kept in the key.
     output: Term,
@@ -205,8 +201,6 @@ impl RewriteTree {
         let value = RewriteValue {
             pattern_id,
             forwards,
-            #[cfg(feature = "validate")]
-            input: input_term.clone(),
             output: output_term.clone(),
             output_context: local_context.clone(),
         };
@@ -228,19 +222,6 @@ impl RewriteTree {
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) {
-        // Debug: log pattern insertions for patterns we want to investigate
-        #[cfg(feature = "validate")]
-        {
-            // Log patterns that look like function application (x0(x1))
-            // These are the patterns that can cause type mismatches
-            let lit_str = format!("{}", literal);
-            if lit_str.contains("x0(x1)") || lit_str.contains("g202") {
-                eprintln!("REWRITE TREE INSERT (pattern_id={}):", pattern_id);
-                eprintln!("  Literal: {}", literal);
-                eprintln!("  Context: {:?}", local_context);
-            }
-        }
-
         // Already normalized
         self.insert_terms(
             pattern_id,

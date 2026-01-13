@@ -500,12 +500,6 @@ impl crate::prover::Prover for SaturationProver {
         normalizer: &Normalizer,
         _checker: &Checker,
     ) -> Outcome {
-        // Debug: log which goal is being searched
-        #[cfg(feature = "validate")]
-        if let Some(goal) = &self.goal {
-            eprintln!("DEBUG: searching goal: {}", goal.name);
-        }
-
         let kernel_context = normalizer.kernel_context();
 
         // Convert mode to actual parameters

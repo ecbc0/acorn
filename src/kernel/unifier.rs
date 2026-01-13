@@ -359,7 +359,22 @@ impl<'a> Unifier<'a> {
                 return false;
             }
 
-            // This is fine.
+            // Type check for OUTPUT variables: verify types are compatible before remapping.
+            // This catches cases like trying to unify a function variable (type A -> B)
+            // with a polymorphic constant (type Type -> T) that have incompatible signatures.
+            if let Some(var_type) = self.output_context.get_var_type(var_id as usize).cloned() {
+                let term_type =
+                    term.get_type_with_context(&self.output_context, self.kernel_context);
+                if !self.unify_internal(
+                    Scope::OUTPUT,
+                    var_type.as_ref(),
+                    Scope::OUTPUT,
+                    term_type.as_ref(),
+                ) {
+                    return false;
+                }
+            }
+
             return self.remap(var_id, term);
         }
 
@@ -453,18 +468,13 @@ impl<'a> Unifier<'a> {
         } else {
             // Normal type unification (no typeclass constraint)
             let term_type = term.get_type_with_context(&self.output_context, self.kernel_context);
-            // Skip type unification if the term type has BoundVariables (polymorphic type).
-            // BoundVariables indicate a polymorphic type that hasn't been fully instantiated,
-            // and we can't meaningfully unify such types in this context.
-            if !term_type.has_bound_variable() {
-                if !self.unify_internal(
-                    var_scope,
-                    var_type.as_ref(),
-                    Scope::OUTPUT,
-                    term_type.as_ref(),
-                ) {
-                    return false;
-                }
+            if !self.unify_internal(
+                var_scope,
+                var_type.as_ref(),
+                Scope::OUTPUT,
+                term_type.as_ref(),
+            ) {
+                return false;
             }
         }
 
@@ -1997,6 +2007,43 @@ mod tests {
         assert!(
             !x0_type.has_variable(0),
             "x0's type should not contain x0 (would be self-referential)"
+        );
+    }
+
+    #[test]
+    fn test_output_variable_type_check_before_remap() {
+        // Test that OUTPUT variables are type-checked before being remapped.
+        // This bug was causing resolution to produce ill-typed clauses.
+        //
+        // Scenario: OUTPUT variable x0 has type (Bool -> Bool), but we try to
+        // remap it to a term of type Bool. This should FAIL because the types
+        // are incompatible.
+        let ctx = test_ctx();
+        let bool_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(1)).clone(); // g1: Bool -> Bool
+
+        let mut u = Unifier::new(3, &ctx);
+        // Set up LEFT context: x0: Bool -> Bool
+        let left_ctx = LocalContext::from_types(vec![bool_to_bool.clone()]);
+        u.set_input_context(Scope::LEFT, Box::leak(Box::new(left_ctx)));
+        u.set_input_context(Scope::RIGHT, Box::leak(Box::new(LocalContext::empty())));
+
+        // Set up OUTPUT context: x0: Bool -> Bool
+        u.set_output_var_types(vec![bool_to_bool.clone()]);
+
+        // First, map x0 from LEFT to OUTPUT (so x0 in OUTPUT has a function type)
+        let x0 = Term::atom(Atom::FreeVariable(0));
+        let result = u.unify_variable(Scope::LEFT, 0, Scope::OUTPUT, &x0);
+        assert!(result, "Initial mapping should succeed");
+
+        // c5 is a Bool constant (not a function)
+        let c5 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(5)));
+
+        // Now try to unify OUTPUT x0 with c5 (Bool).
+        // This should FAIL because x0: (Bool -> Bool) is incompatible with c5: Bool
+        let result = u.unify_variable(Scope::OUTPUT, 0, Scope::OUTPUT, &c5);
+        assert!(
+            !result,
+            "OUTPUT x0: (Bool -> Bool) should NOT unify with c5: Bool - types are incompatible"
         );
     }
 }
