@@ -8,6 +8,7 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::pdt::{compute_unbound_var_remap, substitute_term, term_key_prefix, Pdt};
+use crate::kernel::symbol::Symbol;
 use crate::kernel::term::{Decomposition, Term, TermRef};
 
 // Each term can correspond with multiple RewriteValues.
@@ -19,6 +20,10 @@ struct RewriteValue {
 
     // For an s = t rule, "forwards" is rewriting s -> t, "backwards" is rewriting t -> s
     forwards: bool,
+
+    // The pattern that we are rewriting *from* (stored in PDT key, kept here for debugging).
+    #[cfg(feature = "validate")]
+    input: Term,
 
     // The pattern that we are rewriting into.
     // The pattern that we are rewriting *from* is kept in the key.
@@ -78,6 +83,9 @@ fn extract_type_bindings(
                 if !extract_type_bindings(pattern_output, concrete_output, bindings) {
                     return false;
                 }
+            } else {
+                // Pattern is Pi but concrete is not - types are incompatible
+                return false;
             }
         }
         Decomposition::Application(pattern_func, pattern_arg) => {
@@ -93,10 +101,35 @@ fn extract_type_bindings(
                 if !extract_type_bindings(pattern_arg, concrete_arg, bindings) {
                     return false;
                 }
+            } else {
+                // Pattern is Application but concrete is not - types are incompatible
+                return false;
             }
         }
-        Decomposition::Atom(_) => {
-            // Pattern type is a concrete atom (not a variable) - nothing to bind
+        Decomposition::Atom(pattern_atom) => {
+            // Pattern type is a concrete atom (not a variable)
+            // It must match the concrete type exactly, with one exception:
+            // A Typeclass constraint can match TypeSort (e.g., P: Pointed matches concrete types)
+            if let Decomposition::Atom(concrete_atom) = concrete_type.decompose() {
+                if pattern_atom != concrete_atom {
+                    // Allow Typeclass to match TypeSort
+                    // A typeclass constraint like P: Pointed should match any concrete type
+                    // Concrete types have kind Type (TypeSort), not the typeclass kind
+                    let is_typeclass_matching_typesort = matches!(
+                        (pattern_atom, concrete_atom),
+                        (
+                            KernelAtom::Symbol(Symbol::Typeclass(_)),
+                            KernelAtom::Symbol(Symbol::TypeSort)
+                        )
+                    );
+                    if !is_typeclass_matching_typesort {
+                        return false;
+                    }
+                }
+            } else {
+                // Pattern is Atom but concrete is not - types are incompatible
+                return false;
+            }
         }
     }
     true
@@ -172,6 +205,8 @@ impl RewriteTree {
         let value = RewriteValue {
             pattern_id,
             forwards,
+            #[cfg(feature = "validate")]
+            input: input_term.clone(),
             output: output_term.clone(),
             output_context: local_context.clone(),
         };
@@ -193,6 +228,19 @@ impl RewriteTree {
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) {
+        // Debug: log pattern insertions for patterns we want to investigate
+        #[cfg(feature = "validate")]
+        {
+            // Log patterns that look like function application (x0(x1))
+            // These are the patterns that can cause type mismatches
+            let lit_str = format!("{}", literal);
+            if lit_str.contains("x0(x1)") || lit_str.contains("g202") {
+                eprintln!("REWRITE TREE INSERT (pattern_id={}):", pattern_id);
+                eprintln!("  Literal: {}", literal);
+                eprintln!("  Context: {:?}", local_context);
+            }
+        }
+
         // Already normalized
         self.insert_terms(
             pattern_id,
@@ -824,6 +872,105 @@ mod tests {
             rewrites.len(),
             0,
             "Should not find any rewrites when function types don't match"
+        );
+    }
+
+    #[test]
+    fn test_pdt_shared_key_different_contexts() {
+        // This test reproduces the bug where multiple RewriteValues share the same PDT key
+        // but have DIFFERENT output_contexts.
+        //
+        // The PDT stores ONE metadata context per key, which is used by `types_compatible`.
+        // But each RewriteValue has its own output_context used by `build_bindings`.
+        //
+        // Bug scenario:
+        // 1. Insert pattern 1: x0 -> f1(x0) where x0: Foo (ground type)
+        // 2. Insert pattern 2: x0 -> f2(x1, x2, x0) where x0: Pair[x1, x2] (parameterized type)
+        // 3. Both patterns have the same PDT key (just a variable input)
+        // 4. PDT uses the FIRST context (x0: Foo) for types_compatible
+        // 5. Query with term of type Foo - passes types_compatible
+        // 6. But build_bindings for pattern 2 uses x0: Pair[x1, x2], causing type mismatch
+
+        let mut kctx = KernelContext::new();
+        kctx.parse_datatype("Foo");
+        kctx.parse_type_constructor("Pair", 2);
+        // g0: Foo -> Foo (simple identity-like function)
+        kctx.parse_constant("g0", "Foo -> Foo");
+        // g1: (T: Type, U: Type) -> Pair[T, U] -> Pair[T, U] (polymorphic identity)
+        kctx.parse_polymorphic_constant("g1", "T: Type, U: Type", "Pair[T, U] -> Pair[T, U]");
+        kctx.parse_constant("c0", "Foo");
+
+        let mut tree = RewriteTree::new();
+
+        // Pattern 1: x0 -> g0(x0) where x0: Foo
+        // This establishes the PDT metadata context with x0: Foo
+        let pattern1_lctx = kctx.parse_local(&["Foo"]);
+        let pattern1_input = Term::parse("x0");
+        let pattern1_output = kctx.parse_term("g0(x0)");
+        tree.insert_terms(
+            0,
+            &pattern1_input,
+            &pattern1_output,
+            false, // backwards
+            &pattern1_lctx,
+            &kctx,
+        );
+
+        // Pattern 2: x0 -> g1(x1, x2, x0) where x0: Pair[x1, x2], x1: Type, x2: Type
+        // This has the SAME PDT key (just variable x0) but DIFFERENT context
+        let pattern2_lctx = kctx.parse_local(&["Pair[x1, x2]", "Type", "Type"]);
+        let pattern2_input = Term::parse("x0");
+        let pattern2_output = kctx.parse_term("g1(x1, x2, x0)");
+        tree.insert_terms(
+            0,
+            &pattern2_input,
+            &pattern2_output,
+            false, // backwards
+            &pattern2_lctx,
+            &kctx,
+        );
+
+        // Query: c0 (type Foo)
+        let query_lctx = kctx.parse_local(&[]);
+        let query_term = kctx.parse_term("c0");
+        let query_type = query_term.get_type_with_context(&query_lctx, &kctx);
+        assert_eq!(query_type, kctx.parse_type("Foo"));
+
+        let rewrites = tree.get_rewrites(&query_term, 0, &query_lctx, &kctx);
+
+        // We should get exactly 1 rewrite: g0(c0)
+        // Pattern 2 should NOT produce a rewrite because x0: Pair[x1, x2] doesn't match type Foo
+        //
+        // BUG: Pattern 2 may produce an invalid rewrite because:
+        // - PDT uses pattern 1's context (x0: Foo) for types_compatible, which passes
+        // - build_bindings uses pattern 2's context (x0: Pair[x1, x2]), causing mismatch
+
+        // Verify all rewrites produce well-typed terms
+        for rewrite in &rewrites {
+            let output_type = rewrite.term.get_type_with_context(&rewrite.context, &kctx);
+            assert_eq!(
+                output_type,
+                query_type,
+                "Rewrite output type should match input type.\n\
+                 Input: {} (type {})\n\
+                 Output: {} (type {})\n\
+                 Context: {:?}\n\
+                 BUG: Pattern 2 was matched using pattern 1's context (x0: Foo) for PDT check,\n\
+                 but build_bindings used pattern 2's context (x0: Pair[x1, x2]).",
+                query_term,
+                query_type,
+                rewrite.term,
+                output_type,
+                rewrite.context.get_var_types()
+            );
+        }
+
+        // Should have exactly 1 valid rewrite (from pattern 1 only)
+        assert_eq!(
+            rewrites.len(),
+            1,
+            "Should only get 1 rewrite from pattern 1. Pattern 2 should be rejected \
+             because Foo is not Pair[T, U] for any T, U."
         );
     }
 }

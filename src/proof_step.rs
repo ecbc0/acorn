@@ -631,6 +631,7 @@ impl ProofStep {
 
         // Use rewritten_context for normalization since it has the correct variable types
         // for all variables in new_literal (from both target and new_subterm).
+
         let (clause, trace) = Clause::from_literal_traced(new_literal, false, &rewritten_context);
 
         let truthiness = pattern_step.truthiness.combine(target_step.truthiness);

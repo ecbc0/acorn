@@ -515,6 +515,29 @@ impl ActiveSet {
                         &rewrite.term,
                         &rewrite.context,
                     );
+
+                    // Debug: validate rewrite step types
+                    #[cfg(any(test, feature = "validate"))]
+                    for (i, lit) in ps.clause.literals.iter().enumerate() {
+                        let ctx = ps.clause.get_local_context();
+                        let left_type = lit.left.get_type_with_context(ctx, kernel_context);
+                        let right_type = lit.right.get_type_with_context(ctx, kernel_context);
+                        if left_type != right_type {
+                            eprintln!("Type mismatch in rewrite step (activate_rewrite_target):");
+                            eprintln!("  Pattern step: {}", pattern_step.clause);
+                            eprintln!("  Target step: {}", target_step.clause);
+                            eprintln!("  Target left: {}", target_left);
+                            eprintln!("  Path: {:?}", path);
+                            eprintln!("  Forwards: {}", rewrite.forwards);
+                            eprintln!("  New subterm: {}", rewrite.term);
+                            eprintln!("  Result clause: {}", ps.clause);
+                            eprintln!("  Literal {}: {}", i, lit);
+                            eprintln!("  Left type: {:?}", left_type);
+                            eprintln!("  Right type: {:?}", right_type);
+                            panic!("Type mismatch in rewrite");
+                        }
+                    }
+
                     output.push(ps);
                 }
 
@@ -845,6 +868,7 @@ impl ActiveSet {
         local_context: &LocalContext,
         kernel_context: &KernelContext,
     ) -> Option<(bool, LiteralTrace)> {
+        #[cfg(any(test, feature = "validate"))]
         literal.validate_type(local_context, kernel_context);
         if literal.left == literal.right {
             return Some((literal.positive, LiteralTrace::Impossible));
@@ -942,6 +966,27 @@ impl ActiveSet {
         let mut output_literals = vec![];
         let mut incremental_trace = vec![];
         let local_context = step.clause.get_local_context().clone();
+
+        // Debug: validate all literals before processing
+        #[cfg(any(test, feature = "validate"))]
+        for (i, literal) in step.clause.literals.iter().enumerate() {
+            let left_type = literal
+                .left
+                .get_type_with_context(&local_context, kernel_context);
+            let right_type = literal
+                .right
+                .get_type_with_context(&local_context, kernel_context);
+            if left_type != right_type {
+                eprintln!("Type mismatch in step being simplified:");
+                eprintln!("  Step rule: {}", step.rule.name());
+                eprintln!("  Step clause: {}", step.clause);
+                eprintln!("  Literal {}: {}", i, literal);
+                eprintln!("  Left type: {:?}", left_type);
+                eprintln!("  Right type: {:?}", right_type);
+                eprintln!("  Context: {:?}", local_context.get_var_types());
+            }
+        }
+
         for literal in std::mem::take(&mut step.clause.literals) {
             match self.evaluate_literal(&literal, &local_context, kernel_context) {
                 Some((true, _)) => {
