@@ -359,10 +359,11 @@ impl<'a> Unifier<'a> {
                 return false;
             }
 
-            if term.has_bound_variable() {
+            if term.has_escaping_bound_variable() {
                 // BoundVariables only match structurally with identical BoundVariables.
                 // They cannot unify with FreeVariables. This can happen during Pi type
                 // unification when the output of one Pi contains a BoundVariable.
+                // However, Pi types with properly scoped bound variables are allowed.
                 return false;
             }
 
@@ -393,10 +394,11 @@ impl<'a> Unifier<'a> {
             .cloned()
             .expect("Variable should have type in LocalContext");
 
-        if term.has_bound_variable() {
+        if term.has_escaping_bound_variable() {
             // BoundVariables only match structurally with identical BoundVariables.
             // They cannot unify with FreeVariables. This can happen during Pi type
             // unification when the output of one Pi contains a BoundVariable.
+            // However, Pi types with properly scoped bound variables are allowed.
             return false;
         }
 

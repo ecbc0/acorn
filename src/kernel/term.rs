@@ -1977,6 +1977,31 @@ impl Term {
         false
     }
 
+    /// Check if this term has any bound variables that escape their enclosing Pi type.
+    /// A bound variable "escapes" if it references a binding outside the current term.
+    /// For example, in `Pi(A, b0)`, b0 is properly bound (refers to the Pi's parameter).
+    /// But at top level, any BoundVariable would be escaping.
+    pub fn has_escaping_bound_variable(&self) -> bool {
+        self.has_escaping_bound_variable_at_depth(0)
+    }
+
+    fn has_escaping_bound_variable_at_depth(&self, depth: u16) -> bool {
+        match self.as_ref().decompose() {
+            Decomposition::Atom(Atom::BoundVariable(i)) => *i >= depth,
+            Decomposition::Atom(_) => false,
+            Decomposition::Application(f, a) => {
+                f.to_owned().has_escaping_bound_variable_at_depth(depth)
+                    || a.to_owned().has_escaping_bound_variable_at_depth(depth)
+            }
+            Decomposition::Pi(input, output) => {
+                input.to_owned().has_escaping_bound_variable_at_depth(depth)
+                    || output
+                        .to_owned()
+                        .has_escaping_bound_variable_at_depth(depth + 1)
+            }
+        }
+    }
+
     /// Substitute a bound variable with a replacement term.
     /// Replaces BoundVariable(index) with the given replacement term.
     /// This is the core operation for applying a Pi type to an argument.
