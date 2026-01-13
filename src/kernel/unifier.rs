@@ -393,6 +393,13 @@ impl<'a> Unifier<'a> {
             .cloned()
             .expect("Variable should have type in LocalContext");
 
+        if term.has_bound_variable() {
+            // BoundVariables only match structurally with identical BoundVariables.
+            // They cannot unify with FreeVariables. This can happen during Pi type
+            // unification when the output of one Pi contains a BoundVariable.
+            return false;
+        }
+
         // Universe level check: when var_type is TypeSort (meaning this is a type variable
         // that should be bound to types like Foo, Nat), we should only accept proper types,
         // not value-level expressions that happen to return Type.
