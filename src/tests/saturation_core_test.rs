@@ -632,7 +632,12 @@ fn test_no_verify_boolean_soup() {
             a = b or a = not c
         }
         "#;
-    verify_fails(text);
+    let outcome = verify(text).expect("verification errored");
+    assert!(
+        outcome == Outcome::Exhausted || outcome == Outcome::Timeout,
+        "Expected Exhausted or Timeout, got {}",
+        outcome
+    );
 }
 
 #[test]
