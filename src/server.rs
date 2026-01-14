@@ -677,7 +677,10 @@ impl LanguageServer for AcornLanguageServer {
             return Ok(None);
         };
         let Some(env) = project.get_env(&descriptor) else {
-            log(&format!("no environment for module: {:?}", descriptor));
+            log(&format!(
+                "no environment for module: {:?} (try saving?)",
+                descriptor
+            ));
             return Ok(None);
         };
 
@@ -710,7 +713,10 @@ impl LanguageServer for AcornLanguageServer {
             return Ok(None);
         };
         let Some(env) = project.get_env(&descriptor) else {
-            log(&format!("no environment for module: {:?}", descriptor));
+            log(&format!(
+                "no environment for module: {:?} (try saving?)",
+                descriptor
+            ));
             return Ok(None);
         };
 
