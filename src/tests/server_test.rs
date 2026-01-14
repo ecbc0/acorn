@@ -525,4 +525,14 @@ async fn test_building_flag_cleared_in_bundled_mode() {
         !selection_response.building,
         "building flag should be false after build completes (even with write_cache=false)"
     );
+
+    // Also verify that proof steps are returned (the in-memory cache should have certificates)
+    assert!(
+        !selection_response.goals.is_empty(),
+        "Expected at least one goal"
+    );
+    assert!(
+        selection_response.goals[0].steps.is_some(),
+        "Expected proof steps to be returned in bundled mode (in-memory cache should work)"
+    );
 }

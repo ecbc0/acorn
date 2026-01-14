@@ -1224,12 +1224,13 @@ impl<'a> Builder<'a> {
 
     /// Consumes the builder and returns the build cache if the build was successful
     /// and we should update the cache.
+    /// Note: write_cache is NOT checked here - that's handled by update_build_cache
+    /// which decides whether to write to disk. We always return the cache so that
+    /// in-memory certificate lookups work (e.g., for selection requests).
     pub fn into_build_cache(self) -> Option<BuildCache> {
-        // There's a lot of conditions for when we actually write to the cache
         // We save certificates even when there are warnings (partially verified modules)
         // so that selection requests can show proofs for individual verified statements
-        if !self.status.is_error() && self.project.config.write_cache && self.goal_filter.is_none()
-        {
+        if !self.status.is_error() && self.goal_filter.is_none() {
             self.build_cache
         } else {
             None
