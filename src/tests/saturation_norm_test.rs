@@ -450,3 +450,36 @@ fn test_lambda_with_if_then_else() {
     "#;
     verify_succeeds(text);
 }
+
+// Test that compose with higher-order functions generates checkable certificates.
+// This test catches a bug where in polymorphic mode, the certificate generator
+// incorrectly handles curried function application after compose.
+// The bug manifests as compose(f, g)(x) being treated as compose(f, g, x) with wrong arity.
+#[test]
+#[cfg(feature = "polymorphic")]
+fn test_compose_with_higher_order_result() {
+    let text = r#"
+    type Nat: axiom
+    let one: Nat = axiom
+
+    // mul is curried: mul(a) returns a function that multiplies by a
+    let mul: Nat -> (Nat -> Nat) = axiom
+
+    // from_nat: Nat -> Nat
+    let from_nat: Nat -> Nat = axiom
+
+    // compose[T, U, V](f: U -> V, g: T -> U) returns function(x: T) { f(g(x)) }
+    define compose[T, U, V](f: U -> V, g: T -> U) -> T -> V {
+        function(x: T) {
+            f(g(x))
+        }
+    }
+
+    // compose(mul, from_nat) has type Nat -> (Nat -> Nat)
+    // Applying it to `one` gives mul(from_nat(one)) : Nat -> Nat
+    theorem goal {
+        compose[Nat, Nat, Nat -> Nat](mul, from_nat)(one) = mul(from_nat(one))
+    }
+    "#;
+    verify_succeeds(text);
+}

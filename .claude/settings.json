@@ -11,6 +11,7 @@
       "Bash(samply record:*)",
       "Bash(RUST_BACKTRACE=1 cargo run:*)",
       "Bash(RUST_LOG=* cargo run:*)",
+      "Bash(RUST_LOG=* cargo test:*)",
       "Bash(RUST_LOG=* RUST_BACKTRACE=1 cargo run:*)",
       "Bash(RUSTFLAGS=* cargo build:*)",
       "Bash(time target/fastdev/profile_reprove:*)",
