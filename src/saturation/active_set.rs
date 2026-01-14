@@ -487,9 +487,17 @@ impl ActiveSet {
                         if !rewrite.term.has_any_variable() {
                             // Create a literal representing the rewrite: u_subterm = rewrite.term
                             let (lit, flipped) = if rewrite.forwards {
-                                Literal::new_with_flip(true, u_subterm.clone(), rewrite.term.clone())
+                                Literal::new_with_flip(
+                                    true,
+                                    u_subterm.clone(),
+                                    rewrite.term.clone(),
+                                )
                             } else {
-                                Literal::new_with_flip(true, rewrite.term.clone(), u_subterm.clone())
+                                Literal::new_with_flip(
+                                    true,
+                                    rewrite.term.clone(),
+                                    u_subterm.clone(),
+                                )
                             };
 
                             // Get the pattern clause and try to unify
@@ -498,7 +506,10 @@ impl ActiveSet {
 
                             // Use the unifier to check if this specialization is valid
                             let mut unifier = Unifier::new(3, kernel_context);
-                            unifier.set_input_context(Scope::LEFT, pattern_step.clause.get_local_context());
+                            unifier.set_input_context(
+                                Scope::LEFT,
+                                pattern_step.clause.get_local_context(),
+                            );
                             unifier.set_input_context(Scope::RIGHT, LocalContext::empty_ref());
 
                             let unified = unifier.unify_literals(

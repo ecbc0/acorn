@@ -146,6 +146,25 @@ fn extract_type_bindings(
 /// Returns None if there's a type variable inconsistency (e.g., same type variable
 /// would need to bind to different concrete types). Otherwise returns a HashMap
 /// mapping pattern variable IDs to their replacement terms.
+/// Resolves a type through variable references to find the ultimate typeclass constraint.
+/// For example, if x1 has type x0 and x0 has type Typeclass(Field), this returns Some(Field).
+fn resolve_typeclass_constraint(
+    var_type: TermRef,
+    pattern_context: &LocalContext,
+) -> Option<crate::kernel::types::TypeclassId> {
+    // Direct typeclass constraint
+    if let Some(tc_id) = var_type.as_typeclass() {
+        return Some(tc_id);
+    }
+    // Indirect constraint via type variable reference
+    if let Decomposition::Atom(KernelAtom::FreeVariable(ref_var)) = var_type.decompose() {
+        if let Some(ref_type) = pattern_context.get_var_type(*ref_var as usize) {
+            return resolve_typeclass_constraint(ref_type.as_ref(), pattern_context);
+        }
+    }
+    None
+}
+
 fn build_bindings(
     structural_replacements: &[TermRef],
     pattern_context: &LocalContext,
@@ -162,6 +181,28 @@ fn build_bindings(
     // Infer type variable bindings from the types of matched terms
     for (i, replacement) in structural_replacements.iter().enumerate() {
         if let Some(var_type) = pattern_context.get_var_type(i) {
+            // Check typeclass constraints: if the pattern variable has a typeclass constraint
+            // (e.g., F: Field) and the replacement is a ground type (e.g., Rat), verify that
+            // the ground type is an instance of the typeclass.
+            // Also handle indirect constraints: x1 has type x0 where x0: Field.
+            if let Some(tc_id) = resolve_typeclass_constraint(var_type.as_ref(), pattern_context) {
+                // For type variables (replacement is a ground type), check instance directly
+                if let Some(ground_id) = replacement.as_type_atom() {
+                    if !kernel_context.type_store.is_instance_of(ground_id, tc_id) {
+                        return None;
+                    }
+                } else {
+                    // For value variables whose type has a constraint, check the replacement's type
+                    let replacement_type =
+                        replacement.get_type_with_context(query_context, kernel_context);
+                    if let Some(ground_id) = replacement_type.as_ref().as_type_atom() {
+                        if !kernel_context.type_store.is_instance_of(ground_id, tc_id) {
+                            return None;
+                        }
+                    }
+                }
+            }
+
             // Get the type of the replacement term
             let replacement_type = replacement.get_type_with_context(query_context, kernel_context);
             // Recursively extract type variable bindings by matching pattern type to concrete type
@@ -953,5 +994,96 @@ mod tests {
             "Should only get 1 rewrite from pattern 1. Pattern 2 should be rejected \
              because Foo is not Pair[T, U] for any T, U."
         );
+    }
+
+    #[test]
+    fn test_rewrite_tree_typeclass_constraint() {
+        // Test for the bug from reprove rat --line 330 with polymorphic,validate features.
+        //
+        // ROOT CAUSE INVESTIGATION:
+        // The bug manifests when the type_store doesn't have typeclass instances registered.
+        // In reprove, is_instance_of(GroundTypeId(5), TypeclassId(24)) returns false because
+        // typeclass_instances[24] is EMPTY - the "instance Rat: Field" is not registered.
+        //
+        // The rewrite tree produces rewrites, and the Unifier validation catches that they're
+        // invalid because the typeclass constraint isn't satisfied.
+        //
+        // This test verifies the CORRECT behavior when typeclass instances ARE registered:
+        // - When Rat implements Field, backward rewrites for the inverse pattern should be valid.
+        // - When Foo does NOT implement Field, backward rewrites should NOT be produced.
+
+        let mut kctx = KernelContext::new();
+
+        // Create Field typeclass
+        kctx.parse_typeclass("Field");
+
+        // Create ground types:
+        // - Foo: does NOT implement Field
+        // - Rat: DOES implement Field
+        kctx.parse_datatype("Foo"); // does NOT implement Field
+        kctx.parse_datatype("Rat").parse_instance("Rat", "Field"); // DOES implement Field
+
+        // Create polymorphic function inv = Inverse.inverse[Field]: (F: Field) -> F -> F
+        kctx.parse_polymorphic_constant("g0", "F: Field", "F -> F");
+
+        // Create constants of each type
+        kctx.parse_constant("c0", "Foo"); // constant of type Foo
+        kctx.parse_constant("c1", "Rat"); // constant of type Rat
+
+        let mut tree = RewriteTree::new();
+
+        // Insert pattern: inv[F](inv[F](x)) = x
+        // Pattern context: x0: Field (type parameter F), x1: x0 (value x of type F)
+        let pattern_clause = kctx.parse_clause("g0(x0, g0(x0, x1)) = x1", &["Field", "x0"]);
+        tree.insert_literal(
+            0,
+            &pattern_clause.literals[0],
+            pattern_clause.get_local_context(),
+            &kctx,
+        );
+
+        let query_lctx = kctx.parse_local(&[]);
+
+        // Query with c0 (type Foo, which does NOT implement Field)
+        // No backward rewrite should be returned because Foo doesn't implement Field
+        let query_foo = kctx.parse_term("c0");
+        let rewrites_foo = tree.get_rewrites(&query_foo, 0, &query_lctx, &kctx);
+        let backward_rewrites_foo: Vec<_> = rewrites_foo.iter().filter(|r| !r.forwards).collect();
+
+        // Query with c1 (type Rat, which DOES implement Field)
+        // A backward rewrite should be returned and valid
+        let query_rat = kctx.parse_term("c1");
+        let rewrites_rat = tree.get_rewrites(&query_rat, 0, &query_lctx, &kctx);
+        let backward_rewrites_rat: Vec<_> = rewrites_rat.iter().filter(|r| !r.forwards).collect();
+
+        // Foo doesn't implement Field, so no backward rewrites should be produced
+        assert!(
+            backward_rewrites_foo.is_empty(),
+            "Query c0 (type Foo) should NOT have backward rewrites because Foo does not implement Field. \
+             Got {} backward rewrites.",
+            backward_rewrites_foo.len()
+        );
+
+        // Rat implements Field, so backward rewrites should be produced
+        assert!(
+            !backward_rewrites_rat.is_empty(),
+            "Query c1 (type Rat) SHOULD have backward rewrites because Rat implements Field"
+        );
+
+        // Validate the Rat rewrite using the Unifier
+        use crate::kernel::literal::Literal;
+        use crate::kernel::unifier::{Scope, Unifier};
+
+        let rewrite = &backward_rewrites_rat[0];
+        let (lit, flipped) = Literal::new_with_flip(true, rewrite.term.clone(), query_rat.clone());
+        let pattern_lit = &pattern_clause.literals[0];
+
+        let mut unifier = Unifier::new(3, &kctx);
+        unifier.set_input_context(Scope::LEFT, pattern_clause.get_local_context());
+        unifier.set_input_context(Scope::RIGHT, LocalContext::empty_ref());
+
+        let unified = unifier.unify_literals(Scope::LEFT, pattern_lit, Scope::RIGHT, &lit, flipped);
+
+        assert!(unified, "Unifier should validate the Rat rewrite as valid");
     }
 }

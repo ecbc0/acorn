@@ -305,7 +305,8 @@ impl SaturationProver {
     fn report_equality_graph_contradiction(
         &mut self,
         contradiction: EqualityGraphContradiction,
-        #[cfg_attr(not(feature = "validate"), allow(unused_variables))] kernel_context: &KernelContext,
+        #[cfg_attr(not(feature = "validate"), allow(unused_variables))]
+        kernel_context: &KernelContext,
     ) {
         let mut active_ids = vec![];
         let mut passive_ids = vec![];
