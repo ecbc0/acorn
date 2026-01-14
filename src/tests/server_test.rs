@@ -1,4 +1,4 @@
-use crate::interfaces::ProgressParams;
+use crate::interfaces::{ProgressParams, SelectionParams};
 use crate::server::{AcornLanguageServer, LspClient, ServerArgs};
 use assert_fs::fixture::ChildPath;
 use assert_fs::prelude::*;
@@ -88,6 +88,42 @@ impl TestFixture {
         let args = ServerArgs {
             workspace_root: Some(temp_dir.path().to_str().unwrap().to_string()),
             extension_root: String::new(),
+        };
+
+        let client = Arc::new(MockClient::new());
+        let server = AcornLanguageServer::new(client.clone(), &args).expect("server creation");
+
+        TestFixture {
+            _temp_dir: temp_dir,
+            src_dir,
+            build_dir,
+            client,
+            server,
+        }
+    }
+
+    /// Creates a test fixture that simulates using the bundled library (write_cache = false).
+    /// This is what happens when opening .ac files outside of an acorn project.
+    fn new_bundled() -> Self {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a mock "bundled" acornlib in extension_root
+        // No acorn.toml in workspace means it will use extension_root's acornlib
+        let extension_root = temp_dir.child("extension");
+        let acornlib = extension_root.child("acornlib");
+        acornlib.child("acorn.toml").write_str("").unwrap();
+        let src_dir = acornlib.child("src");
+        src_dir.create_dir_all().unwrap();
+        let build_dir = acornlib.child("build");
+        build_dir.create_dir_all().unwrap();
+
+        // workspace_root has no acorn.toml, so it falls back to extension_root
+        let workspace = temp_dir.child("workspace");
+        workspace.create_dir_all().unwrap();
+
+        let args = ServerArgs {
+            workspace_root: Some(workspace.path().to_str().unwrap().to_string()),
+            extension_root: extension_root.path().to_str().unwrap().to_string(),
         };
 
         let client = Arc::new(MockClient::new());
@@ -427,5 +463,66 @@ async fn test_selection_inside_partially_complete_proof() {
         response.goals[0].steps.is_some(),
         "Expected steps to be returned for 'a = a' statement inside proof block (got None). Goal name: {:?}",
         response.goals[0].goal_name
+    );
+}
+
+/// Test that the `building` flag is set to false after a build completes,
+/// even when write_cache is false (bundled library mode).
+/// This was a bug where `building` stayed true forever in bundled mode.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_building_flag_cleared_in_bundled_mode() {
+    let fx = TestFixture::new_bundled();
+
+    // Create a file in a directory outside the library
+    let outside_dir = fx._temp_dir.child("workspace").child("project");
+    outside_dir.create_dir_all().unwrap();
+    let test_file = outside_dir.child("test.ac");
+    let test_url = Url::from_file_path(test_file.path()).unwrap();
+
+    let content = "theorem foo { true }";
+    test_file.write_str(content).unwrap();
+
+    // Open and save the file
+    fx.server
+        .did_open(DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: test_url.clone(),
+                language_id: "acorn".to_string(),
+                version: 1,
+                text: content.to_string(),
+            },
+        })
+        .await;
+
+    fx.server
+        .did_save(DidSaveTextDocumentParams {
+            text_document: TextDocumentIdentifier {
+                uri: test_url.clone(),
+            },
+            text: Some(content.to_string()),
+        })
+        .await;
+
+    // Wait for the build to complete
+    fx.assert_build_completes().await;
+
+    // Give a moment for the build cache update to complete
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // The building flag should be false after the build completes
+    let selection_response = fx
+        .server
+        .handle_selection_request(SelectionParams {
+            uri: test_url,
+            version: 1,
+            selected_line: 0,
+            id: 1,
+        })
+        .await
+        .unwrap();
+
+    assert!(
+        !selection_response.building,
+        "building flag should be false after build completes (even with write_cache=false)"
     );
 }

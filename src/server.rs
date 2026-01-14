@@ -389,20 +389,21 @@ impl AcornLanguageServer {
                 builder.into_build_cache()
             });
 
-            // Update the build cache if the build was successful and epoch hasn't changed
-            if let Some(new_cache) = build_cache {
-                let result = project_manager
-                    .mutate_if_epoch(epoch, |project| {
+            // Update the build cache if the build was successful and epoch hasn't changed.
+            // Always mark building as false when done.
+            let result = project_manager
+                .mutate_if_epoch(epoch, |project| {
+                    if let Some(new_cache) = build_cache {
                         // Server always does full builds of all targets, not partial builds
                         project.update_build_cache(new_cache, false);
-                        project.building = false;
-                    })
-                    .await;
+                    }
+                    project.building = false;
+                })
+                .await;
 
-                match result {
-                    Ok(()) => log("build cache updated"),
-                    Err(()) => log("build cache update skipped (project changed during build)"),
-                }
+            match result {
+                Ok(()) => log("build cache updated"),
+                Err(()) => log("build cache update skipped (project changed during build)"),
             }
         });
 
