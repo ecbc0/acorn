@@ -1075,6 +1075,18 @@ impl ActiveSet {
         if output_literals.len() == initial_num_literals {
             // This proof step hasn't changed.
             step.clause.literals = output_literals;
+
+            // Validate the unchanged step when the validate feature is enabled
+            #[cfg(any(test, feature = "validate"))]
+            if let Err(e) = self.validate_step(&step, kernel_context) {
+                panic!(
+                    "Invalid proof step (unchanged): {}\nStep clause: {}\nStep rule: {}",
+                    e,
+                    step.clause,
+                    step.rule.name()
+                );
+            }
+
             return Some(step);
         }
 

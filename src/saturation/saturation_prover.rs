@@ -302,7 +302,11 @@ impl SaturationProver {
         Ok(cert)
     }
 
-    fn report_equality_graph_contradiction(&mut self, contradiction: EqualityGraphContradiction) {
+    fn report_equality_graph_contradiction(
+        &mut self,
+        contradiction: EqualityGraphContradiction,
+        #[cfg_attr(not(feature = "validate"), allow(unused_variables))] kernel_context: &KernelContext,
+    ) {
         let mut active_ids = vec![];
         let mut passive_ids = vec![];
         let mut new_clauses = HashSet::new();
@@ -344,6 +348,16 @@ impl SaturationProver {
                 clause,
                 traces,
             );
+
+            // Validate specialization steps
+            #[cfg(feature = "validate")]
+            if let Err(e) = self.active_set.validate_step(&step, kernel_context) {
+                panic!(
+                    "Invalid specialization step: {}\nStep clause: {}\nInspiration id: {}",
+                    e, step.clause, inspiration_id
+                );
+            }
+
             max_depth = max_depth.max(step.depth);
             let passive_id = self.useful_passive.len() as u32;
             self.useful_passive.push(step);
@@ -456,7 +470,7 @@ impl SaturationProver {
         // First regular contradictions (in the loop above), then term graph.
 
         if let Some(contradiction) = self.active_set.graph.get_contradiction_trace() {
-            self.report_equality_graph_contradiction(contradiction);
+            self.report_equality_graph_contradiction(contradiction, kernel_context);
             return true;
         }
 
