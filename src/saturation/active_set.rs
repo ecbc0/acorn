@@ -481,6 +481,54 @@ impl ActiveSet {
                         kernel_context,
                     );
 
+                    // Validate rewrites from the rewrite tree
+                    #[cfg(feature = "validate")]
+                    for rewrite in &rewrites {
+                        if !rewrite.term.has_any_variable() {
+                            // Create a literal representing the rewrite: u_subterm = rewrite.term
+                            let (lit, flipped) = if rewrite.forwards {
+                                Literal::new_with_flip(true, u_subterm.clone(), rewrite.term.clone())
+                            } else {
+                                Literal::new_with_flip(true, rewrite.term.clone(), u_subterm.clone())
+                            };
+
+                            // Get the pattern clause and try to unify
+                            let pattern_step = self.get_step(rewrite.pattern_id);
+                            let pattern_lit = &pattern_step.clause.literals[0];
+
+                            // Use the unifier to check if this specialization is valid
+                            let mut unifier = Unifier::new(3, kernel_context);
+                            unifier.set_input_context(Scope::LEFT, pattern_step.clause.get_local_context());
+                            unifier.set_input_context(Scope::RIGHT, LocalContext::empty_ref());
+
+                            let unified = unifier.unify_literals(
+                                Scope::LEFT,
+                                pattern_lit,
+                                Scope::RIGHT,
+                                &lit,
+                                flipped,
+                            );
+
+                            if !unified {
+                                panic!(
+                                    "Rewrite tree produced invalid rewrite!\n\
+                                     Pattern id: {}\n\
+                                     Pattern clause: {}\n\
+                                     Pattern context: {:?}\n\
+                                     Subterm: {}\n\
+                                     Rewrite term: {}\n\
+                                     Forwards: {}",
+                                    rewrite.pattern_id,
+                                    pattern_step.clause,
+                                    pattern_step.clause.get_local_context().get_var_types(),
+                                    u_subterm,
+                                    rewrite.term,
+                                    rewrite.forwards
+                                );
+                            }
+                        }
+                    }
+
                     // Add these rewrites to the term graph (only if both terms are concrete)
                     let id1 = self.graph.insert_term(&u_subterm, kernel_context);
                     for rewrite in &rewrites {
