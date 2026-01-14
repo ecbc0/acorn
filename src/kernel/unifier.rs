@@ -455,9 +455,37 @@ impl<'a> Unifier<'a> {
                 {
                     return false; // Type doesn't implement the required typeclass
                 }
-            } else if term.as_ref().atomic_variable().is_some() {
-                // term is a type variable - allow it for now
-                // (constraint propagation would be needed for full checking)
+            } else if let Some(out_var_id) = term.as_ref().atomic_variable() {
+                // term is a type variable - check if we need to propagate constraints
+                let term_type =
+                    term.get_type_with_context(&self.output_context, self.kernel_context);
+                if let Some(other_tc) = term_type.as_ref().as_typeclass() {
+                    // Output variable also has a typeclass constraint - check compatibility
+                    if typeclass_id != other_tc {
+                        let other_extends_var = self
+                            .kernel_context
+                            .type_store
+                            .typeclass_extends(other_tc, typeclass_id);
+                        let var_extends_other = self
+                            .kernel_context
+                            .type_store
+                            .typeclass_extends(typeclass_id, other_tc);
+
+                        if !other_extends_var && !var_extends_other {
+                            // Incompatible typeclasses
+                            return false;
+                        }
+
+                        // If var's typeclass is more specific (extends other), update
+                        // the output variable's type to use the more specific constraint.
+                        if var_extends_other && !other_extends_var {
+                            self.output_context
+                                .set_type(out_var_id as usize, var_type.clone());
+                        }
+                    }
+                }
+                // If term_type is TypeSort or something else, allow it (constraint
+                // propagation would be needed for full checking)
             } else if matches!(
                 term.as_ref().decompose(),
                 Decomposition::Atom(Atom::Symbol(Symbol::Bool))
@@ -471,13 +499,31 @@ impl<'a> Unifier<'a> {
                     term.get_type_with_context(&self.output_context, self.kernel_context);
                 if let Some(other_tc) = term_type.as_ref().as_typeclass() {
                     // term has a typeclass type - check compatibility
-                    if typeclass_id != other_tc
-                        && !self
+                    // Either other_tc extends typeclass_id (term is more specific), or
+                    // typeclass_id extends other_tc (var is more specific).
+                    if typeclass_id != other_tc {
+                        let other_extends_var = self
                             .kernel_context
                             .type_store
-                            .typeclass_extends(other_tc, typeclass_id)
-                    {
-                        return false;
+                            .typeclass_extends(other_tc, typeclass_id);
+                        let var_extends_other = self
+                            .kernel_context
+                            .type_store
+                            .typeclass_extends(typeclass_id, other_tc);
+
+                        if !other_extends_var && !var_extends_other {
+                            // Incompatible typeclasses
+                            return false;
+                        }
+
+                        // If var's typeclass is more specific (extends other), update
+                        // the output variable's type to use the more specific constraint.
+                        if var_extends_other && !other_extends_var {
+                            if let Some(out_var_id) = term.atomic_variable() {
+                                self.output_context
+                                    .set_type(out_var_id as usize, var_type.clone());
+                            }
+                        }
                     }
                 } else if !term_type.as_ref().is_type_sort() {
                     // term's type is not TypeSort or a typeclass - reject

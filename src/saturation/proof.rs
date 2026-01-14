@@ -685,9 +685,9 @@ pub fn reconstruct_step<R: ProofResolver>(
                             *res_flip,
                         ) {
                             return Err(Error::internal(format!(
-                                    "failed to unify long clause literal {} with post-resolution literal {}",
-                                    long_lit, post_res_lit
-                                )));
+                                "failed to unify long clause literal {} with post-resolution literal {}",
+                                long_lit, post_res_lit
+                            )));
                         }
 
                         // Now handle what happened to this post-resolution literal
