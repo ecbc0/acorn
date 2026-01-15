@@ -831,6 +831,11 @@ impl CodeGenerator<'_> {
     ///
     /// The key insight: if a function foo[P, Q] takes argument of type P,
     /// we can't infer Q from just the argument. So we need explicit parameters.
+    ///
+    /// Additionally, if a type parameter appears in the return type, we can't omit
+    /// the type params because the return type might be a function type, which would
+    /// change the arity after un-currying. For example, compose[T, U, V] returns T -> V,
+    /// and when V = Nat -> Nat, the arity changes from 3 to 4.
     fn can_infer_type_params_from_args(&self, function: &AcornValue, args: &[AcornValue]) -> bool {
         // Get the constant and its parameters
         let constant = match function {
@@ -848,6 +853,17 @@ impl CodeGenerator<'_> {
             AcornType::Function(ft) => ft,
             _ => return false, // Not a function type, can't infer
         };
+
+        // Check if the arity changed due to type param instantiation.
+        // If the instance_type has a different arity than generic_type, we can't omit
+        // type params because the parser would use the generic arity.
+        //
+        // For example:
+        // - compose[T, U, V] generic: 3 args, but compose[Nat, Nat, Nat -> Nat]: 4 args
+        // - double[T] generic: 1 arg, double[Bool]: still 1 arg
+        if Self::type_param_could_change_arity(constant) {
+            return false;
+        }
 
         // For each type parameter, check if it appears in the argument types
         // in a way that would allow inference
@@ -873,6 +889,37 @@ impl CodeGenerator<'_> {
         }
 
         true
+    }
+
+    /// Check if a type parameter could change the function's arity when instantiated.
+    ///
+    /// This happens when the type param IS the return type (after un-currying).
+    /// If it gets instantiated to a function type, the function type would
+    /// un-curry again, adding more arguments.
+    ///
+    /// Examples:
+    /// - compose[T, U, V]: (U -> V, T -> U, T) -> V (after un-currying)
+    ///   V is the return type. If V = Nat -> Nat, arity changes from 3 to 4.
+    /// - double[T]: T -> T
+    ///   T is the return type. If T = Nat -> Nat, return becomes Nat -> Nat.
+    ///   But wait - does this change arity? Let me think...
+    ///   Actually, for double[Nat -> Nat](f), the return type IS (Nat -> Nat), not un-curried.
+    ///   So double's arity stays 1. The difference is that compose's instance_type
+    ///   gets recomputed with un-currying, while double's doesn't (because the arg type
+    ///   is the same as return type, and we don't un-curry based on arg types).
+    ///
+    /// The key insight: we need to check if the constant's INSTANCE type has a different
+    /// arity from its GENERIC type.
+    fn type_param_could_change_arity(constant: &ConstantInstance) -> bool {
+        let generic_arity = match &constant.generic_type {
+            AcornType::Function(ft) => ft.arg_types.len(),
+            _ => 0,
+        };
+        let instance_arity = match &constant.instance_type {
+            AcornType::Function(ft) => ft.arg_types.len(),
+            _ => 0,
+        };
+        generic_arity != instance_arity
     }
 
     /// Create a marked-up string to display information for this value.
