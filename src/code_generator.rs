@@ -1361,11 +1361,15 @@ impl CodeGenerator<'_> {
                 // Check both original synthetics and replaced ones (now named s0, s1, etc.)
                 let is_synthetic_const =
                     c.name.is_synthetic() || self.is_replaced_synthetic(&c.name);
-                if !inferrable && !c.params.is_empty() && !is_synthetic_const {
+                // Only add type params if the constant itself is polymorphic.
+                // A constant like `item: T` (theorem parameter) has params but empty
+                // type_param_names - it uses types from enclosing scope but isn't polymorphic.
+                let is_polymorphic = !c.type_param_names.is_empty();
+                if !inferrable && !c.params.is_empty() && !is_synthetic_const && is_polymorphic {
                     self.parametrize_expr(const_expr, &c.params)
                 } else {
-                    // We don't need to parametrize because it can be inferred
-                    // (or it's a synthetic where type params are implicit)
+                    // We don't need to parametrize because it can be inferred,
+                    // it's a synthetic (type params implicit), or it's not polymorphic
                     Ok(const_expr)
                 }
             }
