@@ -127,6 +127,12 @@ pub struct Normalizer {
     /// Just the name->id part of type_var_map, for use with to_type_term_with_vars.
     /// In non-polymorphic mode, this is always None.
     type_var_id_map: Option<HashMap<String, AtomId>>,
+
+    /// Goal's type parameter names, indexed by variable ID.
+    /// This is set when normalize_goal is called and persists for certificate generation.
+    /// Used to preserve original type param names (like G, H) when generating certificates.
+    #[cfg(feature = "polymorphic")]
+    goal_type_param_names: HashMap<AtomId, String>,
 }
 
 impl Normalizer {
@@ -139,6 +145,8 @@ impl Normalizer {
             kernel_context: KernelContext::new(),
             type_var_map: None,
             type_var_id_map: None,
+            #[cfg(feature = "polymorphic")]
+            goal_type_param_names: HashMap::new(),
         }
     }
 
@@ -152,14 +160,23 @@ impl Normalizer {
 
     /// Returns a mapping from variable IDs to original type param names.
     /// This is used to preserve original type param names when generating code.
+    /// It prioritizes goal_type_param_names (set during goal normalization) over
+    /// type_var_map (set during polymorphic checking), and finally falls back to
+    /// arbitrary types registered in the type store.
     #[cfg(feature = "polymorphic")]
     pub fn get_var_id_to_name_map(&self) -> HashMap<AtomId, String> {
+        // First check if we have goal type param names (persistent)
+        if !self.goal_type_param_names.is_empty() {
+            return self.goal_type_param_names.clone();
+        }
+        // Fall back to type_var_map (transient)
         let mut result = HashMap::new();
         if let Some(type_var_map) = &self.type_var_map {
             for (name, (id, _)) in type_var_map {
                 result.insert(*id, name.clone());
             }
         }
+        // If no names are available, callers will use default names like T0, T1, etc.
         result
     }
 
@@ -171,6 +188,21 @@ impl Normalizer {
 
     pub fn kernel_context(&self) -> &KernelContext {
         &self.kernel_context
+    }
+
+    /// Registers an arbitrary type with the type store.
+    /// This is needed for certificate checking where type parameters defined
+    /// in a let...satisfy statement need to be available for subsequent steps.
+    pub fn register_arbitrary_type(&mut self, param: &crate::elaborator::acorn_type::TypeParam) {
+        use crate::elaborator::acorn_type::AcornType;
+
+        let arb_type = AcornType::Arbitrary(param.clone());
+        self.kernel_context.type_store.add_type(&arb_type);
+
+        // If the type param has a typeclass constraint, ensure the typeclass is registered.
+        if let Some(typeclass) = &param.typeclass {
+            self.kernel_context.type_store.add_typeclass(typeclass);
+        }
     }
 
     /// Sets up the type variable map for polymorphic checking.
@@ -348,9 +380,11 @@ impl Normalizer {
         }
 
         // In the synthetic key, we normalize synthetic ids by renumbering them.
+        // Use pinned normalization to preserve type variable ordering.
+        let num_type_vars = type_vars.len();
         let key_clauses: Vec<Clause> = clauses
             .iter()
-            .map(|c| c.invalidate_synthetics(&atoms))
+            .map(|c| c.invalidate_synthetics_with_pinned(&atoms, num_type_vars))
             .collect();
         let key = SyntheticKey {
             type_vars: type_vars.clone(),
@@ -513,7 +547,9 @@ impl NormalizerView<'_> {
                     synthesized,
                     &mut local_context,
                 )?;
-                let clauses = cnf.into_clauses(&local_context);
+                // Pin type variables so their ordering is preserved when clauses are normalized.
+                // This ensures function types like G -> H don't get swapped to H -> G.
+                let clauses = cnf.into_clauses_with_pinned(&local_context, num_type_params);
 
                 // Check for dropped forall variables with uninhabited types.
                 // Skip type parameter variables (first num_type_params entries) since they
@@ -1555,7 +1591,10 @@ impl NormalizerView<'_> {
         // Check if an equivalent definition already exists
         // Convert CNF to clauses for the key lookup
         let type_vars = self.get_type_var_kinds();
-        let clauses = definition_cnf.clone().into_clauses(context);
+        let num_type_vars = type_vars.len();
+        let clauses = definition_cnf
+            .clone()
+            .into_clauses_with_pinned(context, num_type_vars);
         let key_clauses: Vec<Clause> = clauses
             .iter()
             .map(|c| c.invalidate_synthetics(&[skolem_id]))
@@ -1575,7 +1614,7 @@ impl NormalizerView<'_> {
         } else {
             // Define the new synthetic atom
             // No source available here since we're synthesizing during normalization
-            let clauses = definition_cnf.into_clauses(context);
+            let clauses = definition_cnf.into_clauses_with_pinned(context, num_type_vars);
             self.as_mut()?.define_synthetic_atoms(
                 vec![skolem_id],
                 type_vars,
@@ -1677,7 +1716,8 @@ impl NormalizerView<'_> {
 
         // Add the definition
         let type_vars = self.get_type_var_kinds();
-        let clauses = defining_cnf.into_clauses(context);
+        let num_type_vars = type_vars.len();
+        let clauses = defining_cnf.into_clauses_with_pinned(context, num_type_vars);
         self.as_mut()?.define_synthetic_atoms(
             vec![atom_id],
             type_vars,
@@ -1808,7 +1848,8 @@ impl NormalizerView<'_> {
 
                 // Add the definition
                 let type_vars = self.get_type_var_kinds();
-                let clauses = defining_cnf.into_clauses(local_context);
+                let num_type_vars = type_vars.len();
+                let clauses = defining_cnf.into_clauses_with_pinned(local_context, num_type_vars);
                 self.as_mut()?.define_synthetic_atoms(
                     vec![atom_id],
                     type_vars,
@@ -2317,6 +2358,17 @@ impl Normalizer {
         goal: &Goal,
     ) -> Result<(NormalizedGoal, Vec<ProofStep>), BuildError> {
         let prop = &goal.proposition;
+
+        // Store the goal's type parameter names for certificate generation.
+        // This maps variable ID to the original type param name (e.g., 0 -> "G", 1 -> "H").
+        #[cfg(feature = "polymorphic")]
+        {
+            self.goal_type_param_names.clear();
+            for (i, param) in prop.params.iter().enumerate() {
+                self.goal_type_param_names
+                    .insert(i as AtomId, param.name.clone());
+            }
+        }
 
         let (hypo, counterfactual) = prop.value.clone().negate_goal();
         let mut steps = vec![];

@@ -123,6 +123,24 @@ impl Cnf {
             .collect()
     }
 
+    /// Converts CNF to clauses, keeping the first `pinned` variables at their
+    /// original positions (x0, x1, ..., x_{pinned-1}).
+    ///
+    /// This is used for synthetic definitions where type variables need to stay
+    /// consistent across all clauses - variable renumbering during normalization
+    /// could otherwise swap type variable references in function types.
+    pub fn into_clauses_with_pinned(
+        self,
+        local_context: &LocalContext,
+        pinned: usize,
+    ) -> Vec<Clause> {
+        self.0
+            .into_iter()
+            .filter(|literals| !literals.iter().any(|l| l.is_tautology()))
+            .map(|literals| Clause::new_with_pinned_vars(literals, local_context, pinned))
+            .collect()
+    }
+
     // Plain "true" or "false" are zero literals, not a single literal.
     fn is_single_literal(&self) -> bool {
         self.0.len() == 1 && self.0[0].len() == 1

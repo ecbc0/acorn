@@ -33,7 +33,7 @@ fn collect_type_var_names(acorn_type: &AcornType) -> Vec<String> {
 
 fn collect_type_var_names_recursive(acorn_type: &AcornType, names: &mut Vec<String>) {
     match acorn_type {
-        AcornType::Variable(param) => {
+        AcornType::Variable(param) | AcornType::Arbitrary(param) => {
             if !names.contains(&param.name) {
                 names.push(param.name.clone());
             }
@@ -120,12 +120,26 @@ fn collect_type_var_names_from_value_recursive(value: &AcornValue, names: &mut V
 }
 
 /// Renames type variables in an AcornType according to the provided mapping.
+/// Also handles Arbitrary types by converting them to Variable types with the new name.
 fn rename_type_vars_in_type(
     acorn_type: &AcornType,
     rename_map: &HashMap<String, String>,
 ) -> AcornType {
     match acorn_type {
         AcornType::Variable(param) => {
+            if let Some(new_name) = rename_map.get(&param.name) {
+                AcornType::Variable(TypeParam {
+                    name: new_name.clone(),
+                    typeclass: param.typeclass.clone(),
+                })
+            } else {
+                acorn_type.clone()
+            }
+        }
+        AcornType::Arbitrary(param) => {
+            // Convert Arbitrary types to Variable types when renaming.
+            // This is needed for certificate generation where we want canonical
+            // type parameter names (T0, T1) instead of specific names (G, H).
             if let Some(new_name) = rename_map.get(&param.name) {
                 AcornType::Variable(TypeParam {
                     name: new_name.clone(),
@@ -1518,10 +1532,10 @@ mod tests {
             .define_synthetics(synthetic_ids, normalizer, &mut codes)
             .unwrap();
 
+        // The synthetic uses T0 for its type parameter (not T from the goal)
         let expected = "let s0[T0]: T0 satisfy { not goal[T0] or foo(s0) and forall(x0: T0) { not foo(x0) or goal[T0] } }";
         assert_eq!(codes[0], expected);
 
-        // The generated code should be checkable
         processor.test_check_code(&codes[0], &bindings);
     }
 
@@ -1551,11 +1565,10 @@ mod tests {
             .define_synthetics(synthetic_ids, normalizer, &mut codes)
             .unwrap();
 
-        // The synthetic should have the typeclass constraint
+        // The synthetic uses T0 with typeclass constraint
         let expected = "let s0[T0: Magma]: T0 satisfy { not goal[T0] or foo(s0) and forall(x0: T0) { not foo(x0) or goal[T0] } }";
         assert_eq!(codes[0], expected);
 
-        // The generated code should be checkable
         processor.test_check_code(&codes[0], &bindings);
     }
 
@@ -1565,7 +1578,7 @@ mod tests {
         use super::CodeGenerator;
         use crate::processor::Processor;
 
-        // Use a pattern that creates a synthetic with type ((T0, T0) -> Bool) -> T0
+        // Use a pattern that creates a synthetic with type ((T, T) -> Bool) -> T
         // The is_reflexive pattern has forall inside, which when negated becomes
         // exists(t: T) { not f(t, t) } where t depends on f, giving synthetic type
         // ((T, T) -> Bool) -> T
@@ -1587,11 +1600,10 @@ mod tests {
             .define_synthetics(synthetic_ids, normalizer, &mut codes)
             .unwrap();
 
-        // The synthetic should have type ((T0, T0) -> Bool) -> T0
+        // The synthetic uses T0 with type ((T0, T0) -> Bool) -> T0
         let expected = "let s0[T0]: ((T0, T0) -> Bool) -> T0 satisfy { forall(x0: (T0, T0) -> Bool, x1: T0) { not is_reflexive[T0](x0) or x0(x1, x1) } and forall(x2: (T0, T0) -> Bool) { not x2(s0(x2), s0(x2)) or is_reflexive[T0](x2) } }";
         assert_eq!(codes[0], expected);
 
-        // The generated code should be checkable
         processor.test_check_code(&codes[0], &bindings);
     }
 

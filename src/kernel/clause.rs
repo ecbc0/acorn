@@ -422,12 +422,19 @@ impl Clause {
 
     /// Renumbers synthetic atoms from the provided list into the invalid range.
     pub fn invalidate_synthetics(&self, from: &[AtomId]) -> Clause {
+        self.invalidate_synthetics_with_pinned(from, 0)
+    }
+
+    /// Renumbers synthetic atoms from the provided list into the invalid range,
+    /// keeping the first `pinned` variables at their original positions.
+    pub fn invalidate_synthetics_with_pinned(&self, from: &[AtomId], pinned: usize) -> Clause {
         let new_literals: Vec<Literal> = self
             .literals
             .iter()
             .map(|lit| lit.invalidate_synthetics(from))
             .collect();
-        Clause::new(new_literals, &self.context).canonicalize()
+        Clause::new_with_pinned_vars(new_literals, &self.context, pinned)
+            .canonicalize_with_pinned(pinned)
     }
 
     /// Replace the first `num_to_replace` variables with invalid synthetic atoms.
@@ -466,13 +473,6 @@ impl Clause {
         // Use pinned normalization to keep type variables (x0..x_{skip-1}) at their positions
         Clause::new_with_pinned_vars(new_literals, &new_context, skip)
             .canonicalize_with_pinned(skip)
-    }
-
-    /// Returns a canonical form of this clause with literals in deterministic order.
-    /// This is used for SyntheticKey matching where we need clauses to match
-    /// regardless of variable naming in the source.
-    fn canonicalize(&self) -> Clause {
-        self.canonicalize_with_pinned(0)
     }
 
     /// Returns a canonical form of this clause with literals in deterministic order,

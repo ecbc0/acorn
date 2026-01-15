@@ -276,11 +276,13 @@ pub fn reconstruct_step<R: ProofResolver>(
                 concrete_steps,
             )?;
             let assumption_id = ConcreteStepId::Assumption(id);
+
             for var_map in var_maps {
                 if var_map.len() == 0 {
                     // We don't need to track exact concrete assumptions.
                     continue;
                 }
+
                 match concrete_steps.entry(assumption_id) {
                     std::collections::hash_map::Entry::Occupied(mut entry) => {
                         let concrete_step = entry.get_mut();
@@ -289,7 +291,13 @@ pub fn reconstruct_step<R: ProofResolver>(
                             .push((var_map, output_context.clone()));
                     }
                     std::collections::hash_map::Entry::Vacant(entry) => {
-                        let generic = Clause::new(info.literals.clone(), &info.context);
+                        // Use from_literals_unnormalized to avoid re-normalizing the clause.
+                        // Re-normalizing can change variable IDs if literals sort differently,
+                        // which would make the var_map inconsistent with the clause.
+                        let generic = Clause::from_literals_unnormalized(
+                            info.literals.clone(),
+                            &info.context,
+                        );
                         let concrete_step =
                             ConcreteStep::new(generic, var_map, output_context.clone());
                         entry.insert(concrete_step);

@@ -391,6 +391,10 @@ impl Checker {
                 let type_params = evaluator.evaluate_type_params(&vss.type_params)?;
                 for param in &type_params {
                     bindings.to_mut().add_arbitrary_type(param.clone());
+
+                    // Also register the arbitrary type with the type store so it can be
+                    // converted to a Term when processing subsequent proof steps.
+                    normalizer.to_mut().register_arbitrary_type(param);
                 }
 
                 // Re-create evaluator with updated bindings
@@ -577,7 +581,9 @@ impl Checker {
                     }
                 }
 
-                // Clear the type variable map after polymorphic checking is complete
+                // Clear the type variable map after processing the let...satisfy condition.
+                // The type parameters (T0, T1) have been added to bindings as arbitrary types
+                // and will be looked up there when processing subsequent claims.
                 #[cfg(feature = "polymorphic")]
                 normalizer.to_mut().clear_type_var_map();
 

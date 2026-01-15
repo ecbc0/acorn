@@ -1553,10 +1553,7 @@ fn test_synthetic_with_unimported_typeclass_constraint() {
 #[test]
 #[cfg(feature = "polymorphic")]
 fn test_synthetic_with_multiple_type_params_function_type() {
-    let mut p = Project::new_mock();
-
-    p.mock(
-        "/mock/main.ac",
+    verify_succeeds(
         r#"
     typeclass M: Monoid {
         1: M
@@ -1589,47 +1586,4 @@ fn test_synthetic_with_multiple_type_params_function_type() {
     }
     "#,
     );
-
-    let module_id = p.load_module_by_name("main").expect("load failed");
-    let env = match p.get_module_by_id(module_id) {
-        crate::module::LoadState::Ok(env) => env,
-        crate::module::LoadState::Error(e) => panic!("error: {}", e),
-        _ => panic!("no module"),
-    };
-
-    // Run the prover and generate a certificate
-    let cursor = env.iter_goals().next().expect("expected a goal");
-    let facts = cursor.usable_facts(&p);
-    let goal = cursor.goal().unwrap();
-    let goal_env = cursor.goal_env().unwrap();
-
-    let mut processor = crate::processor::Processor::new();
-    for fact in facts {
-        processor.add_fact(fact).unwrap();
-    }
-    processor.set_goal(&goal, &p).unwrap();
-
-    let outcome = processor.search(crate::prover::ProverMode::Test, &p, &goal_env.bindings);
-    assert_eq!(outcome, Outcome::Success);
-
-    // Generate the certificate
-    let cert = processor
-        .prover()
-        .make_cert(&p, &env.bindings, processor.normalizer(), true)
-        .expect("make_cert failed");
-
-    // Debug: print the certificate
-    eprintln!("Certificate proof:");
-    if let Some(proof) = &cert.proof {
-        for (i, step) in proof.iter().enumerate() {
-            eprintln!("  Step {}: {}", i, step);
-        }
-    }
-
-    // The certificate should verify successfully
-    // BUG: Currently fails with "expected type T0 -> T1, but this is T1 -> T0"
-    // because type parameters are swapped in one of the foralls
-    processor
-        .check_cert(&cert, None, &p, &env.bindings)
-        .expect("check_cert should succeed - type parameters should not be swapped");
 }

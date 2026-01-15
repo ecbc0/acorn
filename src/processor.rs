@@ -201,7 +201,7 @@ impl Processor {
 
     /// Creates a test Processor from code containing a theorem named "goal".
     /// Loads facts and sets up the goal, which triggers normalization.
-    /// Returns the Processor (which owns the Normalizer) and the BindingMap.
+    /// Returns the Processor (which owns the Normalizer) and the goal-level BindingMap.
     #[cfg(test)]
     pub fn test_goal(code: &str) -> (Processor, BindingMap) {
         use crate::module::LoadState;
