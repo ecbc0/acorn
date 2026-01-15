@@ -651,7 +651,41 @@ pub fn reconstruct_step<R: ProofResolver>(
             // different substitutions.
             let mut simp_scopes: Vec<(usize, Scope)> = Vec::new();
 
-            // Process each long_clause literal according to the trace
+            // IMPORTANT: Process Eliminated traces FIRST, before Output traces.
+            // This is necessary because:
+            // 1. Eliminated traces unify long_scope with short_scope
+            // 2. Output traces unify long_scope with post_res_scope
+            // If we process Output traces first, long_scope variables get mapped to
+            // OUTPUT variables with types from the long clause context.
+            // Then when we process Eliminated traces, short_scope variables create
+            // NEW OUTPUT variables with types from the short clause context.
+            // If these types differ (common in polymorphic code), unification fails.
+            // By processing Eliminated first, short_scope and long_scope variables
+            // get unified together before post_res_scope comes into play.
+            for (i, res_trace) in info.resolution_trace.iter().enumerate() {
+                if let LiteralTrace::Eliminated { flipped, .. } = res_trace {
+                    // This literal was resolved with the short clause
+                    if let Some(short_scope) = short_scope {
+                        let long_lit = &long_clause.literals[i];
+                        let short_lit = &short_clause.literals[0];
+
+                        if !unifier.unify_literals(
+                            long_scope,
+                            long_lit,
+                            short_scope,
+                            short_lit,
+                            *flipped,
+                        ) {
+                            return Err(Error::internal(format!(
+                                "failed to unify resolved literal {} with short clause {}",
+                                long_lit, short_lit
+                            )));
+                        }
+                    }
+                }
+            }
+
+            // Now process Output traces (and handle final_trace for simplifications)
             for (i, (res_trace, final_trace)) in info
                 .resolution_trace
                 .iter()
@@ -659,24 +693,8 @@ pub fn reconstruct_step<R: ProofResolver>(
                 .enumerate()
             {
                 match res_trace {
-                    LiteralTrace::Eliminated { flipped, .. } => {
-                        // This literal was resolved with the short clause
-                        if let Some(short_scope) = short_scope {
-                            let long_lit = &long_clause.literals[i];
-                            let short_lit = &short_clause.literals[0];
-                            if !unifier.unify_literals(
-                                long_scope,
-                                long_lit,
-                                short_scope,
-                                short_lit,
-                                *flipped,
-                            ) {
-                                return Err(Error::internal(format!(
-                                    "failed to unify resolved literal {} with short clause {}",
-                                    long_lit, short_lit
-                                )));
-                            }
-                        }
+                    LiteralTrace::Eliminated { .. } => {
+                        // Already processed above
                     }
                     LiteralTrace::Output {
                         index: post_res_idx,
@@ -685,6 +703,7 @@ pub fn reconstruct_step<R: ProofResolver>(
                         // Unify long_clause[i] with post_res[post_res_idx]
                         let long_lit = &long_clause.literals[i];
                         let post_res_lit = &info.literals[*post_res_idx];
+
                         if !unifier.unify_literals(
                             long_scope,
                             long_lit,
