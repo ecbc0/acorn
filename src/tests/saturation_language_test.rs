@@ -1650,3 +1650,65 @@ fn test_value_param_incorrectly_gets_type_args() {
     "#,
     );
 }
+
+/// Reproduces a bug where `f(item)` claim is not obviously true.
+/// Key: theorem has function param `f: T -> Bool` and value param `item: T`,
+/// and `f(item)` appears in proof with induction capturing both.
+#[test]
+#[cfg(feature = "polymorphic")]
+fn test_function_param_application_not_obvious() {
+    verify_succeeds(
+        r#"
+    inductive MyList[T] {
+        nil
+        cons(T, MyList[T])
+    }
+
+    define contains[T](list: MyList[T], item: T) -> Bool {
+        match list {
+            MyList.nil[T] { false }
+            MyList.cons(head, tail) { head = item or contains(tail, item) }
+        }
+    }
+
+    define filter[T](list: MyList[T], f: T -> Bool) -> MyList[T] {
+        match list {
+            MyList.nil[T] { MyList.nil[T] }
+            MyList.cons(head, tail) {
+                if f(head) {
+                    MyList.cons(head, filter(tail, f))
+                } else {
+                    filter(tail, f)
+                }
+            }
+        }
+    }
+
+    theorem test[T](list: MyList[T], f: T -> Bool, item: T) {
+        contains(filter(list, f), item) implies (contains(list, item) and f(item))
+    } by {
+        define p(l: MyList[T], x: T) -> Bool {
+            contains(filter(l, f), x) implies (contains(l, x) and f(x))
+        }
+
+        forall(head: T, tail: MyList[T]) {
+            if p(tail, item) {
+                if contains(filter(MyList.cons(head, tail), f), item) {
+                    if contains(filter(tail, f), item) {
+                    } else {
+                        f(head)
+                        head = item
+                        f(item) and contains(MyList.cons(head, tail), item)
+                    }
+                }
+                p(MyList.cons(head, tail), item)
+            }
+        }
+
+        MyList.induction(function(l: MyList[T]) {
+            p(l, item)
+        })
+    }
+    "#,
+    );
+}
