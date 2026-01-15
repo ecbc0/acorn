@@ -1657,8 +1657,7 @@ fn test_value_param_incorrectly_gets_type_args() {
 #[test]
 #[cfg(feature = "polymorphic")]
 fn test_function_param_application_not_obvious() {
-    verify_succeeds(
-        r#"
+    let code = r#"
     inductive MyList[T] {
         nil
         cons(T, MyList[T])
@@ -1709,6 +1708,12 @@ fn test_function_param_application_not_obvious() {
             p(l, item)
         })
     }
-    "#,
+    "#;
+
+    // Test the goal that was crashing with "f(item) not obviously true" before the fix
+    // This goal uses a multi-literal short clause in resolution that wasn't being tracked
+    assert_eq!(
+        verify_line(code, "p(MyList.cons(head, tail), item)").unwrap(),
+        Outcome::Success
     );
 }

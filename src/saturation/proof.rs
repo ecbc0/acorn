@@ -795,6 +795,18 @@ pub fn reconstruct_step<R: ProofResolver>(
                 }
                 // conc_scope and post_res_scope are not added to concrete_steps
             }
+
+            // For multi-literal short clauses, we didn't create a scope for them above.
+            // We still need to track them with an empty var_map so they appear in the certificate.
+            if short_scope.is_none() && short_clause.literals.len() > 1 {
+                add_var_map(
+                    resolver,
+                    short_id,
+                    VariableMap::new(),
+                    output_ctx,
+                    concrete_steps,
+                );
+            }
         }
         Rule::Specialization(info) => {
             let pattern_id = ProofStepId::Active(info.pattern_id);
