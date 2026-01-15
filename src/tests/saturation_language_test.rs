@@ -1410,3 +1410,105 @@ fn test_inhabited_const() {
     "#;
     verify_fails(text);
 }
+
+/// Regression test: when a certificate uses a typeclass constraint from a function
+/// defined in another module, but the current module hasn't directly imported that
+/// typeclass BY NAME, the verification should still succeed.
+///
+/// The bug: import_module copies typeclass_defs but NOT name_to_typeclass.
+/// So when certificate code like `let s0[T0: Monoid]: ...` is verified,
+/// the parser fails because `Monoid` isn't in name_to_typeclass.
+///
+/// This test directly checks code with a synthetic that has an unimported typeclass constraint.
+#[test]
+#[cfg(feature = "polymorphic")]
+fn test_synthetic_with_unimported_typeclass_constraint() {
+    use crate::checker::Checker;
+    use crate::normalizer::Normalizer;
+    use std::borrow::Cow;
+
+    let mut p = Project::new_mock();
+
+    // Base typeclass and function
+    p.mock(
+        "/mock/base_tc.ac",
+        r#"
+    typeclass M: Monoid {
+        zero: M
+        add: (M, M) -> M
+    }
+
+    let foo[T: Monoid]: T -> Bool = axiom
+    "#,
+    );
+
+    // Wrapper module that re-exports foo but NOT Monoid by name
+    p.mock(
+        "/mock/wrapper.ac",
+        r#"
+    from base_tc import foo
+    "#,
+    );
+
+    // Main module imports from wrapper (NOT from base_tc)
+    // This means Monoid is in typeclass_defs but NOT in name_to_typeclass
+    p.mock(
+        "/mock/main.ac",
+        r#"
+    from wrapper import foo
+
+    // Use foo to ensure the module loads correctly
+    let use_foo: Bool = foo[Bool](true)
+    "#,
+    );
+
+    let module_id = p.load_module_by_name("main").expect("load failed");
+    let env = match p.get_module_by_id(module_id) {
+        crate::module::LoadState::Ok(env) => env,
+        crate::module::LoadState::Error(e) => panic!("error: {}", e),
+        _ => panic!("no module"),
+    };
+
+    // Check that Monoid is NOT in name_to_typeclass
+    assert!(
+        !env.bindings.has_typeclass_name("Monoid"),
+        "Monoid should NOT be in name_to_typeclass for main module"
+    );
+
+    // Try to check code that references Monoid as a typeclass constraint
+    // This simulates what happens when a certificate has a synthetic with
+    // a typeclass constraint that wasn't directly imported
+    let code = "let s0[T0: Monoid]: T0 satisfy { foo(s0) }";
+
+    let mut checker = Checker::new();
+    let mut bindings = Cow::Borrowed(&env.bindings);
+    let normalizer = Normalizer::new();
+    let kernel_context = normalizer.kernel_context().clone();
+    let mut normalizer = Cow::Owned(normalizer);
+    let mut certificate_steps = vec![];
+
+    // This should succeed because Monoid is in typeclass_defs (via import_module).
+    // However, there's a bug: import_module copies typeclass_defs but NOT name_to_typeclass.
+    // So when the code references Monoid as a typeclass constraint, it fails because
+    // has_typeclass_name("Monoid") returns false.
+    let result = checker.check_code(
+        code,
+        &p,
+        &mut bindings,
+        &mut normalizer,
+        &mut certificate_steps,
+        &kernel_context,
+    );
+
+    // TODO: This should succeed once the bug is fixed. Currently it fails with:
+    // "local constant Monoid not found"
+    // The fix should either:
+    // 1. Make import_module also copy name_to_typeclass entries, or
+    // 2. Make the typeclass lookup fall back to checking typeclass_defs
+    assert!(
+        result.is_ok(),
+        "check_code should succeed but failed with: {:?}. \
+         This is a known bug: import_module copies typeclass_defs but NOT name_to_typeclass.",
+        result.err()
+    );
+}
