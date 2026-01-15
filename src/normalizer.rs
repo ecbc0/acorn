@@ -1764,6 +1764,23 @@ impl NormalizerView<'_> {
                 let mut args = vec![];
                 let mut seen_vars = std::collections::HashSet::new();
 
+                // In polymorphic mode, include type parameters as arguments.
+                // This matches how make_skolem_terms handles polymorphic synthetics.
+                #[cfg(feature = "polymorphic")]
+                if let Some(type_var_map) = self.type_var_map_with_types() {
+                    let mut entries: Vec<_> = type_var_map.values().collect();
+                    entries.sort_by_key(|(id, _)| *id);
+                    for (var_id, _) in entries {
+                        let var_term = Term::new_variable(*var_id);
+                        args.push(var_term);
+                        // Type parameters are tracked in seen_vars so they won't be
+                        // added again when collecting from condition/branches.
+                        // Their types are handled by declare_synthetic_atom and
+                        // define_synthetic_atoms, so we don't add to arg_types.
+                        seen_vars.insert(*var_id);
+                    }
+                }
+
                 // Collect free variables from the condition literal
                 // Skip type parameters (TypeSort or Typeclass) - they're not value arguments
                 for (var_id, closed_type) in cond_lit.left.collect_vars(local_context) {
