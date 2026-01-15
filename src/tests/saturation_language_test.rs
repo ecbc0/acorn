@@ -1717,3 +1717,38 @@ fn test_function_param_application_not_obvious() {
         Outcome::Success
     );
 }
+
+// Regression test for a bug where polymorphic structures containing functions with
+// if-then-else expressions returning non-Bool types would cause a type mismatch
+// during clause validation. The issue was with how synthetic atoms were typed when
+// normalizing function definitions inside define statements.
+#[test]
+fn test_polymorphic_structure_with_function_if_then_else() {
+    let text = r#"
+    inductive Nat {
+        zero
+        suc(Nat)
+    }
+
+    structure Wrapper[T] {
+        func: T -> Nat
+    }
+
+    attributes Wrapper[T] {
+        define modify(self, item: T) -> Wrapper[T] {
+            Wrapper.new(function(x: T) {
+                if x = item {
+                    self.func(x).suc
+                } else {
+                    self.func(x)
+                }
+            })
+        }
+    }
+
+    theorem goal[T](w: Wrapper[T], item: T) {
+        w.modify(item) = w.modify(item)
+    }
+    "#;
+    verify_succeeds(text);
+}
