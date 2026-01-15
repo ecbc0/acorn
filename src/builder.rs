@@ -819,6 +819,14 @@ impl<'a> Builder<'a> {
         if outcome == Outcome::Success {
             match processor.make_cert(self.project, &env.bindings, self.verbose) {
                 Ok(cert) => {
+                    #[cfg(feature = "validate")]
+                    {
+                        // Validate the cert immediately after generation.
+                        processor
+                            .check_cert(&cert, Some(goal), self.project, &env.bindings)
+                            .expect("newly generated cert should be checkable");
+                    }
+                    #[cfg(not(feature = "validate"))]
                     if self.verbose {
                         // Since we aren't performance-sensitive, check the cert.
                         processor

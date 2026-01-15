@@ -1587,3 +1587,72 @@ fn test_synthetic_with_multiple_type_params_function_type() {
     "#,
     );
 }
+
+/// This reproduces a bug in list_base.ac where `unique_preserves_contains[T](list, item)`
+/// generates a certificate with `item[T]` - incorrectly applying type arguments to a
+/// value parameter.
+///
+/// Minimized from list_base.ac - the key elements are:
+/// 1. Polymorphic theorem with type param T and value param `item: T`
+/// 2. Local `define p` with two params (list and item)
+/// 3. Explicit forall/if structure before the induction call
+/// 4. The induction call that captures `item`
+#[test]
+#[cfg(feature = "polymorphic")]
+fn test_value_param_incorrectly_gets_type_args() {
+    verify_succeeds(
+        r#"
+    inductive MyList[T] {
+        nil
+        cons(T, MyList[T])
+    }
+
+    define contains[T](list: MyList[T], item: T) -> Bool {
+        match list {
+            MyList.nil[T] { false }
+            MyList.cons(head, tail) { head = item or contains(tail, item) }
+        }
+    }
+
+    define dedup[T](list: MyList[T]) -> MyList[T] {
+        match list {
+            MyList.nil[T] { MyList.nil[T] }
+            MyList.cons(head, tail) {
+                if contains(tail, head) {
+                    dedup(tail)
+                } else {
+                    MyList.cons(head, dedup(tail))
+                }
+            }
+        }
+    }
+
+    theorem dedup_preserves_contains[T](list: MyList[T], item: T) {
+        contains(dedup(list), item) = contains(list, item)
+    } by {
+        define p(l: MyList[T], x: T) -> Bool {
+            contains(dedup(l), x) = contains(l, x)
+        }
+
+        // Explicit induction structure - this might be key
+        forall(head: T, tail: MyList[T]) {
+            if p(tail, item) {
+                if contains(tail, head) {
+                    contains(tail, item) implies contains(MyList.cons(head, tail), item)
+                    contains(MyList.cons(head, tail), item) = contains(tail, item)
+                } else {
+                    contains(MyList.cons(head, tail), item) implies contains(MyList.cons(head, dedup(tail)), item)
+                    contains(MyList.cons(head, tail), item) = contains(MyList.cons(head, dedup(tail)), item)
+                    p(MyList.cons(head, tail), item)
+                }
+                p(MyList.cons(head, tail), item)
+            }
+        }
+
+        MyList.induction(function(l: MyList[T]) {
+            p(l, item)
+        })
+    }
+    "#,
+    );
+}
