@@ -591,7 +591,7 @@ impl CodeGenerator<'_> {
             let mut rename_map = HashMap::new();
             let mut var_id_to_new_name: HashMap<u16, String> = HashMap::new();
             let mut type_param_names = Vec::new();
-            let mut type_param_constraints: Vec<Option<String>> = Vec::new();
+            let mut type_param_constraints: Vec<Option<Typeclass>> = Vec::new();
 
             for old_name in &all_type_vars {
                 // Try to extract the variable ID from the name (e.g., "x0" -> 0 or "T0" -> 0)
@@ -623,7 +623,6 @@ impl CodeGenerator<'_> {
                                     .kernel_context()
                                     .type_store
                                     .get_typeclass(tc_id)
-                                    .name
                                     .clone()
                             });
                         type_param_constraints.push(constraint);
@@ -642,17 +641,24 @@ impl CodeGenerator<'_> {
             let type_params_str = if type_param_names.is_empty() {
                 String::new()
             } else {
-                let param_strs: Vec<String> = type_param_names
-                    .iter()
-                    .zip(type_param_constraints.iter())
-                    .map(|(name, constraint)| {
-                        if let Some(tc_name) = constraint {
-                            format!("{}: {}", name, tc_name)
+                let mut param_strs: Vec<String> = Vec::new();
+                for (name, constraint) in type_param_names.iter().zip(type_param_constraints.iter())
+                {
+                    let param_str = if let Some(typeclass) = constraint {
+                        // Check if the typeclass is available by name in the current bindings
+                        let tc_code = if self.bindings.has_typeclass_name(&typeclass.name) {
+                            typeclass.name.clone()
                         } else {
-                            name.clone()
-                        }
-                    })
-                    .collect();
+                            // Use lib(module).TypeclassName format
+                            let module_expr = self.module_to_expr(typeclass.module_id)?;
+                            format!("{}.{}", module_expr, typeclass.name)
+                        };
+                        format!("{}: {}", name, tc_code)
+                    } else {
+                        name.clone()
+                    };
+                    param_strs.push(param_str);
+                }
                 format!("[{}]", param_strs.join(", "))
             };
 
