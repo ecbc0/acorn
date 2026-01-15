@@ -890,3 +890,104 @@ fn test_polymorphic_type_params_in_goal() {
     let clauses = norm.get_all_clauses(&env);
     assert!(!clauses.is_empty(), "Should have normalized clauses");
 }
+
+/// Test that checks the type of compose when instantiated with a higher-order return type.
+///
+/// compose[T, U, V](f: U -> V, g: T -> U) -> T -> V
+///
+/// When V = Nat -> Nat, the return type is Nat -> (Nat -> Nat).
+/// After un-currying, compose should accept 4 value args total:
+/// (f, g, x, y) where x: Nat and y: Nat.
+#[test]
+#[cfg(feature = "polymorphic")]
+fn test_compose_type_with_higher_order_return() {
+    let mut env = Environment::test();
+    env.add("type Nat: axiom");
+    env.add("let mul: Nat -> (Nat -> Nat) = axiom");
+    env.add("let from_nat: Nat -> Nat = axiom");
+    env.add(
+        r#"
+        define compose[T, U, V](f: U -> V, g: T -> U) -> T -> V {
+            function(x: T) { f(g(x)) }
+        }
+        "#,
+    );
+
+    // compose[Nat, Nat, Nat -> Nat] should have type that allows 4 value args:
+    // Original: (Nat -> (Nat -> Nat), Nat -> Nat) -> Nat -> (Nat -> Nat)
+    // After full un-currying: (Nat -> (Nat -> Nat), Nat -> Nat, Nat, Nat) -> Nat
+    env.add("let one: Nat = axiom");
+
+    // This should work - applying compose to all 4 args
+    // If this fails with "expected <= 3 arguments, but got 4", then the type isn't fully un-curried
+    env.add("let result: Nat = compose[Nat, Nat, Nat -> Nat](mul, from_nat, one, one)");
+}
+
+/// THE BUG: When code generator decides type params can be "inferred", it omits them.
+/// But for compose[T, U, V], when V is a function type, the arity changes.
+/// Without explicit type params, the parser uses the generic arity (3), not the
+/// instantiated arity (4), causing "expected <= 3 arguments, but got 4".
+///
+/// This test demonstrates that can_infer_type_params_from_args incorrectly returns
+/// true even when the type params affect the arity.
+#[test]
+#[cfg(feature = "polymorphic")]
+fn test_code_generator_omits_type_params_when_arity_changes() {
+    use crate::code_generator::CodeGenerator;
+
+    let mut env = Environment::test();
+    env.add("type Nat: axiom");
+    env.add("let one: Nat = axiom");
+    env.add("let mul: Nat -> (Nat -> Nat) = axiom");
+    env.add("let from_nat: Nat -> Nat = axiom");
+    env.add(
+        r#"
+        define compose[T, U, V](f: U -> V, g: T -> U) -> T -> V {
+            function(x: T) { f(g(x)) }
+        }
+
+        theorem goal {
+            compose[Nat, Nat, Nat -> Nat](mul, from_nat)(one) = mul(from_nat(one))
+        }
+        "#,
+    );
+
+    let mut norm = Normalizer::new();
+    let clauses = norm.get_all_clauses(&env);
+
+    // Find the clause with compose and 4 args (the one derived from the goal)
+    // This is: forall(x0: Nat) { compose[Nat, Nat, Nat -> Nat](mul, from_nat, one, x0) = ... }
+    let mut found_compose_clause = false;
+    for clause in &clauses {
+        let denormalized = norm.denormalize(clause, None, None, None);
+        let denorm_code = format!("{}", denormalized);
+
+        if denorm_code.contains("compose[Nat, Nat, Nat -> Nat](mul, from_nat, one, x0)") {
+            found_compose_clause = true;
+
+            // Generate code using the code generator
+            let mut generator = CodeGenerator::new(&env.bindings);
+            let generated_code = generator.value_to_code(&denormalized).unwrap();
+
+            // THE BUG: The code generator omits type params because can_infer_type_params_from_args
+            // returns true. But for compose[T, U, V], when V is a function type, the arity changes.
+            // Without explicit type params [Nat, Nat, Nat -> Nat], the parser uses generic arity (3)
+            // instead of instantiated arity (4), causing "expected <= 3 arguments, but got 4".
+            assert!(
+                generated_code.contains("compose["),
+                "BUG: Code generator omitted type params for compose.\n\
+                 Denormalized: {}\n\
+                 Generated: {}\n\
+                 Without explicit type params, the parser will use generic arity (3)\n\
+                 instead of instantiated arity (4), causing 'expected <= 3 arguments, but got 4'",
+                denorm_code,
+                generated_code
+            );
+        }
+    }
+
+    assert!(
+        found_compose_clause,
+        "Test setup error: no clause with compose and 4 args was found"
+    );
+}
