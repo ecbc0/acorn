@@ -1539,3 +1539,97 @@ fn test_synthetic_with_unimported_typeclass_constraint() {
         .check_cert(&cert, None, &p, &env.bindings)
         .expect("check_cert should succeed");
 }
+
+/// Regression test: when a synthetic has multiple type parameters and a function type
+/// between them (like `G -> H`), the code generator must preserve the correct order
+/// of type parameters in all foralls within the synthetic definition.
+///
+/// This reproduces a bug in group.ac where `trivial_hom_is_hom[G: Group, H: Group]`
+/// generates a certificate with swapped type parameters in one of the foralls:
+/// - First forall correctly uses `x0: T0 -> T1`
+/// - Second forall incorrectly uses `x3: T1 -> T0` (swapped!)
+///
+/// This causes type mismatch errors during certificate verification.
+#[test]
+#[cfg(feature = "polymorphic")]
+fn test_synthetic_with_multiple_type_params_function_type() {
+    let mut p = Project::new_mock();
+
+    p.mock(
+        "/mock/main.ac",
+        r#"
+    typeclass M: Monoid {
+        1: M
+        mul: (M, M) -> M
+
+        mul_one_left(a: M) {
+            M.mul(M.1, a) = a
+        }
+
+        mul_one_right(a: M) {
+            M.mul(a, M.1) = a
+        }
+    }
+
+    // A function that takes a mapping between two Monoid types
+    // and checks if it preserves the operation
+    define is_hom[G: Monoid, H: Monoid](f: G -> H) -> Bool {
+        forall(a: G, b: G) {
+            f(G.mul(a, b)) = H.mul(f(a), f(b))
+        }
+    }
+
+    // The trivial homomorphism - maps everything to identity
+    let trivial_hom[G: Monoid, H: Monoid]: G -> H = function(a: G) { H.1 }
+
+    // This theorem creates a synthetic with two type parameters and a function type
+    // The bug: type parameters get swapped in one of the foralls
+    theorem trivial_hom_is_hom[G: Monoid, H: Monoid](a: G, b: G) {
+        is_hom[G, H](trivial_hom[G, H])
+    }
+    "#,
+    );
+
+    let module_id = p.load_module_by_name("main").expect("load failed");
+    let env = match p.get_module_by_id(module_id) {
+        crate::module::LoadState::Ok(env) => env,
+        crate::module::LoadState::Error(e) => panic!("error: {}", e),
+        _ => panic!("no module"),
+    };
+
+    // Run the prover and generate a certificate
+    let cursor = env.iter_goals().next().expect("expected a goal");
+    let facts = cursor.usable_facts(&p);
+    let goal = cursor.goal().unwrap();
+    let goal_env = cursor.goal_env().unwrap();
+
+    let mut processor = crate::processor::Processor::new();
+    for fact in facts {
+        processor.add_fact(fact).unwrap();
+    }
+    processor.set_goal(&goal, &p).unwrap();
+
+    let outcome = processor.search(crate::prover::ProverMode::Test, &p, &goal_env.bindings);
+    assert_eq!(outcome, Outcome::Success);
+
+    // Generate the certificate
+    let cert = processor
+        .prover()
+        .make_cert(&p, &env.bindings, processor.normalizer(), true)
+        .expect("make_cert failed");
+
+    // Debug: print the certificate
+    eprintln!("Certificate proof:");
+    if let Some(proof) = &cert.proof {
+        for (i, step) in proof.iter().enumerate() {
+            eprintln!("  Step {}: {}", i, step);
+        }
+    }
+
+    // The certificate should verify successfully
+    // BUG: Currently fails with "expected type T0 -> T1, but this is T1 -> T0"
+    // because type parameters are swapped in one of the foralls
+    processor
+        .check_cert(&cert, None, &p, &env.bindings)
+        .expect("check_cert should succeed - type parameters should not be swapped");
+}
