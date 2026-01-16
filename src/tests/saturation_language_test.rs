@@ -1752,3 +1752,32 @@ fn test_polymorphic_structure_with_function_if_then_else() {
     "#;
     verify_succeeds(text);
 }
+
+// Reproduces a bug where the prover needs to instantiate a polymorphic axiom
+// with an arbitrary type, resulting in certificate code like "let s2: x0 satisfy { true }"
+// which is invalid because x0 is not a valid type name.
+#[test]
+#[cfg(feature = "polymorphic")]
+fn test_polymorphic_axiom_chain_needs_arbitrary_type() {
+    let text = r#"
+    let foo: Bool = axiom
+    let baz: Bool = axiom
+
+    define bar[T](x: T) -> Bool {
+        axiom
+    }
+
+    axiom foo_imp_bar[T](x: T) {
+        foo implies bar[T](x)
+    }
+
+    axiom bar_imp_baz[T](x: T) {
+        bar[T](x) implies baz
+    }
+
+    theorem goal {
+        foo implies baz
+    }
+    "#;
+    verify_succeeds(text);
+}

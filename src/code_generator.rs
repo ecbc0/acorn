@@ -2306,4 +2306,5 @@ mod tests {
         // Zero.0[Bar] should codegen to "Bar.0" since Bar has its own 0 attribute
         p.check_goal_code("main", "goal", "Bar.0 = Bar.bar");
     }
+
 }
