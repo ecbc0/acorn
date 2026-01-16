@@ -1782,35 +1782,34 @@ fn test_polymorphic_axiom_chain_needs_arbitrary_type() {
     verify_succeeds(text);
 }
 
-// Reproduces a bug where a polymorphic let...satisfy statement uses the variable
-// inside its own satisfy block, causing "value sXX has unresolved type".
+// Reproduces a bug with dependently typed synthetics in polymorphic let...satisfy.
+// The synthetic s0 has type T0 where T0 is a type parameter.
+//
+// The code is valid as regular Acorn code (module loads fine), but the certificate
+// checker fails with "value s0 has unresolved type".
 //
 // The original bug: cargo run --profile release --features polymorphic,validate -- reprove ordered_group
-// We directly check the certificate line rather than proving it.
 #[test]
 #[cfg(feature = "polymorphic")]
-fn test_polymorphic_let_satisfy_self_reference() {
+fn test_dependently_typed_synthetic() {
     use crate::processor::Processor;
 
-    // Set up environment similar to acornlib's Group with has_finite_order and is_torsion_free
     let (processor, bindings) = Processor::test_goal(
         r#"
         typeclass T: Grp {
             1: T
         }
 
-        // Standalone function like acornlib's has_finite_order
         define has_finite_order[T: Grp](x: T) -> Bool { axiom }
 
-        // Polymorphic value like acornlib's is_torsion_free
         let is_torsion_free[T: Grp] = forall(x: T) { not has_finite_order(x) or x = T.1 }
 
         theorem goal[G: Grp] { is_torsion_free[G] }
         "#,
     );
 
-    // This is the certificate line pattern that fails in ordered_group.
-    // The key: s0 is used inside its own satisfy block with type parameter T0.
+    // This certificate line is valid Acorn code, but the certificate checker fails on it.
+    // s0 has type T0 where T0 is a type parameter constrained to Grp.
     let cert_line = "let s0[T0: Grp]: T0 satisfy { forall(x0: T0) { not is_torsion_free[T0] or not has_finite_order(x0) or Grp.1[T0] = x0 } and (has_finite_order(s0) or is_torsion_free[T0]) and (s0 != Grp.1[T0] or is_torsion_free[T0]) }";
 
     processor.test_check_code(cert_line, &bindings);
