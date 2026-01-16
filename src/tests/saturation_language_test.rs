@@ -1869,12 +1869,14 @@ fn test_polymorphic_synthetic_claim() {
         "let s0[T0: Grp]: T0 satisfy { forall(x0: T0) { not is_torsion_free[T0] or not has_finite_order(x0) or Grp.1[T0] = x0 } and (has_finite_order(s0) or is_torsion_free[T0]) and (s0 != Grp.1[T0] or is_torsion_free[T0]) }",
     );
 
-    // This claim triggers the bug when checked against the synthetic's clauses
+    // This claim triggers the bug when checked against the synthetic's clauses.
+    // s0 has type Variable(T0) outside the let...satisfy block, so we need
+    // explicit type params. Using G from the theorem's scope.
     check_line(
         &mut checker,
         &mut normalizer_cow,
         &mut bindings_cow,
         &mut certificate_steps,
-        "has_finite_order(s0) or is_torsion_free[G]",
+        "has_finite_order[G](s0[G]) or is_torsion_free[G]",
     );
 }

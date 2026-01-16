@@ -904,13 +904,21 @@ impl CodeGenerator<'_> {
             let mut found_in_args = false;
 
             // Check each argument type to see if this parameter appears
-            for (i, _arg) in args.iter().enumerate() {
+            for (i, arg) in args.iter().enumerate() {
                 if let Some(expected_arg_type) = fn_type.arg_types.get(i) {
                     // Check if the parameter appears in this argument position
                     // For simplicity, we just check direct equality
                     if param_type == expected_arg_type {
-                        found_in_args = true;
-                        break;
+                        // Also check that the actual argument's type is concrete.
+                        // If the arg type contains type variables (has_generic), then
+                        // those variables would also need resolution, so we can't infer.
+                        // E.g., has_finite_order(s0) where s0 has type Variable(T0)
+                        // can't infer T from s0's type because T0 is not concrete.
+                        let arg_type = arg.get_type();
+                        if !arg_type.has_generic() {
+                            found_in_args = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -1550,7 +1558,8 @@ mod tests {
             .unwrap();
 
         // The synthetic uses T0 for its type parameter (not T from the goal)
-        let expected = "let s0[T0]: T0 satisfy { not goal[T0] or foo(s0) and forall(x0: T0) { not foo(x0) or goal[T0] } }";
+        // foo[T0](s0) needs explicit type params since s0's type is Variable(T0)
+        let expected = "let s0[T0]: T0 satisfy { not goal[T0] or foo[T0](s0) and forall(x0: T0) { not foo[T0](x0) or goal[T0] } }";
         assert_eq!(codes[0], expected);
 
         processor.test_check_code(&codes[0], &bindings);
@@ -1583,7 +1592,8 @@ mod tests {
             .unwrap();
 
         // The synthetic uses T0 with typeclass constraint
-        let expected = "let s0[T0: Magma]: T0 satisfy { not goal[T0] or foo(s0) and forall(x0: T0) { not foo(x0) or goal[T0] } }";
+        // foo[T0](s0) needs explicit type params since s0's type is Variable(T0)
+        let expected = "let s0[T0: Magma]: T0 satisfy { not goal[T0] or foo[T0](s0) and forall(x0: T0) { not foo[T0](x0) or goal[T0] } }";
         assert_eq!(codes[0], expected);
 
         processor.test_check_code(&codes[0], &bindings);

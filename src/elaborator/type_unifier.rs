@@ -328,8 +328,18 @@ impl<'a> TypeUnifier<'a> {
         for param in &unresolved.params {
             match self.mapping.get(&param.name) {
                 Some(t) => {
-                    // Parameter was inferred from arguments
-                    all_params.push(t.clone());
+                    // Check if the inferred type is actually concrete.
+                    // If it's a Variable, it's not really resolved - it's just
+                    // unified with another type parameter from a different context.
+                    if t.has_generic() {
+                        // The mapped type contains type variables, so this param
+                        // is not truly inferred to a concrete type yet.
+                        all_params.push(t.clone());
+                        uninferred_params.push(param.clone());
+                    } else {
+                        // Parameter was inferred to a concrete type
+                        all_params.push(t.clone());
+                    }
                 }
                 None => {
                     // Parameter not inferred - keep as type variable

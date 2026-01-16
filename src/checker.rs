@@ -388,7 +388,9 @@ impl Checker {
 
         match statement.statement {
             StatementInfo::VariableSatisfy(vss) => {
-                // Bind type parameters first so they're available when evaluating types
+                // Bind type parameters first so they're available when evaluating types.
+                // Use Arbitrary types during parsing - they'll be converted to Variable
+                // via genericize() when creating the external representation.
                 let type_params = evaluator.evaluate_type_params(&vss.type_params)?;
                 for param in &type_params {
                     bindings.to_mut().add_arbitrary_type(param.clone());
@@ -499,8 +501,8 @@ impl Checker {
                             // Create type param names from the type_params
                             let names: Vec<String> =
                                 type_params.iter().map(|p| p.name.clone()).collect();
-                            // The generic type uses the type params as Variables
-                            (names, acorn_type.clone())
+                            // Genericize converts Arbitrary(T0) -> Variable(T0)
+                            (names, acorn_type.genericize(&type_params))
                         } else {
                             (vec![], acorn_type.clone())
                         };
@@ -510,11 +512,11 @@ impl Checker {
                         let user_cname = ConstantName::unqualified(bindings.module_id(), name);
 
                         // Build a resolved constant value for substitution into the condition.
-                        // For polymorphic synthetics, use Arbitrary types as the type arguments.
+                        // For polymorphic synthetics, use Variable types as the type arguments.
                         #[cfg(feature = "polymorphic")]
                         let type_args: Vec<_> = type_params
                             .iter()
-                            .map(|p| AcornType::Arbitrary(p.clone()))
+                            .map(|p| AcornType::Variable(p.clone()))
                             .collect();
                         #[cfg(not(feature = "polymorphic"))]
                         let type_args: Vec<AcornType> = vec![];
@@ -534,7 +536,7 @@ impl Checker {
                             PotentialValue::Unresolved(UnresolvedConstant {
                                 name: synthetic_cname.clone(),
                                 params: type_params.clone(),
-                                generic_type: acorn_type.clone(),
+                                generic_type: generic_type.clone(),
                                 args: vec![],
                             })
                         } else {
