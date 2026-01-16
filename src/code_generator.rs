@@ -455,7 +455,20 @@ impl CodeGenerator<'_> {
                 self.parametrize_expr(base_expr, params)
             }
             AcornType::Variable(param) | AcornType::Arbitrary(param) => {
-                Ok(Expression::generate_identifier(&param.name))
+                // Check if this is a synthesized free type variable name like "x0", "x1", etc.
+                // These come from FreeVariable atoms in polymorphic clauses and aren't valid
+                // type names. Substitute Bool since we just need some inhabited type.
+                // TODO: This string-matching approach is aesthetically bad. We should track
+                // free type variables more explicitly rather than detecting them by name pattern.
+                let name = &param.name;
+                if name.starts_with('x')
+                    && name.len() > 1
+                    && name[1..].chars().all(|c| c.is_ascii_digit())
+                {
+                    Ok(Expression::generate_identifier("Bool"))
+                } else {
+                    Ok(Expression::generate_identifier(name))
+                }
             }
             AcornType::Function(ft) => {
                 let mut args = vec![];
@@ -2306,5 +2319,4 @@ mod tests {
         // Zero.0[Bar] should codegen to "Bar.0" since Bar has its own 0 attribute
         p.check_goal_code("main", "goal", "Bar.0 = Bar.bar");
     }
-
 }
