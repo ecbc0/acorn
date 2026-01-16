@@ -1781,3 +1781,37 @@ fn test_polymorphic_axiom_chain_needs_arbitrary_type() {
     "#;
     verify_succeeds(text);
 }
+
+// Reproduces a bug where a polymorphic let...satisfy statement uses the variable
+// inside its own satisfy block, causing "value sXX has unresolved type".
+//
+// The original bug: cargo run --profile release --features polymorphic,validate -- reprove ordered_group
+// We directly check the certificate line rather than proving it.
+#[test]
+#[cfg(feature = "polymorphic")]
+fn test_polymorphic_let_satisfy_self_reference() {
+    use crate::processor::Processor;
+
+    // Set up environment similar to acornlib's Group with has_finite_order and is_torsion_free
+    let (processor, bindings) = Processor::test_goal(
+        r#"
+        typeclass T: Grp {
+            1: T
+        }
+
+        // Standalone function like acornlib's has_finite_order
+        define has_finite_order[T: Grp](x: T) -> Bool { axiom }
+
+        // Polymorphic value like acornlib's is_torsion_free
+        let is_torsion_free[T: Grp] = forall(x: T) { not has_finite_order(x) or x = T.1 }
+
+        theorem goal[G: Grp] { is_torsion_free[G] }
+        "#,
+    );
+
+    // This is the certificate line pattern that fails in ordered_group.
+    // The key: s0 is used inside its own satisfy block with type parameter T0.
+    let cert_line = "let s0[T0: Grp]: T0 satisfy { forall(x0: T0) { not is_torsion_free[T0] or not has_finite_order(x0) or Grp.1[T0] = x0 } and (has_finite_order(s0) or is_torsion_free[T0]) and (s0 != Grp.1[T0] or is_torsion_free[T0]) }";
+
+    processor.test_check_code(cert_line, &bindings);
+}
