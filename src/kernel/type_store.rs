@@ -584,6 +584,221 @@ impl TypeStore {
         panic!("Unexpected type Term structure: {:?}", type_term);
     }
 
+    /// Convert a type Term back to an AcornType, using provided names for FreeVariables.
+    /// The `var_id_to_name` map translates FreeVariable IDs to their original type param names.
+    /// This is useful when denormalizing terms that need to preserve the original type names.
+    pub fn type_term_to_acorn_type_with_var_names(
+        &self,
+        type_term: &Term,
+        var_id_to_name: &HashMap<AtomId, String>,
+    ) -> AcornType {
+        self.type_term_to_acorn_type_with_var_names_impl(type_term, 0, 0, var_id_to_name)
+    }
+
+    /// Inner helper that converts a type Term to AcornType using provided variable names.
+    fn type_term_to_acorn_type_with_var_names_impl(
+        &self,
+        type_term: &Term,
+        outer_depth: u16,
+        local_depth: u16,
+        var_id_to_name: &HashMap<AtomId, String>,
+    ) -> AcornType {
+        // Check for built-in types first
+        if type_term.as_ref().is_bool_type() {
+            return AcornType::Bool;
+        }
+        if type_term.as_ref().is_empty_type() {
+            return AcornType::Empty;
+        }
+        if type_term.as_ref().is_type_sort() {
+            panic!(
+                "type_term_to_acorn_type_with_var_names: TypeSort cannot be converted to AcornType."
+            );
+        }
+
+        // Check for user-defined ground type
+        if let Some(ground_id) = type_term.as_ref().as_type_atom() {
+            return self.ground_id_to_type[ground_id.as_u16() as usize].clone();
+        }
+
+        // Check for Pi type
+        if let Some((input, output)) = type_term.as_ref().split_pi() {
+            let input_owned = input.to_owned();
+            let is_type_param = input_owned.as_ref().is_type_param_kind();
+
+            let mut arg_types = if is_type_param {
+                vec![]
+            } else {
+                vec![self.type_term_to_acorn_type_with_var_names_impl(
+                    &input_owned,
+                    outer_depth,
+                    local_depth,
+                    var_id_to_name,
+                )]
+            };
+
+            let (mut current_outer, mut current_local) = if is_type_param {
+                (outer_depth + 1, local_depth)
+            } else {
+                (outer_depth, local_depth + 1)
+            };
+            let mut current_output = output.to_owned();
+
+            // Uncurry nested Pi types
+            while let Some((next_input, next_output)) = current_output.as_ref().split_pi() {
+                let next_input_owned = next_input.to_owned();
+                let next_is_type_param = next_input_owned.as_ref().is_type_param_kind();
+
+                if !next_is_type_param {
+                    arg_types.push(self.type_term_to_acorn_type_with_var_names_impl(
+                        &next_input_owned,
+                        current_outer,
+                        current_local,
+                        var_id_to_name,
+                    ));
+                }
+
+                if next_is_type_param {
+                    current_outer += 1;
+                } else {
+                    current_local += 1;
+                }
+                current_output = next_output.to_owned();
+            }
+
+            let return_type = self.type_term_to_acorn_type_with_var_names_impl(
+                &current_output,
+                current_outer,
+                current_local,
+                var_id_to_name,
+            );
+
+            if arg_types.is_empty() {
+                return return_type;
+            }
+
+            let ft = FunctionType {
+                arg_types,
+                return_type: Box::new(return_type),
+            };
+            return AcornType::Function(ft);
+        }
+
+        // Check for type application
+        if let Some((head, args)) = type_term.as_ref().split_application_multi() {
+            let base_type = self.type_term_to_acorn_type_with_var_names_impl(
+                &head,
+                outer_depth,
+                local_depth,
+                var_id_to_name,
+            );
+            let datatype = match &base_type {
+                AcornType::Data(dt, params) if params.is_empty() => dt.clone(),
+                _ => panic!(
+                    "Expected ground data type in type application, got {:?}",
+                    base_type
+                ),
+            };
+
+            let params: Vec<AcornType> = args
+                .iter()
+                .map(|arg| {
+                    self.type_term_to_acorn_type_with_var_names_impl(
+                        arg,
+                        outer_depth,
+                        local_depth,
+                        var_id_to_name,
+                    )
+                })
+                .collect();
+
+            return AcornType::Data(datatype, params);
+        }
+
+        // Handle BoundVariable
+        if type_term.as_ref().is_atomic() {
+            if let Atom::BoundVariable(i) = type_term.as_ref().get_head_atom() {
+                let type_param_index = if *i >= local_depth && outer_depth > 0 {
+                    let outer_index = *i - local_depth;
+                    if outer_index < outer_depth {
+                        outer_depth - 1 - outer_index
+                    } else {
+                        outer_index
+                    }
+                } else {
+                    *i
+                };
+                // Look up the name by index in the sorted var_id_to_name mapping
+                let name = {
+                    let mut entries: Vec<_> = var_id_to_name.iter().collect();
+                    entries.sort_by_key(|(id, _)| *id);
+                    entries
+                        .get(type_param_index as usize)
+                        .map(|(_, name)| (*name).clone())
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "BoundVariable at type_param_index {} not found in var_id_to_name map (map has {} entries)",
+                                type_param_index,
+                                var_id_to_name.len()
+                            )
+                        })
+                };
+                let type_param = TypeParam {
+                    name,
+                    typeclass: None,
+                };
+                return AcornType::Variable(type_param);
+            }
+        }
+
+        // Handle FreeVariable - look up in var_id_to_name map
+        if type_term.as_ref().is_atomic() {
+            if let Atom::FreeVariable(i) = type_term.as_ref().get_head_atom() {
+                if let Some(name) = var_id_to_name.get(i) {
+                    let type_param = TypeParam {
+                        name: name.clone(),
+                        typeclass: None,
+                    };
+                    return AcornType::Variable(type_param);
+                }
+                panic!(
+                    "FreeVariable({}) not found in var_id_to_name map. \
+                     When using type_term_to_acorn_type_with_var_names, all type variables must be in the map.",
+                    i
+                );
+            }
+        }
+
+        // Handle Typeclass - look up name by index like BoundVariable
+        if type_term.as_ref().is_atomic() {
+            if let Atom::Symbol(Symbol::Typeclass(tc_id)) = type_term.as_ref().get_head_atom() {
+                if let Some(typeclass) = self.id_to_typeclass.get(tc_id.as_u16() as usize) {
+                    // For typeclass constraints, we need to find the name from var_id_to_name
+                    // by index, similar to BoundVariable handling
+                    let mut entries: Vec<_> = var_id_to_name.iter().collect();
+                    entries.sort_by_key(|(id, _)| *id);
+                    // Use outer_depth as the index since typeclass constraints appear at type param positions
+                    let name = entries
+                        .get(outer_depth as usize)
+                        .map(|(_, name)| (*name).clone())
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "Typeclass constraint at index {} not found in var_id_to_name map",
+                                outer_depth
+                            )
+                        });
+                    let type_param = TypeParam {
+                        name,
+                        typeclass: Some(typeclass.clone()),
+                    };
+                    return AcornType::Variable(type_param);
+                }
+            }
+        }
+
+        panic!("Unexpected type Term structure: {:?}", type_term);
+    }
+
     /// Get the id for a typeclass if it exists, otherwise return an error.
     pub fn get_typeclass_id(&self, typeclass: &Typeclass) -> Result<TypeclassId, String> {
         self.typeclass_to_id

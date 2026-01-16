@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::builder::BuildError;
-use crate::elaborator::acorn_type::AcornType;
+use crate::elaborator::acorn_type::{AcornType, TypeParam};
 use crate::elaborator::acorn_value::ConstantInstance;
 use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
 use crate::elaborator::fact::Fact;
@@ -308,30 +308,6 @@ impl Normalizer {
             clauses,
         };
         self.synthetic_map.get(&key)
-    }
-
-    // This declares a synthetic atom, but does not define it.
-    // This weird two-step is necessary since we need to do some constructions
-    // before we actually have the definition.
-    fn declare_synthetic_atom(&mut self, atom_type: AcornType) -> Result<AtomId, String> {
-        let mut term = self
-            .kernel_context
-            .type_store
-            .to_type_term_with_vars(&atom_type, self.type_var_id_map.as_ref());
-        // Wrap with Pi for type parameters and convert FreeVariables to BoundVariables
-        let type_var_kinds: Vec<Term> = if let Some(type_var_map) = &self.type_var_map {
-            let mut entries: Vec<_> = type_var_map.values().collect();
-            entries.sort_by_key(|(id, _)| *id);
-            entries.iter().map(|(_, kind)| kind.clone()).collect()
-        } else {
-            vec![]
-        };
-        let num_type_params = type_var_kinds.len() as u16;
-        term = term.convert_free_to_bound(num_type_params);
-        for kind in type_var_kinds.iter().rev() {
-            term = Term::pi(kind.clone(), term);
-        }
-        self.declare_synthetic_atom_with_type_term(term)
     }
 
     /// Declare a synthetic atom with a type already in Term form.
@@ -1575,9 +1551,18 @@ impl NormalizerView<'_> {
                 var_remapping[var_id as usize] = Some(pos as u16);
             }
         }
-        let skolem_value =
-            self.as_ref()
-                .denormalize_term(&skolem_term, context, None, Some(&var_remapping), None);
+        #[cfg(feature = "polymorphic")]
+        let type_var_id_to_name = self.as_ref().get_var_id_to_name_map();
+        #[cfg(not(feature = "polymorphic"))]
+        let type_var_id_to_name = HashMap::new();
+        let skolem_value = self.as_ref().denormalize_term(
+            &skolem_term,
+            context,
+            None,
+            Some(&var_remapping),
+            None,
+            Some(&type_var_id_to_name),
+        );
         let definition_cnf = self.eq_to_cnf(
             &skolem_value,
             value,
@@ -1664,8 +1649,10 @@ impl NormalizerView<'_> {
         context: &LocalContext,
     ) -> Result<Literal, String> {
         // Create a new synthetic boolean atom with the appropriate function type
-        // based on free variables in the stack
-        let mut arg_types = vec![];
+        // based on free variables in the stack.
+        // Keep types as Terms to avoid round-trip conversion through AcornType,
+        // which would lose the original type parameter names.
+        let mut arg_type_terms = vec![];
         let mut args = vec![];
         let mut seen_vars = std::collections::HashSet::new();
 
@@ -1675,20 +1662,21 @@ impl NormalizerView<'_> {
                 if seen_vars.insert(var_id) {
                     let var_term = Term::new_variable(var_id);
                     args.push(var_term);
-                    arg_types.push(self.type_store().type_term_to_acorn_type(&closed_type));
+                    arg_type_terms.push(closed_type);
                 }
             }
         }
 
-        let bool_type = AcornType::Bool;
-        let atom_type = if arg_types.is_empty() {
-            bool_type.clone()
-        } else {
-            AcornType::functional(arg_types, bool_type.clone())
-        };
+        // Build the function type as a Term: arg1 -> arg2 -> ... -> Bool
+        let mut type_term = Term::bool_type();
+        for arg_type in arg_type_terms.iter().rev() {
+            type_term = Term::pi(arg_type.clone(), type_term);
+        }
 
         // Add the atom type to the symbol table and declare the synthetic atom
-        let atom_id = self.as_mut()?.declare_synthetic_atom(atom_type.clone())?;
+        let atom_id = self
+            .as_mut()?
+            .declare_synthetic_atom_with_type_term(type_term)?;
         synth.push(atom_id);
 
         // Get the synthetic type from the symbol table
@@ -1752,15 +1740,14 @@ impl NormalizerView<'_> {
                 // Which is (not cond or s = then_term) and (cond or s = else_term)
 
                 // Determine the type of the result (should be same as then_term and else_term)
-                let result_closed_type =
+                // Keep types as Terms to avoid round-trip conversion through AcornType,
+                // which would lose the original type parameter names.
+                let result_type_term =
                     then_term.get_type_with_context(local_context, self.kernel_context());
-                let result_type = self
-                    .type_store()
-                    .type_term_to_acorn_type(&result_closed_type);
 
                 // Create a new synthetic atom with the appropriate function type
                 // based on free variables in the if-expression
-                let mut arg_types = vec![];
+                let mut arg_type_terms = vec![];
                 let mut args = vec![];
                 let mut seen_vars = std::collections::HashSet::new();
 
@@ -1770,13 +1757,11 @@ impl NormalizerView<'_> {
                 if let Some(type_var_map) = self.type_var_map_with_types() {
                     let mut entries: Vec<_> = type_var_map.values().collect();
                     entries.sort_by_key(|(id, _)| *id);
-                    for (var_id, _) in entries {
+                    for (var_id, var_type) in entries {
                         let var_term = Term::new_variable(*var_id);
                         args.push(var_term);
-                        // Type parameters are tracked in seen_vars so they won't be
-                        // added again when collecting from condition/branches.
-                        // Their types are handled by declare_synthetic_atom and
-                        // define_synthetic_atoms, so we don't add to arg_types.
+                        // Type variables have their kind (TypeSort or typeclass) as their type in the Pi
+                        arg_type_terms.push(var_type.clone());
                         seen_vars.insert(*var_id);
                     }
                 }
@@ -1790,7 +1775,7 @@ impl NormalizerView<'_> {
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(var_id);
                         args.push(var_term);
-                        arg_types.push(self.type_store().type_term_to_acorn_type(&closed_type));
+                        arg_type_terms.push(closed_type);
                     }
                 }
                 for (var_id, closed_type) in cond_lit.right.collect_vars(local_context) {
@@ -1800,7 +1785,7 @@ impl NormalizerView<'_> {
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(var_id);
                         args.push(var_term);
-                        arg_types.push(self.type_store().type_term_to_acorn_type(&closed_type));
+                        arg_type_terms.push(closed_type);
                     }
                 }
 
@@ -1812,7 +1797,7 @@ impl NormalizerView<'_> {
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(var_id);
                         args.push(var_term);
-                        arg_types.push(self.type_store().type_term_to_acorn_type(&closed_type));
+                        arg_type_terms.push(closed_type);
                     }
                 }
 
@@ -1824,18 +1809,41 @@ impl NormalizerView<'_> {
                     if seen_vars.insert(var_id) {
                         let var_term = Term::new_variable(var_id);
                         args.push(var_term);
-                        arg_types.push(self.type_store().type_term_to_acorn_type(&closed_type));
+                        arg_type_terms.push(closed_type);
                     }
                 }
 
-                let atom_type = if arg_types.is_empty() {
-                    result_type.clone()
-                } else {
-                    AcornType::functional(arg_types, result_type.clone())
-                };
+                // Convert FreeVariables in types to BoundVariables for the Pi structure.
+                // This is needed because symbol types use BoundVariable for parameters.
+                // Type parameter kinds (TypeSort/Typeclass) don't need conversion.
+                let num_type_params = self.type_var_map().map_or(0, |m| m.len()) as u16;
+                let mut non_type_param_index = 0u16;
+                let arg_type_terms: Vec<Term> = arg_type_terms
+                    .into_iter()
+                    .map(|t| {
+                        if t.as_ref().is_type_param_kind() {
+                            t // Type parameter kinds don't need conversion
+                        } else {
+                            let depth = non_type_param_index;
+                            non_type_param_index += 1;
+                            t.convert_free_to_bound_with_depth(num_type_params, depth)
+                        }
+                    })
+                    .collect();
+                let non_type_param_args = arg_type_terms.len() - num_type_params as usize;
+                let result_type_term = result_type_term
+                    .convert_free_to_bound_with_depth(num_type_params, non_type_param_args as u16);
+
+                // Build the function type as a Term: arg1 -> arg2 -> ... -> result_type
+                let mut type_term = result_type_term;
+                for arg_type in arg_type_terms.iter().rev() {
+                    type_term = Term::pi(arg_type.clone(), type_term);
+                }
 
                 // Add the atom type to the symbol table and declare the synthetic atom
-                let atom_id = self.as_mut()?.declare_synthetic_atom(atom_type.clone())?;
+                let atom_id = self
+                    .as_mut()?
+                    .declare_synthetic_atom_with_type_term(type_term)?;
                 synth.push(atom_id);
 
                 // Get the synthetic type from the symbol table
@@ -2416,6 +2424,7 @@ impl Normalizer {
     /// to constants.
     /// If var_remapping is provided, variable indices are remapped (used when type variables
     /// are filtered out of forall quantifiers).
+    /// If type_var_id_to_name is provided, FreeVariable type variables use proper names.
     fn denormalize_atom(
         &self,
         atom_type: &Term,
@@ -2423,11 +2432,17 @@ impl Normalizer {
         arbitrary_names: Option<&HashMap<Term, ConstantName>>,
         var_remapping: Option<&[Option<u16>]>,
         #[allow(unused_variables)] type_param_names: Option<&[String]>,
+        type_var_id_to_name: Option<&HashMap<AtomId, String>>,
     ) -> AcornValue {
-        let acorn_type = self
-            .kernel_context
-            .type_store
-            .type_term_to_acorn_type(atom_type);
+        let acorn_type = if let Some(name_map) = type_var_id_to_name {
+            self.kernel_context
+                .type_store
+                .type_term_to_acorn_type_with_var_names(atom_type, name_map)
+        } else {
+            self.kernel_context
+                .type_store
+                .type_term_to_acorn_type(atom_type)
+        };
         match atom {
             Atom::Symbol(Symbol::True) => AcornValue::Bool(true),
             Atom::Symbol(Symbol::False) => AcornValue::Bool(false),
@@ -2498,10 +2513,15 @@ impl Normalizer {
             Atom::Symbol(Symbol::Synthetic(i)) => {
                 let symbol = Symbol::Synthetic(*i);
                 let type_term = self.kernel_context.symbol_table.get_type(symbol);
-                let acorn_type = self
-                    .kernel_context
-                    .type_store
-                    .type_term_to_acorn_type(type_term);
+                let acorn_type = if let Some(name_map) = type_var_id_to_name {
+                    self.kernel_context
+                        .type_store
+                        .type_term_to_acorn_type_with_var_names(type_term, name_map)
+                } else {
+                    self.kernel_context
+                        .type_store
+                        .type_term_to_acorn_type(type_term)
+                };
                 let name = ConstantName::Synthetic(*i);
 
                 // In polymorphic mode, check if the type has leading type parameter Pis
@@ -2551,6 +2571,7 @@ impl Normalizer {
     /// to constants.
     /// If var_remapping is provided, variable indices are remapped.
     /// If type_param_names is provided, it's used for polymorphic synthetic atoms.
+    /// If type_var_id_to_name is provided, FreeVariable type arguments use proper names.
     fn denormalize_term(
         &self,
         term: &Term,
@@ -2558,6 +2579,7 @@ impl Normalizer {
         arbitrary_names: Option<&HashMap<Term, ConstantName>>,
         var_remapping: Option<&[Option<u16>]>,
         type_param_names: Option<&[String]>,
+        type_var_id_to_name: Option<&HashMap<AtomId, String>>,
     ) -> AcornValue {
         // Get the type of the head atom
         let head_type = match term.get_head_atom() {
@@ -2591,6 +2613,7 @@ impl Normalizer {
             arbitrary_names,
             var_remapping,
             type_param_names,
+            type_var_id_to_name,
         );
 
         // Type arguments appear as the first few arguments.
@@ -2607,7 +2630,19 @@ impl Normalizer {
             // TypeSort is for unconstrained type params, Typeclass is for constrained type params
             if arg_type.as_ref().is_type_param_kind() {
                 // This is a type argument - convert it to an AcornType
-                let acorn_type = self.kernel_context.type_store.type_term_to_acorn_type(arg);
+                // If it's a FreeVariable and we have a name mapping, use the proper name
+                let acorn_type = if let Some(var_id) = arg.as_ref().atomic_variable() {
+                    if let Some(name) = type_var_id_to_name.and_then(|m| m.get(&var_id)) {
+                        AcornType::Variable(TypeParam {
+                            name: name.clone(),
+                            typeclass: None,
+                        })
+                    } else {
+                        self.kernel_context.type_store.type_term_to_acorn_type(arg)
+                    }
+                } else {
+                    self.kernel_context.type_store.type_term_to_acorn_type(arg)
+                };
                 type_args.push(acorn_type);
             } else {
                 // This is a value argument
@@ -2617,6 +2652,7 @@ impl Normalizer {
                     arbitrary_names,
                     var_remapping,
                     type_param_names,
+                    type_var_id_to_name,
                 ));
             }
         }
@@ -2654,6 +2690,7 @@ impl Normalizer {
     /// If arbitrary names are provided, any free variables of the keyed types are converted
     /// to constants.
     /// If var_remapping is provided, variable indices are remapped.
+    /// If type_var_id_to_name is provided, FreeVariable type arguments use proper names.
     fn denormalize_literal(
         &self,
         literal: &Literal,
@@ -2661,6 +2698,7 @@ impl Normalizer {
         arbitrary_names: Option<&HashMap<Term, ConstantName>>,
         var_remapping: Option<&[Option<u16>]>,
         type_param_names: Option<&[String]>,
+        type_var_id_to_name: Option<&HashMap<AtomId, String>>,
     ) -> AcornValue {
         let left = self.denormalize_term(
             &literal.left,
@@ -2668,6 +2706,7 @@ impl Normalizer {
             arbitrary_names,
             var_remapping,
             type_param_names,
+            type_var_id_to_name,
         );
         if literal.right.is_true() {
             if literal.positive {
@@ -2682,6 +2721,7 @@ impl Normalizer {
             arbitrary_names,
             var_remapping,
             type_param_names,
+            type_var_id_to_name,
         );
         if literal.positive {
             AcornValue::equals(left, right)
@@ -2770,6 +2810,7 @@ impl Normalizer {
                 arbitrary_names,
                 var_remapping_ref,
                 type_param_names,
+                None, // No type var id to name mapping needed for public denormalize
             ));
         }
         let disjunction = AcornValue::reduce(BinaryOp::Or, denormalized_literals);
