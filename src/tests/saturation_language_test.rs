@@ -1814,3 +1814,67 @@ fn test_dependently_typed_synthetic() {
 
     processor.test_check_code(cert_line, &bindings);
 }
+
+// Reproduces a bug where a polymorphic synthetic causes
+// "BoundVariable(0) in PDT search - should have been substituted".
+//
+// Based on the certificate from ordered_group for ordered_imp_torsion_free.
+#[test]
+#[cfg(feature = "polymorphic")]
+fn test_polymorphic_synthetic_claim() {
+    use crate::checker::{CertificateStep, Checker};
+    use crate::normalizer::Normalizer;
+    use crate::processor::Processor;
+    use crate::project::Project;
+    use std::borrow::Cow;
+
+    let (processor, bindings) = Processor::test_goal(
+        r#"
+        typeclass T: Grp {
+            1: T
+        }
+
+        define has_finite_order[T: Grp](x: T) -> Bool { axiom }
+
+        let is_torsion_free[T: Grp] = forall(x: T) { not has_finite_order(x) or x = T.1 }
+
+        theorem goal[G: Grp] { is_torsion_free[G] }
+        "#,
+    );
+
+    let mut checker = Checker::new();
+    let normalizer = processor.normalizer().clone();
+    let kernel_context = normalizer.kernel_context().clone();
+    let mut normalizer_cow = Cow::Owned(normalizer);
+    let mut bindings_cow = Cow::Borrowed(&bindings);
+    let mut certificate_steps = vec![];
+    let project = Project::new_mock();
+
+    let check_line = |checker: &mut Checker,
+                      normalizer: &mut Cow<Normalizer>,
+                      bindings: &mut Cow<_>,
+                      steps: &mut Vec<CertificateStep>,
+                      line: &str| {
+        checker
+            .check_code(line, &project, bindings, normalizer, steps, &kernel_context)
+            .expect(&format!("failed to check: {}", line));
+    };
+
+    // Create the polymorphic synthetic
+    check_line(
+        &mut checker,
+        &mut normalizer_cow,
+        &mut bindings_cow,
+        &mut certificate_steps,
+        "let s0[T0: Grp]: T0 satisfy { forall(x0: T0) { not is_torsion_free[T0] or not has_finite_order(x0) or Grp.1[T0] = x0 } and (has_finite_order(s0) or is_torsion_free[T0]) and (s0 != Grp.1[T0] or is_torsion_free[T0]) }",
+    );
+
+    // This claim triggers the bug when checked against the synthetic's clauses
+    check_line(
+        &mut checker,
+        &mut normalizer_cow,
+        &mut bindings_cow,
+        &mut certificate_steps,
+        "has_finite_order(s0) or is_torsion_free[G]",
+    );
+}
