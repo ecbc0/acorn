@@ -257,22 +257,9 @@ impl TypeStore {
                         return Term::atom(Atom::FreeVariable(var_id));
                     }
                 }
-                // Check if this is a synthesized variable name (like "x0", "x1")
-                // created by type_term_to_acorn_type from a FreeVariable
-                if type_param.name.starts_with('x') {
-                    if let Ok(var_id) = type_param.name[1..].parse::<AtomId>() {
-                        return Term::atom(Atom::FreeVariable(var_id));
-                    }
-                }
-                // Check for BoundVariable-style names (like "T0", "T1")
-                if type_param.name.starts_with('T') {
-                    if let Ok(var_id) = type_param.name[1..].parse::<u16>() {
-                        return Term::atom(Atom::BoundVariable(var_id));
-                    }
-                }
                 panic!(
-                    "Variable types should not be converted to type Term without binding context: {:?}. Use to_polymorphic_type_term or provide type_var_map.",
-                    acorn_type
+                    "Variable type {:?} not found in type_var_map. The type_var_map must include all type variables.",
+                    type_param
                 );
             }
 
