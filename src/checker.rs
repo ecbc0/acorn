@@ -14,6 +14,7 @@ use crate::elaborator::source::Source;
 use crate::elaborator::stack::Stack;
 #[cfg(feature = "polymorphic")]
 use crate::elaborator::unresolved_constant::UnresolvedConstant;
+use crate::kernel::atom::AtomId;
 use crate::kernel::clause::Clause;
 use crate::kernel::generalization_set::GeneralizationSet;
 use crate::kernel::inference;
@@ -481,7 +482,10 @@ impl Checker {
                     }
                 };
 
-                // Add all the variables in decls to the bindings and the normalizer
+                // Add all the variables in decls to the bindings and the normalizer.
+                // Also build constant values for substituting into the condition.
+                let mut constant_values = Vec::new();
+
                 if let Some(atoms) = &synthetic_atoms {
                     // We have an existing synthetic definition, create aliases to it
                     for (i, (name, acorn_type)) in decls.iter().enumerate() {
@@ -505,6 +509,25 @@ impl Checker {
 
                         let user_cname = ConstantName::unqualified(bindings.module_id(), name);
 
+                        // Build a resolved constant value for substitution into the condition.
+                        // For polymorphic synthetics, use Arbitrary types as the type arguments.
+                        #[cfg(feature = "polymorphic")]
+                        let type_args: Vec<_> = type_params
+                            .iter()
+                            .map(|p| AcornType::Arbitrary(p.clone()))
+                            .collect();
+                        #[cfg(not(feature = "polymorphic"))]
+                        let type_args: Vec<AcornType> = vec![];
+
+                        let resolved_value = AcornValue::constant(
+                            synthetic_cname.clone(),
+                            type_args,
+                            acorn_type.clone(),
+                            generic_type.clone(),
+                            param_names.clone(),
+                        );
+                        constant_values.push(resolved_value.clone());
+
                         // For polymorphic synthetics, use Unresolved so type inference works
                         #[cfg(feature = "polymorphic")]
                         let potential_value = if !type_params.is_empty() {
@@ -515,27 +538,11 @@ impl Checker {
                                 args: vec![],
                             })
                         } else {
-                            let value = AcornValue::constant(
-                                synthetic_cname.clone(),
-                                vec![],
-                                acorn_type.clone(),
-                                generic_type,
-                                param_names,
-                            );
-                            PotentialValue::Resolved(value)
+                            PotentialValue::Resolved(resolved_value)
                         };
 
                         #[cfg(not(feature = "polymorphic"))]
-                        let potential_value = {
-                            let value = AcornValue::constant(
-                                synthetic_cname.clone(),
-                                vec![],
-                                acorn_type.clone(),
-                                generic_type,
-                                param_names,
-                            );
-                            PotentialValue::Resolved(value)
-                        };
+                        let potential_value = PotentialValue::Resolved(resolved_value);
 
                         bindings.to_mut().add_constant_alias(
                             user_cname,
@@ -547,10 +554,10 @@ impl Checker {
                     }
                 } else {
                     // Trivial case, create new constants
-                    for (name, acorn_type) in decls {
-                        let cname = ConstantName::unqualified(bindings.module_id(), &name);
+                    for (name, acorn_type) in &decls {
+                        let cname = ConstantName::unqualified(bindings.module_id(), name);
                         bindings.to_mut().add_unqualified_constant(
-                            &name,
+                            name,
                             vec![],
                             acorn_type.clone(),
                             None,
@@ -559,15 +566,28 @@ impl Checker {
                             None,
                             String::new(),
                         );
-                        normalizer.to_mut().add_scoped_constant(cname, &acorn_type);
+                        normalizer
+                            .to_mut()
+                            .add_scoped_constant(cname.clone(), acorn_type);
+
+                        // Build resolved constant for substitution
+                        let resolved_value = AcornValue::constant(
+                            cname,
+                            vec![],
+                            acorn_type.clone(),
+                            acorn_type.clone(),
+                            vec![],
+                        );
+                        constant_values.push(resolved_value);
                     }
                 }
 
-                // Re-parse the expression with the newly defined variables and insert clauses
+                // Substitute the constants into the condition and insert clauses.
+                // This replaces the stack variables (indices 0, 1, ...) with the constant values.
                 // Only do this for non-trivial conditions (not Bool(true))
                 if condition_value != AcornValue::Bool(true) {
-                    let mut evaluator = Evaluator::new(project, bindings, None);
-                    let value = evaluator.evaluate_value(&vss.condition, Some(&AcornType::Bool))?;
+                    let num_vars = decls.len() as AtomId;
+                    let value = condition_value.bind_values(0, num_vars, &constant_values);
 
                     // The NormalizerView::Ref prevents us from accidentally mutating the normalizer here.
                     let mut view = NormalizerView::Ref(&normalizer);

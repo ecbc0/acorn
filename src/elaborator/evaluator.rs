@@ -863,6 +863,8 @@ impl<'a> Evaluator<'a> {
 
     /// Evaluates an expression that describes a value, with a stack given as context.
     /// This must resolve to a completed value, with all types inferred.
+    /// If the result is an unresolved constant and we have an expected type, we'll try to
+    /// use type inference to resolve it.
     pub fn evaluate_value_with_stack(
         &mut self,
         stack: &mut Stack,
@@ -870,7 +872,24 @@ impl<'a> Evaluator<'a> {
         expected_type: Option<&AcornType>,
     ) -> error::Result<AcornValue> {
         let potential = self.evaluate_potential_value(stack, expression, expected_type)?;
-        potential.as_value(expression)
+        match potential {
+            PotentialValue::Resolved(v) => Ok(v),
+            PotentialValue::Unresolved(u) => {
+                // Try to resolve using the expected type
+                if let Some(expected) = expected_type {
+                    let mut unifier = self.bindings.unifier();
+                    let result = unifier.try_resolve_with_inference(
+                        u,
+                        vec![],
+                        Some(expected),
+                        expression,
+                    )?;
+                    result.as_value(expression)
+                } else {
+                    Err(expression.error(&format!("value {} has unresolved type", u.name)))
+                }
+            }
+        }
     }
 
     /// Evaluates an expression as a generic value, converting unresolved constants
@@ -883,6 +902,55 @@ impl<'a> Evaluator<'a> {
     ) -> error::Result<AcornValue> {
         let potential = self.evaluate_potential_value(stack, expression, None)?;
         Ok(potential.to_generic_value())
+    }
+
+    /// Evaluates operands for equality or not-equals expressions.
+    /// Handles the case where one operand is an unresolved constant - uses the type
+    /// of the other operand to resolve it via type inference.
+    fn evaluate_equality_operands(
+        &mut self,
+        stack: &mut Stack,
+        left: &Expression,
+        right: &Expression,
+        left_expected: Option<&AcornType>,
+    ) -> error::Result<(AcornValue, AcornValue)> {
+        // Evaluate both sides as potential values
+        let left_potential = self.evaluate_potential_value(stack, left, left_expected)?;
+        let right_potential = self.evaluate_potential_value(stack, right, None)?;
+
+        match (&left_potential, &right_potential) {
+            (PotentialValue::Resolved(lv), PotentialValue::Resolved(rv)) => {
+                // Both resolved - just check type compatibility
+                rv.check_type(Some(&lv.get_type()), right)?;
+                Ok((lv.clone(), rv.clone()))
+            }
+            (PotentialValue::Unresolved(lu), PotentialValue::Resolved(rv)) => {
+                // Left is unresolved, right is resolved - use right's type to resolve left
+                let mut unifier = self.bindings.unifier();
+                let left_resolved = unifier.try_resolve_with_inference(
+                    lu.clone(),
+                    vec![],
+                    Some(&rv.get_type()),
+                    left,
+                )?;
+                Ok((left_resolved.as_value(left)?, rv.clone()))
+            }
+            (PotentialValue::Resolved(lv), PotentialValue::Unresolved(ru)) => {
+                // Left is resolved, right is unresolved - use left's type to resolve right
+                let mut unifier = self.bindings.unifier();
+                let right_resolved = unifier.try_resolve_with_inference(
+                    ru.clone(),
+                    vec![],
+                    Some(&lv.get_type()),
+                    right,
+                )?;
+                Ok((lv.clone(), right_resolved.as_value(right)?))
+            }
+            (PotentialValue::Unresolved(lu), PotentialValue::Unresolved(_)) => {
+                // Both unresolved - we can't infer the types from each other
+                Err(left.error(&format!("value {} has unresolved type", lu.name)))
+            }
+        }
     }
 
     /// Evaluates an expression that could describe a value, but could also describe
@@ -1065,9 +1133,8 @@ impl<'a> Evaluator<'a> {
                     } else {
                         None
                     };
-                    let left_value = self.evaluate_value_with_stack(stack, left, left_expected)?;
-                    let right_value =
-                        self.evaluate_value_with_stack(stack, right, Some(&left_value.get_type()))?;
+                    let (left_value, right_value) =
+                        self.evaluate_equality_operands(stack, left, right, left_expected)?;
                     AcornValue::Binary(
                         BinaryOp::Equals,
                         Box::new(left_value),
@@ -1076,9 +1143,8 @@ impl<'a> Evaluator<'a> {
                 }
                 TokenType::NotEquals => {
                     AcornType::Bool.check_eq(expected_type, token)?;
-                    let left_value = self.evaluate_value_with_stack(stack, left, None)?;
-                    let right_value =
-                        self.evaluate_value_with_stack(stack, right, Some(&left_value.get_type()))?;
+                    let (left_value, right_value) =
+                        self.evaluate_equality_operands(stack, left, right, None)?;
                     AcornValue::Binary(
                         BinaryOp::NotEquals,
                         Box::new(left_value),
