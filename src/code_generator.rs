@@ -457,7 +457,7 @@ impl CodeGenerator<'_> {
             AcornType::Variable(param) | AcornType::Arbitrary(param) => {
                 // Check if this is a synthesized free type variable name like "x0", "x1", etc.
                 // These come from FreeVariable atoms in polymorphic clauses and aren't valid
-                // type names. Substitute Bool since we just need some inhabited type.
+                // type names. We need to substitute some concrete type.
                 // TODO: This string-matching approach is aesthetically bad. We should track
                 // free type variables more explicitly rather than detecting them by name pattern.
                 let name = &param.name;
@@ -465,6 +465,15 @@ impl CodeGenerator<'_> {
                     && name.len() > 1
                     && name[1..].chars().all(|c| c.is_ascii_digit())
                 {
+                    // If the type variable has a typeclass constraint, we need to find
+                    // a type that implements that typeclass.
+                    if let Some(tc) = &param.typeclass {
+                        if let Some(datatype) = self.bindings.find_type_implementing(tc) {
+                            return self.datatype_to_expr(&datatype);
+                        }
+                        // No type implements this typeclass - this shouldn't happen
+                        // in well-formed code, but fall back to Bool.
+                    }
                     Ok(Expression::generate_identifier("Bool"))
                 } else {
                     Ok(Expression::generate_identifier(name))
@@ -768,8 +777,11 @@ impl CodeGenerator<'_> {
         let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names), None, None);
 
         // Define the arbitrary variables.
+        // Use the clause's local context to look up typeclass constraints for type variables.
+        let local_context = clause.get_local_context();
         for (ty, name) in self.arbitrary_names.clone() {
-            let ty_code = self.type_to_code(&normalizer.denormalize_type(ty))?;
+            let ty_code =
+                self.type_to_code(&normalizer.denormalize_type_with_context(ty, local_context))?;
             let decl = format!("let {}: {} satisfy {{ true }}", name, ty_code);
             definitions.push(decl);
         }

@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::elaborator::acorn_type::{AcornType, Datatype, FunctionType, TypeParam, Typeclass};
 use crate::kernel::atom::{Atom, AtomId};
+use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::term::Term;
 use crate::kernel::types::{GroundTypeId, TypeclassId};
@@ -584,6 +585,40 @@ impl TypeStore {
         panic!("Unexpected type Term structure: {:?}", type_term);
     }
 
+    /// Convert a type Term to AcornType, looking up typeclass constraints from LocalContext.
+    /// When the type_term is a FreeVariable, this method checks its type in the context
+    /// to determine if it has a typeclass constraint.
+    pub fn type_term_to_acorn_type_with_context(
+        &self,
+        type_term: &Term,
+        local_context: &LocalContext,
+    ) -> AcornType {
+        // Check for FreeVariable first - we need to look up its typeclass constraint
+        if type_term.as_ref().is_atomic() {
+            if let Atom::FreeVariable(var_id) = type_term.as_ref().get_head_atom() {
+                // Look up the type of this variable in the context
+                let var_type = local_context.get_var_type(*var_id as usize);
+                let typeclass = if let Some(vt) = var_type {
+                    // Check if the type is a Typeclass constraint
+                    if let Atom::Symbol(Symbol::Typeclass(tc_id)) = vt.as_ref().get_head_atom() {
+                        self.id_to_typeclass.get(tc_id.as_u16() as usize).cloned()
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                let type_param = TypeParam {
+                    name: format!("x{}", var_id),
+                    typeclass,
+                };
+                return AcornType::Variable(type_param);
+            }
+        }
+        // Fall back to regular conversion for non-FreeVariable types
+        self.type_term_to_acorn_type(type_term)
+    }
+
     /// Convert a type Term back to an AcornType, using provided names for FreeVariables.
     /// The `var_id_to_name` map translates FreeVariable IDs to their original type param names.
     /// This is useful when denormalizing terms that need to preserve the original type names.
@@ -824,6 +859,11 @@ impl TypeStore {
     /// Get the typeclass for a given id.
     pub fn get_typeclass(&self, typeclass_id: TypeclassId) -> &Typeclass {
         &self.id_to_typeclass[typeclass_id.as_u16() as usize]
+    }
+
+    /// Get a typeclass by its ID, returning None if the ID is out of range.
+    pub fn get_typeclass_by_id(&self, typeclass_id: TypeclassId) -> Option<&Typeclass> {
+        self.id_to_typeclass.get(typeclass_id.as_u16() as usize)
     }
 
     /// Get the TypeclassId for a typeclass by name.

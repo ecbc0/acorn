@@ -991,3 +991,50 @@ fn test_code_generator_omits_type_params_when_arity_changes() {
         "Test setup error: no clause with compose and 4 args was found"
     );
 }
+
+/// Test that typeclass constraints work correctly when the prover needs to instantiate
+/// with an arbitrary type. Similar to test_polymorphic_axiom_chain_needs_arbitrary_type
+/// but with typeclass constraints.
+///
+/// If the Bool placeholder is being used for typeclass-constrained types, this should fail
+/// because Bool doesn't satisfy the typeclass.
+#[test]
+#[cfg(feature = "polymorphic")]
+fn test_polymorphic_axiom_chain_with_typeclass() {
+    use crate::tests::common::verify_succeeds;
+
+    verify_succeeds(
+        r#"
+        type Nat: axiom
+
+        typeclass N: Neg {
+            neg: N -> N
+        }
+
+        let nat_neg: Nat -> Nat = axiom
+
+        instance Nat: Neg {
+            let neg: Nat -> Nat = nat_neg
+        }
+
+        let foo: Bool = axiom
+        let baz: Bool = axiom
+
+        define bar[T: Neg](x: T) -> Bool {
+            axiom
+        }
+
+        axiom foo_imp_bar[T: Neg](x: T) {
+            foo implies bar[T](x)
+        }
+
+        axiom bar_imp_baz[T: Neg](x: T) {
+            bar[T](x) implies baz
+        }
+
+        theorem goal {
+            foo implies baz
+        }
+        "#,
+    );
+}

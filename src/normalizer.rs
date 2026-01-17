@@ -2630,18 +2630,33 @@ impl Normalizer {
             // TypeSort is for unconstrained type params, Typeclass is for constrained type params
             if arg_type.as_ref().is_type_param_kind() {
                 // This is a type argument - convert it to an AcornType
+                // Extract the typeclass constraint from arg_type if it's a Typeclass
+                let typeclass = if let Atom::Symbol(Symbol::Typeclass(tc_id)) =
+                    arg_type.as_ref().get_head_atom()
+                {
+                    self.kernel_context
+                        .type_store
+                        .get_typeclass_by_id(*tc_id)
+                        .cloned()
+                } else {
+                    None
+                };
                 // If it's a FreeVariable and we have a name mapping, use the proper name
                 let acorn_type = if let Some(var_id) = arg.as_ref().atomic_variable() {
                     if let Some(name) = type_var_id_to_name.and_then(|m| m.get(&var_id)) {
                         AcornType::Variable(TypeParam {
                             name: name.clone(),
-                            typeclass: None,
+                            typeclass,
                         })
                     } else {
-                        self.kernel_context.type_store.type_term_to_acorn_type(arg)
+                        self.kernel_context
+                            .type_store
+                            .type_term_to_acorn_type_with_context(arg, local_context)
                     }
                 } else {
-                    self.kernel_context.type_store.type_term_to_acorn_type(arg)
+                    self.kernel_context
+                        .type_store
+                        .type_term_to_acorn_type_with_context(arg, local_context)
                 };
                 type_args.push(acorn_type);
             } else {
@@ -2835,6 +2850,17 @@ impl Normalizer {
         self.kernel_context
             .type_store
             .type_term_to_acorn_type(&type_term)
+    }
+
+    /// Convert a type Term to AcornType, looking up typeclass constraints from LocalContext.
+    pub fn denormalize_type_with_context(
+        &self,
+        type_term: Term,
+        local_context: &LocalContext,
+    ) -> AcornType {
+        self.kernel_context
+            .type_store
+            .type_term_to_acorn_type_with_context(&type_term, local_context)
     }
 
     /// Given a list of atom ids for synthetic atoms that we need to define, find a set

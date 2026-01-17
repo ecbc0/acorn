@@ -1258,6 +1258,17 @@ impl BindingMap {
             .and_then(|info| info.range.as_ref())
     }
 
+    /// Find any datatype that implements the given typeclass.
+    /// Returns the first one found (order is non-deterministic).
+    pub fn find_type_implementing(&self, typeclass: &Typeclass) -> Option<Datatype> {
+        for (datatype, info) in &self.datatype_defs {
+            if info.typeclasses.contains_key(typeclass) {
+                return Some(datatype.clone());
+            }
+        }
+        None
+    }
+
     /// Type variables and arbitrary variables should get removed when they go out of scope.
     /// Other sorts of types shouldn't be getting removed.
     pub fn remove_type(&mut self, name: &str) {
