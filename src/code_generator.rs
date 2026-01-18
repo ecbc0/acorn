@@ -773,6 +773,13 @@ impl CodeGenerator<'_> {
         // pass the arbitrary names like this.
         // It might make more sense to do this in value space, so that we don't have to make
         // the normalizer even more complicated.
+
+        // Capture existing keys BEFORE adding new entries.
+        // We only want to generate definitions for entries added in THIS call,
+        // because those entries need the current clause's LocalContext for correct denormalization.
+        // Entries from earlier calls were already processed with their own (correct) contexts.
+        let keys_before: HashSet<Term> = self.arbitrary_names.keys().cloned().collect();
+
         self.add_arbitrary_for_clause(&clause, normalizer.kernel_context());
         let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names), None, None);
 
@@ -780,8 +787,11 @@ impl CodeGenerator<'_> {
         // Use the clause's local context to look up typeclass constraints for type variables.
         let local_context = clause.get_local_context();
         for (ty, name) in self.arbitrary_names.clone() {
-            let ty_code =
-                self.type_to_code(&normalizer.denormalize_type_with_context(ty, local_context))?;
+            if keys_before.contains(&ty) {
+                continue; // Already processed in a previous call with the correct context
+            }
+            let denorm_type = normalizer.denormalize_type_with_context(ty.clone(), local_context);
+            let ty_code = self.type_to_code(&denorm_type)?;
             let decl = format!("let {}: {} satisfy {{ true }}", name, ty_code);
             definitions.push(decl);
         }
