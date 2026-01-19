@@ -1038,3 +1038,55 @@ fn test_polymorphic_axiom_chain_with_typeclass() {
         "#,
     );
 }
+
+/// Reproduces a bug where polymorphic synthetic definitions don't match during
+/// certificate verification due to type variable ordering differences.
+///
+/// The issue is that when a polymorphic synthetic (skolem function) is created
+/// with 2+ type parameters, the type variable ordering may differ between:
+/// 1. When the definition is stored in synthetic_map
+/// 2. When it's looked up during certificate checking
+///
+/// This causes "does not match any synthetic definition" errors.
+#[test]
+#[cfg(feature = "polymorphic")]
+fn test_polymorphic_synthetic_type_var_ordering() {
+    use crate::tests::common::verify_succeeds;
+
+    // This test mimics the and_family pattern from set.ac which triggers the bug.
+    // Key: and_family[K, I](f, x) has params in order [K, I] but uses I first in the
+    // function type (I -> Set[K]).
+    verify_succeeds(
+        r#"
+        structure Container[T] {
+            member: T -> Bool
+        }
+
+        // Mirrors and_family[K, I](f: I -> Set[K], x: K) -> Bool
+        // Note: K comes first in type params but I comes first in function type
+        define all_contain[K, I](f: I -> Container[K], x: K) -> Bool {
+            forall(i: I) {
+                f(i).member(x)
+            }
+        }
+
+        type Nat: axiom
+        type Item: axiom
+
+        // This axiom creates the skolem function pattern
+        // When negated: not all_contain[K,I](f,x) creates exists(i:I) { not f(i).member(x) }
+        axiom all_contain_witness[K, I](f: I -> Container[K], x: K) {
+            not all_contain[K, I](f, x) implies exists(i: I) { not f(i).member(x) }
+        }
+
+        let f: Nat -> Container[Item] = axiom
+        let x: Item = axiom
+
+        // For this theorem, prover must use the all_contain_witness axiom
+        // This requires matching the polymorphic synthetic definition
+        theorem goal {
+            not all_contain[Item, Nat](f, x) implies exists(n: Nat) { not f(n).member(x) }
+        }
+        "#,
+    );
+}
