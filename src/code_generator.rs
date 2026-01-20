@@ -621,14 +621,37 @@ impl CodeGenerator<'_> {
             #[cfg(not(feature = "polymorphic"))]
             let var_id_to_orig_name: HashMap<AtomId, String> = HashMap::new();
 
-            // Build rename map: x0 -> T or T0, T0 -> T0, etc.
-            // Both "x0" and "T0" represent var_id 0 and should map to the same new name.
-            // Track which var_ids we've already assigned names to.
-            let mut rename_map = HashMap::new();
+            // Build type_param_names and type_param_constraints in var_id order (0, 1, 2, ...).
+            // This ensures the certificate's type params match the order used during proving,
+            // which is critical for synthetic definition lookup to work correctly.
             let mut var_id_to_new_name: HashMap<u16, String> = HashMap::new();
             let mut type_param_names = Vec::new();
             let mut type_param_constraints: Vec<Option<Typeclass>> = Vec::new();
 
+            for (id, type_var_kind) in info.type_vars.iter().enumerate() {
+                let id = id as u16;
+                // Get original name or generate new one
+                let name = var_id_to_orig_name
+                    .get(&id)
+                    .cloned()
+                    .unwrap_or_else(|| self.bindings.next_indexed_var('T', &mut self.next_t));
+                var_id_to_new_name.insert(id, name.clone());
+                type_param_names.push(name);
+
+                // Look up typeclass constraint from the kind
+                let constraint = type_var_kind.as_ref().as_typeclass().map(|tc_id| {
+                    normalizer
+                        .kernel_context()
+                        .type_store
+                        .get_typeclass(tc_id)
+                        .clone()
+                });
+                type_param_constraints.push(constraint);
+            }
+
+            // Build rename map: x0 -> T0, T0 -> T0, x1 -> T1, etc.
+            // Both "x{i}" and "T{i}" represent var_id i and should map to the same new name.
+            let mut rename_map = HashMap::new();
             for old_name in &all_type_vars {
                 // Try to extract the variable ID from the name (e.g., "x0" -> 0 or "T0" -> 0)
                 let var_id = old_name
@@ -636,37 +659,12 @@ impl CodeGenerator<'_> {
                     .or_else(|| old_name.strip_prefix("T"))
                     .and_then(|s| s.parse::<u16>().ok());
 
-                // Check if we've already assigned a new name for this var_id
                 let new_name = if let Some(id) = var_id {
-                    if let Some(existing_name) = var_id_to_new_name.get(&id) {
-                        // Reuse the existing name for this var_id
-                        existing_name.clone()
-                    } else {
-                        // Get original name or generate new one
-                        let name = var_id_to_orig_name.get(&id).cloned().unwrap_or_else(|| {
-                            self.bindings.next_indexed_var('T', &mut self.next_t)
-                        });
-                        var_id_to_new_name.insert(id, name.clone());
-
-                        // Add to type_param_names and look up constraint
-                        type_param_names.push(name.clone());
-                        let constraint = info
-                            .type_vars
-                            .get(id as usize)
-                            .and_then(|term| term.as_ref().as_typeclass())
-                            .map(|tc_id| {
-                                normalizer
-                                    .kernel_context()
-                                    .type_store
-                                    .get_typeclass(tc_id)
-                                    .clone()
-                            });
-                        type_param_constraints.push(constraint);
-
-                        name
-                    }
+                    var_id_to_new_name
+                        .get(&id)
+                        .cloned()
+                        .unwrap_or_else(|| old_name.clone())
                 } else {
-                    // No var_id found, just use the old name
                     old_name.clone()
                 };
 
