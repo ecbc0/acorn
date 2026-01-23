@@ -616,9 +616,9 @@ impl CodeGenerator<'_> {
 
             // In polymorphic mode, try to use the original type param names from the normalizer
             // This ensures the synthetic definition uses the same names as the goal context.
-            #[cfg(feature = "polymorphic")]
+            #[cfg(not(feature = "monomorphic"))]
             let var_id_to_orig_name = normalizer.get_var_id_to_name_map();
-            #[cfg(not(feature = "polymorphic"))]
+            #[cfg(feature = "monomorphic")]
             let var_id_to_orig_name: HashMap<AtomId, String> = HashMap::new();
 
             // Build type_param_names and type_param_constraints in var_id order (0, 1, 2, ...).
@@ -1556,7 +1556,7 @@ mod tests {
     use crate::project::Project;
 
     #[test]
-    #[cfg(feature = "polymorphic")]
+    #[cfg(not(feature = "monomorphic"))]
     fn test_polymorphic_synthetic_declaration() {
         use super::CodeGenerator;
         use crate::processor::Processor;
@@ -1586,7 +1586,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "polymorphic")]
+    #[cfg(not(feature = "monomorphic"))]
     fn test_polymorphic_synthetic_with_typeclass() {
         use super::CodeGenerator;
         use crate::processor::Processor;
@@ -1620,7 +1620,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "polymorphic")]
+    #[cfg(not(feature = "monomorphic"))]
     fn test_polymorphic_synthetic_with_multi_arg_function() {
         use super::CodeGenerator;
         use crate::processor::Processor;

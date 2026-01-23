@@ -870,7 +870,7 @@ fn test_if_then_else_with_forall_condition() {
 /// This test catches a bug where the LocalContext was empty when clause normalization tried
 /// to remap variables for type parameters.
 #[test]
-#[cfg(feature = "polymorphic")]
+#[cfg(not(feature = "monomorphic"))]
 fn test_polymorphic_type_params_in_goal() {
     let mut env = Environment::test();
     env.add(
@@ -899,7 +899,7 @@ fn test_polymorphic_type_params_in_goal() {
 /// After un-currying, compose should accept 4 value args total:
 /// (f, g, x, y) where x: Nat and y: Nat.
 #[test]
-#[cfg(feature = "polymorphic")]
+#[cfg(not(feature = "monomorphic"))]
 fn test_compose_type_with_higher_order_return() {
     let mut env = Environment::test();
     env.add("type Nat: axiom");
@@ -931,7 +931,7 @@ fn test_compose_type_with_higher_order_return() {
 /// This test demonstrates that can_infer_type_params_from_args incorrectly returns
 /// true even when the type params affect the arity.
 #[test]
-#[cfg(feature = "polymorphic")]
+#[cfg(not(feature = "monomorphic"))]
 fn test_code_generator_omits_type_params_when_arity_changes() {
     use crate::code_generator::CodeGenerator;
 
@@ -999,7 +999,7 @@ fn test_code_generator_omits_type_params_when_arity_changes() {
 /// If the Bool placeholder is being used for typeclass-constrained types, this should fail
 /// because Bool doesn't satisfy the typeclass.
 #[test]
-#[cfg(feature = "polymorphic")]
+#[cfg(not(feature = "monomorphic"))]
 fn test_polymorphic_axiom_chain_with_typeclass() {
     use crate::tests::common::verify_succeeds;
 
@@ -1049,7 +1049,7 @@ fn test_polymorphic_axiom_chain_with_typeclass() {
 ///
 /// This causes "does not match any synthetic definition" errors.
 #[test]
-#[cfg(feature = "polymorphic")]
+#[cfg(not(feature = "monomorphic"))]
 fn test_polymorphic_synthetic_type_var_ordering() {
     use crate::tests::common::verify_succeeds;
 

@@ -45,3 +45,7 @@
 - `/src` - Core Rust implementation
 - `/vscode` - VS Code extension and assistant interface
 - `/python` - Training scripts for the scoring model
+
+## Versioning
+
+- The "acornlib manifest version" is defined by `MANIFEST_VERSION` in `src/manifest.rs`. Bump this when making breaking changes to the build format.

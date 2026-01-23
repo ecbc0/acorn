@@ -419,7 +419,7 @@ fn test_conjunction_goal() {
 // 2. Type parameters were incorrectly being collected as value arguments for
 //    synthesized atoms representing if-expressions
 #[test]
-#[cfg(feature = "polymorphic")]
+#[cfg(not(feature = "monomorphic"))]
 fn test_lambda_with_if_then_else() {
     // Test that definitions with if-then-else inside lambdas are processed correctly.
     let text = r#"
@@ -456,7 +456,7 @@ fn test_lambda_with_if_then_else() {
 // incorrectly handles curried function application after compose.
 // The bug manifests as compose(f, g)(x) being treated as compose(f, g, x) with wrong arity.
 #[test]
-#[cfg(feature = "polymorphic")]
+#[cfg(not(feature = "monomorphic"))]
 fn test_compose_with_higher_order_result() {
     let text = r#"
     type Nat: axiom
