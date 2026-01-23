@@ -71,22 +71,6 @@ If we have basic language syntax using options then we either need to import opt
 
 This also requires a migration of the existing code. Not sure how tricky that will be.
 
-### Inhabited typeclass
-
-We need a typeclass that indicates that a type is inhabited. This needs to go in "core".
-
-### Proving typeclass extension
-
-Currently one typeclass can extend another, but only when it's defined that way. In practice, one typeclass often extends another even when it is not defined that way. In particular, many typeclasses will extend Inhabited, and we're going to need to prove that. So we will need some syntax for this, perhaps
-
-```
-extends Ring: Inhabited
-```
-
-### Allow uninhabited types
-
-Once we have the `Inhabited` typeclass, instead of just assuming a type is inhabited, the prover should check the typeclass relationship. (This is why `Inhabited` needs to go in "core", because the prover isn't going to be able to function sanely if it isn't in the proving environment.)
-
 ### Side quest: generic let-satisfy
 
 It would be great to define methods like:
@@ -103,28 +87,6 @@ let pick_any[T](list: List[T]) -> item: T satisfy {
 
 However, this code is similar to the constructor of a constrained type, in that it lets you introduce terms of type `T` with no precondition, thus implicitly assuming that the type is inhabited. Once we have a clean way to handle uninhabited types, we can just check that `T` is inhabited here before allowing this syntax.
 
-### Make a higher-order unifier
-
-Currently, the unifier and the term representation used by the unifier are "first order", meaning that they only handles base types. There is a normalization phase in which every type gets a numeric id, and the unifier only operates on these ids.
-
-With dependent types, there will be some expressions that cannot be normalized into a first order term. For example:
-
-```
-forall(k: Nat) {
-  forall(x: Fin[k]) {
-    foo(k) implies bar(x)
-  }
-}
-```
-
-This can't be converted into a first term because `k` appears both in "value space" and in "type space".
-
-So we need a different term representation here. This is tricky primarily not because of the algorithm (unifying types is not much different than unifying values) but because of performance, because term manipulation is currently the performance bottleneck. Right now we are doing a huge number of tiny allocations so it might be better to redesign the term object rather than add on even more tiny allocations for the types.
-
-### Get rid of the monomorphizer
-
-Proving happens in two stages right now. First the monomorphizer creates first-order versions of every generic theorem, then the prover operates on the first-order terms. Once we have a higher-order unifier we shouldn't need a separate monomorphization stage, which will make it simpler to expand the type system.
-
 ### Side quest: generic instances
 
 Relations like:
@@ -135,11 +97,11 @@ instance NonZero[F: Field]: Group
 
 Currently that would require changing how the monomorphizer works, but once we are not monomorphizing we only have to handle this during unification, which is easier.
 
-### Dependent types
+### Dependent types frontend
 
-After all that stuff, the actual implementation of dependent types should be pretty straightforward. It's just a type where one of the parameters is a value instead of a type.
+Once the internals support all of the above, it's time to expose dependent types in the frontend in the ways that are useful.
 
-We do need to figure out a syntax that can handle things like defining:
+We need to figure out a syntax that can handle things like defining:
 
 ```
 Fin[k]

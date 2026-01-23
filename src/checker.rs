@@ -12,7 +12,6 @@ use crate::elaborator::names::ConstantName;
 use crate::elaborator::potential_value::PotentialValue;
 use crate::elaborator::source::Source;
 use crate::elaborator::stack::Stack;
-#[cfg(not(feature = "monomorphic"))]
 use crate::elaborator::unresolved_constant::UnresolvedConstant;
 use crate::kernel::atom::AtomId;
 use crate::kernel::clause::Clause;
@@ -437,7 +436,6 @@ impl Checker {
                 let exists_value = AcornValue::exists(types, condition_value.clone());
 
                 // Set up type variable map for polymorphic checking
-                #[cfg(not(feature = "monomorphic"))]
                 normalizer.to_mut().set_type_var_map(&type_params);
 
                 let (source, synthetic_atoms) = match normalizer
@@ -494,9 +492,8 @@ impl Checker {
                         let synthetic_id = atoms[i];
                         let synthetic_cname = ConstantName::Synthetic(synthetic_id);
 
-                        // In polymorphic mode, make the synthetic a polymorphic constant
+                        // Make the synthetic a polymorphic constant
                         // so that type parameters can be inferred when it's used.
-                        #[cfg(not(feature = "monomorphic"))]
                         let (param_names, generic_type) = if !type_params.is_empty() {
                             // Create type param names from the type_params
                             let names: Vec<String> =
@@ -506,20 +503,15 @@ impl Checker {
                         } else {
                             (vec![], acorn_type.clone())
                         };
-                        #[cfg(feature = "monomorphic")]
-                        let (param_names, generic_type) = (vec![], acorn_type.clone());
 
                         let user_cname = ConstantName::unqualified(bindings.module_id(), name);
 
                         // Build a resolved constant value for substitution into the condition.
                         // For polymorphic synthetics, use Variable types as the type arguments.
-                        #[cfg(not(feature = "monomorphic"))]
                         let type_args: Vec<_> = type_params
                             .iter()
                             .map(|p| AcornType::Variable(p.clone()))
                             .collect();
-                        #[cfg(feature = "monomorphic")]
-                        let type_args: Vec<AcornType> = vec![];
 
                         let resolved_value = AcornValue::constant(
                             synthetic_cname.clone(),
@@ -531,7 +523,6 @@ impl Checker {
                         constant_values.push(resolved_value.clone());
 
                         // For polymorphic synthetics, use Unresolved so type inference works
-                        #[cfg(not(feature = "monomorphic"))]
                         let potential_value = if !type_params.is_empty() {
                             PotentialValue::Unresolved(UnresolvedConstant {
                                 name: synthetic_cname.clone(),
@@ -542,9 +533,6 @@ impl Checker {
                         } else {
                             PotentialValue::Resolved(resolved_value)
                         };
-
-                        #[cfg(feature = "monomorphic")]
-                        let potential_value = PotentialValue::Resolved(resolved_value);
 
                         bindings.to_mut().add_constant_alias(
                             user_cname,
@@ -606,7 +594,6 @@ impl Checker {
                 // Clear the type variable map after processing the let...satisfy condition.
                 // The type parameters (T0, T1) have been added to bindings as arbitrary types
                 // and will be looked up there when processing subsequent claims.
-                #[cfg(not(feature = "monomorphic"))]
                 normalizer.to_mut().clear_type_var_map();
 
                 // Record this step

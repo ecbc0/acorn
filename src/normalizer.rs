@@ -8,7 +8,6 @@ use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
 use crate::elaborator::fact::Fact;
 use crate::elaborator::goal::Goal;
 use crate::elaborator::names::ConstantName;
-#[cfg(not(feature = "monomorphic"))]
 use crate::elaborator::potential_value::PotentialValue;
 use crate::elaborator::proposition::Proposition;
 use crate::elaborator::source::{Source, SourceType};
@@ -22,8 +21,6 @@ use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::symbol_table::NewConstantType;
 use crate::kernel::term::Term;
-#[cfg(feature = "monomorphic")]
-use crate::monomorphizer::Monomorphizer;
 use crate::proof_step::{ProofStep, Truthiness};
 use tracing::trace;
 
@@ -105,9 +102,6 @@ impl std::fmt::Display for SyntheticKey {
 
 #[derive(Clone)]
 pub struct Normalizer {
-    #[cfg(feature = "monomorphic")]
-    monomorphizer: Monomorphizer,
-
     /// The definition for each synthetic atom, indexed by AtomId.
     synthetic_definitions: HashMap<AtomId, Arc<SyntheticDefinition>>,
 
@@ -131,21 +125,17 @@ pub struct Normalizer {
     /// Goal's type parameter names, indexed by variable ID.
     /// This is set when normalize_goal is called and persists for certificate generation.
     /// Used to preserve original type param names (like G, H) when generating certificates.
-    #[cfg(not(feature = "monomorphic"))]
     goal_type_param_names: HashMap<AtomId, String>,
 }
 
 impl Normalizer {
     pub fn new() -> Normalizer {
         Normalizer {
-            #[cfg(feature = "monomorphic")]
-            monomorphizer: Monomorphizer::new(),
             synthetic_definitions: HashMap::new(),
             synthetic_map: HashMap::new(),
             kernel_context: KernelContext::new(),
             type_var_map: None,
             type_var_id_map: None,
-            #[cfg(not(feature = "monomorphic"))]
             goal_type_param_names: HashMap::new(),
         }
     }
@@ -163,7 +153,6 @@ impl Normalizer {
     /// It prioritizes goal_type_param_names (set during goal normalization) over
     /// type_var_map (set during polymorphic checking), and finally falls back to
     /// arbitrary types registered in the type store.
-    #[cfg(not(feature = "monomorphic"))]
     pub fn get_var_id_to_name_map(&self) -> HashMap<AtomId, String> {
         // First check if we have goal type param names (persistent)
         if !self.goal_type_param_names.is_empty() {
@@ -207,7 +196,6 @@ impl Normalizer {
 
     /// Sets up the type variable map for polymorphic checking.
     /// This allows type parameters like T0, T1 to be recognized during value conversion.
-    #[cfg(not(feature = "monomorphic"))]
     pub fn set_type_var_map(&mut self, type_params: &[crate::elaborator::acorn_type::TypeParam]) {
         use crate::kernel::term::Term;
 
@@ -241,7 +229,6 @@ impl Normalizer {
     }
 
     /// Clears the type variable map after polymorphic checking.
-    #[cfg(not(feature = "monomorphic"))]
     pub fn clear_type_var_map(&mut self) {
         self.type_var_map = None;
         self.type_var_id_map = None;
@@ -382,13 +369,10 @@ impl Normalizer {
     }
 
     pub fn add_scoped_constant(&mut self, cname: ConstantName, acorn_type: &AcornType) -> Atom {
-        #[cfg(not(feature = "monomorphic"))]
         let type_term = self
             .kernel_context
             .type_store
             .to_type_term_with_vars(acorn_type, self.type_var_id_map.as_ref());
-        #[cfg(feature = "monomorphic")]
-        let type_term = self.kernel_context.type_store.to_type_term(acorn_type);
         Atom::Symbol(self.kernel_context.symbol_table.add_constant(
             cname,
             NewConstantType::Local,
@@ -455,7 +439,6 @@ impl NormalizerView<'_> {
     }
 
     /// Get the full type variable map including type constraints.
-    #[cfg(not(feature = "monomorphic"))]
     fn type_var_map_with_types(&self) -> Option<&HashMap<String, (AtomId, Term)>> {
         self.as_ref().type_var_map.as_ref()
     }
@@ -497,7 +480,6 @@ impl NormalizerView<'_> {
                 let mut local_context = LocalContext::empty();
 
                 // In polymorphic mode, pre-allocate space for type variables
-                #[cfg(not(feature = "monomorphic"))]
                 let (mut next_var_id, num_type_params) =
                     if let Some(type_var_map) = self.type_var_map_with_types() {
                         // Pre-populate local_context with the type of each type variable.
@@ -512,8 +494,6 @@ impl NormalizerView<'_> {
                     } else {
                         (0, 0)
                     };
-                #[cfg(feature = "monomorphic")]
-                let (mut next_var_id, num_type_params) = (0, 0);
 
                 let cnf = self.value_to_cnf(
                     &value,
@@ -625,7 +605,6 @@ impl NormalizerView<'_> {
 
         // In polymorphic mode, pre-allocate space for type variables
         // This ensures value variable IDs don't collide with type variable IDs
-        #[cfg(not(feature = "monomorphic"))]
         let mut next_var_id = if let Some(type_var_map) = self.type_var_map_with_types() {
             // Pre-populate local_context with the type of each type variable.
             let mut entries: Vec<_> = type_var_map.values().collect();
@@ -637,8 +616,6 @@ impl NormalizerView<'_> {
         } else {
             0
         };
-        #[cfg(feature = "monomorphic")]
-        let mut next_var_id = 0;
 
         let cnf = self.value_to_cnf(
             &value,
@@ -853,12 +830,9 @@ impl NormalizerView<'_> {
         context: &mut LocalContext,
     ) -> Result<Cnf, String> {
         for quant in quants {
-            #[cfg(not(feature = "monomorphic"))]
             let type_term = self
                 .type_store()
                 .to_type_term_with_vars(quant, self.type_var_map());
-            #[cfg(feature = "monomorphic")]
-            let type_term = self.type_store().to_type_term(quant);
             let var_id = *next_var_id;
             context.push_type(type_term);
             let var = Term::new_variable(var_id);
@@ -893,7 +867,6 @@ impl NormalizerView<'_> {
         // This is the same pattern as other polymorphic constants: the type is
         // Pi(Type, Pi(Type, ... actual_type ...)) where each Type is skipped when
         // converting to AcornType, giving the user-facing type without type params.
-        #[cfg(not(feature = "monomorphic"))]
         if let Some(type_var_map) = self.type_var_map_with_types() {
             // Sort entries by var_id to ensure consistent ordering
             let mut entries: Vec<_> = type_var_map.values().collect();
@@ -1107,20 +1080,14 @@ impl NormalizerView<'_> {
             // Comparing functions.
             let mut arg_type_terms: Vec<Term> = Vec::with_capacity(app.arg_types.len());
             for t in &app.arg_types {
-                #[cfg(not(feature = "monomorphic"))]
                 arg_type_terms.push(
                     self.type_store()
                         .to_type_term_with_vars(t, self.type_var_map()),
                 );
-                #[cfg(feature = "monomorphic")]
-                arg_type_terms.push(self.type_store().to_type_term(t));
             }
-            #[cfg(not(feature = "monomorphic"))]
             let result_type_term = self
                 .type_store()
                 .to_type_term_with_vars(&app.return_type, self.type_var_map());
-            #[cfg(feature = "monomorphic")]
-            let result_type_term = self.type_store().to_type_term(&app.return_type);
 
             if result_type_term == Term::bool_type() {
                 // Boolean functional comparison.
@@ -1380,16 +1347,11 @@ impl NormalizerView<'_> {
                     };
                     Ok(Some((Term::new(Atom::Symbol(symbol), vec![]), true)))
                 } else {
-                    #[cfg(not(feature = "monomorphic"))]
                     let term = self.symbol_table().term_from_instance_with_vars(
                         &c,
                         self.type_store(),
                         self.type_var_map(),
                     )?;
-                    #[cfg(feature = "monomorphic")]
-                    let term = self
-                        .symbol_table()
-                        .term_from_instance(&c, self.type_store())?;
                     Ok(Some((term, true)))
                 }
             }
@@ -1551,10 +1513,7 @@ impl NormalizerView<'_> {
                 var_remapping[var_id as usize] = Some(pos as u16);
             }
         }
-        #[cfg(not(feature = "monomorphic"))]
         let type_var_id_to_name = self.as_ref().get_var_id_to_name_map();
-        #[cfg(feature = "monomorphic")]
-        let type_var_id_to_name = HashMap::new();
         let skolem_value = self.as_ref().denormalize_term(
             &skolem_term,
             context,
@@ -1753,7 +1712,6 @@ impl NormalizerView<'_> {
 
                 // In polymorphic mode, include type parameters as arguments.
                 // This matches how make_skolem_terms handles polymorphic synthetics.
-                #[cfg(not(feature = "monomorphic"))]
                 if let Some(type_var_map) = self.type_var_map_with_types() {
                     let mut entries: Vec<_> = type_var_map.values().collect();
                     entries.sort_by_key(|(id, _)| *id);
@@ -1958,16 +1916,11 @@ impl NormalizerView<'_> {
                     };
                     Ok(ExtendedTerm::Term(Term::new(Atom::Symbol(symbol), vec![])))
                 } else {
-                    #[cfg(not(feature = "monomorphic"))]
                     let term = self.symbol_table().term_from_instance_with_vars(
                         &c,
                         self.type_store(),
                         self.type_var_map(),
                     )?;
-                    #[cfg(feature = "monomorphic")]
-                    let term = self
-                        .symbol_table()
-                        .term_from_instance(&c, self.type_store())?;
                     Ok(ExtendedTerm::Term(term))
                 }
             }
@@ -1978,12 +1931,9 @@ impl NormalizerView<'_> {
                 // Use next_var_id to assign unique variable IDs
                 let mut args = vec![];
                 for arg_type in arg_types {
-                    #[cfg(not(feature = "monomorphic"))]
                     let type_term = self
                         .type_store()
                         .to_type_term_with_vars(arg_type, self.type_var_map());
-                    #[cfg(feature = "monomorphic")]
-                    let type_term = self.type_store().to_type_term(arg_type);
                     let var_id = *next_var_id;
                     *next_var_id += 1;
                     // Add the variable type to the context
@@ -2212,55 +2162,6 @@ impl Normalizer {
 
         let range = fact.source().range;
 
-        #[cfg(feature = "monomorphic")]
-        {
-            // Register constants from the fact even before monomorphization.
-            // This ensures type constructors are marked as inhabited immediately.
-            if let Fact::Proposition(prop) = &fact {
-                self.kernel_context.symbol_table.add_from(
-                    &prop.value,
-                    NewConstantType::Global,
-                    &mut self.kernel_context.type_store,
-                );
-            }
-
-            self.monomorphizer.add_fact(fact);
-            for proposition in self.monomorphizer.take_output() {
-                let ctype = if proposition.source.truthiness() == Truthiness::Factual {
-                    NewConstantType::Global
-                } else {
-                    NewConstantType::Local
-                };
-                let clauses = self
-                    .normalize_value(&proposition.value, ctype, &proposition.source)
-                    .map_err(|msg| BuildError::new(range, msg))?;
-                for clause in &clauses {
-                    trace!(clause = %clause, "normalized to clause");
-                }
-                let defined = match &proposition.source.source_type {
-                    SourceType::ConstantDefinition(value, _) => {
-                        let view = NormalizerView::Ref(self);
-                        let term =
-                            view.force_simple_value_to_term(value, &vec![])
-                                .map_err(|msg| {
-                                    BuildError::new(
-                                        range,
-                                        format!("cannot convert definition to term: {}", msg),
-                                    )
-                                })?;
-                        Some(term.get_head_atom().clone())
-                    }
-                    _ => None,
-                };
-                for clause in clauses {
-                    clause.validate(&self.kernel_context);
-                    let step = ProofStep::assumption(&proposition.source, clause, defined);
-                    steps.push(step);
-                }
-            }
-        }
-
-        #[cfg(not(feature = "monomorphic"))]
         {
             use crate::elaborator::acorn_type::TypeParam;
 
@@ -2386,7 +2287,6 @@ impl Normalizer {
 
         // Store the goal's type parameter names for certificate generation.
         // This maps variable ID to the original type param name (e.g., 0 -> "G", 1 -> "H").
-        #[cfg(not(feature = "monomorphic"))]
         {
             self.goal_type_param_names.clear();
             for (i, param) in prop.params.iter().enumerate() {
@@ -2526,7 +2426,6 @@ impl Normalizer {
 
                 // In polymorphic mode, check if the type has leading type parameter Pis
                 // (Pi types where the input is TypeSort or a Typeclass)
-                #[cfg(not(feature = "monomorphic"))]
                 {
                     let num_type_params = type_term.as_ref().count_type_params();
                     if num_type_params > 0 {

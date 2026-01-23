@@ -1428,7 +1428,6 @@ fn test_inhabited_const() {
 /// so the synthetic is monomorphic.
 #[test]
 #[ignore]
-#[cfg(not(feature = "monomorphic"))]
 fn test_synthetic_with_unimported_typeclass_constraint() {
     let mut p = Project::new_mock();
 
@@ -1551,7 +1550,6 @@ fn test_synthetic_with_unimported_typeclass_constraint() {
 ///
 /// This causes type mismatch errors during certificate verification.
 #[test]
-#[cfg(not(feature = "monomorphic"))]
 fn test_synthetic_with_multiple_type_params_function_type() {
     verify_succeeds(
         r#"
@@ -1592,7 +1590,6 @@ fn test_synthetic_with_multiple_type_params_function_type() {
 /// Key ingredients: polymorphic theorem, value param `item: T`, local define with 2 params,
 /// forall/if structure, and induction capturing `item`.
 #[test]
-#[cfg(not(feature = "monomorphic"))]
 fn test_value_param_incorrectly_gets_type_args() {
     verify_succeeds(
         r#"
@@ -1655,7 +1652,6 @@ fn test_value_param_incorrectly_gets_type_args() {
 /// Key: theorem has function param `f: T -> Bool` and value param `item: T`,
 /// and `f(item)` appears in proof with induction capturing both.
 #[test]
-#[cfg(not(feature = "monomorphic"))]
 fn test_function_param_application_not_obvious() {
     let code = r#"
     inductive MyList[T] {
@@ -1757,7 +1753,6 @@ fn test_polymorphic_structure_with_function_if_then_else() {
 // with an arbitrary type, resulting in certificate code like "let s2: x0 satisfy { true }"
 // which is invalid because x0 is not a valid type name.
 #[test]
-#[cfg(not(feature = "monomorphic"))]
 fn test_polymorphic_axiom_chain_needs_arbitrary_type() {
     let text = r#"
     let foo: Bool = axiom
@@ -1790,7 +1785,6 @@ fn test_polymorphic_axiom_chain_needs_arbitrary_type() {
 //
 // The original bug: cargo run --profile release --features polymorphic,validate -- reprove ordered_group
 #[test]
-#[cfg(not(feature = "monomorphic"))]
 fn test_dependently_typed_synthetic() {
     use crate::processor::Processor;
 
@@ -1820,7 +1814,6 @@ fn test_dependently_typed_synthetic() {
 //
 // Based on the certificate from ordered_group for ordered_imp_torsion_free.
 #[test]
-#[cfg(not(feature = "monomorphic"))]
 fn test_polymorphic_synthetic_claim() {
     use crate::checker::{CertificateStep, Checker};
     use crate::normalizer::Normalizer;
