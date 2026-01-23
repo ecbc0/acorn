@@ -137,9 +137,13 @@ impl SymbolTable {
         }
 
         // Now current is the "return type" after stripping type/typeclass Pis.
-        // If its head is a ground type, record it as inhabited.
-        if let Atom::Symbol(Symbol::Type(ground_id)) = current.get_head_atom() {
-            self.inhabited_type_constructors.insert(*ground_id);
+        // If it's a ground type (possibly applied to arguments), mark it as inhabited.
+        // We skip Pi types because get_head_atom on a Pi type like `T -> Bool` returns
+        // the head of the input type (T), not the function type itself.
+        if !current.is_pi() {
+            if let Atom::Symbol(Symbol::Type(ground_id)) = current.get_head_atom() {
+                self.inhabited_type_constructors.insert(*ground_id);
+            }
         }
     }
 

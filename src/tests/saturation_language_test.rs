@@ -1332,7 +1332,6 @@ fn test_cannot_avoid_inhabitedness_through_resolution() {
 }
 
 #[test]
-#[ignore]
 fn test_cannot_avoid_inhabitedness_through_equality_reduction() {
     // This should be rejected because T might not be inhabited at all.
     let text = r#"

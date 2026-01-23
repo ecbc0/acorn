@@ -1002,6 +1002,7 @@ fn test_polymorphic_axiom_chain_with_typeclass() {
     verify_succeeds(
         r#"
         type Nat: axiom
+        let zero: Nat = axiom
 
         typeclass N: Neg {
             neg: N -> N
