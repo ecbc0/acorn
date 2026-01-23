@@ -1417,13 +1417,9 @@ fn test_inhabited_const() {
 /// - The prover creates a synthetic with AddCommMonoid constraint
 /// - Verification fails because AddCommMonoid isn't in name_to_typeclass
 ///
-/// The fix is for the code generator to use lib(module).TypeclassName format.
-///
-/// TODO: This test needs work to actually trigger a polymorphic synthetic with
-/// an unimported typeclass constraint. Currently the prover specializes the type
-/// so the synthetic is monomorphic.
+/// The fix is for the code generator to substitute type variables that aren't valid
+/// type names with concrete types that implement the required typeclass.
 #[test]
-#[ignore]
 fn test_synthetic_with_unimported_typeclass_constraint() {
     let mut p = Project::new_mock();
 
@@ -1517,7 +1513,7 @@ fn test_synthetic_with_unimported_typeclass_constraint() {
     // Generate the certificate
     let cert = processor
         .prover()
-        .make_cert(&p, &env.bindings, processor.normalizer(), true)
+        .make_cert(&p, &goal_env.bindings, processor.normalizer(), true)
         .expect("make_cert failed");
 
     // Debug: print the certificate
@@ -1531,7 +1527,7 @@ fn test_synthetic_with_unimported_typeclass_constraint() {
     // The certificate should verify successfully
     // (If the code generator correctly uses lib(monoid).Monoid format)
     processor
-        .check_cert(&cert, None, &p, &env.bindings)
+        .check_cert(&cert, None, &p, &goal_env.bindings)
         .expect("check_cert should succeed");
 }
 
