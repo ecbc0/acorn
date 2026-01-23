@@ -290,15 +290,16 @@ fn test_completions() {
     let env = p.get_env(&ModuleDescriptor::name("main")).unwrap();
 
     // Make sure the indexes are what we expect
+    // Let statements (including axiom constants) now create nodes with proper line types
     assert_eq!(env.get_line_type(0), Some(LineType::Empty));
-    assert_eq!(env.get_line_type(1), Some(LineType::Other));
-    assert_eq!(env.get_line_type(2), Some(LineType::Other));
-    assert_eq!(env.get_line_type(3), Some(LineType::Other));
-    assert_eq!(env.get_line_type(4), Some(LineType::Node(0)));
-    assert_eq!(env.get_line_type(5), Some(LineType::Node(0)));
-    assert_eq!(env.get_line_type(6), Some(LineType::Node(0)));
-    assert_eq!(env.get_line_type(7), Some(LineType::Node(0)));
-    assert_eq!(env.get_line_type(8), Some(LineType::Node(0)));
+    assert_eq!(env.get_line_type(1), Some(LineType::Other)); // import
+    assert_eq!(env.get_line_type(2), Some(LineType::Node(0))); // foo axiom
+    assert_eq!(env.get_line_type(3), Some(LineType::Node(1))); // bar axiom
+    assert_eq!(env.get_line_type(4), Some(LineType::Node(2))); // theorem goal
+    assert_eq!(env.get_line_type(5), Some(LineType::Node(2)));
+    assert_eq!(env.get_line_type(6), Some(LineType::Node(2)));
+    assert_eq!(env.get_line_type(7), Some(LineType::Node(2)));
+    assert_eq!(env.get_line_type(8), Some(LineType::Node(2)));
     assert_eq!(env.get_line_type(9), None);
 
     let check = |prefix: &str, line: u32, expected: &[&str]| {
@@ -1737,7 +1738,11 @@ fn test_handle_selection_typeclass_attribute() {
     // Handle selection on the foo_specific theorem line (line 18)
     let result = p.handle_selection(&test_file, 18);
 
-    assert!(result.is_ok(), "handle_selection should succeed");
+    assert!(
+        result.is_ok(),
+        "handle_selection should succeed: {:?}",
+        result.err()
+    );
     let (goal_infos, goal_range) = result.unwrap();
 
     // Verify we got exactly one goal

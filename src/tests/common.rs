@@ -87,10 +87,21 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
         LoadState::Error(e) => panic!("error: {}", e),
         _ => panic!("no module"),
     };
+
+    // Track the highest top-level node index that contains a goal
+    let mut last_goal_top_index: Option<usize> = None;
+
     for cursor in env.iter_goals() {
         let facts = cursor.usable_facts(&project);
         let goal = cursor.goal().unwrap();
         let goal_env = cursor.goal_env().unwrap();
+
+        // Track the top-level index of this goal
+        let path = cursor.path();
+        if !path.is_empty() {
+            let top_index = path[0];
+            last_goal_top_index = Some(last_goal_top_index.map_or(top_index, |i| i.max(top_index)));
+        }
 
         let mut processor = Processor::new();
         for fact in facts {
@@ -113,6 +124,26 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
             panic!("check_cert failed: {}", e);
         }
     }
+
+    // Normalize any facts after the last goal (or all facts if there are no goals).
+    // This catches normalization errors in trailing definitions.
+    let first_unnormalized = last_goal_top_index.map_or(0, |i| i + 1);
+    if first_unnormalized < env.nodes.len() {
+        let mut processor = Processor::new();
+
+        // Add imported facts to build up normalizer state
+        for fact in project.imported_facts(module_id, None) {
+            processor.add_fact(fact)?;
+        }
+
+        // Add all facts from this module to normalize trailing ones
+        for node in &env.nodes {
+            if let Some(fact) = node.get_fact() {
+                processor.add_fact(fact)?;
+            }
+        }
+    }
+
     Ok(Outcome::Success)
 }
 

@@ -458,20 +458,19 @@ impl NormalizerView<'_> {
 
     /// Wrapper around value_to_cnf.
     /// Note that this only works on values that have already been "cleaned up" to some extent.
-    /// If check_dropped_vars is true, verifies that any forall variables that get dropped
-    /// during normalization have provably inhabited types.
+    ///
+    /// This function checks for invalid conversions where variables are dropped:
+    /// - Exists skolems that don't appear in clauses (would assert existence over empty type)
+    /// - Forall variables that don't appear in clauses (would lose vacuous truth condition)
     pub fn nice_value_to_clauses(
         &mut self,
         value: &AcornValue,
         synthesized: &mut Vec<AtomId>,
-        check_dropped_vars: bool,
     ) -> Result<Vec<Clause>, String> {
         match value {
             AcornValue::Binary(BinaryOp::And, left, right) => {
-                let mut left_clauses =
-                    self.nice_value_to_clauses(left, synthesized, check_dropped_vars)?;
-                let right_clauses =
-                    self.nice_value_to_clauses(right, synthesized, check_dropped_vars)?;
+                let mut left_clauses = self.nice_value_to_clauses(left, synthesized)?;
+                let right_clauses = self.nice_value_to_clauses(right, synthesized)?;
                 left_clauses.extend(right_clauses);
                 Ok(left_clauses)
             }
@@ -507,19 +506,18 @@ impl NormalizerView<'_> {
                 // This ensures function types like G -> H don't get swapped to H -> G.
                 let clauses = cnf.into_clauses_with_pinned(&local_context, num_type_params);
 
-                // Check for dropped forall variables with uninhabited types.
-                // Skip type parameter variables (first num_type_params entries) since they
-                // represent universally quantified types, not existential claims.
-                // If an uninhabited type is found, this statement is vacuously true (for foralls)
-                // or unprovable (for existentials). Return empty clauses to indicate this.
-                // For facts: vacuously true facts add no information, so empty is correct.
-                // For negated goals: the original goal becomes unprovable, causing Exhausted.
-                if check_dropped_vars
-                    && self.has_uninhabited_dropped_variable(
-                        &local_context,
-                        &clauses,
-                        num_type_params,
-                    )
+                // Check for dropped variables that would lose inhabitedness information.
+                // Both checks look for variables that don't appear in the resulting clauses
+                // but whose type might be empty.
+
+                // Exists skolems: asserting existence over a potentially empty type is unsound.
+                if self.has_uninhabited_skolem(synthesized, &clauses) {
+                    return Err("exists over a potentially uninhabited type".to_string());
+                }
+
+                // Forall variables: if dropped, the statement is vacuously true when the
+                // type is empty. Return empty clauses since we can't represent this properly.
+                if self.has_uninhabited_dropped_variable(&local_context, &clauses, num_type_params)
                 {
                     return Ok(vec![]);
                 }
@@ -530,9 +528,11 @@ impl NormalizerView<'_> {
     }
 
     /// Checks if any forall variables dropped during normalization have uninhabited types.
-    /// This prevents unsound proofs where vacuous foralls over empty types are eliminated.
-    /// Skips the first `skip_vars` entries which are type parameters (universally quantified types).
-    /// Returns true if an uninhabited type was found (meaning the formula is unprovable).
+    /// This is specifically for detecting vacuous quantification over unconstrained type parameters.
+    ///
+    /// For example, `forall(x: T) { P }` where T is an unconstrained type parameter and x
+    /// doesn't appear in P. If T is empty, this is vacuously true; if T is inhabited, it's
+    /// equivalent to P. We can't represent this ambiguity in CNF, so we return empty clauses.
     fn has_uninhabited_dropped_variable(
         &self,
         original_context: &LocalContext,
@@ -542,7 +542,6 @@ impl NormalizerView<'_> {
         use std::collections::HashSet;
 
         // Collect all types that appear in ANY clause's context.
-        // A type is only "dropped" if it doesn't appear in any clause at all.
         let mut all_clause_types: HashSet<&Term> = HashSet::new();
         for clause in clauses {
             let clause_ctx = clause.get_local_context();
@@ -553,39 +552,101 @@ impl NormalizerView<'_> {
             }
         }
 
-        // Check each type in the original context, skipping type parameters
+        // Build a context for the type parameters (first skip_vars entries)
+        let mut type_param_context = LocalContext::empty();
+        for i in 0..skip_vars {
+            if let Some(t) = original_context.get_var_type(i) {
+                type_param_context.push_type(t.clone());
+            }
+        }
+
+        // Check each variable type in the original context, skipping type parameters
         for var_id in skip_vars..original_context.len() {
             if let Some(var_type) = original_context.get_var_type(var_id) {
-                // If this type doesn't appear in ANY clause, all variables of this type were dropped
+                // If this type doesn't appear in ANY clause context, variables of this type were dropped
                 if !all_clause_types.contains(var_type) {
-                    // Check if the type is provably inhabited.
-                    // If the type is a free variable (representing a type parameter), we need to
-                    // check the constraint on that type parameter instead.
-                    let type_to_check = if let Some(type_param_id) = var_type.atomic_variable() {
-                        // This is a type variable (like x0 representing P: Pointed).
-                        // Look up its constraint in the original context.
-                        if (type_param_id as usize) < skip_vars {
-                            original_context.get_var_type(type_param_id as usize)
-                        } else {
-                            Some(var_type)
-                        }
-                    } else {
-                        Some(var_type)
-                    };
-
-                    if let Some(t) = type_to_check {
-                        // TypeSort means unconstrained type variable - it could be empty
-                        if t.as_ref().is_type_sort() {
-                            return true;
-                        }
-                        if !self
-                            .kernel_context()
-                            .provably_inhabited(t, Some(original_context))
-                        {
-                            return true;
-                        }
+                    // Check if this type is provably inhabited
+                    if !self
+                        .kernel_context()
+                        .provably_inhabited(var_type, Some(&type_param_context))
+                    {
+                        return true;
                     }
                 }
+            }
+        }
+
+        false
+    }
+
+    /// Checks if any skolems were created for uninhabited types.
+    /// This prevents unsound definitions where we assert existence over empty types.
+    /// For example: `let inhabited[T]: Bool = exists(x: T) { true }` would create a skolem
+    /// for type T, but T might be empty, making the exists claim invalid.
+    fn has_uninhabited_skolem(&self, synthesized: &[AtomId], clauses: &[Clause]) -> bool {
+        use std::collections::HashSet;
+
+        // Collect all skolem atoms that appear in any clause
+        let mut used_skolems: HashSet<AtomId> = HashSet::new();
+        for clause in clauses {
+            for lit in &clause.literals {
+                for atom in lit.left.iter_atoms() {
+                    if let &Atom::Symbol(Symbol::Synthetic(id)) = atom {
+                        used_skolems.insert(id);
+                    }
+                }
+                for atom in lit.right.iter_atoms() {
+                    if let &Atom::Symbol(Symbol::Synthetic(id)) = atom {
+                        used_skolems.insert(id);
+                    }
+                }
+            }
+        }
+
+        // Check each synthesized skolem
+        for &skolem_id in synthesized {
+            // If this skolem appears in clauses, it's constrained by something, so skip
+            if used_skolems.contains(&skolem_id) {
+                continue;
+            }
+
+            // Get the skolem's type
+            let skolem_type = self
+                .kernel_context()
+                .symbol_table
+                .get_type(Symbol::Synthetic(skolem_id));
+
+            // Get the result type by stripping off type parameter Pis only.
+            // Type parameter Pis have TypeSort (or Typeclass) as the input type.
+            // For example, a skolem with type Pi(Type, b0) represents
+            // "for any type T, return a value of type T".
+            // We DON'T strip function type Pis like Pi(Nat, Bool) because those
+            // represent function types, not type parameters.
+            let mut result_type = skolem_type.as_ref();
+            let mut stripped_types = Vec::new();
+            while let Some((input_type, body)) = result_type.split_pi() {
+                // Only strip if this is a type parameter (input is Type/TypeSort or Typeclass)
+                if !input_type.is_type_param_kind() {
+                    break;
+                }
+                stripped_types.push(input_type.to_owned());
+                result_type = body;
+            }
+
+            // Build context with types in reverse order (innermost first) to match de Bruijn indices
+            let mut type_param_context = LocalContext::empty();
+            for t in stripped_types.into_iter().rev() {
+                type_param_context.push_type(t);
+            }
+
+            // The result term keeps its original bound variable indices
+            let result_term = result_type.to_owned();
+
+            let is_inhabited = self
+                .kernel_context()
+                .provably_inhabited(&result_term, Some(&type_param_context));
+            if !is_inhabited {
+                return true;
             }
         }
 
@@ -1989,8 +2050,6 @@ impl Normalizer {
         ctype: NewConstantType,
         source: &Source,
     ) -> Result<Vec<Clause>, String> {
-        use crate::elaborator::source::SourceType;
-
         self.kernel_context.symbol_table.add_from(
             &value,
             ctype,
@@ -2002,13 +2061,9 @@ impl Normalizer {
         let value = value.expand_lambdas(0);
 
         // Check for dropped forall variables only when normalizing negated goals.
-        // This prevents unsound proofs like `let x: T satisfy { true }` where T is uninhabited.
-        let check_dropped_vars = matches!(source.source_type, SourceType::NegatedGoal);
-
         let mut skolem_ids = vec![];
         let mut mut_view = NormalizerView::Mut(self);
-        let clauses =
-            mut_view.nice_value_to_clauses(&value, &mut skolem_ids, check_dropped_vars)?;
+        let clauses = mut_view.nice_value_to_clauses(&value, &mut skolem_ids)?;
 
         // For any of the created ids that have not been defined yet, the output
         // clauses will be their definition.

@@ -140,8 +140,34 @@ impl Environment {
     }
 
     /// Associate the node with the given index with all lines in the range.
+    /// This can overwrite existing `Other` or `Empty` lines.
     pub fn add_node_lines(&mut self, index: usize, range: &Range) {
-        self.add_line_types(LineType::Node(index), range.start.line, range.end.line);
+        let first = range.start.line;
+        let last = range.end.line;
+        let node_type = LineType::Node(index);
+
+        // First, ensure we have enough entries
+        while self.next_line() <= last {
+            self.line_types.push(LineType::Empty);
+        }
+
+        // Then update the lines in range
+        for line in first..=last {
+            if line >= self.first_line {
+                let idx = (line - self.first_line) as usize;
+                if idx < self.line_types.len() {
+                    // Node can overwrite Other or Empty
+                    match self.line_types[idx] {
+                        LineType::Other | LineType::Empty => {
+                            self.line_types[idx] = node_type;
+                        }
+                        LineType::Node(_) | LineType::Opening | LineType::Closing => {
+                            // Don't overwrite existing Node/Opening/Closing assignments
+                        }
+                    }
+                }
+            }
+        }
     }
 
     pub fn get_line_type(&self, line: u32) -> Option<LineType> {
@@ -172,10 +198,6 @@ impl Environment {
     /// Adds a node to represent the definition of the provided
     /// constant.
     pub fn add_definition(&mut self, defined_name: &DefinedName) {
-        let Some(definition) = self.bindings.get_definition(defined_name) else {
-            return;
-        };
-
         // This constant can be generic, with type variables in it.
         let potential = self
             .bindings
@@ -189,13 +211,25 @@ impl Environment {
         let name = defined_name.to_string();
         let source = Source::constant_definition(
             self.module_id,
-            range,
+            range.clone(),
             self.depth,
             potential.clone().to_generic_value(),
             &name,
         );
 
-        self.add_node(Node::definition(potential, definition.clone(), source));
+        // For axiom constants (no definition), create a tautological definition (c = c)
+        // This ensures the constant is registered in the symbol table as an inhabitant of its type.
+        let definition = match self.bindings.get_definition(defined_name) {
+            Some(def) => def.clone(),
+            None => potential.clone().to_generic_value(),
+        };
+
+        let index = self.add_node(Node::definition(potential, definition, source));
+        // Only set line types for top-level definitions. Definitions inside blocks
+        // (depth > 0) have their line types managed by the parent block.
+        if self.depth == 0 {
+            self.add_node_lines(index, &range);
+        }
     }
 
     /// Takes the currently collected doc comments and returns them, clearing the collection.

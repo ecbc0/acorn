@@ -1395,20 +1395,16 @@ fn test_can_inhabit_list_type() {
 }
 
 #[test]
-#[ignore]
 fn test_inhabited_const() {
     let text = r#"
     let inhabited[T]: Bool = exists(x: T) {
         true
     }
-
-    // If we ever change the semantics so that inhabited can be elaborated,
-    // we need to be sure that this can't be proven.
-    // theorem all_inhabited[T] {
-    //     inhabited[T]
-    // }
     "#;
-    verify_fails(text);
+    // This definition should fail to normalize because it involves an exists
+    // over a potentially uninhabited type T.
+    let result = verify(text);
+    assert!(result.is_err(), "expected an error, got {:?}", result);
 }
 
 /// Regression test: when a certificate uses a typeclass constraint from a function

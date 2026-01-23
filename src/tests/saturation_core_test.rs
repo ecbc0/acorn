@@ -1094,7 +1094,7 @@ fn test_proving_with_passive_resolution() {
     let c = prove(&mut p, "main", "goal");
     assert_eq!(
         c.proof.unwrap(),
-        vec!["not h(y) or f(y)", "f(y)", "not f(y) or not g(y)", "g(y)"]
+        vec!["not h(y) or f(y)", "f(y)", "not g(y) or not f(y)", "g(y)"]
     );
 }
 
@@ -1155,7 +1155,7 @@ fn test_proving_with_passive_contradiction() {
     let c = prove(&mut p, "main", "goal");
     assert_eq!(
         c.proof.unwrap(),
-        vec!["f(Foo.foo) = g(Foo.foo)", "not h(f(Foo.foo))"]
+        vec!["g(Foo.foo) = f(Foo.foo)", "not h(f(Foo.foo))"]
     );
 }
 
@@ -1259,7 +1259,12 @@ fn test_proving_with_equality_factoring_basic() {
     let c = prove(&mut p, "main", "goal");
     assert_eq!(
         c.proof.unwrap(),
-        vec!["g(y) != h(y) or h(y) = f(y)", "g(y) = h(y)", "h(y) != f(y)"]
+        vec![
+            "h(y) != g(y) or g(y) = f(y)",
+            "h(y) = g(y)",
+            "g(y) = f(y)",
+            "h(y) != f(y)"
+        ]
     );
 }
 
@@ -1297,7 +1302,12 @@ fn test_proving_with_equality_factoring_mixed_forwards() {
     let c = prove(&mut p, "main", "goal");
     assert_eq!(
         c.proof.unwrap(),
-        vec!["g(y) != h(y) or f(y) = h(y)", "g(y) = h(y)", "f(y) != h(y)"]
+        vec![
+            "h(y) != g(y) or g(y) = f(y)",
+            "h(y) = g(y)",
+            "g(y) = f(y)",
+            "h(y) != f(y)"
+        ]
     );
 }
 

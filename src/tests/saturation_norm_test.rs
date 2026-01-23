@@ -140,6 +140,7 @@ fn test_proving_avoids_another_infinite_monomorphization_recursion() {
     }
 
     type Nat: axiom
+    let zero: Nat = axiom
 
     attributes Set[K] {
         define is_finite_set(self) -> Bool {

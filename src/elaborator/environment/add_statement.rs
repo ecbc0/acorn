@@ -100,7 +100,7 @@ impl Environment {
             StatementInfo::Type(ts) => self.add_type_statement(project, statement, ts),
 
             StatementInfo::Let(ls) => {
-                self.add_other_lines(statement);
+                // Don't pre-set line types - add_definition will set them when creating the node
                 self.add_let_statement(
                     project,
                     statement,

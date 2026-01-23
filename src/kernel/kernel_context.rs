@@ -62,25 +62,42 @@ impl KernelContext {
         // 1. The codomain B is inhabited (we can create a constant function), OR
         // 2. The domain A equals the codomain B (the identity function exists)
         if let Some((domain, codomain)) = var_type.as_ref().split_pi() {
-            if domain == codomain {
+            // For non-dependent function types, check if domain equals codomain.
+            // Due to de Bruijn indexing, the codomain is inside the Pi's scope,
+            // so we need to shift it down by 1 to compare with the domain.
+            // For example, T -> T is represented as Pi(b0, b1) where both refer to
+            // the same outer binding, but b1 is shifted because it's inside the Pi.
+            let codomain_term = codomain.to_owned();
+            let shifted_codomain = codomain_term.shift_bound(0, -1);
+            if domain.to_owned() == shifted_codomain {
                 // Identity function always exists: T -> T is inhabited for any T
                 return true;
             }
-            return self.provably_inhabited(&codomain.to_owned(), local_context);
+            // When recursing on the codomain, use the shifted version so indices
+            // align with the context (which doesn't include the Pi's binding)
+            return self.provably_inhabited(&shifted_codomain, local_context);
         }
 
         // In polymorphic mode, check if this is a type variable with a constraint.
-        // For example, if var_type is FreeVariable(0) representing P: Pointed,
+        // For example, if var_type is FreeVariable(0) or BoundVariable(0) representing P: Pointed,
         // look up the constraint (Pointed) in the local context.
-        if let Some(var_id) = var_type.atomic_variable() {
-            if let Some(ctx) = local_context {
-                if let Some(constraint_type) = ctx.get_var_type(var_id as usize) {
-                    // If the constraint is TypeSort, this is an unconstrained type variable.
-                    // Unconstrained types are NOT provably inhabited (could be empty).
-                    if constraint_type.as_ref().is_type_sort() {
-                        return false;
+        let var_type_ref = var_type.as_ref();
+        if var_type_ref.is_atomic() {
+            let var_id = match var_type_ref.get_head_atom() {
+                Atom::FreeVariable(id) => Some(*id),
+                Atom::BoundVariable(id) => Some(*id),
+                _ => None,
+            };
+            if let Some(var_id) = var_id {
+                if let Some(ctx) = local_context {
+                    if let Some(constraint_type) = ctx.get_var_type(var_id as usize) {
+                        // If the constraint is TypeSort, this is an unconstrained type variable.
+                        // Unconstrained types are NOT provably inhabited (could be empty).
+                        if constraint_type.as_ref().is_type_sort() {
+                            return false;
+                        }
+                        return self.provably_inhabited(constraint_type, local_context);
                     }
-                    return self.provably_inhabited(constraint_type, local_context);
                 }
             }
         }
@@ -1139,5 +1156,31 @@ mod tests {
         let expected = Term::pi(comm_ring_type, Term::pi(b0, Term::pi(b1, b2)));
 
         assert_eq!(add_type, expected);
+    }
+
+    #[test]
+    fn test_provably_inhabited_identity_function() {
+        use crate::kernel::atom::Atom;
+        use crate::kernel::local_context::LocalContext;
+
+        let ctx = KernelContext::new();
+
+        // Test T -> T type (identity function)
+        // In de Bruijn notation, T -> T (where T is a type parameter at index 0) is Pi(b0, b1):
+        // - b0: the domain type T (from outside the Pi)
+        // - b1: the codomain type T (from inside the Pi, so shifted by 1)
+        let b0 = Term::atom(Atom::BoundVariable(0));
+        let b1 = Term::atom(Atom::BoundVariable(1));
+        let t_to_t = Term::pi(b0.clone(), b1.clone());
+
+        // Create a local context where type variable 0 has kind TypeSort
+        let mut local_ctx = LocalContext::empty();
+        local_ctx.push_type(Term::type_sort());
+
+        // T -> T should be provably inhabited (identity function exists)
+        assert!(
+            ctx.provably_inhabited(&t_to_t, Some(&local_ctx)),
+            "T -> T should be provably inhabited"
+        );
     }
 }
