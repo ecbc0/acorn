@@ -1309,6 +1309,43 @@ fn test_cannot_inhabit_arbitrary_type_const_true() {
 }
 
 #[test]
+#[ignore]
+fn test_cannot_avoid_inhabitedness_through_resolution() {
+    // When T is not inhabited, ax1 and ax2 do not imply goal.
+    let text = r#"
+    let foo[T]: Bool = axiom
+    let bar[T]: T -> Bool = axiom
+
+    axiom ax1[T](x: T) {
+        bar(x) implies foo[T]
+    }
+
+    axiom ax2[T](x: T) {
+        not bar(x) implies foo[T]
+    }
+
+    theorem goal[T] {
+        foo[T]
+    }
+    "#;
+    verify_fails(text);
+}
+
+#[test]
+#[ignore]
+fn test_cannot_avoid_inhabitedness_through_equality_reduction() {
+    // This should be rejected because T might not be inhabited at all.
+    let text = r#"
+    theorem bar_or_not_bar[T](bar: T -> Bool) {
+        exists(x: T) {
+            bar(x) or not bar(x)
+        }
+    }
+    "#;
+    verify_fails(text);
+}
+
+#[test]
 fn test_can_inhabit_arbitrary_type_of_typeclass() {
     // This should be accepted, since any arbitrary P: Pointed is inhabited.
     let text = r#"
