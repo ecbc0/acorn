@@ -175,7 +175,7 @@ impl SaturationProver {
             if step.clause.is_impossible() {
                 println!("Contradiction, depth {}, {}.", step.depth, rule);
             } else {
-                let denormalized = normalizer.denormalize(&step.clause, None, None, None);
+                let denormalized = normalizer.denormalize(&step.clause, None, None, None, false);
                 let clause_text = CodeGenerator::new(bindings)
                     .value_to_code(&denormalized)
                     .unwrap_or_else(|_| format!("{:?}", step.clause));
@@ -209,7 +209,7 @@ impl SaturationProver {
                 let dep_text = if dep_clause.is_impossible() {
                     "contradiction".to_string()
                 } else {
-                    let denormalized = normalizer.denormalize(&dep_clause, None, None, None);
+                    let denormalized = normalizer.denormalize(&dep_clause, None, None, None, false);
                     CodeGenerator::new(bindings)
                         .value_to_code(&denormalized)
                         .unwrap_or_else(|_| format!("{:?}", dep_clause))

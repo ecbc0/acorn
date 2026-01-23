@@ -956,7 +956,7 @@ fn test_code_generator_omits_type_params_when_arity_changes() {
     // This is: forall(x0: Nat) { compose[Nat, Nat, Nat -> Nat](mul, from_nat, one, x0) = ... }
     let mut found_compose_clause = false;
     for clause in &clauses {
-        let denormalized = norm.denormalize(clause, None, None, None);
+        let denormalized = norm.denormalize(clause, None, None, None, false);
         let denorm_code = format!("{}", denormalized);
 
         if denorm_code.contains("compose[Nat, Nat, Nat -> Nat](mul, from_nat, one, x0)") {

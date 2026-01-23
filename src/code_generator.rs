@@ -455,29 +455,7 @@ impl CodeGenerator<'_> {
                 self.parametrize_expr(base_expr, params)
             }
             AcornType::Variable(param) | AcornType::Arbitrary(param) => {
-                // Check if this is a synthesized free type variable name like "x0", "x1", etc.
-                // These come from FreeVariable atoms in polymorphic clauses and aren't valid
-                // type names. We need to substitute some concrete type.
-                // TODO: This string-matching approach is aesthetically bad. We should track
-                // free type variables more explicitly rather than detecting them by name pattern.
-                let name = &param.name;
-                if name.starts_with('x')
-                    && name.len() > 1
-                    && name[1..].chars().all(|c| c.is_ascii_digit())
-                {
-                    // If the type variable has a typeclass constraint, we need to find
-                    // a type that implements that typeclass.
-                    if let Some(tc) = &param.typeclass {
-                        if let Some(datatype) = self.bindings.find_type_implementing(tc) {
-                            return self.datatype_to_expr(&datatype);
-                        }
-                        // No type implements this typeclass - this shouldn't happen
-                        // in well-formed code, but fall back to Bool.
-                    }
-                    Ok(Expression::generate_identifier("Bool"))
-                } else {
-                    Ok(Expression::generate_identifier(name))
-                }
+                Ok(Expression::generate_identifier(&param.name))
             }
             AcornType::Function(ft) => {
                 let mut args = vec![];
@@ -590,9 +568,10 @@ impl CodeGenerator<'_> {
             }
 
             // Denormalize clauses first so we can collect all type variable names
+            // Don't instantiate type vars here - they're part of the polymorphic structure
             let mut cond_parts = vec![];
             for clause in &info.clauses {
-                let part = normalizer.denormalize(clause, None, None, None);
+                let part = normalizer.denormalize(clause, None, None, None, false);
                 cond_parts.push(part);
             }
             let cond_val = AcornValue::reduce(BinaryOp::And, cond_parts);
@@ -776,7 +755,8 @@ impl CodeGenerator<'_> {
         let keys_before: HashSet<Term> = self.arbitrary_names.keys().cloned().collect();
 
         self.add_arbitrary_for_clause(&clause, normalizer.kernel_context());
-        let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names), None, None);
+        let mut value =
+            normalizer.denormalize(&clause, Some(&self.arbitrary_names), None, None, true);
 
         // Define the arbitrary variables.
         // Use the clause's local context to look up typeclass constraints for type variables.
@@ -785,7 +765,8 @@ impl CodeGenerator<'_> {
             if keys_before.contains(&ty) {
                 continue; // Already processed in a previous call with the correct context
             }
-            let denorm_type = normalizer.denormalize_type_with_context(ty.clone(), local_context);
+            let denorm_type =
+                normalizer.denormalize_type_with_context(ty.clone(), local_context, true);
             let ty_code = self.type_to_code(&denorm_type)?;
             let decl = format!("let {}: {} satisfy {{ true }}", name, ty_code);
             definitions.push(decl);

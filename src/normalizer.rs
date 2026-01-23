@@ -1582,6 +1582,7 @@ impl NormalizerView<'_> {
             Some(&var_remapping),
             None,
             Some(&type_var_id_to_name),
+            false, // Don't instantiate type vars for skolem definitions
         );
         let definition_cnf = self.eq_to_cnf(
             &skolem_value,
@@ -2526,6 +2527,7 @@ impl Normalizer {
     /// If var_remapping is provided, variable indices are remapped.
     /// If type_param_names is provided, it's used for polymorphic synthetic atoms.
     /// If type_var_id_to_name is provided, FreeVariable type arguments use proper names.
+    /// If instantiate_type_vars is true, FreeVariable type atoms become concrete types.
     fn denormalize_term(
         &self,
         term: &Term,
@@ -2534,6 +2536,7 @@ impl Normalizer {
         var_remapping: Option<&[Option<u16>]>,
         type_param_names: Option<&[String]>,
         type_var_id_to_name: Option<&HashMap<AtomId, String>>,
+        instantiate_type_vars: bool,
     ) -> AcornValue {
         // Get the type of the head atom
         let head_type = match term.get_head_atom() {
@@ -2605,12 +2608,20 @@ impl Normalizer {
                     } else {
                         self.kernel_context
                             .type_store
-                            .type_term_to_acorn_type_with_context(arg, local_context)
+                            .type_term_to_acorn_type_with_context(
+                                arg,
+                                local_context,
+                                instantiate_type_vars,
+                            )
                     }
                 } else {
                     self.kernel_context
                         .type_store
-                        .type_term_to_acorn_type_with_context(arg, local_context)
+                        .type_term_to_acorn_type_with_context(
+                            arg,
+                            local_context,
+                            instantiate_type_vars,
+                        )
                 };
                 type_args.push(acorn_type);
             } else {
@@ -2622,6 +2633,7 @@ impl Normalizer {
                     var_remapping,
                     type_param_names,
                     type_var_id_to_name,
+                    instantiate_type_vars,
                 ));
             }
         }
@@ -2660,6 +2672,7 @@ impl Normalizer {
     /// to constants.
     /// If var_remapping is provided, variable indices are remapped.
     /// If type_var_id_to_name is provided, FreeVariable type arguments use proper names.
+    /// If instantiate_type_vars is true, FreeVariable type atoms become concrete types.
     fn denormalize_literal(
         &self,
         literal: &Literal,
@@ -2668,6 +2681,7 @@ impl Normalizer {
         var_remapping: Option<&[Option<u16>]>,
         type_param_names: Option<&[String]>,
         type_var_id_to_name: Option<&HashMap<AtomId, String>>,
+        instantiate_type_vars: bool,
     ) -> AcornValue {
         let left = self.denormalize_term(
             &literal.left,
@@ -2676,6 +2690,7 @@ impl Normalizer {
             var_remapping,
             type_param_names,
             type_var_id_to_name,
+            instantiate_type_vars,
         );
         if literal.right.is_true() {
             if literal.positive {
@@ -2691,6 +2706,7 @@ impl Normalizer {
             var_remapping,
             type_param_names,
             type_var_id_to_name,
+            instantiate_type_vars,
         );
         if literal.positive {
             AcornValue::equals(left, right)
@@ -2706,6 +2722,7 @@ impl Normalizer {
     /// If type_vars is provided, those variable indices are treated as type-level variables
     /// and excluded from the forall quantifier (their indices are remapped in the body).
     /// If type_param_names is provided, it's used for naming polymorphic synthetic type params.
+    /// If instantiate_type_vars is true, FreeVariable type atoms become concrete types.
     /// Any remaining free variables are enclosed in a "forall" quantifier.
     pub fn denormalize(
         &self,
@@ -2713,6 +2730,7 @@ impl Normalizer {
         arbitrary_names: Option<&HashMap<Term, ConstantName>>,
         type_vars: Option<&HashSet<u16>>,
         type_param_names: Option<&[String]>,
+        instantiate_type_vars: bool,
     ) -> AcornValue {
         if clause.literals.is_empty() {
             return AcornValue::Bool(false);
@@ -2780,6 +2798,7 @@ impl Normalizer {
                 var_remapping_ref,
                 type_param_names,
                 None, // No type var id to name mapping needed for public denormalize
+                instantiate_type_vars,
             ));
         }
         let disjunction = AcornValue::reduce(BinaryOp::Or, denormalized_literals);
@@ -2807,14 +2826,16 @@ impl Normalizer {
     }
 
     /// Convert a type Term to AcornType, looking up typeclass constraints from LocalContext.
+    /// If `instantiate_type_vars` is true, FreeVariable type atoms become concrete types.
     pub fn denormalize_type_with_context(
         &self,
         type_term: Term,
         local_context: &LocalContext,
+        instantiate_type_vars: bool,
     ) -> AcornType {
         self.kernel_context
             .type_store
-            .type_term_to_acorn_type_with_context(&type_term, local_context)
+            .type_term_to_acorn_type_with_context(&type_term, local_context, instantiate_type_vars)
     }
 
     /// Given a list of atom ids for synthetic atoms that we need to define, find a set
@@ -2844,7 +2865,7 @@ impl Normalizer {
     /// When you denormalize and renormalize a clause, you should get the same thing.
     #[cfg(test)]
     fn check_denormalize_renormalize(&mut self, clause: &Clause) {
-        let denormalized = self.denormalize(clause, None, None, None);
+        let denormalized = self.denormalize(clause, None, None, None, false);
         if let Err(e) = denormalized.validate() {
             eprintln!("DEBUG: clause = {}", clause);
             eprintln!("DEBUG: clause context = {:?}", clause.get_local_context());

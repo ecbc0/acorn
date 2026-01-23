@@ -588,26 +588,47 @@ impl TypeStore {
     /// Convert a type Term to AcornType, looking up typeclass constraints from LocalContext.
     /// When the type_term is a FreeVariable, this method checks its type in the context
     /// to determine if it has a typeclass constraint.
+    ///
+    /// If `instantiate_type_vars` is true, FreeVariable type atoms are converted to concrete
+    /// types rather than becoming AcornType::Variable. If the type variable has a typeclass
+    /// constraint, we find a concrete type implementing that typeclass; otherwise we use Bool.
     pub fn type_term_to_acorn_type_with_context(
         &self,
         type_term: &Term,
         local_context: &LocalContext,
+        instantiate_type_vars: bool,
     ) -> AcornType {
         // Check for FreeVariable first - we need to look up its typeclass constraint
         if type_term.as_ref().is_atomic() {
             if let Atom::FreeVariable(var_id) = type_term.as_ref().get_head_atom() {
                 // Look up the type of this variable in the context
                 let var_type = local_context.get_var_type(*var_id as usize);
-                let typeclass = if let Some(vt) = var_type {
+                let typeclass_id = if let Some(vt) = var_type {
                     // Check if the type is a Typeclass constraint
                     if let Atom::Symbol(Symbol::Typeclass(tc_id)) = vt.as_ref().get_head_atom() {
-                        self.id_to_typeclass.get(tc_id.as_u16() as usize).cloned()
+                        Some(*tc_id)
                     } else {
                         None
                     }
                 } else {
                     None
                 };
+
+                if instantiate_type_vars {
+                    // Convert to a concrete type
+                    if let Some(tc_id) = typeclass_id {
+                        // Find a type that implements this typeclass
+                        if let Some(ground_id) = self.find_instance_of_typeclass(tc_id) {
+                            return self.ground_id_to_type[ground_id.as_u16() as usize].clone();
+                        }
+                    }
+                    // No typeclass constraint or no implementing type found - use Bool
+                    return AcornType::Bool;
+                }
+
+                // Not instantiating - return a type variable
+                let typeclass = typeclass_id
+                    .and_then(|tc_id| self.id_to_typeclass.get(tc_id.as_u16() as usize).cloned());
                 let type_param = TypeParam {
                     name: format!("x{}", var_id),
                     typeclass,
@@ -968,6 +989,14 @@ impl TypeStore {
         }
 
         false
+    }
+
+    /// Find any ground type that implements the given typeclass.
+    /// Returns None if no instances are registered.
+    pub fn find_instance_of_typeclass(&self, typeclass_id: TypeclassId) -> Option<GroundTypeId> {
+        self.typeclass_instances
+            .get(typeclass_id.as_u16() as usize)
+            .and_then(|instances| instances.iter().next().copied())
     }
 
     /// Get the typeclass constraint for a ground type, if it represents an arbitrary type
