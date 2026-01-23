@@ -12,7 +12,6 @@ pub mod interfaces;
 pub mod kernel;
 pub mod manifest;
 pub mod module;
-pub mod monomorphizer;
 pub mod normalizer;
 pub mod ort_utils;
 pub mod processor;

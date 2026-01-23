@@ -79,8 +79,6 @@ pub struct BindingMap {
     numerals: Option<Datatype>,
 
     /// The definitions of the instance attributes defined in this module.
-    /// Alias-type definitions are stored here just like anything else, because the monomorphizer
-    /// is going to need to see them in their parameterized form.
     instance_attr_defs: HashMap<InstanceName, InstanceAttributeDefinition>,
 }
 
