@@ -5,6 +5,7 @@ use super::proof::ProofResolver;
 use super::proof::{reconstruct_step, ConcreteStep, ConcreteStepId};
 use super::rewrite_tree::{Rewrite, RewriteTree};
 use crate::code_generator::Error;
+use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::clause::Clause;
 use crate::kernel::clause_set::TermId;
 use crate::kernel::fingerprint::FingerprintUnifier;
@@ -385,6 +386,52 @@ impl ActiveSet {
                 index,
                 flipped: new_flip,
             });
+        }
+
+        // Check inhabitedness for eliminated short clause variables.
+        // A variable is "eliminated" if it doesn't appear in any output literal.
+        // This resolution is only sound if eliminated variables have inhabited types.
+        let mut output_vars: HashSet<AtomId> = HashSet::new();
+        for literal in &literals {
+            for atom in literal.iter_atoms() {
+                if let Atom::FreeVariable(id) = atom {
+                    output_vars.insert(*id);
+                }
+            }
+        }
+
+        let short_context = short_clause.get_local_context();
+        for var_id in 0..short_context.len() {
+            // Apply the unifier to a variable term to get its mapped value
+            let var_term = Term::new_variable(var_id as AtomId);
+            let mapped_term = unifier.apply(Scope::LEFT, &var_term);
+
+            // If mapped to concrete term (no variables), the variable was instantiated - OK
+            if !mapped_term.has_any_variable() {
+                continue;
+            }
+
+            // Check if any output variables in mapped_term appear in output literals
+            let appears_in_output = mapped_term.iter_atoms().any(|atom| {
+                if let Atom::FreeVariable(out_var) = atom {
+                    output_vars.contains(out_var)
+                } else {
+                    false
+                }
+            });
+
+            // If no output variables appear in output, this variable is eliminated
+            if !appears_in_output {
+                if let Some(var_type) = short_context.get_var_type(var_id) {
+                    // Translate the type to output scope for the inhabitedness check
+                    let translated_type = unifier.apply(Scope::LEFT, var_type);
+                    if !kernel_context
+                        .provably_inhabited(&translated_type, Some(unifier.output_context()))
+                    {
+                        return None; // Reject the resolution
+                    }
+                }
+            }
         }
 
         // Gather the output data
@@ -1131,6 +1178,30 @@ impl ActiveSet {
             }
         }
 
+        // Check inhabitedness for eliminated variables.
+        // If simplification eliminates all occurrences of a variable, we need to verify
+        // that variable's type is provably inhabited. Otherwise, the simplification is unsound.
+        let mut output_vars: HashSet<AtomId> = HashSet::new();
+        for literal in &output_literals {
+            for atom in literal.iter_atoms() {
+                if let Atom::FreeVariable(id) = atom {
+                    output_vars.insert(*id);
+                }
+            }
+        }
+
+        for var_id in 0..local_context.len() {
+            let var_id_atom = var_id as AtomId;
+            if !output_vars.contains(&var_id_atom) {
+                // This variable was eliminated - check if its type is provably inhabited
+                if let Some(var_type) = local_context.get_var_type(var_id) {
+                    if !kernel_context.provably_inhabited(var_type, Some(&local_context)) {
+                        return None; // Reject the simplification
+                    }
+                }
+            }
+        }
+
         if output_literals.len() == initial_num_literals {
             // This proof step hasn't changed.
             step.clause.literals = output_literals;
@@ -1724,5 +1795,47 @@ mod tests {
         for ps in &result {
             ps.clause.validate(&kctx);
         }
+    }
+
+    /// Test that resolution is rejected when eliminating a variable whose type
+    /// is not provably inhabited.
+    ///
+    /// Short clause: g1(x0, x1) where x0: Type, x1: x0 (i.e., x1 has type T where T is unconstrained)
+    /// Long clause: not g1(x0, x1) or c0
+    ///
+    /// Resolution would produce: c0
+    /// But this is unsound if the type variable T (x0) is not inhabited.
+    #[test]
+    fn test_resolution_rejects_eliminated_variable_with_uninhabited_type() {
+        let mut kctx = KernelContext::new();
+
+        // g1: (T: Type) -> T -> Bool (polymorphic predicate)
+        kctx.parse_polymorphic_constant("g1", "T: Type", "T -> Bool");
+
+        // c0: Bool (simple boolean constant)
+        kctx.parse_constant("c0", "Bool");
+
+        let mut set = ActiveSet::new();
+
+        // Short clause: g1(x0, x1)
+        // Context: x0: Type (the type variable T), x1: x0 (value of type T)
+        let short_clause = kctx.parse_clause("g1(x0, x1)", &["Type", "x0"]);
+        set.activate(ProofStep::mock_from_clause(short_clause), &kctx);
+
+        // Long clause: not g1(x0, x1) or c0
+        // Context: x0: Type, x1: x0
+        let long_clause = kctx.parse_clause("not g1(x0, x1) or c0", &["Type", "x0"]);
+        let long_step = ProofStep::mock_from_clause(long_clause);
+
+        let mut results = vec![];
+        set.find_resolutions(&long_step, &mut results, &kctx);
+
+        // Resolution should be rejected because x1: x0 (a value of type T) is eliminated
+        // and x0 (the type T) is an unconstrained type variable, which is not provably inhabited.
+        assert!(
+            results.is_empty(),
+            "Resolution should be rejected when eliminating variable with uninhabited type, got {} results",
+            results.len()
+        );
     }
 }

@@ -1309,7 +1309,6 @@ fn test_cannot_inhabit_arbitrary_type_const_true() {
 }
 
 #[test]
-#[ignore]
 fn test_cannot_avoid_inhabitedness_through_resolution() {
     // When T is not inhabited, ax1 and ax2 do not imply goal.
     let text = r#"
