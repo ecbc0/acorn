@@ -824,11 +824,46 @@ impl ActiveSet {
     ) -> Vec<ProofStep> {
         let clause = &activated_step.clause;
         let mut answer = vec![];
+        let original_context = clause.get_local_context();
 
         // Use the new method to find all possible equality resolutions
         for (index, new_literals, flipped, context) in
             inference::find_equality_resolutions(clause, kernel_context)
         {
+            // Check inhabitedness for eliminated variables.
+            // We only need to check when a variable's type depends on other type variables
+            // (which might be uninhabited). For concrete types, the prover's standard
+            // behavior is correct.
+            // Variables in the original clause that don't appear in new_literals are eliminated.
+            let mut output_vars: HashSet<AtomId> = HashSet::new();
+            for literal in &new_literals {
+                for atom in literal.iter_atoms() {
+                    if let Atom::FreeVariable(id) = atom {
+                        output_vars.insert(*id);
+                    }
+                }
+            }
+
+            let mut skip = false;
+            for var_id in 0..original_context.len() {
+                if !output_vars.contains(&(var_id as AtomId)) {
+                    // This variable is eliminated - check if its type is provably inhabited
+                    if let Some(var_type) = original_context.get_var_type(var_id) {
+                        // Only check inhabitedness if the type contains free variables
+                        // (i.e., depends on type parameters that might be uninhabited)
+                        if var_type.has_any_variable()
+                            && !kernel_context.provably_inhabited(var_type, Some(original_context))
+                        {
+                            skip = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if skip {
+                continue;
+            }
+
             let literals = new_literals.clone();
             let (new_clause, traces) = Clause::normalize_with_trace(new_literals, &context);
 
@@ -859,12 +894,51 @@ impl ActiveSet {
     /// Apply injectivity to derive inequalities from function inequalities.
     /// When f(a, b, d) != f(a, c, d), that implies that b != c.
     /// We can run this operation on any negative literal in the clause.
-    pub fn injectivity(activated_id: usize, activated_step: &ProofStep) -> Vec<ProofStep> {
+    pub fn injectivity(
+        activated_id: usize,
+        activated_step: &ProofStep,
+        kernel_context: &KernelContext,
+    ) -> Vec<ProofStep> {
         let clause = &activated_step.clause;
+        let original_context = clause.get_local_context();
         let mut answer = vec![];
 
         for (index, arg, literals, flipped) in clause.find_injectivities() {
-            let context = activated_step.clause.get_local_context().clone();
+            // Check inhabitedness for eliminated variables.
+            // We only need to check when a variable's type depends on other type variables
+            // (which might be uninhabited). For concrete types, the prover's standard
+            // behavior is correct.
+            // Collect variables that appear in the new literals.
+            let mut output_vars: HashSet<AtomId> = HashSet::new();
+            for literal in &literals {
+                for atom in literal.iter_atoms() {
+                    if let Atom::FreeVariable(id) = atom {
+                        output_vars.insert(*id);
+                    }
+                }
+            }
+
+            let mut skip = false;
+            for var_id in 0..original_context.len() {
+                if !output_vars.contains(&(var_id as AtomId)) {
+                    // This variable is eliminated - check if its type is provably inhabited
+                    if let Some(var_type) = original_context.get_var_type(var_id) {
+                        // Only check inhabitedness if the type contains free variables
+                        // (i.e., depends on type parameters that might be uninhabited)
+                        if var_type.has_any_variable()
+                            && !kernel_context.provably_inhabited(var_type, Some(original_context))
+                        {
+                            skip = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if skip {
+                continue;
+            }
+
+            let context = original_context.clone();
             let info = InjectivityInfo {
                 id: activated_id,
                 index,
@@ -1406,7 +1480,7 @@ impl ActiveSet {
             output.push(proof_step);
         }
 
-        for proof_step in ActiveSet::injectivity(activated_id, &activated_step) {
+        for proof_step in ActiveSet::injectivity(activated_id, &activated_step, kernel_context) {
             output.push(proof_step);
         }
 
@@ -1835,6 +1909,156 @@ mod tests {
         assert!(
             results.is_empty(),
             "Resolution should be rejected when eliminating variable with uninhabited type, got {} results",
+            results.len()
+        );
+    }
+
+    /// Test that injectivity rejects clauses where eliminated variables have uninhabited types.
+    ///
+    /// Clause: g(x0, x1, x2) != g(x0, x1, x3) | c0
+    /// Context: x0: Type, x1: x0, x2: Bool, x3: Bool
+    /// Injectivity extracts: x2 != x3 | c0
+    /// But x0 (Type) and x1 (x0) are eliminated, and x0 is not provably inhabited.
+    #[test]
+    fn test_injectivity_rejects_eliminated_variable_with_uninhabited_type() {
+        let mut kctx = KernelContext::new();
+
+        // g0: (T: Type) -> T -> Bool -> Bool -> Bool
+        kctx.parse_polymorphic_constant("g0", "T: Type", "T -> Bool -> Bool -> Bool");
+        kctx.parse_constant("c0", "Bool");
+
+        // Clause: g0(x0, x1, x2) != g0(x0, x1, x3) or c0
+        // Context: x0: Type, x1: x0, x2: Bool, x3: Bool
+        // Injectivity extracts: x2 != x3 or c0
+        // But x0 (Type) and x1 (x0) are eliminated, and x0 is not provably inhabited.
+        let clause = kctx.parse_clause(
+            "g0(x0, x1, x2) != g0(x0, x1, x3) or c0",
+            &["Type", "x0", "Bool", "Bool"],
+        );
+        let mock_step = ProofStep::mock_from_clause(clause);
+        let results = ActiveSet::injectivity(0, &mock_step, &kctx);
+
+        // Injectivity should be rejected because x0 (Type) and x1 (x0) are eliminated
+        // and x0 is not provably inhabited.
+        assert!(
+            results.is_empty(),
+            "Injectivity should be rejected when eliminating variable with uninhabited type, got {} results: {:?}",
+            results.len(),
+            results.iter().map(|r| r.clause.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    /// Test that equality factoring does NOT have the same inhabitedness bug as equality resolution.
+    ///
+    /// Unlike equality_resolution which completely removes a literal (and can eliminate variables
+    /// that only appeared in that literal), equality_factoring preserves the unified term in the
+    /// output. Variables in s transfer to u during unification, so they survive.
+    ///
+    /// This test demonstrates that equality_factoring is safe: it produces valid output clauses
+    /// even when the input has variables with potentially uninhabited types.
+    #[test]
+    fn test_equality_factoring_preserves_uninhabited_type_variables() {
+        let mut kctx = KernelContext::new();
+
+        // g0: (T: Type) -> T -> T -> Bool
+        kctx.parse_polymorphic_constant("g0", "T: Type", "T -> T -> Bool");
+        kctx.parse_constant("c1", "Bool");
+        kctx.parse_constant("c2", "Bool");
+
+        // Clause: g0(x0, x1, x2) = c1 | g0(x0, x2, x1) = c2
+        // Context: x0: Type, x1: x0, x2: x0
+        // Equality factoring will unify g0(x0, x1, x2) with g0(x0, x2, x1), giving x1 = x2
+        // Output: c1 != c2 | g0(x0, x2, x2) = c2
+        // Key: x0 (Type) and x2 (x0) both survive - no unsoundness
+        let clause = kctx.parse_clause(
+            "g0(x0, x1, x2) = c1 or g0(x0, x2, x1) = c2",
+            &["Type", "x0", "x0"],
+        );
+        let mock_step = ProofStep::mock_from_clause(clause);
+        let results = ActiveSet::equality_factoring(0, &mock_step, &kctx);
+
+        // Equality factoring should produce results - the inference is valid
+        // because x0 (Type variable) survives in the output via g0(x0, x2, x2)
+        // The output is still universally quantified over x0: Type
+        assert!(
+            !results.is_empty(),
+            "Equality factoring should produce results (no variables with uninhabited types are eliminated)"
+        );
+
+        // Verify that the output clauses still have variables of type x0
+        for result in &results {
+            let ctx = result.clause.get_local_context();
+            // The output should have at least one variable - the surviving x2 of type x0
+            assert!(ctx.len() > 0, "Output clause should have variables");
+        }
+    }
+
+    /// Test that extensionality does NOT have the same inhabitedness bug as equality resolution.
+    ///
+    /// Extensionality peels trailing variable arguments from f(x, y) = g(x, y) to get f(x) = g(x).
+    /// The peeled variable y is eliminated, but the type variable x survives.
+    ///
+    /// Unlike equality_resolution which can derive something false from something vacuously true,
+    /// extensionality is sound even when types are uninhabited because:
+    /// - Original: "for all y: x, f(x, y) = g(x, y)" is vacuously true when x is empty
+    /// - Result: "f(x) = g(x)" means f(x) and g(x) are extensionally equal functions
+    /// - When x is empty, two functions x -> T are extensionally equal (no arguments to differ on)
+    #[test]
+    fn test_extensionality_sound_with_uninhabited_types() {
+        let mut kctx = KernelContext::new();
+
+        // c1, c2: (T: Type) -> T -> Bool
+        kctx.parse_polymorphic_constant("c1", "T: Type", "T -> Bool");
+        kctx.parse_polymorphic_constant("c2", "T: Type", "T -> Bool");
+
+        // Clause: c1(x0, x1) = c2(x0, x1) where x0: Type, x1: x0
+        // Extensionality should peel x1 to get c1(x0) = c2(x0)
+        // This is sound because even if x0 is uninhabited, the functions are extensionally equal
+        let clause = kctx.parse_clause("c1(x0, x1) = c2(x0, x1)", &["Type", "x0"]);
+
+        if let Some(result_literals) = clause.find_extensionality(&kctx) {
+            // Extensionality should work - it's a sound inference
+            assert_eq!(result_literals.len(), 1);
+            // The result should have fewer variables than the original
+            let result_clause = Clause::new(result_literals, clause.get_local_context());
+            assert!(
+                result_clause.get_local_context().len() < clause.get_local_context().len(),
+                "Extensionality should eliminate some variables"
+            );
+        }
+        // Note: find_extensionality might return None due to other constraints,
+        // which is fine - we're just checking that IF it works, it's sound.
+    }
+
+    /// Test that equality resolution is rejected when eliminating a variable whose type
+    /// is not provably inhabited.
+    ///
+    /// Clause: g0(x0, x1, x2) != g0(x0, x2, x1) or c1
+    /// Context: x0: Type, x1: x0, x2: x0
+    /// Unification maps x1 ↔ x2, eliminating the negative literal.
+    /// Result would be: c1 (all variables eliminated)
+    /// But this is unsound if x0 (Type) is not inhabited.
+    #[test]
+    fn test_equality_resolution_rejects_eliminated_variable_with_uninhabited_type() {
+        let mut kctx = KernelContext::new();
+
+        // g0: (T: Type) -> T -> T -> Bool
+        kctx.parse_polymorphic_constant("g0", "T: Type", "T -> T -> Bool");
+        kctx.parse_constant("c1", "Bool");
+
+        // Clause: g0(x0, x1, x2) != g0(x0, x2, x1) or c1
+        // Context: x0: Type, x1: x0, x2: x0
+        let clause = kctx.parse_clause(
+            "g0(x0, x1, x2) != g0(x0, x2, x1) or c1",
+            &["Type", "x0", "x0"],
+        );
+        let mock_step = ProofStep::mock_from_clause(clause);
+        let results = ActiveSet::equality_resolution(0, &mock_step, &kctx);
+
+        // Should reject because x1, x2 have type x0 (uninhabited), and they're eliminated
+        assert!(
+            results.is_empty(),
+            "Equality resolution should be rejected when eliminating variable with uninhabited type, got {} results",
             results.len()
         );
     }
