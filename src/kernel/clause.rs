@@ -607,11 +607,6 @@ impl Clause {
             return None;
         }
 
-        // Functions must be different
-        if longer.get_head_atom() == shorter.get_head_atom() {
-            return None;
-        }
-
         // Heads must not be variables
         if longer.get_head_atom().is_variable() || shorter.get_head_atom().is_variable() {
             return None;
@@ -719,6 +714,11 @@ impl Clause {
                 .collect();
             Term::new(*shorter.get_head_atom(), args)
         };
+
+        // If the resulting terms are identical, this would be a tautology (f = f)
+        if new_longer == new_shorter {
+            return None;
+        }
 
         // Check the types are compatible
         let longer_type = new_longer.get_type_with_context(&self.context, kernel_context);
@@ -839,12 +839,13 @@ mod tests {
         );
     }
 
-    /// Test that extensionality doesn't match clauses where functions are the same.
+    /// Test that extensionality rejects tautologies like f(x0) = f(x0).
+    /// Even after peeling x0, the result would be f = f which is useless.
     #[test]
-    fn test_extensionality_rejects_same_function() {
+    fn test_extensionality_rejects_tautology() {
         let kernel_context = KernelContext::new();
 
-        // Create a clause like "f(x0) = f(x0)" (same function on both sides)
+        // Create a clause like "f(x0) = f(x0)" (identical terms)
         let x0 = Term::atom(Atom::FreeVariable(0));
         let f_x0 = Term::new(Atom::Symbol(Symbol::GlobalConstant(0)), vec![x0.clone()]);
         let literal = Literal::equals(f_x0.clone(), f_x0);
@@ -853,10 +854,10 @@ mod tests {
         let context = LocalContext::from_types(vec![some_type]);
         let clause = Clause::from_literals_unnormalized(vec![literal], &context);
 
-        // Extensionality should not match this clause since both sides use the same function
+        // Extensionality should reject this since it would produce a tautology
         assert!(
             clause.find_extensionality(&kernel_context).is_none(),
-            "Extensionality should not match when functions are the same"
+            "Extensionality should reject tautologies"
         );
     }
 
@@ -887,6 +888,39 @@ mod tests {
         // Both sides should have 1 argument (c0)
         assert_eq!(result_lit.left.num_args(), 1);
         assert_eq!(result_lit.right.num_args(), 1);
+    }
+
+    /// Test that extensionality works with same head but different prefix.
+    /// g2(c0, x) = g2(c1, x) where c0, c1 are constants, x is free var -> g2(c0) = g2(c1)
+    #[test]
+    fn test_extensionality_same_head_different_prefix() {
+        let mut kctx = KernelContext::new();
+        kctx.parse_constant("c0", "Bool")
+            .parse_constant("c1", "Bool")
+            .parse_constant("g2", "Bool -> Bool -> Bool");
+
+        // Create clause: g2(c0, x0) = g2(c1, x0)
+        let clause = kctx.parse_clause("g2(c0, x0) = g2(c1, x0)", &["Bool"]);
+
+        // Extensionality should work, peeling x0 to derive g2(c0) = g2(c1)
+        let result = clause.find_extensionality(&kctx);
+        assert!(
+            result.is_some(),
+            "Extensionality should work with same head but different prefix"
+        );
+
+        // Result should be g2(c0) = g2(c1)
+        let result_lits = result.unwrap();
+        assert_eq!(result_lits.len(), 1);
+        let result_lit = &result_lits[0];
+        // Both sides should have 1 argument
+        assert_eq!(result_lit.left.num_args(), 1);
+        assert_eq!(result_lit.right.num_args(), 1);
+        // The heads should be the same (both g2)
+        assert_eq!(
+            result_lit.left.get_head_atom(),
+            result_lit.right.get_head_atom()
+        );
     }
 
     /// Test that extensionality rejects duplicate variables.
