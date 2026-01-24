@@ -1986,6 +1986,50 @@ fn test_proving_functional_structure_identity() {
     prove(&mut p, "main", "goal");
 }
 
+/// Test that extensionality works without requiring a witness for uninhabited types.
+///
+/// This test uses a structure wrapper so that the proof MUST use extensionality.
+/// The axiom `a.value = b.value` normalizes to `a.value(x) = b.value(x)`.
+/// The goal `a = b` requires proving the structures are equal, which requires:
+/// 1. Using extensionality to derive `a.value = b.value` from `a.value(x) = b.value(x)`
+/// 2. Using the structure identity axiom to conclude `a = b`
+///
+/// Importantly, T is uninhabited (an axiom type with no constructors), so the prover
+/// cannot instantiate x with a concrete value. Extensionality must work on the
+/// universally quantified clause directly.
+#[test]
+fn test_extensionality_without_witness_for_uninhabited_type() {
+    let mut p = Project::new_mock();
+    p.mock(
+        "/mock/main.ac",
+        r#"
+        // T is uninhabited - it's an axiom type with no constructors
+        type T: axiom
+
+        // A wrapper structure containing a function over T
+        structure Wrapper {
+            value: T -> T
+        }
+
+        let a: Wrapper = axiom
+        let b: Wrapper = axiom
+
+        // Axiom that a.value = b.value (normalizes to a.value(x) = b.value(x))
+        axiom values_equal {
+            a.value = b.value
+        }
+
+        // Goal: prove a = b (requires extensionality to derive a.value = b.value first)
+        theorem goal {
+            a = b
+        }
+        "#,
+    );
+
+    // This should succeed without needing a witness for T
+    prove(&mut p, "main", "goal");
+}
+
 #[test]
 fn test_proving_implied_boolean_equality() {
     let mut p = Project::new_mock();

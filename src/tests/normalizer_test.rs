@@ -180,6 +180,7 @@ fn test_functional_equality() {
         "#,
     );
     let mut norm = Normalizer::new();
+    // Functional equality gets expanded with free variables
     norm.check(&env, "goal", &["zerof(x0, x1) = zerof(x2, x1)"]);
 }
 
@@ -509,9 +510,8 @@ fn test_normalizing_function_equality() {
     "#,
     );
     let mut norm = Normalizer::new();
-    // We need to add the expanded version here because we don't have the types
-    // in the prover.
-    norm.check(&env, "goal", &["g(a, x0) = f(x0)", "g(a) = f"]);
+    // Functional equality gets expanded with free variables
+    norm.check(&env, "goal", &["g(a, x0) = f(x0)"]);
 }
 
 #[test]
@@ -553,6 +553,7 @@ fn test_normalizing_func_eq_inside_lambda() {
     "#,
     );
     let mut norm = Normalizer::new();
+    // Functional equality inside lambda gets expanded with free variables
     norm.check(
         &env,
         "goal",
@@ -713,7 +714,8 @@ fn test_normalizing_boolean_function_equality() {
     "#,
     );
     let mut norm = Normalizer::new();
-    norm.check(&env, "goal", &["g(x0) = f(x0)", "g = f"]);
+    // Boolean functional equality gets expanded with free variables
+    norm.check(&env, "goal", &["g(x0) = f(x0)"]);
 }
 
 #[test]

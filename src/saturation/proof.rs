@@ -597,18 +597,11 @@ pub fn reconstruct_step<R: ProofResolver>(
                 add_var_map(resolver, base_id, map, map_context, concrete_steps);
             }
         }
-        Rule::Extensionality(info) => {
-            // For extensionality, the output is always concrete (f = g with no variables).
-            // Since there are no variables in the output, we add an empty variable map.
-            let base_id = ProofStepId::Active(info.id);
-            let map = VariableMap::new();
-            add_var_map(
-                resolver,
-                base_id,
-                map,
-                LocalContext::empty(),
-                concrete_steps,
-            );
+        Rule::Extensionality(_) => {
+            // For extensionality, we don't need to add the source clause to concrete_steps.
+            // The extensionality inference is sound on the universally quantified clause directly:
+            // from "forall x. f(x) = g(x)" we derive "f = g" without needing to instantiate x.
+            // This avoids requiring a witness for types that may be uninhabited.
         }
         Rule::Resolution(info) => {
             // For Resolution, we do custom reconstruction because the trace was

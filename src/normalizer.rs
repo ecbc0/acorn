@@ -2137,49 +2137,7 @@ impl Normalizer {
         }
         assert!(value.is_bool_type());
 
-        let mut clauses = self.ugly_value_to_clauses(value, ctype, source)?;
-
-        if let AcornValue::Binary(BinaryOp::Equals, left, right) = &value {
-            if left.get_type().is_functional() && left.is_term() && right.is_term() {
-                // This is an annoying case.
-                // If we are expressing, say,
-                //   f(a) = g(b)
-                // where the return value is a functional type, that gets normalized into:
-                //   f(a, x0) = g(b, x0)
-                // The problem is that we do also want the functional equality.
-                // In most cases, we can get this in the prover by the extensionality rule.
-                // However, in this specific case we can't, because in the Clause,
-                // the type of f(a) has been erased.
-                // So we add back in the plain literal version that hasn't been normalized.
-                //
-                // Ideally, we would either:
-                //   1. Represent functional types better in unification, so that we
-                //      don't have to normalize by adding args, and we can keep it as
-                //      f(a) = g(b)
-                //   2. Make extensionality more powerful, so that it can deduce f(a) = g(b).
-                let view = NormalizerView::Ref(self);
-                let left_term = view.force_simple_value_to_term(left, &vec![])?;
-                let right_term = view.force_simple_value_to_term(right, &vec![])?;
-                let literal = Literal::new(true, left_term, right_term);
-
-                // Build a LocalContext with type variables if present.
-                let local_context = if let Some(type_var_map) = &self.type_var_map {
-                    let mut ctx = LocalContext::empty();
-                    let mut entries: Vec<_> = type_var_map.values().collect();
-                    entries.sort_by_key(|(id, _)| *id);
-                    for (_, var_type) in entries {
-                        ctx.push_type(var_type.clone());
-                    }
-                    ctx
-                } else {
-                    LocalContext::empty()
-                };
-
-                let clause = Clause::new(vec![literal], &local_context);
-                clauses.push(clause);
-            }
-        }
-
+        let clauses = self.ugly_value_to_clauses(value, ctype, source)?;
         Ok(clauses)
     }
 
