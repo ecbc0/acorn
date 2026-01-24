@@ -113,7 +113,7 @@ impl SymbolTable {
                 let head = input.get_head_atom();
                 // Check if the input is Type or Typeclass
                 match head {
-                    Atom::Symbol(Symbol::TypeSort) => {
+                    Atom::Symbol(Symbol::Type0) => {
                         current = output;
                         depth += 1;
                         continue;
@@ -187,7 +187,7 @@ impl SymbolTable {
             Symbol::True | Symbol::False => Term::bool_type_ref(),
             Symbol::Empty
             | Symbol::Bool
-            | Symbol::TypeSort
+            | Symbol::Type0
             | Symbol::Type(_)
             | Symbol::Typeclass(_) => Term::type_sort_ref(),
             Symbol::Synthetic(i) => &self.synthetic_types[i as usize],
@@ -201,7 +201,7 @@ impl SymbolTable {
     pub fn get_symbol_type(&self, symbol: Symbol, type_store: &TypeStore) -> Term {
         let result = match symbol {
             Symbol::True | Symbol::False => Term::bool_type(),
-            Symbol::Empty | Symbol::Bool | Symbol::TypeSort | Symbol::Typeclass(_) => {
+            Symbol::Empty | Symbol::Bool | Symbol::Type0 | Symbol::Typeclass(_) => {
                 Term::type_sort()
             }
             Symbol::Type(ground_id) => type_store.get_type_kind(ground_id),

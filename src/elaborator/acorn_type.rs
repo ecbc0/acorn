@@ -366,6 +366,14 @@ pub enum AcornType {
     /// An arbitrary type represents a type that is (optionally) a fixed instance of a typeclass,
     /// but we don't know anything else about it.
     Arbitrary(TypeParam),
+
+    /// The type of types (kind *). Used when denormalizing type variables.
+    /// This appears as the "type" of a type variable in forall quantifiers.
+    Type0,
+
+    /// A typeclass constraint as a kind. Used when denormalizing constrained type variables.
+    /// For example, a type variable T: Ring would have this as its kind.
+    TypeclassConstraint(Typeclass),
 }
 
 impl AcornType {
@@ -489,13 +497,23 @@ impl AcornType {
     }
 
     /// Converts a list of declaration types to a string representation.
+    /// Uses "T" prefix for type-level types (Type0, TypeclassConstraint)
+    /// and "x" prefix for value-level types.
     pub fn decs_to_str(dec_types: &[AcornType], stack_size: usize) -> String {
         let mut result = String::new();
         for (i, dec_type) in dec_types.iter().enumerate() {
             if i > 0 {
                 result.push_str(", ");
             }
-            result.push_str(&format!("x{}: {}", i + stack_size, dec_type));
+            let prefix = if matches!(
+                dec_type,
+                AcornType::Type0 | AcornType::TypeclassConstraint(_)
+            ) {
+                "T"
+            } else {
+                "x"
+            };
+            result.push_str(&format!("{}{}: {}", prefix, i + stack_size, dec_type));
         }
         result
     }
@@ -558,7 +576,11 @@ impl AcornType {
     /// A type is generic if it has any type variables within it.
     pub fn has_generic(&self) -> bool {
         match self {
-            AcornType::Bool | AcornType::Empty | AcornType::Arbitrary(..) => false,
+            AcornType::Bool
+            | AcornType::Empty
+            | AcornType::Arbitrary(..)
+            | AcornType::Type0
+            | AcornType::TypeclassConstraint(_) => false,
             AcornType::Variable(..) => true,
             AcornType::Data(_, types) => types.iter().any(|t| t.has_generic()),
             AcornType::Function(ftype) => {
@@ -783,7 +805,10 @@ impl AcornType {
                 ));
                 combined
             }
-            AcornType::Bool | AcornType::Empty => Variance::None,
+            AcornType::Bool
+            | AcornType::Empty
+            | AcornType::Type0
+            | AcornType::TypeclassConstraint(_) => Variance::None,
         }
     }
 
@@ -846,6 +871,8 @@ impl fmt::Display for AcornType {
                 write!(f, "{}", param.name)?;
                 Ok(())
             }
+            AcornType::Type0 => write!(f, "Type0"),
+            AcornType::TypeclassConstraint(tc) => write!(f, "{}", tc.name),
         }
     }
 }

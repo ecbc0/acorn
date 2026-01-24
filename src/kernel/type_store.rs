@@ -123,6 +123,10 @@ impl TypeStore {
             // Variable types are represented as FreeVariable atoms, not registered as ground types.
             // They will be converted to FreeVariable by to_type_term_with_vars.
             AcornType::Variable(_) => {}
+
+            // Type0 and TypeclassConstraint are kind-level types, not value types.
+            // They don't need registration.
+            AcornType::Type0 | AcornType::TypeclassConstraint(_) => {}
         }
     }
 
@@ -279,6 +283,16 @@ impl TypeStore {
                     .unwrap_or_else(|| panic!("Arbitrary type {:?} not registered", type_param));
                 Term::ground_type(*ground_id)
             }
+
+            AcornType::Type0 => Term::type_sort(),
+
+            AcornType::TypeclassConstraint(tc) => {
+                let tc_id = self
+                    .typeclass_to_id
+                    .get(tc)
+                    .unwrap_or_else(|| panic!("Typeclass {:?} not registered", tc));
+                Term::typeclass(*tc_id)
+            }
         }
     }
 
@@ -374,6 +388,16 @@ impl TypeStore {
                     .unwrap_or_else(|| panic!("Arbitrary type {:?} not registered", type_param));
                 Term::ground_type(*ground_id)
             }
+
+            AcornType::Type0 => Term::type_sort(),
+
+            AcornType::TypeclassConstraint(tc) => {
+                let tc_id = self
+                    .typeclass_to_id
+                    .get(tc)
+                    .unwrap_or_else(|| panic!("Typeclass {:?} not registered", tc));
+                Term::typeclass(*tc_id)
+            }
         }
     }
 
@@ -409,13 +433,9 @@ impl TypeStore {
         if type_term.as_ref().is_empty_type() {
             return AcornType::Empty;
         }
-        // TypeSort is the "type of types" - it's a kind, not a type.
-        // It should not be converted to an AcornType.
-        if type_term.as_ref().is_type_sort() {
-            panic!(
-                "type_term_to_acorn_type: TypeSort cannot be converted to AcornType. \
-                 TypeSort is the type of types, not a value type."
-            );
+        // Type0 is the "type of types" (kind *). Return the new AcornType::Type0 variant.
+        if type_term.as_ref().is_type0() {
+            return AcornType::Type0;
         }
 
         // Check for user-defined ground type
@@ -558,9 +578,9 @@ impl TypeStore {
         if type_term.as_ref().is_atomic() {
             if let Atom::FreeVariable(i) = type_term.as_ref().get_head_atom() {
                 // Create a synthetic type variable for display purposes
-                // Use "x" prefix to match the free variable naming convention
+                // Use "T" prefix since these are type variables (they appear in type terms)
                 let type_param = TypeParam {
-                    name: format!("x{}", i),
+                    name: format!("T{}", i),
                     typeclass: None,
                 };
                 return AcornType::Variable(type_param);
@@ -572,12 +592,8 @@ impl TypeStore {
             if let Atom::Symbol(Symbol::Typeclass(tc_id)) = type_term.as_ref().get_head_atom() {
                 // Convert back to a Typeclass. We need to look up the name.
                 if let Some(typeclass) = self.id_to_typeclass.get(tc_id.as_u16() as usize) {
-                    // Return as a type variable constrained to this typeclass
-                    let type_param = TypeParam {
-                        name: "S".to_string(), // Generic name for the constrained type
-                        typeclass: Some(typeclass.clone()),
-                    };
-                    return AcornType::Variable(type_param);
+                    // Return as a TypeclassConstraint kind
+                    return AcornType::TypeclassConstraint(typeclass.clone());
                 }
             }
         }
@@ -627,10 +643,11 @@ impl TypeStore {
                 }
 
                 // Not instantiating - return a type variable
+                // Use "T" prefix since these are type variables
                 let typeclass = typeclass_id
                     .and_then(|tc_id| self.id_to_typeclass.get(tc_id.as_u16() as usize).cloned());
                 let type_param = TypeParam {
-                    name: format!("x{}", var_id),
+                    name: format!("T{}", var_id),
                     typeclass,
                 };
                 return AcornType::Variable(type_param);
@@ -666,10 +683,9 @@ impl TypeStore {
         if type_term.as_ref().is_empty_type() {
             return AcornType::Empty;
         }
-        if type_term.as_ref().is_type_sort() {
-            panic!(
-                "type_term_to_acorn_type_with_var_names: TypeSort cannot be converted to AcornType."
-            );
+        // Type0 is the "type of types" (kind *). Return the new AcornType::Type0 variant.
+        if type_term.as_ref().is_type0() {
+            return AcornType::Type0;
         }
 
         // Check for user-defined ground type
@@ -825,29 +841,11 @@ impl TypeStore {
             }
         }
 
-        // Handle Typeclass - look up name by index like BoundVariable
+        // Handle Typeclass - return TypeclassConstraint
         if type_term.as_ref().is_atomic() {
             if let Atom::Symbol(Symbol::Typeclass(tc_id)) = type_term.as_ref().get_head_atom() {
                 if let Some(typeclass) = self.id_to_typeclass.get(tc_id.as_u16() as usize) {
-                    // For typeclass constraints, we need to find the name from var_id_to_name
-                    // by index, similar to BoundVariable handling
-                    let mut entries: Vec<_> = var_id_to_name.iter().collect();
-                    entries.sort_by_key(|(id, _)| *id);
-                    // Use outer_depth as the index since typeclass constraints appear at type param positions
-                    let name = entries
-                        .get(outer_depth as usize)
-                        .map(|(_, name)| (*name).clone())
-                        .unwrap_or_else(|| {
-                            panic!(
-                                "Typeclass constraint at index {} not found in var_id_to_name map",
-                                outer_depth
-                            )
-                        });
-                    let type_param = TypeParam {
-                        name,
-                        typeclass: Some(typeclass.clone()),
-                    };
-                    return AcornType::Variable(type_param);
+                    return AcornType::TypeclassConstraint(typeclass.clone());
                 }
             }
         }

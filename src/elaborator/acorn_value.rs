@@ -364,7 +364,17 @@ struct Subvalue<'a> {
 impl fmt::Display for Subvalue<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.value {
-            AcornValue::Variable(i, _) => write!(f, "x{}", i),
+            AcornValue::Variable(i, acorn_type) => {
+                let prefix = if matches!(
+                    acorn_type,
+                    AcornType::Type0 | AcornType::TypeclassConstraint(_)
+                ) {
+                    "T"
+                } else {
+                    "x"
+                };
+                write!(f, "{}{}", prefix, i)
+            }
             AcornValue::Application(a) => a.fmt_helper(f, self.stack_size),
             AcornValue::Lambda(args, body) => {
                 fmt_binder(f, "function", args, body, self.stack_size)

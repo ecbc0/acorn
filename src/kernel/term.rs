@@ -286,10 +286,10 @@ impl<'a> TermRef<'a> {
         self.as_typeclass().is_some()
     }
 
-    /// Returns true if this represents a type parameter kind (either TypeSort or a Typeclass).
+    /// Returns true if this represents a type parameter kind (either Type0 or a Typeclass).
     /// Type parameters with these kinds are not value arguments.
     pub fn is_type_param_kind(&self) -> bool {
-        self.is_type_sort() || self.is_typeclass()
+        self.is_type0() || self.is_typeclass()
     }
 
     /// Counts the number of leading Pi types where the input is a type parameter kind.
@@ -318,9 +318,9 @@ impl<'a> TermRef<'a> {
         self.is_atomic() && matches!(self.get_head_atom(), Atom::Symbol(Symbol::Empty))
     }
 
-    /// Returns true if this is the TypeSort (the type of types).
-    pub fn is_type_sort(&self) -> bool {
-        self.is_atomic() && matches!(self.get_head_atom(), Atom::Symbol(Symbol::TypeSort))
+    /// Returns true if this is Type0 (the type of types, aka kind *).
+    pub fn is_type0(&self) -> bool {
+        self.is_atomic() && matches!(self.get_head_atom(), Atom::Symbol(Symbol::Type0))
     }
 
     /// Get the term's type as a Term with context.
@@ -563,7 +563,7 @@ impl<'a> TermRef<'a> {
                 }
                 TermComponent::Atom(Atom::Symbol(Symbol::Empty))
                 | TermComponent::Atom(Atom::Symbol(Symbol::Bool))
-                | TermComponent::Atom(Atom::Symbol(Symbol::TypeSort)) => {
+                | TermComponent::Atom(Atom::Symbol(Symbol::Type0)) => {
                     // Built-in type symbols contribute to weight
                     weight1 += 1;
                 }
@@ -1169,7 +1169,7 @@ impl Term {
 
     /// Returns a Term for the Type kind (the type of proper types).
     pub fn type_sort() -> Term {
-        Term::atom(Atom::Symbol(Symbol::TypeSort))
+        Term::atom(Atom::Symbol(Symbol::Type0))
     }
 
     /// Returns a static reference to the Type kind.

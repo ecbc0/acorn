@@ -20,13 +20,13 @@ pub enum Symbol {
     // The Bool type.
     Bool,
 
-    // The type of types (kind *). Called "Type" in the language but "TypeSort" here
-    // to avoid confusion with the Type(GroundTypeId) variant.
-    TypeSort,
+    // The type of types (kind *). Called "Type" in the language but "Type0" here
+    // to distinguish from the Type(GroundTypeId) variant which is for user-defined types.
+    Type0,
 
     // A ground type, used in type terms to represent user-defined types like Nat, Int, etc.
     // Ground types have no internal structure - they are atomic type constants.
-    // Note: Empty, Bool, and TypeSort are NOT GroundTypeIds - they have their own variants.
+    // Note: Empty, Bool, and Type0 are NOT GroundTypeIds - they have their own variants.
     Type(GroundTypeId),
 
     // A typeclass used as a type constraint for type variables.
@@ -55,7 +55,7 @@ impl fmt::Display for Symbol {
             Symbol::False => write!(f, "false"),
             Symbol::Empty => write!(f, "Empty"),
             Symbol::Bool => write!(f, "Bool"),
-            Symbol::TypeSort => write!(f, "Type"),
+            Symbol::Type0 => write!(f, "Type0"),
             Symbol::Type(t) => write!(f, "T{}", t.as_u16()),
             Symbol::Typeclass(tc) => write!(f, "tc{}", tc.as_u16()),
             Symbol::Synthetic(i) => write!(f, "s{}", i),

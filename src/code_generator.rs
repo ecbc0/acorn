@@ -496,6 +496,8 @@ impl CodeGenerator<'_> {
             }
             AcornType::Empty => Err(Error::internal("empty type generated")),
             AcornType::Bool => Err(Error::internal("Bool unbound")),
+            AcornType::Type0 => Ok(Expression::generate_identifier("Type0")),
+            AcornType::TypeclassConstraint(tc) => Ok(Expression::generate_identifier(&tc.name)),
         }
     }
 

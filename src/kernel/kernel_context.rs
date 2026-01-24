@@ -28,7 +28,7 @@ impl KernelContext {
             Atom::Symbol(Symbol::False) => "false".to_string(),
             Atom::Symbol(Symbol::Empty) => "Empty".to_string(),
             Atom::Symbol(Symbol::Bool) => "Bool".to_string(),
-            Atom::Symbol(Symbol::TypeSort) => "Type".to_string(),
+            Atom::Symbol(Symbol::Type0) => "Type".to_string(),
             Atom::Symbol(Symbol::GlobalConstant(i)) => {
                 self.symbol_table.name_for_global_id(*i).to_string()
             }
@@ -93,7 +93,7 @@ impl KernelContext {
                     if let Some(constraint_type) = ctx.get_var_type(var_id as usize) {
                         // If the constraint is TypeSort, this is an unconstrained type variable.
                         // Unconstrained types are NOT provably inhabited (could be empty).
-                        if constraint_type.as_ref().is_type_sort() {
+                        if constraint_type.as_ref().is_type0() {
                             return false;
                         }
                         return self.provably_inhabited(constraint_type, local_context);
@@ -107,7 +107,7 @@ impl KernelContext {
             Atom::Symbol(Symbol::Bool) => return true,
 
             // TypeSort is inhabited (any type can be used as a value of type Type)
-            Atom::Symbol(Symbol::TypeSort) => return true,
+            Atom::Symbol(Symbol::Type0) => return true,
 
             // Check if the type's head is a type constructor known to be inhabited.
             // For example, List[T] is inhabited if we have nil: forall[T]. List[T].

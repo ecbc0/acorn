@@ -93,7 +93,7 @@ impl Edge {
                 Atom::Symbol(Symbol::False) => ATOM_FALSE,
                 Atom::Symbol(Symbol::Empty) => ATOM_SYMBOL_EMPTY,
                 Atom::Symbol(Symbol::Bool) => ATOM_SYMBOL_BOOL,
-                Atom::Symbol(Symbol::TypeSort) => ATOM_SYMBOL_TYPESORT,
+                Atom::Symbol(Symbol::Type0) => ATOM_SYMBOL_TYPESORT,
                 Atom::Symbol(Symbol::Type(_)) => ATOM_SYMBOL_TYPE,
                 Atom::Symbol(Symbol::Typeclass(_)) => ATOM_SYMBOL_TYPECLASS,
                 Atom::Symbol(Symbol::GlobalConstant(_)) => ATOM_SYMBOL_GLOBAL,
@@ -115,7 +115,7 @@ impl Edge {
                 Atom::Symbol(Symbol::True) | Atom::Symbol(Symbol::False) => 0,
                 Atom::Symbol(Symbol::Empty) => 0,
                 Atom::Symbol(Symbol::Bool) => 0,
-                Atom::Symbol(Symbol::TypeSort) => 0,
+                Atom::Symbol(Symbol::Type0) => 0,
                 Atom::Symbol(Symbol::Type(t)) => t.as_u16(),
                 Atom::Symbol(Symbol::Typeclass(tc)) => tc.as_u16(),
                 Atom::Symbol(Symbol::GlobalConstant(c)) => *c,
@@ -143,7 +143,7 @@ impl Edge {
             ATOM_SYMBOL_SYNTHETIC => Edge::Atom(Atom::Symbol(Symbol::Synthetic(id))),
             ATOM_SYMBOL_EMPTY => Edge::Atom(Atom::Symbol(Symbol::Empty)),
             ATOM_SYMBOL_BOOL => Edge::Atom(Atom::Symbol(Symbol::Bool)),
-            ATOM_SYMBOL_TYPESORT => Edge::Atom(Atom::Symbol(Symbol::TypeSort)),
+            ATOM_SYMBOL_TYPESORT => Edge::Atom(Atom::Symbol(Symbol::Type0)),
             ATOM_SYMBOL_TYPE => Edge::Atom(Atom::Symbol(Symbol::Type(GroundTypeId::new(id)))),
             ATOM_SYMBOL_TYPECLASS => Edge::Atom(Atom::Symbol(Symbol::Typeclass(
                 super::types::TypeclassId::new(id),
@@ -510,7 +510,7 @@ fn types_compatible(
     // - Value functions returning Type: second[T, Type, p] returns Type if U=Type
     if matches!(
         pattern_var_type.as_ref().decompose(),
-        Decomposition::Atom(KernelAtom::Symbol(Symbol::TypeSort))
+        Decomposition::Atom(KernelAtom::Symbol(Symbol::Type0))
     ) {
         // Check that bound_term is a proper type, not a value-level expression
         match bound_term.get_head_atom() {
@@ -521,7 +521,7 @@ fn types_compatible(
             | KernelAtom::FreeVariable(_) => {
                 // Accept: proper types and type variables
             }
-            KernelAtom::Symbol(Symbol::TypeSort) => {
+            KernelAtom::Symbol(Symbol::Type0) => {
                 // Reject: TypeSort itself shouldn't match a type variable
                 return false;
             }
@@ -584,12 +584,12 @@ fn types_compatible(
             // - Foo: TypeSort → bound_type = TypeSort → invalid (Foo is a type, not a value)
             if matches!(
                 var_type.as_ref().decompose(),
-                Decomposition::Atom(KernelAtom::Symbol(Symbol::TypeSort))
+                Decomposition::Atom(KernelAtom::Symbol(Symbol::Type0))
             ) {
                 // Reject if bound_type IS TypeSort (meaning bound_term is a type, not a value)
                 if matches!(
                     bound_type.as_ref().decompose(),
-                    Decomposition::Atom(KernelAtom::Symbol(Symbol::TypeSort))
+                    Decomposition::Atom(KernelAtom::Symbol(Symbol::Type0))
                 ) {
                     return false; // Reject: bound_term is a type, not a value
                 }
@@ -1011,10 +1011,10 @@ pub fn compute_unbound_var_remap(
     // Sort unbound variables by type dependency:
     // Type variables (those with type=Type) come before value variables
     // (those whose type references other variables)
-    let is_type_sort = |t: &Term| -> bool {
+    let is_type0 = |t: &Term| -> bool {
         matches!(
             t.as_ref().decompose(),
-            Decomposition::Atom(KernelAtom::Symbol(Symbol::TypeSort))
+            Decomposition::Atom(KernelAtom::Symbol(Symbol::Type0))
         )
     };
 
@@ -1023,7 +1023,7 @@ pub fn compute_unbound_var_remap(
     let mut value_vars: Vec<AtomId> = Vec::new();
     for var_id in &unbound_vars {
         if let Some(var_type) = pattern_context.get_var_type(*var_id as usize) {
-            if is_type_sort(var_type) {
+            if is_type0(var_type) {
                 type_vars.push(*var_id);
             } else {
                 value_vars.push(*var_id);

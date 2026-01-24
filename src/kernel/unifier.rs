@@ -410,7 +410,7 @@ impl<'a> Unifier<'a> {
         // Invalid: TypeSort itself, function applications (GlobalConstant, ScopedConstant)
         if matches!(
             var_type.as_ref().decompose(),
-            Decomposition::Atom(Atom::Symbol(Symbol::TypeSort))
+            Decomposition::Atom(Atom::Symbol(Symbol::Type0))
         ) {
             match term.as_ref().get_head_atom() {
                 // Accept: proper types and type variables
@@ -420,7 +420,7 @@ impl<'a> Unifier<'a> {
                 | Atom::FreeVariable(_) => {
                     // OK - these are proper types
                 }
-                Atom::Symbol(Symbol::TypeSort) => {
+                Atom::Symbol(Symbol::Type0) => {
                     // Reject: TypeSort itself shouldn't match a type variable
                     return false;
                 }
@@ -437,7 +437,7 @@ impl<'a> Unifier<'a> {
         if let Some(typeclass_id) = var_type.as_ref().as_typeclass() {
             // The variable represents a TYPE that must implement the typeclass.
             // First, reject TypeSort itself - it's not a type, it's a kind.
-            if term.as_ref().is_type_sort() {
+            if term.as_ref().is_type0() {
                 return false;
             }
             // Reject Pi types (function kinds like Type -> Type).
@@ -525,7 +525,7 @@ impl<'a> Unifier<'a> {
                             }
                         }
                     }
-                } else if !term_type.as_ref().is_type_sort() {
+                } else if !term_type.as_ref().is_type0() {
                     // term's type is not TypeSort or a typeclass - reject
                     return false;
                 }
@@ -571,12 +571,12 @@ impl<'a> Unifier<'a> {
         // A Typeclass constraint is a refinement of TypeSort, not a different type.
         // When unifying types, Typeclass(X) should match TypeSort.
         if matches!(atom1, Atom::Symbol(Symbol::Typeclass(_)))
-            && matches!(atom2, Atom::Symbol(Symbol::TypeSort))
+            && matches!(atom2, Atom::Symbol(Symbol::Type0))
         {
             return true;
         }
         if matches!(atom2, Atom::Symbol(Symbol::Typeclass(_)))
-            && matches!(atom1, Atom::Symbol(Symbol::TypeSort))
+            && matches!(atom1, Atom::Symbol(Symbol::Type0))
         {
             return true;
         }

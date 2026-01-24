@@ -115,7 +115,7 @@ fn extract_type_bindings(
                         (pattern_atom, concrete_atom),
                         (
                             KernelAtom::Symbol(Symbol::Typeclass(_)),
-                            KernelAtom::Symbol(Symbol::TypeSort)
+                            KernelAtom::Symbol(Symbol::Type0)
                         )
                     );
                     if !is_typeclass_matching_typesort {

@@ -2510,7 +2510,7 @@ impl Normalizer {
             Atom::Symbol(Symbol::Type(_))
             | Atom::Symbol(Symbol::Empty)
             | Atom::Symbol(Symbol::Bool)
-            | Atom::Symbol(Symbol::TypeSort) => {
+            | Atom::Symbol(Symbol::Type0) => {
                 panic!("Type symbols should not appear in open terms")
             }
             Atom::Symbol(Symbol::Typeclass(_)) => {
@@ -2728,7 +2728,7 @@ impl Normalizer {
         &self,
         clause: &Clause,
         arbitrary_names: Option<&HashMap<Term, ConstantName>>,
-        type_vars: Option<&HashSet<u16>>,
+        _type_vars: Option<&HashSet<u16>>,
         type_param_names: Option<&[String]>,
         instantiate_type_vars: bool,
     ) -> AcornValue {
@@ -2764,12 +2764,8 @@ impl Normalizer {
         let mut new_index: u16 = 0;
         for i in 0..num_vars {
             let type_term = &var_types_raw[i];
-            // A variable is a type variable if it's in the explicit type_vars set,
-            // or if its kind is TypeSort (unconstrained type param) or a Typeclass (constrained type param)
-            let is_type_var = type_vars
-                .map(|tv| tv.contains(&(i as u16)))
-                .unwrap_or(false)
-                || type_term.as_ref().is_type_param_kind();
+            // A variable is a type variable if its kind is Type0 (unconstrained) or Typeclass (constrained)
+            let is_type_var = type_term.as_ref().is_type_param_kind();
             let is_arbitrary = arbitrary_names
                 .map(|m| m.contains_key(type_term))
                 .unwrap_or(false);
