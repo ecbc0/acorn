@@ -6,27 +6,11 @@ There are two big categories of things we need to do. First, we need to make the
 
 Language features are more straightforward to plan. So that's what this roadmap focuses on. And there is one feature that is more requested than anything else: dependent types.
 
-## Why we need uninhabited types before dependent types
+A lot of the groundwork has been laid, like options and uninhabited types. We still have some stuff to do.
 
-Right now, every type in Acorn must be inhabited. Ie, for every type, there must be some element of that type. The prover implicitly uses this fact to combine statements like
+### Make constrained types use options instead of forcing inhabitedness
 
-```
-forall(x: T) {
-    f(x)
-}
-
-forall(x: T) {
-    not f(x)
-}
-```
-
-If `T` is inhabited, this leads to a contradiction. But if `T` is not inhabited, both of these statements are vacuously true! Allowing uninhabited types means we need to do more bookkeeping to make sure we only apply this sort of deduction rule for inhabited types.
-
-So far, disallowing uninhabited types has not been too bothersome because uninhabited types are not very interesting on their own. But this will change because with dependent types it is much less obvious when a type is inhabited. For example, a very useful dependent type is `Fin[k]` which means all natural numbers less than `k`. Note that `Fin[0]` is uninhabited. To allow expressions with `Fin[k]`, we either have to allow uninhabited types, or require that in every place we use `Fin[k]` we first prove that `k > 0`, which seems both more complicated and not how mathematicians think about the problem.
-
-## Why we need options before uninhabited types
-
-If uninhabited types are allowed, the current behavior of constructors of constrained types won't work. Currently, when a type is defined like
+When a type is defined like
 
 ```
 structure Foo {
@@ -36,40 +20,7 @@ structure Foo {
 }
 ```
 
-If `qux(bar)` is false, the expression `Foo.new(bar)` is still a valid expression of type `Foo`, it is just a `Foo` about which nothing is known. Like a C++ "undefined behavior". This is a bit weird, but currently it's mathematically okay. But if `Foo` is uninhabited, it's no longer okay for `Foo.new(bar)` to represent a `Foo` at all. We will need to change the behavior of `new` for constrained types.
-
-The logical meaning of a constructor for a constrained type is an option. The declaration above could become syntactic sugar for:
-
-```
-define Foo.new_eq(bar: Bar, opt: Option[Foo]) -> Bool {
-    match opt {
-        Option.some(foo) {
-            qux(bar) and foo.bar = bar
-        }
-        Option.none {
-            not qux(bar)
-        }
-    }
-}
-
-let Foo.new(bar: Bar) -> opt: Option[Foo] satisfy {
-    Foo.new_eq(bar, opt)
-}
-```
-
-Ie, instead of returning a nonsense `Foo` when the constraint is false, the constructor could return an option that encodes whether the constraint is true or not.
-
-## The actual roadmap
-
-At a high level, we need to build these things in the order of, options, uninhabited types, dependent types. At a lower level, here are some bullet points.
-
-### A "core" module
-
-If we have basic language syntax using options then we either need to import option all the time or make it automatically imported. Probably just automatically import it. Not rocket science but still something that logistically needs to happen.
-
-### Make constrained types use options
-
-This also requires a migration of the existing code. Not sure how tricky that will be.
+Currently, we require that `qux` is true for some `bar`. This is because the constructor `Foo.new` always returns a `Foo`, and we need some "default". Instead, we should make `Foo.new` return an `Option`.
 
 ### Side quest: generic let-satisfy
 
@@ -85,7 +36,7 @@ let pick_any[T](list: List[T]) -> item: T satisfy {
 }
 ```
 
-However, this code is similar to the constructor of a constrained type, in that it lets you introduce terms of type `T` with no precondition, thus implicitly assuming that the type is inhabited. Once we have a clean way to handle uninhabited types, we can just check that `T` is inhabited here before allowing this syntax.
+However, this code is similar to the constructor of a constrained type, in that it lets you introduce terms of type `T` with no precondition, thus implicitly assuming that the type is inhabited. We should just check that `T` is inhabited here before allowing this syntax.
 
 ### Side quest: generic instances
 
@@ -95,7 +46,7 @@ Relations like:
 instance NonZero[F: Field]: Group
 ```
 
-Currently that would require changing how the monomorphizer works, but once we are not monomorphizing we only have to handle this during unification, which is easier.
+We are not monomorphizing any more, which makes this more plausible.
 
 ### Dependent types frontend
 
@@ -139,3 +90,5 @@ Another issue is that syntactically, not every expression can be associated with
 syntax wouldn't be usable everywhere, which would lead to some confusion.
 
 Another possibility would be to implement a more general solution, a way of expressing when one type could be converted into another type, and treat this as a case of converting an `Option[T]` into a `T`.
+
+Another possibility is to simply punt on implementing this syntax and make the LLMs spell it out.
