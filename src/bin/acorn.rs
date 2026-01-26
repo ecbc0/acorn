@@ -1,10 +1,8 @@
 // The Acorn CLI.
 // You can run a language server, verify a file, or reverify the whole project.
 
-use acorn::builder::ProverConfig;
 use acorn::cleaner::{ModuleCleaner, ProjectCleaner};
 use acorn::doc_generator::DocGenerator;
-use acorn::generative::generative_prover::GenerativeProverConfig;
 use acorn::module::ModuleDescriptor;
 use acorn::project::{Project, ProjectConfig};
 use acorn::server::{run_server, ServerArgs};
@@ -137,13 +135,6 @@ enum Command {
         dir: String,
     },
 
-    /// Generate training data
-    Training {
-        /// Directory to generate training data in
-        #[clap(value_name = "DIR")]
-        dir: String,
-    },
-
     /// Verify theorems and proofs (default)
     Verify {
         /// Target module or file to verify (can be a filename, module name, or module:line)
@@ -237,14 +228,6 @@ enum Command {
         )]
         line_flag: Option<u32>,
 
-        /// Use the generative prover instead of the saturation prover
-        #[clap(
-            long,
-            help = "Path to the directory containing the generative model (model.onnx, tokenizer.json, config.json)",
-            value_name = "MODEL_DIR"
-        )]
-        generative: Option<String>,
-
         /// Exit immediately on the first verification failure
         #[clap(long, help = "Exit immediately on the first verification failure.")]
         fail_fast: bool,
@@ -336,36 +319,6 @@ async fn main() {
                 Err(e) => {
                     println!("Error generating documentation: {}", e);
                     std::process::exit(1);
-                }
-            }
-        }
-
-        Some(Command::Training { dir }) => {
-            let mut verifier = match Verifier::new(current_dir, ProjectConfig::default(), None) {
-                Ok(v) => v,
-                Err(e) => {
-                    println!("{}", e);
-                    std::process::exit(1);
-                }
-            };
-
-            // Training mode automatically enables reverify and disables hash checking
-            verifier.builder.reverify = true;
-            verifier.builder.check_hashes = false;
-            if let Err(e) = verifier.builder.set_training_output_dir(&dir) {
-                println!("Error setting training output directory: {}", e);
-                std::process::exit(1);
-            }
-
-            match verifier.run() {
-                Err(e) => {
-                    println!("{}", e);
-                    std::process::exit(1);
-                }
-                Ok(output) => {
-                    if !output.is_success() {
-                        std::process::exit(1);
-                    }
                 }
             }
         }
@@ -502,7 +455,6 @@ async fn main() {
             target,
             line_positional,
             line_flag,
-            generative,
             fail_fast,
             timeout,
             write_cache,
@@ -532,23 +484,13 @@ async fn main() {
                 write_cache,
             };
 
-            // Create the prover config based on the --generative flag
-            let prover_config = if let Some(model_path) = generative {
-                let mut gen_config = GenerativeProverConfig::default();
-                gen_config.generative_model_path = model_path;
-                ProverConfig::Generative(gen_config)
-            } else {
-                ProverConfig::default()
+            let mut verifier = match Verifier::new(current_dir, config, target) {
+                Ok(v) => v,
+                Err(e) => {
+                    println!("{}", e);
+                    std::process::exit(1);
+                }
             };
-
-            let mut verifier =
-                match Verifier::with_prover(current_dir, config, target, prover_config) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        println!("{}", e);
-                        std::process::exit(1);
-                    }
-                };
 
             verifier.builder.verbose = line_selection.is_some();
             verifier.line_selection = line_selection;

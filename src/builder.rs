@@ -14,25 +14,12 @@ use crate::elaborator::fact::Fact;
 use crate::elaborator::goal::Goal;
 use crate::elaborator::node::{Node, NodeCursor};
 use crate::elaborator::source::SourceType;
-use crate::generative::generative_prover::GenerativeProverConfig;
-use crate::generative::goal_context::GoalContext;
-use crate::generative::training_data_writer::TrainingDataWriter;
 use crate::module::{LoadState, ModuleDescriptor, ModuleId};
 use crate::processor::Processor;
 use crate::project::Project;
 use crate::prover::{Outcome, ProverMode};
 
 static NEXT_BUILD_ID: AtomicU32 = AtomicU32::new(1);
-
-/// Configuration for which prover to use during verification
-#[derive(Clone, Debug, Default)]
-pub enum ProverConfig {
-    /// Use the saturation-based prover (default)
-    #[default]
-    Saturation,
-    /// Use the generative prover
-    Generative(GenerativeProverConfig),
-}
 
 /// Filter for which goals to verify.
 /// Line numbers are internal (0-based).
@@ -118,13 +105,6 @@ pub struct Builder<'a> {
 
     /// Cancellation token to stop the build.
     cancellation_token: CancellationToken,
-
-    /// Optional writer for training data output.
-    /// When set, writes goal context and proofs for verified certificates to numbered files.
-    training_output: Option<TrainingDataWriter>,
-
-    /// Configuration for which prover to use.
-    prover_config: ProverConfig,
 
     /// When set, use this certificate instead of the cached one for single-goal verification.
     /// Only used when single_goal is also set.
@@ -325,20 +305,6 @@ impl<'a> Builder<'a> {
         cancellation_token: CancellationToken,
         event_handler: impl FnMut(BuildEvent) + 'a,
     ) -> Self {
-        Self::with_prover(
-            project,
-            cancellation_token,
-            event_handler,
-            ProverConfig::default(),
-        )
-    }
-
-    pub fn with_prover(
-        project: &'a Project,
-        cancellation_token: CancellationToken,
-        event_handler: impl FnMut(BuildEvent) + 'a,
-        prover_config: ProverConfig,
-    ) -> Self {
         let event_handler = Box::new(event_handler);
         Builder {
             project,
@@ -360,34 +326,9 @@ impl<'a> Builder<'a> {
             goal_filter: None,
             verbose: false,
             cancellation_token,
-            training_output: None,
-            prover_config,
             cert_override: None,
             operation_verb: "verified",
             timeout_secs: 5.0,
-        }
-    }
-
-    /// Set the training output directory.
-    /// This only works in reverify mode.
-    /// When set, the builder will write goal contexts and proofs for all verified certificates
-    /// to numbered files in the specified directory.
-    pub fn set_training_output_dir(&mut self, dir: &str) -> Result<(), String> {
-        if !self.reverify {
-            return Err("Training output can only be used in reverify mode".to_string());
-        }
-        let writer = TrainingDataWriter::new(dir)?;
-        self.training_output = Some(writer);
-        Ok(())
-    }
-
-    /// Log a summary of training data written.
-    fn log_training_summary(&mut self) {
-        if let Some(ref writer) = self.training_output {
-            let count = writer.count();
-            if count > 0 {
-                self.log_global(format!("Wrote {} training data files", count));
-            }
         }
     }
 
@@ -755,21 +696,6 @@ impl<'a> Builder<'a> {
                     new_certs.push(cert_to_use.clone());
                     worklist.remove(&goal.name, *i);
 
-                    // Write training data if output is enabled
-                    if let Some(ref writer) = self.training_output {
-                        if let Some(context) =
-                            GoalContext::from_project_and_goal(self.project, goal)
-                        {
-                            // Write both context and proof to a numbered file
-                            if let Err(e) = writer.write_proof(&context, &cert_to_use) {
-                                self.log_global(format!(
-                                    "Warning: failed to write training data: {}",
-                                    e
-                                ));
-                            }
-                        }
-                    }
-
                     return Ok(());
                 }
                 Err(e) if self.reverify => {
@@ -950,10 +876,7 @@ impl<'a> Builder<'a> {
         if !env.nodes.is_empty() {
             self.module_proving_started(target.clone());
 
-            let mut processor = match &self.prover_config {
-                ProverConfig::Saturation => Processor::with_token(self.cancellation_token.clone()),
-                ProverConfig::Generative(config) => Processor::new_generative(config.clone()),
-            };
+            let mut processor = Processor::with_token(self.cancellation_token.clone());
             for fact in self.project.imported_facts(env.module_id, None) {
                 processor.add_fact(fact.clone())?;
             }
@@ -1137,7 +1060,6 @@ impl<'a> Builder<'a> {
 
             if let Err(e) = self.verify_module(&target, env) {
                 self.log_build_error(&e);
-                self.log_training_summary();
                 return;
             }
 
@@ -1158,9 +1080,6 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-
-        // Log training summary at the end of a successful build
-        self.log_training_summary();
     }
 
     /// Tries to skip building a module if it and all its dependencies are unchanged.

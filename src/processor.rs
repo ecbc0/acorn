@@ -7,7 +7,6 @@ use crate::code_generator::Error;
 use crate::elaborator::binding_map::BindingMap;
 use crate::elaborator::fact::Fact;
 use crate::elaborator::goal::Goal;
-use crate::generative::generative_prover::{GenerativeProver, GenerativeProverConfig};
 use crate::normalizer::Normalizer;
 use crate::project::Project;
 use crate::proof_step::Rule;
@@ -45,14 +44,6 @@ impl Processor {
     pub fn with_token(cancellation_token: CancellationToken) -> Processor {
         Processor {
             prover: Box::new(SaturationProver::new(vec![cancellation_token])),
-            normalizer: Normalizer::new(),
-            checker: Checker::new(),
-        }
-    }
-
-    pub fn new_generative(config: GenerativeProverConfig) -> Processor {
-        Processor {
-            prover: Box::new(GenerativeProver::new(config)),
             normalizer: Normalizer::new(),
             checker: Checker::new(),
         }

@@ -56,19 +56,11 @@ name = "profile_reprove"
 test = false
 
 [[bin]]
-name = "profile_generation"
-test = false
-
-[[bin]]
 name = "profile_scorer"
 test = false
 
 [[bin]]
 name = "profile_reverify"
-test = false
-
-[[bin]]
-name = "test_gen"
 test = false
 
 # Fast, but including debug info.
