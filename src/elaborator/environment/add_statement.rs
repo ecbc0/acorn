@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use tower_lsp::lsp_types::Range;
 
 use crate::elaborator::acorn_type::{AcornType, Datatype, TypeParam, Typeclass, Variance};
@@ -804,7 +806,7 @@ impl Environment {
             self.module_id,
             definition_range,
             self.depth,
-            generic_constant,
+            Arc::new(generic_constant),
             fss.name_token.text(),
         );
         let prop = Proposition::new(external_condition, type_params, source);

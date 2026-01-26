@@ -1,6 +1,8 @@
 /// A description of where propositions or facts come from in the source code.
 /// Not just the ability to find it in the text, but also useful metadata and descriptive
 /// information for human consumption.
+use std::sync::Arc;
+
 use crate::elaborator::acorn_value::AcornValue;
 use crate::module::ModuleId;
 use crate::proof_step::Truthiness;
@@ -24,7 +26,8 @@ pub enum SourceType {
     /// A proposition that comes from the definition of a constant.
     /// The value is instantiated during monomorphization.
     /// The string is the name of the constant. It can be <Type>.<name> for members.
-    ConstantDefinition(AcornValue, String),
+    /// Uses Arc to avoid expensive cloning during verification.
+    ConstantDefinition(Arc<AcornValue>, String),
 
     /// The fact that one typeclass extends a particular set.
     /// The source only tracks the typeclass that is being defined.
@@ -146,7 +149,7 @@ impl Source {
         module: ModuleId,
         range: Range,
         depth: u32,
-        constant: AcornValue,
+        constant: Arc<AcornValue>,
         name: &str,
     ) -> Source {
         Source {

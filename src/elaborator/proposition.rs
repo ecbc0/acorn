@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 
 use crate::elaborator::acorn_type::{AcornType, TypeParam};
 use crate::elaborator::acorn_value::AcornValue;
@@ -83,7 +84,8 @@ impl Proposition {
         }
         let source = match &self.source.source_type {
             SourceType::ConstantDefinition(v, name) => {
-                let new_type = SourceType::ConstantDefinition(v.instantiate(params), name.clone());
+                let new_type =
+                    SourceType::ConstantDefinition(Arc::new(v.instantiate(params)), name.clone());
                 Source {
                     module_id: self.source.module_id,
                     range: self.source.range.clone(),

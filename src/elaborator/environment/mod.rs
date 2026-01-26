@@ -1,6 +1,7 @@
 mod add_statement;
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use tower_lsp::lsp_types::Range;
 
@@ -213,7 +214,7 @@ impl Environment {
             self.module_id,
             range.clone(),
             self.depth,
-            potential.clone().to_generic_value(),
+            Arc::new(potential.clone().to_generic_value()),
             &name,
         );
 
