@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Arc;
 
-use crate::elaborator::acorn_type::{AcornType, TypeParam};
+use crate::elaborator::acorn_type::TypeParam;
 use crate::elaborator::acorn_value::AcornValue;
 use crate::elaborator::error::{ErrorContext, Result};
 use crate::elaborator::source::{Source, SourceType};
@@ -64,52 +63,6 @@ impl Proposition {
         }
     }
 
-    /// Instantiates a generic proposition to have a particular type.
-    pub fn instantiate(&self, params: &[(String, AcornType)]) -> MonomorphicProposition {
-        if self.params.len() != params.len() {
-            panic!(
-                "proposition has {} params, but we tried to instantiate with {}",
-                self.params.len(),
-                params.len()
-            );
-        }
-        let value = self.value.instantiate(params);
-        if value.has_generic() {
-            let joined = params
-                .iter()
-                .map(|(p, _)| p.to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
-            panic!("instantiated {} but {} is still generic", joined, value);
-        }
-        let source = match &self.source.source_type {
-            SourceType::ConstantDefinition(v, name) => {
-                let new_type =
-                    SourceType::ConstantDefinition(Arc::new(v.instantiate(params)), name.clone());
-                Source {
-                    module_id: self.source.module_id,
-                    range: self.source.range.clone(),
-                    source_type: new_type,
-                    importable: self.source.importable,
-                    depth: self.source.depth,
-                }
-            }
-            _ => self.source.clone(),
-        };
-        MonomorphicProposition { value, source }
-    }
-
-    pub fn as_monomorphic(&self) -> Option<MonomorphicProposition> {
-        if self.params.is_empty() {
-            Some(MonomorphicProposition {
-                value: self.value.clone(),
-                source: self.source.clone(),
-            })
-        } else {
-            None
-        }
-    }
-
     /// Validates that the params exactly match the type variables used in the value.
     /// Returns an error if there's a mismatch.
     pub fn validate_params(&self, source: &dyn ErrorContext) -> Result<()> {
@@ -156,21 +109,5 @@ impl Proposition {
         }
 
         Ok(())
-    }
-}
-
-/// A proposition that is not generic.
-#[derive(Debug, Clone)]
-pub struct MonomorphicProposition {
-    /// A boolean value. The essence of the proposition is "value is true".
-    pub value: AcornValue,
-
-    /// Where this proposition came from.
-    pub source: Source,
-}
-
-impl fmt::Display for MonomorphicProposition {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.value.fmt(f)
     }
 }
