@@ -489,17 +489,10 @@ impl SaturationProver {
             }
         }
     }
-}
-
-// Implement the Prover trait for SaturationProver
-impl crate::prover::Prover for SaturationProver {
-    fn box_clone(&self) -> Box<dyn crate::prover::Prover> {
-        Box::new(self.clone())
-    }
 
     /// Add proof steps to the prover.
     /// These can be used as initial facts for starting the proof.
-    fn add_steps(&mut self, steps: Vec<ProofStep>, kernel_context: &KernelContext) {
+    pub fn add_steps(&mut self, steps: Vec<ProofStep>, kernel_context: &KernelContext) {
         self.passive_set.push_batch(steps, kernel_context);
     }
 
@@ -507,7 +500,7 @@ impl crate::prover::Prover for SaturationProver {
     ///   Activating activation_limit nonfactual clauses
     ///   Going over the time limit, in seconds
     ///   Activating all shallow steps, if shallow_only is set
-    fn search(
+    pub fn search(
         &mut self,
         mode: ProverMode,
         _project: &Project,
@@ -579,7 +572,7 @@ impl crate::prover::Prover for SaturationProver {
         }
     }
 
-    fn set_goal(
+    pub fn set_goal(
         &mut self,
         ng: NormalizedGoal,
         steps: Vec<ProofStep>,
@@ -590,15 +583,5 @@ impl crate::prover::Prover for SaturationProver {
         assert!(self.goal.is_none());
         self.add_steps(steps, kernel_context);
         self.goal = Some(ng);
-    }
-
-    fn make_cert(
-        &self,
-        project: &Project,
-        bindings: &BindingMap,
-        normalizer: &Normalizer,
-        print: bool,
-    ) -> Result<Certificate, Error> {
-        self.make_cert(project, bindings, normalizer, print)
     }
 }

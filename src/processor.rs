@@ -10,32 +10,23 @@ use crate::elaborator::goal::Goal;
 use crate::normalizer::Normalizer;
 use crate::project::Project;
 use crate::proof_step::Rule;
-use crate::prover::{Outcome, Prover, ProverMode};
+use crate::prover::{Outcome, ProverMode};
 use crate::saturation::SaturationProver;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, trace};
 
 /// The processor represents what we do with a stream of facts.
+#[derive(Clone)]
 pub struct Processor {
-    prover: Box<dyn Prover>,
+    prover: SaturationProver,
     normalizer: Normalizer,
     checker: Checker,
-}
-
-impl Clone for Processor {
-    fn clone(&self) -> Self {
-        Processor {
-            prover: self.prover.box_clone(),
-            normalizer: self.normalizer.clone(),
-            checker: self.checker.clone(),
-        }
-    }
 }
 
 impl Processor {
     pub fn new() -> Processor {
         Processor {
-            prover: Box::new(SaturationProver::new(vec![])),
+            prover: SaturationProver::new(vec![]),
             normalizer: Normalizer::new(),
             checker: Checker::new(),
         }
@@ -43,14 +34,14 @@ impl Processor {
 
     pub fn with_token(cancellation_token: CancellationToken) -> Processor {
         Processor {
-            prover: Box::new(SaturationProver::new(vec![cancellation_token])),
+            prover: SaturationProver::new(vec![cancellation_token]),
             normalizer: Normalizer::new(),
             checker: Checker::new(),
         }
     }
 
-    pub fn prover(&self) -> &dyn Prover {
-        &*self.prover
+    pub fn prover(&self) -> &SaturationProver {
+        &self.prover
     }
     pub fn normalizer(&self) -> &Normalizer {
         &self.normalizer

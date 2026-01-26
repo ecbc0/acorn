@@ -1,15 +1,5 @@
 use std::fmt;
 
-use crate::certificate::Certificate;
-use crate::checker::Checker;
-use crate::code_generator::Error;
-use crate::elaborator::binding_map::BindingMap;
-use crate::elaborator::goal::Goal;
-use crate::kernel::kernel_context::KernelContext;
-use crate::normalizer::{NormalizedGoal, Normalizer};
-use crate::project::Project;
-use crate::proof_step::ProofStep;
-
 /// Mode controlling proof search behavior
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ProverMode {
@@ -43,42 +33,4 @@ impl fmt::Display for Outcome {
             Outcome::Constrained => write!(f, "Constrained"),
         }
     }
-}
-
-/// A trait for theorem provers
-pub trait Prover {
-    /// Clone this prover into a boxed trait object
-    fn box_clone(&self) -> Box<dyn Prover>;
-
-    /// Add proof steps to the prover (facts or axioms)
-    fn add_steps(&mut self, steps: Vec<ProofStep>, kernel_context: &KernelContext);
-
-    /// Set the goal and add goal-derived steps.
-    fn set_goal(
-        &mut self,
-        goal: NormalizedGoal,
-        steps: Vec<ProofStep>,
-        project: &Project,
-        original_goal: &Goal,
-        kernel_context: &KernelContext,
-    );
-
-    /// Run the proof search with the given mode
-    fn search(
-        &mut self,
-        mode: ProverMode,
-        project: &Project,
-        bindings: &BindingMap,
-        normalizer: &Normalizer,
-        checker: &Checker,
-    ) -> Outcome;
-
-    /// Generate a certificate for the proof
-    fn make_cert(
-        &self,
-        project: &Project,
-        bindings: &BindingMap,
-        normalizer: &Normalizer,
-        print: bool,
-    ) -> Result<Certificate, Error>;
 }
