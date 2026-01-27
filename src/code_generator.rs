@@ -18,7 +18,7 @@ use crate::kernel::term::{Decomposition, Term};
 use crate::kernel::variable_map::VariableMap;
 use crate::module::ModuleId;
 use crate::normalizer::Normalizer;
-use crate::saturation::proof::ConcreteStep;
+use crate::prover::proof::ConcreteStep;
 use crate::syntax::expression::{Declaration, Expression};
 use crate::syntax::token::TokenType;
 

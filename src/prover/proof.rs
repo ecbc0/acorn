@@ -980,7 +980,7 @@ mod tests {
     use crate::kernel::kernel_context::KernelContext;
     use crate::kernel::trace::LiteralTrace;
     use crate::proof_step::{ProofStep, Rule, Truthiness};
-    use crate::saturation::active_set::ActiveSet;
+    use crate::prover::active_set::ActiveSet;
 
     /// Test that resolution followed by simplification has consistent traces.
     ///

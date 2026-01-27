@@ -29,7 +29,7 @@ use crate::prover::{Outcome, ProverMode};
 /// active set, and performs inferences between it and the active clauses. This continues until
 /// a contradiction is found or the search saturates.
 #[derive(Clone)]
-pub struct SaturationProver {
+pub struct Prover {
     /// The "active" clauses are the ones we use for reasoning.
     active_set: ActiveSet,
 
@@ -56,11 +56,11 @@ pub struct SaturationProver {
     goal: Option<NormalizedGoal>,
 }
 
-impl SaturationProver {
-    /// Creates a new SaturationProver instance.
+impl Prover {
+    /// Creates a new Prover instance.
     /// The prover must stop when any of its cancellation tokens are canceled.
-    pub fn new(tokens: Vec<CancellationToken>) -> SaturationProver {
-        SaturationProver {
+    pub fn new(tokens: Vec<CancellationToken>) -> Prover {
+        Prover {
             active_set: ActiveSet::new(),
             passive_set: PassiveSet::new(),
             final_step: None,

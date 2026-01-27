@@ -52,7 +52,7 @@ perf report -i perf.data --stdio --no-children --percent-limit 0.3 2>&1 | grep -
 Provide a top-down summary showing what logical phases take time. Example for `reprove`:
 
 ```
-Within SaturationProver::search, the breakdown is:
+Within Prover::search, the breakdown is:
 
 | Phase                  | % of search |
 |------------------------|-------------|
@@ -71,7 +71,7 @@ Within SaturationProver::search, the breakdown is:
 
 ## Notes on reprove profiling
 
-For `profile_reprove`, the main phases of the saturation prover are:
+For `profile_reprove`, the main phases of the prover are:
 - `PassiveSet::simplify` - checking if clauses are subsumed
 - `PassiveSet::push_batch` - adding new clauses, building fingerprint index
 - `ActiveSet::activate` - generating inferences (resolution, rewriting)

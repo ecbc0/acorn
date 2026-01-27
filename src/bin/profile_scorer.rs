@@ -7,9 +7,9 @@
 
 use acorn::kernel::kernel_context::KernelContext;
 use acorn::proof_step::ProofStep;
-use acorn::saturation::features::Features;
-use acorn::saturation::scorer::Scorer;
-use acorn::saturation::scoring_model::ScoringModel;
+use acorn::prover::features::Features;
+use acorn::prover::scorer::Scorer;
+use acorn::prover::scoring_model::ScoringModel;
 use mimalloc::MiMalloc;
 
 #[global_allocator]
