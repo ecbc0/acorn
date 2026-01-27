@@ -4,8 +4,7 @@ use crate::kernel::atom::Atom;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::term::PathStep;
-use crate::kernel::term::Term;
+use crate::kernel::term::{Decomposition, PathStep, Term, TermRef};
 use crate::kernel::types::{GroundTypeId, TypeclassId};
 
 /// A coarse categorization of types for fingerprint indexing.
@@ -41,21 +40,21 @@ enum TypeCategory {
 }
 
 impl TypeCategory {
-    /// Create a TypeCategory from a type Term.
-    fn from_type_term(type_term: &Term) -> TypeCategory {
-        if type_term.atomic_variable().is_some() {
+    /// Create a TypeCategory from a type TermRef.
+    fn from_type_ref(type_ref: TermRef) -> TypeCategory {
+        if type_ref.atomic_variable().is_some() {
             TypeCategory::Variable
-        } else if let Some(tc_id) = type_term.as_ref().as_typeclass() {
+        } else if let Some(tc_id) = type_ref.as_typeclass() {
             TypeCategory::Typeclass(tc_id)
-        } else if type_term.as_ref().is_bool_type() {
+        } else if type_ref.is_bool_type() {
             TypeCategory::Bool
-        } else if type_term.as_ref().is_empty_type() {
+        } else if type_ref.is_empty_type() {
             TypeCategory::Empty
-        } else if type_term.as_ref().is_type0() {
+        } else if type_ref.is_type0() {
             TypeCategory::Type0
-        } else if let Some(gid) = type_term.as_ref().as_type_atom() {
+        } else if let Some(gid) = type_ref.as_type_atom() {
             TypeCategory::Ground(gid)
-        } else if type_term.as_ref().is_pi() {
+        } else if type_ref.is_pi() {
             TypeCategory::Arrow
         } else {
             TypeCategory::Applied
@@ -88,6 +87,91 @@ impl TypeCategory {
     }
 }
 
+/// Get the type category of a term efficiently without allocating the full type.
+/// For applications, this traverses to the return type by peeling off Pi types
+/// from the head symbol's type. Falls back to full type computation for dependent types.
+fn get_type_category(
+    term: TermRef,
+    local_context: &LocalContext,
+    kernel_context: &KernelContext,
+) -> TypeCategory {
+    match term.decompose() {
+        Decomposition::Atom(atom) => match atom {
+            Atom::FreeVariable(i) => {
+                let var_type = local_context
+                    .get_var_type(*i as usize)
+                    .expect("Variable not found in LocalContext");
+                TypeCategory::from_type_ref(var_type.as_ref())
+            }
+            Atom::BoundVariable(_) => TypeCategory::Variable,
+            Atom::Symbol(symbol) => {
+                let symbol_type = kernel_context.symbol_table.get_type(*symbol);
+                TypeCategory::from_type_ref(symbol_type.as_ref())
+            }
+        },
+        Decomposition::Application(_, _) => {
+            // For applications, find the head and count arguments
+            let (head_atom, num_args) = get_head_and_arg_count(term);
+
+            // Get the head's type
+            let head_type = match head_atom {
+                Atom::FreeVariable(i) => {
+                    local_context
+                        .get_var_type(*i as usize)
+                        .expect("Variable not found in LocalContext")
+                }
+                Atom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol),
+                Atom::BoundVariable(_) => return TypeCategory::Variable,
+            };
+
+            // Peel off num_args Pi types to get to the return type
+            let mut current_type = head_type.as_ref();
+            for _ in 0..num_args {
+                match current_type.split_pi() {
+                    Some((_input, output)) => {
+                        // Check if the output is a bound variable (dependent type)
+                        if output.is_atomic() {
+                            if let Decomposition::Atom(Atom::BoundVariable(_)) = output.decompose()
+                            {
+                                // Fall back to full computation for dependent types
+                                let full_type =
+                                    term.get_type_with_context(local_context, kernel_context);
+                                return TypeCategory::from_type_ref(full_type.as_ref());
+                            }
+                        }
+                        current_type = output;
+                    }
+                    None => {
+                        // Fall back to full computation
+                        let full_type =
+                            term.get_type_with_context(local_context, kernel_context);
+                        return TypeCategory::from_type_ref(full_type.as_ref());
+                    }
+                }
+            }
+
+            TypeCategory::from_type_ref(current_type)
+        }
+        Decomposition::Pi(_, _) => TypeCategory::Type0,
+    }
+}
+
+/// Get the head atom and count of arguments for a term.
+fn get_head_and_arg_count(term: TermRef) -> (&Atom, usize) {
+    let mut current = term;
+    let mut count = 0;
+    loop {
+        match current.decompose() {
+            Decomposition::Application(func, _) => {
+                count += 1;
+                current = func;
+            }
+            Decomposition::Atom(atom) => return (atom, count),
+            Decomposition::Pi(_, _) => return (&Atom::FreeVariable(0), count),
+        }
+    }
+}
+
 /// A fingerprint component describes the head of a term at a particular binary path.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum FingerprintComponent {
@@ -111,8 +195,7 @@ impl FingerprintComponent {
     ) -> FingerprintComponent {
         match term.as_ref().get_term_at_path(path) {
             Some(subterm) => {
-                let type_term = subterm.get_type_with_context(local_context, kernel_context);
-                let type_category = TypeCategory::from_type_term(&type_term);
+                let type_category = get_type_category(subterm, local_context, kernel_context);
 
                 match subterm.get_head_atom() {
                     Atom::FreeVariable(_) => {
@@ -259,8 +342,7 @@ impl<T> FingerprintUnifier<T> {
         kernel_context: &KernelContext,
     ) {
         let fingerprint = TermFingerprint::new(term, local_context, kernel_context);
-        let type_term = term.get_type_with_context(local_context, kernel_context);
-        let type_category = TypeCategory::from_type_term(&type_term);
+        let type_category = get_type_category(term.as_ref(), local_context, kernel_context);
         let tree = self.trees.entry(type_category).or_insert(BTreeMap::new());
         tree.entry(fingerprint).or_insert(vec![]).push(value);
     }
@@ -273,8 +355,7 @@ impl<T> FingerprintUnifier<T> {
         kernel_context: &KernelContext,
     ) -> Vec<&T> {
         let fingerprint = TermFingerprint::new(term, local_context, kernel_context);
-        let type_term = term.get_type_with_context(local_context, kernel_context);
-        let type_category = TypeCategory::from_type_term(&type_term);
+        let type_category = get_type_category(term.as_ref(), local_context, kernel_context);
 
         let mut result = vec![];
 
@@ -370,10 +451,7 @@ impl<T> FingerprintSpecializer<T> {
     ) {
         let fingerprint =
             LiteralFingerprint::new(&literal.left, &literal.right, local_context, kernel_context);
-        let type_term = literal
-            .left
-            .get_type_with_context(local_context, kernel_context);
-        let type_category = TypeCategory::from_type_term(&type_term);
+        let type_category = get_type_category(literal.left.as_ref(), local_context, kernel_context);
         let tree = self.trees.entry(type_category).or_insert(BTreeMap::new());
         tree.entry(fingerprint).or_insert(vec![]).push(value);
     }
@@ -388,8 +466,7 @@ impl<T> FingerprintSpecializer<T> {
         kernel_context: &KernelContext,
     ) -> Vec<&T> {
         let fingerprint = LiteralFingerprint::new(left, right, local_context, kernel_context);
-        let type_term = left.get_type_with_context(local_context, kernel_context);
-        let type_category = TypeCategory::from_type_term(&type_term);
+        let type_category = get_type_category(left.as_ref(), local_context, kernel_context);
 
         let mut result = vec![];
 
@@ -538,13 +615,13 @@ mod tests {
         // Test that type variables are correctly categorized
         let type_var = Term::atom(crate::kernel::atom::Atom::FreeVariable(0));
         assert_eq!(
-            TypeCategory::from_type_term(&type_var),
+            TypeCategory::from_type_ref(type_var.as_ref()),
             TypeCategory::Variable
         );
 
         // Bool type should be categorized as Bool
         let bool_type = Term::bool_type();
-        assert_eq!(TypeCategory::from_type_term(&bool_type), TypeCategory::Bool);
+        assert_eq!(TypeCategory::from_type_ref(bool_type.as_ref()), TypeCategory::Bool);
     }
 
     #[test]
@@ -711,7 +788,7 @@ mod tests {
 
         // Create a type term for the typeclass
         let typeclass_type = Term::typeclass(monoid_id);
-        let category = TypeCategory::from_type_term(&typeclass_type);
+        let category = TypeCategory::from_type_ref(typeclass_type.as_ref());
 
         // Should be categorized as Typeclass
         assert!(
@@ -721,7 +798,7 @@ mod tests {
 
         // Typeclass should match Ground types (conservatively, for potential instances)
         let bool_type = Term::bool_type();
-        let ground_cat = TypeCategory::from_type_term(&bool_type);
+        let ground_cat = TypeCategory::from_type_ref(bool_type.as_ref());
         assert!(
             category.could_match(&ground_cat),
             "Typeclass should potentially match Ground types"
@@ -738,7 +815,7 @@ mod tests {
         };
         let group_id = kctx.type_store.add_typeclass(&group);
         let group_type = Term::typeclass(group_id);
-        let group_cat = TypeCategory::from_type_term(&group_type);
+        let group_cat = TypeCategory::from_type_ref(group_type.as_ref());
         assert!(
             category.could_match(&group_cat),
             "Typeclass should match other Typeclass"
@@ -973,7 +1050,7 @@ mod tests {
         // Create dependent Pi type: Π(R: Ring). R -> R -> R
         let dependent_pi = kctx.parse_pi("R: Ring", "R -> R -> R");
 
-        let category = TypeCategory::from_type_term(&dependent_pi);
+        let category = TypeCategory::from_type_ref(dependent_pi.as_ref());
         assert_eq!(
             category,
             TypeCategory::Arrow,
