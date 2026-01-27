@@ -115,11 +115,9 @@ fn get_type_category(
 
             // Get the head's type
             let head_type = match head_atom {
-                Atom::FreeVariable(i) => {
-                    local_context
-                        .get_var_type(*i as usize)
-                        .expect("Variable not found in LocalContext")
-                }
+                Atom::FreeVariable(i) => local_context
+                    .get_var_type(*i as usize)
+                    .expect("Variable not found in LocalContext"),
                 Atom::Symbol(symbol) => kernel_context.symbol_table.get_type(*symbol),
                 Atom::BoundVariable(_) => return TypeCategory::Variable,
             };
@@ -143,8 +141,7 @@ fn get_type_category(
                     }
                     None => {
                         // Fall back to full computation
-                        let full_type =
-                            term.get_type_with_context(local_context, kernel_context);
+                        let full_type = term.get_type_with_context(local_context, kernel_context);
                         return TypeCategory::from_type_ref(full_type.as_ref());
                     }
                 }
@@ -621,7 +618,10 @@ mod tests {
 
         // Bool type should be categorized as Bool
         let bool_type = Term::bool_type();
-        assert_eq!(TypeCategory::from_type_ref(bool_type.as_ref()), TypeCategory::Bool);
+        assert_eq!(
+            TypeCategory::from_type_ref(bool_type.as_ref()),
+            TypeCategory::Bool
+        );
     }
 
     #[test]

@@ -176,7 +176,7 @@ impl<'a> Proof<'a> {
         let mut synthetic_definitions = Vec::new();
         for (ps_id, step) in &self.steps {
             let concrete_id = ConcreteStepId::ProofStep(*ps_id);
-            if step.rule.is_assumption() && !step.clause.has_any_variable() {
+            if step.rule.is_underlying_assumption() && !step.clause.has_any_variable() {
                 let Some(cs) = concrete_steps.remove(&concrete_id) else {
                     continue;
                 };
@@ -639,11 +639,6 @@ pub fn reconstruct_step<R: ProofResolver>(
                 None
             };
 
-            // Track simplification scopes - each occurrence needs its own scope
-            // because the same simp step might eliminate multiple literals with
-            // different substitutions.
-            let mut simp_scopes: Vec<(usize, Scope)> = Vec::new();
-
             // IMPORTANT: Process Eliminated traces FIRST, before Output traces.
             // This is necessary because:
             // 1. Eliminated traces unify long_scope with short_scope
@@ -733,41 +728,16 @@ pub fn reconstruct_step<R: ProofResolver>(
                                     )));
                                 }
                             }
-                            LiteralTrace::Eliminated {
-                                step: simp_id,
-                                flipped: composed_flip,
-                            } => {
-                                // Post-res literal was eliminated by simplification.
-                                // The composed_flip is the flip from long_clause[i] to the simp literal.
-                                // We need the flip from post_res to simp, which is composed_flip XOR res_flip.
-                                let simp_step_id = ProofStepId::Active(*simp_id);
-                                let simp_clause = resolver.get_clause(simp_step_id)?;
-                                if simp_clause.literals.len() == 1 {
-                                    // Create a new scope for this occurrence
-                                    let simp_scope = unifier.add_scope();
-                                    unifier.set_input_context(
-                                        simp_scope,
-                                        simp_clause.get_local_context(),
-                                    );
-                                    simp_scopes.push((*simp_id, simp_scope));
-                                    let simp_lit = &simp_clause.literals[0];
-
-                                    // XOR the composed flip with res_flip to get the flip
-                                    // from post_res to simp (same pattern as the Output case above)
-                                    let flip_to_use = *composed_flip != *res_flip;
-                                    if !unifier.unify_literals(
-                                        post_res_scope,
-                                        post_res_lit,
-                                        simp_scope,
-                                        simp_lit,
-                                        flip_to_use,
-                                    ) {
-                                        return Err(Error::internal(format!(
-                                                "failed to unify post-res literal {} with simp literal {} (flip={})",
-                                                post_res_lit, simp_lit, flip_to_use
-                                            )));
-                                    }
-                                }
+                            LiteralTrace::Eliminated { .. } => {
+                                // With simplification separated into its own step,
+                                // the resolution step's trace should never have Eliminated entries
+                                // for simplification. Only the resolution_trace has Eliminated entries
+                                // (for the resolved literal).
+                                return Err(Error::internal(
+                                    "unexpected Eliminated in resolution step trace \
+                                     (simplification should be a separate step)"
+                                        .to_string(),
+                                ));
                             }
                             LiteralTrace::Impossible => {}
                         }
@@ -791,15 +761,6 @@ pub fn reconstruct_step<R: ProofResolver>(
                     add_var_map(
                         resolver,
                         short_id,
-                        var_map,
-                        output_ctx.clone(),
-                        concrete_steps,
-                    );
-                } else if let Some((simp_id, _)) = simp_scopes.iter().find(|(_, s)| *s == scope) {
-                    let simp_step_id = ProofStepId::Active(*simp_id);
-                    add_var_map(
-                        resolver,
-                        simp_step_id,
                         var_map,
                         output_ctx.clone(),
                         concrete_steps,
@@ -841,6 +802,31 @@ pub fn reconstruct_step<R: ProofResolver>(
                     output_context.clone(),
                     concrete_steps,
                 );
+            }
+        }
+        Rule::Simplification(info) => {
+            // The trace maps from original step's clause literals to the simplified clause.
+            let (var_maps, output_context) = reconstruct_trace(
+                resolver,
+                &info.original.clause.literals,
+                info.original.clause.get_local_context(),
+                traces.as_slice(),
+                &step.clause,
+                conclusion_map,
+                conclusion_map_context,
+                concrete_steps,
+            )?;
+
+            // Recursively reconstruct the original (inner) step with each var_map.
+            for var_map in var_maps {
+                reconstruct_step(
+                    resolver,
+                    id,
+                    &info.original,
+                    var_map,
+                    &output_context,
+                    concrete_steps,
+                )?;
             }
         }
         rule => {
@@ -1067,89 +1053,42 @@ mod tests {
             final_step.clause
         );
 
-        // Get the resolution info
-        let resolution_info = match &final_step.rule {
-            Rule::Resolution(info) => info,
-            other => panic!("Expected Resolution rule, got {:?}", other),
+        // The final step should be a Simplification wrapping a Resolution
+        let simp_info = match &final_step.rule {
+            Rule::Simplification(info) => info,
+            other => panic!("Expected Simplification rule, got {:?}", other),
         };
 
-        // The trace should have entries for the long clause's literals
-        let trace = final_step.trace.as_ref().expect("Expected trace");
+        let resolution_info = match &simp_info.original.rule {
+            Rule::Resolution(info) => info,
+            other => panic!("Expected inner Resolution rule, got {:?}", other),
+        };
+
+        // The Simplification step should have a trace mapping from the resolution
+        // output to the simplified clause
+        let trace = final_step
+            .trace
+            .as_ref()
+            .expect("Expected trace on Simplification step");
         let traces = trace.as_slice();
 
-        // Here's the key invariant that should hold but doesn't due to the bug:
-        // The trace was built based on the POST-resolution clause, which has
-        // only ONE literal (g1(g2(c1)) = c0) - the first literal was eliminated by resolution.
-        //
-        // But ResolutionInfo only stores long_id, and reconstruct_step uses
-        // long_clause.literals which has TWO literals.
-        //
-        // The trace length should match what reconstruct_step expects (long_clause.literals.len())
-        // but the trace was built for post-resolution literals.
+        // The trace should have entries for the resolution step's clause literals
+        assert_eq!(
+            traces.len(),
+            simp_info.original.clause.literals.len(),
+            "Simplification trace should have same length as inner resolution clause literals"
+        );
 
-        // Verify ResolutionInfo now stores post-resolution literals
+        // Verify ResolutionInfo stores post-resolution literals
         assert!(
             !resolution_info.literals.is_empty(),
             "ResolutionInfo should store post-resolution literals"
         );
 
-        // The trace has entries for all the original literals
-        let long_clause_for_reconstruction = &active_set.get_step(resolution_info.long_id).clause;
-        let long_literal_count = long_clause_for_reconstruction.literals.len();
-        assert_eq!(
-            traces.len(),
-            long_literal_count,
-            "Trace should have same length as long clause literals"
-        );
-
-        // Find the simplification trace entry
-        let simp_trace_idx = traces
-            .iter()
-            .position(|t| matches!(t, LiteralTrace::Eliminated { step, .. } if *step == 1));
-        let simp_trace_idx = simp_trace_idx.expect("Expected to find simplification trace entry");
-
-        // Find the corresponding post-resolution literal using the resolution_trace.
-        // The resolution_trace maps original literal indices to post-resolution literal indices.
-        let post_res_index = match &resolution_info.resolution_trace[simp_trace_idx] {
-            LiteralTrace::Output { index, .. } => *index,
-            other => panic!(
-                "Expected Output trace for simplified literal, got {:?}",
-                other
-            ),
-        };
-        let post_res_literal = &resolution_info.literals[post_res_index];
-        let simp_literal = &simp_step.clause.literals[0];
-
-        // The post-resolution literal should be unifiable with the simplification literal.
-        // This is what our fix enables - we now use post-resolution literals for reconstruction.
-        use crate::kernel::variable_map::VariableMap;
-        let post_res_context = &resolution_info.context;
-        let simp_context = simp_step.clause.get_local_context();
-
-        let mut var_map = VariableMap::new();
-        let can_match_left = var_map.match_terms(
-            simp_literal.left.as_ref(),
-            post_res_literal.left.as_ref(),
-            simp_context,
-            post_res_context,
-            &kctx,
-        );
-        let can_match_right = can_match_left
-            && var_map.match_terms(
-                simp_literal.right.as_ref(),
-                post_res_literal.right.as_ref(),
-                simp_context,
-                post_res_context,
-                &kctx,
-            );
-
+        // The simplifying clause should be referenced in the simplification info
         assert!(
-            can_match_right,
-            "Post-resolution literal should be unifiable with simplification literal.\n\
-             Post-resolution literal: {}\n\
-             Simplification literal: {}\n\
-             This verifies the fix: ResolutionInfo now stores post-resolution literals.",
-            post_res_literal, simp_literal
+            !simp_info.simplifying_ids.is_empty(),
+            "Simplification should reference simplifying clause IDs"
         );
     }
 
@@ -1226,17 +1165,25 @@ mod tests {
             final_step.clause
         );
 
-        // Get the resolution info
-        let resolution_info = match &final_step.rule {
-            Rule::Resolution(info) => info,
-            other => panic!("Expected Resolution rule, got {:?}", other),
+        // The final step should be a Simplification wrapping a Resolution
+        let simp_info = match &final_step.rule {
+            Rule::Simplification(info) => info,
+            other => panic!("Expected Simplification rule, got {:?}", other),
         };
 
-        // The trace should have a simplification entry with the flipped value set
-        let trace = final_step.trace.as_ref().expect("Expected trace");
+        let resolution_info = match &simp_info.original.rule {
+            Rule::Resolution(info) => info,
+            other => panic!("Expected inner Resolution rule, got {:?}", other),
+        };
+
+        // The Simplification step should have a trace
+        let trace = final_step
+            .trace
+            .as_ref()
+            .expect("Expected trace on Simplification step");
         let traces = trace.as_slice();
 
-        // Find the simplification trace entry (step 1)
+        // Find the simplification trace entry (step 1) in the Simplification step's trace
         let simp_trace = traces
             .iter()
             .find(|t| matches!(t, LiteralTrace::Eliminated { step: 1, .. }));
@@ -1249,12 +1196,10 @@ mod tests {
         let simp_trace = simp_trace.unwrap();
         if let LiteralTrace::Eliminated { step, flipped } = simp_trace {
             assert_eq!(*step, 1, "Simplification should reference step 1");
-            // The flipped value should be correctly tracked (false in this case because
-            // g1(x0, g2(x0)) matches g1(c0, g2(c0)) without flipping)
             assert!(!flipped, "The simplification literal should not be flipped");
         }
 
-        // Verify the post-resolution literal exists
+        // Verify the post-resolution literal exists in the inner resolution info
         assert!(
             !resolution_info.literals.is_empty(),
             "ResolutionInfo should store post-resolution literals"

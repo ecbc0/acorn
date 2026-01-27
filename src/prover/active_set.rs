@@ -22,7 +22,7 @@ use crate::kernel::variable_map::VariableMap;
 use crate::kernel::{EqualityGraph, StepId};
 use crate::proof_step::{
     BooleanReductionInfo, EqualityFactoringInfo, EqualityResolutionInfo, ExtensionalityInfo,
-    InjectivityInfo, ProofStep, ProofStepId, Rule, Truthiness,
+    InjectivityInfo, ProofStep, ProofStepId, Rule, SimplificationInfo, Truthiness,
 };
 
 /// The ActiveSet stores a bunch of clauses that are indexed for various efficient lookups.
@@ -1225,6 +1225,9 @@ impl ActiveSet {
             }
         }
 
+        // Clone the literals before consuming them, so we can restore the original step
+        // if simplification happens (the original step is stored inline in Rule::Simplification).
+        let original_literals = step.clause.literals.clone();
         for literal in std::mem::take(&mut step.clause.literals) {
             match self.evaluate_literal(&literal, &local_context, kernel_context) {
                 Some((true, _)) => {
@@ -1294,10 +1297,9 @@ impl ActiveSet {
             return Some(step);
         }
 
-        let (clause, trace) = Clause::new_composing_traces(
+        let (clause, simp_trace) = Clause::new_with_trace(
             output_literals,
-            step.trace.clone(),
-            &ClauseTrace::new(incremental_trace),
+            ClauseTrace::new(incremental_trace),
             step.clause.get_local_context(),
         );
         if clause.is_tautology() {
@@ -1306,7 +1308,35 @@ impl ActiveSet {
         if self.is_known_long_clause(&clause) {
             return None;
         }
-        let result = ProofStep::simplified(step, &new_rules, clause, trace);
+
+        // Compute combined truthiness, proof_size, depth from simplifying rules
+        let mut truthiness = step.truthiness;
+        let mut proof_size = step.proof_size;
+        let mut depth = step.depth;
+        let simplifying_ids: Vec<usize> = new_rules
+            .iter()
+            .map(|(id, short_step)| {
+                truthiness = truthiness.combine(short_step.truthiness);
+                proof_size += short_step.proof_size;
+                depth = u32::max(depth, short_step.depth);
+                *id
+            })
+            .collect();
+
+        // Restore the original literals so the inline step has its complete clause
+        step.clause.literals = original_literals;
+
+        let result = ProofStep {
+            clause,
+            truthiness,
+            rule: Rule::Simplification(SimplificationInfo {
+                original: Box::new(step),
+                simplifying_ids,
+            }),
+            proof_size,
+            depth,
+            trace: Some(simp_trace),
+        };
 
         // Validate the simplified step when the validate feature is enabled
         #[cfg(any(test, feature = "validate"))]

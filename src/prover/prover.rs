@@ -132,11 +132,16 @@ impl Prover {
                     answer.push(("clause".to_string(), ProofStepId::Passive(id)));
                 }
             }
+            Rule::Simplification(info) => {
+                // Include the original step's descriptive dependencies
+                answer.extend(self.descriptive_dependencies(&info.original));
+                // Add the simplifying clauses
+                for &id in &info.simplifying_ids {
+                    answer.push(("simplification".to_string(), ProofStepId::Active(id)));
+                }
+            }
         }
 
-        for rule in &step.simplification_rules {
-            answer.push(("simplification".to_string(), ProofStepId::Active(*rule)));
-        }
         answer
     }
 

@@ -10,7 +10,7 @@ use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::Term;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::variable_map::VariableMap;
-use crate::proof_step::ProofStep;
+use crate::proof_step::{ProofStep, Rule, SimplificationInfo};
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
@@ -101,8 +101,7 @@ fn make_simplified(
     caller_flipped: bool,
     _index: usize,
     literals: Vec<Literal>,
-    trace: Option<ClauseTrace>,
-) -> Option<(Clause, Option<ClauseTrace>)> {
+) -> Option<(Clause, ClauseTrace)> {
     // Note: When caller_flipped is true, left and right have already been swapped
     // by the caller. So any flip we compute here is relative to the swapped order.
     // The final flip must be XORed with caller_flipped to get the flip relative
@@ -162,12 +161,12 @@ fn make_simplified(
             new_literals.push(literal);
         }
     }
-    Some(Clause::new_composing_traces(
+    let (clause, simp_trace) = Clause::new_with_trace(
         new_literals,
-        trace,
-        &ClauseTrace::new(incremental_trace),
+        ClauseTrace::new(incremental_trace),
         passive_context,
-    ))
+    );
+    Some((clause, simp_trace))
 }
 
 impl PassiveSet {
@@ -334,7 +333,7 @@ impl PassiveSet {
 
             // It matches. So we're definitely removing the existing clause.
             let passive_context = step.clause.get_local_context().clone();
-            let (mut step, score) = self.clauses[clause_id].take().unwrap();
+            let (step, score) = self.clauses[clause_id].take().unwrap();
             self.queue.remove(&(score, clause_id));
 
             if positive == literal_positive {
@@ -342,7 +341,7 @@ impl PassiveSet {
                 // So it's just redundant. We can forget about it.
                 continue;
             }
-            let Some((new_clause, traces)) = make_simplified(
+            let Some((new_clause, simp_trace)) = make_simplified(
                 activated_id,
                 local_context,
                 &passive_context,
@@ -352,8 +351,7 @@ impl PassiveSet {
                 positive,
                 flipped,
                 literal_index,
-                std::mem::take(&mut step.clause.literals),
-                std::mem::take(&mut step.trace),
+                step.clause.literals.clone(),
             ) else {
                 continue;
             };
@@ -379,8 +377,21 @@ impl PassiveSet {
                 }
             }
 
-            let short_steps = &[(activated_id, activated_step)];
-            let simplified = ProofStep::simplified(step, short_steps, new_clause, traces);
+            let truthiness = step.truthiness.combine(activated_step.truthiness);
+            let proof_size = step.proof_size + activated_step.proof_size;
+            let depth = u32::max(step.depth, activated_step.depth);
+
+            let simplified = ProofStep {
+                clause: new_clause,
+                truthiness,
+                rule: Rule::Simplification(SimplificationInfo {
+                    original: Box::new(step),
+                    simplifying_ids: vec![activated_id],
+                }),
+                proof_size,
+                depth,
+                trace: Some(simp_trace),
+            };
 
             // Validate the simplified step when the validate feature is enabled
             // Include the activating step as a pending step since it's not in the active set yet

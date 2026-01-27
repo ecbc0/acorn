@@ -35,8 +35,8 @@ impl Features {
             is_counterfactual: step.truthiness == Truthiness::Counterfactual,
             is_hypothetical: step.truthiness == Truthiness::Hypothetical,
             is_factual: step.truthiness == Truthiness::Factual,
-            is_assumption: step.rule.is_assumption(),
-            is_negated_goal: step.rule.is_negated_goal(),
+            is_assumption: step.rule.is_underlying_assumption(),
+            is_negated_goal: step.rule.is_underlying_negated_goal(),
             proof_size: step.proof_size as i32,
             depth: step.depth as i32,
         }

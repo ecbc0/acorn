@@ -285,6 +285,16 @@ pub struct ExtensionalityInfo {
     pub context: LocalContext,
 }
 
+/// Information about a simplification step.
+/// The original step is stored inline (not referenced by ID) because it was never activated.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SimplificationInfo {
+    /// The original proof step before simplification.
+    pub original: Box<ProofStep>,
+    /// Active IDs of clauses used for this simplification.
+    pub simplifying_ids: Vec<usize>,
+}
+
 /// The rules that can generate new clauses, along with the clause ids used to generate.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Rule {
@@ -307,6 +317,10 @@ pub enum Rule {
 
     /// A contradiction between a number of passive clauses.
     PassiveContradiction(u32),
+
+    /// Simplification of a proof step using existing single-literal clauses.
+    /// Can nest: a Simplification can wrap another Simplification.
+    Simplification(SimplificationInfo),
 }
 
 impl Rule {
@@ -339,6 +353,11 @@ impl Rule {
                 answer
             }
             Rule::PassiveContradiction(n) => (0..*n).map(|id| ProofStepId::Passive(id)).collect(),
+            Rule::Simplification(info) => info
+                .simplifying_ids
+                .iter()
+                .map(|id| ProofStepId::Active(*id))
+                .collect(),
         }
     }
 
@@ -356,6 +375,7 @@ impl Rule {
             Rule::Specialization(_) => "Specialization",
             Rule::MultipleRewrite(..) => "Multiple Rewrite",
             Rule::PassiveContradiction(..) => "Passive Contradiction",
+            Rule::Simplification(..) => "Simplification",
         }
     }
 
@@ -370,6 +390,24 @@ impl Rule {
     pub fn is_negated_goal(&self) -> bool {
         match self {
             Rule::Assumption(info) => matches!(info.source.source_type, SourceType::NegatedGoal),
+            _ => false,
+        }
+    }
+
+    /// Whether this rule is, or wraps, an assumption (following through Simplification layers).
+    pub fn is_underlying_assumption(&self) -> bool {
+        match self {
+            Rule::Assumption(_) => true,
+            Rule::Simplification(info) => info.original.rule.is_underlying_assumption(),
+            _ => false,
+        }
+    }
+
+    /// Whether this rule is, or wraps, a negated goal (following through Simplification layers).
+    pub fn is_underlying_negated_goal(&self) -> bool {
+        match self {
+            Rule::Assumption(info) => matches!(info.source.source_type, SourceType::NegatedGoal),
+            Rule::Simplification(info) => info.original.rule.is_underlying_negated_goal(),
             _ => false,
         }
     }
@@ -389,9 +427,6 @@ pub struct ProofStep {
 
     /// How this clause was generated.
     pub rule: Rule,
-
-    /// Clauses that we used for additional simplification.
-    pub simplification_rules: Vec<usize>,
 
     /// The number of proof steps that this proof step depends on.
     /// The size includes this proof step itself, but does not count assumptions and definitions.
@@ -451,7 +486,7 @@ impl ProofStep {
             clause,
             truthiness,
             rule,
-            simplification_rules: vec![],
+
             proof_size: 0,
             depth: 0,
             trace,
@@ -474,7 +509,7 @@ impl ProofStep {
             clause,
             truthiness: activated_step.truthiness,
             rule,
-            simplification_rules: vec![],
+
             proof_size: activated_step.proof_size + 1,
             depth,
             trace: Some(trace),
@@ -497,7 +532,7 @@ impl ProofStep {
             clause,
             truthiness: pattern_step.truthiness,
             rule: Rule::Specialization(info),
-            simplification_rules: vec![],
+
             proof_size: pattern_step.proof_size + 1,
             depth: pattern_step.depth,
             trace: Some(trace),
@@ -545,40 +580,10 @@ impl ProofStep {
             clause,
             truthiness,
             rule,
-            simplification_rules: vec![],
+
             proof_size,
             depth,
             trace: None,
-        }
-    }
-
-    /// Create a replacement for this clause that has extra simplification rules.
-    /// The long step doesn't have an id because it isn't activated.
-    pub fn simplified(
-        long_step: ProofStep,
-        short_steps: &[(usize, &ProofStep)],
-        clause: Clause,
-        trace: Option<ClauseTrace>,
-    ) -> ProofStep {
-        let mut truthiness = long_step.truthiness;
-        let mut simplification_rules = long_step.simplification_rules;
-        let mut proof_size = long_step.proof_size;
-        let mut depth = long_step.depth;
-        for (short_id, short_step) in short_steps {
-            truthiness = truthiness.combine(short_step.truthiness);
-            simplification_rules.push(*short_id);
-            proof_size += short_step.proof_size;
-            depth = u32::max(depth, short_step.depth);
-        }
-
-        ProofStep {
-            clause,
-            truthiness,
-            rule: long_step.rule,
-            simplification_rules,
-            proof_size,
-            depth,
-            trace,
         }
     }
 
@@ -660,7 +665,7 @@ impl ProofStep {
             clause,
             truthiness,
             rule,
-            simplification_rules: vec![],
+
             proof_size,
             depth,
             trace: Some(trace),
@@ -686,7 +691,7 @@ impl ProofStep {
             clause: Clause::impossible(),
             truthiness,
             rule,
-            simplification_rules: vec![],
+
             proof_size: 0,
             depth,
             trace: None,
@@ -709,7 +714,7 @@ impl ProofStep {
             clause: Clause::impossible(),
             truthiness,
             rule,
-            simplification_rules: vec![],
+
             proof_size,
             depth,
             trace: None,
@@ -751,22 +756,34 @@ impl ProofStep {
             literals,
             context,
         });
+        let trace = Some(ClauseTrace::new(
+            clause
+                .literals
+                .iter()
+                .enumerate()
+                .map(|(i, _)| LiteralTrace::Output {
+                    index: i,
+                    flipped: false,
+                })
+                .collect(),
+        ));
         ProofStep {
             clause,
             truthiness,
             rule,
-            simplification_rules: vec![],
+
             proof_size: 0,
             depth: 0,
-            trace: None,
+            trace,
         }
     }
 
     /// The ids of the other clauses that this clause depends on.
     pub fn dependencies(&self) -> Vec<ProofStepId> {
         let mut answer = self.rule.premises();
-        for rule in &self.simplification_rules {
-            answer.push(ProofStepId::Active(*rule));
+        if let Rule::Simplification(info) = &self.rule {
+            // Include the inline original step's dependencies recursively
+            answer.extend(info.original.dependencies());
         }
         answer
     }
@@ -782,11 +799,19 @@ impl ProofStep {
             })
             .collect();
         if include_inspiration {
-            if let Rule::Specialization(info) = &self.rule {
-                answer.push(info.inspiration_id);
-            }
+            self.collect_inspiration_ids(&mut answer);
         }
         answer
+    }
+
+    /// Collects inspiration IDs from this step and any inline original steps.
+    fn collect_inspiration_ids(&self, answer: &mut Vec<usize>) {
+        if let Rule::Specialization(info) = &self.rule {
+            answer.push(info.inspiration_id);
+        }
+        if let Rule::Simplification(info) = &self.rule {
+            info.original.collect_inspiration_ids(answer);
+        }
     }
 
     pub fn depends_on_active(&self, id: usize) -> bool {
