@@ -17,7 +17,6 @@ use crate::kernel::pdt::LiteralSet;
 use crate::kernel::term::{PathStep, Term};
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::unifier::{Scope, Unifier};
-#[cfg(any(test, feature = "validate"))]
 use crate::kernel::variable_map::VariableMap;
 use crate::kernel::{EqualityGraph, StepId};
 use crate::proof_step::{
@@ -434,8 +433,17 @@ impl ActiveSet {
             }
         }
 
-        // Gather the output data
-        let context = unifier.take_output_context();
+        // Gather the output data including variable maps for reconstruction
+        let (all_maps, context) = unifier.into_maps_with_context();
+        let mut short_var_map = VariableMap::new();
+        let mut long_var_map = VariableMap::new();
+        for (scope, map) in all_maps {
+            if scope == Scope::LEFT {
+                short_var_map = map;
+            } else if scope == Scope::RIGHT {
+                long_var_map = map;
+            }
+        }
 
         // Store post-resolution literals and trace for reconstruction.
         // These are needed because simplification operates on post-resolution literals,
@@ -484,6 +492,8 @@ impl ActiveSet {
             resolution_literals,
             resolution_context,
             resolution_trace,
+            short_var_map,
+            long_var_map,
         );
         step.trace = Some(trace);
         Some(step)
@@ -655,6 +665,14 @@ impl ActiveSet {
                         continue;
                     }
 
+                    // Extract the pattern's variable map for reconstruction
+                    let (all_maps, _) = unifier.into_maps_with_context();
+                    let pattern_var_map = all_maps
+                        .into_iter()
+                        .find(|(scope, _)| *scope == Scope::LEFT)
+                        .map(|(_, map)| map)
+                        .unwrap_or_else(VariableMap::new);
+
                     let ps = ProofStep::rewrite(
                         rewrite.pattern_id,
                         &pattern_step,
@@ -665,6 +683,7 @@ impl ActiveSet {
                         rewrite.forwards,
                         &rewrite.term,
                         &rewrite.context,
+                        pattern_var_map,
                     );
 
                     // Debug: validate rewrite step types
@@ -757,6 +776,14 @@ impl ActiveSet {
                 let new_subterm = unifier.apply(Scope::LEFT, t);
                 let new_subterm_context = unifier.output_context().clone();
 
+                // Extract the pattern's variable map for reconstruction
+                let (all_maps, _) = unifier.into_maps_with_context();
+                let pattern_var_map = all_maps
+                    .into_iter()
+                    .find(|(scope, _)| *scope == Scope::LEFT)
+                    .map(|(_, map)| map)
+                    .unwrap_or_else(VariableMap::new);
+
                 for location in &subterm_info.locations {
                     if location.target_id == pattern_id {
                         // Don't rewrite a literal with itself
@@ -782,6 +809,7 @@ impl ActiveSet {
                         forwards,
                         &new_subterm,
                         &new_subterm_context,
+                        pattern_var_map.clone(),
                     );
                     output.push(ps);
                 }
@@ -827,7 +855,7 @@ impl ActiveSet {
         let original_context = clause.get_local_context();
 
         // Use the new method to find all possible equality resolutions
-        for (index, new_literals, flipped, context) in
+        for (index, new_literals, flipped, context, input_var_map) in
             inference::find_equality_resolutions(clause, kernel_context)
         {
             // Check inhabitedness for eliminated variables.
@@ -878,6 +906,7 @@ impl ActiveSet {
                         literals,
                         context,
                         flipped,
+                        input_var_map,
                     }),
                     new_clause,
                     traces,
@@ -1046,7 +1075,7 @@ impl ActiveSet {
         // Use the clause's helper method to find all factorings
         let factorings = inference::find_equality_factorings(clause, kernel_context);
 
-        for (literals, ef_trace, output_context) in factorings {
+        for (literals, ef_trace, output_context, input_var_map) in factorings {
             // Capture the literals before normalization
             let literals_before_normalization = literals.clone();
 
@@ -1062,6 +1091,7 @@ impl ActiveSet {
                     literals: literals_before_normalization,
                     context: output_context,
                     ef_trace,
+                    input_var_map,
                 }),
                 new_clause,
                 normalization_traces,
@@ -1326,12 +1356,16 @@ impl ActiveSet {
         // Restore the original literals so the inline step has its complete clause
         step.clause.literals = original_literals;
 
+        // TODO: Collect actual var_maps from find_generalization for proper reconstruction
+        let simplifying_var_maps = vec![VariableMap::new(); simplifying_ids.len()];
+
         let result = ProofStep {
             clause,
             truthiness,
             rule: Rule::Simplification(SimplificationInfo {
                 original: Box::new(step),
                 simplifying_ids,
+                simplifying_var_maps,
             }),
             proof_size,
             depth,

@@ -13,6 +13,7 @@ use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::variable_map::VariableMap;
 use crate::kernel::EqualityGraphContradiction;
 use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::project::Project;
@@ -347,12 +348,15 @@ impl Prover {
                 continue;
             }
             new_clauses.insert(clause.clone());
+            // The clause is concrete (no variables), so use empty var_map and context
             let step = ProofStep::specialization(
                 step.source.pattern_id.get(),
                 inspiration_id,
                 rewrite_step,
                 clause,
                 traces,
+                VariableMap::new(),
+                LocalContext::empty(),
             );
 
             // Validate specialization steps

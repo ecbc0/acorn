@@ -190,6 +190,31 @@ impl VariableMap {
         self.map.push(None);
     }
 
+    /// Compose this map with another.
+    /// self maps: A vars → terms with B vars (B types in self_context)
+    /// other maps: B vars → terms with C vars (C types in other_context)
+    /// Result: A vars → terms with C vars
+    ///
+    /// This is used during proof reconstruction to compose:
+    /// - premise_var_map (premise vars → output vars) with
+    /// - conclusion_map (output vars → concrete terms)
+    /// to get premise vars → concrete terms.
+    pub fn compose(
+        &self,
+        self_context: &LocalContext,
+        other: &VariableMap,
+        other_context: &LocalContext,
+        kernel_context: &KernelContext,
+    ) -> VariableMap {
+        let mut result = VariableMap::new();
+        for (var_id, term) in self.iter() {
+            let specialized =
+                other.specialize_term(term.as_ref(), self_context, other_context, kernel_context);
+            result.set(var_id as AtomId, specialized);
+        }
+        result
+    }
+
     /// This does not normalize.
     /// Unmapped variables are kept as-is.
     /// input_context is for the input term, output_context is for replacement terms in the map.

@@ -7,6 +7,7 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::unifier::{Scope, Unifier};
+use crate::kernel::variable_map::VariableMap;
 use crate::proof_step::{EFLiteralTrace, EFTermTrace};
 
 /// Finds all possible equality resolutions for a clause.
@@ -19,10 +20,11 @@ use crate::proof_step::{EFLiteralTrace, EFTermTrace};
 /// - The resulting literals after applying the unifier
 /// - The flipped flags for each literal
 /// - The output_context containing types of variables in the resulting literals
+/// - The input_var_map mapping input clause variables to output terms
 pub fn find_equality_resolutions(
     clause: &Clause,
     kernel_context: &KernelContext,
-) -> Vec<(usize, Vec<Literal>, Vec<bool>, LocalContext)> {
+) -> Vec<(usize, Vec<Literal>, Vec<bool>, LocalContext, VariableMap)> {
     let mut results = vec![];
 
     for i in 0..clause.literals.len() {
@@ -50,12 +52,18 @@ pub fn find_equality_resolutions(
             }
         }
 
-        // Get the output context from the unifier
-        let output_context = unifier.take_output_context();
+        // Get the output context and variable map from the unifier
+        let (all_maps, output_context) = unifier.into_maps_with_context();
+        let mut input_var_map = VariableMap::new();
+        for (scope, map) in all_maps {
+            if scope == Scope::LEFT {
+                input_var_map = map;
+            }
+        }
 
         // Return the raw literals without checking for tautology
         // The caller will handle that after normalization
-        results.push((i, new_literals, flipped, output_context));
+        results.push((i, new_literals, flipped, output_context, input_var_map));
     }
 
     results
@@ -66,7 +74,7 @@ pub fn find_equality_resolutions(
 pub fn equality_resolutions(clause: &Clause, kernel_context: &KernelContext) -> Vec<Clause> {
     find_equality_resolutions(clause, kernel_context)
         .into_iter()
-        .map(|(_, literals, _, context)| Clause::new(literals, &context))
+        .map(|(_, literals, _, context, _)| Clause::new(literals, &context))
         .filter(|c| !c.is_tautology())
         .collect()
 }
@@ -76,14 +84,15 @@ pub fn equality_resolutions(clause: &Clause, kernel_context: &KernelContext) -> 
 /// Equality factoring applies when a clause has two positive literals that can
 /// be partially unified. It creates a new clause with an additional negative literal.
 ///
-/// Returns a vector of (literals, ef_trace, output_context) tuples.
+/// Returns a vector of (literals, ef_trace, output_context, input_var_map) tuples.
 /// The literals are the result of factoring before normalization.
 /// The ef_trace tracks how the literals were transformed.
 /// The output_context contains types for variables in the resulting literals.
+/// The input_var_map maps input clause variables to output terms.
 pub fn find_equality_factorings(
     clause: &Clause,
     kernel_context: &KernelContext,
-) -> Vec<(Vec<Literal>, Vec<EFLiteralTrace>, LocalContext)> {
+) -> Vec<(Vec<Literal>, Vec<EFLiteralTrace>, LocalContext, VariableMap)> {
     let mut results = vec![];
 
     // The first literal must be positive for equality factoring
@@ -161,10 +170,16 @@ pub fn find_equality_factorings(
                     }
                 }
 
-                // Get the output context from the unifier
-                let output_context = unifier.take_output_context();
+                // Get the output context and variable map from the unifier
+                let (all_maps, output_context) = unifier.into_maps_with_context();
+                let mut input_var_map = VariableMap::new();
+                for (scope, map) in all_maps {
+                    if scope == Scope::LEFT {
+                        input_var_map = map;
+                    }
+                }
 
-                results.push((literals, ef_trace, output_context));
+                results.push((literals, ef_trace, output_context, input_var_map));
             }
         }
     }
@@ -181,7 +196,7 @@ pub fn equality_factorings(
 ) -> Vec<Clause> {
     find_equality_factorings(clause, kernel_context)
         .into_iter()
-        .map(|(literals, _, output_context)| Clause::new(literals, &output_context))
+        .map(|(literals, _, output_context, _)| Clause::new(literals, &output_context))
         .filter(|c| !c.is_tautology())
         .collect()
 }

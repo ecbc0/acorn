@@ -9,6 +9,7 @@ use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::{PathStep, Term};
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
+use crate::kernel::variable_map::VariableMap;
 
 /// The different sorts of proof steps.
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
@@ -86,6 +87,12 @@ pub struct ResolutionInfo {
     /// - Eliminated { step: short_id } for the resolved literal
     /// - Output { index } for literals kept in post-resolution
     pub resolution_trace: Vec<LiteralTrace>,
+
+    /// Maps short_clause variable IDs to terms in the output scope (context).
+    pub short_var_map: VariableMap,
+
+    /// Maps long_clause variable IDs to terms in the output scope (context).
+    pub long_var_map: VariableMap,
 }
 
 /// Information about a specialization.
@@ -97,6 +104,12 @@ pub struct SpecializationInfo {
     /// The inspiration isn't mathematically necessary for the specialization to be true,
     /// but we used it to decide which substitutions to make.
     pub inspiration_id: usize,
+
+    /// Maps pattern_clause variable IDs to terms in the output scope (output_context).
+    pub pattern_var_map: VariableMap,
+
+    /// The context for variables in the pattern_var_map's replacement terms.
+    pub output_context: LocalContext,
 }
 
 /// Information about a rewrite inference.
@@ -131,6 +144,10 @@ pub struct RewriteInfo {
 
     /// Whether the literal was flipped during normalization
     pub flipped: bool,
+
+    /// Maps pattern_clause variable IDs to terms in the output scope (context).
+    /// The target is concrete (no variables) so it doesn't need a var_map.
+    pub pattern_var_map: VariableMap,
 }
 
 /// Information about a contradiction found by rewriting one side of an inequality into the other.
@@ -213,6 +230,9 @@ pub struct EqualityFactoringInfo {
 
     /// Parallel to literals. Tracks how we got them from the input clause.
     pub ef_trace: Vec<EFLiteralTrace>,
+
+    /// Maps input clause variable IDs to terms in the output scope (context).
+    pub input_var_map: VariableMap,
 }
 
 /// Information about an equality resolution inference.
@@ -232,6 +252,9 @@ pub struct EqualityResolutionInfo {
 
     // Parallel to literals. Tracks whether they were flipped or not.
     pub flipped: Vec<bool>,
+
+    /// Maps input clause variable IDs to terms in the output scope (context).
+    pub input_var_map: VariableMap,
 }
 
 /// Information about an injectivity inference.
@@ -293,6 +316,9 @@ pub struct SimplificationInfo {
     pub original: Box<ProofStep>,
     /// Active IDs of clauses used for this simplification.
     pub simplifying_ids: Vec<usize>,
+    /// Parallel to simplifying_ids. Maps each simplifying clause's variables to terms
+    /// in the output scope (step.clause.context).
+    pub simplifying_var_maps: Vec<VariableMap>,
 }
 
 /// The rules that can generate new clauses, along with the clause ids used to generate.
@@ -523,10 +549,14 @@ impl ProofStep {
         pattern_step: &ProofStep,
         clause: Clause,
         trace: ClauseTrace,
+        pattern_var_map: VariableMap,
+        output_context: LocalContext,
     ) -> ProofStep {
         let info = SpecializationInfo {
             pattern_id,
             inspiration_id,
+            pattern_var_map,
+            output_context,
         };
         ProofStep {
             clause,
@@ -549,6 +579,8 @@ impl ProofStep {
         literals: Vec<Literal>,
         context: LocalContext,
         resolution_trace: Vec<LiteralTrace>,
+        short_var_map: VariableMap,
+        long_var_map: VariableMap,
     ) -> ProofStep {
         let rule = Rule::Resolution(ResolutionInfo {
             short_id,
@@ -556,6 +588,8 @@ impl ProofStep {
             literals,
             context,
             resolution_trace,
+            short_var_map,
+            long_var_map,
         });
 
         let truthiness = short_step.truthiness.combine(long_step.truthiness);
@@ -606,6 +640,7 @@ impl ProofStep {
         forwards: bool,
         new_subterm: &Term,
         new_subterm_context: &LocalContext,
+        pattern_var_map: VariableMap,
     ) -> ProofStep {
         assert_eq!(target_step.clause.literals.len(), 1);
 
@@ -650,6 +685,7 @@ impl ProofStep {
             rewritten,
             context: rewritten_context,
             flipped,
+            pattern_var_map,
         });
 
         let proof_size = pattern_step.proof_size + target_step.proof_size + 1;
@@ -888,7 +924,8 @@ mod tests {
             &[],   // path - at root
             false, // forwards=false (backwards rewrite)
             &new_subterm,
-            &pattern_context, // context for new_subterm's variables
+            &pattern_context,   // context for new_subterm's variables
+            VariableMap::new(), // mock test - empty var map
         );
 
         // The clause should have all variables in its context

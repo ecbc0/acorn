@@ -381,12 +381,14 @@ impl PassiveSet {
             let proof_size = step.proof_size + activated_step.proof_size;
             let depth = u32::max(step.depth, activated_step.depth);
 
+            // TODO: Collect actual var_map from forward simplification for proper reconstruction
             let simplified = ProofStep {
                 clause: new_clause,
                 truthiness,
                 rule: Rule::Simplification(SimplificationInfo {
                     original: Box::new(step),
                     simplifying_ids: vec![activated_id],
+                    simplifying_var_maps: vec![VariableMap::new()],
                 }),
                 proof_size,
                 depth,
