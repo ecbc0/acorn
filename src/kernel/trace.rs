@@ -145,7 +145,8 @@ mod tests {
         let literals: Vec<Literal> = s.split(" or ").map(|x| Literal::parse(x.trim())).collect();
         let literals_context = clause.get_local_context().clone();
 
-        let (alt_clause, trace) = Clause::normalize_with_trace(literals.clone(), &literals_context);
+        let (alt_clause, trace, _var_ids) =
+            Clause::normalize_with_trace(literals.clone(), &literals_context);
 
         assert_eq!(clause, &alt_clause);
 

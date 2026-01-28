@@ -10,7 +10,7 @@ use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::Term;
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::variable_map::VariableMap;
-use crate::proof_step::{ProofStep, Rule, SimplificationInfo};
+use crate::proof_step::{PremiseMap, ProofStep, Rule, SimplificationInfo};
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
@@ -161,7 +161,7 @@ fn make_simplified(
             new_literals.push(literal);
         }
     }
-    let (clause, simp_trace) = Clause::new_with_trace(
+    let (clause, simp_trace, _var_ids) = Clause::new_with_trace(
         new_literals,
         ClauseTrace::new(incremental_trace),
         passive_context,
@@ -388,11 +388,11 @@ impl PassiveSet {
                 rule: Rule::Simplification(SimplificationInfo {
                     original: Box::new(step),
                     simplifying_ids: vec![activated_id],
-                    simplifying_var_maps: vec![VariableMap::new()],
                 }),
                 proof_size,
                 depth,
                 trace: Some(simp_trace),
+                premise_map: PremiseMap::empty(),
             };
 
             // Validate the simplified step when the validate feature is enabled

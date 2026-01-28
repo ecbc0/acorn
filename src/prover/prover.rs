@@ -13,11 +13,10 @@ use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::variable_map::VariableMap;
 use crate::kernel::EqualityGraphContradiction;
 use crate::normalizer::{NormalizedGoal, Normalizer};
 use crate::project::Project;
-use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
+use crate::proof_step::{PremiseMap, ProofStep, ProofStepId, Rule, Truthiness};
 use crate::prover::{Outcome, ProverMode};
 
 /// A traditional saturation prover. Uses just a bit of AI for scoring.
@@ -340,7 +339,7 @@ impl Prover {
             // specific equality used by this rewrite.
             let (literal, flipped) =
                 Literal::new_with_flip(true, step.left_term().clone(), step.right_term().clone());
-            let (clause, traces) =
+            let (clause, traces, _var_ids) =
                 Clause::from_literal_traced(literal, flipped, &LocalContext::empty());
             if new_clauses.contains(&clause) {
                 // We already created a step for this equality
@@ -355,8 +354,7 @@ impl Prover {
                 rewrite_step,
                 clause,
                 traces,
-                VariableMap::new(),
-                LocalContext::empty(),
+                PremiseMap::empty(),
             );
 
             // Validate specialization steps

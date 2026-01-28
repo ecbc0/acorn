@@ -21,7 +21,7 @@ use crate::kernel::variable_map::VariableMap;
 use crate::kernel::{EqualityGraph, StepId};
 use crate::proof_step::{
     BooleanReductionInfo, EqualityFactoringInfo, EqualityResolutionInfo, ExtensionalityInfo,
-    InjectivityInfo, ProofStep, ProofStepId, Rule, SimplificationInfo, Truthiness,
+    InjectivityInfo, PremiseMap, ProofStep, ProofStepId, Rule, SimplificationInfo, Truthiness,
 };
 
 /// The ActiveSet stores a bunch of clauses that are indexed for various efficient lookups.
@@ -452,8 +452,15 @@ impl ActiveSet {
         let resolution_context = context.clone();
         let resolution_trace = incremental_trace.clone();
 
-        let (clause, trace) =
+        let (clause, trace, var_ids) =
             Clause::new_with_trace(literals, ClauseTrace::new(incremental_trace), &context);
+
+        // Store raw inference var maps and normalization trace for reconstruction
+        let premise_map = PremiseMap::new(
+            vec![short_var_map.clone(), long_var_map.clone()],
+            var_ids.clone(),
+            context.clone(),
+        );
 
         // Debug: validate resolution output before creating step
         // Note: use clause.get_local_context() because literals have been renormalized
@@ -492,8 +499,7 @@ impl ActiveSet {
             resolution_literals,
             resolution_context,
             resolution_trace,
-            short_var_map,
-            long_var_map,
+            premise_map,
         );
         step.trace = Some(trace);
         Some(step)
@@ -893,10 +899,16 @@ impl ActiveSet {
             }
 
             let literals = new_literals.clone();
-            let (new_clause, traces) = Clause::normalize_with_trace(new_literals, &context);
+            let (new_clause, traces, var_ids) =
+                Clause::normalize_with_trace(new_literals, &context);
 
             // Check if normalization resulted in a tautology
             if !new_clause.is_tautology() {
+                let premise_map = PremiseMap::new(
+                    vec![input_var_map.clone()],
+                    var_ids.clone(),
+                    context.clone(),
+                );
                 let step = ProofStep::direct(
                     activated_id,
                     activated_step,
@@ -906,10 +918,10 @@ impl ActiveSet {
                         literals,
                         context,
                         flipped,
-                        input_var_map,
                     }),
                     new_clause,
                     traces,
+                    premise_map,
                 );
                 answer.push(step);
             }
@@ -976,13 +988,15 @@ impl ActiveSet {
                 context: context.clone(),
                 flipped,
             };
-            let (clause, traces) = Clause::normalize_with_trace(literals, &context);
+            let (clause, traces, var_ids) = Clause::normalize_with_trace(literals, &context);
+            let premise_map = PremiseMap::new(vec![VariableMap::new()], var_ids, context.clone());
             let step = ProofStep::direct(
                 activated_id,
                 activated_step,
                 Rule::Injectivity(info),
                 clause,
                 traces,
+                premise_map,
             );
             answer.push(step);
         }
@@ -1008,13 +1022,15 @@ impl ActiveSet {
                 literals: literals.clone(),
                 context: context.clone(),
             };
-            let (clause, traces) = Clause::normalize_with_trace(literals, &context);
+            let (clause, traces, var_ids) = Clause::normalize_with_trace(literals, &context);
+            let premise_map = PremiseMap::new(vec![VariableMap::new()], var_ids, context.clone());
             let step = ProofStep::direct(
                 activated_id,
                 activated_step,
                 Rule::BooleanReduction(info),
                 clause,
                 traces,
+                premise_map,
             );
             answer.push(step);
         }
@@ -1040,13 +1056,15 @@ impl ActiveSet {
                 literals: literals.clone(),
                 context: context.clone(),
             };
-            let (clause, traces) = Clause::normalize_with_trace(literals, &context);
+            let (clause, traces, var_ids) = Clause::normalize_with_trace(literals, &context);
+            let premise_map = PremiseMap::new(vec![VariableMap::new()], var_ids, context.clone());
             let step = ProofStep::direct(
                 activated_id,
                 activated_step,
                 Rule::Extensionality(info),
                 clause,
                 traces,
+                premise_map,
             );
             answer.push(step);
         }
@@ -1080,9 +1098,14 @@ impl ActiveSet {
             let literals_before_normalization = literals.clone();
 
             // Create the new clause with trace using the unifier's output context
-            let (new_clause, normalization_traces) =
+            let (new_clause, normalization_traces, var_ids) =
                 Clause::normalize_with_trace(literals, &output_context);
 
+            let premise_map = PremiseMap::new(
+                vec![input_var_map.clone()],
+                var_ids.clone(),
+                output_context.clone(),
+            );
             let step = ProofStep::direct(
                 activated_id,
                 activated_step,
@@ -1091,10 +1114,10 @@ impl ActiveSet {
                     literals: literals_before_normalization,
                     context: output_context,
                     ef_trace,
-                    input_var_map,
                 }),
                 new_clause,
                 normalization_traces,
+                premise_map,
             );
             answer.push(step);
         }
@@ -1327,7 +1350,7 @@ impl ActiveSet {
             return Some(step);
         }
 
-        let (clause, simp_trace) = Clause::new_with_trace(
+        let (clause, simp_trace, _var_ids) = Clause::new_with_trace(
             output_literals,
             ClauseTrace::new(incremental_trace),
             step.clause.get_local_context(),
@@ -1356,20 +1379,17 @@ impl ActiveSet {
         // Restore the original literals so the inline step has its complete clause
         step.clause.literals = original_literals;
 
-        // TODO: Collect actual var_maps from find_generalization for proper reconstruction
-        let simplifying_var_maps = vec![VariableMap::new(); simplifying_ids.len()];
-
         let result = ProofStep {
             clause,
             truthiness,
             rule: Rule::Simplification(SimplificationInfo {
                 original: Box::new(step),
                 simplifying_ids,
-                simplifying_var_maps,
             }),
             proof_size,
             depth,
             trace: Some(simp_trace),
+            premise_map: PremiseMap::empty(),
         };
 
         // Validate the simplified step when the validate feature is enabled

@@ -4,10 +4,12 @@ use crate::certificate::Certificate;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::elaborator::acorn_value::AcornValue;
 use crate::elaborator::binding_map::BindingMap;
+use crate::kernel::atom::AtomId;
 use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::term::Term;
 use crate::kernel::trace::LiteralTrace;
 use crate::kernel::unifier::{Scope, Unifier};
 use crate::kernel::variable_map::VariableMap;
@@ -250,6 +252,55 @@ pub fn reconstruct_step<R: ProofResolver>(
             }
             return Ok(());
         }
+
+        // Rules with populated PremiseMaps: compose raw inference maps with conclusion_map
+        // to get concrete var maps. No re-unification needed.
+        Rule::Extensionality(_) => {
+            // No reconstruction needed - extensionality is sound on universally
+            // quantified clauses without instantiation.
+            return Ok(());
+        }
+
+        Rule::EqualityResolution(_)
+        | Rule::EqualityFactoring(_)
+        | Rule::Injectivity(_)
+        | Rule::BooleanReduction(_)
+        | Rule::Rewrite(_)
+        | Rule::Resolution(_)
+            if !step.premise_map.is_empty() =>
+        {
+            let premise_ids = step.rule.premises();
+            let mut premise_contexts: Vec<&LocalContext> = Vec::new();
+            for premise_id in &premise_ids {
+                let premise_clause = resolver.get_clause(*premise_id)?;
+                premise_contexts.push(premise_clause.get_local_context());
+            }
+            let concrete_premises = step.premise_map.concretize_premises(
+                &conclusion_map,
+                conclusion_map_context,
+                &premise_contexts,
+            );
+            for (premise_id, (mut var_map, mut context)) in
+                premise_ids.into_iter().zip(concrete_premises)
+            {
+                // Fill in any remaining unmapped premise variables with fresh output variables
+                let premise_clause = resolver.get_clause(premise_id)?;
+                let premise_context = premise_clause.get_local_context();
+                let mut next_var = context.len();
+                for var_id in 0..premise_context.len() {
+                    if !var_map.has_mapping(var_id as AtomId) {
+                        if let Some(var_type) = premise_context.get_var_type(var_id) {
+                            var_map.set(var_id as AtomId, Term::new_variable(next_var as AtomId));
+                            context.set_type(next_var, var_type.clone());
+                            next_var += 1;
+                        }
+                    }
+                }
+                add_var_map(resolver, premise_id, var_map, context, concrete_steps);
+            }
+            return Ok(());
+        }
+
         _ => {}
     }
 
@@ -303,482 +354,6 @@ pub fn reconstruct_step<R: ProofResolver>(
                         entry.insert(concrete_step);
                     }
                 }
-            }
-        }
-        Rule::Rewrite(info) => {
-            // For rewrites, the trace applies to the original rewritten literal.
-            // We use info.rewritten and info.context which store the pre-normalization
-            // literal and its variable context.
-            let literals = vec![info.rewritten.clone()];
-            let (var_maps, unifier_context) = reconstruct_trace(
-                resolver,
-                &literals,
-                &info.context,
-                traces.as_slice(),
-                &step.clause,
-                conclusion_map,
-                conclusion_map_context,
-                concrete_steps,
-            )?;
-
-            // The target is already concrete, and the conclusion has been made concrete through
-            // its variable map. We need to unify the pattern.
-            let pattern_id = ProofStepId::Active(info.pattern_id);
-            let pattern_clause = &resolver.get_clause(pattern_id)?;
-            let pattern = &pattern_clause.literals[0];
-            let target_id = ProofStepId::Active(info.target_id);
-            let target_clause = &resolver.get_clause(target_id)?;
-            let target = &target_clause.literals[0];
-            let (from_pat, to_pat) = if info.forwards {
-                (&pattern.left, &pattern.right)
-            } else {
-                (&pattern.right, &pattern.left)
-            };
-            let target_term = if info.target_left {
-                &target.left
-            } else {
-                &target.right
-            };
-            let target_subterm = target_term.get_term_at_path(&info.path).unwrap();
-            let rewritten_term = if info.target_left ^ info.flipped {
-                &info.rewritten.left
-            } else {
-                &info.rewritten.right
-            };
-            let rewritten_subterm = rewritten_term.get_term_at_path(&info.path).unwrap();
-            for conc_map in var_maps {
-                // Use the unifier's output context from reconstruct_trace, not the step context.
-                // The conc_map's replacement terms reference variables in the unifier's output context.
-                let output_context = conc_map.build_output_context(&unifier_context);
-                let (mut unifier, conc_scope) =
-                    Unifier::with_map(conc_map, resolver.kernel_context(), output_context);
-                // The conc_scope uses the rewritten literal's context (info.context),
-                // because that's what the trace was computed with.
-                unifier.set_input_context(conc_scope, &info.context);
-                let pattern_scope = unifier.add_scope();
-                unifier.set_input_context(pattern_scope, pattern_clause.get_local_context());
-                let target_scope = unifier.add_scope();
-                unifier.set_input_context(target_scope, target_clause.get_local_context());
-                if !unifier.unify(pattern_scope, from_pat, target_scope, &target_subterm) {
-                    eprintln!("DEBUG: Unification failed!");
-                    eprintln!("  from_pat: {}", from_pat);
-                    eprintln!("  target_subterm: {}", target_subterm);
-                    eprintln!(
-                        "  pattern context: {:?}",
-                        pattern_clause.get_local_context()
-                    );
-                    eprintln!("  target context: {:?}", target_clause.get_local_context());
-                    panic!("unification failed");
-                }
-                assert!(unifier.unify(pattern_scope, to_pat, conc_scope, &rewritten_subterm));
-
-                // Report the concrete pattern
-                let (map, map_context) = unifier.into_one_map_with_context(pattern_scope);
-                add_var_map(resolver, pattern_id, map, map_context, concrete_steps);
-            }
-
-            // The target is already concrete
-            let map = VariableMap::new();
-            add_var_map(
-                resolver,
-                target_id,
-                map,
-                LocalContext::empty(),
-                concrete_steps,
-            );
-        }
-        Rule::EqualityFactoring(info) => {
-            // For EF, the trace applies to the stored literals.
-            let (var_maps, unifier_context) = reconstruct_trace(
-                resolver,
-                &info.literals,
-                &info.context,
-                traces.as_slice(),
-                &step.clause,
-                conclusion_map,
-                conclusion_map_context,
-                concrete_steps,
-            )?;
-
-            // Unify the pre-EF and post-EF literals.
-            let base_id = ProofStepId::Active(info.id);
-            let base_clause = &resolver.get_clause(base_id)?;
-            assert!(base_clause.literals.len() == info.literals.len());
-
-            for conc_map in var_maps {
-                let output_context = conc_map.build_output_context(&unifier_context);
-                let (mut unifier, conc_scope) =
-                    Unifier::with_map(conc_map, resolver.kernel_context(), output_context);
-                unifier.set_input_context(conc_scope, &info.context);
-                let base_scope = unifier.add_scope();
-                unifier.set_input_context(base_scope, base_clause.get_local_context());
-
-                for (base_lit, lit_trace) in base_clause.literals.iter().zip(&info.ef_trace) {
-                    for (base_term, term_trace) in [
-                        (&base_lit.left, &lit_trace.left),
-                        (&base_lit.right, &lit_trace.right),
-                    ] {
-                        let out_lit = &info.literals[term_trace.index];
-                        let out_term = if term_trace.left {
-                            &out_lit.left
-                        } else {
-                            &out_lit.right
-                        };
-                        assert!(unifier.unify(base_scope, base_term, conc_scope, out_term));
-                    }
-                }
-
-                // Report the concrete base
-                let (map, map_context) = unifier.into_one_map_with_context(base_scope);
-                add_var_map(resolver, base_id, map, map_context, concrete_steps);
-            }
-        }
-        Rule::EqualityResolution(info) => {
-            // For ER, the trace applies to the stored literals.
-            let (var_maps, unifier_context) = reconstruct_trace(
-                resolver,
-                &info.literals,
-                &info.context,
-                traces.as_slice(),
-                &step.clause,
-                conclusion_map,
-                conclusion_map_context,
-                concrete_steps,
-            )?;
-
-            // Unify the pre-ER and post-ER literals.
-            let base_id = ProofStepId::Active(info.id);
-            let base_clause = &resolver.get_clause(base_id)?;
-            assert!(base_clause.literals.len() == info.literals.len() + 1);
-
-            for conc_map in var_maps {
-                let output_context = conc_map.build_output_context(&unifier_context);
-                let (mut unifier, conc_scope) =
-                    Unifier::with_map(conc_map, resolver.kernel_context(), output_context);
-                unifier.set_input_context(conc_scope, &info.context);
-                let base_scope = unifier.add_scope();
-                unifier.set_input_context(base_scope, base_clause.get_local_context());
-                let mut j = 0;
-                for (i, base_lit) in base_clause.literals.iter().enumerate() {
-                    if i == info.index {
-                        assert!(!base_lit.positive);
-                        assert!(unifier.unify(
-                            base_scope,
-                            &base_lit.left,
-                            base_scope,
-                            &base_lit.right
-                        ));
-                        continue;
-                    }
-                    let (left, right) = if info.flipped[j] {
-                        (&info.literals[j].right, &info.literals[j].left)
-                    } else {
-                        (&info.literals[j].left, &info.literals[j].right)
-                    };
-
-                    assert!(unifier.unify(base_scope, &base_lit.left, conc_scope, left));
-                    assert!(unifier.unify(base_scope, &base_lit.right, conc_scope, right));
-                    j += 1;
-                }
-
-                // Report the concrete base
-                let (map, map_context) = unifier.into_one_map_with_context(base_scope);
-                add_var_map(resolver, base_id, map, map_context, concrete_steps);
-            }
-        }
-        Rule::Injectivity(info) => {
-            // For injectivity, the trace applies to the stored literals.
-            let (var_maps, unifier_context) = reconstruct_trace(
-                resolver,
-                &info.literals,
-                &info.context,
-                traces.as_slice(),
-                &step.clause,
-                conclusion_map,
-                conclusion_map_context,
-                concrete_steps,
-            )?;
-
-            // Unify the pre-injectivity and post-injectivity literals.
-            let base_id = ProofStepId::Active(info.id);
-            let base_clause = &resolver.get_clause(base_id)?;
-            assert!(base_clause.literals.len() == info.literals.len());
-
-            for conc_map in var_maps {
-                let output_context = conc_map.build_output_context(&unifier_context);
-                let (mut unifier, conc_scope) =
-                    Unifier::with_map(conc_map, resolver.kernel_context(), output_context);
-                unifier.set_input_context(conc_scope, &info.context);
-                let base_scope = unifier.add_scope();
-                unifier.set_input_context(base_scope, base_clause.get_local_context());
-
-                for (i, (base_lit, info_lit)) in
-                    base_clause.literals.iter().zip(&info.literals).enumerate()
-                {
-                    if i == info.index {
-                        let base_left = &base_lit.left.args()[info.arg];
-                        let base_right = &base_lit.right.args()[info.arg];
-                        let (left, right) = if info.flipped {
-                            (&info_lit.right, &info_lit.left)
-                        } else {
-                            (&info_lit.left, &info_lit.right)
-                        };
-                        assert!(unifier.unify(base_scope, base_left, conc_scope, left));
-                        assert!(unifier.unify(base_scope, base_right, conc_scope, right));
-                    } else {
-                        assert!(unifier.unify(
-                            base_scope,
-                            &base_lit.left,
-                            conc_scope,
-                            &info_lit.left
-                        ));
-                        assert!(unifier.unify(
-                            base_scope,
-                            &base_lit.right,
-                            conc_scope,
-                            &info_lit.right
-                        ));
-                    }
-                }
-
-                // Report the concrete base
-                let (map, map_context) = unifier.into_one_map_with_context(base_scope);
-                add_var_map(resolver, base_id, map, map_context, concrete_steps);
-            }
-        }
-        Rule::BooleanReduction(info) => {
-            // For boolean reduction, the trace applies to the stored literals.
-            let (var_maps, unifier_context) = reconstruct_trace(
-                resolver,
-                &info.literals,
-                &info.context,
-                traces.as_slice(),
-                &step.clause,
-                conclusion_map,
-                conclusion_map_context,
-                concrete_steps,
-            )?;
-
-            // Unify the pre-reduction and post-reduction literals.
-            let base_id = ProofStepId::Active(info.id);
-            let base_clause = &resolver.get_clause(base_id)?;
-            assert!(base_clause.literals.len() + 1 == info.literals.len());
-
-            for conc_map in var_maps {
-                let output_context = conc_map.build_output_context(&unifier_context);
-                let (mut unifier, conc_scope) =
-                    Unifier::with_map(conc_map, resolver.kernel_context(), output_context);
-                unifier.set_input_context(conc_scope, &info.context);
-                let base_scope = unifier.add_scope();
-                unifier.set_input_context(base_scope, base_clause.get_local_context());
-
-                for i in 0..info.index {
-                    let base = &base_clause.literals[i];
-                    let red = &info.literals[i];
-                    assert!(unifier.unify(base_scope, &base.left, conc_scope, &red.left));
-                    assert!(unifier.unify(base_scope, &base.right, conc_scope, &red.right));
-                }
-
-                let base = &base_clause.literals[info.index];
-                let red1 = &info.literals[info.index];
-                let red2 = &info.literals[info.index + 1];
-                assert!(unifier.unify(base_scope, &base.left, conc_scope, &red1.left));
-                assert!(unifier.unify(base_scope, &base.right, conc_scope, &red2.left));
-
-                for i in (info.index + 1)..base_clause.literals.len() {
-                    let base = &base_clause.literals[i];
-                    let red = &info.literals[i + 1];
-                    assert!(unifier.unify(base_scope, &base.left, conc_scope, &red.left));
-                    assert!(unifier.unify(base_scope, &base.right, conc_scope, &red.right));
-                }
-
-                // Report the concrete base
-                let (map, map_context) = unifier.into_one_map_with_context(base_scope);
-                add_var_map(resolver, base_id, map, map_context, concrete_steps);
-            }
-        }
-        Rule::Extensionality(_) => {
-            // For extensionality, we don't need to add the source clause to concrete_steps.
-            // The extensionality inference is sound on the universally quantified clause directly:
-            // from "forall x. f(x) = g(x)" we derive "f = g" without needing to instantiate x.
-            // This avoids requiring a witness for types that may be uninhabited.
-        }
-        Rule::Resolution(info) => {
-            // For Resolution, we do custom reconstruction because the trace was
-            // built for post-resolution literals, but simplifications reference
-            // those post-resolution literals (not the original long_clause literals).
-            //
-            // We handle this by:
-            // 1. For Eliminated entries that reference the short clause: use long_clause literal
-            // 2. For Eliminated entries that reference simplification steps: use post-resolution literal
-            // 3. For Output entries: use post-resolution literal (mapped to conclusion)
-
-            let long_id = ProofStepId::Active(info.long_id);
-            let long_clause = resolver.get_clause(long_id)?;
-            let short_id = ProofStepId::Active(info.short_id);
-            let short_clause = resolver.get_clause(short_id)?;
-            let traces_slice = traces.as_slice();
-
-            // Build a unifier that handles all scopes
-            let output_context = conclusion_map.build_output_context(conclusion_map_context);
-            let (mut unifier, conc_scope) =
-                Unifier::with_map(conclusion_map, resolver.kernel_context(), output_context);
-            unifier.set_input_context(conc_scope, step.clause.get_local_context());
-
-            let long_scope = unifier.add_scope();
-            unifier.set_input_context(long_scope, long_clause.get_local_context());
-
-            let post_res_scope = unifier.add_scope();
-            unifier.set_input_context(post_res_scope, &info.context);
-
-            let short_scope = if short_clause.literals.len() == 1 {
-                let scope = unifier.add_scope();
-                unifier.set_input_context(scope, short_clause.get_local_context());
-                Some(scope)
-            } else {
-                None
-            };
-
-            // IMPORTANT: Process Eliminated traces FIRST, before Output traces.
-            // This is necessary because:
-            // 1. Eliminated traces unify long_scope with short_scope
-            // 2. Output traces unify long_scope with post_res_scope
-            // If we process Output traces first, long_scope variables get mapped to
-            // OUTPUT variables with types from the long clause context.
-            // Then when we process Eliminated traces, short_scope variables create
-            // NEW OUTPUT variables with types from the short clause context.
-            // If these types differ (common in polymorphic code), unification fails.
-            // By processing Eliminated first, short_scope and long_scope variables
-            // get unified together before post_res_scope comes into play.
-            for (i, res_trace) in info.resolution_trace.iter().enumerate() {
-                if let LiteralTrace::Eliminated { flipped, .. } = res_trace {
-                    // This literal was resolved with the short clause
-                    if let Some(short_scope) = short_scope {
-                        let long_lit = &long_clause.literals[i];
-                        let short_lit = &short_clause.literals[0];
-
-                        if !unifier.unify_literals(
-                            long_scope,
-                            long_lit,
-                            short_scope,
-                            short_lit,
-                            *flipped,
-                        ) {
-                            return Err(Error::internal(format!(
-                                "failed to unify resolved literal {} with short clause {}",
-                                long_lit, short_lit
-                            )));
-                        }
-                    }
-                }
-            }
-
-            // Now process Output traces (and handle final_trace for simplifications)
-            for (i, (res_trace, final_trace)) in info
-                .resolution_trace
-                .iter()
-                .zip(traces_slice.iter())
-                .enumerate()
-            {
-                match res_trace {
-                    LiteralTrace::Eliminated { .. } => {
-                        // Already processed above
-                    }
-                    LiteralTrace::Output {
-                        index: post_res_idx,
-                        flipped: res_flip,
-                    } => {
-                        // Unify long_clause[i] with post_res[post_res_idx]
-                        let long_lit = &long_clause.literals[i];
-                        let post_res_lit = &info.literals[*post_res_idx];
-
-                        if !unifier.unify_literals(
-                            long_scope,
-                            long_lit,
-                            post_res_scope,
-                            post_res_lit,
-                            *res_flip,
-                        ) {
-                            return Err(Error::internal(format!(
-                                "failed to unify long clause literal {} with post-resolution literal {}",
-                                long_lit, post_res_lit
-                            )));
-                        }
-
-                        // Now handle what happened to this post-resolution literal
-                        match final_trace {
-                            LiteralTrace::Output {
-                                index: final_idx,
-                                flipped: final_flip,
-                            } => {
-                                // Post-res literal made it to the conclusion
-                                // Combine the flips: long→post_res was res_flip, but we're now
-                                // relating post_res→conclusion
-                                let conc_lit = &step.clause.literals[*final_idx];
-                                if !unifier.unify_literals(
-                                    post_res_scope,
-                                    post_res_lit,
-                                    conc_scope,
-                                    conc_lit,
-                                    *final_flip != *res_flip,
-                                ) {
-                                    return Err(Error::internal(format!(
-                                        "failed to unify post-res literal {} with conclusion {}",
-                                        post_res_lit, conc_lit
-                                    )));
-                                }
-                            }
-                            LiteralTrace::Eliminated { .. } => {
-                                // With simplification separated into its own step,
-                                // the resolution step's trace should never have Eliminated entries
-                                // for simplification. Only the resolution_trace has Eliminated entries
-                                // (for the resolved literal).
-                                return Err(Error::internal(
-                                    "unexpected Eliminated in resolution step trace \
-                                     (simplification should be a separate step)"
-                                        .to_string(),
-                                ));
-                            }
-                            LiteralTrace::Impossible => {}
-                        }
-                    }
-                    LiteralTrace::Impossible => {}
-                }
-            }
-
-            // Extract all maps and add to concrete_steps
-            let (all_maps, output_ctx) = unifier.into_maps_with_context();
-            for (scope, var_map) in all_maps {
-                if scope == long_scope {
-                    add_var_map(
-                        resolver,
-                        long_id,
-                        var_map,
-                        output_ctx.clone(),
-                        concrete_steps,
-                    );
-                } else if Some(scope) == short_scope {
-                    add_var_map(
-                        resolver,
-                        short_id,
-                        var_map,
-                        output_ctx.clone(),
-                        concrete_steps,
-                    );
-                }
-                // conc_scope and post_res_scope are not added to concrete_steps
-            }
-
-            // For multi-literal short clauses, we didn't create a scope for them above.
-            // We still need to track them with an empty var_map so they appear in the certificate.
-            if short_scope.is_none() && short_clause.literals.len() > 1 {
-                add_var_map(
-                    resolver,
-                    short_id,
-                    VariableMap::new(),
-                    output_ctx,
-                    concrete_steps,
-                );
             }
         }
         Rule::Specialization(info) => {

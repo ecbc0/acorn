@@ -1,10 +1,11 @@
+use std::fmt;
+
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::{Decomposition, Term, TermRef};
-use std::fmt;
 
 // A VariableMap maintains a mapping from variables to terms, allowing us to turn a more general term
 // into a more specific one by substituting variables.
@@ -16,6 +17,20 @@ pub struct VariableMap {
 impl VariableMap {
     pub fn new() -> VariableMap {
         VariableMap { map: Vec::new() }
+    }
+
+    /// Build a normalization variable map from var_ids.
+    ///
+    /// var_ids maps new sequential IDs to old IDs: var_ids[new] = old.
+    /// The returned map maps old IDs to new IDs: old → FreeVariable(new).
+    ///
+    /// This captures the variable renumbering that happens during clause normalization.
+    pub fn from_var_ids(var_ids: &[AtomId]) -> VariableMap {
+        let mut map = VariableMap::new();
+        for (new_id, &old_id) in var_ids.iter().enumerate() {
+            map.set(old_id, Term::atom(Atom::FreeVariable(new_id as AtomId)));
+        }
+        map
     }
 
     /// Returns the maximum variable index in any of the mapped terms, or None if there are no variables.
@@ -332,6 +347,27 @@ impl VariableMap {
             }
         }
         false
+    }
+}
+
+/// Substitute variables in a term according to a map. Unmapped variables are kept as-is.
+pub fn apply_to_term(term: TermRef, map: &VariableMap) -> Term {
+    match term.decompose() {
+        Decomposition::Atom(Atom::FreeVariable(i)) => map
+            .get_mapping(*i)
+            .cloned()
+            .unwrap_or_else(|| term.to_owned()),
+        Decomposition::Atom(_) => term.to_owned(),
+        Decomposition::Application(func, arg) => {
+            let new_func = apply_to_term(func, map);
+            let new_arg = apply_to_term(arg, map);
+            new_func.apply(&[new_arg])
+        }
+        Decomposition::Pi(input, output) => {
+            let new_input = apply_to_term(input, map);
+            let new_output = apply_to_term(output, map);
+            Term::pi(new_input, new_output)
+        }
     }
 }
 

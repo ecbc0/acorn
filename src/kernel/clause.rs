@@ -55,10 +55,13 @@ impl Clause {
 
     /// Normalizes literals into a clause, creating a trace of where each one is sent.
     /// Tracks flips that occur during variable ID normalization.
+    ///
+    /// Returns (clause, trace, var_ids) where var_ids maps new sequential variable IDs
+    /// to original variable IDs: var_ids[new_id] = old_id.
     pub fn normalize_with_trace(
         literals: Vec<Literal>,
         context: &LocalContext,
-    ) -> (Clause, ClauseTrace) {
+    ) -> (Clause, ClauseTrace, Vec<AtomId>) {
         let mut trace = vec![LiteralTrace::Impossible; literals.len()];
 
         // Pair each literal with its initial index.
@@ -119,43 +122,52 @@ impl Clause {
             literals: output_literals,
             context: context.remap(&var_ids),
         };
-        (clause, ClauseTrace::new(trace))
+        (clause, ClauseTrace::new(trace), var_ids)
     }
 
     /// Creates a new clause and a new trace, given a list of literals and a
     /// trace of how they were created.
+    ///
+    /// Returns (clause, trace, var_ids) where var_ids maps new sequential variable IDs
+    /// to original variable IDs.
     pub fn new_with_trace(
         literals: Vec<Literal>,
         mut trace: ClauseTrace,
         context: &LocalContext,
-    ) -> (Clause, ClauseTrace) {
-        let (c, incremental_trace) = Clause::normalize_with_trace(literals, context);
+    ) -> (Clause, ClauseTrace, Vec<AtomId>) {
+        let (c, incremental_trace, var_ids) = Clause::normalize_with_trace(literals, context);
         trace.compose(&incremental_trace);
-        (c, trace)
+        (c, trace, var_ids)
     }
 
     /// Creates a new clause. If a trace is provided, we compose the traces.
     /// The base_trace should be applicable to the provided literals.
+    ///
+    /// Returns (clause, trace, var_ids) where var_ids maps new sequential variable IDs
+    /// to original variable IDs. var_ids is empty when base_trace is None.
     pub fn new_composing_traces(
         literals: Vec<Literal>,
         base_trace: Option<ClauseTrace>,
         incremental_trace: &ClauseTrace,
         context: &LocalContext,
-    ) -> (Clause, Option<ClauseTrace>) {
+    ) -> (Clause, Option<ClauseTrace>, Vec<AtomId>) {
         let Some(mut base_trace) = base_trace else {
-            return (Clause::new(literals, context), None);
+            return (Clause::new(literals, context), None, vec![]);
         };
         base_trace.compose(incremental_trace);
-        let (c, trace) = Clause::new_with_trace(literals, base_trace, context);
-        (c, Some(trace))
+        let (c, trace, var_ids) = Clause::new_with_trace(literals, base_trace, context);
+        (c, Some(trace), var_ids)
     }
 
     /// Create a clause from a single literal with trace.
+    ///
+    /// Returns (clause, trace, var_ids) where var_ids maps new sequential variable IDs
+    /// to original variable IDs.
     pub fn from_literal_traced(
         literal: Literal,
         flipped: bool,
         context: &LocalContext,
-    ) -> (Clause, ClauseTrace) {
+    ) -> (Clause, ClauseTrace, Vec<AtomId>) {
         Clause::new_with_trace(
             vec![literal],
             ClauseTrace::new(vec![LiteralTrace::Output { index: 0, flipped }]),
@@ -986,7 +998,7 @@ mod tests {
             LocalContext::from_types(vec![type_foo.clone(), type_foo.clone(), type_bool.clone()]);
 
         // Normalize the clause
-        let (clause, _trace) = Clause::normalize_with_trace(vec![lit1, lit2], &context);
+        let (clause, _trace, _var_ids) = Clause::normalize_with_trace(vec![lit1, lit2], &context);
 
         // After normalization, check the output context:
         // Should have 3 variables with types Foo, Foo, Bool

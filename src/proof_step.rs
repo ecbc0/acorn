@@ -2,14 +2,14 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::elaborator::source::{Source, SourceType};
-use crate::kernel::atom::Atom;
+use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
-use crate::kernel::term::{PathStep, Term};
+use crate::kernel::term::{Decomposition, PathStep, Term, TermRef};
 use crate::kernel::trace::{ClauseTrace, LiteralTrace};
-use crate::kernel::variable_map::VariableMap;
+use crate::kernel::variable_map::{self, VariableMap};
 
 /// The different sorts of proof steps.
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
@@ -87,12 +87,6 @@ pub struct ResolutionInfo {
     /// - Eliminated { step: short_id } for the resolved literal
     /// - Output { index } for literals kept in post-resolution
     pub resolution_trace: Vec<LiteralTrace>,
-
-    /// Maps short_clause variable IDs to terms in the output scope (context).
-    pub short_var_map: VariableMap,
-
-    /// Maps long_clause variable IDs to terms in the output scope (context).
-    pub long_var_map: VariableMap,
 }
 
 /// Information about a specialization.
@@ -104,12 +98,6 @@ pub struct SpecializationInfo {
     /// The inspiration isn't mathematically necessary for the specialization to be true,
     /// but we used it to decide which substitutions to make.
     pub inspiration_id: usize,
-
-    /// Maps pattern_clause variable IDs to terms in the output scope (output_context).
-    pub pattern_var_map: VariableMap,
-
-    /// The context for variables in the pattern_var_map's replacement terms.
-    pub output_context: LocalContext,
 }
 
 /// Information about a rewrite inference.
@@ -144,10 +132,6 @@ pub struct RewriteInfo {
 
     /// Whether the literal was flipped during normalization
     pub flipped: bool,
-
-    /// Maps pattern_clause variable IDs to terms in the output scope (context).
-    /// The target is concrete (no variables) so it doesn't need a var_map.
-    pub pattern_var_map: VariableMap,
 }
 
 /// Information about a contradiction found by rewriting one side of an inequality into the other.
@@ -230,9 +214,6 @@ pub struct EqualityFactoringInfo {
 
     /// Parallel to literals. Tracks how we got them from the input clause.
     pub ef_trace: Vec<EFLiteralTrace>,
-
-    /// Maps input clause variable IDs to terms in the output scope (context).
-    pub input_var_map: VariableMap,
 }
 
 /// Information about an equality resolution inference.
@@ -252,9 +233,6 @@ pub struct EqualityResolutionInfo {
 
     // Parallel to literals. Tracks whether they were flipped or not.
     pub flipped: Vec<bool>,
-
-    /// Maps input clause variable IDs to terms in the output scope (context).
-    pub input_var_map: VariableMap,
 }
 
 /// Information about an injectivity inference.
@@ -316,9 +294,6 @@ pub struct SimplificationInfo {
     pub original: Box<ProofStep>,
     /// Active IDs of clauses used for this simplification.
     pub simplifying_ids: Vec<usize>,
-    /// Parallel to simplifying_ids. Maps each simplifying clause's variables to terms
-    /// in the output scope (step.clause.context).
-    pub simplifying_var_maps: Vec<VariableMap>,
 }
 
 /// The rules that can generate new clauses, along with the clause ids used to generate.
@@ -439,6 +414,199 @@ impl Rule {
     }
 }
 
+/// Stores the inference variable bindings needed to reconstruct proof premises.
+///
+/// Built at step creation time from the raw unification results and normalization trace.
+/// At reconstruction time, these are composed with a conclusion_map to produce
+/// concrete variable maps for each premise.
+///
+/// Stores raw inference var maps (premise vars → pre-norm terms) rather than
+/// pre-composed maps, because inference bindings may reference variables that
+/// are eliminated during normalization. These eliminated variables still encode
+/// structural relationships needed for correct reconstruction (e.g., if ER
+/// resolves x2 = List.cons(x0, x1), then x2 must map to the same concrete term
+/// as List.cons(x0, x1), even if x1 is eliminated from the output clause).
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct PremiseMap {
+    /// One entry per premise, parallel to Rule::premises().
+    /// Maps premise vars → pre-normalization output terms.
+    /// An empty VariableMap means the premise is concrete (no variables to map).
+    raw_maps: Vec<VariableMap>,
+
+    /// Normalization trace: var_ids[new_sequential_id] = old_pre_norm_id.
+    /// Used to map between pre-norm and post-norm variable namespaces.
+    var_ids: Vec<AtomId>,
+
+    /// The local context for the pre-normalization output variables.
+    /// Used to look up types for eliminated variables when assigning fresh IDs.
+    pre_norm_context: LocalContext,
+}
+
+impl PremiseMap {
+    pub fn empty() -> PremiseMap {
+        PremiseMap {
+            raw_maps: vec![],
+            var_ids: vec![],
+            pre_norm_context: LocalContext::empty(),
+        }
+    }
+
+    pub fn new(
+        raw_maps: Vec<VariableMap>,
+        var_ids: Vec<AtomId>,
+        pre_norm_context: LocalContext,
+    ) -> PremiseMap {
+        PremiseMap {
+            raw_maps,
+            var_ids,
+            pre_norm_context,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.raw_maps.is_empty()
+    }
+
+    /// Given how the conclusion was concretized, produce how each premise
+    /// should be concretized.
+    ///
+    /// conclusion_map maps output clause vars → concrete terms.
+    /// premise_contexts provides the LocalContext for each premise clause,
+    /// needed to look up types for eliminated variables.
+    ///
+    /// Returns one (VariableMap, LocalContext) per premise.
+    pub fn concretize_premises(
+        &self,
+        conclusion_map: &VariableMap,
+        conclusion_context: &LocalContext,
+        premise_contexts: &[&LocalContext],
+    ) -> Vec<(VariableMap, LocalContext)> {
+        // Step 1: Build pre-norm → concrete mapping.
+        // For surviving pre-norm vars (in var_ids): compose with conclusion_map.
+        // For eliminated pre-norm vars: assign fresh concrete variable IDs.
+        let mut pre_norm_concrete = VariableMap::new();
+
+        // Start with all types from conclusion_context, since composed terms
+        // may reference any variable in the conclusion_map's replacement terms.
+        let mut concrete_context = conclusion_context.clone();
+
+        // Map surviving pre-norm vars to concrete terms
+        for (new_id, &old_id) in self.var_ids.iter().enumerate() {
+            if let Some(concrete_term) = conclusion_map.get_mapping(new_id as AtomId) {
+                pre_norm_concrete.set(old_id, concrete_term.clone());
+            } else {
+                // Output var not in conclusion_map: keep as identity
+                pre_norm_concrete.set(old_id, Term::atom(Atom::FreeVariable(new_id as AtomId)));
+            }
+        }
+
+        // Find eliminated pre-norm vars referenced in any raw map and assign fresh IDs.
+        // Fresh IDs must not collide with existing variables in the conclusion context.
+        // We collect from ALL premises first to ensure consistency (same eliminated
+        // pre-norm var gets the same fresh ID across all premises).
+        let mut next_fresh = self.var_ids.len().max(conclusion_context.len());
+        for raw_map in &self.raw_maps {
+            for (_, term) in raw_map.iter() {
+                self.assign_fresh_for_eliminated(
+                    term.as_ref(),
+                    &mut pre_norm_concrete,
+                    &mut concrete_context,
+                    &mut next_fresh,
+                );
+            }
+        }
+
+        // Step 2: For each premise, compose raw_map with pre_norm_concrete.
+        self.raw_maps
+            .iter()
+            .enumerate()
+            .map(|(premise_idx, raw_map)| {
+                let mut result = VariableMap::new();
+
+                // Handle explicitly bound premise vars
+                for (var_id, term) in raw_map.iter() {
+                    result.set(
+                        var_id as AtomId,
+                        variable_map::apply_to_term(term.as_ref(), &pre_norm_concrete),
+                    );
+                }
+
+                // Handle identity pass-through for unmapped premise vars.
+                // These are premise vars that weren't bound by unification and
+                // correspond to pre-norm vars (same ID in the premise = same ID pre-norm).
+                if let Some(premise_ctx) = premise_contexts.get(premise_idx) {
+                    for var_id in 0..premise_ctx.len() {
+                        let var_id_atom = var_id as AtomId;
+                        if !raw_map.has_mapping(var_id_atom) {
+                            if let Some(concrete_term) = pre_norm_concrete.get_mapping(var_id_atom)
+                            {
+                                result.set(var_id_atom, concrete_term.clone());
+                            }
+                        }
+                    }
+                }
+
+                // Use concrete_context which has types for both conclusion vars
+                // and fresh extended vars (for eliminated pre-norm variables).
+                let output_ctx = result.build_output_context(&concrete_context);
+                (result, output_ctx)
+            })
+            .collect()
+    }
+
+    /// Recursively find eliminated pre-norm variables in a term and assign fresh IDs.
+    fn assign_fresh_for_eliminated(
+        &self,
+        term: TermRef,
+        pre_norm_concrete: &mut VariableMap,
+        concrete_context: &mut LocalContext,
+        next_fresh: &mut usize,
+    ) {
+        match term.decompose() {
+            Decomposition::Atom(Atom::FreeVariable(var_id)) => {
+                if !pre_norm_concrete.has_mapping(*var_id) {
+                    let fresh_id = *next_fresh as AtomId;
+                    pre_norm_concrete.set(*var_id, Term::atom(Atom::FreeVariable(fresh_id)));
+                    // Get type from the pre-normalization context
+                    if let Some(ty) = self.pre_norm_context.get_var_type(*var_id as usize) {
+                        concrete_context.set_type(*next_fresh, ty.clone());
+                    }
+                    *next_fresh += 1;
+                }
+            }
+            Decomposition::Atom(_) => {}
+            Decomposition::Application(func, arg) => {
+                self.assign_fresh_for_eliminated(
+                    func,
+                    pre_norm_concrete,
+                    concrete_context,
+                    next_fresh,
+                );
+                self.assign_fresh_for_eliminated(
+                    arg,
+                    pre_norm_concrete,
+                    concrete_context,
+                    next_fresh,
+                );
+            }
+            Decomposition::Pi(input, output) => {
+                self.assign_fresh_for_eliminated(
+                    input,
+                    pre_norm_concrete,
+                    concrete_context,
+                    next_fresh,
+                );
+                self.assign_fresh_for_eliminated(
+                    output,
+                    pre_norm_concrete,
+                    concrete_context,
+                    next_fresh,
+                );
+            }
+        }
+    }
+}
+
 /// A proof is made up of ProofSteps.
 /// Each ProofStep contains an output clause, plus a bunch of information we track about it.
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -466,12 +634,12 @@ pub struct ProofStep {
     /// When we use a rewrite backwards, increasing KBO, that also counts toward depth.
     pub depth: u32,
 
-    /// A printable proof step is one that we are willing to turn into a line of code in a proof.
-    /// Unprintable proof steps are things like halfway resolved theorems, or expressions
-    /// that use anonymous synthetic atoms.
-
     /// Information about this step that will let us reconstruct the variable mappings.
     pub trace: Option<ClauseTrace>,
+
+    /// Maps each premise's variables to this step's clause variables.
+    /// Used during proof reconstruction to avoid re-unification.
+    pub premise_map: PremiseMap,
 }
 
 impl fmt::Display for ProofStep {
@@ -512,10 +680,10 @@ impl ProofStep {
             clause,
             truthiness,
             rule,
-
             proof_size: 0,
             depth: 0,
             trace,
+            premise_map: PremiseMap::empty(),
         }
     }
 
@@ -527,6 +695,7 @@ impl ProofStep {
         rule: Rule,
         clause: Clause,
         trace: ClauseTrace,
+        premise_map: PremiseMap,
     ) -> ProofStep {
         // Direct implication does not add to depth.
         let depth = activated_step.depth;
@@ -535,10 +704,10 @@ impl ProofStep {
             clause,
             truthiness: activated_step.truthiness,
             rule,
-
             proof_size: activated_step.proof_size + 1,
             depth,
             trace: Some(trace),
+            premise_map,
         }
     }
 
@@ -549,23 +718,20 @@ impl ProofStep {
         pattern_step: &ProofStep,
         clause: Clause,
         trace: ClauseTrace,
-        pattern_var_map: VariableMap,
-        output_context: LocalContext,
+        premise_map: PremiseMap,
     ) -> ProofStep {
         let info = SpecializationInfo {
             pattern_id,
             inspiration_id,
-            pattern_var_map,
-            output_context,
         };
         ProofStep {
             clause,
             truthiness: pattern_step.truthiness,
             rule: Rule::Specialization(info),
-
             proof_size: pattern_step.proof_size + 1,
             depth: pattern_step.depth,
             trace: Some(trace),
+            premise_map,
         }
     }
 
@@ -579,8 +745,7 @@ impl ProofStep {
         literals: Vec<Literal>,
         context: LocalContext,
         resolution_trace: Vec<LiteralTrace>,
-        short_var_map: VariableMap,
-        long_var_map: VariableMap,
+        premise_map: PremiseMap,
     ) -> ProofStep {
         let rule = Rule::Resolution(ResolutionInfo {
             short_id,
@@ -588,8 +753,6 @@ impl ProofStep {
             literals,
             context,
             resolution_trace,
-            short_var_map,
-            long_var_map,
         });
 
         let truthiness = short_step.truthiness.combine(long_step.truthiness);
@@ -614,10 +777,10 @@ impl ProofStep {
             clause,
             truthiness,
             rule,
-
             proof_size,
             depth,
             trace: None,
+            premise_map,
         }
     }
 
@@ -672,7 +835,15 @@ impl ProofStep {
         // Use rewritten_context for normalization since it has the correct variable types
         // for all variables in new_literal (from both target and new_subterm).
 
-        let (clause, trace) = Clause::from_literal_traced(new_literal, false, &rewritten_context);
+        let (clause, trace, var_ids) =
+            Clause::from_literal_traced(new_literal, false, &rewritten_context);
+
+        // Build premise map: pattern gets raw var map, target is concrete (empty map)
+        let premise_map = PremiseMap::new(
+            vec![pattern_var_map.clone(), VariableMap::new()],
+            var_ids,
+            rewritten_context.clone(),
+        );
 
         let truthiness = pattern_step.truthiness.combine(target_step.truthiness);
 
@@ -685,7 +856,6 @@ impl ProofStep {
             rewritten,
             context: rewritten_context,
             flipped,
-            pattern_var_map,
         });
 
         let proof_size = pattern_step.proof_size + target_step.proof_size + 1;
@@ -701,10 +871,10 @@ impl ProofStep {
             clause,
             truthiness,
             rule,
-
             proof_size,
             depth,
             trace: Some(trace),
+            premise_map,
         }
     }
 
@@ -727,10 +897,10 @@ impl ProofStep {
             clause: Clause::impossible(),
             truthiness,
             rule,
-
             proof_size: 0,
             depth,
             trace: None,
+            premise_map: PremiseMap::empty(),
         }
     }
 
@@ -750,10 +920,10 @@ impl ProofStep {
             clause: Clause::impossible(),
             truthiness,
             rule,
-
             proof_size,
             depth,
             trace: None,
+            premise_map: PremiseMap::empty(),
         }
     }
 
@@ -807,10 +977,10 @@ impl ProofStep {
             clause,
             truthiness,
             rule,
-
             proof_size: 0,
             depth: 0,
             trace,
+            premise_map: PremiseMap::empty(),
         }
     }
 
