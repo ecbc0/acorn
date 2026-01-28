@@ -8,7 +8,6 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::{Decomposition, PathStep, Term, TermRef};
-use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::variable_map::{self, VariableMap};
 
 /// The different sorts of proof steps.
@@ -81,12 +80,6 @@ pub struct ResolutionInfo {
 
     /// The local context for the post-resolution literals.
     pub context: LocalContext,
-
-    /// Maps long_clause literals to post-resolution literals.
-    /// Each entry corresponds to a long_clause literal:
-    /// - Eliminated { step: short_id } for the resolved literal
-    /// - Output { index } for literals kept in post-resolution
-    pub resolution_trace: Vec<LiteralTrace>,
 }
 
 /// Information about a specialization.
@@ -161,46 +154,6 @@ pub struct AssumptionInfo {
     pub context: LocalContext,
 }
 
-/// Information about what happens to a term during equality factoring.
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub struct EFTermTrace {
-    /// Which literal it goes to
-    pub index: usize,
-
-    /// Whether it goes to the left of that literal
-    pub left: bool,
-}
-
-/// Information about what happens to a literal during equality factoring.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EFLiteralTrace {
-    pub left: EFTermTrace,
-    pub right: EFTermTrace,
-}
-
-impl EFLiteralTrace {
-    pub fn to_index(index: usize, flipped: bool) -> EFLiteralTrace {
-        EFLiteralTrace::to_out(
-            EFTermTrace { index, left: true },
-            EFTermTrace { index, left: false },
-            flipped,
-        )
-    }
-
-    /// Trace a literal that goes to a provided output. Flip the input if flipped is provided.
-    pub fn to_out(left: EFTermTrace, right: EFTermTrace, flipped: bool) -> EFLiteralTrace {
-        if flipped {
-            EFLiteralTrace::new(right, left)
-        } else {
-            EFLiteralTrace::new(left, right)
-        }
-    }
-
-    pub fn new(left: EFTermTrace, right: EFTermTrace) -> EFLiteralTrace {
-        EFLiteralTrace { left, right }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EqualityFactoringInfo {
     /// The id of the clause that was factored.
@@ -211,9 +164,6 @@ pub struct EqualityFactoringInfo {
 
     /// The local context for the literals.
     pub context: LocalContext,
-
-    /// Parallel to literals. Tracks how we got them from the input clause.
-    pub ef_trace: Vec<EFLiteralTrace>,
 }
 
 /// Information about an equality resolution inference.
@@ -681,9 +631,6 @@ pub struct ProofStep {
     /// When we use a rewrite backwards, increasing KBO, that also counts toward depth.
     pub depth: u32,
 
-    /// Information about this step that will let us reconstruct the variable mappings.
-    pub trace: Option<ClauseTrace>,
-
     /// Maps each premise's variables to this step's clause variables.
     /// Used during proof reconstruction to avoid re-unification.
     pub premise_map: PremiseMap,
@@ -710,26 +657,12 @@ impl ProofStep {
             context,
         });
 
-        // Create traces to indicate that no literals have been moved around
-        let trace = Some(ClauseTrace::new(
-            clause
-                .literals
-                .iter()
-                .enumerate()
-                .map(|(i, _)| LiteralTrace::Output {
-                    index: i,
-                    flipped: false,
-                })
-                .collect(),
-        ));
-
         ProofStep {
             clause,
             truthiness,
             rule,
             proof_size: 0,
             depth: 0,
-            trace,
             premise_map: PremiseMap::empty(),
         }
     }
@@ -741,7 +674,6 @@ impl ProofStep {
         activated_step: &ProofStep,
         rule: Rule,
         clause: Clause,
-        trace: ClauseTrace,
         premise_map: PremiseMap,
     ) -> ProofStep {
         // Direct implication does not add to depth.
@@ -753,7 +685,6 @@ impl ProofStep {
             rule,
             proof_size: activated_step.proof_size + 1,
             depth,
-            trace: Some(trace),
             premise_map,
         }
     }
@@ -764,7 +695,6 @@ impl ProofStep {
         inspiration_id: usize,
         pattern_step: &ProofStep,
         clause: Clause,
-        trace: ClauseTrace,
         premise_map: PremiseMap,
     ) -> ProofStep {
         let info = SpecializationInfo {
@@ -777,7 +707,6 @@ impl ProofStep {
             rule: Rule::Specialization(info),
             proof_size: pattern_step.proof_size + 1,
             depth: pattern_step.depth,
-            trace: Some(trace),
             premise_map,
         }
     }
@@ -791,7 +720,6 @@ impl ProofStep {
         clause: Clause,
         literals: Vec<Literal>,
         context: LocalContext,
-        resolution_trace: Vec<LiteralTrace>,
         premise_map: PremiseMap,
     ) -> ProofStep {
         let rule = Rule::Resolution(ResolutionInfo {
@@ -799,7 +727,6 @@ impl ProofStep {
             long_id,
             literals,
             context,
-            resolution_trace,
         });
 
         let truthiness = short_step.truthiness.combine(long_step.truthiness);
@@ -826,7 +753,6 @@ impl ProofStep {
             rule,
             proof_size,
             depth,
-            trace: None,
             premise_map,
         }
     }
@@ -838,8 +764,6 @@ impl ProofStep {
     /// It seems weird for the output to have variables, but it does.
     ///
     /// A "forwards" rewrite goes left-to-right in the pattern.
-    ///
-    /// The trace will capture everything that happens *after* the rewrite.
     pub fn rewrite(
         pattern_id: usize,
         pattern_step: &ProofStep,
@@ -882,8 +806,8 @@ impl ProofStep {
         // Use rewritten_context for normalization since it has the correct variable types
         // for all variables in new_literal (from both target and new_subterm).
 
-        let (clause, trace, var_ids) =
-            Clause::from_literal_traced(new_literal, false, &rewritten_context);
+        let (clause, var_ids) =
+            Clause::normalize_with_var_ids(vec![new_literal], &rewritten_context);
 
         // Build premise map: pattern gets raw var map, target is concrete (empty map)
         let premise_map = PremiseMap::new(
@@ -920,7 +844,6 @@ impl ProofStep {
             rule,
             proof_size,
             depth,
-            trace: Some(trace),
             premise_map,
         }
     }
@@ -946,7 +869,6 @@ impl ProofStep {
             rule,
             proof_size: 0,
             depth,
-            trace: None,
             premise_map: PremiseMap::empty(),
         }
     }
@@ -969,7 +891,6 @@ impl ProofStep {
             rule,
             proof_size,
             depth,
-            trace: None,
             premise_map: PremiseMap::empty(),
         }
     }
@@ -1009,24 +930,12 @@ impl ProofStep {
             literals,
             context,
         });
-        let trace = Some(ClauseTrace::new(
-            clause
-                .literals
-                .iter()
-                .enumerate()
-                .map(|(i, _)| LiteralTrace::Output {
-                    index: i,
-                    flipped: false,
-                })
-                .collect(),
-        ));
         ProofStep {
             clause,
             truthiness,
             rule,
             proof_size: 0,
             depth: 0,
-            trace,
             premise_map: PremiseMap::empty(),
         }
     }

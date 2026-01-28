@@ -338,10 +338,10 @@ impl Prover {
 
             // Create a new proof step, without activating it, to express the
             // specific equality used by this rewrite.
-            let (literal, flipped) =
+            let (literal, _flipped) =
                 Literal::new_with_flip(true, step.left_term().clone(), step.right_term().clone());
-            let (clause, traces, _var_ids) =
-                Clause::from_literal_traced(literal, flipped, &LocalContext::empty());
+            let (clause, _var_ids) =
+                Clause::normalize_with_var_ids(vec![literal], &LocalContext::empty());
             if new_clauses.contains(&clause) {
                 // We already created a step for this equality
                 // TODO: is it really okay to not insert any sort of id here?
@@ -371,7 +371,6 @@ impl Prover {
                 inspiration_id,
                 rewrite_step,
                 clause,
-                traces,
                 premise_map,
             );
 

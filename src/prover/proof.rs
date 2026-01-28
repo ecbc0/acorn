@@ -360,15 +360,10 @@ pub fn reconstruct_step<R: ProofResolver>(
 #[cfg(test)]
 mod tests {
     use crate::kernel::kernel_context::KernelContext;
-    use crate::kernel::trace::LiteralTrace;
     use crate::proof_step::{ProofStep, Rule, Truthiness};
     use crate::prover::active_set::ActiveSet;
 
-    /// Test that resolution followed by simplification has consistent traces.
-    ///
-    /// This tests a bug where ResolutionInfo doesn't store the post-resolution literals,
-    /// causing reconstruct_trace to use the original long clause literals instead of
-    /// the literals after the resolution unifier was applied.
+    /// Test that resolution followed by simplification produces correct results.
     ///
     /// The scenario:
     /// - Long clause: not g0(x) or g1(x) = c0  (x is a variable)
@@ -376,13 +371,8 @@ mod tests {
     /// - Resolution gives: g1(g2(c1)) = c0
     /// - Simplification clause: g1(g2(x)) != c0  (eliminates g1(g2(c1)) = c0)
     /// - Result: empty clause (contradiction)
-    ///
-    /// The bug: The trace is built based on the post-resolution clause [g1(g2(c1)) = c0],
-    /// but ResolutionInfo only stores short_id and long_id. When reconstruct_trace is called,
-    /// it uses long_clause.literals [not g0(x), g1(x) = c0] which don't match the trace
-    /// that was built for the post-resolution literals.
     #[test]
-    fn test_resolution_with_simplification_trace() {
+    fn test_resolution_with_simplification() {
         let mut kctx = KernelContext::new();
         kctx.parse_constant("g0", "Bool -> Bool")
             .parse_constant("g1", "Bool -> Bool")
@@ -390,123 +380,59 @@ mod tests {
             .parse_constant("c0", "Bool")
             .parse_constant("c1", "Bool");
 
-        // Long clause (step 0): not g0(x) or g1(x) = c0
-        // First literal is negative (g0(x) != true), second is positive (g1(x) = c0)
         let long_clause = kctx.parse_clause("not g0(x0) or g1(x0) = c0", &["Bool"]);
         let long_step = ProofStep::mock_from_clause(long_clause);
 
-        // Short clause (step 1): g0(g2(c1))
-        // This resolves with the first literal of long clause, binding x0 -> g2(c1)
         let short_clause = kctx.parse_clause("g0(g2(c1))", &[]);
         let mut short_step = ProofStep::mock_from_clause(short_clause);
-        short_step.truthiness = crate::proof_step::Truthiness::Hypothetical;
+        short_step.truthiness = Truthiness::Hypothetical;
 
-        // Simplification clause (step 2): g1(g2(x)) != c0
-        // This can eliminate g1(g2(c1)) = c0 from the resolution result
         let simp_clause = kctx.parse_clause("g1(g2(x0)) != c0", &["Bool"]);
         let simp_step = ProofStep::mock_from_clause(simp_clause);
 
-        // Build the active set
-        // Order is important: we activate long_step and simp_step first,
-        // then call find_resolutions with short_step (which will use next_id = 2)
         let mut active_set = ActiveSet::new();
-        active_set.activate(long_step.clone(), &kctx); // Step 0
-        active_set.activate(simp_step.clone(), &kctx); // Step 1
+        active_set.activate(long_step.clone(), &kctx);
+        active_set.activate(simp_step.clone(), &kctx);
 
-        // Find resolutions - short_step will get ID 2 (next_id)
         let mut resolution_results = vec![];
         active_set.find_resolutions(&short_step, &mut resolution_results, &kctx);
+        active_set.activate(short_step.clone(), &kctx);
 
-        // Now activate short_step so it gets ID 2 (matching what find_resolutions used)
-        active_set.activate(short_step.clone(), &kctx); // Step 2
-
-        // Should have at least one resolution result
-        assert!(
-            !resolution_results.is_empty(),
-            "Resolution should produce at least one result. Long: {}, Short: {}",
-            long_step.clause,
-            short_step.clause
-        );
+        assert!(!resolution_results.is_empty());
 
         let resolution_step = resolution_results.into_iter().next().unwrap();
-
-        // The resolution step should have a trace
-        assert!(
-            resolution_step.trace.is_some(),
-            "Resolution step should have a trace"
-        );
-
-        // Now simplify the resolution result using the active set
         let simplified_step = active_set.simplify(resolution_step.clone(), &kctx);
-
-        // The simplification should succeed (or not change the step)
         let final_step = simplified_step.unwrap_or(resolution_step);
 
-        // Verify we got the expected structure
         assert!(
             final_step.clause.is_impossible(),
-            "Expected empty clause after resolution + simplification, got: {}",
+            "Expected empty clause, got: {}",
             final_step.clause
         );
 
-        // The final step should be a Simplification wrapping a Resolution
         let simp_info = match &final_step.rule {
             Rule::Simplification(info) => info,
             other => panic!("Expected Simplification rule, got {:?}", other),
         };
 
-        let resolution_info = match &simp_info.original.rule {
-            Rule::Resolution(info) => info,
+        match &simp_info.original.rule {
+            Rule::Resolution(info) => {
+                assert!(!info.literals.is_empty());
+            }
             other => panic!("Expected inner Resolution rule, got {:?}", other),
         };
 
-        // The Simplification step should have a trace mapping from the resolution
-        // output to the simplified clause
-        let trace = final_step
-            .trace
-            .as_ref()
-            .expect("Expected trace on Simplification step");
-        let traces = trace.as_slice();
-
-        // The trace should have entries for the resolution step's clause literals
-        assert_eq!(
-            traces.len(),
-            simp_info.original.clause.literals.len(),
-            "Simplification trace should have same length as inner resolution clause literals"
-        );
-
-        // Verify ResolutionInfo stores post-resolution literals
-        assert!(
-            !resolution_info.literals.is_empty(),
-            "ResolutionInfo should store post-resolution literals"
-        );
-
-        // The simplifying clause should be referenced in the simplification info
-        assert!(
-            !simp_info.simplifying_ids.is_empty(),
-            "Simplification should reference simplifying clause IDs"
-        );
+        assert!(!simp_info.simplifying_ids.is_empty());
     }
 
-    /// Test that resolution with polymorphic simplification uses traced flip correctly.
-    ///
-    /// This tests a bug where the flip determination in reconstruct_step tries to compute
-    /// the flip dynamically using match_terms, rather than using the flip value already
-    /// stored in the trace. This fails when both the post-resolution literal and the
-    /// simplification literal have variables.
+    /// Test that resolution with polymorphic simplification works correctly.
     ///
     /// The scenario:
-    /// - Long clause: not g0(x0) or not g1(x0, g2(x0))  (negative literals with variable)
-    /// - Short clause: g0(c0)  (concrete, resolves with first literal, binds x0->c0)
+    /// - Long clause: not g0(x0) or not g1(x0, g2(x0))
+    /// - Short clause: g0(c0)  (resolves with first literal, binds x0->c0)
     /// - Resolution gives: not g1(c0, g2(c0))
-    /// - Simplification clause: g1(x0, g2(x0))  (pattern with variable, eliminates the neg lit)
+    /// - Simplification clause: g1(x0, g2(x0))  (eliminates the neg lit)
     /// - Result: empty clause (contradiction)
-    ///
-    /// The bug: When reconstructing the proof, the code tries to determine if the
-    /// simplification literal needs to be flipped relative to the post-resolution literal.
-    /// It uses match_terms to test both orientations, but this fails when both literals
-    /// have variables (different variable IDs). The fix is to use the `flipped` value
-    /// that was already computed and stored in the trace.
     #[test]
     fn test_resolution_simplification_with_polymorphic_flip() {
         let mut kctx = KernelContext::new();
@@ -515,90 +441,47 @@ mod tests {
             .parse_constant("g2", "Bool -> Bool")
             .parse_constant("c0", "Bool");
 
-        // Long clause (step 0): not g0(x0) or not g1(x0, g2(x0))
         let long_clause = kctx.parse_clause("not g0(x0) or not g1(x0, g2(x0))", &["Bool"]);
         let mut long_step = ProofStep::mock_from_clause(long_clause);
         long_step.truthiness = Truthiness::Factual;
 
-        // Simplification clause (step 1): g1(x0, g2(x0))
-        // This pattern will eliminate `not g1(c0, g2(c0))` from the resolution result
         let simp_clause = kctx.parse_clause("g1(x0, g2(x0))", &["Bool"]);
         let simp_step = ProofStep::mock_from_clause(simp_clause);
 
-        // Short clause (step 2): g0(c0)
-        // This resolves with the first literal of long clause, binding x0 -> c0
         let short_clause = kctx.parse_clause("g0(c0)", &[]);
         let mut short_step = ProofStep::mock_from_clause(short_clause);
         short_step.truthiness = Truthiness::Hypothetical;
 
-        // Build the active set
         let mut active_set = ActiveSet::new();
-        active_set.activate(long_step.clone(), &kctx); // Step 0
-        active_set.activate(simp_step.clone(), &kctx); // Step 1
+        active_set.activate(long_step.clone(), &kctx);
+        active_set.activate(simp_step.clone(), &kctx);
 
-        // Find resolutions - short_step will get ID 2 (next_id)
         let mut resolution_results = vec![];
         active_set.find_resolutions(&short_step, &mut resolution_results, &kctx);
+        active_set.activate(short_step.clone(), &kctx);
 
-        // Now activate short_step
-        active_set.activate(short_step.clone(), &kctx); // Step 2
-
-        assert!(
-            !resolution_results.is_empty(),
-            "Resolution should produce at least one result"
-        );
+        assert!(!resolution_results.is_empty());
 
         let resolution_step = resolution_results.into_iter().next().unwrap();
-
-        // Now simplify the resolution result using the active set
         let simplified_step = active_set.simplify(resolution_step.clone(), &kctx);
-
-        // The simplification should succeed and produce an empty clause
         let final_step = simplified_step.unwrap_or(resolution_step);
+
         assert!(
             final_step.clause.is_impossible(),
-            "Expected empty clause after resolution + simplification, got: {}",
+            "Expected empty clause, got: {}",
             final_step.clause
         );
 
-        // The final step should be a Simplification wrapping a Resolution
         let simp_info = match &final_step.rule {
             Rule::Simplification(info) => info,
             other => panic!("Expected Simplification rule, got {:?}", other),
         };
 
-        let resolution_info = match &simp_info.original.rule {
-            Rule::Resolution(info) => info,
+        match &simp_info.original.rule {
+            Rule::Resolution(info) => {
+                assert!(!info.literals.is_empty());
+            }
             other => panic!("Expected inner Resolution rule, got {:?}", other),
         };
-
-        // The Simplification step should have a trace
-        let trace = final_step
-            .trace
-            .as_ref()
-            .expect("Expected trace on Simplification step");
-        let traces = trace.as_slice();
-
-        // Find the simplification trace entry (step 1) in the Simplification step's trace
-        let simp_trace = traces
-            .iter()
-            .find(|t| matches!(t, LiteralTrace::Eliminated { step: 1, .. }));
-        assert!(
-            simp_trace.is_some(),
-            "Expected to find simplification trace entry for step 1"
-        );
-
-        // Verify that the trace captures the flip information
-        let simp_trace = simp_trace.unwrap();
-        if let LiteralTrace::Eliminated { step, flipped } = simp_trace {
-            assert_eq!(*step, 1, "Simplification should reference step 1");
-            assert!(!flipped, "The simplification literal should not be flipped");
-        }
-
-        // Verify the post-resolution literal exists in the inner resolution info
-        assert!(
-            !resolution_info.literals.is_empty(),
-            "ResolutionInfo should store post-resolution literals"
-        );
     }
 }

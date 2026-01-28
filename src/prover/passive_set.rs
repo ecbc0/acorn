@@ -9,7 +9,6 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::Term;
-use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::variable_map::VariableMap;
 use crate::proof_step::{PremiseMap, ProofStep, Rule, SimplificationInfo};
 use std::collections::hash_map::Entry;
@@ -92,7 +91,7 @@ fn pair_specializes(
 // Returns None if the clause is tautologically implied by the literal we are simplifying with.
 // activated_context is for left/right, passive_context is for literals.
 fn make_simplified(
-    activated_id: usize,
+    _activated_id: usize,
     activated_context: &LocalContext,
     activated_literal: &Literal,
     passive_context: &LocalContext,
@@ -103,13 +102,12 @@ fn make_simplified(
     caller_flipped: bool,
     _index: usize,
     literals: Vec<Literal>,
-) -> Option<(Clause, ClauseTrace, Vec<AtomId>, Vec<VariableMap>)> {
+) -> Option<(Clause, Vec<AtomId>, Vec<VariableMap>)> {
     // Note: When caller_flipped is true, left and right have already been swapped
     // by the caller. So any flip we compute here is relative to the swapped order.
     // The final flip must be XORed with caller_flipped to get the flip relative
     // to the original activating literal orientation.
     let mut new_literals = vec![];
-    let mut incremental_trace = vec![];
     let mut simp_var_maps = vec![];
     for literal in literals.into_iter() {
         // Check both directions consistently for all literals.
@@ -151,29 +149,16 @@ fn make_simplified(
         if eliminated {
             // XOR with caller_flipped to get the flip relative to original orientation
             let literal_flipped = match_flipped != caller_flipped;
-            incremental_trace.push(LiteralTrace::Eliminated {
-                step: activated_id,
-                flipped: literal_flipped,
-            });
             // Extract var_map for the simplifying clause
             let mut var_map = VariableMap::new();
             var_map.match_literal(activated_literal, &literal, literal_flipped);
             simp_var_maps.push(var_map);
         } else {
-            let index = new_literals.len();
-            incremental_trace.push(LiteralTrace::Output {
-                index,
-                flipped: false,
-            });
             new_literals.push(literal);
         }
     }
-    let (clause, simp_trace, var_ids) = Clause::new_with_trace(
-        new_literals,
-        ClauseTrace::new(incremental_trace),
-        passive_context,
-    );
-    Some((clause, simp_trace, var_ids, simp_var_maps))
+    let (clause, var_ids) = Clause::normalize_with_var_ids(new_literals, passive_context);
+    Some((clause, var_ids, simp_var_maps))
 }
 
 impl PassiveSet {
@@ -349,7 +334,7 @@ impl PassiveSet {
                 continue;
             }
             let activated_literal = &activated_step.clause.literals[0];
-            let Some((new_clause, simp_trace, var_ids, simp_var_maps)) = make_simplified(
+            let Some((new_clause, var_ids, simp_var_maps)) = make_simplified(
                 activated_id,
                 local_context,
                 activated_literal,
@@ -401,28 +386,23 @@ impl PassiveSet {
                 }),
                 proof_size,
                 depth,
-                trace: Some(simp_trace),
                 premise_map,
             };
 
             // Validate the simplified step when the validate feature is enabled
-            // Include the activating step as a pending step since it's not in the active set yet
-            // Skip validation for steps without traces (like mock steps in tests)
             #[cfg(any(test, feature = "validate"))]
-            if simplified.trace.is_some() {
-                if let Err(e) = active_set.validate_step_with_pending(
-                    &simplified,
-                    kernel_context,
-                    activated_id,
-                    &activated_step.clause,
-                ) {
-                    panic!(
-                        "Invalid proof step after passive simplification: {}\nStep clause: {}\nStep rule: {}",
-                        e,
-                        simplified.clause,
-                        simplified.rule.name()
-                    );
-                }
+            if let Err(e) = active_set.validate_step_with_pending(
+                &simplified,
+                kernel_context,
+                activated_id,
+                &activated_step.clause,
+            ) {
+                panic!(
+                    "Invalid proof step after passive simplification: {}\nStep clause: {}\nStep rule: {}",
+                    e,
+                    simplified.clause,
+                    simplified.rule.name()
+                );
             }
 
             new_steps.push(simplified);

@@ -15,7 +15,6 @@ pub mod pdt;
 pub mod symbol;
 pub mod symbol_table;
 pub mod term;
-pub mod trace;
 pub mod type_store;
 pub mod types;
 pub mod unifier;

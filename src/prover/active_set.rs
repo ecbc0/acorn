@@ -15,7 +15,6 @@ use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::pdt::LiteralSet;
 use crate::kernel::term::{PathStep, Term};
-use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 use crate::kernel::unifier::{Scope, Unifier};
 use crate::kernel::variable_map::VariableMap;
 use crate::kernel::{EqualityGraph, StepId};
@@ -23,6 +22,14 @@ use crate::proof_step::{
     BooleanReductionInfo, EqualityFactoringInfo, EqualityResolutionInfo, ExtensionalityInfo,
     InjectivityInfo, PremiseMap, ProofStep, ProofStepId, Rule, SimplificationInfo, Truthiness,
 };
+
+/// Result of evaluating whether a literal can be eliminated during simplification.
+enum LiteralElimination {
+    /// The literal is self-contradictory (e.g., x != x).
+    Impossible,
+    /// The literal was eliminated by matching an existing clause.
+    Eliminated { step: usize, flipped: bool },
+}
 
 /// The ActiveSet stores a bunch of clauses that are indexed for various efficient lookups.
 /// The goal is that, given a new clause, it is efficient to determine what can be concluded
@@ -367,24 +374,14 @@ impl ActiveSet {
         }
 
         let mut literals = vec![];
-        let mut incremental_trace = vec![];
         for (i, literal) in long_clause.literals.iter().enumerate() {
             if i == long_index {
-                incremental_trace.push(LiteralTrace::Eliminated {
-                    step: short_id,
-                    flipped,
-                });
                 continue;
             }
-            let index = literals.len();
             let left = unifier.apply(Scope::RIGHT, &literal.left);
             let right = unifier.apply(Scope::RIGHT, &literal.right);
-            let (new_literal, new_flip) = Literal::new_with_flip(literal.positive, left, right);
+            let (new_literal, _new_flip) = Literal::new_with_flip(literal.positive, left, right);
             literals.push(new_literal);
-            incremental_trace.push(LiteralTrace::Output {
-                index,
-                flipped: new_flip,
-            });
         }
 
         // Check inhabitedness for eliminated short clause variables.
@@ -445,15 +442,11 @@ impl ActiveSet {
             }
         }
 
-        // Store post-resolution literals and trace for reconstruction.
-        // These are needed because simplification operates on post-resolution literals,
-        // but the composed trace maps from original long_clause literals.
+        // Store post-resolution literals for reconstruction.
         let resolution_literals = literals.clone();
         let resolution_context = context.clone();
-        let resolution_trace = incremental_trace.clone();
 
-        let (clause, trace, var_ids) =
-            Clause::new_with_trace(literals, ClauseTrace::new(incremental_trace), &context);
+        let (clause, var_ids) = Clause::normalize_with_var_ids(literals, &context);
 
         // Store raw inference var maps and normalization trace for reconstruction
         let premise_map = PremiseMap::new(
@@ -490,7 +483,7 @@ impl ActiveSet {
             }
         }
 
-        let mut step = ProofStep::resolution(
+        let step = ProofStep::resolution(
             long_id,
             long_step,
             short_id,
@@ -498,10 +491,8 @@ impl ActiveSet {
             clause,
             resolution_literals,
             resolution_context,
-            resolution_trace,
             premise_map,
         );
-        step.trace = Some(trace);
         Some(step)
     }
 
@@ -899,8 +890,7 @@ impl ActiveSet {
             }
 
             let literals = new_literals.clone();
-            let (new_clause, traces, var_ids) =
-                Clause::normalize_with_trace(new_literals, &context);
+            let (new_clause, var_ids) = Clause::normalize_with_var_ids(new_literals, &context);
 
             // Check if normalization resulted in a tautology
             if !new_clause.is_tautology() {
@@ -920,7 +910,6 @@ impl ActiveSet {
                         flipped,
                     }),
                     new_clause,
-                    traces,
                     premise_map,
                 );
                 answer.push(step);
@@ -988,14 +977,13 @@ impl ActiveSet {
                 context: context.clone(),
                 flipped,
             };
-            let (clause, traces, var_ids) = Clause::normalize_with_trace(literals, &context);
+            let (clause, var_ids) = Clause::normalize_with_var_ids(literals, &context);
             let premise_map = PremiseMap::new(vec![VariableMap::new()], var_ids, context.clone());
             let step = ProofStep::direct(
                 activated_id,
                 activated_step,
                 Rule::Injectivity(info),
                 clause,
-                traces,
                 premise_map,
             );
             answer.push(step);
@@ -1022,14 +1010,13 @@ impl ActiveSet {
                 literals: literals.clone(),
                 context: context.clone(),
             };
-            let (clause, traces, var_ids) = Clause::normalize_with_trace(literals, &context);
+            let (clause, var_ids) = Clause::normalize_with_var_ids(literals, &context);
             let premise_map = PremiseMap::new(vec![VariableMap::new()], var_ids, context.clone());
             let step = ProofStep::direct(
                 activated_id,
                 activated_step,
                 Rule::BooleanReduction(info),
                 clause,
-                traces,
                 premise_map,
             );
             answer.push(step);
@@ -1056,14 +1043,13 @@ impl ActiveSet {
                 literals: literals.clone(),
                 context: context.clone(),
             };
-            let (clause, traces, var_ids) = Clause::normalize_with_trace(literals, &context);
+            let (clause, var_ids) = Clause::normalize_with_var_ids(literals, &context);
             let premise_map = PremiseMap::new(vec![VariableMap::new()], var_ids, context.clone());
             let step = ProofStep::direct(
                 activated_id,
                 activated_step,
                 Rule::Extensionality(info),
                 clause,
-                traces,
                 premise_map,
             );
             answer.push(step);
@@ -1093,13 +1079,12 @@ impl ActiveSet {
         // Use the clause's helper method to find all factorings
         let factorings = inference::find_equality_factorings(clause, kernel_context);
 
-        for (literals, ef_trace, output_context, input_var_map) in factorings {
+        for (literals, output_context, input_var_map) in factorings {
             // Capture the literals before normalization
             let literals_before_normalization = literals.clone();
 
-            // Create the new clause with trace using the unifier's output context
-            let (new_clause, normalization_traces, var_ids) =
-                Clause::normalize_with_trace(literals, &output_context);
+            // Create the new clause using the unifier's output context
+            let (new_clause, var_ids) = Clause::normalize_with_var_ids(literals, &output_context);
 
             let premise_map = PremiseMap::new(
                 vec![input_var_map.clone()],
@@ -1113,10 +1098,8 @@ impl ActiveSet {
                     id: activated_id,
                     literals: literals_before_normalization,
                     context: output_context,
-                    ef_trace,
                 }),
                 new_clause,
-                normalization_traces,
                 premise_map,
             );
             answer.push(step);
@@ -1150,26 +1133,24 @@ impl ActiveSet {
             .filter(move |(_, step)| step.depends_on_active(id))
     }
 
-    /// Returns (value, trace) when this literal's value is known due to some existing clause.
-    /// The trace is either Eliminated, if the literal matched an existing one, or Impossible,
-    /// if the literal is self-evident.
+    /// Returns (value, elimination) when this literal's value is known due to some existing clause.
     fn evaluate_literal(
         &self,
         literal: &Literal,
         local_context: &LocalContext,
         kernel_context: &KernelContext,
-    ) -> Option<(bool, LiteralTrace)> {
+    ) -> Option<(bool, LiteralElimination)> {
         #[cfg(any(test, feature = "validate"))]
         literal.validate_type(local_context, kernel_context);
         if literal.left == literal.right {
-            return Some((literal.positive, LiteralTrace::Impossible));
+            return Some((literal.positive, LiteralElimination::Impossible));
         }
         match self
             .literal_set
             .find_generalization(&literal, local_context, kernel_context)
         {
             Some((positive, step, flipped)) => {
-                Some((positive, LiteralTrace::Eliminated { step, flipped }))
+                Some((positive, LiteralElimination::Eliminated { step, flipped }))
             }
             None => None,
         }
@@ -1255,7 +1236,6 @@ impl ActiveSet {
         let mut new_rules = vec![];
         let initial_num_literals = step.clause.literals.len();
         let mut output_literals = vec![];
-        let mut incremental_trace = vec![];
         let local_context = step.clause.get_local_context().clone();
 
         // Debug: validate all literals before processing
@@ -1289,13 +1269,13 @@ impl ActiveSet {
                     // Thus, the whole clause is a tautology.
                     return None;
                 }
-                Some((false, trace)) => {
+                Some((false, elimination)) => {
                     // This literal is already known to be false.
                     // Extract the var_map for the simplifying clause.
-                    if let LiteralTrace::Eliminated {
+                    if let LiteralElimination::Eliminated {
                         step: simp_id,
                         flipped,
-                    } = &trace
+                    } = &elimination
                     {
                         let simp_step = self.get_step(*simp_id);
                         new_rules.push((*simp_id, simp_step));
@@ -1312,16 +1292,10 @@ impl ActiveSet {
                             simplifying_var_maps.push(VariableMap::new());
                         }
                     }
-                    incremental_trace.push(trace);
                     continue;
                 }
                 None => {
-                    let output_index = output_literals.len();
                     output_literals.push(literal);
-                    incremental_trace.push(LiteralTrace::Output {
-                        index: output_index,
-                        flipped: false,
-                    });
                 }
             }
         }
@@ -1369,11 +1343,7 @@ impl ActiveSet {
         }
 
         let pre_norm_context = step.clause.get_local_context().clone();
-        let (clause, simp_trace, var_ids) = Clause::new_with_trace(
-            output_literals,
-            ClauseTrace::new(incremental_trace),
-            &pre_norm_context,
-        );
+        let (clause, var_ids) = Clause::normalize_with_var_ids(output_literals, &pre_norm_context);
         if clause.is_tautology() {
             return None;
         }
@@ -1409,7 +1379,6 @@ impl ActiveSet {
             }),
             proof_size,
             depth,
-            trace: Some(simp_trace),
             premise_map,
         };
 

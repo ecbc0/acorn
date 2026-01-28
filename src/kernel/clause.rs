@@ -7,7 +7,6 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::Term;
-use crate::kernel::trace::{ClauseTrace, LiteralTrace};
 
 /// A Clause represents a disjunction (an "or") of literals.
 /// Type information is stored separately in the TypeStore and SymbolTable,
@@ -53,18 +52,15 @@ impl Clause {
         c
     }
 
-    /// Normalizes literals into a clause, creating a trace of where each one is sent.
-    /// Tracks flips that occur during variable ID normalization.
+    /// Normalizes literals into a clause, tracking the variable renumbering.
     ///
-    /// Returns (clause, trace, var_ids) where var_ids maps new sequential variable IDs
+    /// Returns (clause, var_ids) where var_ids maps new sequential variable IDs
     /// to original variable IDs: var_ids[new_id] = old_id.
-    pub fn normalize_with_trace(
+    pub fn normalize_with_var_ids(
         literals: Vec<Literal>,
         context: &LocalContext,
-    ) -> (Clause, ClauseTrace, Vec<AtomId>) {
-        let mut trace = vec![LiteralTrace::Impossible; literals.len()];
-
-        // Pair each literal with its initial index.
+    ) -> (Clause, Vec<AtomId>) {
+        // Pair each literal with its initial index, filtering out impossible literals.
         let mut indexed_literals: Vec<(Literal, usize)> = literals
             .into_iter()
             .enumerate()
@@ -79,100 +75,30 @@ impl Clause {
         indexed_literals.sort();
 
         let mut output_literals = vec![];
-        for (literal, input_index) in indexed_literals {
+        for (literal, _input_index) in indexed_literals {
             if !output_literals.is_empty() {
                 let last_index = output_literals.len() - 1;
                 if literal == output_literals[last_index] {
-                    // This literal is a duplicate, but it is in the output.
-                    trace[input_index] = LiteralTrace::Output {
-                        index: last_index,
-                        flipped: false,
-                    };
+                    // Duplicate literal, skip it.
                     continue;
                 }
             }
-            let output_index = output_literals.len();
             output_literals.push(literal);
-            trace[input_index] = LiteralTrace::Output {
-                index: output_index,
-                flipped: false,
-            };
         }
 
-        // Normalize variable IDs and track flips, rebuilding the context.
+        // Normalize variable IDs, rebuilding the context.
         // var_ids will contain the original variable IDs in their new order.
-        // We use normalize_var_ids_with_context to ensure type dependencies come first:
-        // when a variable is first encountered, any variables in its type are added
-        // before the variable itself.
+        // We use normalize_var_ids_with_context to ensure type dependencies come first.
         let mut var_ids = vec![];
         for i in 0..output_literals.len() {
-            if output_literals[i].normalize_var_ids_with_context(&mut var_ids, context) {
-                // We flipped literal i. Update the trace.
-                for t in &mut trace {
-                    if let LiteralTrace::Output { index, flipped } = t {
-                        if *index == i {
-                            *flipped = !*flipped;
-                        }
-                    }
-                }
-            }
+            output_literals[i].normalize_var_ids_with_context(&mut var_ids, context);
         }
 
         let clause = Clause {
             literals: output_literals,
             context: context.remap(&var_ids),
         };
-        (clause, ClauseTrace::new(trace), var_ids)
-    }
-
-    /// Creates a new clause and a new trace, given a list of literals and a
-    /// trace of how they were created.
-    ///
-    /// Returns (clause, trace, var_ids) where var_ids maps new sequential variable IDs
-    /// to original variable IDs.
-    pub fn new_with_trace(
-        literals: Vec<Literal>,
-        mut trace: ClauseTrace,
-        context: &LocalContext,
-    ) -> (Clause, ClauseTrace, Vec<AtomId>) {
-        let (c, incremental_trace, var_ids) = Clause::normalize_with_trace(literals, context);
-        trace.compose(&incremental_trace);
-        (c, trace, var_ids)
-    }
-
-    /// Creates a new clause. If a trace is provided, we compose the traces.
-    /// The base_trace should be applicable to the provided literals.
-    ///
-    /// Returns (clause, trace, var_ids) where var_ids maps new sequential variable IDs
-    /// to original variable IDs. var_ids is empty when base_trace is None.
-    pub fn new_composing_traces(
-        literals: Vec<Literal>,
-        base_trace: Option<ClauseTrace>,
-        incremental_trace: &ClauseTrace,
-        context: &LocalContext,
-    ) -> (Clause, Option<ClauseTrace>, Vec<AtomId>) {
-        let Some(mut base_trace) = base_trace else {
-            return (Clause::new(literals, context), None, vec![]);
-        };
-        base_trace.compose(incremental_trace);
-        let (c, trace, var_ids) = Clause::new_with_trace(literals, base_trace, context);
-        (c, Some(trace), var_ids)
-    }
-
-    /// Create a clause from a single literal with trace.
-    ///
-    /// Returns (clause, trace, var_ids) where var_ids maps new sequential variable IDs
-    /// to original variable IDs.
-    pub fn from_literal_traced(
-        literal: Literal,
-        flipped: bool,
-        context: &LocalContext,
-    ) -> (Clause, ClauseTrace, Vec<AtomId>) {
-        Clause::new_with_trace(
-            vec![literal],
-            ClauseTrace::new(vec![LiteralTrace::Output { index: 0, flipped }]),
-            context,
-        )
+        (clause, var_ids)
     }
 
     /// Sorts literals.
@@ -961,11 +887,11 @@ mod tests {
         // If it returns None, that's also acceptable (conservative behavior)
     }
 
-    /// Test that normalize_with_trace correctly preserves variable types when
+    /// Test that normalize_with_var_ids correctly preserves variable types when
     /// literals are reordered during sorting. This reproduces a bug where
     /// variable types were getting shuffled incorrectly.
     #[test]
-    fn test_normalize_with_trace_preserves_types() {
+    fn test_normalize_with_var_ids_preserves_types() {
         // Create a clause with mixed types:
         // not f(x0, x1, x2) or x2
         // where x0: Foo, x1: Foo, x2: Bool
@@ -998,7 +924,7 @@ mod tests {
             LocalContext::from_types(vec![type_foo.clone(), type_foo.clone(), type_bool.clone()]);
 
         // Normalize the clause
-        let (clause, _trace, _var_ids) = Clause::normalize_with_trace(vec![lit1, lit2], &context);
+        let (clause, _var_ids) = Clause::normalize_with_var_ids(vec![lit1, lit2], &context);
 
         // After normalization, check the output context:
         // Should have 3 variables with types Foo, Foo, Bool
