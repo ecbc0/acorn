@@ -1281,6 +1281,7 @@ impl ActiveSet {
         // Clone the literals before consuming them, so we can restore the original step
         // if simplification happens (the original step is stored inline in Rule::Simplification).
         let original_literals = step.clause.literals.clone();
+        let mut simplifying_var_maps: Vec<VariableMap> = vec![];
         for literal in std::mem::take(&mut step.clause.literals) {
             match self.evaluate_literal(&literal, &local_context, kernel_context) {
                 Some((true, _)) => {
@@ -1290,9 +1291,26 @@ impl ActiveSet {
                 }
                 Some((false, trace)) => {
                     // This literal is already known to be false.
-                    // Thus, we can just omit it from the disjunction.
-                    if let Some(id) = trace.step_id() {
-                        new_rules.push((id, self.get_step(id)));
+                    // Extract the var_map for the simplifying clause.
+                    if let LiteralTrace::Eliminated {
+                        step: simp_id,
+                        flipped,
+                    } = &trace
+                    {
+                        let simp_step = self.get_step(*simp_id);
+                        new_rules.push((*simp_id, simp_step));
+                        if simp_step.clause.literals.len() == 1 {
+                            let mut simp_var_map = VariableMap::new();
+                            simp_var_map.match_literal(
+                                &simp_step.clause.literals[0],
+                                &literal,
+                                *flipped,
+                            );
+                            simplifying_var_maps.push(simp_var_map);
+                        } else {
+                            // Two-long-clause case - concrete, empty map
+                            simplifying_var_maps.push(VariableMap::new());
+                        }
                     }
                     incremental_trace.push(trace);
                     continue;
@@ -1350,10 +1368,11 @@ impl ActiveSet {
             return Some(step);
         }
 
-        let (clause, simp_trace, _var_ids) = Clause::new_with_trace(
+        let pre_norm_context = step.clause.get_local_context().clone();
+        let (clause, simp_trace, var_ids) = Clause::new_with_trace(
             output_literals,
             ClauseTrace::new(incremental_trace),
-            step.clause.get_local_context(),
+            &pre_norm_context,
         );
         if clause.is_tautology() {
             return None;
@@ -1376,6 +1395,8 @@ impl ActiveSet {
             })
             .collect();
 
+        let premise_map = PremiseMap::new(simplifying_var_maps, var_ids, pre_norm_context);
+
         // Restore the original literals so the inline step has its complete clause
         step.clause.literals = original_literals;
 
@@ -1389,7 +1410,7 @@ impl ActiveSet {
             proof_size,
             depth,
             trace: Some(simp_trace),
-            premise_map: PremiseMap::empty(),
+            premise_map,
         };
 
         // Validate the simplified step when the validate feature is enabled

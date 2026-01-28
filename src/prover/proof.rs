@@ -7,11 +7,8 @@ use crate::elaborator::binding_map::BindingMap;
 use crate::kernel::atom::AtomId;
 use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
-use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::Term;
-use crate::kernel::trace::LiteralTrace;
-use crate::kernel::unifier::{Scope, Unifier};
 use crate::kernel::variable_map::VariableMap;
 use crate::normalizer::Normalizer;
 use crate::proof_step::{ProofStep, ProofStepId, Rule};
@@ -267,6 +264,7 @@ pub fn reconstruct_step<R: ProofResolver>(
         | Rule::BooleanReduction(_)
         | Rule::Rewrite(_)
         | Rule::Resolution(_)
+        | Rule::Specialization(_)
             if !step.premise_map.is_empty() =>
         {
             let premise_ids = step.rule.premises();
@@ -301,107 +299,82 @@ pub fn reconstruct_step<R: ProofResolver>(
             return Ok(());
         }
 
+        Rule::Simplification(info) if !step.premise_map.is_empty() => {
+            // Handle simplifying clauses via PremiseMap
+            let premise_ids = step.rule.premises();
+            let mut premise_contexts: Vec<&LocalContext> = Vec::new();
+            for premise_id in &premise_ids {
+                let premise_clause = resolver.get_clause(*premise_id)?;
+                premise_contexts.push(premise_clause.get_local_context());
+            }
+            let concrete_premises = step.premise_map.concretize_premises(
+                &conclusion_map,
+                conclusion_map_context,
+                &premise_contexts,
+            );
+            for (premise_id, (mut var_map, mut context)) in
+                premise_ids.into_iter().zip(concrete_premises)
+            {
+                let premise_clause = resolver.get_clause(premise_id)?;
+                let premise_context = premise_clause.get_local_context();
+                let mut next_var = context.len();
+                for var_id in 0..premise_context.len() {
+                    if !var_map.has_mapping(var_id as AtomId) {
+                        if let Some(var_type) = premise_context.get_var_type(var_id) {
+                            var_map.set(var_id as AtomId, Term::new_variable(next_var as AtomId));
+                            context.set_type(next_var, var_type.clone());
+                            next_var += 1;
+                        }
+                    }
+                }
+                add_var_map(resolver, premise_id, var_map, context, concrete_steps);
+            }
+
+            // Compute inner step's conclusion_map from var_ids + conclusion_map
+            let (inner_map, inner_context) = step.premise_map.inner_step_map(
+                &conclusion_map,
+                conclusion_map_context,
+                info.original.clause.get_local_context(),
+            );
+            reconstruct_step(
+                resolver,
+                id,
+                &info.original,
+                inner_map,
+                &inner_context,
+                concrete_steps,
+            )?;
+            return Ok(());
+        }
+
         _ => {}
     }
 
-    let Some(traces) = step.trace.as_ref() else {
-        return Err(Error::internal(format!(
-            "no trace for {}: {}",
-            step.rule.name(),
-            &step.clause
-        )));
-    };
-
     match &step.rule {
         Rule::Assumption(info) => {
-            // We need to reconstruct assumptions because assumptions can be simplified in
-            // a way that we need to reconstruct.
-            let (var_maps, output_context) = reconstruct_trace(
-                resolver,
-                &info.literals,
-                &info.context,
-                traces.as_slice(),
-                &step.clause,
-                conclusion_map,
-                conclusion_map_context,
-                concrete_steps,
-            )?;
+            if conclusion_map.len() == 0 {
+                // No concrete instantiation needed.
+                return Ok(());
+            }
+            // The assumption trace is always identity (each literal maps to itself),
+            // so reconstruction just passes through the conclusion_map directly.
             let assumption_id = ConcreteStepId::Assumption(id);
-
-            for var_map in var_maps {
-                if var_map.len() == 0 {
-                    // We don't need to track exact concrete assumptions.
-                    continue;
+            match concrete_steps.entry(assumption_id) {
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    entry
+                        .get_mut()
+                        .var_maps
+                        .push((conclusion_map, conclusion_map_context.clone()));
                 }
-
-                match concrete_steps.entry(assumption_id) {
-                    std::collections::hash_map::Entry::Occupied(mut entry) => {
-                        let concrete_step = entry.get_mut();
-                        concrete_step
-                            .var_maps
-                            .push((var_map, output_context.clone()));
-                    }
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        // Use from_literals_unnormalized to avoid re-normalizing the clause.
-                        // Re-normalizing can change variable IDs if literals sort differently,
-                        // which would make the var_map inconsistent with the clause.
-                        let generic = Clause::from_literals_unnormalized(
-                            info.literals.clone(),
-                            &info.context,
-                        );
-                        let concrete_step =
-                            ConcreteStep::new(generic, var_map, output_context.clone());
-                        entry.insert(concrete_step);
-                    }
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    let generic =
+                        Clause::from_literals_unnormalized(info.literals.clone(), &info.context);
+                    entry.insert(ConcreteStep::new(
+                        generic,
+                        conclusion_map,
+                        conclusion_map_context.clone(),
+                    ));
                 }
-            }
-        }
-        Rule::Specialization(info) => {
-            let pattern_id = ProofStepId::Active(info.pattern_id);
-            let pattern_clause = resolver.get_clause(pattern_id)?;
-            let (var_maps, output_context) = reconstruct_trace(
-                resolver,
-                &pattern_clause.literals,
-                pattern_clause.get_local_context(),
-                traces.as_slice(),
-                &step.clause,
-                conclusion_map,
-                conclusion_map_context,
-                concrete_steps,
-            )?;
-            for map in var_maps {
-                add_var_map(
-                    resolver,
-                    pattern_id,
-                    map,
-                    output_context.clone(),
-                    concrete_steps,
-                );
-            }
-        }
-        Rule::Simplification(info) => {
-            // The trace maps from original step's clause literals to the simplified clause.
-            let (var_maps, output_context) = reconstruct_trace(
-                resolver,
-                &info.original.clause.literals,
-                info.original.clause.get_local_context(),
-                traces.as_slice(),
-                &step.clause,
-                conclusion_map,
-                conclusion_map_context,
-                concrete_steps,
-            )?;
-
-            // Recursively reconstruct the original (inner) step with each var_map.
-            for var_map in var_maps {
-                reconstruct_step(
-                    resolver,
-                    id,
-                    &info.original,
-                    var_map,
-                    &output_context,
-                    concrete_steps,
-                )?;
             }
         }
         rule => {
@@ -412,128 +385,6 @@ pub fn reconstruct_step<R: ProofResolver>(
         }
     }
     Ok(())
-}
-
-// Reconstructs input var maps given a base, conclusion, and trace.
-//
-// There are two sorts of input: the base clause, and simplifications.
-// When we reconstruct a simplification, we add the appropriate variable map to simp_maps.
-// The base clause is always reconstructed, and we return its var map as the result.
-//
-// If the step cannot be reconstructed, we return an error.
-/// Returns (var_maps, output_context) where output_context is the context
-/// that the VariableMaps' replacement terms reference. This context
-/// must be used when calling build_output_context on the returned maps.
-///
-/// The conc_map_context is the context that conc_map's replacement terms reference.
-/// This is needed to look up variable types when building output contexts.
-fn reconstruct_trace<R: ProofResolver>(
-    resolver: &R,
-    base_literals: &[Literal],
-    base_context: &LocalContext,
-    traces: &[LiteralTrace],
-    conclusion: &Clause,
-    conc_map: VariableMap,
-    conc_map_context: &LocalContext,
-    simp_maps: &mut HashMap<ConcreteStepId, ConcreteStep>,
-) -> Result<(HashSet<VariableMap>, LocalContext), Error> {
-    // The unifier will figure out the concrete clauses.
-    // The base and conclusion get their own scope.
-    let output_context = conc_map.build_output_context(conc_map_context);
-    let (mut unifier, conc_scope) =
-        Unifier::with_map(conc_map, resolver.kernel_context(), output_context);
-    unifier.set_input_context(conc_scope, conclusion.get_local_context());
-    let base_scope = unifier.add_scope();
-    unifier.set_input_context(base_scope, base_context);
-
-    // Each simplification gets its own scope.
-    // A proof step gets multiple scopes if it is used for multiple simplifications.
-    let mut simp_scopes: HashMap<Scope, ProofStepId> = HashMap::new();
-
-    if traces.len() != base_literals.len() {
-        return Err(Error::internal("trace with wrong number of literals"));
-    }
-
-    // Do the multi-way unification according to the trace.
-    for (base_literal, trace) in base_literals.iter().zip(traces) {
-        let (scope, literal, flipped) = match trace {
-            LiteralTrace::Eliminated { step, flipped } => {
-                // This matches a one-literal clause.
-                let step_id = ProofStepId::Active(*step);
-                let scope = unifier.add_scope();
-                simp_scopes.insert(scope, step_id);
-                let clause = resolver.get_clause(step_id)?;
-                unifier.set_input_context(scope, clause.get_local_context());
-                if clause.literals.len() != 1 {
-                    // This is two-long-clause resolution.
-                    // This should only happen for concrete clauses, and thus we don't
-                    // need to unify them.
-                    continue;
-                }
-                (scope, &clause.literals[0], *flipped)
-            }
-            LiteralTrace::Output { index, flipped } => {
-                // The output literal is in the conclusion scope.
-                (conc_scope, &conclusion.literals[*index], *flipped)
-            }
-            LiteralTrace::Impossible => {
-                continue;
-            }
-        };
-
-        // For eliminated literals (from simplifications), polarities are opposite.
-        // For signed boolean terms (atom = true or atom != true), we just unify the atoms.
-        // For equalities, we use the standard literal unification.
-        let unified = if base_literal.is_signed_term() && literal.is_signed_term() {
-            // Both are signed terms, so just unify the left sides (the atoms)
-            unifier.unify(base_scope, &base_literal.left, scope, &literal.left)
-        } else {
-            // Use standard literal unification
-            unifier.unify_literals(base_scope, base_literal, scope, literal, flipped)
-        };
-
-        if !unified {
-            return Err(Error::internal(format!(
-                "failed to unify base literal {} with trace literal {}",
-                base_literal, literal
-            )));
-        }
-    }
-
-    // Now that we've unified, get the var maps and output context.
-    // The output context is needed for build_output_context calls.
-    let mut answer = HashSet::new();
-    let (maps, unifier_output_context) = unifier.into_maps_with_context();
-
-    for (scope, map) in maps {
-        if scope == Scope::OUTPUT || scope == conc_scope {
-            // We only need to store the scopes for inputs.
-            continue;
-        }
-
-        if scope == base_scope {
-            // This is the base clause, so we return it.
-            answer.insert(map);
-            continue;
-        }
-
-        // This is a simplification, so we store it in simp_maps.
-        let step_id = simp_scopes.get(&scope).ok_or_else(|| {
-            Error::internal(format!(
-                "no proof step id for scope {:?} in reconstruct_trace",
-                scope
-            ))
-        })?;
-        add_var_map(
-            resolver,
-            *step_id,
-            map,
-            unifier_output_context.clone(),
-            simp_maps,
-        );
-    }
-
-    Ok((answer, unifier_output_context))
 }
 
 #[cfg(test)]

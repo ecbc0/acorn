@@ -2,6 +2,7 @@ use super::active_set::ActiveSet;
 use super::features::Features;
 use super::score::Score;
 use super::scorer::{default_scorer, Scorer};
+use crate::kernel::atom::AtomId;
 use crate::kernel::clause::Clause;
 use crate::kernel::fingerprint::FingerprintSpecializer;
 use crate::kernel::kernel_context::KernelContext;
@@ -93,6 +94,7 @@ fn pair_specializes(
 fn make_simplified(
     activated_id: usize,
     activated_context: &LocalContext,
+    activated_literal: &Literal,
     passive_context: &LocalContext,
     kernel_context: &KernelContext,
     left: &Term,
@@ -101,13 +103,14 @@ fn make_simplified(
     caller_flipped: bool,
     _index: usize,
     literals: Vec<Literal>,
-) -> Option<(Clause, ClauseTrace)> {
+) -> Option<(Clause, ClauseTrace, Vec<AtomId>, Vec<VariableMap>)> {
     // Note: When caller_flipped is true, left and right have already been swapped
     // by the caller. So any flip we compute here is relative to the swapped order.
     // The final flip must be XORed with caller_flipped to get the flip relative
     // to the original activating literal orientation.
     let mut new_literals = vec![];
     let mut incremental_trace = vec![];
+    let mut simp_var_maps = vec![];
     for literal in literals.into_iter() {
         // Check both directions consistently for all literals.
         // The flip value must be determined by which direction actually matches,
@@ -152,6 +155,10 @@ fn make_simplified(
                 step: activated_id,
                 flipped: literal_flipped,
             });
+            // Extract var_map for the simplifying clause
+            let mut var_map = VariableMap::new();
+            var_map.match_literal(activated_literal, &literal, literal_flipped);
+            simp_var_maps.push(var_map);
         } else {
             let index = new_literals.len();
             incremental_trace.push(LiteralTrace::Output {
@@ -161,12 +168,12 @@ fn make_simplified(
             new_literals.push(literal);
         }
     }
-    let (clause, simp_trace, _var_ids) = Clause::new_with_trace(
+    let (clause, simp_trace, var_ids) = Clause::new_with_trace(
         new_literals,
         ClauseTrace::new(incremental_trace),
         passive_context,
     );
-    Some((clause, simp_trace))
+    Some((clause, simp_trace, var_ids, simp_var_maps))
 }
 
 impl PassiveSet {
@@ -341,9 +348,11 @@ impl PassiveSet {
                 // So it's just redundant. We can forget about it.
                 continue;
             }
-            let Some((new_clause, simp_trace)) = make_simplified(
+            let activated_literal = &activated_step.clause.literals[0];
+            let Some((new_clause, simp_trace, var_ids, simp_var_maps)) = make_simplified(
                 activated_id,
                 local_context,
+                activated_literal,
                 &passive_context,
                 kernel_context,
                 left,
@@ -381,7 +390,8 @@ impl PassiveSet {
             let proof_size = step.proof_size + activated_step.proof_size;
             let depth = u32::max(step.depth, activated_step.depth);
 
-            // TODO: Collect actual var_map from forward simplification for proper reconstruction
+            let pre_norm_context = step.clause.get_local_context().clone();
+            let premise_map = PremiseMap::new(simp_var_maps, var_ids, pre_norm_context);
             let simplified = ProofStep {
                 clause: new_clause,
                 truthiness,
@@ -392,7 +402,7 @@ impl PassiveSet {
                 proof_size,
                 depth,
                 trace: Some(simp_trace),
-                premise_map: PremiseMap::empty(),
+                premise_map,
             };
 
             // Validate the simplified step when the validate feature is enabled

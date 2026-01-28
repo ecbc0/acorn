@@ -348,6 +348,42 @@ impl VariableMap {
         }
         false
     }
+
+    /// One-way structural term matching without type checking.
+    /// Matches `general` (with variables) against `special` (variables treated as constants).
+    /// General's FreeVariables get bound; all other atoms are compared for equality.
+    fn match_term_no_type_check(&mut self, general: TermRef, special: TermRef) -> bool {
+        match (general.decompose(), special.decompose()) {
+            (Decomposition::Atom(Atom::FreeVariable(i)), _) => self.match_var(*i, special),
+            (Decomposition::Atom(g_atom), Decomposition::Atom(s_atom)) => g_atom == s_atom,
+            (
+                Decomposition::Application(g_func, g_arg),
+                Decomposition::Application(s_func, s_arg),
+            ) => {
+                self.match_term_no_type_check(g_func, s_func)
+                    && self.match_term_no_type_check(g_arg, s_arg)
+            }
+            _ => false,
+        }
+    }
+
+    /// Match a general literal against a special literal for proof reconstruction.
+    /// `flipped` swaps the general literal's left/right when matching.
+    /// Returns true if match succeeds, updating this map with variable bindings.
+    /// Type checking is not performed - callers should ensure type compatibility
+    /// (e.g., via PDT's find_generalization).
+    pub fn match_literal(&mut self, general: &Literal, special: &Literal, flipped: bool) -> bool {
+        if general.is_signed_term() && special.is_signed_term() {
+            // For signed boolean terms (x = true / x != true), only match the left sides
+            self.match_term_no_type_check(general.left.as_ref(), special.left.as_ref())
+        } else if flipped {
+            self.match_term_no_type_check(general.left.as_ref(), special.right.as_ref())
+                && self.match_term_no_type_check(general.right.as_ref(), special.left.as_ref())
+        } else {
+            self.match_term_no_type_check(general.left.as_ref(), special.left.as_ref())
+                && self.match_term_no_type_check(general.right.as_ref(), special.right.as_ref())
+        }
+    }
 }
 
 /// Substitute variables in a term according to a map. Unmapped variables are kept as-is.

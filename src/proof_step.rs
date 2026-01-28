@@ -467,6 +467,53 @@ impl PremiseMap {
         self.raw_maps.is_empty()
     }
 
+    /// Compute the inner step's conclusion map for Simplification reconstruction.
+    /// Maps pre-norm variables to concrete terms using var_ids and the outer conclusion_map.
+    ///
+    /// For surviving variables (in var_ids): maps through conclusion_map.
+    /// For eliminated variables (not in var_ids): assigns fresh variable IDs.
+    ///
+    /// Returns (pre_norm_map, concrete_context) where concrete_context has types
+    /// for all variables referenced by pre_norm_map's replacement terms.
+    pub fn inner_step_map(
+        &self,
+        conclusion_map: &VariableMap,
+        conclusion_context: &LocalContext,
+        inner_step_context: &LocalContext,
+    ) -> (VariableMap, LocalContext) {
+        let mut map = VariableMap::new();
+        let mut context = conclusion_context.clone();
+
+        // Map surviving pre-norm vars through conclusion_map
+        for (new_id, &old_id) in self.var_ids.iter().enumerate() {
+            if let Some(concrete_term) = conclusion_map.get_mapping(new_id as AtomId) {
+                map.set(old_id, concrete_term.clone());
+            } else {
+                // Variable not in conclusion_map: keep as identity.
+                // Ensure the output context has the type for this variable.
+                map.set(old_id, Term::atom(Atom::FreeVariable(new_id as AtomId)));
+                if let Some(var_type) = inner_step_context.get_var_type(old_id as usize) {
+                    context.set_type(new_id, var_type.clone());
+                }
+            }
+        }
+
+        // Assign fresh IDs for eliminated variables in the inner step
+        let mut next_fresh = self.var_ids.len().max(conclusion_context.len());
+        for var_id in 0..inner_step_context.len() {
+            if !map.has_mapping(var_id as AtomId) {
+                if let Some(var_type) = inner_step_context.get_var_type(var_id) {
+                    let fresh_id = next_fresh as AtomId;
+                    map.set(var_id as AtomId, Term::atom(Atom::FreeVariable(fresh_id)));
+                    context.set_type(next_fresh, var_type.clone());
+                    next_fresh += 1;
+                }
+            }
+        }
+
+        (map, context)
+    }
+
     /// Given how the conclusion was concretized, produce how each premise
     /// should be concretized.
     ///
