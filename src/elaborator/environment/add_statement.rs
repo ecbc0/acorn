@@ -1658,7 +1658,7 @@ impl Environment {
                 let datatype = self.check_can_add_attributes(&ats.name_token, &instance_type)?;
 
                 // Check for conflicts with existing generic attributes
-                self.check_no_conflicting_attributes(datatype, &ats.body, &ats.name_token)?;
+                self.check_no_conflicting_attributes(datatype, &ats.body)?;
 
                 for substatement in &ats.body.statements {
                     match &substatement.statement {

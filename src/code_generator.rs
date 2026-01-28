@@ -12,7 +12,6 @@ use crate::elaborator::names::{ConstantName, DefinedName};
 use crate::elaborator::type_unifier::TypeclassRegistry;
 use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::clause::Clause;
-use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::{Decomposition, Term};
 use crate::kernel::variable_map::VariableMap;
@@ -573,7 +572,7 @@ impl CodeGenerator<'_> {
             // Don't instantiate type vars here - they're part of the polymorphic structure
             let mut cond_parts = vec![];
             for clause in &info.clauses {
-                let part = normalizer.denormalize(clause, None, None, None, false);
+                let part = normalizer.denormalize(clause, None, None, false);
                 cond_parts.push(part);
             }
             let cond_val = AcornValue::reduce(BinaryOp::And, cond_parts);
@@ -756,9 +755,8 @@ impl CodeGenerator<'_> {
         // Entries from earlier calls were already processed with their own (correct) contexts.
         let keys_before: HashSet<Term> = self.arbitrary_names.keys().cloned().collect();
 
-        self.add_arbitrary_for_clause(&clause, normalizer.kernel_context());
-        let mut value =
-            normalizer.denormalize(&clause, Some(&self.arbitrary_names), None, None, true);
+        self.add_arbitrary_for_clause(&clause);
+        let mut value = normalizer.denormalize(&clause, Some(&self.arbitrary_names), None, true);
 
         // Define the arbitrary variables.
         // Use the clause's local context to look up typeclass constraints for type variables.
@@ -851,7 +849,7 @@ impl CodeGenerator<'_> {
     }
 
     /// For any variables in this clause, add an arbitrary variable.
-    fn add_arbitrary_for_clause(&mut self, clause: &Clause, _kernel_context: &KernelContext) {
+    fn add_arbitrary_for_clause(&mut self, clause: &Clause) {
         let local_context = clause.get_local_context();
         for literal in &clause.literals {
             for term in [&literal.left, &literal.right] {

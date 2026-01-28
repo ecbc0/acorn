@@ -958,7 +958,7 @@ fn test_code_generator_omits_type_params_when_arity_changes() {
     // This is: forall(x0: Nat) { compose[Nat, Nat, Nat -> Nat](mul, from_nat, one, x0) = ... }
     let mut found_compose_clause = false;
     for clause in &clauses {
-        let denormalized = norm.denormalize(clause, None, None, None, false);
+        let denormalized = norm.denormalize(clause, None, None, false);
         let denorm_code = format!("{}", denormalized);
 
         if denorm_code.contains("compose[Nat, Nat, Nat -> Nat](mul, from_nat, one, x0)") {
@@ -1117,7 +1117,7 @@ fn test_type_variable_display_format() {
     // Find the clause for ax1 which has a type variable T and a value variable x
     let mut found_target_clause = false;
     for clause in &clauses {
-        let denormalized = norm.denormalize(clause, None, None, None, false);
+        let denormalized = norm.denormalize(clause, None, None, false);
         let display = format!("{}", denormalized);
 
         // Check if this is a clause involving bar and foo
@@ -1170,7 +1170,7 @@ fn test_typeclass_constrained_type_variable_display() {
     // Find clauses involving the Monoid typeclass
     let mut found_typeclass_clause = false;
     for clause in &clauses {
-        let denormalized = norm.denormalize(clause, None, None, None, false);
+        let denormalized = norm.denormalize(clause, None, None, false);
         let display = format!("{}", denormalized);
 
         if display.contains("Monoid") || display.contains(".identity") {

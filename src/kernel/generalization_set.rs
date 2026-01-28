@@ -26,7 +26,7 @@ impl GeneralizationSet {
         let mut generalized = vec![];
         all_generalized_forms(&mut clause, 0, &mut generalized, kernel_context);
         for c in generalized {
-            self.tree.insert_clause(&c, id, kernel_context);
+            self.tree.insert_clause(&c, id);
         }
     }
 

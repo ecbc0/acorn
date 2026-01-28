@@ -1052,13 +1052,13 @@ fn test_proving_with_mixin_instance() {
         for fact in facts {
             processor.add_fact(fact).unwrap();
         }
-        processor.set_goal(&goal, &p).unwrap();
+        processor.set_goal(&goal).unwrap();
 
-        let outcome = processor.search(crate::prover::ProverMode::Test, &p, &goal_env.bindings);
+        let outcome = processor.search(crate::prover::ProverMode::Test);
         assert_eq!(outcome, Outcome::Success);
         let cert = processor
             .prover()
-            .make_cert(&p, &goal_env.bindings, processor.normalizer(), true)
+            .make_cert(&goal_env.bindings, processor.normalizer(), true)
             .expect("make_cert failed");
         processor
             .check_cert(&cert, None, &p, &goal_env.bindings)
@@ -1540,15 +1540,15 @@ fn test_synthetic_with_unimported_typeclass_constraint() {
     for fact in facts {
         processor.add_fact(fact).unwrap();
     }
-    processor.set_goal(&goal, &p).unwrap();
+    processor.set_goal(&goal).unwrap();
 
-    let outcome = processor.search(crate::prover::ProverMode::Test, &p, &goal_env.bindings);
+    let outcome = processor.search(crate::prover::ProverMode::Test);
     assert_eq!(outcome, Outcome::Success);
 
     // Generate the certificate
     let cert = processor
         .prover()
-        .make_cert(&p, &goal_env.bindings, processor.normalizer(), true)
+        .make_cert(&goal_env.bindings, processor.normalizer(), true)
         .expect("make_cert failed");
 
     // Debug: print the certificate

@@ -23,19 +23,18 @@ pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certi
     for fact in facts {
         processor.add_fact(fact).unwrap();
     }
-    processor.set_goal(&goal, project).unwrap();
-    let outcome = processor.search(ProverMode::Test, project, &env.bindings);
+    processor.set_goal(&goal).unwrap();
+    let outcome = processor.search(ProverMode::Test);
 
     assert_eq!(outcome, Outcome::Success);
 
-    let cert =
-        match processor
-            .prover()
-            .make_cert(project, &env.bindings, processor.normalizer(), true)
-        {
-            Ok(cert) => cert,
-            Err(e) => panic!("make_cert failed: {}", e),
-        };
+    let cert = match processor
+        .prover()
+        .make_cert(&env.bindings, processor.normalizer(), true)
+    {
+        Ok(cert) => cert,
+        Err(e) => panic!("make_cert failed: {}", e),
+    };
 
     if let Err(e) = processor.check_cert(&cert, None, project, &env.bindings) {
         panic!("check_cert failed: {}", e);
@@ -59,7 +58,6 @@ pub fn prove_text(text: &str, goal_name: &str) -> Outcome {
         let goal = cursor.goal().unwrap();
         if goal.name == goal_name {
             let facts = cursor.usable_facts(&project);
-            let goal_env = cursor.goal_env().unwrap();
 
             let mut processor = Processor::new();
             for fact in facts {
@@ -67,11 +65,11 @@ pub fn prove_text(text: &str, goal_name: &str) -> Outcome {
                     return Outcome::Inconsistent;
                 }
             }
-            if let Err(_) = processor.set_goal(&goal, &project) {
+            if let Err(_) = processor.set_goal(&goal) {
                 return Outcome::Inconsistent;
             }
 
-            return processor.search(ProverMode::Test, &project, &goal_env.bindings);
+            return processor.search(ProverMode::Test);
         }
     }
     panic!("goal '{}' not found in text", goal_name);
@@ -107,18 +105,18 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
         for fact in facts {
             processor.add_fact(fact)?;
         }
-        processor.set_goal(&goal, &project)?;
+        processor.set_goal(&goal)?;
 
         // This is a key difference between our verification tests, and our real verification.
         // This helps us test that verification fails in cases where we do have an
         // infinite rabbit hole we could go down.
-        let outcome = processor.search(ProverMode::Test, &project, &goal_env.bindings);
+        let outcome = processor.search(ProverMode::Test);
         if outcome != Outcome::Success {
             return Ok(outcome);
         }
         let cert = processor
             .prover()
-            .make_cert(&project, &goal_env.bindings, processor.normalizer(), true)
+            .make_cert(&goal_env.bindings, processor.normalizer(), true)
             .map_err(|e| e.to_string())?;
         if let Err(e) = processor.check_cert(&cert, None, &project, &goal_env.bindings) {
             panic!("check_cert failed: {}", e);
@@ -190,15 +188,15 @@ pub fn verify_line(text: &str, goal_name: &str) -> Result<Outcome, String> {
             for fact in facts {
                 processor.add_fact(fact)?;
             }
-            processor.set_goal(&goal, &project)?;
+            processor.set_goal(&goal)?;
 
-            let outcome = processor.search(ProverMode::Test, &project, &goal_env.bindings);
+            let outcome = processor.search(ProverMode::Test);
             if outcome != Outcome::Success {
                 return Ok(outcome);
             }
             let cert = processor
                 .prover()
-                .make_cert(&project, &goal_env.bindings, processor.normalizer(), true)
+                .make_cert(&goal_env.bindings, processor.normalizer(), true)
                 .map_err(|e| e.to_string())?;
             if let Err(e) = processor.check_cert(&cert, None, &project, &goal_env.bindings) {
                 panic!("check_cert failed: {}", e);

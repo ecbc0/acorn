@@ -234,7 +234,6 @@ impl RewriteTree {
         output_term: &Term,
         forwards: bool,
         local_context: &LocalContext,
-        kernel_context: &KernelContext,
     ) {
         if input_term.is_true() {
             panic!("cannot rewrite true to something else");
@@ -245,13 +244,7 @@ impl RewriteTree {
             output: output_term.clone(),
             output_context: local_context.clone(),
         };
-        Pdt::insert_or_append(
-            &mut self.tree,
-            input_term,
-            value,
-            local_context,
-            kernel_context,
-        );
+        Pdt::insert_or_append(&mut self.tree, input_term, value, local_context);
     }
 
     // Inserts both directions.
@@ -261,7 +254,6 @@ impl RewriteTree {
         pattern_id: usize,
         literal: &Literal,
         local_context: &LocalContext,
-        kernel_context: &KernelContext,
     ) {
         // Already normalized
         self.insert_terms(
@@ -270,7 +262,6 @@ impl RewriteTree {
             &literal.right,
             true,
             local_context,
-            kernel_context,
         );
 
         if !literal.right.is_true() {
@@ -309,14 +300,7 @@ impl RewriteTree {
             // Remap the context to match the new variable ordering
             let structural_context = reversed_context.remap(&structural_var_ids);
 
-            self.insert_terms(
-                pattern_id,
-                &right,
-                &left,
-                false,
-                &structural_context,
-                kernel_context,
-            );
+            self.insert_terms(pattern_id, &right, &left, false, &structural_context);
         }
     }
 
@@ -416,14 +400,7 @@ mod tests {
         let lctx = kctx.parse_local(&[]);
 
         let mut tree = RewriteTree::new();
-        tree.insert_terms(
-            0,
-            &Term::parse("c1"),
-            &Term::parse("c0"),
-            true,
-            &lctx,
-            &kctx,
-        );
+        tree.insert_terms(0, &Term::parse("c1"), &Term::parse("c0"), true, &lctx);
         let rewrites = tree.get_rewrites(&Term::parse("c1"), 0, &lctx, &kctx);
         assert_eq!(rewrites.len(), 1);
         assert_eq!(rewrites[0].term, Term::parse("c0"));
@@ -445,7 +422,6 @@ mod tests {
             &Term::parse("g0(x0, c0)"),
             true,
             &lctx,
-            &kctx,
         );
 
         // Query: g1(c2, c0) should rewrite to g0(c2, c0)
@@ -472,7 +448,6 @@ mod tests {
             &Term::parse("g3(x0, c0)"),
             true,
             &lctx,
-            &kctx,
         );
         // Rule 2: g1(c2, x0) -> g4(x0, c0)
         tree.insert_terms(
@@ -481,7 +456,6 @@ mod tests {
             &Term::parse("g4(x0, c0)"),
             true,
             &lctx,
-            &kctx,
         );
 
         // Query: g1(c2, c2) should match both rules
@@ -500,10 +474,10 @@ mod tests {
         let mut tree = RewriteTree::new();
         // x0 = c0 where both are Bool
         let clause1 = kctx.parse_clause("x0 = c0", &["Bool"]);
-        tree.insert_literal(0, &clause1.literals[0], clause1.get_local_context(), &kctx);
+        tree.insert_literal(0, &clause1.literals[0], clause1.get_local_context());
         // c0 alone as literal (Bool = true)
         let clause2 = kctx.parse_clause("c0", &[]);
-        tree.insert_literal(1, &clause2.literals[0], clause2.get_local_context(), &kctx);
+        tree.insert_literal(1, &clause2.literals[0], clause2.get_local_context());
     }
 
     #[test]
@@ -515,7 +489,7 @@ mod tests {
         let mut tree = RewriteTree::new();
         // g1(x0, c1) = c0 means c0 rewrites to g1(x1, c1) with a new variable x1
         let clause = kctx.parse_clause("g1(x0, c1) = c0", &["Bool"]);
-        tree.insert_literal(0, &clause.literals[0], clause.get_local_context(), &kctx);
+        tree.insert_literal(0, &clause.literals[0], clause.get_local_context());
 
         let query_lctx = kctx.parse_local(&[]);
         let rewrites = tree.get_rewrites(&Term::parse("c0"), 1, &query_lctx, &kctx);
@@ -533,7 +507,7 @@ mod tests {
         let mut tree = RewriteTree::new();
         // Make a rule for Bool-typed variables
         let var_bool = Term::atom(Atom::FreeVariable(0));
-        tree.insert_terms(0, &var_bool, &var_bool, true, &lctx, &kctx);
+        tree.insert_terms(0, &var_bool, &var_bool, true, &lctx);
 
         // A Bool constant should match it
         let query_lctx = kctx.parse_local(&[]);
@@ -566,7 +540,6 @@ mod tests {
             0,
             &pattern_clause.literals[0],
             pattern_clause.get_local_context(),
-            &kctx,
         );
 
         let query_lctx = kctx.parse_local(&[]);
@@ -598,7 +571,6 @@ mod tests {
             0,
             &pattern_clause.literals[0],
             pattern_clause.get_local_context(),
-            &kctx,
         );
 
         let query_lctx = kctx.parse_local(&[]);
@@ -633,7 +605,6 @@ mod tests {
             0,
             &pattern_clause.literals[0],
             pattern_clause.get_local_context(),
-            &kctx,
         );
 
         // Query: c1 (for backwards rewrite)
@@ -687,7 +658,6 @@ mod tests {
             0,
             &pattern_clause.literals[0],
             pattern_clause.get_local_context(),
-            &kctx,
         );
 
         // Query: c1 (for backwards rewrite)
@@ -767,7 +737,6 @@ mod tests {
             0,
             &pattern_clause.literals[0],
             pattern_clause.get_local_context(),
-            &kctx,
         );
     }
 
@@ -814,7 +783,6 @@ mod tests {
             0,
             &pattern_clause.literals[0],
             pattern_clause.get_local_context(),
-            &kctx,
         );
 
         // Query: c0(c1(c2)) (for backwards rewrite)
@@ -881,7 +849,6 @@ mod tests {
             0,
             &pattern_clause.literals[0],
             pattern_clause.get_local_context(),
-            &kctx,
         );
 
         // Query with type mismatch
@@ -935,7 +902,6 @@ mod tests {
             &pattern1_output,
             false, // backwards
             &pattern1_lctx,
-            &kctx,
         );
 
         // Pattern 2: x0 -> g1(x1, x2, x0) where x0: Pair[x1, x2], x1: Type, x2: Type
@@ -949,7 +915,6 @@ mod tests {
             &pattern2_output,
             false, // backwards
             &pattern2_lctx,
-            &kctx,
         );
 
         // Query: c0 (type Foo)
@@ -1039,7 +1004,6 @@ mod tests {
             0,
             &pattern_clause.literals[0],
             pattern_clause.get_local_context(),
-            &kctx,
         );
 
         let query_lctx = kctx.parse_local(&[]);

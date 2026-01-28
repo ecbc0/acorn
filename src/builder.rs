@@ -733,17 +733,13 @@ impl<'a> Builder<'a> {
 
         // Try searching
         let processor = Rc::make_mut(&mut processor);
-        processor.set_goal(goal, self.project)?;
+        processor.set_goal(goal)?;
         let start = std::time::Instant::now();
-        let outcome = processor.search(
-            ProverMode::Interactive {
-                timeout_secs: self.timeout_secs,
-            },
-            self.project,
-            &env.bindings,
-        );
+        let outcome = processor.search(ProverMode::Interactive {
+            timeout_secs: self.timeout_secs,
+        });
         if outcome == Outcome::Success {
-            match processor.make_cert(self.project, &env.bindings, self.verbose) {
+            match processor.make_cert(&env.bindings, self.verbose) {
                 Ok(cert) => {
                     #[cfg(feature = "validate")]
                     {

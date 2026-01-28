@@ -102,7 +102,7 @@ impl StepReason {
 
 /// Converts a clause to readable code using the environment's names.
 fn clause_to_code(clause: &Clause, normalizer: &Normalizer, bindings: &Cow<BindingMap>) -> String {
-    let value = normalizer.denormalize(clause, None, None, None, false);
+    let value = normalizer.denormalize(clause, None, None, false);
     let mut code_gen = crate::code_generator::CodeGenerator::new(bindings);
     code_gen
         .value_to_code(&value)
@@ -270,7 +270,7 @@ impl Checker {
         // and we want to match it against:
         //   g0(x0, x1, x2, x3, x4, x5) = x3(x4(x5))
         // by eliminating the common last argument x0 from both sides.
-        if let Some(reduced) = self.try_last_arg_elimination(clause, kernel_context) {
+        if let Some(reduced) = self.try_last_arg_elimination(clause) {
             if let Some(step_id) = self
                 .generalization_set
                 .find_generalization(reduced, kernel_context)
@@ -290,11 +290,7 @@ impl Checker {
     /// - Both sides are applications
     /// - The last argument of both sides is the same variable
     /// - That variable doesn't appear elsewhere in the terms
-    fn try_last_arg_elimination(
-        &self,
-        clause: &Clause,
-        _kernel_context: &KernelContext,
-    ) -> Option<Clause> {
+    fn try_last_arg_elimination(&self, clause: &Clause) -> Option<Clause> {
         // Must be a single literal
         if clause.literals.len() != 1 {
             return None;

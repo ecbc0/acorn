@@ -5,10 +5,8 @@ use super::active_set::ActiveSet;
 use super::passive_set::PassiveSet;
 use super::proof::Proof;
 use crate::certificate::Certificate;
-use crate::checker::Checker;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::elaborator::binding_map::BindingMap;
-use crate::elaborator::goal::Goal;
 use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
@@ -16,7 +14,6 @@ use crate::kernel::local_context::LocalContext;
 use crate::kernel::variable_map::VariableMap;
 use crate::kernel::EqualityGraphContradiction;
 use crate::normalizer::{NormalizedGoal, Normalizer};
-use crate::project::Project;
 use crate::proof_step::{PremiseMap, ProofStep, ProofStepId, Rule, Truthiness};
 use crate::prover::{Outcome, ProverMode};
 
@@ -157,13 +154,7 @@ impl Prover {
     }
 
     /// Prints the proof in a human-readable form.
-    pub fn print_proof(
-        &self,
-        proof: &Proof,
-        _project: &Project,
-        bindings: &BindingMap,
-        normalizer: &Normalizer,
-    ) {
+    pub fn print_proof(&self, proof: &Proof, bindings: &BindingMap, normalizer: &Normalizer) {
         println!(
             "in total, we activated {} proof steps.",
             self.active_set.len()
@@ -181,7 +172,7 @@ impl Prover {
             if step.clause.is_impossible() {
                 println!("Contradiction, depth {}, {}.", step.depth, rule);
             } else {
-                let denormalized = normalizer.denormalize(&step.clause, None, None, None, false);
+                let denormalized = normalizer.denormalize(&step.clause, None, None, false);
                 let clause_text = CodeGenerator::new(bindings)
                     .value_to_code(&denormalized)
                     .unwrap_or_else(|_| format!("{:?}", step.clause));
@@ -215,7 +206,7 @@ impl Prover {
                 let dep_text = if dep_clause.is_impossible() {
                     "contradiction".to_string()
                 } else {
-                    let denormalized = normalizer.denormalize(&dep_clause, None, None, None, false);
+                    let denormalized = normalizer.denormalize(&dep_clause, None, None, false);
                     CodeGenerator::new(bindings)
                         .value_to_code(&denormalized)
                         .unwrap_or_else(|_| format!("{:?}", dep_clause))
@@ -247,12 +238,7 @@ impl Prover {
             self.active_set
                 .find_upstream(step, include_inspiration, &mut useful_active);
         }
-        let negated_goal = match &self.goal {
-            Some(goal) => &goal.counterfactual,
-            _ => return None,
-        };
-
-        let mut proof = Proof::new(&normalizer, negated_goal);
+        let mut proof = Proof::new(&normalizer);
         let mut active_ids: Vec<_> = useful_active.iter().collect();
         active_ids.sort();
         for i in active_ids {
@@ -272,7 +258,6 @@ impl Prover {
     /// If `print` is true, we print the proof.
     pub fn make_cert(
         &self,
-        project: &Project,
         bindings: &BindingMap,
         normalizer: &Normalizer,
         print: bool,
@@ -289,7 +274,7 @@ impl Prover {
             .ok_or_else(|| Error::internal("No proof found"))?;
 
         if print {
-            self.print_proof(&proof, project, bindings, normalizer);
+            self.print_proof(&proof, bindings, normalizer);
         }
 
         let cert = proof.make_cert(goal_name, bindings)?;
@@ -524,14 +509,7 @@ impl Prover {
     ///   Activating activation_limit nonfactual clauses
     ///   Going over the time limit, in seconds
     ///   Activating all shallow steps, if shallow_only is set
-    pub fn search(
-        &mut self,
-        mode: ProverMode,
-        _project: &Project,
-        _bindings: &BindingMap,
-        normalizer: &Normalizer,
-        _checker: &Checker,
-    ) -> Outcome {
+    pub fn search(&mut self, mode: ProverMode, normalizer: &Normalizer) -> Outcome {
         let kernel_context = normalizer.kernel_context();
 
         // Convert mode to actual parameters
@@ -600,8 +578,6 @@ impl Prover {
         &mut self,
         ng: NormalizedGoal,
         steps: Vec<ProofStep>,
-        _project: &Project,
-        _original_goal: &Goal,
         kernel_context: &KernelContext,
     ) {
         assert!(self.goal.is_none());

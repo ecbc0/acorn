@@ -311,7 +311,6 @@ impl Environment {
         &self,
         datatype: &Datatype,
         body: &crate::syntax::statement::Body,
-        _name_token: &Token,
     ) -> error::Result<()> {
         use crate::syntax::statement::StatementInfo;
 

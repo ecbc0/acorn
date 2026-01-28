@@ -91,7 +91,6 @@ fn pair_specializes(
 // Returns None if the clause is tautologically implied by the literal we are simplifying with.
 // activated_context is for left/right, passive_context is for literals.
 fn make_simplified(
-    _activated_id: usize,
     activated_context: &LocalContext,
     activated_literal: &Literal,
     passive_context: &LocalContext,
@@ -100,7 +99,6 @@ fn make_simplified(
     right: &Term,
     positive: bool,
     caller_flipped: bool,
-    _index: usize,
     literals: Vec<Literal>,
 ) -> Option<(Clause, Vec<AtomId>, Vec<VariableMap>)> {
     // Note: When caller_flipped is true, left and right have already been swapped
@@ -335,7 +333,6 @@ impl PassiveSet {
             }
             let activated_literal = &activated_step.clause.literals[0];
             let Some((new_clause, var_ids, simp_var_maps)) = make_simplified(
-                activated_id,
                 local_context,
                 activated_literal,
                 &passive_context,
@@ -344,7 +341,6 @@ impl PassiveSet {
                 right,
                 positive,
                 flipped,
-                literal_index,
                 step.clause.literals.clone(),
             ) else {
                 continue;

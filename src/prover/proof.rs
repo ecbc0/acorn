@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 
 use crate::certificate::Certificate;
 use crate::code_generator::{CodeGenerator, Error};
-use crate::elaborator::acorn_value::AcornValue;
 use crate::elaborator::binding_map::BindingMap;
 use crate::kernel::atom::AtomId;
 use crate::kernel::clause::Clause;
@@ -46,7 +45,7 @@ pub struct Proof<'a> {
 
 impl<'a> Proof<'a> {
     /// Creates a new proof.
-    pub fn new<'b>(normalizer: &'a Normalizer, _negated_goal: &AcornValue) -> Proof<'a> {
+    pub fn new(normalizer: &'a Normalizer) -> Proof<'a> {
         Proof {
             normalizer,
             steps: vec![],

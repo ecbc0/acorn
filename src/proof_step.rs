@@ -567,7 +567,6 @@ impl ProofStep {
     /// Construct a new ProofStep that is a direct implication of a single activated step,
     /// not requiring any other clauses.
     pub fn direct(
-        _activated_id: usize,
         activated_step: &ProofStep,
         rule: Rule,
         clause: Clause,

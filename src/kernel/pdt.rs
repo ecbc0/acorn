@@ -295,7 +295,7 @@ impl<T> Pdt<T> {
     }
 
     /// Inserts a clause with its associated value.
-    pub fn insert_clause(&mut self, clause: &Clause, value: T, _kernel_context: &KernelContext) {
+    pub fn insert_clause(&mut self, clause: &Clause, value: T) {
         let key = key_from_clause(clause);
         let value_id = self.values.len();
         self.values.push(value);
@@ -411,7 +411,6 @@ impl Pdt<()> {
         term: &Term,
         value: U,
         local_context: &LocalContext,
-        _kernel_context: &KernelContext,
     ) {
         let key = key_from_term(term);
         match pt.trie.entry(key) {
@@ -443,13 +442,7 @@ impl LiteralSet {
     }
 
     /// Inserts a literal along with its id.
-    pub fn insert(
-        &mut self,
-        literal: &Literal,
-        id: usize,
-        local_context: &LocalContext,
-        _kernel_context: &KernelContext,
-    ) {
+    pub fn insert(&mut self, literal: &Literal, id: usize, local_context: &LocalContext) {
         self.tree.insert_pair(
             &literal.left,
             &literal.right,
@@ -1111,7 +1104,7 @@ mod tests {
 
         // Insert pattern: x0 = x0
         let clause = kctx.parse_clause("x0 = x0", &["Bool"]);
-        tree.insert_clause(&clause, 42, &kctx);
+        tree.insert_clause(&clause, 42);
 
         // Query: c5 = c5 should match
         kctx.parse_constant("c5", "Bool");
@@ -1190,7 +1183,7 @@ mod tests {
 
         // Insert pattern into tree
         let mut tree: Pdt<&str> = Pdt::new();
-        tree.insert_clause(&pattern_clause, "commutativity", &kctx);
+        tree.insert_clause(&pattern_clause, "commutativity");
 
         // Query clause: add[Int](c, f(d)) = add[Int](f(d), c)
         let query_clause = kctx.parse_clause("c0(Int, c2, c1(c3)) = c0(Int, c1(c3), c2)", &[]);
@@ -1238,7 +1231,7 @@ mod tests {
         // x0 is a type variable T (type: Type)
         // x1 has type List[x0] = List[T]
         let pattern_clause = kctx.parse_clause("c0(x0, x1) = x1", &["Type", "List[x0]"]);
-        tree.insert_clause(&pattern_clause, "reverse_identity", &kctx);
+        tree.insert_clause(&pattern_clause, "reverse_identity");
 
         // Query clause: reverse[Int](mylist) = mylist where mylist : List[Int]
         let query_clause = kctx.parse_clause("c0(Int, c1) = c1", &[]);

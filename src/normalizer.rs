@@ -2686,7 +2686,6 @@ impl Normalizer {
         &self,
         clause: &Clause,
         arbitrary_names: Option<&HashMap<Term, ConstantName>>,
-        _type_vars: Option<&HashSet<u16>>,
         type_param_names: Option<&[String]>,
         instantiate_type_vars: bool,
     ) -> AcornValue {
@@ -2819,7 +2818,7 @@ impl Normalizer {
     /// When you denormalize and renormalize a clause, you should get the same thing.
     #[cfg(test)]
     fn check_denormalize_renormalize(&mut self, clause: &Clause) {
-        let denormalized = self.denormalize(clause, None, None, None, false);
+        let denormalized = self.denormalize(clause, None, None, false);
         if let Err(e) = denormalized.validate() {
             eprintln!("DEBUG: clause = {}", clause);
             eprintln!("DEBUG: clause context = {:?}", clause.get_local_context());

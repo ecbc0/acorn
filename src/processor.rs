@@ -55,9 +55,7 @@ impl Processor {
         }
         let steps = self.normalizer.normalize_fact(fact)?;
         for step in &steps {
-            let denormalized = self
-                .normalizer
-                .denormalize(&step.clause, None, None, None, false);
+            let denormalized = self.normalizer.denormalize(&step.clause, None, None, false);
             trace!(clause = %denormalized, "proof step");
         }
         let kernel_context = self.normalizer.kernel_context();
@@ -88,14 +86,12 @@ impl Processor {
     }
 
     /// Normalizes a goal and sets it as the prover's goal.
-    pub fn set_goal(&mut self, goal: &Goal, project: &Project) -> Result<(), BuildError> {
+    pub fn set_goal(&mut self, goal: &Goal) -> Result<(), BuildError> {
         let source = &goal.proposition.source;
         let (ng, steps) = self.normalizer.normalize_goal(goal)?;
         debug!(goal = %goal.proposition.value, "setting goal");
         for step in &steps {
-            let denormalized = self
-                .normalizer
-                .denormalize(&step.clause, None, None, None, false);
+            let denormalized = self.normalizer.denormalize(&step.clause, None, None, false);
             trace!(clause = %denormalized, "proof step");
         }
         let kernel_context = self.normalizer.kernel_context();
@@ -113,31 +109,18 @@ impl Processor {
                 kernel_context,
             );
         }
-        self.prover
-            .set_goal(ng, steps, project, goal, kernel_context);
+        self.prover.set_goal(ng, steps, kernel_context);
         Ok(())
     }
 
     /// Forwards a search request to the underlying prover.
-    pub fn search(
-        &mut self,
-        mode: ProverMode,
-        project: &Project,
-        bindings: &BindingMap,
-    ) -> Outcome {
-        self.prover
-            .search(mode, project, bindings, &self.normalizer, &self.checker)
+    pub fn search(&mut self, mode: ProverMode) -> Outcome {
+        self.prover.search(mode, &self.normalizer)
     }
 
     /// Creates a certificate from the current proof state.
-    pub fn make_cert(
-        &self,
-        project: &Project,
-        bindings: &BindingMap,
-        print: bool,
-    ) -> Result<Certificate, Error> {
-        self.prover
-            .make_cert(project, bindings, &self.normalizer, print)
+    pub fn make_cert(&self, bindings: &BindingMap, print: bool) -> Result<Certificate, Error> {
+        self.prover.make_cert(bindings, &self.normalizer, print)
     }
 
     /// Checks a certificate.
@@ -210,7 +193,7 @@ impl Processor {
         for fact in facts {
             processor.add_fact(fact).unwrap();
         }
-        processor.set_goal(&goal, &p).unwrap();
+        processor.set_goal(&goal).unwrap();
 
         (processor, goal_env.bindings.clone())
     }

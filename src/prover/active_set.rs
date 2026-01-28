@@ -889,7 +889,6 @@ impl ActiveSet {
                     context.clone(),
                 );
                 let step = ProofStep::direct(
-                    activated_id,
                     activated_step,
                     Rule::EqualityResolution(SingleSourceInfo { id: activated_id }),
                     new_clause,
@@ -955,7 +954,6 @@ impl ActiveSet {
             let (clause, var_ids) = Clause::normalize_with_var_ids(literals, &context);
             let premise_map = PremiseMap::new(vec![VariableMap::new()], var_ids, context);
             let step = ProofStep::direct(
-                activated_id,
                 activated_step,
                 Rule::Injectivity(SingleSourceInfo { id: activated_id }),
                 clause,
@@ -982,7 +980,6 @@ impl ActiveSet {
             let (clause, var_ids) = Clause::normalize_with_var_ids(literals, &context);
             let premise_map = PremiseMap::new(vec![VariableMap::new()], var_ids, context);
             let step = ProofStep::direct(
-                activated_id,
                 activated_step,
                 Rule::BooleanReduction(SingleSourceInfo { id: activated_id }),
                 clause,
@@ -1010,7 +1007,6 @@ impl ActiveSet {
             let (clause, var_ids) = Clause::normalize_with_var_ids(literals, &context);
             let premise_map = PremiseMap::new(vec![VariableMap::new()], var_ids, context);
             let step = ProofStep::direct(
-                activated_id,
                 activated_step,
                 Rule::Extensionality(SingleSourceInfo { id: activated_id }),
                 clause,
@@ -1049,7 +1045,6 @@ impl ActiveSet {
 
             let premise_map = PremiseMap::new(vec![input_var_map.clone()], var_ids, output_context);
             let step = ProofStep::direct(
-                activated_id,
                 activated_step,
                 Rule::EqualityFactoring(SingleSourceInfo { id: activated_id }),
                 new_clause,
@@ -1468,7 +1463,6 @@ impl ActiveSet {
                 activated_id,
                 literal,
                 activated_step.clause.get_local_context(),
-                kernel_context,
             );
         }
 
@@ -1476,7 +1470,6 @@ impl ActiveSet {
             &literal,
             activated_id,
             activated_step.clause.get_local_context(),
-            kernel_context,
         );
     }
 
