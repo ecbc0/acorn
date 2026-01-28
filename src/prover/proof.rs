@@ -416,9 +416,7 @@ mod tests {
         };
 
         match &simp_info.original.rule {
-            Rule::Resolution(info) => {
-                assert!(!info.literals.is_empty());
-            }
+            Rule::Resolution(_) => {}
             other => panic!("Expected inner Resolution rule, got {:?}", other),
         };
 
@@ -478,9 +476,7 @@ mod tests {
         };
 
         match &simp_info.original.rule {
-            Rule::Resolution(info) => {
-                assert!(!info.literals.is_empty());
-            }
+            Rule::Resolution(_) => {}
             other => panic!("Expected inner Resolution rule, got {:?}", other),
         };
     }

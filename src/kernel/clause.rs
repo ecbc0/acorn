@@ -452,12 +452,8 @@ impl Clause {
     }
 
     /// Finds all possible injectivity applications for this clause.
-    /// Returns a vector of (index, arg_index, literals, flipped) tuples.
-    /// - index: the literal index where injectivity can be applied
-    /// - arg_index: which argument position differs
-    /// - literals: the resulting literals after applying injectivity
-    /// - flipped: whether the resulting literal was flipped
-    pub fn find_injectivities(&self) -> Vec<(usize, usize, Vec<Literal>, bool)> {
+    /// Returns the resulting literals for each application.
+    pub fn find_injectivities(&self) -> Vec<Vec<Literal>> {
         let mut results = vec![];
 
         for (i, target) in self.literals.iter().enumerate() {
@@ -490,10 +486,10 @@ impl Clause {
             if let Some(j) = different_index {
                 // Looks like we can eliminate the functions from this literal
                 let mut literals = self.literals.clone();
-                let (new_literal, flipped) =
+                let (new_literal, _flipped) =
                     Literal::new_with_flip(false, left_args[j].clone(), right_args[j].clone());
                 literals[i] = new_literal;
-                results.push((i, j, literals, flipped));
+                results.push(literals);
             }
         }
 
@@ -505,7 +501,7 @@ impl Clause {
     pub fn injectivities(&self) -> Vec<Clause> {
         self.find_injectivities()
             .into_iter()
-            .map(|(_, _, literals, _)| Clause::new(literals, &self.context))
+            .map(|literals| Clause::new(literals, &self.context))
             .filter(|clause| !clause.is_tautology())
             .collect()
     }
@@ -671,14 +667,8 @@ impl Clause {
 
     /// Generates all clauses that can be derived from this clause using boolean reduction.
     /// Boolean reduction is replacing a boolean equality with a disjunction that it implies.
-    ///
-    /// Returns a vector of (index, resulting_literals) pairs.
-    /// The index describes the index of a literal that got replaced by two literals.
-    /// We always replace a (left ~ right) at position i with ~left at i and ~right at i+1.
-    pub fn find_boolean_reductions(
-        &self,
-        kernel_context: &KernelContext,
-    ) -> Vec<(usize, Vec<Literal>)> {
+    /// Returns the resulting literals for each application.
+    pub fn find_boolean_reductions(&self, kernel_context: &KernelContext) -> Vec<Vec<Literal>> {
         let bool_type = Term::bool_type();
 
         let mut answer = vec![];
@@ -711,8 +701,8 @@ impl Clause {
             }
             first.extend_from_slice(&self.literals[i + 1..]);
             second.extend_from_slice(&self.literals[i + 1..]);
-            answer.push((i, first));
-            answer.push((i, second));
+            answer.push(first);
+            answer.push(second);
         }
         answer
     }
@@ -720,12 +710,10 @@ impl Clause {
     /// Generates all clauses that can be derived from this clause using boolean reduction.
     /// This is a convenience method that returns just the normalized clauses.
     pub fn boolean_reductions(&self, kernel_context: &KernelContext) -> Vec<Clause> {
-        let mut answer = vec![];
-        for (_, literals) in self.find_boolean_reductions(kernel_context) {
-            let clause = Clause::new(literals, &self.context);
-            answer.push(clause);
-        }
-        answer
+        self.find_boolean_reductions(kernel_context)
+            .into_iter()
+            .map(|literals| Clause::new(literals, &self.context))
+            .collect()
     }
 }
 

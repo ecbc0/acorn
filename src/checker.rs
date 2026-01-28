@@ -206,9 +206,7 @@ impl Checker {
                 .insert_clause(clause, StepId(step_id), kernel_context);
         }
 
-        for factoring in
-            inference::equality_factorings(clause, clause.get_local_context(), kernel_context)
-        {
+        for factoring in inference::equality_factorings(clause, kernel_context) {
             self.insert_clause(
                 &factoring,
                 StepReason::EqualityFactoring(step_id),

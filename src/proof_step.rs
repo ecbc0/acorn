@@ -73,13 +73,6 @@ pub struct ResolutionInfo {
     /// The long clause will usually have more than one literal. It can have just one literal
     /// if we're finding a contradiction.
     pub long_id: usize,
-
-    /// The literals immediately after resolution (before any simplification).
-    /// These have the resolution unifier applied.
-    pub literals: Vec<Literal>,
-
-    /// The local context for the post-resolution literals.
-    pub context: LocalContext,
 }
 
 /// Information about a specialization.
@@ -102,29 +95,6 @@ pub struct RewriteInfo {
     /// Which clauses were used as the sources.
     pub pattern_id: usize,
     pub target_id: usize,
-
-    /// Whether we rewrite the term on the left of the target literal. (As opposed to the right.)
-    pub target_left: bool,
-
-    /// The path within the target term that we rewrite.
-    /// Uses PathStep::Function/Argument to navigate the curried term structure.
-    pub path: Vec<PathStep>,
-
-    /// Whether this is a forwards or backwards rewrite.
-    /// A forwards rewrite rewrites the left side of the pattern into the right.
-    pub forwards: bool,
-
-    /// The literal initially created by the rewrite.
-    /// This is usually redundant, but not always, because the output clause can get simplified.
-    pub rewritten: Literal,
-
-    /// The variable context for the rewritten literal.
-    /// This is needed because normalization may renumber variables, so the clause's
-    /// context might not match the rewritten literal's variables.
-    pub context: LocalContext,
-
-    /// Whether the literal was flipped during normalization
-    pub flipped: bool,
 }
 
 /// Information about a contradiction found by rewriting one side of an inequality into the other.
@@ -154,86 +124,13 @@ pub struct AssumptionInfo {
     pub context: LocalContext,
 }
 
+/// Information about an inference rule with a single source clause.
+/// Used for equality factoring, equality resolution, injectivity,
+/// boolean reduction, and extensionality.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EqualityFactoringInfo {
-    /// The id of the clause that was factored.
+pub struct SingleSourceInfo {
+    /// The id of the source clause.
     pub id: usize,
-
-    /// The literals that we got immediately after factoring.
-    pub literals: Vec<Literal>,
-
-    /// The local context for the literals.
-    pub context: LocalContext,
-}
-
-/// Information about an equality resolution inference.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EqualityResolutionInfo {
-    /// The id of the clause that was resolved.
-    pub id: usize,
-
-    // Which literal in the input clause got resolved away.
-    pub index: usize,
-
-    // The literals that we got immediately after resolution.
-    pub literals: Vec<Literal>,
-
-    // The local context for the literals.
-    pub context: LocalContext,
-
-    // Parallel to literals. Tracks whether they were flipped or not.
-    pub flipped: Vec<bool>,
-}
-
-/// Information about an injectivity inference.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InjectivityInfo {
-    /// The id of the clause that had injectivity applied.
-    pub id: usize,
-
-    /// The literal that was eliminated.
-    pub index: usize,
-
-    /// The literals that we got immediately after function elimination.
-    pub literals: Vec<Literal>,
-
-    /// The local context for the literals.
-    pub context: LocalContext,
-
-    /// Whether the function-eliminated literal was flipped.
-    pub flipped: bool,
-
-    /// The argument to the eliminated function that we kept.
-    pub arg: usize,
-}
-
-/// Information about a boolean reduction inference.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BooleanReductionInfo {
-    /// The id of the clause that had boolean reduction applied.
-    pub id: usize,
-
-    /// The literal that got expanded into two literals.
-    pub index: usize,
-
-    /// The literals that we got immediately after boolean reduction.
-    pub literals: Vec<Literal>,
-
-    /// The local context for the literals.
-    pub context: LocalContext,
-}
-
-/// Information about an extensionality inference.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExtensionalityInfo {
-    /// The id of the clause that had extensionality applied.
-    pub id: usize,
-
-    /// The literals that we got immediately after applying extensionality.
-    pub literals: Vec<Literal>,
-
-    /// The local context for the literals.
-    pub context: LocalContext,
 }
 
 /// Information about a simplification step.
@@ -257,11 +154,11 @@ pub enum Rule {
     Specialization(SpecializationInfo),
 
     /// Rules with only one source clause
-    EqualityFactoring(EqualityFactoringInfo),
-    EqualityResolution(EqualityResolutionInfo),
-    Injectivity(InjectivityInfo),
-    BooleanReduction(BooleanReductionInfo),
-    Extensionality(ExtensionalityInfo),
+    EqualityFactoring(SingleSourceInfo),
+    EqualityResolution(SingleSourceInfo),
+    Injectivity(SingleSourceInfo),
+    BooleanReduction(SingleSourceInfo),
+    Extensionality(SingleSourceInfo),
 
     /// A contradiction found by repeatedly rewriting identical terms.
     MultipleRewrite(MultipleRewriteInfo),
@@ -718,16 +615,9 @@ impl ProofStep {
         short_id: usize,
         short_step: &ProofStep,
         clause: Clause,
-        literals: Vec<Literal>,
-        context: LocalContext,
         premise_map: PremiseMap,
     ) -> ProofStep {
-        let rule = Rule::Resolution(ResolutionInfo {
-            short_id,
-            long_id,
-            literals,
-            context,
-        });
+        let rule = Rule::Resolution(ResolutionInfo { short_id, long_id });
 
         let truthiness = short_step.truthiness.combine(long_step.truthiness);
         let proof_size = short_step.proof_size + long_step.proof_size + 1;
@@ -761,7 +651,6 @@ impl ProofStep {
     /// We are replacing a subterm of the target literal with a new subterm.
     /// Note that the target step will always be a concrete single literal.
     /// The pattern and the output may have variables in them.
-    /// It seems weird for the output to have variables, but it does.
     ///
     /// A "forwards" rewrite goes left-to-right in the pattern.
     pub fn rewrite(
@@ -771,7 +660,6 @@ impl ProofStep {
         target_step: &ProofStep,
         target_left: bool,
         path: &[PathStep],
-        forwards: bool,
         new_subterm: &Term,
         new_subterm_context: &LocalContext,
         pattern_var_map: VariableMap,
@@ -779,9 +667,8 @@ impl ProofStep {
         assert_eq!(target_step.clause.literals.len(), 1);
 
         let target_literal = &target_step.clause.literals[0];
-        let (new_literal, flipped) =
+        let (new_literal, _flipped) =
             target_literal.replace_at_path(target_left, path, new_subterm.clone());
-        let rewritten = new_literal.clone();
 
         let simplifying = new_literal.extended_kbo_cmp(&target_literal) == Ordering::Less;
 
@@ -803,9 +690,6 @@ impl ProofStep {
             LocalContext::from_types(var_types)
         };
 
-        // Use rewritten_context for normalization since it has the correct variable types
-        // for all variables in new_literal (from both target and new_subterm).
-
         let (clause, var_ids) =
             Clause::normalize_with_var_ids(vec![new_literal], &rewritten_context);
 
@@ -813,7 +697,7 @@ impl ProofStep {
         let premise_map = PremiseMap::new(
             vec![pattern_var_map.clone(), VariableMap::new()],
             var_ids,
-            rewritten_context.clone(),
+            rewritten_context,
         );
 
         let truthiness = pattern_step.truthiness.combine(target_step.truthiness);
@@ -821,12 +705,6 @@ impl ProofStep {
         let rule = Rule::Rewrite(RewriteInfo {
             pattern_id,
             target_id,
-            target_left,
-            path: path.to_vec(),
-            forwards,
-            rewritten,
-            context: rewritten_context,
-            flipped,
         });
 
         let proof_size = pattern_step.proof_size + target_step.proof_size + 1;
@@ -1046,9 +924,8 @@ mod tests {
             &pattern_step,
             1,
             &target_step,
-            true,  // target_left - replace g1(c0)
-            &[],   // path - at root
-            false, // forwards=false (backwards rewrite)
+            true, // target_left - replace g1(c0)
+            &[],  // path - at root
             &new_subterm,
             &pattern_context,   // context for new_subterm's variables
             VariableMap::new(), // mock test - empty var map

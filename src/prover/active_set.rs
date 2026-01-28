@@ -19,8 +19,7 @@ use crate::kernel::unifier::{Scope, Unifier};
 use crate::kernel::variable_map::VariableMap;
 use crate::kernel::{EqualityGraph, StepId};
 use crate::proof_step::{
-    BooleanReductionInfo, EqualityFactoringInfo, EqualityResolutionInfo, ExtensionalityInfo,
-    InjectivityInfo, PremiseMap, ProofStep, ProofStepId, Rule, SimplificationInfo, Truthiness,
+    PremiseMap, ProofStep, ProofStepId, Rule, SimplificationInfo, SingleSourceInfo, Truthiness,
 };
 
 /// Result of evaluating whether a literal can be eliminated during simplification.
@@ -380,7 +379,7 @@ impl ActiveSet {
             }
             let left = unifier.apply(Scope::RIGHT, &literal.left);
             let right = unifier.apply(Scope::RIGHT, &literal.right);
-            let (new_literal, _new_flip) = Literal::new_with_flip(literal.positive, left, right);
+            let (new_literal, _) = Literal::new_with_flip(literal.positive, left, right);
             literals.push(new_literal);
         }
 
@@ -442,16 +441,11 @@ impl ActiveSet {
             }
         }
 
-        // Store post-resolution literals for reconstruction.
-        let resolution_literals = literals.clone();
-        let resolution_context = context.clone();
-
         let (clause, var_ids) = Clause::normalize_with_var_ids(literals, &context);
 
-        // Store raw inference var maps and normalization trace for reconstruction
         let premise_map = PremiseMap::new(
             vec![short_var_map.clone(), long_var_map.clone()],
-            var_ids.clone(),
+            var_ids,
             context.clone(),
         );
 
@@ -489,8 +483,6 @@ impl ActiveSet {
             short_id,
             short_step,
             clause,
-            resolution_literals,
-            resolution_context,
             premise_map,
         );
         Some(step)
@@ -677,7 +669,6 @@ impl ActiveSet {
                         target_step,
                         target_left,
                         &path,
-                        rewrite.forwards,
                         &rewrite.term,
                         &rewrite.context,
                         pattern_var_map,
@@ -803,7 +794,6 @@ impl ActiveSet {
                         target_step,
                         location.left,
                         &location.path,
-                        forwards,
                         &new_subterm,
                         &new_subterm_context,
                         pattern_var_map.clone(),
@@ -852,7 +842,7 @@ impl ActiveSet {
         let original_context = clause.get_local_context();
 
         // Use the new method to find all possible equality resolutions
-        for (index, new_literals, flipped, context, input_var_map) in
+        for (new_literals, context, input_var_map) in
             inference::find_equality_resolutions(clause, kernel_context)
         {
             // Check inhabitedness for eliminated variables.
@@ -889,7 +879,6 @@ impl ActiveSet {
                 continue;
             }
 
-            let literals = new_literals.clone();
             let (new_clause, var_ids) = Clause::normalize_with_var_ids(new_literals, &context);
 
             // Check if normalization resulted in a tautology
@@ -902,13 +891,7 @@ impl ActiveSet {
                 let step = ProofStep::direct(
                     activated_id,
                     activated_step,
-                    Rule::EqualityResolution(EqualityResolutionInfo {
-                        id: activated_id,
-                        index,
-                        literals,
-                        context,
-                        flipped,
-                    }),
+                    Rule::EqualityResolution(SingleSourceInfo { id: activated_id }),
                     new_clause,
                     premise_map,
                 );
@@ -933,7 +916,7 @@ impl ActiveSet {
         let original_context = clause.get_local_context();
         let mut answer = vec![];
 
-        for (index, arg, literals, flipped) in clause.find_injectivities() {
+        for literals in clause.find_injectivities() {
             // Check inhabitedness for eliminated variables.
             // We only need to check when a variable's type depends on other type variables
             // (which might be uninhabited). For concrete types, the prover's standard
@@ -969,20 +952,12 @@ impl ActiveSet {
             }
 
             let context = original_context.clone();
-            let info = InjectivityInfo {
-                id: activated_id,
-                index,
-                arg,
-                literals: literals.clone(),
-                context: context.clone(),
-                flipped,
-            };
             let (clause, var_ids) = Clause::normalize_with_var_ids(literals, &context);
-            let premise_map = PremiseMap::new(vec![VariableMap::new()], var_ids, context.clone());
+            let premise_map = PremiseMap::new(vec![VariableMap::new()], var_ids, context);
             let step = ProofStep::direct(
                 activated_id,
                 activated_step,
-                Rule::Injectivity(info),
+                Rule::Injectivity(SingleSourceInfo { id: activated_id }),
                 clause,
                 premise_map,
             );
@@ -1002,20 +977,14 @@ impl ActiveSet {
         let clause = &activated_step.clause;
         let mut answer = vec![];
 
-        for (index, literals) in clause.find_boolean_reductions(kernel_context) {
+        for literals in clause.find_boolean_reductions(kernel_context) {
             let context = activated_step.clause.get_local_context().clone();
-            let info = BooleanReductionInfo {
-                id: activated_id,
-                index,
-                literals: literals.clone(),
-                context: context.clone(),
-            };
             let (clause, var_ids) = Clause::normalize_with_var_ids(literals, &context);
-            let premise_map = PremiseMap::new(vec![VariableMap::new()], var_ids, context.clone());
+            let premise_map = PremiseMap::new(vec![VariableMap::new()], var_ids, context);
             let step = ProofStep::direct(
                 activated_id,
                 activated_step,
-                Rule::BooleanReduction(info),
+                Rule::BooleanReduction(SingleSourceInfo { id: activated_id }),
                 clause,
                 premise_map,
             );
@@ -1038,17 +1007,12 @@ impl ActiveSet {
 
         if let Some(literals) = clause.find_extensionality(kernel_context) {
             let context = activated_step.clause.get_local_context().clone();
-            let info = ExtensionalityInfo {
-                id: activated_id,
-                literals: literals.clone(),
-                context: context.clone(),
-            };
             let (clause, var_ids) = Clause::normalize_with_var_ids(literals, &context);
-            let premise_map = PremiseMap::new(vec![VariableMap::new()], var_ids, context.clone());
+            let premise_map = PremiseMap::new(vec![VariableMap::new()], var_ids, context);
             let step = ProofStep::direct(
                 activated_id,
                 activated_step,
-                Rule::Extensionality(info),
+                Rule::Extensionality(SingleSourceInfo { id: activated_id }),
                 clause,
                 premise_map,
             );
@@ -1080,25 +1044,14 @@ impl ActiveSet {
         let factorings = inference::find_equality_factorings(clause, kernel_context);
 
         for (literals, output_context, input_var_map) in factorings {
-            // Capture the literals before normalization
-            let literals_before_normalization = literals.clone();
-
             // Create the new clause using the unifier's output context
             let (new_clause, var_ids) = Clause::normalize_with_var_ids(literals, &output_context);
 
-            let premise_map = PremiseMap::new(
-                vec![input_var_map.clone()],
-                var_ids.clone(),
-                output_context.clone(),
-            );
+            let premise_map = PremiseMap::new(vec![input_var_map.clone()], var_ids, output_context);
             let step = ProofStep::direct(
                 activated_id,
                 activated_step,
-                Rule::EqualityFactoring(EqualityFactoringInfo {
-                    id: activated_id,
-                    literals: literals_before_normalization,
-                    context: output_context,
-                }),
+                Rule::EqualityFactoring(SingleSourceInfo { id: activated_id }),
                 new_clause,
                 premise_map,
             );

@@ -14,16 +14,14 @@ use crate::kernel::variable_map::VariableMap;
 /// Equality resolution applies when a clause contains a negative literal `s != t`
 /// where `s` and `t` can be unified. The literal is then removed from the clause.
 ///
-/// Returns a vector of tuples containing:
-/// - The index of the literal that was resolved
-/// - The resulting literals after applying the unifier
-/// - The flipped flags for each literal
-/// - The output_context containing types of variables in the resulting literals
-/// - The input_var_map mapping input clause variables to output terms
+/// Returns a vector of (literals, output_context, input_var_map) tuples.
+/// The literals are the result after removing the resolved literal and applying the unifier.
+/// The output_context contains types for variables in the resulting literals.
+/// The input_var_map maps input clause variables to output terms.
 pub fn find_equality_resolutions(
     clause: &Clause,
     kernel_context: &KernelContext,
-) -> Vec<(usize, Vec<Literal>, Vec<bool>, LocalContext, VariableMap)> {
+) -> Vec<(Vec<Literal>, LocalContext, VariableMap)> {
     let mut results = vec![];
 
     for i in 0..clause.literals.len() {
@@ -42,12 +40,10 @@ pub fn find_equality_resolutions(
 
         // We can do equality resolution
         let mut new_literals = vec![];
-        let mut flipped = vec![];
         for (j, lit) in clause.literals.iter().enumerate() {
             if j != i {
-                let (new_lit, j_flipped) = unifier.apply_to_literal(Scope::LEFT, lit);
+                let (new_lit, _) = unifier.apply_to_literal(Scope::LEFT, lit);
                 new_literals.push(new_lit);
-                flipped.push(j_flipped);
             }
         }
 
@@ -60,9 +56,7 @@ pub fn find_equality_resolutions(
             }
         }
 
-        // Return the raw literals without checking for tautology
-        // The caller will handle that after normalization
-        results.push((i, new_literals, flipped, output_context, input_var_map));
+        results.push((new_literals, output_context, input_var_map));
     }
 
     results
@@ -73,7 +67,7 @@ pub fn find_equality_resolutions(
 pub fn equality_resolutions(clause: &Clause, kernel_context: &KernelContext) -> Vec<Clause> {
     find_equality_resolutions(clause, kernel_context)
         .into_iter()
-        .map(|(_, literals, _, context, _)| Clause::new(literals, &context))
+        .map(|(literals, context, _)| Clause::new(literals, &context))
         .filter(|c| !c.is_tautology())
         .collect()
 }
@@ -100,14 +94,14 @@ pub fn find_equality_factorings(
 
     let st_literal = &clause.literals[0];
 
-    for (_st_forwards, s, t) in st_literal.both_term_pairs() {
+    for (_, s, t) in st_literal.both_term_pairs() {
         for i in 1..clause.literals.len() {
             let uv_literal = &clause.literals[i];
             if !uv_literal.positive {
                 continue;
             }
 
-            for (_uv_forwards, u, v) in uv_literal.both_term_pairs() {
+            for (_, u, v) in uv_literal.both_term_pairs() {
                 let mut unifier = Unifier::new(3, kernel_context);
                 unifier.set_input_context(Scope::LEFT, clause.get_local_context());
                 if !unifier.unify(Scope::LEFT, s, Scope::LEFT, u) {
@@ -116,12 +110,12 @@ pub fn find_equality_factorings(
 
                 // Create the factored terms.
                 let mut literals = vec![];
-                let (tv_lit, _tv_flip) = Literal::new_with_flip(
+                let (tv_lit, _) = Literal::new_with_flip(
                     false,
                     unifier.apply(Scope::LEFT, t),
                     unifier.apply(Scope::LEFT, v),
                 );
-                let (uv_out, _uv_out_flip) = Literal::new_with_flip(
+                let (uv_out, _) = Literal::new_with_flip(
                     true,
                     unifier.apply(Scope::LEFT, u),
                     unifier.apply(Scope::LEFT, v),
@@ -132,7 +126,7 @@ pub fn find_equality_factorings(
 
                 for j in 1..clause.literals.len() {
                     if i != j {
-                        let (new_lit, _j_flipped) =
+                        let (new_lit, _) =
                             unifier.apply_to_literal(Scope::LEFT, &clause.literals[j]);
                         literals.push(new_lit);
                     }
@@ -157,11 +151,7 @@ pub fn find_equality_factorings(
 
 /// Generates all clauses that can be derived from a clause using equality factoring.
 /// This is a convenience function that returns just the normalized clauses.
-pub fn equality_factorings(
-    clause: &Clause,
-    _context: &LocalContext,
-    kernel_context: &KernelContext,
-) -> Vec<Clause> {
+pub fn equality_factorings(clause: &Clause, kernel_context: &KernelContext) -> Vec<Clause> {
     find_equality_factorings(clause, kernel_context)
         .into_iter()
         .map(|(literals, output_context, _)| Clause::new(literals, &output_context))
