@@ -265,6 +265,7 @@ pub fn reconstruct_step<R: ProofResolver>(
         | Rule::Rewrite(_)
         | Rule::Resolution(_)
         | Rule::Specialization(_)
+        | Rule::Simplification(_)
             if !step.premise_map.is_empty() =>
         {
             let premise_ids = step.rule.premises();
@@ -296,54 +297,23 @@ pub fn reconstruct_step<R: ProofResolver>(
                 }
                 add_var_map(resolver, premise_id, var_map, context, concrete_steps);
             }
-            return Ok(());
-        }
 
-        Rule::Simplification(info) if !step.premise_map.is_empty() => {
-            // Handle simplifying clauses via PremiseMap
-            let premise_ids = step.rule.premises();
-            let mut premise_contexts: Vec<&LocalContext> = Vec::new();
-            for premise_id in &premise_ids {
-                let premise_clause = resolver.get_clause(*premise_id)?;
-                premise_contexts.push(premise_clause.get_local_context());
+            // For Simplification, also reconstruct the inner step
+            if let Rule::Simplification(info) = &step.rule {
+                let (inner_map, inner_context) = step.premise_map.inner_step_map(
+                    &conclusion_map,
+                    conclusion_map_context,
+                    info.original.clause.get_local_context(),
+                );
+                reconstruct_step(
+                    resolver,
+                    id,
+                    &info.original,
+                    inner_map,
+                    &inner_context,
+                    concrete_steps,
+                )?;
             }
-            let concrete_premises = step.premise_map.concretize_premises(
-                &conclusion_map,
-                conclusion_map_context,
-                &premise_contexts,
-            );
-            for (premise_id, (mut var_map, mut context)) in
-                premise_ids.into_iter().zip(concrete_premises)
-            {
-                let premise_clause = resolver.get_clause(premise_id)?;
-                let premise_context = premise_clause.get_local_context();
-                let mut next_var = context.len();
-                for var_id in 0..premise_context.len() {
-                    if !var_map.has_mapping(var_id as AtomId) {
-                        if let Some(var_type) = premise_context.get_var_type(var_id) {
-                            var_map.set(var_id as AtomId, Term::new_variable(next_var as AtomId));
-                            context.set_type(next_var, var_type.clone());
-                            next_var += 1;
-                        }
-                    }
-                }
-                add_var_map(resolver, premise_id, var_map, context, concrete_steps);
-            }
-
-            // Compute inner step's conclusion_map from var_ids + conclusion_map
-            let (inner_map, inner_context) = step.premise_map.inner_step_map(
-                &conclusion_map,
-                conclusion_map_context,
-                info.original.clause.get_local_context(),
-            );
-            reconstruct_step(
-                resolver,
-                id,
-                &info.original,
-                inner_map,
-                &inner_context,
-                concrete_steps,
-            )?;
             return Ok(());
         }
 
