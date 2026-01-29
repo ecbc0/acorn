@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::certificate::Certificate;
@@ -20,8 +20,9 @@ use crate::kernel::generalization_set::GeneralizationSet;
 use crate::kernel::inference;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
+use crate::kernel::term::Term;
 use crate::kernel::{EqualityGraph, StepId};
-use crate::normalizer::{Normalizer, NormalizerView};
+use crate::normalizer::{NormalizationContext, Normalizer};
 use crate::project::Project;
 use crate::proof_step::Rule;
 use crate::syntax::expression::Declaration;
@@ -492,11 +493,36 @@ impl Checker {
                 // Look up synthetic definition
                 let types: Vec<_> = decls.iter().map(|(_, ty)| ty.clone()).collect();
                 let exists_value = AcornValue::exists(types.clone(), condition_value.clone());
-                normalizer.to_mut().set_type_var_map(&type_params);
+
+                // Build type_var_map from type parameters
+                let type_var_map: Option<HashMap<String, (AtomId, Term)>> =
+                    if type_params.is_empty() {
+                        None
+                    } else {
+                        Some(
+                            type_params
+                                .iter()
+                                .enumerate()
+                                .map(|(i, p)| {
+                                    let var_type = if let Some(tc) = &p.typeclass {
+                                        let tc_id = normalizer
+                                            .to_mut()
+                                            .kernel_context_mut()
+                                            .type_store
+                                            .add_typeclass(tc);
+                                        Term::typeclass(tc_id)
+                                    } else {
+                                        Term::type_sort()
+                                    };
+                                    (p.name.clone(), (i as AtomId, var_type))
+                                })
+                                .collect(),
+                        )
+                    };
 
                 let (source, synthetic_atoms) = match normalizer
                     .to_mut()
-                    .get_synthetic_definition(&exists_value)
+                    .get_synthetic_definition(&exists_value, type_var_map.as_ref())
                 {
                     Some(def) => (def.source.clone(), Some(def.atoms.clone())),
                     None => {
@@ -593,9 +619,11 @@ impl Checker {
                             None,
                             String::new(),
                         );
-                        normalizer
-                            .to_mut()
-                            .add_scoped_constant(cname.clone(), acorn_type);
+                        normalizer.to_mut().add_scoped_constant(
+                            cname.clone(),
+                            acorn_type,
+                            type_var_map.as_ref(),
+                        );
 
                         let resolved_value = AcornValue::constant(
                             cname,
@@ -612,13 +640,11 @@ impl Checker {
                 let clauses_to_insert = if condition_value != AcornValue::Bool(true) {
                     let num_vars = decls.len() as AtomId;
                     let value = condition_value.bind_values(0, num_vars, &constant_values);
-                    let mut view = NormalizerView::Ref(&normalizer);
+                    let mut view = NormalizationContext::new_ref(&normalizer, type_var_map.clone());
                     view.nice_value_to_clauses(&value, &mut vec![])?
                 } else {
                     vec![]
                 };
-
-                normalizer.to_mut().clear_type_var_map();
 
                 let reason = match source {
                     Some(source) => StepReason::Skolemization(source),
@@ -632,7 +658,7 @@ impl Checker {
             }
             StatementInfo::Claim(claim) => {
                 let value = evaluator.evaluate_value(&claim.claim, Some(&AcornType::Bool))?;
-                let mut view = NormalizerView::Mut(normalizer.to_mut());
+                let mut view = NormalizationContext::new_mut(normalizer.to_mut(), None);
                 let clauses = view.value_to_denormalized_clauses(&value)?;
                 Ok(ParsedLine::Claim(clauses))
             }

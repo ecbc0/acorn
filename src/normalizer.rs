@@ -112,12 +112,6 @@ pub struct Normalizer {
     /// The kernel context containing TypeStore and SymbolTable.
     kernel_context: KernelContext,
 
-    /// Current type variable mapping for polymorphic normalization.
-    /// Maps type parameter names to (variable id, kind).
-    /// The kind is either TypeSort (unconstrained) or Typeclass (constrained).
-    /// In non-polymorphic mode, this is always None.
-    type_var_map: Option<HashMap<String, (AtomId, Term)>>,
-
     /// Goal's type parameter names, indexed by variable ID.
     /// This is set when normalize_goal is called and persists for certificate generation.
     /// Used to preserve original type param names (like G, H) when generating certificates.
@@ -130,7 +124,6 @@ impl Normalizer {
             synthetic_definitions: HashMap::new(),
             synthetic_map: HashMap::new(),
             kernel_context: KernelContext::new(),
-            type_var_map: None,
             goal_type_param_names: HashMap::new(),
         }
     }
@@ -145,23 +138,10 @@ impl Normalizer {
 
     /// Returns a mapping from variable IDs to original type param names.
     /// This is used to preserve original type param names when generating code.
-    /// It prioritizes goal_type_param_names (set during goal normalization) over
-    /// type_var_map (set during polymorphic checking), and finally falls back to
-    /// arbitrary types registered in the type store.
+    /// Returns goal_type_param_names if set, otherwise an empty map.
+    /// If no names are available, callers will use default names like T0, T1, etc.
     pub fn get_var_id_to_name_map(&self) -> HashMap<AtomId, String> {
-        // First check if we have goal type param names (persistent)
-        if !self.goal_type_param_names.is_empty() {
-            return self.goal_type_param_names.clone();
-        }
-        // Fall back to type_var_map (transient)
-        let mut result = HashMap::new();
-        if let Some(type_var_map) = &self.type_var_map {
-            for (name, (id, _)) in type_var_map {
-                result.insert(*id, name.clone());
-            }
-        }
-        // If no names are available, callers will use default names like T0, T1, etc.
-        result
+        self.goal_type_param_names.clone()
     }
 
     /// Returns all synthetic atom IDs that have been defined.
@@ -172,6 +152,10 @@ impl Normalizer {
 
     pub fn kernel_context(&self) -> &KernelContext {
         &self.kernel_context
+    }
+
+    pub fn kernel_context_mut(&mut self) -> &mut KernelContext {
+        &mut self.kernel_context
     }
 
     /// Registers an arbitrary type with the type store.
@@ -189,43 +173,13 @@ impl Normalizer {
         }
     }
 
-    /// Sets up the type variable map for polymorphic checking.
-    /// This allows type parameters like T0, T1 to be recognized during value conversion.
-    pub fn set_type_var_map(&mut self, type_params: &[crate::elaborator::acorn_type::TypeParam]) {
-        use crate::kernel::term::Term;
-
-        if type_params.is_empty() {
-            self.type_var_map = None;
-            return;
-        }
-
-        let type_var_map: HashMap<String, (AtomId, Term)> = type_params
-            .iter()
-            .enumerate()
-            .map(|(i, p)| {
-                let var_type = if let Some(tc) = &p.typeclass {
-                    let tc_id = self.kernel_context.type_store.add_typeclass(tc);
-                    Term::typeclass(tc_id)
-                } else {
-                    Term::type_sort()
-                };
-                (p.name.clone(), (i as AtomId, var_type))
-            })
-            .collect();
-
-        self.type_var_map = Some(type_var_map);
-    }
-
-    /// Clears the type variable map after polymorphic checking.
-    pub fn clear_type_var_map(&mut self) {
-        self.type_var_map = None;
-    }
-
     /// Gets a synthetic definition for a value, if one exists.
     /// The value should be of the form "exists ___ (forall x and forall y and ...)".
+    /// The type_var_map is used for polymorphic normalization.
     pub fn get_synthetic_definition(
         &self,
         value: &AcornValue,
+        type_var_map: Option<&HashMap<String, (AtomId, Term)>>,
     ) -> Option<&Arc<SyntheticDefinition>> {
         let (num_definitions, alt_value, quant_types) = match value {
             AcornValue::Exists(quants, subvalue) => (
@@ -235,18 +189,18 @@ impl Normalizer {
             ),
             _ => (0, value.clone(), vec![]),
         };
-        let mut view = NormalizerView::Ref(self);
+        let mut view = NormalizationContext::new_ref(self, type_var_map.cloned());
         let Ok(uninstantiated) = view.value_to_denormalized_clauses(&alt_value) else {
             return None;
         };
 
         // Skip the type variables when replacing existentials
-        let num_type_vars = self.type_var_map.as_ref().map_or(0, |m| m.len());
+        let num_type_vars = type_var_map.map_or(0, |m| m.len());
 
         // Convert quantifier types to type terms, including polymorphic wrapper if applicable
         // Get type variable kinds in sorted order (same as make_skolem_terms)
-        let type_var_kinds: Vec<Term> = if let Some(type_var_map) = &self.type_var_map {
-            let mut entries: Vec<_> = type_var_map.values().collect();
+        let type_var_kinds: Vec<Term> = if let Some(tvm) = type_var_map {
+            let mut entries: Vec<_> = tvm.values().collect();
             entries.sort_by_key(|(id, _)| *id);
             entries.iter().map(|(_, kind)| kind.clone()).collect()
         } else {
@@ -261,7 +215,7 @@ impl Normalizer {
                 let mut type_term = self
                     .kernel_context
                     .type_store
-                    .to_type_term_with_vars(t, self.type_var_map.as_ref());
+                    .to_type_term_with_vars(t, type_var_map);
                 // Convert FreeVariables to BoundVariables (same as make_skolem_terms)
                 type_term = type_term.convert_free_to_bound(num_type_params);
                 // Wrap with Pi types for each type variable
@@ -355,11 +309,16 @@ impl Normalizer {
         Ok(())
     }
 
-    pub fn add_scoped_constant(&mut self, cname: ConstantName, acorn_type: &AcornType) -> Atom {
+    pub fn add_scoped_constant(
+        &mut self,
+        cname: ConstantName,
+        acorn_type: &AcornType,
+        type_var_map: Option<&HashMap<String, (AtomId, Term)>>,
+    ) -> Atom {
         let type_term = self
             .kernel_context
             .type_store
-            .to_type_term_with_vars(acorn_type, self.type_var_map.as_ref());
+            .to_type_term_with_vars(acorn_type, type_var_map);
         Atom::Symbol(self.kernel_context.symbol_table.add_constant(
             cname,
             NewConstantType::Local,
@@ -384,25 +343,58 @@ impl TermBinding {
     }
 }
 
-// A NormalizerView lets us share methods between mutable and non-mutable normalizers that
-// only differ in a small number of places.
-pub enum NormalizerView<'a> {
+/// Inner enum for NormalizationContext to support both ref and mut access to the Normalizer.
+enum NormalizerRef<'a> {
     Ref(&'a Normalizer),
     Mut(&'a mut Normalizer),
 }
 
-impl NormalizerView<'_> {
+/// A NormalizationContext holds state for a single normalization operation.
+/// It combines a reference to the Normalizer with operation-scoped state like type_var_map.
+/// This lets us share methods between mutable and non-mutable normalizer access while
+/// keeping per-operation state separate from the persistent Normalizer state.
+pub struct NormalizationContext<'a> {
+    inner: NormalizerRef<'a>,
+    /// Type variable mapping for polymorphic normalization.
+    /// Maps type parameter names to (variable id, kind).
+    /// This is set for the duration of normalizing a single polymorphic fact/goal.
+    type_var_map: Option<HashMap<String, (AtomId, Term)>>,
+}
+
+impl<'a> NormalizationContext<'a> {
+    /// Create a new NormalizationContext with immutable access.
+    pub fn new_ref(
+        n: &'a Normalizer,
+        type_var_map: Option<HashMap<String, (AtomId, Term)>>,
+    ) -> Self {
+        NormalizationContext {
+            inner: NormalizerRef::Ref(n),
+            type_var_map,
+        }
+    }
+
+    /// Create a new NormalizationContext with mutable access.
+    pub fn new_mut(
+        n: &'a mut Normalizer,
+        type_var_map: Option<HashMap<String, (AtomId, Term)>>,
+    ) -> Self {
+        NormalizationContext {
+            inner: NormalizerRef::Mut(n),
+            type_var_map,
+        }
+    }
+
     fn as_ref(&self) -> &Normalizer {
-        match self {
-            NormalizerView::Ref(n) => n,
-            NormalizerView::Mut(n) => n,
+        match &self.inner {
+            NormalizerRef::Ref(n) => n,
+            NormalizerRef::Mut(n) => n,
         }
     }
 
     fn as_mut(&mut self) -> Result<&mut Normalizer, String> {
-        match self {
-            NormalizerView::Ref(_) => Err("Cannot mutate a NormalizerView::Ref".to_string()),
-            NormalizerView::Mut(n) => Ok(n),
+        match &mut self.inner {
+            NormalizerRef::Ref(_) => Err("Cannot mutate a NormalizationContext::Ref".to_string()),
+            NormalizerRef::Mut(n) => Ok(n),
         }
     }
 
@@ -422,20 +414,39 @@ impl NormalizerView<'_> {
     /// Maps type parameter names to (variable id, kind).
     /// In non-polymorphic mode, this always returns None.
     fn type_var_map(&self) -> Option<&HashMap<String, (AtomId, Term)>> {
-        self.as_ref().type_var_map.as_ref()
+        self.type_var_map.as_ref()
     }
 
     /// Get the kinds of type variables in sorted order by their IDs.
     /// Returns the types (e.g., Type) that each type variable has.
     /// Empty in non-polymorphic mode.
     fn get_type_var_kinds(&self) -> Vec<Term> {
-        if let Some(type_var_map) = &self.as_ref().type_var_map {
+        if let Some(type_var_map) = &self.type_var_map {
             let mut entries: Vec<_> = type_var_map.values().collect();
             entries.sort_by_key(|(id, _)| *id);
             entries.iter().map(|(_, kind)| kind.clone()).collect()
         } else {
             vec![]
         }
+    }
+
+    /// Get a mapping from variable IDs to type parameter names.
+    /// This is used for denormalization to convert type variables back to named type params.
+    /// Prioritizes goal_type_param_names (from normalize_goal), then falls back to type_var_map.
+    fn get_var_id_to_name_map(&self) -> HashMap<AtomId, String> {
+        // First check normalizer's goal_type_param_names (set during goal normalization)
+        let goal_names = &self.as_ref().goal_type_param_names;
+        if !goal_names.is_empty() {
+            return goal_names.clone();
+        }
+        // Fall back to NormalizationContext's type_var_map
+        if let Some(ref type_var_map) = self.type_var_map {
+            return type_var_map
+                .iter()
+                .map(|(name, (id, _))| (*id, name.clone()))
+                .collect();
+        }
+        HashMap::new()
     }
 
     /// Wrapper around value_to_cnf.
@@ -1570,7 +1581,7 @@ impl NormalizerView<'_> {
                 var_remapping[var_id as usize] = Some(pos as u16);
             }
         }
-        let type_var_id_to_name = self.as_ref().get_var_id_to_name_map();
+        let type_var_id_to_name = self.get_var_id_to_name_map();
         let skolem_value = self.as_ref().denormalize_term(
             &skolem_term,
             context,
@@ -2046,6 +2057,7 @@ impl Normalizer {
         value: &AcornValue,
         ctype: NewConstantType,
         source: &Source,
+        type_var_map: Option<HashMap<String, (AtomId, Term)>>,
     ) -> Result<Vec<Clause>, String> {
         self.kernel_context.symbol_table.add_from(
             &value,
@@ -2059,7 +2071,7 @@ impl Normalizer {
 
         // Check for dropped forall variables only when normalizing negated goals.
         let mut skolem_ids = vec![];
-        let mut mut_view = NormalizerView::Mut(self);
+        let mut mut_view = NormalizationContext::new_mut(self, type_var_map.clone());
         let clauses = mut_view.nice_value_to_clauses(&value, &mut skolem_ids)?;
 
         // For any of the created ids that have not been defined yet, the output
@@ -2078,9 +2090,9 @@ impl Normalizer {
 
         if !undefined_ids.is_empty() {
             // We have to define the skolem atoms that were declared during skolemization.
-            // Get type_vars from the normalizer's type_var_map
-            let type_vars: Vec<Term> = if let Some(type_var_map) = &self.type_var_map {
-                let mut entries: Vec<_> = type_var_map.values().collect();
+            // Get type_vars from the type_var_map parameter
+            let type_vars: Vec<Term> = if let Some(ref tvm) = type_var_map {
+                let mut entries: Vec<_> = tvm.values().collect();
                 entries.sort_by_key(|(id, _)| *id);
                 entries.iter().map(|(_, kind)| kind.clone()).collect()
             } else {
@@ -2124,6 +2136,7 @@ impl Normalizer {
         value: &AcornValue,
         ctype: NewConstantType,
         source: &Source,
+        type_var_map: Option<HashMap<String, (AtomId, Term)>>,
     ) -> Result<Vec<Clause>, String> {
         if let Err(e) = value.validate() {
             return Err(format!(
@@ -2133,7 +2146,7 @@ impl Normalizer {
         }
         assert!(value.is_bool_type());
 
-        let clauses = self.ugly_value_to_clauses(value, ctype, source)?;
+        let clauses = self.ugly_value_to_clauses(value, ctype, source, type_var_map)?;
         Ok(clauses)
     }
 
@@ -2215,26 +2228,25 @@ impl Normalizer {
                     })
                     .collect();
 
-                // Set the type_var_map before normalization
-                if type_var_map.is_empty() {
-                    self.type_var_map = None;
+                let type_var_map_opt = if type_var_map.is_empty() {
+                    None
                 } else {
-                    self.type_var_map = Some(type_var_map);
-                }
+                    Some(type_var_map)
+                };
                 let ctype = if source.truthiness() == Truthiness::Factual {
                     NewConstantType::Global
                 } else {
                     NewConstantType::Local
                 };
                 let clauses = self
-                    .normalize_value(&value, ctype, &source)
+                    .normalize_value(&value, ctype, &source, type_var_map_opt.clone())
                     .map_err(|msg| BuildError::new(range, msg))?;
                 for clause in &clauses {
                     trace!(clause = %clause, "normalized to clause");
                 }
                 let defined = match &source.source_type {
                     SourceType::ConstantDefinition(def_value, _) => {
-                        let view = NormalizerView::Ref(self);
+                        let view = NormalizationContext::new_ref(self, type_var_map_opt);
                         let term = view
                             .force_simple_value_to_term(def_value, &vec![])
                             .map_err(|msg| {
@@ -2252,9 +2264,6 @@ impl Normalizer {
                     let step = ProofStep::assumption(&source, clause, defined);
                     steps.push(step);
                 }
-
-                // Clear type_var_map after processing this proposition
-                self.type_var_map = None;
             }
         }
 
@@ -2814,7 +2823,7 @@ impl Normalizer {
             panic!("denormalized clause should validate: {:?}", e);
         }
         let renormalized = self
-            .normalize_value(&denormalized, NewConstantType::Local, &Source::mock())
+            .normalize_value(&denormalized, NewConstantType::Local, &Source::mock(), None)
             .unwrap();
         if renormalized.len() != 1 {
             if true {
@@ -2860,7 +2869,7 @@ impl Normalizer {
         use crate::kernel::display::DisplayClause;
 
         let actual = self
-            .normalize_value(value, NewConstantType::Local, &Source::mock())
+            .normalize_value(value, NewConstantType::Local, &Source::mock(), None)
             .unwrap();
         if actual.len() != expected.len() {
             panic!(
