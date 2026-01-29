@@ -113,14 +113,10 @@ pub struct Normalizer {
     kernel_context: KernelContext,
 
     /// Current type variable mapping for polymorphic normalization.
-    /// Maps type parameter names to (variable id, type).
-    /// The type is either TypeSort (unconstrained) or Typeclass (constrained).
+    /// Maps type parameter names to (variable id, kind).
+    /// The kind is either TypeSort (unconstrained) or Typeclass (constrained).
     /// In non-polymorphic mode, this is always None.
     type_var_map: Option<HashMap<String, (AtomId, Term)>>,
-
-    /// Just the name->id part of type_var_map, for use with to_type_term_with_vars.
-    /// In non-polymorphic mode, this is always None.
-    type_var_id_map: Option<HashMap<String, AtomId>>,
 
     /// Goal's type parameter names, indexed by variable ID.
     /// This is set when normalize_goal is called and persists for certificate generation.
@@ -135,7 +131,6 @@ impl Normalizer {
             synthetic_map: HashMap::new(),
             kernel_context: KernelContext::new(),
             type_var_map: None,
-            type_var_id_map: None,
             goal_type_param_names: HashMap::new(),
         }
     }
@@ -201,7 +196,6 @@ impl Normalizer {
 
         if type_params.is_empty() {
             self.type_var_map = None;
-            self.type_var_id_map = None;
             return;
         }
 
@@ -219,19 +213,12 @@ impl Normalizer {
             })
             .collect();
 
-        let id_map: HashMap<String, AtomId> = type_var_map
-            .iter()
-            .map(|(name, (id, _))| (name.clone(), *id))
-            .collect();
-
         self.type_var_map = Some(type_var_map);
-        self.type_var_id_map = Some(id_map);
     }
 
     /// Clears the type variable map after polymorphic checking.
     pub fn clear_type_var_map(&mut self) {
         self.type_var_map = None;
-        self.type_var_id_map = None;
     }
 
     /// Gets a synthetic definition for a value, if one exists.
@@ -274,7 +261,7 @@ impl Normalizer {
                 let mut type_term = self
                     .kernel_context
                     .type_store
-                    .to_type_term_with_vars(t, self.type_var_id_map.as_ref());
+                    .to_type_term_with_vars(t, self.type_var_map.as_ref());
                 // Convert FreeVariables to BoundVariables (same as make_skolem_terms)
                 type_term = type_term.convert_free_to_bound(num_type_params);
                 // Wrap with Pi types for each type variable
@@ -372,7 +359,7 @@ impl Normalizer {
         let type_term = self
             .kernel_context
             .type_store
-            .to_type_term_with_vars(acorn_type, self.type_var_id_map.as_ref());
+            .to_type_term_with_vars(acorn_type, self.type_var_map.as_ref());
         Atom::Symbol(self.kernel_context.symbol_table.add_constant(
             cname,
             NewConstantType::Local,
@@ -431,15 +418,10 @@ impl NormalizerView<'_> {
         &self.as_ref().kernel_context
     }
 
-    /// Get a map from type parameter names to variable IDs.
-    /// This is used with to_type_term_with_vars.
+    /// Get the type variable map for polymorphic normalization.
+    /// Maps type parameter names to (variable id, kind).
     /// In non-polymorphic mode, this always returns None.
-    fn type_var_map(&self) -> Option<&HashMap<String, AtomId>> {
-        self.as_ref().type_var_id_map.as_ref()
-    }
-
-    /// Get the full type variable map including type constraints.
-    fn type_var_map_with_types(&self) -> Option<&HashMap<String, (AtomId, Term)>> {
+    fn type_var_map(&self) -> Option<&HashMap<String, (AtomId, Term)>> {
         self.as_ref().type_var_map.as_ref()
     }
 
@@ -480,7 +462,7 @@ impl NormalizerView<'_> {
 
                 // In polymorphic mode, pre-allocate space for type variables
                 let (mut next_var_id, num_type_params) =
-                    if let Some(type_var_map) = self.type_var_map_with_types() {
+                    if let Some(type_var_map) = self.type_var_map() {
                         // Pre-populate local_context with the type of each type variable.
                         // The type is either TypeSort (unconstrained) or Typeclass (constrained).
                         // We need to iterate in order of variable ID.
@@ -680,7 +662,7 @@ impl NormalizerView<'_> {
 
         // In polymorphic mode, pre-allocate space for type variables
         // This ensures value variable IDs don't collide with type variable IDs
-        let mut next_var_id = if let Some(type_var_map) = self.type_var_map_with_types() {
+        let mut next_var_id = if let Some(type_var_map) = self.type_var_map() {
             // Pre-populate local_context with the type of each type variable.
             let mut entries: Vec<_> = type_var_map.values().collect();
             entries.sort_by_key(|(id, _)| *id);
@@ -942,7 +924,7 @@ impl NormalizerView<'_> {
         // This is the same pattern as other polymorphic constants: the type is
         // Pi(Type, Pi(Type, ... actual_type ...)) where each Type is skipped when
         // converting to AcornType, giving the user-facing type without type params.
-        if let Some(type_var_map) = self.type_var_map_with_types() {
+        if let Some(type_var_map) = self.type_var_map() {
             // Sort entries by var_id to ensure consistent ordering
             let mut entries: Vec<_> = type_var_map.values().collect();
             entries.sort_by_key(|(id, _)| *id);
@@ -1788,7 +1770,7 @@ impl NormalizerView<'_> {
 
                 // In polymorphic mode, include type parameters as arguments.
                 // This matches how make_skolem_terms handles polymorphic synthetics.
-                if let Some(type_var_map) = self.type_var_map_with_types() {
+                if let Some(type_var_map) = self.type_var_map() {
                     let mut entries: Vec<_> = type_var_map.values().collect();
                     entries.sort_by_key(|(id, _)| *id);
                     for (var_id, var_type) in entries {
@@ -2233,17 +2215,10 @@ impl Normalizer {
                     })
                     .collect();
 
-                // Set the type_var_map and type_var_id_map before normalization
+                // Set the type_var_map before normalization
                 if type_var_map.is_empty() {
                     self.type_var_map = None;
-                    self.type_var_id_map = None;
                 } else {
-                    // Build the id-only map for to_type_term_with_vars
-                    let id_map: HashMap<String, AtomId> = type_var_map
-                        .iter()
-                        .map(|(name, (id, _))| (name.clone(), *id))
-                        .collect();
-                    self.type_var_id_map = Some(id_map);
                     self.type_var_map = Some(type_var_map);
                 }
                 let ctype = if source.truthiness() == Truthiness::Factual {
@@ -2278,9 +2253,8 @@ impl Normalizer {
                     steps.push(step);
                 }
 
-                // Clear type_var_map and type_var_id_map after processing this proposition
+                // Clear type_var_map after processing this proposition
                 self.type_var_map = None;
-                self.type_var_id_map = None;
             }
         }
 

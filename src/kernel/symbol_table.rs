@@ -539,7 +539,7 @@ impl SymbolTable {
         &self,
         c: &ConstantInstance,
         type_store: &TypeStore,
-        type_var_map: Option<&HashMap<String, AtomId>>,
+        type_var_map: Option<&HashMap<String, (AtomId, Term)>>,
     ) -> Result<Term, String> {
         // Check for an alias first - instance definitions create aliases
         // where Arf.foo[Foo] = Foo.foo makes them the same symbol

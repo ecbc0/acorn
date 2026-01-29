@@ -205,12 +205,14 @@ impl TypeStore {
     /// Function types and parameterized data types are constructed on the fly.
     ///
     /// If `type_var_map` is provided, type variables are converted to FreeVariable atoms
-    /// using the mapping. This is used in polymorphic mode where type variables participate
+    /// using the mapping. The map contains (AtomId, Term) pairs where the Term is the
+    /// kind/constraint of the type variable (used elsewhere, ignored here).
+    /// This is used in polymorphic mode where type variables participate
     /// in unification like term variables.
     pub fn to_type_term_with_vars(
         &self,
         acorn_type: &AcornType,
-        type_var_map: Option<&HashMap<String, AtomId>>,
+        type_var_map: Option<&HashMap<String, (AtomId, Term)>>,
     ) -> Term {
         match acorn_type {
             // Built-in types: use dedicated Symbol variants
@@ -258,8 +260,8 @@ impl TypeStore {
             AcornType::Variable(type_param) => {
                 // Type variables become FreeVariable atoms if we have a mapping
                 if let Some(map) = type_var_map {
-                    if let Some(&var_id) = map.get(&type_param.name) {
-                        return Term::atom(Atom::FreeVariable(var_id));
+                    if let Some((var_id, _)) = map.get(&type_param.name) {
+                        return Term::atom(Atom::FreeVariable(*var_id));
                     }
                 }
                 panic!(
@@ -272,8 +274,8 @@ impl TypeStore {
                 // In polymorphic mode, check if this arbitrary type corresponds to a type parameter.
                 // If so, convert it to a FreeVariable just like we do for Variable types.
                 if let Some(map) = type_var_map {
-                    if let Some(&var_id) = map.get(&type_param.name) {
-                        return Term::atom(Atom::FreeVariable(var_id));
+                    if let Some((var_id, _)) = map.get(&type_param.name) {
+                        return Term::atom(Atom::FreeVariable(*var_id));
                     }
                 }
                 // Otherwise, use the registered ground type
