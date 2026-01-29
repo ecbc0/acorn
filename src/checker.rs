@@ -15,6 +15,7 @@ use crate::elaborator::stack::Stack;
 use crate::elaborator::unresolved_constant::UnresolvedConstant;
 use crate::kernel::atom::AtomId;
 use crate::kernel::clause::Clause;
+use crate::kernel::concrete_proof::ConcreteProof;
 use crate::kernel::generalization_set::GeneralizationSet;
 use crate::kernel::inference;
 use crate::kernel::kernel_context::KernelContext;
@@ -23,7 +24,6 @@ use crate::kernel::{EqualityGraph, StepId};
 use crate::normalizer::{Normalizer, NormalizerView};
 use crate::project::Project;
 use crate::proof_step::Rule;
-use crate::prover::proof::ConcreteProof;
 use crate::syntax::expression::Declaration;
 use crate::syntax::statement::{Statement, StatementInfo};
 use tracing::trace;
@@ -434,8 +434,7 @@ impl Checker {
             return Ok(Vec::new());
         }
 
-        let concrete_proof =
-            Self::cert_to_concrete_proof(cert, project, &mut bindings, &mut normalizer)?;
+        let concrete_proof = cert.to_concrete_proof(project, &mut bindings, &mut normalizer)?;
         // Get kernel_context AFTER parsing, since parsing may register new types/constants
         let kernel_context = normalizer.kernel_context().clone();
         self.check_concrete_proof(&concrete_proof, &kernel_context, &normalizer, &bindings)
@@ -642,43 +641,6 @@ impl Checker {
                 code
             ))),
         }
-    }
-
-    /// Convert a certificate to a ConcreteProof.
-    /// This parses the certificate strings into clauses.
-    pub fn cert_to_concrete_proof(
-        cert: &Certificate,
-        project: &Project,
-        bindings: &mut Cow<BindingMap>,
-        normalizer: &mut Cow<Normalizer>,
-    ) -> Result<ConcreteProof, Error> {
-        let Some(proof) = &cert.proof else {
-            return Err(Error::NoProof);
-        };
-
-        let mut claims = Vec::new();
-
-        for code in proof {
-            // Get fresh kernel_context each iteration to see updates from register_arbitrary_type etc
-            let kernel_context = normalizer.kernel_context().clone();
-            match Self::parse_code_line(code, project, bindings, normalizer, &kernel_context)? {
-                ParsedLine::LetSatisfy { .. } => {
-                    // Let-satisfy sets up bindings but doesn't produce claims
-                }
-                ParsedLine::Claim(clauses) => {
-                    for clause in clauses {
-                        if !claims.contains(&clause) {
-                            claims.push(clause);
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(ConcreteProof {
-            goal: cert.goal.clone(),
-            claims,
-        })
     }
 
     /// Check a ConcreteProof directly.

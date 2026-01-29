@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::certificate::Certificate;
-use crate::code_generator::{CodeGenerator, Error};
+use crate::code_generator::Error;
 use crate::elaborator::binding_map::BindingMap;
 use crate::kernel::atom::AtomId;
 use crate::kernel::clause::Clause;
+use crate::kernel::concrete_proof::ConcreteProof;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::Term;
@@ -95,7 +96,8 @@ fn concrete_ids_for(ps_id: ProofStepId) -> [ConcreteStepId; 2] {
     [assumption_id, concrete_id]
 }
 
-// A concrete version of the proof step that has been reconstructed from the proof.
+/// A concrete version of a proof step that has been reconstructed from the proof.
+/// Also used when converting ConcreteProof to Certificate.
 pub struct ConcreteStep {
     // The generic clause for this proof step.
     pub generic: Clause,
@@ -132,86 +134,6 @@ impl ConcreteStep {
     }
 }
 
-/// A concrete proof is an intermediate representation between the Proof (which has
-/// generic clauses with variable maps) and the Certificate (which is strings).
-///
-/// # Design: In-Memory vs Serialized Representation
-///
-/// `ConcreteProof` is the **in-memory** representation with resolved numeric IDs
-/// (e.g., `Symbol::GlobalConstant(123)`). This is efficient for checking but would
-/// be **brittle** if serialized directly - adding a constant could shift all IDs.
-///
-/// The **serialized** representation (Certificate) uses names instead of IDs.
-/// This makes certificates robust to refactoring: renaming, reordering definitions,
-/// or adding unrelated code won't invalidate existing certificates.
-///
-/// The conversion flow is:
-/// - **Proof generation**: `Proof` → `ConcreteProof` → `Certificate` (names)
-/// - **Proof checking**: `Certificate` (names) → `ConcreteProof` (IDs) → Checker
-///
-/// Name resolution happens at the Certificate ↔ ConcreteProof boundary, using the
-/// current codebase's bindings. This is what makes certificates survive refactoring.
-///
-/// # Claims vs Full Proof Structure
-///
-/// `ConcreteProof` stores only the **claims** to verify, not the full proof structure
-/// (which rule derived each step, what it depends on, etc.). This is intentional:
-/// - The checker figures out *how* to verify each claim
-/// - Claims survive when their justification changes (e.g., a lemma is renamed)
-/// - Only genuinely unprovable claims cause certificate failures
-///
-/// See also: `Certificate` for the string-based serialization format.
-#[derive(Debug, Clone)]
-pub struct ConcreteProof {
-    /// The name of the goal that was proved.
-    pub goal: String,
-
-    /// The claims in order. Each is checked against the current state, then added.
-    /// Clauses may have free variables representing universally quantified values.
-    pub claims: Vec<Clause>,
-}
-
-impl ConcreteProof {
-    /// Convert this concrete proof to a certificate (string format).
-    ///
-    /// This requires the normalizer (to denormalize clauses and look up synthetic definitions)
-    /// and the bindings (to generate readable names).
-    pub fn to_certificate(
-        &self,
-        normalizer: &Normalizer,
-        bindings: &BindingMap,
-    ) -> Result<Certificate, Error> {
-        let mut generator = CodeGenerator::new(bindings);
-        let mut definitions = Vec::new();
-        let mut codes = Vec::new();
-
-        for clause in &self.claims {
-            // Create a ConcreteStep with an identity mapping (clause is already specialized)
-            let step = ConcreteStep {
-                generic: clause.clone(),
-                var_maps: vec![(VariableMap::new(), clause.get_local_context().clone())],
-            };
-            let (defs, step_codes) = generator.concrete_step_to_code(&step, normalizer)?;
-            for def in defs {
-                if !definitions.contains(&def) {
-                    definitions.push(def);
-                }
-            }
-            for code in step_codes {
-                if !codes.contains(&code) {
-                    codes.push(code);
-                }
-            }
-        }
-
-        // Combine definitions and codes
-        let mut answer = definitions;
-        answer.extend(codes);
-
-        Ok(Certificate::new(self.goal.clone(), answer))
-    }
-}
-
 // Adds a var map for a non-assumption proof step.
 fn add_var_map<R: ProofResolver>(
     resolver: &R,
@@ -237,7 +159,7 @@ impl<'a> Proof<'a> {
     /// Create a certificate for this proof.
     pub fn make_cert(&self, goal: String, bindings: &BindingMap) -> Result<Certificate, Error> {
         let concrete_proof = self.make_concrete_proof(goal)?;
-        concrete_proof.to_certificate(self.normalizer, bindings)
+        Certificate::from_concrete_proof(&concrete_proof, self.normalizer, bindings)
     }
 
     /// Create a concrete proof from this proof.

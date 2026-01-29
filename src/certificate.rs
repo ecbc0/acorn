@@ -5,7 +5,17 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 
+use std::borrow::Cow;
+
+use crate::checker::{Checker, ParsedLine};
+use crate::code_generator::{CodeGenerator, Error as CodeGenError};
+use crate::elaborator::binding_map::BindingMap;
+use crate::kernel::concrete_proof::ConcreteProof;
+use crate::kernel::variable_map::VariableMap;
 use crate::module::ModuleDescriptor;
+use crate::normalizer::Normalizer;
+use crate::project::Project;
+use crate::prover::proof::ConcreteStep;
 
 /// A proof certificate containing the concrete proof steps as strings.
 ///
@@ -70,6 +80,85 @@ impl Certificate {
             }
         }
         Ok(())
+    }
+
+    /// Convert a ConcreteProof to a Certificate (string format).
+    ///
+    /// This is the serialization boundary where resolved IDs are converted back to names.
+    /// Requires the normalizer (to denormalize clauses and look up synthetic definitions)
+    /// and the bindings (to generate readable names).
+    pub fn from_concrete_proof(
+        concrete_proof: &ConcreteProof,
+        normalizer: &Normalizer,
+        bindings: &BindingMap,
+    ) -> Result<Certificate, CodeGenError> {
+        let mut generator = CodeGenerator::new(bindings);
+        let mut definitions = Vec::new();
+        let mut codes = Vec::new();
+
+        for clause in &concrete_proof.claims {
+            // Create a ConcreteStep with an identity mapping (clause is already specialized)
+            let step = ConcreteStep {
+                generic: clause.clone(),
+                var_maps: vec![(VariableMap::new(), clause.get_local_context().clone())],
+            };
+            let (defs, step_codes) = generator.concrete_step_to_code(&step, normalizer)?;
+            for def in defs {
+                if !definitions.contains(&def) {
+                    definitions.push(def);
+                }
+            }
+            for code in step_codes {
+                if !codes.contains(&code) {
+                    codes.push(code);
+                }
+            }
+        }
+
+        // Combine definitions and codes
+        let mut answer = definitions;
+        answer.extend(codes);
+
+        Ok(Certificate::new(concrete_proof.goal.clone(), answer))
+    }
+
+    /// Convert this certificate to a ConcreteProof.
+    ///
+    /// This is the parsing boundary where string names are resolved to numeric IDs.
+    /// Requires the project (for parsing), bindings, and normalizer.
+    pub fn to_concrete_proof(
+        &self,
+        project: &Project,
+        bindings: &mut Cow<BindingMap>,
+        normalizer: &mut Cow<Normalizer>,
+    ) -> Result<ConcreteProof, CodeGenError> {
+        let Some(proof) = &self.proof else {
+            return Err(CodeGenError::NoProof);
+        };
+
+        let mut claims = Vec::new();
+
+        for code in proof {
+            // Get fresh kernel_context each iteration to see updates from register_arbitrary_type etc
+            let kernel_context = normalizer.kernel_context().clone();
+            match Checker::parse_code_line(code, project, bindings, normalizer, &kernel_context)? {
+                ParsedLine::LetSatisfy { .. } => {
+                    // Let-satisfy sets up bindings but doesn't produce claims
+                }
+                ParsedLine::Claim(clauses) => {
+                    for clause in clauses {
+                        if !claims.contains(&clause) {
+                            claims.push(clause);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(ConcreteProof {
+            goal: self.goal.clone(),
+            claims,
+        })
     }
 }
 
