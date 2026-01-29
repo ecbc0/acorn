@@ -113,6 +113,103 @@ impl ConcreteStep {
             var_maps: vec![(var_map, replacement_context)],
         }
     }
+
+    /// Convert this ConcreteStep to specialized clauses.
+    fn to_clauses(&self, kernel_context: &KernelContext) -> Vec<Clause> {
+        self.var_maps
+            .iter()
+            .map(|(var_map, replacement_context)| {
+                let mut clause = var_map.specialize_clause_with_replacement_context(
+                    &self.generic,
+                    replacement_context,
+                    kernel_context,
+                );
+                // Normalize variable IDs to ensure they are in order (0, 1, 2, ...) with no gaps.
+                clause.normalize_var_ids_no_flip();
+                clause
+            })
+            .collect()
+    }
+}
+
+/// A concrete proof is an intermediate representation between the Proof (which has
+/// generic clauses with variable maps) and the Certificate (which is strings).
+///
+/// # Design: In-Memory vs Serialized Representation
+///
+/// `ConcreteProof` is the **in-memory** representation with resolved numeric IDs
+/// (e.g., `Symbol::GlobalConstant(123)`). This is efficient for checking but would
+/// be **brittle** if serialized directly - adding a constant could shift all IDs.
+///
+/// The **serialized** representation (Certificate) uses names instead of IDs.
+/// This makes certificates robust to refactoring: renaming, reordering definitions,
+/// or adding unrelated code won't invalidate existing certificates.
+///
+/// The conversion flow is:
+/// - **Proof generation**: `Proof` → `ConcreteProof` → `Certificate` (names)
+/// - **Proof checking**: `Certificate` (names) → `ConcreteProof` (IDs) → Checker
+///
+/// Name resolution happens at the Certificate ↔ ConcreteProof boundary, using the
+/// current codebase's bindings. This is what makes certificates survive refactoring.
+///
+/// # Claims vs Full Proof Structure
+///
+/// `ConcreteProof` stores only the **claims** to verify, not the full proof structure
+/// (which rule derived each step, what it depends on, etc.). This is intentional:
+/// - The checker figures out *how* to verify each claim
+/// - Claims survive when their justification changes (e.g., a lemma is renamed)
+/// - Only genuinely unprovable claims cause certificate failures
+///
+/// See also: `Certificate` for the string-based serialization format.
+#[derive(Debug, Clone)]
+pub struct ConcreteProof {
+    /// The name of the goal that was proved.
+    pub goal: String,
+
+    /// The claims in order. Each is checked against the current state, then added.
+    /// Clauses may have free variables representing universally quantified values.
+    pub claims: Vec<Clause>,
+}
+
+impl ConcreteProof {
+    /// Convert this concrete proof to a certificate (string format).
+    ///
+    /// This requires the normalizer (to denormalize clauses and look up synthetic definitions)
+    /// and the bindings (to generate readable names).
+    pub fn to_certificate(
+        &self,
+        normalizer: &Normalizer,
+        bindings: &BindingMap,
+    ) -> Result<Certificate, Error> {
+        let mut generator = CodeGenerator::new(bindings);
+        let mut definitions = Vec::new();
+        let mut codes = Vec::new();
+
+        for clause in &self.claims {
+            // Create a ConcreteStep with an identity mapping (clause is already specialized)
+            let step = ConcreteStep {
+                generic: clause.clone(),
+                var_maps: vec![(VariableMap::new(), clause.get_local_context().clone())],
+            };
+            let (defs, step_codes) = generator.concrete_step_to_code(&step, normalizer)?;
+            for def in defs {
+                if !definitions.contains(&def) {
+                    definitions.push(def);
+                }
+            }
+            for code in step_codes {
+                if !codes.contains(&code) {
+                    codes.push(code);
+                }
+            }
+        }
+
+        // Combine definitions and codes
+        let mut answer = definitions;
+        answer.extend(codes);
+
+        Ok(Certificate::new(self.goal.clone(), answer))
+    }
 }
 
 // Adds a var map for a non-assumption proof step.
@@ -139,7 +236,14 @@ fn add_var_map<R: ProofResolver>(
 impl<'a> Proof<'a> {
     /// Create a certificate for this proof.
     pub fn make_cert(&self, goal: String, bindings: &BindingMap) -> Result<Certificate, Error> {
-        let mut generator = CodeGenerator::new(&bindings);
+        let concrete_proof = self.make_concrete_proof(goal)?;
+        concrete_proof.to_certificate(self.normalizer, bindings)
+    }
+
+    /// Create a concrete proof from this proof.
+    /// This is an intermediate representation between Proof and Certificate.
+    pub fn make_concrete_proof(&self, goal: String) -> Result<ConcreteProof, Error> {
+        let kernel_context = self.normalizer.kernel_context();
 
         // First, reconstruct all the steps, working backwards.
         let mut concrete_steps: HashMap<ConcreteStepId, ConcreteStep> = HashMap::new();
@@ -167,54 +271,36 @@ impl<'a> Proof<'a> {
             }
         }
 
-        // Skip the code that comes from concrete assumptions, because we don't need it
-        // TODO: should we actually be skipping the original assumptions rather than
-        // the simplified versions?
-        let mut skip_code = HashSet::new();
-        let mut synthetic_definitions = Vec::new();
+        // Skip clauses from concrete assumptions
+        let mut skip_clauses: HashSet<Clause> = HashSet::new();
         for (ps_id, step) in &self.steps {
             let concrete_id = ConcreteStepId::ProofStep(*ps_id);
             if step.rule.is_underlying_assumption() && !step.clause.has_any_variable() {
                 let Some(cs) = concrete_steps.remove(&concrete_id) else {
                     continue;
                 };
-                let (definitions, codes) = generator.concrete_step_to_code(&cs, self.normalizer)?;
-                // Collect all synthetic atom definitions
-                for def in definitions {
-                    if !synthetic_definitions.contains(&def) {
-                        synthetic_definitions.push(def);
-                    }
-                }
-                // Skip the actual clause codes from concrete assumptions
-                for code in codes {
-                    skip_code.insert(code);
+                for clause in cs.to_clauses(kernel_context) {
+                    skip_clauses.insert(clause);
                 }
             }
         }
 
-        // Start with synthetic atom definitions
-        let mut answer = synthetic_definitions;
+        // Collect all clauses in order
+        let mut claims = Vec::new();
         for (ps_id, _) in &self.steps {
             for concrete_id in concrete_ids_for(*ps_id) {
                 let Some(cs) = concrete_steps.remove(&concrete_id) else {
                     continue;
                 };
-                let (definitions, codes) = generator.concrete_step_to_code(&cs, self.normalizer)?;
-                // Add any new definitions
-                for def in definitions {
-                    if !answer.contains(&def) {
-                        answer.push(def);
-                    }
-                }
-                // Add the clause codes if not skipped
-                for code in codes {
-                    if !answer.contains(&code) && !skip_code.contains(&code) {
-                        answer.push(code);
+                for clause in cs.to_clauses(kernel_context) {
+                    if !claims.contains(&clause) && !skip_clauses.contains(&clause) {
+                        claims.push(clause);
                     }
                 }
             }
         }
-        Ok(Certificate::new(goal, answer))
+
+        Ok(ConcreteProof { goal, claims })
     }
 }
 

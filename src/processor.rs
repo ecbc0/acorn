@@ -198,29 +198,25 @@ impl Processor {
         (processor, goal_env.bindings.clone())
     }
 
-    /// Test helper: check a line of code using this processor's context.
-    /// Panics if the code fails to check.
+    /// Test helper: verify a line of certificate code can be parsed.
+    /// Panics if parsing fails.
     #[cfg(test)]
-    pub fn test_check_code(&self, code: &str, bindings: &BindingMap) {
+    pub fn test_parse_code(&self, code: &str, bindings: &BindingMap) {
         use std::borrow::Cow;
 
-        let mut checker = Checker::new();
         let normalizer = self.normalizer.clone();
         let kernel_context = normalizer.kernel_context().clone();
         let mut normalizer_cow = Cow::Owned(normalizer);
         let mut bindings_cow = Cow::Borrowed(bindings);
-        let mut certificate_steps = vec![];
         let project = Project::new_mock();
 
-        checker
-            .check_code(
-                code,
-                &project,
-                &mut bindings_cow,
-                &mut normalizer_cow,
-                &mut certificate_steps,
-                &kernel_context,
-            )
-            .unwrap();
+        Checker::parse_code_line(
+            code,
+            &project,
+            &mut bindings_cow,
+            &mut normalizer_cow,
+            &kernel_context,
+        )
+        .unwrap();
     }
 }

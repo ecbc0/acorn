@@ -1187,9 +1187,9 @@ fn test_proving_with_multiple_rewrite() {
     assert_eq!(
         c.proof.unwrap(),
         vec![
-            "g(g(g(y))) = f(g(g(y)))",
+            "g(y) = f(y)",
             "g(g(y)) = f(g(y))",
-            "g(y) = f(y)"
+            "g(g(g(y))) = f(g(g(y)))"
         ]
     );
 }
@@ -1343,8 +1343,8 @@ fn test_proving_with_equality_resolution() {
     assert_eq!(
         c.proof.unwrap(),
         vec![
-            "not f(g(x), x) or f(g(g(x)), x)",
             "not f(x, x) or f(g(x), x)",
+            "not f(g(x), x) or f(g(g(x)), x)",
             "not f(g(x), x)",
             "g(x) != g(x) or f(x, x)",
             "f(x, x)"
@@ -1506,7 +1506,7 @@ fn test_proving_multiple_simplifying() {
     );
 
     let c = prove(&mut p, "main", "goal");
-    assert_eq!(c.proof.unwrap(), vec!["f(Foo.bar)", "f(Foo.foo)"]);
+    assert_eq!(c.proof.unwrap(), vec!["f(Foo.foo)", "f(Foo.bar)"]);
 }
 
 #[test]

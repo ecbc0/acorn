@@ -23,6 +23,7 @@ use crate::kernel::{EqualityGraph, StepId};
 use crate::normalizer::{Normalizer, NormalizerView};
 use crate::project::Project;
 use crate::proof_step::Rule;
+use crate::prover::proof::ConcreteProof;
 use crate::syntax::expression::Declaration;
 use crate::syntax::statement::{Statement, StatementInfo};
 use tracing::trace;
@@ -107,6 +108,27 @@ fn clause_to_code(clause: &Clause, normalizer: &Normalizer, bindings: &Cow<Bindi
     code_gen
         .value_to_code(&value)
         .unwrap_or_else(|_| format!("{} (internal)", clause))
+}
+
+/// Result of parsing a single line of certificate code.
+///
+/// This is the boundary where name resolution happens: certificate strings use names
+/// like "Nat.add", which get resolved to current numeric IDs during parsing.
+/// This makes certificates robust to refactoring (see `Certificate` docs).
+pub enum ParsedLine {
+    /// A let...satisfy statement. Sets up bindings for subsequent claims.
+    ///
+    /// These map user-chosen names (like "s0") to existing synthetic constants.
+    /// The synthetic constants themselves are created during goal normalization,
+    /// not from the certificate - the certificate just establishes the name mapping.
+    LetSatisfy {
+        /// Clauses from the satisfy condition (empty for trivial conditions like `true`).
+        clauses_to_insert: Vec<Clause>,
+        /// The reason for this step (Skolemization or SyntheticDefinition).
+        reason: StepReason,
+    },
+    /// A claim statement with clauses to check.
+    Claim(Vec<Clause>),
 }
 
 /// Information about a single step in a certificate proof.
@@ -363,41 +385,86 @@ impl Checker {
         self.direct_contradiction || self.term_graph.has_contradiction()
     }
 
-    /// Helper method to check a single line of code in a proof.
-    pub fn check_code(
+    /// Insert goal clauses into the checker.
+    /// Normalizes the goal and inserts all resulting clauses as assumptions.
+    pub fn insert_goal(
         &mut self,
+        goal: &crate::elaborator::goal::Goal,
+        normalizer: &mut crate::normalizer::Normalizer,
+    ) -> Result<(), Error> {
+        trace!("inserting goal {} (line {})", goal.name, goal.first_line);
+
+        let source = &goal.proposition.source;
+        let (_, steps) = normalizer.normalize_goal(goal).map_err(|e| e.message)?;
+        // Get kernel_context after normalizing, since normalize_goal may create new monomorphs
+        let kernel_context = normalizer.kernel_context();
+        for step in &steps {
+            // Use the step's own source if it's an assumption (which includes negated goals),
+            // otherwise use the goal's source
+            let step_source = if let Rule::Assumption(info) = &step.rule {
+                &info.source
+            } else {
+                source
+            };
+            self.insert_clause(
+                &step.clause,
+                StepReason::Assumption(step_source.clone()),
+                kernel_context,
+            );
+        }
+        Ok(())
+    }
+
+    /// Check a certificate. It is expected that the certificate has a proof.
+    /// Returns a list of CertificateSteps showing how each step was verified.
+    ///
+    /// Consumes bindings, normalizer and the checker itself since they may be
+    /// modified during checking and should not be reused afterwards.
+    pub fn check_cert(
+        self,
+        cert: &Certificate,
+        project: &Project,
+        mut bindings: Cow<BindingMap>,
+        mut normalizer: Cow<Normalizer>,
+    ) -> Result<Vec<CertificateStep>, Error> {
+        // Check for contradiction before parsing. If goal insertion already
+        // created a contradiction, we don't need to parse or check the proof.
+        if self.has_contradiction() {
+            trace!("has_contradiction (before parsing)");
+            return Ok(Vec::new());
+        }
+
+        let concrete_proof =
+            Self::cert_to_concrete_proof(cert, project, &mut bindings, &mut normalizer)?;
+        // Get kernel_context AFTER parsing, since parsing may register new types/constants
+        let kernel_context = normalizer.kernel_context().clone();
+        self.check_concrete_proof(&concrete_proof, &kernel_context, &normalizer, &bindings)
+    }
+
+    /// Parse a single code line, updating bindings/normalizer, and return structured result.
+    pub fn parse_code_line(
         code: &str,
         project: &Project,
         bindings: &mut Cow<BindingMap>,
         normalizer: &mut Cow<Normalizer>,
-        certificate_steps: &mut Vec<CertificateStep>,
         kernel_context: &KernelContext,
-    ) -> Result<(), Error> {
-        // Parse as a statement with in_block=true to allow bare expressions
+    ) -> Result<ParsedLine, Error> {
         let statement = Statement::parse_str_with_options(&code, true)?;
-
-        // Create a new evaluator for this check
         let mut evaluator = Evaluator::new(project, bindings, None);
 
         match statement.statement {
             StatementInfo::VariableSatisfy(vss) => {
-                // Bind type parameters first so they're available when evaluating types.
-                // Use Arbitrary types during parsing - they'll be converted to Variable
-                // via genericize() when creating the external representation.
+                // Bind type parameters first
                 let type_params = evaluator.evaluate_type_params(&vss.type_params)?;
                 for param in &type_params {
                     bindings.to_mut().add_arbitrary_type(param.clone());
-
-                    // Also register the arbitrary type with the type store so it can be
-                    // converted to a Term when processing subsequent proof steps.
                     normalizer.to_mut().register_arbitrary_type(param);
                 }
 
                 // Re-create evaluator with updated bindings
                 let mut evaluator = Evaluator::new(project, bindings, None);
 
-                // Create an exists value from the let...satisfy statement
-                // The declarations become the existential quantifiers
+                // Parse declarations
                 let mut decls = vec![];
                 for decl in &vss.declarations {
                     match decl {
@@ -414,44 +481,33 @@ impl Checker {
                     }
                 }
 
-                // Bind the declared variables to the stack
+                // Evaluate the condition
                 let mut stack = Stack::new();
                 evaluator.bind_args(&mut stack, &vss.declarations, None)?;
-
-                // Evaluate the condition with the declared variables on the stack
                 let condition_value = evaluator.evaluate_value_with_stack(
                     &mut stack,
                     &vss.condition,
                     Some(&AcornType::Bool),
                 )?;
 
-                // Create an exists value and check if it matches any existing synthetic definition
-                let types = decls.iter().map(|(_, ty)| ty.clone()).collect();
-                let exists_value = AcornValue::exists(types, condition_value.clone());
-
-                // Set up type variable map for polymorphic checking
+                // Look up synthetic definition
+                let types: Vec<_> = decls.iter().map(|(_, ty)| ty.clone()).collect();
+                let exists_value = AcornValue::exists(types.clone(), condition_value.clone());
                 normalizer.to_mut().set_type_var_map(&type_params);
 
                 let (source, synthetic_atoms) = match normalizer
                     .to_mut()
                     .get_synthetic_definition(&exists_value)
                 {
-                    Some(def) => {
-                        // Found an existing synthetic definition
-                        (def.source.clone(), Some(def.atoms.clone()))
-                    }
+                    Some(def) => (def.source.clone(), Some(def.atoms.clone())),
                     None => {
-                        // No synthetic definition found
                         if condition_value != AcornValue::Bool(true) {
-                            // Non-trivial condition must match a synthetic definition
                             return Err(Error::GeneratedBadCode(format!(
                                 "statement '{}' does not match any synthetic definition",
                                 code
                             )));
                         }
-
                         // Trivial condition requires the type to be inhabited
-                        // "let x: T satisfy { true }" only works if we know the type has an element
                         for (name, acorn_type) in &decls {
                             let type_term = kernel_context
                                 .type_store
@@ -464,44 +520,33 @@ impl Checker {
                                 })?;
                             if !kernel_context.provably_inhabited(&type_term, None) {
                                 return Err(Error::GeneratedBadCode(format!(
-                                        "cannot create witness '{}' of type '{}' with trivial condition: \
-                                         type is not provably inhabited",
-                                        name, acorn_type
-                                    )));
+                                    "cannot create witness '{}' of type '{}' with trivial condition: \
+                                     type is not provably inhabited",
+                                    name, acorn_type
+                                )));
                             }
                         }
-
-                        // Trivial case: no source or synthetic atoms
                         (None, None)
                     }
                 };
 
-                // Add all the variables in decls to the bindings and the normalizer.
-                // Also build constant values for substituting into the condition.
+                // Set up bindings and build constant values for substitution
                 let mut constant_values = Vec::new();
 
                 if let Some(atoms) = &synthetic_atoms {
-                    // We have an existing synthetic definition, create aliases to it
                     for (i, (name, acorn_type)) in decls.iter().enumerate() {
                         let synthetic_id = atoms[i];
                         let synthetic_cname = ConstantName::Synthetic(synthetic_id);
 
-                        // Make the synthetic a polymorphic constant
-                        // so that type parameters can be inferred when it's used.
                         let (param_names, generic_type) = if !type_params.is_empty() {
-                            // Create type param names from the type_params
                             let names: Vec<String> =
                                 type_params.iter().map(|p| p.name.clone()).collect();
-                            // Genericize converts Arbitrary(T0) -> Variable(T0)
                             (names, acorn_type.genericize(&type_params))
                         } else {
                             (vec![], acorn_type.clone())
                         };
 
                         let user_cname = ConstantName::unqualified(bindings.module_id(), name);
-
-                        // Build a resolved constant value for substitution into the condition.
-                        // For polymorphic synthetics, use Variable types as the type arguments.
                         let type_args: Vec<_> = type_params
                             .iter()
                             .map(|p| AcornType::Variable(p.clone()))
@@ -516,7 +561,6 @@ impl Checker {
                         );
                         constant_values.push(resolved_value.clone());
 
-                        // For polymorphic synthetics, use Unresolved so type inference works
                         let potential_value = if !type_params.is_empty() {
                             PotentialValue::Unresolved(UnresolvedConstant {
                                 name: synthetic_cname.clone(),
@@ -554,7 +598,6 @@ impl Checker {
                             .to_mut()
                             .add_scoped_constant(cname.clone(), acorn_type);
 
-                        // Build resolved constant for substitution
                         let resolved_value = AcornValue::constant(
                             cname,
                             vec![],
@@ -566,163 +609,112 @@ impl Checker {
                     }
                 }
 
-                // Substitute the constants into the condition and insert clauses.
-                // This replaces the stack variables (indices 0, 1, ...) with the constant values.
-                // Only do this for non-trivial conditions (not Bool(true))
-                if condition_value != AcornValue::Bool(true) {
+                // Build clauses from non-trivial conditions
+                let clauses_to_insert = if condition_value != AcornValue::Bool(true) {
                     let num_vars = decls.len() as AtomId;
                     let value = condition_value.bind_values(0, num_vars, &constant_values);
-
-                    // The NormalizerView::Ref prevents us from accidentally mutating the normalizer here.
                     let mut view = NormalizerView::Ref(&normalizer);
-                    let clauses = view.nice_value_to_clauses(&value, &mut vec![])?;
-                    for clause in clauses {
-                        self.insert_clause(
-                            &clause,
-                            StepReason::SyntheticDefinition,
-                            kernel_context,
-                        );
-                    }
-                }
+                    view.nice_value_to_clauses(&value, &mut vec![])?
+                } else {
+                    vec![]
+                };
 
-                // Clear the type variable map after processing the let...satisfy condition.
-                // The type parameters (T0, T1) have been added to bindings as arbitrary types
-                // and will be looked up there when processing subsequent claims.
                 normalizer.to_mut().clear_type_var_map();
 
-                // Record this step
                 let reason = match source {
                     Some(source) => StepReason::Skolemization(source),
                     None => StepReason::SyntheticDefinition,
                 };
-                certificate_steps.push(CertificateStep {
-                    statement: code.to_string(),
-                    reason,
-                });
 
-                Ok(())
+                Ok(ParsedLine::LetSatisfy {
+                    clauses_to_insert,
+                    reason,
+                })
             }
             StatementInfo::Claim(claim) => {
                 let value = evaluator.evaluate_value(&claim.claim, Some(&AcornType::Bool))?;
-
-                // We don't want to normalize these clauses because sometimes checking
-                // only works on the non-normalized version.
-                // So we use the denormalized clause.
-                let mut view = NormalizerView::Ref(&normalizer);
+                let mut view = NormalizerView::Mut(normalizer.to_mut());
                 let clauses = view.value_to_denormalized_clauses(&value)?;
-
-                // For multi-clause claims, we'll use the reason from the first clause that provides one.
-                // This is unclear, but it's just informational for a rare case, so it's not too bad.
-                let mut reason = None;
-                let num_clauses = clauses.len();
-                for mut clause in clauses {
-                    match self.check_clause(&clause, kernel_context) {
-                        Some(r) => {
-                            if reason.is_none() {
-                                reason = Some(r);
-                            }
-                        }
-                        None => {
-                            if num_clauses == 1 {
-                                return Err(Error::GeneratedBadCode(format!(
-                                    "Claim '{}' is not obviously true",
-                                    code
-                                )));
-                            }
-
-                            let clause_code = clause_to_code(&clause, normalizer, bindings);
-
-                            return Err(Error::GeneratedBadCode(format!(
-                                "In claim '{}', the clause '{}' is not obviously true",
-                                code, clause_code
-                            )));
-                        }
-                    }
-                    clause.normalize();
-                    self.insert_clause(&clause, StepReason::PreviousClaim, kernel_context);
-                }
-
-                // Record the certificate step with the reason we found
-                if let Some(reason) = reason {
-                    certificate_steps.push(CertificateStep {
-                        statement: code.to_string(),
-                        reason,
-                    });
-                }
-
-                Ok(())
+                Ok(ParsedLine::Claim(clauses))
             }
-            _ => {
-                return Err(Error::GeneratedBadCode(format!(
-                    "Expected a claim or let...satisfy statement, got: {}",
-                    code
-                )));
-            }
+            _ => Err(Error::GeneratedBadCode(format!(
+                "Expected a claim or let...satisfy statement, got: {}",
+                code
+            ))),
         }
     }
 
-    /// Insert goal clauses into the checker.
-    /// Normalizes the goal and inserts all resulting clauses as assumptions.
-    pub fn insert_goal(
-        &mut self,
-        goal: &crate::elaborator::goal::Goal,
-        normalizer: &mut crate::normalizer::Normalizer,
-    ) -> Result<(), Error> {
-        trace!("inserting goal {} (line {})", goal.name, goal.first_line);
-
-        let source = &goal.proposition.source;
-        let (_, steps) = normalizer.normalize_goal(goal).map_err(|e| e.message)?;
-        // Get kernel_context after normalizing, since normalize_goal may create new monomorphs
-        let kernel_context = normalizer.kernel_context();
-        for step in &steps {
-            // Use the step's own source if it's an assumption (which includes negated goals),
-            // otherwise use the goal's source
-            let step_source = if let Rule::Assumption(info) = &step.rule {
-                &info.source
-            } else {
-                source
-            };
-            self.insert_clause(
-                &step.clause,
-                StepReason::Assumption(step_source.clone()),
-                kernel_context,
-            );
-        }
-        Ok(())
-    }
-
-    /// Check a certificate. It is expected that the certificate has a proof.
-    /// Returns a list of CertificateSteps showing how each step was verified.
-    ///
-    /// Consumes bindings, normalizer and the checker itself since they may be
-    /// modified during checking and should not be reused afterwards.
-    pub fn check_cert(
-        mut self,
+    /// Convert a certificate to a ConcreteProof.
+    /// This parses the certificate strings into clauses.
+    pub fn cert_to_concrete_proof(
         cert: &Certificate,
         project: &Project,
-        mut bindings: Cow<BindingMap>,
-        mut normalizer: Cow<Normalizer>,
-    ) -> Result<Vec<CertificateStep>, Error> {
+        bindings: &mut Cow<BindingMap>,
+        normalizer: &mut Cow<Normalizer>,
+    ) -> Result<ConcreteProof, Error> {
         let Some(proof) = &cert.proof else {
             return Err(Error::NoProof);
         };
 
-        let mut certificate_steps = Vec::new();
+        let mut claims = Vec::new();
 
         for code in proof {
+            // Get fresh kernel_context each iteration to see updates from register_arbitrary_type etc
+            let kernel_context = normalizer.kernel_context().clone();
+            match Self::parse_code_line(code, project, bindings, normalizer, &kernel_context)? {
+                ParsedLine::LetSatisfy { .. } => {
+                    // Let-satisfy sets up bindings but doesn't produce claims
+                }
+                ParsedLine::Claim(clauses) => {
+                    for clause in clauses {
+                        if !claims.contains(&clause) {
+                            claims.push(clause);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(ConcreteProof {
+            goal: cert.goal.clone(),
+            claims,
+        })
+    }
+
+    /// Check a ConcreteProof directly.
+    /// Returns a list of CertificateSteps showing how each step was verified.
+    pub fn check_concrete_proof(
+        mut self,
+        concrete_proof: &ConcreteProof,
+        kernel_context: &KernelContext,
+        normalizer: &Normalizer,
+        bindings: &Cow<BindingMap>,
+    ) -> Result<Vec<CertificateStep>, Error> {
+        let mut certificate_steps = Vec::new();
+
+        for clause in &concrete_proof.claims {
             if self.has_contradiction() {
                 trace!("has_contradiction (early exit)");
                 return Ok(certificate_steps);
             }
-            let kernel_context = normalizer.kernel_context().clone();
-            self.check_code(
-                code,
-                project,
-                &mut bindings,
-                &mut normalizer,
-                &mut certificate_steps,
-                &kernel_context,
-            )?;
+
+            let mut clause = clause.clone();
+            match self.check_clause(&clause, kernel_context) {
+                Some(reason) => {
+                    certificate_steps.push(CertificateStep {
+                        statement: clause_to_code(&clause, normalizer, bindings),
+                        reason,
+                    });
+                }
+                None => {
+                    return Err(Error::GeneratedBadCode(format!(
+                        "Claim '{}' is not obviously true",
+                        clause
+                    )));
+                }
+            }
+            clause.normalize();
+            self.insert_clause(&clause, StepReason::PreviousClaim, kernel_context);
         }
 
         if self.has_contradiction() {

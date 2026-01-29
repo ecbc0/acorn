@@ -7,7 +7,27 @@ use std::path::Path;
 
 use crate::module::ModuleDescriptor;
 
-/// A proof certificate containing the concrete proof steps
+/// A proof certificate containing the concrete proof steps as strings.
+///
+/// # Design: Robustness to Refactoring
+///
+/// A key design goal is that certificates should be robust to common refactorings:
+/// - **Renaming**: If a theorem is renamed, certificates that don't use it should still work.
+/// - **Reordering**: If constants are reordered (changing internal IDs), certificates should
+///   still work because they use names, not numeric IDs.
+/// - **Adding/removing definitions**: Unrelated changes shouldn't invalidate certificates.
+///
+/// This is achieved by using string-based proof steps that reference constants by name.
+/// When a certificate is checked, names are resolved to current IDs at parse time.
+/// This avoids the "brittleness" problem where machine-generated proofs break due to
+/// unrelated codebase changes.
+///
+/// The string format also allows the checker to figure out *how* to verify each claim
+/// (which theorems to use, etc.) rather than having the certificate spell it out.
+/// This means certificates don't break when the *justification* for a claim changes,
+/// only when the claim itself becomes unprovable.
+///
+/// See also: `ConcreteProof` for the in-memory representation with resolved IDs.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Certificate {
     /// The name of the goal that was proved
