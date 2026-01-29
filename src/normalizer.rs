@@ -510,8 +510,8 @@ impl NormalizerView<'_> {
                 // Both checks look for variables that don't appear in the resulting clauses
                 // but whose type might be empty.
 
-                // Exists skolems: asserting existence over a potentially empty type is unsound.
-                if self.has_uninhabited_skolem(synthesized, &clauses) {
+                // Existential witnesses: asserting existence over a potentially empty type is unsound.
+                if self.has_uninhabited_existential_witness(synthesized, &clauses) {
                     return Err("exists over a potentially uninhabited type".to_string());
                 }
 
@@ -579,50 +579,64 @@ impl NormalizerView<'_> {
         false
     }
 
-    /// Checks if any skolems were created for uninhabited types.
+    /// Checks if any existential witnesses were created for uninhabited types.
     /// This prevents unsound definitions where we assert existence over empty types.
-    /// For example: `let inhabited[T]: Bool = exists(x: T) { true }` would create a skolem
+    /// For example: `let inhabited[T]: Bool = exists(x: T) { true }` would create a witness
     /// for type T, but T might be empty, making the exists claim invalid.
-    fn has_uninhabited_skolem(&self, synthesized: &[AtomId], clauses: &[Clause]) -> bool {
+    ///
+    /// This function only checks witnesses that don't appear in any clause. The rationale is:
+    /// - If a witness IS used in clauses (like `exists(x: T) { P(x) }`), then the clause P(x)
+    ///   provides some constraint on the witness, and we allow it.
+    /// - If a witness is NOT used (like `exists(x: T) { true }`), we're purely asserting
+    ///   inhabitedness of T with no justification, which is unsound if T is empty.
+    ///
+    /// Note: The `synthesized` list includes all synthetics (existential witnesses, Tseitin
+    /// abbreviations, etc.), but the "unused" filter effectively isolates the problematic
+    /// existential cases since definition-style synthetics are always used in their defining clauses.
+    fn has_uninhabited_existential_witness(
+        &self,
+        synthesized: &[AtomId],
+        clauses: &[Clause],
+    ) -> bool {
         use std::collections::HashSet;
 
-        // Collect all skolem atoms that appear in any clause
-        let mut used_skolems: HashSet<AtomId> = HashSet::new();
+        // Collect all synthetic atoms that appear in any clause
+        let mut used_synthetics: HashSet<AtomId> = HashSet::new();
         for clause in clauses {
             for lit in &clause.literals {
                 for atom in lit.left.iter_atoms() {
                     if let &Atom::Symbol(Symbol::Synthetic(id)) = atom {
-                        used_skolems.insert(id);
+                        used_synthetics.insert(id);
                     }
                 }
                 for atom in lit.right.iter_atoms() {
                     if let &Atom::Symbol(Symbol::Synthetic(id)) = atom {
-                        used_skolems.insert(id);
+                        used_synthetics.insert(id);
                     }
                 }
             }
         }
 
-        // Check each synthesized skolem
-        for &skolem_id in synthesized {
-            // If this skolem appears in clauses, it's constrained by something, so skip
-            if used_skolems.contains(&skolem_id) {
+        // Check each synthesized atom
+        for &synth_id in synthesized {
+            // If this synthetic appears in clauses, it's constrained by something, so skip
+            if used_synthetics.contains(&synth_id) {
                 continue;
             }
 
-            // Get the skolem's type
-            let skolem_type = self
+            // Get the synthetic's type
+            let synth_type = self
                 .kernel_context()
                 .symbol_table
-                .get_type(Symbol::Synthetic(skolem_id));
+                .get_type(Symbol::Synthetic(synth_id));
 
             // Get the result type by stripping off type parameter Pis only.
             // Type parameter Pis have TypeSort (or Typeclass) as the input type.
-            // For example, a skolem with type Pi(Type, b0) represents
+            // For example, a witness with type Pi(Type, b0) represents
             // "for any type T, return a value of type T".
             // We DON'T strip function type Pis like Pi(Nat, Bool) because those
             // represent function types, not type parameters.
-            let mut result_type = skolem_type.as_ref();
+            let mut result_type = synth_type.as_ref();
             let mut stripped_types = Vec::new();
             while let Some((input_type, body)) = result_type.split_pi() {
                 // Only strip if this is a type parameter (input is Type/TypeSort or Typeclass)
