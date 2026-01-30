@@ -111,11 +111,6 @@ pub struct Normalizer {
 
     /// The kernel context containing TypeStore and SymbolTable.
     kernel_context: KernelContext,
-
-    /// Goal's type parameter names, indexed by variable ID.
-    /// This is set when normalize_goal is called and persists for certificate generation.
-    /// Used to preserve original type param names (like G, H) when generating certificates.
-    goal_type_param_names: HashMap<AtomId, String>,
 }
 
 impl Normalizer {
@@ -124,7 +119,6 @@ impl Normalizer {
             synthetic_definitions: HashMap::new(),
             synthetic_map: HashMap::new(),
             kernel_context: KernelContext::new(),
-            goal_type_param_names: HashMap::new(),
         }
     }
 
@@ -134,14 +128,6 @@ impl Normalizer {
         self.kernel_context
             .type_store
             .type_term_to_acorn_type(type_term)
-    }
-
-    /// Returns a mapping from variable IDs to original type param names.
-    /// This is used to preserve original type param names when generating code.
-    /// Returns goal_type_param_names if set, otherwise an empty map.
-    /// If no names are available, callers will use default names like T0, T1, etc.
-    pub fn get_var_id_to_name_map(&self) -> HashMap<AtomId, String> {
-        self.goal_type_param_names.clone()
     }
 
     /// Returns all synthetic atom IDs that have been defined.
@@ -432,14 +418,7 @@ impl<'a> NormalizationContext<'a> {
 
     /// Get a mapping from variable IDs to type parameter names.
     /// This is used for denormalization to convert type variables back to named type params.
-    /// Prioritizes goal_type_param_names (from normalize_goal), then falls back to type_var_map.
     fn get_var_id_to_name_map(&self) -> HashMap<AtomId, String> {
-        // First check normalizer's goal_type_param_names (set during goal normalization)
-        let goal_names = &self.as_ref().goal_type_param_names;
-        if !goal_names.is_empty() {
-            return goal_names.clone();
-        }
-        // Fall back to NormalizationContext's type_var_map
         if let Some(ref type_var_map) = self.type_var_map {
             return type_var_map
                 .iter()
@@ -2295,16 +2274,6 @@ impl Normalizer {
         goal: &Goal,
     ) -> Result<(NormalizedGoal, Vec<ProofStep>), BuildError> {
         let prop = &goal.proposition;
-
-        // Store the goal's type parameter names for certificate generation.
-        // This maps variable ID to the original type param name (e.g., 0 -> "G", 1 -> "H").
-        {
-            self.goal_type_param_names.clear();
-            for (i, param) in prop.params.iter().enumerate() {
-                self.goal_type_param_names
-                    .insert(i as AtomId, param.name.clone());
-            }
-        }
 
         let (hypo, counterfactual) = prop.value.clone().negate_goal();
         let mut steps = vec![];

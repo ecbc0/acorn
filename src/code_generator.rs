@@ -594,10 +594,6 @@ impl CodeGenerator<'_> {
                 }
             }
 
-            // Try to use the original type param names from the normalizer
-            // This ensures the synthetic definition uses the same names as the goal context.
-            let var_id_to_orig_name = normalizer.get_var_id_to_name_map();
-
             // Build type_param_names and type_param_constraints in var_id order (0, 1, 2, ...).
             // This ensures the certificate's type params match the order used during proving,
             // which is critical for synthetic definition lookup to work correctly.
@@ -607,11 +603,7 @@ impl CodeGenerator<'_> {
 
             for (id, type_var_kind) in info.type_vars.iter().enumerate() {
                 let id = id as u16;
-                // Get original name or generate new one
-                let name = var_id_to_orig_name
-                    .get(&id)
-                    .cloned()
-                    .unwrap_or_else(|| self.bindings.next_indexed_var('T', &mut self.next_t));
+                let name = self.bindings.next_indexed_var('T', &mut self.next_t);
                 var_id_to_new_name.insert(id, name.clone());
                 type_param_names.push(name);
 

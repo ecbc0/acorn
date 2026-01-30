@@ -154,7 +154,7 @@ fn get_type_category(
 }
 
 /// Get the head atom and count of arguments for a term.
-fn get_head_and_arg_count(term: TermRef) -> (&Atom, usize) {
+fn get_head_and_arg_count(term: TermRef<'_>) -> (&Atom, usize) {
     let mut current = term;
     let mut count = 0;
     loop {

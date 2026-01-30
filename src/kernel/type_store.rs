@@ -273,6 +273,10 @@ impl TypeStore {
             AcornType::Arbitrary(type_param) => {
                 // In polymorphic mode, check if this arbitrary type corresponds to a type parameter.
                 // If so, convert it to a FreeVariable just like we do for Variable types.
+                // This is needed because:
+                // 1. Type parameters are "pinned" as FreeVariable(0), FreeVariable(1), etc.
+                // 2. Synthetic definitions use these FreeVariables for matching
+                // 3. Certificate type params may be renamed (e.g., "G" -> "T0"), so we match by position
                 if let Some(map) = type_var_map {
                     if let Some((var_id, _)) = map.get(&type_param.name) {
                         return Term::atom(Atom::FreeVariable(*var_id));
