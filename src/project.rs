@@ -1132,18 +1132,18 @@ impl Project {
         }
 
         // Give this module an id before parsing it, so that we can catch circular imports.
-        // Prelude always gets ModuleId(0). Other modules get ModuleId(1) and above.
+        // Prelude always gets ModuleId::PRELUDE. Other modules get subsequent IDs.
         let is_prelude = matches!(descriptor, ModuleDescriptor::Name(parts) if parts.len() == 1 && parts[0] == "prelude");
 
         let module_id = if is_prelude {
-            // Prelude always gets slot 0
+            // Prelude always gets the reserved slot
             if self.modules.is_empty() {
                 self.modules.push(Module::new(descriptor.clone()));
             } else {
-                // Slot 0 was reserved; update it
-                self.modules[0] = Module::new(descriptor.clone());
+                // Slot was reserved; update it
+                self.modules[ModuleId::PRELUDE.get() as usize] = Module::new(descriptor.clone());
             }
-            ModuleId(0)
+            ModuleId::PRELUDE
         } else {
             // Non-prelude modules: reserve slot 0 for prelude if not already done
             if self.modules.is_empty() {

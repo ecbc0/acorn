@@ -15,6 +15,10 @@ use crate::elaborator::error;
 pub struct ModuleId(pub u16);
 
 impl ModuleId {
+    /// The prelude module always gets ID 0.
+    /// Note: Default::default() also returns ModuleId(0), which equals PRELUDE.
+    pub const PRELUDE: ModuleId = ModuleId(0);
+
     pub const fn get(&self) -> u16 {
         self.0
     }
