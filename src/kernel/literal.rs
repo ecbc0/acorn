@@ -6,6 +6,7 @@ use crate::kernel::atom::{Atom, AtomId};
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::{PathStep, Term};
+use crate::module::ModuleId;
 
 /// A Literal stores an equation (or inequality) between two terms.
 /// Type information is stored separately in the TypeStore and SymbolTable.
@@ -229,6 +230,23 @@ impl Literal {
         self.right.extended_kbo_cmp(&other.right)
     }
 
+    /// Stable KBO comparison - treats all free variables as equivalent.
+    /// Alpha-equivalent literals compare as Equal.
+    /// Includes sign in comparison.
+    pub fn stable_kbo_cmp(&self, other: &Literal) -> Ordering {
+        // Compare by sign first (positive > negative for consistency)
+        let positive_cmp = self.positive.cmp(&other.positive);
+        if positive_cmp != Ordering::Equal {
+            return positive_cmp;
+        }
+
+        let left_cmp = self.left.stable_kbo_cmp(&other.left);
+        if left_cmp != Ordering::Equal {
+            return left_cmp;
+        }
+        self.right.stable_kbo_cmp(&other.right)
+    }
+
     /// Returns (right, left, output_context) with normalized var ids.
     /// The output_context contains the types of the renumbered variables.
     /// The input_context provides the types of variables before renumbering.
@@ -306,7 +324,7 @@ impl Literal {
     }
 
     /// Renumbers synthetic atoms from the provided list into the invalid range.
-    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> Literal {
+    pub fn invalidate_synthetics(&self, from: &[(ModuleId, AtomId)]) -> Literal {
         let new_left = self.left.invalidate_synthetics(from);
         let new_right = self.right.invalidate_synthetics(from);
         let (lit, _) = Literal::new_with_flip(self.positive, new_left, new_right);

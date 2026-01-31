@@ -209,8 +209,8 @@ impl BindingMap {
                         // This doesn't seem right!
                         false
                     }
-                    ConstantName::Synthetic(i) => {
-                        let name = format!("s{}", i);
+                    ConstantName::Synthetic(m, i) => {
+                        let name = format!("s{}_{}", m.0, i);
                         self.unqualified.contains_key(&name)
                             || self.name_to_module.contains_key(&name)
                     }
@@ -493,7 +493,7 @@ impl BindingMap {
             ConstantName::TypeclassAttribute(typeclass, attr) => {
                 self.resolve_typeclass_attr(typeclass, attr)
             }
-            ConstantName::Synthetic(_) => None,
+            ConstantName::Synthetic(..) => None,
         }
     }
 
@@ -1099,8 +1099,8 @@ impl BindingMap {
             ConstantName::Unqualified(_, name) => {
                 self.unqualified.insert(name.clone(), ());
             }
-            ConstantName::Synthetic(i) => {
-                let name = format!("s{}", i);
+            ConstantName::Synthetic(m, i) => {
+                let name = format!("s{}_{}", m.0, i);
                 self.unqualified.insert(name, ());
             }
         }

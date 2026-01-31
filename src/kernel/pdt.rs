@@ -99,7 +99,7 @@ impl Edge {
                 Atom::Symbol(Symbol::Typeclass(_)) => ATOM_SYMBOL_TYPECLASS,
                 Atom::Symbol(Symbol::GlobalConstant(..)) => ATOM_SYMBOL_GLOBAL,
                 Atom::Symbol(Symbol::ScopedConstant(_)) => ATOM_SYMBOL_SCOPED,
-                Atom::Symbol(Symbol::Synthetic(_)) => ATOM_SYMBOL_SYNTHETIC,
+                Atom::Symbol(Symbol::Synthetic(..)) => ATOM_SYMBOL_SYNTHETIC,
             },
         }
     }
@@ -138,7 +138,11 @@ impl Edge {
                     v.extend_from_slice(&c.to_ne_bytes());
                 }
                 Atom::Symbol(Symbol::ScopedConstant(c)) => v.extend_from_slice(&c.to_ne_bytes()),
-                Atom::Symbol(Symbol::Synthetic(s)) => v.extend_from_slice(&s.to_ne_bytes()),
+                Atom::Symbol(Symbol::Synthetic(m, s)) => {
+                    // Synthetic uses 4 bytes: module_id (2) + local_id (2)
+                    v.extend_from_slice(&m.get().to_ne_bytes());
+                    v.extend_from_slice(&s.to_ne_bytes());
+                }
             },
         }
     }
@@ -176,8 +180,16 @@ impl Edge {
                 (Edge::Atom(Atom::Symbol(Symbol::ScopedConstant(id))), 3)
             }
             ATOM_SYMBOL_SYNTHETIC => {
-                let id = u16::from_ne_bytes([bytes[1], bytes[2]]);
-                (Edge::Atom(Atom::Symbol(Symbol::Synthetic(id))), 3)
+                // Synthetic uses 5 bytes: 1 discriminant + 2 module_id + 2 local_id
+                let module_id = u16::from_ne_bytes([bytes[1], bytes[2]]);
+                let local_id = u16::from_ne_bytes([bytes[3], bytes[4]]);
+                (
+                    Edge::Atom(Atom::Symbol(Symbol::Synthetic(
+                        ModuleId(module_id),
+                        local_id,
+                    ))),
+                    5,
+                )
             }
             ATOM_SYMBOL_EMPTY => (Edge::Atom(Atom::Symbol(Symbol::Empty)), 3),
             ATOM_SYMBOL_BOOL => (Edge::Atom(Atom::Symbol(Symbol::Bool)), 3),
@@ -1142,7 +1154,6 @@ mod tests {
             Edge::Atom(Atom::True),
             Edge::Atom(Atom::False),
             Edge::Atom(Atom::Symbol(Symbol::ScopedConstant(20))),
-            Edge::Atom(Atom::Symbol(Symbol::Synthetic(40))),
         ];
 
         for edge in edges_3_bytes {
@@ -1154,14 +1165,20 @@ mod tests {
             assert_eq!(edge, parsed, "roundtrip failed for {:?}", edge);
         }
 
-        // GlobalConstant uses 5-byte encoding
-        let global_edge = Edge::Atom(Atom::Symbol(Symbol::GlobalConstant(ModuleId(5), 10)));
-        let mut bytes = Vec::new();
-        global_edge.append_to(&mut bytes);
-        assert_eq!(bytes.len(), 5, "GlobalConstant should use 5 bytes");
-        let (parsed, consumed) = Edge::from_bytes(&bytes);
-        assert_eq!(consumed, 5);
-        assert_eq!(global_edge, parsed, "roundtrip failed for GlobalConstant");
+        // Edges with 5-byte encoding (module-scoped)
+        let edges_5_bytes = vec![
+            Edge::Atom(Atom::Symbol(Symbol::GlobalConstant(ModuleId(5), 10))),
+            Edge::Atom(Atom::Symbol(Symbol::Synthetic(ModuleId(0), 40))),
+        ];
+
+        for edge in edges_5_bytes {
+            let mut bytes = Vec::new();
+            edge.append_to(&mut bytes);
+            assert_eq!(bytes.len(), 5, "expected 5 bytes for {:?}", edge);
+            let (parsed, consumed) = Edge::from_bytes(&bytes);
+            assert_eq!(consumed, 5);
+            assert_eq!(edge, parsed, "roundtrip failed for {:?}", edge);
+        }
     }
 
     #[test]

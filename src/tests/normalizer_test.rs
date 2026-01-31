@@ -30,8 +30,8 @@ fn test_nat_normalization() {
         &env,
         "induction",
         &[
-            "not x0(zero) or x0(s0(x0)) or x0(x1)",
-            "not x0(suc(s0(x0))) or not x0(zero) or x0(x1)",
+            "not x0(zero) or x0(s0_0(x0)) or x0(x1)",
+            "not x0(suc(s0_0(x0))) or not x0(zero) or x0(x1)",
         ],
     );
 
@@ -89,7 +89,7 @@ fn test_nested_skolemization() {
     let mut norm = Normalizer::new();
     env.add("type Nat: axiom");
     env.add("theorem exists_eq(x: Nat) { exists(y: Nat) { x = y } }");
-    norm.check(&env, "exists_eq", &["s0(x0) = x0"]);
+    norm.check(&env, "exists_eq", &["s0_0(x0) = x0"]);
 }
 
 #[test]
@@ -197,7 +197,7 @@ fn test_normalizing_exists() {
         "#,
     );
     let mut norm = Normalizer::new();
-    norm.check(&env, "goal", &["addx(s0, zero) = one"]);
+    norm.check(&env, "goal", &["addx(s0_0, zero) = one"]);
 }
 
 #[test]
@@ -251,7 +251,7 @@ fn test_functional_skolemization() {
     norm.check(
         &env,
         "test_finite",
-        &["not finite_constraint(x0) or not x0(x1) or contains(s0(x0), x1)"],
+        &["not finite_constraint(x0) or not x0(x1) or contains(s0_0(x0), x1)"],
     );
 }
 
@@ -413,7 +413,7 @@ fn test_normalizing_equals_exists() {
     "#,
     );
     let mut norm = Normalizer::new();
-    norm.check(&env, "goal", &["not b or f(s0)", "not f(x0) or b"]);
+    norm.check(&env, "goal", &["not b or f(s0_0)", "not f(x0) or b"]);
 }
 
 #[test]
@@ -460,7 +460,7 @@ fn test_normalizing_exists_inside_if() {
     "#,
     );
     let mut norm = Normalizer::new();
-    norm.check(&env, "goal", &["not b or f(s0)", "g(s1) or b"]);
+    norm.check(&env, "goal", &["not b or f(s0_0)", "g(s0_1) or b"]);
 }
 
 #[test]
@@ -531,7 +531,7 @@ fn test_normalizing_function_inequality() {
     "#,
     );
     let mut norm = Normalizer::new();
-    norm.check(&env, "goal", &["g(a, s0) != f(s0)"]);
+    norm.check(&env, "goal", &["g(a, s0_0) != f(s0_0)"]);
 }
 
 #[test]
@@ -559,7 +559,7 @@ fn test_normalizing_func_eq_inside_lambda() {
         "goal",
         &[
             "not f(x0) or h(x0, x1) = g(x0, x1)",
-            "h(x0, s0(x0)) != g(x0, s0(x0)) or f(x0)",
+            "h(x0, s0_0(x0)) != g(x0, s0_0(x0)) or f(x0)",
         ],
     );
 }
@@ -587,7 +587,7 @@ fn test_normalizing_exists_inside_lambda() {
     norm.check(
         &env,
         "goal",
-        &["not g(x0) or f(x0, s0(x0))", "not f(x0, x1) or g(x0)"],
+        &["not g(x0) or f(x0, s0_0(x0))", "not f(x0, x1) or g(x0)"],
     );
 }
 
@@ -614,7 +614,7 @@ fn test_normalizing_forall_inside_lambda() {
     norm.check(
         &env,
         "goal",
-        &["not g(x0) or f(x0, x1)", "not f(x0, s0(x0)) or g(x0)"],
+        &["not g(x0) or f(x0, x1)", "not f(x0, s0_0(x0)) or g(x0)"],
     );
 }
 
@@ -641,7 +641,7 @@ fn test_normalizing_exists_inside_neq_lambda() {
     norm.check(
         &env,
         "goal",
-        &["not f(s0, x0) or not g(s0)", "f(s0, s1) or g(s0)"],
+        &["not f(s0_0, x0) or not g(s0_0)", "f(s0_0, s0_1) or g(s0_0)"],
     );
 }
 
@@ -668,7 +668,7 @@ fn test_normalizing_forall_inside_neq_lambda() {
     norm.check(
         &env,
         "goal",
-        &["not f(s0, s1) or not g(s0)", "f(s0, x0) or g(s0)"],
+        &["not f(s0_0, s0_1) or not g(s0_0)", "f(s0_0, x0) or g(s0_0)"],
     );
 }
 
@@ -695,7 +695,7 @@ fn test_normalizing_pre_expanded_exists_inside_lambda() {
     norm.check(
         &env,
         "goal",
-        &["not g(x0) or f(x0, s0(x0))", "not f(x0, x1) or g(x0)"],
+        &["not g(x0) or f(x0, s0_0(x0))", "not f(x0, x1) or g(x0)"],
     );
 }
 
@@ -733,7 +733,7 @@ fn test_normalizing_boolean_function_inequality() {
     "#,
     );
     let mut norm = Normalizer::new();
-    norm.check(&env, "goal", &["g(s0) != f(s0)"]);
+    norm.check(&env, "goal", &["g(s0_0) != f(s0_0)"]);
 }
 
 #[test]
@@ -785,10 +785,10 @@ fn test_normalizing_and_inside_arg() {
         &env,
         "goal",
         &[
-            "not s0(x0, x1) or BoxedBool.value(x0)",
-            "not s0(x0, x1) or BoxedBool.value(x1)",
-            "not BoxedBool.value(x0) or not BoxedBool.value(x1) or s0(x0, x1)",
-            "BoxedBool.new(s0(x0, x1)) = f(x0, x1)",
+            "not s0_0(x0, x1) or BoxedBool.value(x0)",
+            "not s0_0(x0, x1) or BoxedBool.value(x1)",
+            "not BoxedBool.value(x0) or not BoxedBool.value(x1) or s0_0(x0, x1)",
+            "BoxedBool.new(s0_0(x0, x1)) = f(x0, x1)",
         ],
     );
 }
@@ -823,9 +823,9 @@ fn test_normalizing_nested_lambdas() {
         &env,
         "goal",
         &[
-            "sum(map(range(x0), s1(x1, x0, x2, x3))) = s0(x1, x0, x2, x3)",
-            "s1(x0, x1, x2, x3, x4) = x2(x3, x4)",
-            "sum(map(range(x0), s0(x0, x1, x2))) = double_sum(x0, x1, x2)",
+            "sum(map(range(x0), s0_1(x1, x0, x2, x3))) = s0_0(x1, x0, x2, x3)",
+            "s0_1(x0, x1, x2, x3, x4) = x2(x3, x4)",
+            "sum(map(range(x0), s0_0(x0, x1, x2))) = double_sum(x0, x1, x2)",
         ],
     );
 }
@@ -860,10 +860,10 @@ fn test_if_then_else_with_forall_condition() {
         &env,
         "goal",
         &[
-            "not s0 or p(x0)",
-            "not s0 or q(x0)",
-            "not q(x0) or not p(x0) or s0",
-            "one = zero or s0",
+            "not s0_0 or p(x0)",
+            "not s0_0 or q(x0)",
+            "not q(x0) or not p(x0) or s0_0",
+            "one = zero or s0_0",
         ],
     );
 }

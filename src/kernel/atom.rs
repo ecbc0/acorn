@@ -7,10 +7,9 @@ use super::symbol::Symbol;
 
 pub type AtomId = u16;
 
-/// Don't let synthetic ids get this high.
-/// We use ids in the invalid space for normalization purposes.
-/// Bit of a hack.
-pub const INVALID_SYNTHETIC_ID: AtomId = 65000;
+/// A sentinel ModuleId used for "invalid" synthetics during normalization.
+/// Synthetics with this ModuleId are temporary markers used for deduplication.
+pub const INVALID_SYNTHETIC_MODULE: crate::module::ModuleId = crate::module::ModuleId(u16::MAX);
 
 /// An atomic value does not have any internal structure.
 /// The Atom is a lower-level representation.
@@ -75,7 +74,25 @@ impl Atom {
             'c' => Some(Atom::Symbol(Symbol::ScopedConstant(rest.parse().ok()?))),
             'x' => Some(Atom::FreeVariable(rest.parse().ok()?)),
             'b' => Some(Atom::BoundVariable(rest.parse().ok()?)),
-            's' => Some(Atom::Symbol(Symbol::Synthetic(rest.parse().ok()?))),
+            's' => {
+                // Format: s{module_id}_{local_id} or s{local_id} (with implicit module_id 0)
+                let parts: Vec<&str> = rest.split('_').collect();
+                if parts.len() == 2 {
+                    // New format: s{module_id}_{local_id}
+                    let module_id = crate::module::ModuleId(parts[0].parse().ok()?);
+                    let local_id: AtomId = parts[1].parse().ok()?;
+                    Some(Atom::Symbol(Symbol::Synthetic(module_id, local_id)))
+                } else if parts.len() == 1 {
+                    // Old format for tests: s{local_id} -> module 0
+                    let local_id: AtomId = rest.parse().ok()?;
+                    Some(Atom::Symbol(Symbol::Synthetic(
+                        crate::module::ModuleId(0),
+                        local_id,
+                    )))
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
@@ -133,14 +150,17 @@ impl Atom {
     }
 
     /// Renumbers synthetic atoms from the provided list into the invalid range.
-    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> Atom {
+    /// Invalid synthetics use INVALID_SYNTHETIC_MODULE with sequential AtomIds.
+    pub fn invalidate_synthetics(&self, from: &[(crate::module::ModuleId, AtomId)]) -> Atom {
         match self {
-            Atom::Symbol(Symbol::Synthetic(i)) => match from.iter().position(|x| x == i) {
-                Some(j) => Atom::Symbol(Symbol::Synthetic(
-                    (INVALID_SYNTHETIC_ID as usize + j) as AtomId,
-                )),
-                None => *self,
-            },
+            Atom::Symbol(Symbol::Synthetic(m, i)) => {
+                match from.iter().position(|(fm, fi)| fm == m && fi == i) {
+                    Some(j) => {
+                        Atom::Symbol(Symbol::Synthetic(INVALID_SYNTHETIC_MODULE, j as AtomId))
+                    }
+                    None => *self,
+                }
+            }
             a => *a,
         }
     }
@@ -155,6 +175,7 @@ impl Atom {
     /// Replace `num_to_replace` free variables (starting after `skip` variables) with invalid
     /// synthetic atoms. Variables before `skip` are preserved, variables in the replacement
     /// range become invalid synthetics, and variables after are shifted down.
+    /// Invalid synthetics use INVALID_SYNTHETIC_MODULE with sequential AtomIds.
     pub fn instantiate_invalid_synthetics_with_skip(
         &self,
         num_to_replace: usize,
@@ -170,7 +191,8 @@ impl Atom {
                     // In replacement range: convert to invalid synthetic
                     // The synthetic id is based on position within the replacement range
                     Atom::Symbol(Symbol::Synthetic(
-                        (INVALID_SYNTHETIC_ID as usize + idx - skip) as AtomId,
+                        INVALID_SYNTHETIC_MODULE,
+                        (idx - skip) as AtomId,
                     ))
                 } else {
                     // After replacement range: shift down by num_to_replace

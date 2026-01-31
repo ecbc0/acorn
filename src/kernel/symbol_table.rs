@@ -58,8 +58,9 @@ pub struct SymbolTable {
     /// Used for instance definitions where e.g. Arf.foo[Foo] = Foo.foo.
     instance_to_symbol: HashMap<ConstantInstance, Symbol>,
 
-    /// For synthetic atom i, synthetic_types[i] is the type.
-    synthetic_types: Vec<Term>,
+    /// For synthetic atom (module_id, local_id), synthetic_types[module_id][local_id] is the type.
+    /// Uses Vec<Vec<...>> instead of HashMap for fast indexing by module_id.
+    synthetic_types: Vec<Vec<Term>>,
 
     /// Maps polymorphic constant names to their generic type info.
     /// Used to properly denormalize constants.
@@ -173,8 +174,8 @@ impl SymbolTable {
     }
 
     pub fn get_symbol(&self, name: &ConstantName) -> Option<Symbol> {
-        if let ConstantName::Synthetic(i) = name {
-            return Some(Symbol::Synthetic(*i));
+        if let ConstantName::Synthetic(m, i) = name {
+            return Some(Symbol::Synthetic(*m, *i));
         };
         self.name_to_symbol.get(name).cloned()
     }
@@ -195,7 +196,7 @@ impl SymbolTable {
             | Symbol::Type0
             | Symbol::Type(_)
             | Symbol::Typeclass(_) => Term::type_sort_ref(),
-            Symbol::Synthetic(i) => &self.synthetic_types[i as usize],
+            Symbol::Synthetic(m, i) => &self.synthetic_types[m.get() as usize][i as usize],
             Symbol::GlobalConstant(m, i) => {
                 &self.global_constant_types[m.get() as usize][i as usize]
             }
@@ -212,7 +213,7 @@ impl SymbolTable {
                 Term::type_sort()
             }
             Symbol::Type(ground_id) => type_store.get_type_kind(ground_id),
-            Symbol::Synthetic(i) => self.synthetic_types[i as usize].clone(),
+            Symbol::Synthetic(m, i) => self.synthetic_types[m.get() as usize][i as usize].clone(),
             Symbol::GlobalConstant(m, i) => {
                 self.global_constant_types[m.get() as usize][i as usize].clone()
             }
@@ -265,15 +266,18 @@ impl SymbolTable {
         while self.global_constant_types.len() <= idx {
             self.global_constant_types.push(Vec::new());
         }
+        while self.synthetic_types.len() <= idx {
+            self.synthetic_types.push(Vec::new());
+        }
     }
 
     /// Get the number of synthetics.
     #[cfg(test)]
     pub fn num_synthetics(&self) -> u32 {
-        self.synthetic_types.len() as u32
+        self.synthetic_types.first().map(|v| v.len()).unwrap_or(0) as u32
     }
 
-    /// Set the type for a synthetic at a given index.
+    /// Set the type for a synthetic at a given index in module 0 (for tests).
     #[cfg(test)]
     pub fn set_synthetic_type(&mut self, id: u32, var_type: Term) {
         #[cfg(any(test, feature = "validate"))]
@@ -284,11 +288,13 @@ impl SymbolTable {
                 var_type
             );
         }
-        self.synthetic_types[id as usize] = var_type;
+        self.ensure_module_exists(ModuleId(0));
+        self.synthetic_types[0][id as usize] = var_type;
     }
 
     /// Declare a new synthetic atom with the given type.
-    pub fn declare_synthetic(&mut self, var_type: Term) -> Symbol {
+    /// The module_id identifies which module's normalization is creating this synthetic.
+    pub fn declare_synthetic(&mut self, module_id: ModuleId, var_type: Term) -> Symbol {
         // Symbol types should be closed - no free variables allowed.
         // Free variables in a type like Π(T, x0) indicate a bug where BoundVariable
         // should have been used instead.
@@ -301,10 +307,12 @@ impl SymbolTable {
             );
         }
 
-        let atom_id = self.synthetic_types.len() as AtomId;
-        let symbol = Symbol::Synthetic(atom_id);
+        self.ensure_module_exists(module_id);
+        let idx = module_id.get() as usize;
+        let atom_id = self.synthetic_types[idx].len() as AtomId;
+        let symbol = Symbol::Synthetic(module_id, atom_id);
         self.record_element(var_type.clone(), symbol);
-        self.synthetic_types.push(var_type);
+        self.synthetic_types[idx].push(var_type);
         symbol
     }
 

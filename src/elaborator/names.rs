@@ -56,7 +56,8 @@ pub enum ConstantName {
     Unqualified(ModuleId, String),
 
     /// A synthetic constant, created by the normalizer to simplify expressions.
-    Synthetic(AtomId),
+    /// The ModuleId identifies which module's normalization created this synthetic.
+    Synthetic(ModuleId, AtomId),
 }
 
 impl ConstantName {
@@ -90,7 +91,7 @@ impl ConstantName {
             }
             ConstantName::TypeclassAttribute(tc, attr) => Some((tc.module_id, &tc.name, attr)),
             ConstantName::Unqualified(..) => None,
-            ConstantName::Synthetic(_) => None,
+            ConstantName::Synthetic(..) => None,
         }
     }
 
@@ -103,12 +104,12 @@ impl ConstantName {
     }
 
     pub fn is_synthetic(&self) -> bool {
-        matches!(self, ConstantName::Synthetic(_))
+        matches!(self, ConstantName::Synthetic(..))
     }
 
-    pub fn synthetic_id(&self) -> Option<AtomId> {
+    pub fn synthetic_id(&self) -> Option<(ModuleId, AtomId)> {
         match self {
-            ConstantName::Synthetic(id) => Some(*id),
+            ConstantName::Synthetic(m, id) => Some((*m, *id)),
             _ => None,
         }
     }
@@ -119,7 +120,7 @@ impl ConstantName {
             ConstantName::SpecificDatatypeAttribute(datatype, _, _) => datatype.module_id,
             ConstantName::TypeclassAttribute(tc, _) => tc.module_id,
             ConstantName::Unqualified(module_id, _) => *module_id,
-            ConstantName::Synthetic(_) => panic!("synthetic constants do not have a module id"),
+            ConstantName::Synthetic(module_id, _) => *module_id,
         }
     }
 
@@ -154,7 +155,7 @@ impl fmt::Display for ConstantName {
                 write!(f, "{}.{}", tc.name, attr)
             }
             ConstantName::Unqualified(_, name) => write!(f, "{}", name),
-            ConstantName::Synthetic(i) => write!(f, "s{}", i),
+            ConstantName::Synthetic(m, i) => write!(f, "s{}_{}", m.0, i),
         }
     }
 }

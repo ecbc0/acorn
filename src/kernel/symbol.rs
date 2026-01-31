@@ -39,7 +39,8 @@ pub enum Symbol {
     // to CNF directly.
     // These don't have a name in the environment, so you need to create a definition before
     // generating code with them.
-    Synthetic(AtomId),
+    // The ModuleId identifies which module's normalization created this synthetic.
+    Synthetic(ModuleId, AtomId),
 
     // Constant values that are accessible anywhere in the code.
     // This includes concepts like addition, zero, and the axioms.
@@ -62,7 +63,7 @@ impl fmt::Display for Symbol {
             Symbol::Typeclass(tc) => {
                 write!(f, "tc{}_{}", tc.module_id().get(), tc.local_id())
             }
-            Symbol::Synthetic(i) => write!(f, "s{}", i),
+            Symbol::Synthetic(m, i) => write!(f, "s{}_{}", m.get(), i),
             Symbol::GlobalConstant(m, i) => write!(f, "g{}_{}", m.get(), i),
             Symbol::ScopedConstant(i) => write!(f, "c{}", i),
         }

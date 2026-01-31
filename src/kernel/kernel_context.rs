@@ -4,6 +4,8 @@ use crate::kernel::symbol::Symbol;
 use crate::kernel::symbol_table::SymbolTable;
 use crate::kernel::term::Term;
 use crate::kernel::type_store::TypeStore;
+#[cfg(test)]
+use crate::module::ModuleId;
 
 /// KernelContext combines the TypeStore and SymbolTable that are needed
 /// for working with kernel types and various kernel operations.
@@ -37,7 +39,7 @@ impl KernelContext {
             }
             Atom::FreeVariable(i) => format!("x{}", i),
             Atom::BoundVariable(i) => format!("b{}", i),
-            Atom::Symbol(Symbol::Synthetic(i)) => format!("s{}", i),
+            Atom::Symbol(Symbol::Synthetic(m, i)) => format!("s{}_{}", m.0, i),
             Atom::Symbol(Symbol::Type(t)) => {
                 format!("T{}_{}", t.module_id().get(), t.local_id())
             }
@@ -201,9 +203,10 @@ impl KernelContext {
         for _ in 0..num_global {
             ctx.symbol_table.add_global_constant(Term::empty_type());
         }
-        // Also add synthetics for tests that use "s0", "s1", etc.
+        // Also add synthetics for tests that use "s0_0", "s0_1", etc.
         for _ in 0..10 {
-            ctx.symbol_table.declare_synthetic(Term::empty_type());
+            ctx.symbol_table
+                .declare_synthetic(ModuleId(0), Term::empty_type());
         }
         ctx
     }
@@ -224,7 +227,8 @@ impl KernelContext {
             ctx.symbol_table.add_global_constant(type_term.clone());
         }
         for type_term in synthetic_types {
-            ctx.symbol_table.declare_synthetic(type_term.clone());
+            ctx.symbol_table
+                .declare_synthetic(ModuleId(0), type_term.clone());
         }
         ctx
     }
@@ -353,7 +357,8 @@ impl KernelContext {
 
         // Add synthetics with BOOL type
         for _ in 0..10 {
-            ctx.symbol_table.declare_synthetic(Term::bool_type());
+            ctx.symbol_table
+                .declare_synthetic(ModuleId(0), Term::bool_type());
         }
 
         ctx
@@ -753,7 +758,8 @@ impl KernelContext {
             }
             's' => {
                 while self.symbol_table.num_synthetics() <= id {
-                    self.symbol_table.declare_synthetic(Term::empty_type());
+                    self.symbol_table
+                        .declare_synthetic(ModuleId(0), Term::empty_type());
                 }
                 self.symbol_table.set_synthetic_type(id, type_term);
             }

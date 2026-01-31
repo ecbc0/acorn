@@ -1347,7 +1347,7 @@ mod tests {
         // Use g2(x0, x1, s4) instead of s0(x0, x1, s4) since g2 has proper function type
         let x0 = Term::atom(Atom::FreeVariable(0));
         let x1 = Term::atom(Atom::FreeVariable(1));
-        let s4 = Term::atom(Atom::Symbol(Symbol::Synthetic(4))); // BOOL type
+        let s4 = Term::atom(Atom::Symbol(Symbol::Synthetic(ModuleId(0), 4))); // BOOL type
         let g2_term = Term::new(
             Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 2)),
             vec![x0.clone(), x1.clone(), s4.clone()],

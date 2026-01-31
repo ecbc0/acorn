@@ -731,7 +731,7 @@ mod tests {
         // Build query manually: not g0(c1)(s0(g0(c1)), s0(g0(c1))) or c0(g0(c1))
         // Symbols: g0 = GlobalConstant(0), s0 = Synthetic(0), c0 = ScopedConstant(0), c1 = ScopedConstant(1)
         let g0_atom = Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0));
-        let s0_atom = Atom::Symbol(Symbol::Synthetic(0));
+        let s0_atom = Atom::Symbol(Symbol::Synthetic(ModuleId(0), 0));
         let c0_atom = Atom::Symbol(Symbol::ScopedConstant(0));
         let c1_atom = Atom::Symbol(Symbol::ScopedConstant(1));
         let c1_term = Term::atom(c1_atom);
@@ -815,7 +815,7 @@ mod tests {
         // g0 = GlobalConstant(0), s0 = Synthetic(0), c0 = ScopedConstant(0), c1 = ScopedConstant(1)
         // Type = Type(GroundTypeId(0)) which is the type T
         let g0_atom = Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0));
-        let s0_atom = Atom::Symbol(Symbol::Synthetic(0));
+        let s0_atom = Atom::Symbol(Symbol::Synthetic(ModuleId(0), 0));
         let c0_atom = Atom::Symbol(Symbol::ScopedConstant(0));
         let c1_atom = Atom::Symbol(Symbol::ScopedConstant(1));
         let type_atom = Atom::Symbol(Symbol::Type(GroundTypeId::test(0))); // T as a type symbol
@@ -899,7 +899,7 @@ mod tests {
         let type_atom = Atom::Symbol(Symbol::Type(GroundTypeId::test(0)));
         let type_term = Term::atom(type_atom);
         let g1_atom = Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 1));
-        let s0_atom = Atom::Symbol(Symbol::Synthetic(0));
+        let s0_atom = Atom::Symbol(Symbol::Synthetic(ModuleId(0), 0));
         let x0_term = Term::new_variable(0);
 
         // First literal: not x0(s0(x0), s0(x0))

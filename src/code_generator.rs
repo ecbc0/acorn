@@ -177,7 +177,7 @@ fn rename_type_vars_in_type(
 fn rename_type_vars_in_value(
     value: &AcornValue,
     rename_map: &HashMap<String, String>,
-    defining_synthetics: &HashSet<AtomId>,
+    defining_synthetics: &HashSet<(ModuleId, AtomId)>,
 ) -> AcornValue {
     match value {
         AcornValue::Variable(i, t) => {
@@ -365,7 +365,7 @@ pub struct CodeGenerator<'a> {
     var_names: Vec<String>,
 
     /// The names we have assigned to synthetic atoms so far.
-    synthetic_names: HashMap<AtomId, String>,
+    synthetic_names: HashMap<(ModuleId, AtomId), String>,
 
     /// The names for whenever we need an arbitrary member of a type.
     /// Maps type to the name of an element of that type.
@@ -535,7 +535,7 @@ impl CodeGenerator<'_> {
     /// Updates self.synthetic_names with names for all provided synthetic atom IDs.
     fn define_synthetics(
         &mut self,
-        skolem_ids: Vec<AtomId>,
+        skolem_ids: Vec<(ModuleId, AtomId)>,
         normalizer: &Normalizer,
         codes: &mut Vec<String>,
     ) -> Result<()> {
@@ -547,7 +547,7 @@ impl CodeGenerator<'_> {
             let all_already_defined = info
                 .atoms
                 .iter()
-                .all(|id| self.synthetic_names.contains_key(id));
+                .all(|&(m, i)| self.synthetic_names.contains_key(&(m, i)));
             if all_already_defined {
                 // Skip this info - we've already generated code for it
                 continue;
@@ -555,14 +555,15 @@ impl CodeGenerator<'_> {
 
             // Assign names to any atoms that don't have them yet
             let mut decl = vec![];
-            for id in &info.atoms {
-                if self.synthetic_names.contains_key(id) {
+            for &(module_id, local_id) in &info.atoms {
+                if self.synthetic_names.contains_key(&(module_id, local_id)) {
                     // We already have a name for this synthetic atom
                     continue;
                 }
                 let name = self.bindings.next_indexed_var('s', &mut self.next_s);
-                self.synthetic_names.insert(*id, name.clone());
-                decl.push((name, normalizer.get_synthetic_type(*id)));
+                self.synthetic_names
+                    .insert((module_id, local_id), name.clone());
+                decl.push((name, normalizer.get_synthetic_type(module_id, local_id)));
             }
             if decl.is_empty() {
                 continue;
@@ -691,7 +692,8 @@ impl CodeGenerator<'_> {
 
             // Rename type variables in the condition value
             // Pass the set of synthetics being defined so they don't get type params added
-            let defining_synthetics: HashSet<AtomId> = info.atoms.iter().copied().collect();
+            let defining_synthetics: HashSet<(ModuleId, AtomId)> =
+                info.atoms.iter().copied().collect();
             let cond_val = rename_type_vars_in_value(&cond_val, &rename_map, &defining_synthetics);
 
             // The denormalized clauses might contain additional synthetic constants.
@@ -768,7 +770,7 @@ impl CodeGenerator<'_> {
         let synthetic_ids = value.find_synthetics();
         self.define_synthetics(synthetic_ids, normalizer, definitions)?;
 
-        value = value.replace_synthetics(self.bindings.module_id(), &self.synthetic_names);
+        value = value.replace_synthetics(&self.synthetic_names);
         let subvalues = value.remove_and();
         for subvalue in subvalues {
             codes.push(self.value_to_code(&subvalue)?);
@@ -1020,7 +1022,7 @@ impl CodeGenerator<'_> {
                 ConstantName::TypeclassAttribute(tc, attr) => {
                     Expression::generate_identifier(&tc.name).add_dot_str(attr)
                 }
-                ConstantName::Synthetic(_) => panic!("control should not get here"),
+                ConstantName::Synthetic(..) => panic!("control should not get here"),
             });
         }
 
@@ -1066,7 +1068,7 @@ impl CodeGenerator<'_> {
             ConstantName::TypeclassAttribute(tc, attr) => {
                 Ok(module.add_dot_str(&tc.name).add_dot_str(attr))
             }
-            ConstantName::Synthetic(_) => panic!("control should not get here"),
+            ConstantName::Synthetic(..) => panic!("control should not get here"),
         }
     }
 

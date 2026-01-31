@@ -6,6 +6,7 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::types::{GroundTypeId, TypeclassId};
+use crate::module::ModuleId;
 
 /// A step in a path through a term.
 /// Treats applications in curried form: f(a, b) becomes ((f a) b).
@@ -419,7 +420,7 @@ impl<'a> TermRef<'a> {
     /// Check if this term contains any synthetic atoms.
     pub fn has_synthetic(&self) -> bool {
         for component in self.components {
-            if let TermComponent::Atom(Atom::Symbol(Symbol::Synthetic(_))) = component {
+            if let TermComponent::Atom(Atom::Symbol(Symbol::Synthetic(..))) = component {
                 return true;
             }
         }
@@ -585,9 +586,12 @@ impl<'a> TermRef<'a> {
                     weight1 += 1;
                     weight2 += 1 + 4 * (*i) as u32;
                 }
-                TermComponent::Atom(Atom::Symbol(Symbol::Synthetic(i))) => {
+                TermComponent::Atom(Atom::Symbol(Symbol::Synthetic(m, i))) => {
                     weight1 += 1;
-                    weight2 += 3 + 4 * (*i) as u32;
+                    // Use wrapping arithmetic to avoid overflow for INVALID_SYNTHETIC_MODULE
+                    weight2 = weight2.wrapping_add(3u32.wrapping_add(4u32.wrapping_mul(
+                        (m.get() as u32).wrapping_mul(65536).wrapping_add(*i as u32),
+                    )));
                 }
                 TermComponent::Atom(Atom::Symbol(Symbol::Type(t))) => {
                     // Type atoms contribute to weight
@@ -709,6 +713,22 @@ impl<'a> TermRef<'a> {
         }
 
         self.total_tiebreak(other)
+    }
+
+    /// Stable KBO comparison - treats all free variables as equivalent.
+    /// Alpha-equivalent terms compare as Equal.
+    /// This is useful for canonicalization where we want the result to be
+    /// independent of initial variable naming.
+    pub fn stable_kbo_cmp(&self, other: &TermRef) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+
+        let kbo_cmp = self.kbo_helper(other, false);
+        if kbo_cmp != Ordering::Equal {
+            return kbo_cmp;
+        }
+
+        // Use only partial_tiebreak, which treats all free variables as equal
+        self.partial_tiebreak(other)
     }
 
     /// Navigate to a subterm using a path.
@@ -1641,7 +1661,7 @@ impl Term {
     }
 
     /// Renumbers synthetic atoms from the provided list into the invalid range.
-    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> Term {
+    pub fn invalidate_synthetics(&self, from: &[(ModuleId, AtomId)]) -> Term {
         let new_components = self
             .components
             .iter()
@@ -1667,7 +1687,7 @@ impl Term {
         num_to_replace: usize,
         skip: usize,
     ) -> Term {
-        use crate::kernel::atom::INVALID_SYNTHETIC_ID;
+        use crate::kernel::atom::INVALID_SYNTHETIC_MODULE;
 
         match self.as_ref().decompose() {
             Decomposition::Atom(atom) => match atom {
@@ -1679,8 +1699,9 @@ impl Term {
                     } else if idx < skip + num_to_replace {
                         // In replacement range: convert to invalid synthetic
                         // The synthetic is applied to all type variables (first `skip` vars)
-                        let synthetic_id = (INVALID_SYNTHETIC_ID as usize + idx - skip) as AtomId;
-                        let synthetic_atom = Atom::Symbol(Symbol::Synthetic(synthetic_id));
+                        let synthetic_id = (idx - skip) as AtomId;
+                        let synthetic_atom =
+                            Atom::Symbol(Symbol::Synthetic(INVALID_SYNTHETIC_MODULE, synthetic_id));
                         if skip == 0 {
                             Term::atom(synthetic_atom)
                         } else {
@@ -1862,6 +1883,12 @@ impl Term {
     /// Extended KBO comparison - total ordering where only identical terms are equal.
     pub fn extended_kbo_cmp(&self, other: &Term) -> std::cmp::Ordering {
         self.as_ref().extended_kbo_cmp(&other.as_ref())
+    }
+
+    /// Stable KBO comparison - treats all free variables as equivalent.
+    /// Alpha-equivalent terms compare as Equal.
+    pub fn stable_kbo_cmp(&self, other: &Term) -> std::cmp::Ordering {
+        self.as_ref().stable_kbo_cmp(&other.as_ref())
     }
 
     /// Get the subterm at the given path.

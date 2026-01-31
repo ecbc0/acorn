@@ -285,11 +285,10 @@ impl ConstantInstance {
     /// Returns None if this is not a synthetic atom, or if its id is not in the map.
     fn replace_synthetic(
         &self,
-        module_id: ModuleId,
-        synthetic_names: &HashMap<AtomId, String>,
+        synthetic_names: &HashMap<(ModuleId, AtomId), String>,
     ) -> Option<ConstantInstance> {
-        let id = self.name.synthetic_id()?;
-        let name = synthetic_names.get(&id)?;
+        let (module_id, local_id) = self.name.synthetic_id()?;
+        let name = synthetic_names.get(&(module_id, local_id))?;
         // Handle both polymorphic and non-polymorphic synthetics
         Some(ConstantInstance {
             name: ConstantName::unqualified(module_id, name),
@@ -1068,15 +1067,9 @@ impl AcornValue {
         }
     }
 
-    pub fn replace_synthetics(
-        &self,
-        module_id: ModuleId,
-        map: &HashMap<AtomId, String>,
-    ) -> AcornValue {
+    pub fn replace_synthetics(&self, map: &HashMap<(ModuleId, AtomId), String>) -> AcornValue {
         self.replace_constants(0, &|old_ci| {
-            old_ci
-                .replace_synthetic(module_id, map)
-                .map(AcornValue::Constant)
+            old_ci.replace_synthetic(map).map(AcornValue::Constant)
         })
     }
 
@@ -1434,13 +1427,13 @@ impl AcornValue {
 
     /// Finds all synthetic atom ids in this value.
     /// May contain duplicates.
-    pub fn find_synthetics(&self) -> Vec<AtomId> {
+    pub fn find_synthetics(&self) -> Vec<(ModuleId, AtomId)> {
         let mut consts = vec![];
         self.find_constants(&|c| c.name.is_synthetic(), &mut consts);
         let mut answer = vec![];
         for c in consts {
-            if let ConstantName::Synthetic(id) = c.name {
-                answer.push(id);
+            if let ConstantName::Synthetic(m, id) = c.name {
+                answer.push((m, id));
             }
         }
         answer

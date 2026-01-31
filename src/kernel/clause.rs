@@ -7,6 +7,7 @@ use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::Term;
+use crate::module::ModuleId;
 
 /// A Clause represents a disjunction (an "or") of literals.
 /// Type information is stored separately in the TypeStore and SymbolTable,
@@ -359,13 +360,17 @@ impl Clause {
     }
 
     /// Renumbers synthetic atoms from the provided list into the invalid range.
-    pub fn invalidate_synthetics(&self, from: &[AtomId]) -> Clause {
+    pub fn invalidate_synthetics(&self, from: &[(ModuleId, AtomId)]) -> Clause {
         self.invalidate_synthetics_with_pinned(from, 0)
     }
 
     /// Renumbers synthetic atoms from the provided list into the invalid range,
     /// keeping the first `pinned` variables at their original positions.
-    pub fn invalidate_synthetics_with_pinned(&self, from: &[AtomId], pinned: usize) -> Clause {
+    pub fn invalidate_synthetics_with_pinned(
+        &self,
+        from: &[(ModuleId, AtomId)],
+        pinned: usize,
+    ) -> Clause {
         let new_literals: Vec<Literal> = self
             .literals
             .iter()
@@ -415,23 +420,33 @@ impl Clause {
 
     /// Returns a canonical form of this clause with literals in deterministic order,
     /// keeping the first `pinned` variables at their original positions.
+    ///
+    /// This uses a two-phase approach to ensure alpha-equivalent clauses produce
+    /// identical canonical forms:
+    /// 1. Sort using stable comparison (treating all free variables as equivalent)
+    /// 2. Renumber variables based on order of first appearance
+    /// 3. Re-sort using total ordering (now with canonical variable names)
     fn canonicalize_with_pinned(&self, pinned: usize) -> Clause {
-        // The clause has already been through Clause::new, so variables are renumbered.
-        // But literals might be in different order if the stable sort didn't break ties.
-        // Re-sort using total ordering now that variables are normalized.
+        // Phase 1: Sort using stable comparison that treats all free variables as equivalent.
+        // This ensures alpha-equivalent clauses get the same initial ordering.
         let mut literals = self.literals.clone();
-        literals.sort();
+        literals.sort_by(|a, b| a.stable_kbo_cmp(b));
 
-        // Now renumber variables again based on the new literal order
+        // Phase 2: Renumber variables based on order of first appearance.
         // Pre-populate with pinned variable IDs (0, 1, ..., pinned-1)
         let mut var_ids: Vec<AtomId> = (0..pinned as AtomId).collect();
         for lit in &mut literals {
             lit.normalize_var_ids_with_context(&mut var_ids, &self.context);
         }
+        let new_context = self.context.remap(&var_ids);
+
+        // Phase 3: Re-sort using total ordering. Now that variables are canonical,
+        // this produces a deterministic final order.
+        literals.sort();
 
         Clause {
             literals,
-            context: self.context.remap(&var_ids),
+            context: new_context,
         }
     }
 

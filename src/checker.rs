@@ -560,8 +560,8 @@ impl Checker {
 
                 if let Some(atoms) = &synthetic_atoms {
                     for (i, (name, acorn_type)) in decls.iter().enumerate() {
-                        let synthetic_id = atoms[i];
-                        let synthetic_cname = ConstantName::Synthetic(synthetic_id);
+                        let (module_id, local_id) = atoms[i];
+                        let synthetic_cname = ConstantName::Synthetic(module_id, local_id);
 
                         let (param_names, generic_type) = if !type_params.is_empty() {
                             let names: Vec<String> =
@@ -658,7 +658,8 @@ impl Checker {
             }
             StatementInfo::Claim(claim) => {
                 let value = evaluator.evaluate_value(&claim.claim, Some(&AcornType::Bool))?;
-                let mut view = NormalizationContext::new_mut(normalizer.to_mut(), None);
+                let module_id = bindings.module_id();
+                let mut view = NormalizationContext::new_mut(normalizer.to_mut(), None, module_id);
                 let clauses = view.value_to_denormalized_clauses(&value)?;
                 Ok(ParsedLine::Claim(clauses))
             }

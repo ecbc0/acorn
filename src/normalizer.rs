@@ -11,7 +11,7 @@ use crate::elaborator::names::ConstantName;
 use crate::elaborator::potential_value::PotentialValue;
 use crate::elaborator::proposition::Proposition;
 use crate::elaborator::source::Source;
-use crate::kernel::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
+use crate::kernel::atom::{Atom, AtomId, INVALID_SYNTHETIC_MODULE};
 use crate::kernel::clause::Clause;
 use crate::kernel::cnf::Cnf;
 use crate::kernel::extended_term::ExtendedTerm;
@@ -21,6 +21,7 @@ use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::symbol_table::NewConstantType;
 use crate::kernel::term::Term;
+use crate::module::ModuleId;
 use crate::proof_step::{ProofStep, Truthiness};
 use tracing::trace;
 
@@ -28,7 +29,7 @@ use tracing::trace;
 pub struct SyntheticDefinition {
     /// The synthetic atoms that are defined in this definition.
     /// Each of these should be present in clauses.
-    pub atoms: Vec<AtomId>,
+    pub atoms: Vec<(ModuleId, AtomId)>,
 
     /// The kinds of the type variables (e.g., Type for unconstrained type params).
     /// These are "pinned" as x0, x1, ... in all clauses.
@@ -102,8 +103,8 @@ impl std::fmt::Display for SyntheticKey {
 
 #[derive(Clone)]
 pub struct Normalizer {
-    /// The definition for each synthetic atom, indexed by AtomId.
-    synthetic_definitions: HashMap<AtomId, Arc<SyntheticDefinition>>,
+    /// The definition for each synthetic atom, indexed by (ModuleId, AtomId).
+    synthetic_definitions: HashMap<(ModuleId, AtomId), Arc<SyntheticDefinition>>,
 
     /// Same information as `synthetic_definitions`, but indexed by SyntheticKey.
     /// This is used to avoid defining the same thing multiple times.
@@ -122,8 +123,8 @@ impl Normalizer {
         }
     }
 
-    pub fn get_synthetic_type(&self, id: AtomId) -> AcornType {
-        let symbol = Symbol::Synthetic(id);
+    pub fn get_synthetic_type(&self, module_id: ModuleId, local_id: AtomId) -> AcornType {
+        let symbol = Symbol::Synthetic(module_id, local_id);
         let type_term = self.kernel_context.symbol_table.get_type(symbol);
         self.kernel_context
             .type_store
@@ -132,7 +133,7 @@ impl Normalizer {
 
     /// Returns all synthetic atom IDs that have been defined.
     #[cfg(test)]
-    pub fn get_synthetic_ids(&self) -> Vec<AtomId> {
+    pub fn get_synthetic_ids(&self) -> Vec<(ModuleId, AtomId)> {
         self.synthetic_definitions.keys().copied().collect()
     }
 
@@ -175,6 +176,7 @@ impl Normalizer {
             ),
             _ => (0, value.clone(), vec![]),
         };
+
         let mut view = NormalizationContext::new_ref(self, type_var_map.cloned());
         let Ok(uninstantiated) = view.value_to_denormalized_clauses(&alt_value) else {
             return None;
@@ -221,30 +223,36 @@ impl Normalizer {
             synthetic_types,
             clauses,
         };
+
         self.synthetic_map.get(&key)
     }
 
     /// Declare a synthetic atom with a type already in Term form.
     /// This avoids round-trip conversion through AcornType.
-    fn declare_synthetic_atom_with_type_term(&mut self, type_term: Term) -> Result<AtomId, String> {
+    fn declare_synthetic_atom_with_type_term(
+        &mut self,
+        module_id: ModuleId,
+        type_term: Term,
+    ) -> Result<(ModuleId, AtomId), String> {
         let symbol = self
             .kernel_context
             .symbol_table
-            .declare_synthetic(type_term);
-        let id = match symbol {
-            Symbol::Synthetic(id) => id,
+            .declare_synthetic(module_id, type_term);
+        let (m, id) = match symbol {
+            Symbol::Synthetic(m, id) => (m, id),
             _ => panic!("declare_synthetic should return a Synthetic symbol"),
         };
-        if id >= INVALID_SYNTHETIC_ID {
-            return Err(format!("ran out of synthetic ids (used {})", id));
+        // Check for invalid synthetic module (shouldn't happen in normal use)
+        if m == INVALID_SYNTHETIC_MODULE {
+            return Err("synthetic atom created with invalid module".to_string());
         }
-        Ok(id)
+        Ok((m, id))
     }
 
     /// Adds the definition for these synthetic atoms.
     fn define_synthetic_atoms(
         &mut self,
-        atoms: Vec<AtomId>,
+        atoms: Vec<(ModuleId, AtomId)>,
         type_vars: Vec<Term>,
         synthetic_types: Vec<Term>,
         clauses: Vec<Clause>,
@@ -253,13 +261,13 @@ impl Normalizer {
         // Check if any atoms are already defined
         for atom in &atoms {
             if self.synthetic_definitions.contains_key(atom) {
-                return Err(format!("synthetic atom {} is already defined", atom));
+                return Err(format!("synthetic atom {:?} is already defined", atom));
             }
         }
 
         for (i, atom) in atoms.iter().enumerate() {
             trace!(
-                atom_id = atom,
+                atom_id = ?atom,
                 source = ?source,
                 clause_index = i,
                 "defining synthetic atom"
@@ -281,6 +289,7 @@ impl Normalizer {
             synthetic_types: synthetic_types.clone(),
             clauses: key_clauses,
         };
+
         let info = Arc::new(SyntheticDefinition {
             atoms: atoms.clone(),
             type_vars,
@@ -345,10 +354,14 @@ pub struct NormalizationContext<'a> {
     /// Maps type parameter names to (variable id, kind).
     /// This is set for the duration of normalizing a single polymorphic fact/goal.
     type_var_map: Option<HashMap<String, (AtomId, Term)>>,
+    /// The module ID for which we're normalizing. Synthetics created during
+    /// normalization will be scoped to this module.
+    module_id: ModuleId,
 }
 
 impl<'a> NormalizationContext<'a> {
     /// Create a new NormalizationContext with immutable access.
+    /// Uses ModuleId(0) as a placeholder since immutable contexts don't create synthetics.
     pub fn new_ref(
         n: &'a Normalizer,
         type_var_map: Option<HashMap<String, (AtomId, Term)>>,
@@ -356,17 +369,21 @@ impl<'a> NormalizationContext<'a> {
         NormalizationContext {
             inner: NormalizerRef::Ref(n),
             type_var_map,
+            module_id: ModuleId(0),
         }
     }
 
     /// Create a new NormalizationContext with mutable access.
+    /// The module_id determines which module synthetics will be scoped to.
     pub fn new_mut(
         n: &'a mut Normalizer,
         type_var_map: Option<HashMap<String, (AtomId, Term)>>,
+        module_id: ModuleId,
     ) -> Self {
         NormalizationContext {
             inner: NormalizerRef::Mut(n),
             type_var_map,
+            module_id,
         }
     }
 
@@ -382,6 +399,10 @@ impl<'a> NormalizationContext<'a> {
             NormalizerRef::Ref(_) => Err("Cannot mutate a NormalizationContext::Ref".to_string()),
             NormalizerRef::Mut(n) => Ok(n),
         }
+    }
+
+    fn module_id(&self) -> ModuleId {
+        self.module_id
     }
 
     fn symbol_table(&self) -> &crate::kernel::symbol_table::SymbolTable {
@@ -437,7 +458,7 @@ impl<'a> NormalizationContext<'a> {
     pub fn nice_value_to_clauses(
         &mut self,
         value: &AcornValue,
-        synthesized: &mut Vec<AtomId>,
+        synthesized: &mut Vec<(ModuleId, AtomId)>,
     ) -> Result<Vec<Clause>, String> {
         match value {
             AcornValue::Binary(BinaryOp::And, left, right) => {
@@ -567,32 +588,32 @@ impl<'a> NormalizationContext<'a> {
     /// existential cases since definition-style synthetics are always used in their defining clauses.
     fn has_uninhabited_existential_witness(
         &self,
-        synthesized: &[AtomId],
+        synthesized: &[(ModuleId, AtomId)],
         clauses: &[Clause],
     ) -> bool {
         use std::collections::HashSet;
 
         // Collect all synthetic atoms that appear in any clause
-        let mut used_synthetics: HashSet<AtomId> = HashSet::new();
+        let mut used_synthetics: HashSet<(ModuleId, AtomId)> = HashSet::new();
         for clause in clauses {
             for lit in &clause.literals {
                 for atom in lit.left.iter_atoms() {
-                    if let &Atom::Symbol(Symbol::Synthetic(id)) = atom {
-                        used_synthetics.insert(id);
+                    if let &Atom::Symbol(Symbol::Synthetic(m, id)) = atom {
+                        used_synthetics.insert((m, id));
                     }
                 }
                 for atom in lit.right.iter_atoms() {
-                    if let &Atom::Symbol(Symbol::Synthetic(id)) = atom {
-                        used_synthetics.insert(id);
+                    if let &Atom::Symbol(Symbol::Synthetic(m, id)) = atom {
+                        used_synthetics.insert((m, id));
                     }
                 }
             }
         }
 
         // Check each synthesized atom
-        for &synth_id in synthesized {
+        for &(module_id, local_id) in synthesized {
             // If this synthetic appears in clauses, it's constrained by something, so skip
-            if used_synthetics.contains(&synth_id) {
+            if used_synthetics.contains(&(module_id, local_id)) {
                 continue;
             }
 
@@ -600,7 +621,7 @@ impl<'a> NormalizationContext<'a> {
             let synth_type = self
                 .kernel_context()
                 .symbol_table
-                .get_type(Symbol::Synthetic(synth_id));
+                .get_type(Symbol::Synthetic(module_id, local_id));
 
             // Get the result type by stripping off type parameter Pis only.
             // Type parameter Pis have TypeSort (or Typeclass) as the input type.
@@ -702,7 +723,7 @@ impl<'a> NormalizationContext<'a> {
         negate: bool,
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
-        synth: &mut Vec<AtomId>,
+        synth: &mut Vec<(ModuleId, AtomId)>,
         context: &mut LocalContext,
     ) -> Result<Cnf, String> {
         match value {
@@ -827,7 +848,7 @@ impl<'a> NormalizationContext<'a> {
         negate: bool,
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
-        synthesized: &mut Vec<AtomId>,
+        synthesized: &mut Vec<(ModuleId, AtomId)>,
         context: &mut LocalContext,
     ) -> Result<Cnf, String> {
         if let AcornValue::Lambda(_, return_value) = function {
@@ -873,7 +894,7 @@ impl<'a> NormalizationContext<'a> {
         negate: bool,
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
-        synthesized: &mut Vec<AtomId>,
+        synthesized: &mut Vec<(ModuleId, AtomId)>,
         context: &mut LocalContext,
     ) -> Result<Cnf, String> {
         for quant in quants {
@@ -901,7 +922,7 @@ impl<'a> NormalizationContext<'a> {
         &mut self,
         skolem_types: &[AcornType],
         stack: &Vec<TermBinding>,
-        synthesized: &mut Vec<AtomId>,
+        synthesized: &mut Vec<(ModuleId, AtomId)>,
         context: &LocalContext,
     ) -> Result<Vec<Term>, String> {
         let mut args = vec![];
@@ -984,11 +1005,13 @@ impl<'a> NormalizationContext<'a> {
                 skolem_type_term = Term::pi(arg_type.clone(), skolem_type_term);
             }
 
+            let module_id = self.module_id();
             let skolem_id = self
                 .as_mut()?
-                .declare_synthetic_atom_with_type_term(skolem_type_term)?;
+                .declare_synthetic_atom_with_type_term(module_id, skolem_type_term)?;
             synthesized.push(skolem_id);
-            let skolem_atom = Atom::Symbol(Symbol::Synthetic(skolem_id));
+            let (m, i) = skolem_id;
+            let skolem_atom = Atom::Symbol(Symbol::Synthetic(m, i));
             let skolem_term = Term::new(skolem_atom, args.clone());
             output.push(skolem_term);
         }
@@ -999,7 +1022,7 @@ impl<'a> NormalizationContext<'a> {
         &mut self,
         skolem_type: &AcornType,
         stack: &Vec<TermBinding>,
-        synthesized: &mut Vec<AtomId>,
+        synthesized: &mut Vec<(ModuleId, AtomId)>,
         context: &LocalContext,
     ) -> Result<Term, String> {
         let mut terms = self.make_skolem_terms(
@@ -1020,7 +1043,7 @@ impl<'a> NormalizationContext<'a> {
         negate: bool,
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
-        synthesized: &mut Vec<AtomId>,
+        synthesized: &mut Vec<(ModuleId, AtomId)>,
         context: &mut LocalContext,
     ) -> Result<Cnf, String> {
         let skolem_terms = self.make_skolem_terms(quants, stack, synthesized, context)?;
@@ -1046,7 +1069,7 @@ impl<'a> NormalizationContext<'a> {
         negate_right: bool,
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
-        synthesized: &mut Vec<AtomId>,
+        synthesized: &mut Vec<(ModuleId, AtomId)>,
         context: &mut LocalContext,
     ) -> Result<Cnf, String> {
         let left =
@@ -1072,7 +1095,7 @@ impl<'a> NormalizationContext<'a> {
         negate_right: bool,
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
-        synthesized: &mut Vec<AtomId>,
+        synthesized: &mut Vec<(ModuleId, AtomId)>,
         context: &mut LocalContext,
     ) -> Result<Cnf, String> {
         let left =
@@ -1097,7 +1120,7 @@ impl<'a> NormalizationContext<'a> {
         negate: bool,
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
-        synth: &mut Vec<AtomId>,
+        synth: &mut Vec<(ModuleId, AtomId)>,
         context: &mut LocalContext,
     ) -> Result<Cnf, String> {
         if let AcornValue::Match(scrutinee, cases) = right {
@@ -1409,7 +1432,7 @@ impl<'a> NormalizationContext<'a> {
         args: Vec<ExtendedTerm>,
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
-        synth: &mut Vec<AtomId>,
+        synth: &mut Vec<(ModuleId, AtomId)>,
         context: &mut LocalContext,
     ) -> Result<ExtendedTerm, String> {
         if let AcornValue::Lambda(_, return_value) = function {
@@ -1515,13 +1538,14 @@ impl<'a> NormalizationContext<'a> {
         value_type: &AcornType,
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
-        synth: &mut Vec<AtomId>,
+        synth: &mut Vec<(ModuleId, AtomId)>,
         context: &mut LocalContext,
     ) -> Result<Term, String> {
         // Create a tentative skolem term with the value's type
         let skolem_term = self.make_skolem_term(value_type, stack, synth, context)?;
-        let skolem_id = if let Atom::Symbol(Symbol::Synthetic(id)) = *skolem_term.get_head_atom() {
-            id
+        let skolem_id = if let Atom::Symbol(Symbol::Synthetic(m, id)) = *skolem_term.get_head_atom()
+        {
+            (m, id)
         } else {
             return Err("internal error: skolem term is not synthetic".to_string());
         };
@@ -1530,7 +1554,7 @@ impl<'a> NormalizationContext<'a> {
         let synthetic_type = self
             .kernel_context()
             .symbol_table
-            .get_type(Symbol::Synthetic(skolem_id))
+            .get_type(Symbol::Synthetic(skolem_id.0, skolem_id.1))
             .clone();
 
         // Create the definition for this synthetic term.
@@ -1587,8 +1611,8 @@ impl<'a> NormalizationContext<'a> {
 
         if let Some(existing_def) = self.as_ref().synthetic_map.get(&key) {
             // Reuse the existing synthetic atom
-            let existing_id = existing_def.atoms[0];
-            let existing_atom = Atom::Symbol(Symbol::Synthetic(existing_id));
+            let (existing_m, existing_id) = existing_def.atoms[0];
+            let existing_atom = Atom::Symbol(Symbol::Synthetic(existing_m, existing_id));
             let reused_term = Term::new(existing_atom, skolem_term.args().to_vec());
             Ok(reused_term)
         } else {
@@ -1614,7 +1638,7 @@ impl<'a> NormalizationContext<'a> {
         value: &AcornValue,
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
-        synth: &mut Vec<AtomId>,
+        synth: &mut Vec<(ModuleId, AtomId)>,
         context: &mut LocalContext,
     ) -> Result<ExtendedTerm, String> {
         match value {
@@ -1640,7 +1664,7 @@ impl<'a> NormalizationContext<'a> {
         &mut self,
         cnf: Cnf,
         stack: &Vec<TermBinding>,
-        synth: &mut Vec<AtomId>,
+        synth: &mut Vec<(ModuleId, AtomId)>,
         context: &LocalContext,
     ) -> Result<Literal, String> {
         // Create a new synthetic boolean atom with the appropriate function type
@@ -1669,19 +1693,21 @@ impl<'a> NormalizationContext<'a> {
         }
 
         // Add the atom type to the symbol table and declare the synthetic atom
+        let module_id = self.module_id();
         let atom_id = self
             .as_mut()?
-            .declare_synthetic_atom_with_type_term(type_term)?;
+            .declare_synthetic_atom_with_type_term(module_id, type_term)?;
         synth.push(atom_id);
 
         // Get the synthetic type from the symbol table
+        let (m, i) = atom_id;
         let synthetic_type = self
             .kernel_context()
             .symbol_table
-            .get_type(Symbol::Synthetic(atom_id))
+            .get_type(Symbol::Synthetic(m, i))
             .clone();
 
-        let atom = Atom::Symbol(Symbol::Synthetic(atom_id));
+        let atom = Atom::Symbol(Symbol::Synthetic(m, i));
         let synth_term = Term::new(atom, args);
         let synth_lit = Literal::from_signed_term(synth_term.clone(), true);
 
@@ -1719,7 +1745,7 @@ impl<'a> NormalizationContext<'a> {
         &mut self,
         ext_term: ExtendedTerm,
         local_context: &LocalContext,
-        synth: &mut Vec<AtomId>,
+        synth: &mut Vec<(ModuleId, AtomId)>,
     ) -> Result<Term, String> {
         match ext_term {
             ExtendedTerm::Term(t) => Ok(t),
@@ -1835,19 +1861,21 @@ impl<'a> NormalizationContext<'a> {
                 }
 
                 // Add the atom type to the symbol table and declare the synthetic atom
+                let module_id = self.module_id();
                 let atom_id = self
                     .as_mut()?
-                    .declare_synthetic_atom_with_type_term(type_term)?;
+                    .declare_synthetic_atom_with_type_term(module_id, type_term)?;
                 synth.push(atom_id);
 
                 // Get the synthetic type from the symbol table
+                let (m, i) = atom_id;
                 let synthetic_type = self
                     .kernel_context()
                     .symbol_table
-                    .get_type(Symbol::Synthetic(atom_id))
+                    .get_type(Symbol::Synthetic(m, i))
                     .clone();
 
-                let atom = Atom::Symbol(Symbol::Synthetic(atom_id));
+                let atom = Atom::Symbol(Symbol::Synthetic(m, i));
                 let synth_term = Term::new(atom, args);
 
                 // Create defining CNF for the if-expression
@@ -1889,7 +1917,7 @@ impl<'a> NormalizationContext<'a> {
         value: &AcornValue,
         stack: &mut Vec<TermBinding>,
         next_var_id: &mut AtomId,
-        synth: &mut Vec<AtomId>,
+        synth: &mut Vec<(ModuleId, AtomId)>,
         context: &mut LocalContext,
     ) -> Result<ExtendedTerm, String> {
         match value {
@@ -2038,7 +2066,8 @@ impl Normalizer {
 
         // Check for dropped forall variables only when normalizing negated goals.
         let mut skolem_ids = vec![];
-        let mut mut_view = NormalizationContext::new_mut(self, type_var_map.clone());
+        let mut mut_view =
+            NormalizationContext::new_mut(self, type_var_map.clone(), source.module_id);
         let clauses = mut_view.nice_value_to_clauses(&value, &mut skolem_ids)?;
 
         // For any of the created ids that have not been defined yet, the output
@@ -2069,10 +2098,10 @@ impl Normalizer {
             // Get the types for these synthetic atoms from the symbol table.
             let synthetic_types: Vec<Term> = undefined_ids
                 .iter()
-                .map(|id| {
+                .map(|&(m, i)| {
                     self.kernel_context
                         .symbol_table
-                        .get_type(Symbol::Synthetic(*id))
+                        .get_type(Symbol::Synthetic(m, i))
                         .clone()
                 })
                 .collect();
@@ -2363,8 +2392,8 @@ impl Normalizer {
                     .unwrap_or(*i);
                 AcornValue::Variable(new_i, acorn_type)
             }
-            Atom::Symbol(Symbol::Synthetic(i)) => {
-                let symbol = Symbol::Synthetic(*i);
+            Atom::Symbol(Symbol::Synthetic(m, i)) => {
+                let symbol = Symbol::Synthetic(*m, *i);
                 let type_term = self.kernel_context.symbol_table.get_type(symbol);
                 let acorn_type = if let Some(name_map) = type_var_id_to_name {
                     self.kernel_context
@@ -2375,7 +2404,7 @@ impl Normalizer {
                         .type_store
                         .type_term_to_acorn_type(type_term)
                 };
-                let name = ConstantName::Synthetic(*i);
+                let name = ConstantName::Synthetic(*m, *i);
 
                 // In polymorphic mode, check if the type has leading type parameter Pis
                 // (Pi types where the input is TypeSort or a Typeclass)
@@ -2724,11 +2753,14 @@ impl Normalizer {
             .type_term_to_acorn_type_with_context(&type_term, local_context, instantiate_type_vars)
     }
 
-    /// Given a list of atom ids for synthetic atoms that we need to define, find a set
+    /// Given a list of (module_id, atom_id) for synthetic atoms that we need to define, find a set
     /// of SyntheticInfo that covers them.
     /// The output may have synthetic atoms that aren't used in the input.
     /// The input doesn't have to be in order and may contain duplicates.
-    pub fn find_covering_synthetic_info(&self, ids: &[AtomId]) -> Vec<Arc<SyntheticDefinition>> {
+    pub fn find_covering_synthetic_info(
+        &self,
+        ids: &[(ModuleId, AtomId)],
+    ) -> Vec<Arc<SyntheticDefinition>> {
         let mut covered = HashSet::new();
         let mut output = vec![];
         for id in ids {
