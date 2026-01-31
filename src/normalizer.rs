@@ -105,7 +105,7 @@ pub struct Normalizer {
     /// The definition for each synthetic atom, indexed by AtomId.
     synthetic_definitions: HashMap<AtomId, Arc<SyntheticDefinition>>,
 
-    /// Same information as `synthetic_info`, but indexed by SyntheticKey.
+    /// Same information as `synthetic_definitions`, but indexed by SyntheticKey.
     /// This is used to avoid defining the same thing multiple times.
     synthetic_map: HashMap<SyntheticKey, Arc<SyntheticDefinition>>,
 
