@@ -1132,14 +1132,30 @@ impl Project {
         }
 
         // Give this module an id before parsing it, so that we can catch circular imports.
-        let module_id = ModuleId(self.modules.len() as u16);
-        self.modules.push(Module::new(descriptor.clone()));
+        // Prelude always gets ModuleId(0). Other modules get ModuleId(1) and above.
+        let is_prelude = matches!(descriptor, ModuleDescriptor::Name(parts) if parts.len() == 1 && parts[0] == "prelude");
+
+        let module_id = if is_prelude {
+            // Prelude always gets slot 0
+            if self.modules.is_empty() {
+                self.modules.push(Module::new(descriptor.clone()));
+            } else {
+                // Slot 0 was reserved; update it
+                self.modules[0] = Module::new(descriptor.clone());
+            }
+            ModuleId(0)
+        } else {
+            // Non-prelude modules: reserve slot 0 for prelude if not already done
+            if self.modules.is_empty() {
+                self.modules.push(Module::anonymous());
+            }
+            let id = ModuleId(self.modules.len() as u16);
+            self.modules.push(Module::new(descriptor.clone()));
+            id
+        };
         self.module_map.insert(descriptor.clone(), module_id);
 
         let mut env = Environment::new(module_id);
-
-        // Auto-import prelude if it exists and we're not loading prelude itself
-        let is_prelude = matches!(descriptor, ModuleDescriptor::Name(parts) if parts.len() == 1 && parts[0] == "prelude");
         if !is_prelude {
             let prelude_descriptor = ModuleDescriptor::name("prelude");
             // Try to load prelude, but don't fail if it doesn't exist
