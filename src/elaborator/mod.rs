@@ -14,6 +14,7 @@ pub mod potential_value;
 pub mod proposition;
 pub mod source;
 pub mod stack;
+pub mod synthetic;
 pub mod termination_checker;
 pub mod type_unifier;
 pub mod unresolved_constant;

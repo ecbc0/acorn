@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::builder::BuildError;
@@ -11,6 +11,7 @@ use crate::elaborator::names::ConstantName;
 use crate::elaborator::potential_value::PotentialValue;
 use crate::elaborator::proposition::Proposition;
 use crate::elaborator::source::Source;
+use crate::elaborator::synthetic::{SyntheticDefinition, SyntheticRegistry};
 use crate::kernel::atom::{Atom, AtomId, INVALID_SYNTHETIC_MODULE};
 use crate::kernel::clause::Clause;
 use crate::kernel::cnf::Cnf;
@@ -25,90 +26,10 @@ use crate::module::ModuleId;
 use crate::proof_step::{ProofStep, Truthiness};
 use tracing::trace;
 
-/// Information about the definition of a set of synthetic atoms.
-pub struct SyntheticDefinition {
-    /// The synthetic atoms that are defined in this definition.
-    /// Each of these should be present in clauses.
-    pub atoms: Vec<(ModuleId, AtomId)>,
-
-    /// The kinds of the type variables (e.g., Type for unconstrained type params).
-    /// These are "pinned" as x0, x1, ... in all clauses.
-    /// Empty in non-polymorphic mode.
-    pub type_vars: Vec<Term>,
-
-    /// The types of the synthetic atoms (one per atom).
-    /// For polymorphic synthetics, these types may contain FreeVariable references
-    /// to the pinned type parameters.
-    pub synthetic_types: Vec<Term>,
-
-    /// The clauses are true by construction and describe the synthetic atoms.
-    /// Type variables are pinned at x0, x1, ... across all clauses.
-    pub clauses: Vec<Clause>,
-
-    /// The source location where this synthetic definition originated.
-    pub source: Option<Source>,
-}
-
-impl std::fmt::Display for SyntheticDefinition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let type_vars_str: Vec<String> = self.type_vars.iter().map(|t| t.to_string()).collect();
-        let types_str: Vec<String> = self.synthetic_types.iter().map(|t| t.to_string()).collect();
-        let clauses_str: Vec<String> = self.clauses.iter().map(|c| c.to_string()).collect();
-        write!(
-            f,
-            "SyntheticDefinition(atoms: {:?}, type_vars: [{}], types: [{}], clauses: {})",
-            self.atoms,
-            type_vars_str.join(", "),
-            types_str.join(", "),
-            clauses_str.join(" and ")
-        )
-    }
-}
-
-/// The SyntheticKey normalizes out the specific choice of id for the synthetic atoms
-/// in the SyntheticDefinition.
-/// This lets us check if two different synthetic atoms would be "defined the same way".
-///
-/// Note: Uses Vec<Clause> for matching because clauses have been individually normalized
-/// and this is the format used in both definition and lookup paths.
-#[derive(Hash, Eq, PartialEq, Debug, Clone)]
-struct SyntheticKey {
-    /// The kinds of the type variables (e.g., Type for unconstrained type params).
-    /// These are "pinned" as x0, x1, ... in all clauses.
-    type_vars: Vec<Term>,
-
-    /// The types of the synthetic atoms.
-    synthetic_types: Vec<Term>,
-
-    /// Clauses that define the synthetic atoms.
-    /// Here, the synthetic atoms have been remapped to the invalid range,
-    /// and type variables are pinned at x0, x1, ...
-    clauses: Vec<Clause>,
-}
-
-impl std::fmt::Display for SyntheticKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let type_vars_str: Vec<String> = self.type_vars.iter().map(|t| t.to_string()).collect();
-        let types_str: Vec<String> = self.synthetic_types.iter().map(|t| t.to_string()).collect();
-        let clauses_str: Vec<String> = self.clauses.iter().map(|c| c.to_string()).collect();
-        write!(
-            f,
-            "SyntheticKey(type_vars: [{}], types: [{}], clauses: {})",
-            type_vars_str.join(", "),
-            types_str.join(", "),
-            clauses_str.join(" and ")
-        )
-    }
-}
-
 #[derive(Clone)]
 pub struct Normalizer {
-    /// The definition for each synthetic atom, indexed by (ModuleId, AtomId).
-    synthetic_definitions: HashMap<(ModuleId, AtomId), Arc<SyntheticDefinition>>,
-
-    /// Same information as `synthetic_definitions`, but indexed by SyntheticKey.
-    /// This is used to avoid defining the same thing multiple times.
-    synthetic_map: HashMap<SyntheticKey, Arc<SyntheticDefinition>>,
+    /// Registry for synthetic atom definitions.
+    synthetic_registry: SyntheticRegistry,
 
     /// The kernel context containing TypeStore and SymbolTable.
     kernel_context: KernelContext,
@@ -117,8 +38,7 @@ pub struct Normalizer {
 impl Normalizer {
     pub fn new() -> Normalizer {
         Normalizer {
-            synthetic_definitions: HashMap::new(),
-            synthetic_map: HashMap::new(),
+            synthetic_registry: SyntheticRegistry::new(),
             kernel_context: KernelContext::new(),
         }
     }
@@ -134,7 +54,7 @@ impl Normalizer {
     /// Returns all synthetic atom IDs that have been defined.
     #[cfg(test)]
     pub fn get_synthetic_ids(&self) -> Vec<(ModuleId, AtomId)> {
-        self.synthetic_definitions.keys().copied().collect()
+        self.synthetic_registry.get_ids()
     }
 
     pub fn kernel_context(&self) -> &KernelContext {
@@ -218,13 +138,9 @@ impl Normalizer {
             .iter()
             .map(|c| c.instantiate_invalid_synthetics_with_skip(num_definitions, num_type_vars))
             .collect();
-        let key = SyntheticKey {
-            type_vars: type_var_kinds.clone(),
-            synthetic_types,
-            clauses,
-        };
 
-        self.synthetic_map.get(&key)
+        self.synthetic_registry
+            .lookup_by_key(&type_var_kinds, &synthetic_types, &clauses)
     }
 
     /// Declare a synthetic atom with a type already in Term form.
@@ -258,13 +174,6 @@ impl Normalizer {
         clauses: Vec<Clause>,
         source: Option<Source>,
     ) -> Result<(), String> {
-        // Check if any atoms are already defined
-        for atom in &atoms {
-            if self.synthetic_definitions.contains_key(atom) {
-                return Err(format!("synthetic atom {:?} is already defined", atom));
-            }
-        }
-
         for (i, atom) in atoms.iter().enumerate() {
             trace!(
                 atom_id = ?atom,
@@ -284,24 +193,15 @@ impl Normalizer {
             .iter()
             .map(|c| c.invalidate_synthetics_with_pinned(&atoms, num_type_vars))
             .collect();
-        let key = SyntheticKey {
-            type_vars: type_vars.clone(),
-            synthetic_types: synthetic_types.clone(),
-            clauses: key_clauses,
-        };
 
-        let info = Arc::new(SyntheticDefinition {
-            atoms: atoms.clone(),
+        self.synthetic_registry.define(
+            atoms,
             type_vars,
             synthetic_types,
             clauses,
+            key_clauses,
             source,
-        });
-        for atom in &atoms {
-            self.synthetic_definitions.insert(*atom, info.clone());
-        }
-        self.synthetic_map.insert(key, info);
-        Ok(())
+        )
     }
 
     pub fn add_scoped_constant(
@@ -1603,13 +1503,13 @@ impl<'a> NormalizationContext<'a> {
             .iter()
             .map(|c| c.invalidate_synthetics(&[skolem_id]))
             .collect();
-        let key = SyntheticKey {
-            type_vars: type_vars.clone(),
-            synthetic_types: vec![synthetic_type.clone()],
-            clauses: key_clauses,
-        };
+        let synthetic_types = vec![synthetic_type.clone()];
 
-        if let Some(existing_def) = self.as_ref().synthetic_map.get(&key) {
+        if let Some(existing_def) = self.as_ref().synthetic_registry.lookup_by_key(
+            &type_vars,
+            &synthetic_types,
+            &key_clauses,
+        ) {
             // Reuse the existing synthetic atom
             let (existing_m, existing_id) = existing_def.atoms[0];
             let existing_atom = Atom::Symbol(Symbol::Synthetic(existing_m, existing_id));
@@ -2075,7 +1975,7 @@ impl Normalizer {
         let mut output = vec![];
         let mut undefined_ids = vec![];
         for id in skolem_ids {
-            if let Some(def) = self.synthetic_definitions.get(&id) {
+            if let Some(def) = self.synthetic_registry.get(&id) {
                 for clause in &def.clauses {
                     output.push(clause.clone());
                 }
@@ -2761,19 +2661,7 @@ impl Normalizer {
         &self,
         ids: &[(ModuleId, AtomId)],
     ) -> Vec<Arc<SyntheticDefinition>> {
-        let mut covered = HashSet::new();
-        let mut output = vec![];
-        for id in ids {
-            if covered.contains(id) {
-                continue;
-            }
-            let info = self.synthetic_definitions[id].clone();
-            for synthetic_id in &info.atoms {
-                covered.insert(*synthetic_id);
-            }
-            output.push(info);
-        }
-        output
+        self.synthetic_registry.find_covering_info(ids)
     }
 
     pub fn atom_str(&self, atom: &Atom) -> String {
