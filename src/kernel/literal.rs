@@ -230,21 +230,20 @@ impl Literal {
         self.right.extended_kbo_cmp(&other.right)
     }
 
-    /// Stable KBO comparison - treats all free variables as equivalent.
-    /// Alpha-equivalent literals compare as Equal.
+    /// Comparison that is stable under variable renaming (alpha-equivalence).
+    /// Two literals that differ only in variable naming will compare as Equal.
     /// Includes sign in comparison.
-    pub fn stable_kbo_cmp(&self, other: &Literal) -> Ordering {
-        // Compare by sign first (positive > negative for consistency)
+    pub fn stable_cmp(&self, other: &Literal) -> Ordering {
         let positive_cmp = self.positive.cmp(&other.positive);
         if positive_cmp != Ordering::Equal {
             return positive_cmp;
         }
 
-        let left_cmp = self.left.stable_kbo_cmp(&other.left);
+        let left_cmp = self.left.stable_cmp(&other.left);
         if left_cmp != Ordering::Equal {
             return left_cmp;
         }
-        self.right.stable_kbo_cmp(&other.right)
+        self.right.stable_cmp(&other.right)
     }
 
     /// Returns (right, left, output_context) with normalized var ids.

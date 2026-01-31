@@ -430,7 +430,7 @@ impl Clause {
         // Phase 1: Sort using stable comparison that treats all free variables as equivalent.
         // This ensures alpha-equivalent clauses get the same initial ordering.
         let mut literals = self.literals.clone();
-        literals.sort_by(|a, b| a.stable_kbo_cmp(b));
+        literals.sort_by(|a, b| a.stable_cmp(b));
 
         // Phase 2: Renumber variables based on order of first appearance.
         // Pre-populate with pinned variable IDs (0, 1, ..., pinned-1)

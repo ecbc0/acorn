@@ -715,11 +715,11 @@ impl<'a> TermRef<'a> {
         self.total_tiebreak(other)
     }
 
-    /// Stable KBO comparison - treats all free variables as equivalent.
-    /// Alpha-equivalent terms compare as Equal.
-    /// This is useful for canonicalization where we want the result to be
-    /// independent of initial variable naming.
-    pub fn stable_kbo_cmp(&self, other: &TermRef) -> std::cmp::Ordering {
+    /// Comparison that is stable under variable renaming (alpha-equivalence).
+    /// Two terms that differ only in variable naming will compare as Equal.
+    /// Uses KBO with partial_tiebreak internally, but stops before total_tiebreak
+    /// which would distinguish between specific variable IDs.
+    pub fn stable_cmp(&self, other: &TermRef) -> std::cmp::Ordering {
         use std::cmp::Ordering;
 
         let kbo_cmp = self.kbo_helper(other, false);
@@ -727,7 +727,6 @@ impl<'a> TermRef<'a> {
             return kbo_cmp;
         }
 
-        // Use only partial_tiebreak, which treats all free variables as equal
         self.partial_tiebreak(other)
     }
 
@@ -1885,10 +1884,10 @@ impl Term {
         self.as_ref().extended_kbo_cmp(&other.as_ref())
     }
 
-    /// Stable KBO comparison - treats all free variables as equivalent.
-    /// Alpha-equivalent terms compare as Equal.
-    pub fn stable_kbo_cmp(&self, other: &Term) -> std::cmp::Ordering {
-        self.as_ref().stable_kbo_cmp(&other.as_ref())
+    /// Comparison that is stable under variable renaming (alpha-equivalence).
+    /// Two terms that differ only in variable naming will compare as Equal.
+    pub fn stable_cmp(&self, other: &Term) -> std::cmp::Ordering {
+        self.as_ref().stable_cmp(&other.as_ref())
     }
 
     /// Get the subterm at the given path.
