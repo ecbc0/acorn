@@ -29,8 +29,8 @@ impl KernelContext {
             Atom::Symbol(Symbol::Empty) => "Empty".to_string(),
             Atom::Symbol(Symbol::Bool) => "Bool".to_string(),
             Atom::Symbol(Symbol::Type0) => "Type".to_string(),
-            Atom::Symbol(Symbol::GlobalConstant(i)) => {
-                self.symbol_table.name_for_global_id(*i).to_string()
+            Atom::Symbol(Symbol::GlobalConstant(m, i)) => {
+                self.symbol_table.name_for_global_id(*m, *i).to_string()
             }
             Atom::Symbol(Symbol::ScopedConstant(i)) => {
                 self.symbol_table.name_for_local_id(*i).to_string()
@@ -38,7 +38,9 @@ impl KernelContext {
             Atom::FreeVariable(i) => format!("x{}", i),
             Atom::BoundVariable(i) => format!("b{}", i),
             Atom::Symbol(Symbol::Synthetic(i)) => format!("s{}", i),
-            Atom::Symbol(Symbol::Type(t)) => format!("T{}", t.as_u16()),
+            Atom::Symbol(Symbol::Type(t)) => {
+                format!("T{}_{}", t.module_id().get(), t.local_id())
+            }
             Atom::Symbol(Symbol::Typeclass(tc)) => {
                 let typeclass = self.type_store.get_typeclass(*tc);
                 typeclass.name.clone()
@@ -986,6 +988,7 @@ impl Default for KernelContext {
 mod tests {
     use super::*;
     use crate::kernel::symbol::Symbol;
+    use crate::module::ModuleId;
 
     #[test]
     fn test_test_with_constants_works() {
@@ -996,9 +999,9 @@ mod tests {
             let type_term = ctx.symbol_table.get_type(symbol);
             assert_eq!(*type_term, Term::empty_type());
         }
-        // Verify we can look up the types for global constants g0-g9
+        // Verify we can look up the types for global constants g0_0-g0_9
         for i in 0..10 {
-            let symbol = Symbol::GlobalConstant(i);
+            let symbol = Symbol::GlobalConstant(ModuleId(0), i);
             let type_term = ctx.symbol_table.get_type(symbol);
             assert_eq!(*type_term, Term::empty_type());
         }

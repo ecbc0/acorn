@@ -2299,11 +2299,11 @@ impl Normalizer {
         match atom {
             Atom::Symbol(Symbol::True) => AcornValue::Bool(true),
             Atom::Symbol(Symbol::False) => AcornValue::Bool(false),
-            Atom::Symbol(Symbol::GlobalConstant(i)) => {
+            Atom::Symbol(Symbol::GlobalConstant(m, i)) => {
                 let name = self
                     .kernel_context
                     .symbol_table
-                    .name_for_global_id(*i)
+                    .name_for_global_id(*m, *i)
                     .clone();
                 // Look up stored polymorphic info
                 if let Some(poly_info) =

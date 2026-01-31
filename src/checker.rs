@@ -800,6 +800,7 @@ impl TestChecker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::module::ModuleId;
 
     #[test]
     fn test_checker_should_be_monovariant() {
@@ -925,7 +926,7 @@ mod tests {
                 Literal::new(
                     true,
                     Term::new(
-                        Atom::Symbol(Symbol::GlobalConstant(4)),
+                        Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 4)),
                         vec![foo_term.clone()],
                     ),
                     Term::new_true(),
@@ -933,11 +934,11 @@ mod tests {
                 Literal::new(
                     true,
                     Term::new(
-                        Atom::Symbol(Symbol::GlobalConstant(3)),
+                        Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 3)),
                         vec![foo_term.clone()],
                     ),
                     Term::new(
-                        Atom::Symbol(Symbol::GlobalConstant(2)),
+                        Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 2)),
                         vec![foo_term.clone()],
                     ),
                 ),

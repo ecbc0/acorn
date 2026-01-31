@@ -728,6 +728,7 @@ impl fmt::Display for Unifier<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::module::ModuleId;
     use std::sync::LazyLock;
 
     fn bool_fn(head: Atom, args: Vec<Term>) -> Term {
@@ -766,7 +767,7 @@ mod tests {
         let bool1 = Term::atom(Atom::FreeVariable(1));
         let bool2 = Term::atom(Atom::FreeVariable(2));
         let fterm = bool_fn(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![bool0.clone(), bool1.clone()],
         );
         let mut u = test_unifier_bool(&ctx);
@@ -775,7 +776,7 @@ mod tests {
         assert!(u.unify_variable(Scope::LEFT, 0, Scope::OUTPUT, &bool1));
         assert!(u.unify_variable(Scope::LEFT, 1, Scope::OUTPUT, &bool2));
         let term = u.apply(Scope::LEFT, &fterm);
-        assert_eq!(format!("{}", term), "g0(x1, x2)");
+        assert_eq!(format!("{}", term), "g0_0(x1, x2)");
     }
 
     #[test]
@@ -785,20 +786,20 @@ mod tests {
         let bool1 = Term::atom(Atom::FreeVariable(1));
         let bool2 = Term::atom(Atom::FreeVariable(2));
         let term1 = bool_fn(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![bool0.clone(), bool1.clone()],
         );
         let term2 = bool_fn(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![bool1.clone(), bool2.clone()],
         );
         let mut u = test_unifier_bool(&ctx);
 
         u.assert_unify(Scope::LEFT, &term1, Scope::LEFT, &term2);
         let new1 = u.apply(Scope::LEFT, &term1);
-        assert_eq!(format!("{}", new1), "g0(x0, x0)");
+        assert_eq!(format!("{}", new1), "g0_0(x0, x0)");
         let new2 = u.apply(Scope::LEFT, &term2);
-        assert_eq!(format!("{}", new2), "g0(x0, x0)");
+        assert_eq!(format!("{}", new2), "g0_0(x0, x0)");
     }
 
     #[test]
@@ -808,20 +809,20 @@ mod tests {
         let bool1 = Term::atom(Atom::FreeVariable(1));
         let bool2 = Term::atom(Atom::FreeVariable(2));
         let term1 = bool_fn(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![bool0.clone(), bool1.clone()],
         );
         let term2 = bool_fn(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![bool1.clone(), bool2.clone()],
         );
         let mut u = test_unifier_bool(&ctx);
 
         u.assert_unify(Scope::LEFT, &term1, Scope::RIGHT, &term2);
         let new1 = u.apply(Scope::LEFT, &term1);
-        assert_eq!(format!("{}", new1), "g0(x0, x1)");
+        assert_eq!(format!("{}", new1), "g0_0(x0, x1)");
         let new2 = u.apply(Scope::RIGHT, &term2);
-        assert_eq!(format!("{}", new2), "g0(x0, x1)");
+        assert_eq!(format!("{}", new2), "g0_0(x0, x1)");
     }
 
     #[test]
@@ -830,11 +831,14 @@ mod tests {
         // Variable(1) should unify with GlobalConstant(3), both with type Empty -> Bool.
         let ctx = test_ctx();
         // g3 has type Empty -> Bool
-        let empty_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(3)).clone();
+        let empty_to_bool = ctx
+            .symbol_table
+            .get_type(Symbol::GlobalConstant(ModuleId(0), 3))
+            .clone();
 
         let empty0 = Term::atom(Atom::FreeVariable(0));
         let const_f_term = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(3)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 3)),
             vec![empty0.clone()],
         );
         let var_f_term = Term::new(Atom::FreeVariable(1), vec![empty0.clone()]);
@@ -900,7 +904,10 @@ mod tests {
     #[test]
     fn test_nested_functional_superpose() {
         let ctx = test_ctx();
-        let bool_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(1)).clone(); // g1: Bool -> Bool
+        let bool_to_bool = ctx
+            .symbol_table
+            .get_type(Symbol::GlobalConstant(ModuleId(0), 1))
+            .clone(); // g1: Bool -> Bool
 
         // Create local context where x0 has type Bool -> Bool, x1 has type Bool
         let lctx = LocalContext::from_types(vec![bool_to_bool.clone(), Term::bool_type()]);
@@ -912,7 +919,10 @@ mod tests {
         let s = Term::new(Atom::FreeVariable(0), vec![x0_x1.clone()]);
 
         // u_subterm = g1(x0(x1))
-        let u_subterm = Term::new(Atom::Symbol(Symbol::GlobalConstant(1)), vec![x0_x1.clone()]);
+        let u_subterm = Term::new(
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 1)),
+            vec![x0_x1.clone()],
+        );
 
         // Test that s = x0(x0(x1)) unifies with u_subterm = g1(x0(x1))
         // This should succeed with x0 mapping to g1
@@ -932,7 +942,11 @@ mod tests {
         // Check that x0 in LEFT maps to g1
         let x0_mapping = u.get_mapping(Scope::LEFT, 0);
         assert!(x0_mapping.is_some(), "x0 should have a mapping");
-        assert_eq!(x0_mapping.unwrap().to_string(), "g1", "x0 should map to g1");
+        assert_eq!(
+            x0_mapping.unwrap().to_string(),
+            "g0_1",
+            "x0 should map to g1"
+        );
     }
 
     // Tests higher-order partial application unification.
@@ -951,7 +965,10 @@ mod tests {
         // where x0 should map to g0(c5) (a partial application)
 
         let ctx = test_ctx();
-        let bool_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(1)).clone(); // g1: Bool -> Bool
+        let bool_to_bool = ctx
+            .symbol_table
+            .get_type(Symbol::GlobalConstant(ModuleId(0), 1))
+            .clone(); // g1: Bool -> Bool
 
         // c5, c6 are Bool constants
         let c5 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(5)));
@@ -964,7 +981,7 @@ mod tests {
         // Right side: g0(c5, c6) : Bool
         // This is the full application
         let right_term = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![c5.clone(), c6.clone()],
         );
 
@@ -986,7 +1003,7 @@ mod tests {
             let x0_mapping = u.get_mapping(Scope::LEFT, 0);
             assert!(x0_mapping.is_some(), "x0 should have a mapping");
             let mapping_str = x0_mapping.unwrap().to_string();
-            assert_eq!(mapping_str, "g0(c5)", "x0 should map to g0(c5)");
+            assert_eq!(mapping_str, "g0_0(c5)", "x0 should map to g0(c5)");
         }
     }
 
@@ -996,7 +1013,10 @@ mod tests {
     #[test]
     fn test_original_superpose() {
         let ctx = test_ctx();
-        let bool_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(1)).clone(); // g1: Bool -> Bool
+        let bool_to_bool = ctx
+            .symbol_table
+            .get_type(Symbol::GlobalConstant(ModuleId(0), 1))
+            .clone(); // g1: Bool -> Bool
 
         // Create local context where x0 has type Bool -> Bool, x1 has type Bool
         let lctx = LocalContext::from_types(vec![bool_to_bool.clone(), Term::bool_type()]);
@@ -1009,7 +1029,10 @@ mod tests {
         let s = Term::new(Atom::FreeVariable(0), vec![x0_x1.clone()]);
 
         // u_subterm = g1(x0(x1))
-        let u_subterm = Term::new(Atom::Symbol(Symbol::GlobalConstant(1)), vec![x0_x1.clone()]);
+        let u_subterm = Term::new(
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 1)),
+            vec![x0_x1.clone()],
+        );
 
         // Test that s = x0(x0(x1)) unifies with u_subterm = g1(x0(x1))
         let mut u = Unifier::new(3, &ctx);
@@ -1050,26 +1073,29 @@ mod tests {
         let x2 = Term::atom(Atom::FreeVariable(2));
 
         // c1(x2) -> g1(x2)
-        let g1_x2 = Term::new(Atom::Symbol(Symbol::GlobalConstant(1)), vec![x2.clone()]);
+        let g1_x2 = Term::new(
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 1)),
+            vec![x2.clone()],
+        );
         // c0(x1, c1(x2)) -> g0(x1, g1(x2))
         let inner = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![x1.clone(), g1_x2],
         );
         // c0(x0, c0(x1, c1(x2))) -> g0(x0, g0(x1, g1(x2)))
         let left_term = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![x0.clone(), inner],
         );
 
         // c0(x2, x1) -> g0(x2, x1)
         let g0_x2_x1 = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![x2.clone(), x1.clone()],
         );
         // c0(c0(x2, x1), x0) -> g0(g0(x2, x1), x0)
         let right_term = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![g0_x2_x1, x0.clone()],
         );
 
@@ -1088,26 +1114,29 @@ mod tests {
         let x2 = Term::atom(Atom::FreeVariable(2));
 
         // c1(x1) -> g1(x1)
-        let g1_x1 = Term::new(Atom::Symbol(Symbol::GlobalConstant(1)), vec![x1.clone()]);
+        let g1_x1 = Term::new(
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 1)),
+            vec![x1.clone()],
+        );
         // c0(x0, c1(x1)) -> g0(x0, g1(x1))
         let inner_left = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![x0.clone(), g1_x1],
         );
         // c0(c0(x0, c1(x1)), x2) -> g0(g0(x0, g1(x1)), x2)
         let left_term = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![inner_left, x2.clone()],
         );
 
         // c0(x1, x0) -> g0(x1, x0)
         let inner_right = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![x1.clone(), x0.clone()],
         );
         // c0(x2, c0(x1, x0)) -> g0(x2, g0(x1, x0))
         let right_term = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![x2.clone(), inner_right],
         );
 
@@ -1129,7 +1158,7 @@ mod tests {
 
         // Left: g0(x0, x0)
         let left_term = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![x0.clone(), x0.clone()],
         );
 
@@ -1137,19 +1166,19 @@ mod tests {
         // Original was g2(g2(g1(c0, x0), x0), g2(x1, x1)) which uses g1 with 2 args
         // Let's simplify: g0(g0(g0(c5, x0), x0), g0(x1, x1))
         let g0_c5_x0 = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![c5.clone(), x0.clone()],
         );
         let g0_inner_x0 = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![g0_c5_x0, x0.clone()],
         );
         let g0_x1_x1 = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![x1.clone(), x1.clone()],
         );
         let right_term = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![g0_inner_x0, g0_x1_x1],
         );
 
@@ -1320,7 +1349,7 @@ mod tests {
         let x1 = Term::atom(Atom::FreeVariable(1));
         let s4 = Term::atom(Atom::Symbol(Symbol::Synthetic(4))); // BOOL type
         let g2_term = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(2)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 2)),
             vec![x0.clone(), x1.clone(), s4.clone()],
         );
 
@@ -1339,11 +1368,11 @@ mod tests {
         // Unify g0(x0, x1) with g0(c5, x0)
         let c5 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(5)));
         let g0_x0_x1 = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![x0.clone(), x1.clone()],
         );
         let g0_c5_x0 = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![c5.clone(), x0.clone()],
         );
         assert!(unifier.unify(scope2, &g0_x0_x1, scope3, &g0_c5_x0));
@@ -1351,11 +1380,11 @@ mod tests {
         // Unify g0(x2, x1) with g0(s4, x0)
         let x2 = Term::atom(Atom::FreeVariable(2));
         let g0_x2_x1 = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![x2.clone(), x1.clone()],
         );
         let g0_s4_x0 = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![s4.clone(), x0.clone()],
         );
         assert!(unifier.unify(scope2, &g0_x2_x1, scope1, &g0_s4_x0));
@@ -1912,7 +1941,10 @@ mod tests {
 
         // getType(c0) is a value-level expression that returns Type
         let c0 = Term::atom(Atom::Symbol(Symbol::ScopedConstant(0)));
-        let get_type_c0 = Term::new(Atom::Symbol(Symbol::GlobalConstant(0)), vec![c0.clone()]);
+        let get_type_c0 = Term::new(
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
+            vec![c0.clone()],
+        );
 
         // x0 is a type variable (x0: TypeSort)
         let lctx = LocalContext::from_types(vec![type_sort.clone()]);
@@ -2086,7 +2118,10 @@ mod tests {
         // remap it to a term of type Bool. This should FAIL because the types
         // are incompatible.
         let ctx = test_ctx();
-        let bool_to_bool = ctx.symbol_table.get_type(Symbol::GlobalConstant(1)).clone(); // g1: Bool -> Bool
+        let bool_to_bool = ctx
+            .symbol_table
+            .get_type(Symbol::GlobalConstant(ModuleId(0), 1))
+            .clone(); // g1: Bool -> Bool
 
         let mut u = Unifier::new(3, &ctx);
         // Set up LEFT context: x0: Bool -> Bool

@@ -1,5 +1,7 @@
 use std::{fmt, path::PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use crate::elaborator::environment::Environment;
 use crate::elaborator::error;
 
@@ -7,7 +9,9 @@ use crate::elaborator::error;
 // You could have two different types both named "MyStruct" but defined in different places.
 // Each name is uniquely identified not just by its string name, but also by the module it's defined in.
 // When you look at the AcornType object, they should have each have a different ModuleId.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Default,
+)]
 pub struct ModuleId(pub u16);
 
 impl ModuleId {

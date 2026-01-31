@@ -165,9 +165,10 @@ impl LocalContext {
 mod tests {
     use super::*;
     use crate::kernel::types::GroundTypeId;
+    use crate::module::ModuleId;
 
     fn ground(id: u16) -> Term {
-        Term::ground_type(GroundTypeId::new(id))
+        Term::ground_type(GroundTypeId::test(id))
     }
 
     #[test]
@@ -363,7 +364,7 @@ mod tests {
         use crate::kernel::types::TypeclassId;
 
         // Create a context with a typeclass-constrained type variable
-        let monoid_id = TypeclassId::new(0);
+        let monoid_id = TypeclassId::test(0);
         let typeclass_type = Term::typeclass(monoid_id);
         let ctx = LocalContext::from_types(vec![typeclass_type, Term::bool_type()]);
 
@@ -393,7 +394,10 @@ mod tests {
 
         // Create a term that just contains x0: f(x0)
         let mut term = Term::new(
-            Atom::Symbol(crate::kernel::symbol::Symbol::GlobalConstant(0)),
+            Atom::Symbol(crate::kernel::symbol::Symbol::GlobalConstant(
+                ModuleId(0),
+                0,
+            )),
             vec![Term::atom(Atom::FreeVariable(0))],
         );
 
@@ -405,7 +409,7 @@ mod tests {
         assert_eq!(var_ids, vec![1, 0]);
 
         // The term should now reference x1 (the new position of original x0)
-        assert_eq!(term.to_string(), "g0(x1)");
+        assert_eq!(term.to_string(), "g0_0(x1)");
 
         // Remap the context
         let new_ctx = ctx.remap(&var_ids);

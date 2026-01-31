@@ -6,18 +6,20 @@ use crate::kernel::local_context::LocalContext;
 use crate::kernel::symbol::Symbol;
 use crate::kernel::term::Term;
 use crate::kernel::types::{GroundTypeId, TypeclassId};
+use crate::module::ModuleId;
 
 /// Manages ground type registration and typeclass relationships.
 #[derive(Clone)]
 pub struct TypeStore {
-    /// ground_id_to_type[ground_id] is the AcornType for that ground type.
+    /// ground_id_to_type[module_id][local_id] is the AcornType for that ground type.
     /// Only ground types are stored here.
-    ground_id_to_type: Vec<AcornType>,
+    /// Uses Vec<Vec<...>> for fast indexing by module_id.
+    ground_id_to_type: Vec<Vec<AcornType>>,
 
-    /// ground_id_to_arity[ground_id] is the number of type parameters for that type.
+    /// ground_id_to_arity[module_id][local_id] is the number of type parameters for that type.
     /// For proper types like Bool, arity is 0.
     /// For type constructors like List, arity is 1.
-    ground_id_to_arity: Vec<u8>,
+    ground_id_to_arity: Vec<Vec<u8>>,
 
     /// Maps Datatype (bare data type with no params) to its GroundTypeId.
     datatype_to_ground_id: HashMap<Datatype, GroundTypeId>,
@@ -28,15 +30,16 @@ pub struct TypeStore {
     /// typeclass_to_id[typeclass] is the TypeclassId
     typeclass_to_id: HashMap<Typeclass, TypeclassId>,
 
-    /// id_to_typeclass[typeclass_id] is the Typeclass
-    id_to_typeclass: Vec<Typeclass>,
+    /// id_to_typeclass[module_id][local_id] is the Typeclass
+    /// Uses Vec<Vec<...>> for fast indexing by module_id.
+    id_to_typeclass: Vec<Vec<Typeclass>>,
 
-    /// typeclass_extends[typeclass_id] is the set of TypeclassIds that this typeclass extends.
+    /// typeclass_extends[module_id][local_id] is the set of TypeclassIds that this typeclass extends.
     /// This is the transitive closure, so if A extends B and B extends C, then A's set contains both B and C.
-    typeclass_extends: Vec<HashSet<TypeclassId>>,
+    typeclass_extends: Vec<Vec<HashSet<TypeclassId>>>,
 
-    /// typeclass_instances[typeclass_id] is the set of GroundTypeIds that are instances of this typeclass.
-    typeclass_instances: Vec<HashSet<GroundTypeId>>,
+    /// typeclass_instances[module_id][local_id] is the set of GroundTypeIds that are instances of this typeclass.
+    typeclass_instances: Vec<Vec<HashSet<GroundTypeId>>>,
 }
 
 impl TypeStore {
@@ -44,14 +47,39 @@ impl TypeStore {
         // Empty, Bool, and TypeSort are now Symbol variants, not GroundTypeIds.
         // No pre-registration needed.
         TypeStore {
-            ground_id_to_type: vec![],
-            ground_id_to_arity: vec![],
+            ground_id_to_type: Vec::new(),
+            ground_id_to_arity: Vec::new(),
             datatype_to_ground_id: HashMap::new(),
             arbitrary_to_ground_id: HashMap::new(),
             typeclass_to_id: HashMap::new(),
-            id_to_typeclass: vec![],
-            typeclass_extends: vec![],
-            typeclass_instances: vec![],
+            id_to_typeclass: Vec::new(),
+            typeclass_extends: Vec::new(),
+            typeclass_instances: Vec::new(),
+        }
+    }
+
+    /// Ensures the Vec has an entry for the given module_id, extending with empty Vecs if needed.
+    fn ensure_ground_module(&mut self, module_id: ModuleId) {
+        let idx = module_id.get() as usize;
+        while self.ground_id_to_type.len() <= idx {
+            self.ground_id_to_type.push(Vec::new());
+        }
+        while self.ground_id_to_arity.len() <= idx {
+            self.ground_id_to_arity.push(Vec::new());
+        }
+    }
+
+    /// Ensures the Vec has an entry for the given module_id for typeclass storage.
+    fn ensure_typeclass_module(&mut self, module_id: ModuleId) {
+        let idx = module_id.get() as usize;
+        while self.id_to_typeclass.len() <= idx {
+            self.id_to_typeclass.push(Vec::new());
+        }
+        while self.typeclass_extends.len() <= idx {
+            self.typeclass_extends.push(Vec::new());
+        }
+        while self.typeclass_instances.len() <= idx {
+            self.typeclass_instances.push(Vec::new());
         }
     }
 
@@ -75,9 +103,12 @@ impl TypeStore {
                 if self.datatype_to_ground_id.contains_key(datatype) {
                     return; // Already registered
                 }
-                let ground_id = self.next_ground_id();
-                self.ground_id_to_type.push(acorn_type.clone());
-                self.ground_id_to_arity.push(0); // Default arity 0, will be updated by set_datatype_arity
+                let module_id = datatype.module_id;
+                let ground_id = self.next_ground_id(module_id);
+                self.ensure_ground_module(module_id);
+                let idx = module_id.get() as usize;
+                self.ground_id_to_type[idx].push(acorn_type.clone());
+                self.ground_id_to_arity[idx].push(0); // Default arity 0, will be updated by set_datatype_arity
                 self.datatype_to_ground_id
                     .insert(datatype.clone(), ground_id);
             }
@@ -90,9 +121,13 @@ impl TypeStore {
                 // This handles cases where we first see List (arity 0) then List[Int] (arity 1)
                 let arity = params.len() as u8;
                 if let Some(ground_id) = self.datatype_to_ground_id.get(datatype) {
-                    let idx = ground_id.as_u16() as usize;
-                    if idx < self.ground_id_to_arity.len() && self.ground_id_to_arity[idx] < arity {
-                        self.ground_id_to_arity[idx] = arity;
+                    let module_id = ground_id.module_id();
+                    let local_idx = ground_id.local_id() as usize;
+                    let mod_idx = module_id.get() as usize;
+                    if let Some(arities) = self.ground_id_to_arity.get_mut(mod_idx) {
+                        if local_idx < arities.len() && arities[local_idx] < arity {
+                            arities[local_idx] = arity;
+                        }
                     }
                 }
                 for param in params {
@@ -109,13 +144,17 @@ impl TypeStore {
             }
 
             // Arbitrary type: assign a new GroundTypeId
+            // Use module 0 for arbitrary types since they don't have a home module
             AcornType::Arbitrary(type_param) => {
                 if self.arbitrary_to_ground_id.contains_key(type_param) {
                     return; // Already registered
                 }
-                let ground_id = self.next_ground_id();
-                self.ground_id_to_type.push(acorn_type.clone());
-                self.ground_id_to_arity.push(0); // Arbitrary types have arity 0
+                let module_id = ModuleId(0);
+                let ground_id = self.next_ground_id(module_id);
+                self.ensure_ground_module(module_id);
+                let idx = module_id.get() as usize;
+                self.ground_id_to_type[idx].push(acorn_type.clone());
+                self.ground_id_to_arity[idx].push(0); // Arbitrary types have arity 0
                 self.arbitrary_to_ground_id
                     .insert(type_param.clone(), ground_id);
             }
@@ -130,9 +169,15 @@ impl TypeStore {
         }
     }
 
-    /// Allocate the next GroundTypeId.
-    fn next_ground_id(&self) -> GroundTypeId {
-        GroundTypeId::new(self.ground_id_to_type.len() as u16)
+    /// Allocate the next GroundTypeId for a given module.
+    fn next_ground_id(&self, module_id: ModuleId) -> GroundTypeId {
+        let idx = module_id.get() as usize;
+        let local_id = self
+            .ground_id_to_type
+            .get(idx)
+            .map(|v| v.len())
+            .unwrap_or(0) as u16;
+        GroundTypeId::new(module_id, local_id)
     }
 
     /// Get the GroundTypeId for a bare Datatype (no type parameters).
@@ -145,17 +190,23 @@ impl TypeStore {
     /// This should be called after the datatype is registered and its arity is known.
     pub fn set_datatype_arity(&mut self, datatype: &Datatype, arity: u8) {
         if let Some(ground_id) = self.datatype_to_ground_id.get(datatype) {
-            let idx = ground_id.as_u16() as usize;
-            if idx < self.ground_id_to_arity.len() {
-                self.ground_id_to_arity[idx] = arity;
+            let module_id = ground_id.module_id();
+            let local_idx = ground_id.local_id() as usize;
+            let mod_idx = module_id.get() as usize;
+            if let Some(arities) = self.ground_id_to_arity.get_mut(mod_idx) {
+                if local_idx < arities.len() {
+                    arities[local_idx] = arity;
+                }
             }
         }
     }
 
     /// Get the arity (number of type parameters) for a ground type.
     pub fn get_arity(&self, ground_id: GroundTypeId) -> u8 {
+        let mod_idx = ground_id.module_id().get() as usize;
         self.ground_id_to_arity
-            .get(ground_id.as_u16() as usize)
+            .get(mod_idx)
+            .and_then(|v| v.get(ground_id.local_id() as usize))
             .copied()
             .unwrap_or(0)
     }
@@ -447,7 +498,8 @@ impl TypeStore {
         // Check for user-defined ground type
         if let Some(ground_id) = type_term.as_ref().as_type_atom() {
             // Ground type - look up in ground_id_to_type
-            return self.ground_id_to_type[ground_id.as_u16() as usize].clone();
+            let mod_idx = ground_id.module_id().get() as usize;
+            return self.ground_id_to_type[mod_idx][ground_id.local_id() as usize].clone();
         }
 
         // Check for Pi type
@@ -597,7 +649,12 @@ impl TypeStore {
         if type_term.as_ref().is_atomic() {
             if let Atom::Symbol(Symbol::Typeclass(tc_id)) = type_term.as_ref().get_head_atom() {
                 // Convert back to a Typeclass. We need to look up the name.
-                if let Some(typeclass) = self.id_to_typeclass.get(tc_id.as_u16() as usize) {
+                let mod_idx = tc_id.module_id().get() as usize;
+                if let Some(typeclass) = self
+                    .id_to_typeclass
+                    .get(mod_idx)
+                    .and_then(|v| v.get(tc_id.local_id() as usize))
+                {
                     // Return as a TypeclassConstraint kind
                     return AcornType::TypeclassConstraint(typeclass.clone());
                 }
@@ -641,7 +698,9 @@ impl TypeStore {
                     if let Some(tc_id) = typeclass_id {
                         // Find a type that implements this typeclass
                         if let Some(ground_id) = self.find_instance_of_typeclass(tc_id) {
-                            return self.ground_id_to_type[ground_id.as_u16() as usize].clone();
+                            let mod_idx = ground_id.module_id().get() as usize;
+                            return self.ground_id_to_type[mod_idx][ground_id.local_id() as usize]
+                                .clone();
                         }
                     }
                     // No typeclass constraint or no implementing type found - use Bool
@@ -650,8 +709,12 @@ impl TypeStore {
 
                 // Not instantiating - return a type variable
                 // Use "T" prefix since these are type variables
-                let typeclass = typeclass_id
-                    .and_then(|tc_id| self.id_to_typeclass.get(tc_id.as_u16() as usize).cloned());
+                let typeclass = typeclass_id.and_then(|tc_id| {
+                    let mod_idx = tc_id.module_id().get() as usize;
+                    self.id_to_typeclass
+                        .get(mod_idx)
+                        .and_then(|v| v.get(tc_id.local_id() as usize).cloned())
+                });
                 let type_param = TypeParam {
                     name: format!("T{}", var_id),
                     typeclass,
@@ -696,7 +759,8 @@ impl TypeStore {
 
         // Check for user-defined ground type
         if let Some(ground_id) = type_term.as_ref().as_type_atom() {
-            return self.ground_id_to_type[ground_id.as_u16() as usize].clone();
+            let mod_idx = ground_id.module_id().get() as usize;
+            return self.ground_id_to_type[mod_idx][ground_id.local_id() as usize].clone();
         }
 
         // Check for Pi type
@@ -850,7 +914,12 @@ impl TypeStore {
         // Handle Typeclass - return TypeclassConstraint
         if type_term.as_ref().is_atomic() {
             if let Atom::Symbol(Symbol::Typeclass(tc_id)) = type_term.as_ref().get_head_atom() {
-                if let Some(typeclass) = self.id_to_typeclass.get(tc_id.as_u16() as usize) {
+                let mod_idx = tc_id.module_id().get() as usize;
+                if let Some(typeclass) = self
+                    .id_to_typeclass
+                    .get(mod_idx)
+                    .and_then(|v| v.get(tc_id.local_id() as usize))
+                {
                     return AcornType::TypeclassConstraint(typeclass.clone());
                 }
             }
@@ -873,31 +942,46 @@ impl TypeStore {
             return *id;
         }
 
-        self.id_to_typeclass.push(typeclass.clone());
-        self.typeclass_extends.push(HashSet::new());
-        self.typeclass_instances.push(HashSet::new());
-        let id = TypeclassId::new((self.id_to_typeclass.len() - 1) as u16);
+        let module_id = typeclass.module_id;
+        let mod_idx = module_id.get() as usize;
+        let local_id = self
+            .id_to_typeclass
+            .get(mod_idx)
+            .map(|v| v.len())
+            .unwrap_or(0) as u16;
+        let id = TypeclassId::new(module_id, local_id);
+
+        self.ensure_typeclass_module(module_id);
+        self.id_to_typeclass[mod_idx].push(typeclass.clone());
+        self.typeclass_extends[mod_idx].push(HashSet::new());
+        self.typeclass_instances[mod_idx].push(HashSet::new());
         self.typeclass_to_id.insert(typeclass.clone(), id);
         id
     }
 
     /// Get the typeclass for a given id.
     pub fn get_typeclass(&self, typeclass_id: TypeclassId) -> &Typeclass {
-        &self.id_to_typeclass[typeclass_id.as_u16() as usize]
+        let mod_idx = typeclass_id.module_id().get() as usize;
+        &self.id_to_typeclass[mod_idx][typeclass_id.local_id() as usize]
     }
 
     /// Get a typeclass by its ID, returning None if the ID is out of range.
     pub fn get_typeclass_by_id(&self, typeclass_id: TypeclassId) -> Option<&Typeclass> {
-        self.id_to_typeclass.get(typeclass_id.as_u16() as usize)
+        let mod_idx = typeclass_id.module_id().get() as usize;
+        self.id_to_typeclass
+            .get(mod_idx)
+            .and_then(|v| v.get(typeclass_id.local_id() as usize))
     }
 
     /// Get the TypeclassId for a typeclass by name.
     /// Returns None if not found.
     #[cfg(test)]
     pub fn get_typeclass_id_by_name(&self, name: &str) -> Option<TypeclassId> {
-        for (i, tc) in self.id_to_typeclass.iter().enumerate() {
-            if tc.name == name {
-                return Some(TypeclassId::new(i as u16));
+        for (mod_idx, typeclasses) in self.id_to_typeclass.iter().enumerate() {
+            for (local_id, tc) in typeclasses.iter().enumerate() {
+                if tc.name == name {
+                    return Some(TypeclassId::new(ModuleId(mod_idx as u16), local_id as u16));
+                }
             }
         }
         None
@@ -906,22 +990,38 @@ impl TypeStore {
     /// Register that one typeclass extends another.
     /// This should be the direct extension relationship; the transitive closure is computed automatically.
     pub fn add_typeclass_extends(&mut self, typeclass_id: TypeclassId, base_id: TypeclassId) {
+        let mod_idx = typeclass_id.module_id().get() as usize;
+        let local_idx = typeclass_id.local_id() as usize;
+
         // Add the direct extension
-        self.typeclass_extends[typeclass_id.as_u16() as usize].insert(base_id);
+        self.ensure_typeclass_module(typeclass_id.module_id());
+        if let Some(s) = self.typeclass_extends[mod_idx].get_mut(local_idx) {
+            s.insert(base_id);
+        }
 
         // Also add all typeclasses that the base extends (transitive closure)
-        let base_extends: Vec<TypeclassId> = self.typeclass_extends[base_id.as_u16() as usize]
-            .iter()
-            .copied()
-            .collect();
+        let base_mod_idx = base_id.module_id().get() as usize;
+        let base_extends: Vec<TypeclassId> = self
+            .typeclass_extends
+            .get(base_mod_idx)
+            .and_then(|v| v.get(base_id.local_id() as usize))
+            .map(|s| s.iter().copied().collect())
+            .unwrap_or_default();
         for transitive_base in base_extends {
-            self.typeclass_extends[typeclass_id.as_u16() as usize].insert(transitive_base);
+            if let Some(s) = self.typeclass_extends[mod_idx].get_mut(local_idx) {
+                s.insert(transitive_base);
+            }
         }
     }
 
     /// Register that a ground type is an instance of a typeclass.
     fn add_instance(&mut self, ground_id: GroundTypeId, typeclass_id: TypeclassId) {
-        self.typeclass_instances[typeclass_id.as_u16() as usize].insert(ground_id);
+        let mod_idx = typeclass_id.module_id().get() as usize;
+        self.ensure_typeclass_module(typeclass_id.module_id());
+        if let Some(s) = self.typeclass_instances[mod_idx].get_mut(typeclass_id.local_id() as usize)
+        {
+            s.insert(ground_id);
+        }
     }
 
     /// Register that a type (given as AcornType) is an instance of a typeclass.
@@ -947,8 +1047,10 @@ impl TypeStore {
 
     /// Check if one typeclass extends another (directly or transitively).
     pub fn typeclass_extends(&self, typeclass_id: TypeclassId, base_id: TypeclassId) -> bool {
+        let mod_idx = typeclass_id.module_id().get() as usize;
         self.typeclass_extends
-            .get(typeclass_id.as_u16() as usize)
+            .get(mod_idx)
+            .and_then(|v| v.get(typeclass_id.local_id() as usize))
             .map_or(false, |extends| extends.contains(&base_id))
     }
 
@@ -957,10 +1059,12 @@ impl TypeStore {
         &self,
         typeclass_id: TypeclassId,
     ) -> impl Iterator<Item = TypeclassId> + '_ {
+        let mod_idx = typeclass_id.module_id().get() as usize;
         self.typeclass_extends
-            .get(typeclass_id.as_u16() as usize)
+            .get(mod_idx)
+            .and_then(|v| v.get(typeclass_id.local_id() as usize))
             .into_iter()
-            .flat_map(|extends| extends.iter().copied())
+            .flat_map(|extends: &HashSet<TypeclassId>| extends.iter().copied())
     }
 
     /// Creates a Term representing a typeclass.
@@ -975,9 +1079,11 @@ impl TypeStore {
     /// 2. The ground type is an arbitrary type with a compatible typeclass constraint
     pub fn is_instance_of(&self, ground_id: GroundTypeId, typeclass_id: TypeclassId) -> bool {
         // First check explicit instances
+        let mod_idx = typeclass_id.module_id().get() as usize;
         if self
             .typeclass_instances
-            .get(typeclass_id.as_u16() as usize)
+            .get(mod_idx)
+            .and_then(|v| v.get(typeclass_id.local_id() as usize))
             .map_or(false, |instances| instances.contains(&ground_id))
         {
             return true;
@@ -998,8 +1104,10 @@ impl TypeStore {
     /// Find any ground type that implements the given typeclass.
     /// Returns None if no instances are registered.
     pub fn find_instance_of_typeclass(&self, typeclass_id: TypeclassId) -> Option<GroundTypeId> {
+        let mod_idx = typeclass_id.module_id().get() as usize;
         self.typeclass_instances
-            .get(typeclass_id.as_u16() as usize)
+            .get(mod_idx)
+            .and_then(|v| v.get(typeclass_id.local_id() as usize))
             .and_then(|instances| instances.iter().next().copied())
     }
 

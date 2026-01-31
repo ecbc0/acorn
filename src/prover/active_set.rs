@@ -1673,7 +1673,7 @@ mod tests {
         let (_, new_clauses) = set.activate(step, &kctx);
 
         // Find the expected clause in results
-        let expected = "not g2(g0(g0(c3, c4), c5), c6)";
+        let expected = "not g0_2(g0_0(g0_0(c3, c4), c5), c6)";
         assert!(
             new_clauses
                 .iter()
@@ -1703,7 +1703,7 @@ mod tests {
         let clause2 = kctx.parse_clause("g1(x0, x1) or g1(x1, x0) or x0 = x1", &["Bool", "Bool"]);
         let mock_step = ProofStep::mock_from_clause(clause2);
         let output = ActiveSet::equality_factoring(0, &mock_step, &kctx);
-        assert_eq!(output[0].clause.to_string(), "g1(x0, x0) or x0 = x0");
+        assert_eq!(output[0].clause.to_string(), "g0_1(x0, x0) or x0 = x0");
     }
 
     #[test]

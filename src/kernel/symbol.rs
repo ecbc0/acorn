@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::atom::AtomId;
 use super::types::{GroundTypeId, TypeclassId};
+use crate::module::ModuleId;
 
 /// A Symbol represents named constants, functions, and primitive values in the environment.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -42,7 +43,8 @@ pub enum Symbol {
 
     // Constant values that are accessible anywhere in the code.
     // This includes concepts like addition, zero, and the axioms.
-    GlobalConstant(AtomId),
+    // The ModuleId identifies which module defined this constant.
+    GlobalConstant(ModuleId, AtomId),
 
     // Constant values that are only accessible inside a particular block.
     ScopedConstant(AtomId),
@@ -56,10 +58,12 @@ impl fmt::Display for Symbol {
             Symbol::Empty => write!(f, "Empty"),
             Symbol::Bool => write!(f, "Bool"),
             Symbol::Type0 => write!(f, "Type0"),
-            Symbol::Type(t) => write!(f, "T{}", t.as_u16()),
-            Symbol::Typeclass(tc) => write!(f, "tc{}", tc.as_u16()),
+            Symbol::Type(t) => write!(f, "T{}_{}", t.module_id().get(), t.local_id()),
+            Symbol::Typeclass(tc) => {
+                write!(f, "tc{}_{}", tc.module_id().get(), tc.local_id())
+            }
             Symbol::Synthetic(i) => write!(f, "s{}", i),
-            Symbol::GlobalConstant(i) => write!(f, "g{}", i),
+            Symbol::GlobalConstant(m, i) => write!(f, "g{}_{}", m.get(), i),
             Symbol::ScopedConstant(i) => write!(f, "c{}", i),
         }
     }

@@ -329,6 +329,7 @@ fn specialized_form(mut clause: Clause, kernel_context: &KernelContext) -> Claus
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::module::ModuleId;
 
     #[test]
     fn test_clause_set_basic_generalization() {
@@ -729,7 +730,7 @@ mod tests {
 
         // Build query manually: not g0(c1)(s0(g0(c1)), s0(g0(c1))) or c0(g0(c1))
         // Symbols: g0 = GlobalConstant(0), s0 = Synthetic(0), c0 = ScopedConstant(0), c1 = ScopedConstant(1)
-        let g0_atom = Atom::Symbol(Symbol::GlobalConstant(0));
+        let g0_atom = Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0));
         let s0_atom = Atom::Symbol(Symbol::Synthetic(0));
         let c0_atom = Atom::Symbol(Symbol::ScopedConstant(0));
         let c1_atom = Atom::Symbol(Symbol::ScopedConstant(1));
@@ -813,11 +814,11 @@ mod tests {
         // Build query: not g0(Type)(c1)(s0(...), s0(...)) or c0(g0(Type)(c1))
         // g0 = GlobalConstant(0), s0 = Synthetic(0), c0 = ScopedConstant(0), c1 = ScopedConstant(1)
         // Type = Type(GroundTypeId(0)) which is the type T
-        let g0_atom = Atom::Symbol(Symbol::GlobalConstant(0));
+        let g0_atom = Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0));
         let s0_atom = Atom::Symbol(Symbol::Synthetic(0));
         let c0_atom = Atom::Symbol(Symbol::ScopedConstant(0));
         let c1_atom = Atom::Symbol(Symbol::ScopedConstant(1));
-        let type_atom = Atom::Symbol(Symbol::Type(GroundTypeId::new(0))); // T as a type symbol
+        let type_atom = Atom::Symbol(Symbol::Type(GroundTypeId::test(0))); // T as a type symbol
 
         let type_term = Term::atom(type_atom);
         let c1_term = Term::atom(c1_atom);
@@ -895,9 +896,9 @@ mod tests {
         // where f: (T, T) -> Bool (variable x0)
         // But we need the pattern to be g1(Type)(x0), not just g1(x0)
         // We'll need to construct this manually
-        let type_atom = Atom::Symbol(Symbol::Type(GroundTypeId::new(0)));
+        let type_atom = Atom::Symbol(Symbol::Type(GroundTypeId::test(0)));
         let type_term = Term::atom(type_atom);
-        let g1_atom = Atom::Symbol(Symbol::GlobalConstant(1));
+        let g1_atom = Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 1));
         let s0_atom = Atom::Symbol(Symbol::Synthetic(0));
         let x0_term = Term::new_variable(0);
 
@@ -926,7 +927,7 @@ mod tests {
         clause_set.insert(pattern.clone(), 99, &kctx);
 
         // Build query: not g0(Type)(c1)(s0(...), s0(...)) or g1(Type)(g0(Type)(c1))
-        let g0_atom = Atom::Symbol(Symbol::GlobalConstant(0));
+        let g0_atom = Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0));
         let c1_atom = Atom::Symbol(Symbol::ScopedConstant(1));
         let c1_term = Term::atom(c1_atom);
 
@@ -1017,8 +1018,8 @@ mod tests {
         // GlobalConstant(218): (T7 -> T6)
 
         let type_sort = Term::type_sort();
-        let t6_type = Term::ground_type(GroundTypeId::new(6));
-        let t7_type = Term::ground_type(GroundTypeId::new(7));
+        let t6_type = Term::ground_type(GroundTypeId::test(6));
+        let t7_type = Term::ground_type(GroundTypeId::test(7));
 
         // For polymorphic types: Type -> (T -> (T -> T))
         // With De Bruijn indices, references to the outer Type binding must be shifted
@@ -1060,14 +1061,14 @@ mod tests {
         let mut clause_set = GeneralizationSet::new();
 
         // Atoms using GlobalConstant indices from above
-        let g90 = Atom::Symbol(Symbol::GlobalConstant(0)); // add_r (like g90)
-        let g92 = Atom::Symbol(Symbol::GlobalConstant(1)); // mul_c (like g92)
-        let g217 = Atom::Symbol(Symbol::GlobalConstant(2)); // re (like g217)
-        let g218 = Atom::Symbol(Symbol::GlobalConstant(3)); // im (like g218)
+        let g90 = Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)); // add_r (like g90)
+        let g92 = Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 1)); // mul_c (like g92)
+        let g217 = Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 2)); // re (like g217)
+        let g218 = Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 3)); // im (like g218)
 
         // Type symbols used as term arguments (T6=Real, T7=Complex)
-        let t6 = Term::atom(Atom::Symbol(Symbol::Type(GroundTypeId::new(6))));
-        let t7 = Term::atom(Atom::Symbol(Symbol::Type(GroundTypeId::new(7))));
+        let t6 = Term::atom(Atom::Symbol(Symbol::Type(GroundTypeId::test(6))));
+        let t7 = Term::atom(Atom::Symbol(Symbol::Type(GroundTypeId::test(7))));
 
         // Variables
         let x0 = Term::new_variable(0);
@@ -1128,7 +1129,7 @@ mod tests {
         let p_lhs = mk_g217(mk_g92_t7(mk_g92_t7(x0.clone(), x1.clone()), x2.clone()));
 
         // Create pattern clause with variables of type T7 (Complex)
-        let complex_type = Term::atom(Atom::Symbol(Symbol::Type(GroundTypeId::new(7))));
+        let complex_type = Term::atom(Atom::Symbol(Symbol::Type(GroundTypeId::test(7))));
         let local_ctx = LocalContext::from_types(vec![
             complex_type.clone(),
             complex_type.clone(),

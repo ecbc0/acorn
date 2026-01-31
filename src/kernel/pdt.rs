@@ -24,6 +24,7 @@ use super::symbol::Symbol;
 use super::term::Term;
 use super::term::{Decomposition, TermRef};
 use super::unifier::{Scope, Unifier};
+use crate::module::ModuleId;
 
 /// Atoms are the leaf nodes in the PDT.
 /// Types are NOT represented - only symbols and variables.
@@ -96,7 +97,7 @@ impl Edge {
                 Atom::Symbol(Symbol::Type0) => ATOM_SYMBOL_TYPESORT,
                 Atom::Symbol(Symbol::Type(_)) => ATOM_SYMBOL_TYPE,
                 Atom::Symbol(Symbol::Typeclass(_)) => ATOM_SYMBOL_TYPECLASS,
-                Atom::Symbol(Symbol::GlobalConstant(_)) => ATOM_SYMBOL_GLOBAL,
+                Atom::Symbol(Symbol::GlobalConstant(..)) => ATOM_SYMBOL_GLOBAL,
                 Atom::Symbol(Symbol::ScopedConstant(_)) => ATOM_SYMBOL_SCOPED,
                 Atom::Symbol(Symbol::Synthetic(_)) => ATOM_SYMBOL_SYNTHETIC,
             },
@@ -104,51 +105,107 @@ impl Edge {
     }
 
     /// Appends the byte representation of this edge to the vector.
-    /// Each edge is 3 bytes: discriminant + 2 bytes for ID (if applicable).
+    /// Most edges are 3 bytes: discriminant + 2 bytes for ID.
+    /// GlobalConstant is 5 bytes: discriminant + 2 bytes module_id + 2 bytes local_id.
     fn append_to(&self, v: &mut Vec<u8>) {
         v.push(self.discriminant());
-        let id: u16 = match self {
-            Edge::Application | Edge::Arrow | Edge::LiteralForm(_) => 0,
+        match self {
+            Edge::Application | Edge::Arrow | Edge::LiteralForm(_) => {
+                v.extend_from_slice(&0u16.to_ne_bytes());
+            }
             Edge::Atom(atom) => match atom {
-                Atom::Variable(i) => *i,
-                Atom::True | Atom::False => 0,
-                Atom::Symbol(Symbol::True) | Atom::Symbol(Symbol::False) => 0,
-                Atom::Symbol(Symbol::Empty) => 0,
-                Atom::Symbol(Symbol::Bool) => 0,
-                Atom::Symbol(Symbol::Type0) => 0,
-                Atom::Symbol(Symbol::Type(t)) => t.as_u16(),
-                Atom::Symbol(Symbol::Typeclass(tc)) => tc.as_u16(),
-                Atom::Symbol(Symbol::GlobalConstant(c)) => *c,
-                Atom::Symbol(Symbol::ScopedConstant(c)) => *c,
-                Atom::Symbol(Symbol::Synthetic(s)) => *s,
+                Atom::Variable(i) => v.extend_from_slice(&i.to_ne_bytes()),
+                Atom::True | Atom::False => v.extend_from_slice(&0u16.to_ne_bytes()),
+                Atom::Symbol(Symbol::True) | Atom::Symbol(Symbol::False) => {
+                    v.extend_from_slice(&0u16.to_ne_bytes())
+                }
+                Atom::Symbol(Symbol::Empty) => v.extend_from_slice(&0u16.to_ne_bytes()),
+                Atom::Symbol(Symbol::Bool) => v.extend_from_slice(&0u16.to_ne_bytes()),
+                Atom::Symbol(Symbol::Type0) => v.extend_from_slice(&0u16.to_ne_bytes()),
+                Atom::Symbol(Symbol::Type(t)) => {
+                    // Type uses 4 bytes: module_id (2) + local_id (2)
+                    v.extend_from_slice(&t.module_id().get().to_ne_bytes());
+                    v.extend_from_slice(&t.local_id().to_ne_bytes());
+                }
+                Atom::Symbol(Symbol::Typeclass(tc)) => {
+                    // Typeclass uses 4 bytes: module_id (2) + local_id (2)
+                    v.extend_from_slice(&tc.module_id().get().to_ne_bytes());
+                    v.extend_from_slice(&tc.local_id().to_ne_bytes());
+                }
+                Atom::Symbol(Symbol::GlobalConstant(m, c)) => {
+                    // GlobalConstant uses 4 bytes: module_id (2) + local_id (2)
+                    v.extend_from_slice(&m.get().to_ne_bytes());
+                    v.extend_from_slice(&c.to_ne_bytes());
+                }
+                Atom::Symbol(Symbol::ScopedConstant(c)) => v.extend_from_slice(&c.to_ne_bytes()),
+                Atom::Symbol(Symbol::Synthetic(s)) => v.extend_from_slice(&s.to_ne_bytes()),
             },
-        };
-        v.extend_from_slice(&id.to_ne_bytes());
+        }
     }
 
-    /// Parses an edge from 3 bytes.
-    fn from_bytes(byte1: u8, byte2: u8, byte3: u8) -> Edge {
+    /// Parses an edge from bytes. Returns the edge and the number of bytes consumed.
+    /// Most edges consume 3 bytes, GlobalConstant consumes 5 bytes.
+    fn from_bytes(bytes: &[u8]) -> (Edge, usize) {
         use super::types::GroundTypeId;
-        let id = u16::from_ne_bytes([byte2, byte3]);
-        match byte1 {
-            APPLICATION => Edge::Application,
-            ARROW => Edge::Arrow,
-            LITERAL_POSITIVE => Edge::LiteralForm(true),
-            LITERAL_NEGATIVE => Edge::LiteralForm(false),
-            ATOM_VARIABLE => Edge::Atom(Atom::Variable(id)),
-            ATOM_TRUE => Edge::Atom(Atom::True),
-            ATOM_FALSE => Edge::Atom(Atom::False),
-            ATOM_SYMBOL_GLOBAL => Edge::Atom(Atom::Symbol(Symbol::GlobalConstant(id))),
-            ATOM_SYMBOL_SCOPED => Edge::Atom(Atom::Symbol(Symbol::ScopedConstant(id))),
-            ATOM_SYMBOL_SYNTHETIC => Edge::Atom(Atom::Symbol(Symbol::Synthetic(id))),
-            ATOM_SYMBOL_EMPTY => Edge::Atom(Atom::Symbol(Symbol::Empty)),
-            ATOM_SYMBOL_BOOL => Edge::Atom(Atom::Symbol(Symbol::Bool)),
-            ATOM_SYMBOL_TYPESORT => Edge::Atom(Atom::Symbol(Symbol::Type0)),
-            ATOM_SYMBOL_TYPE => Edge::Atom(Atom::Symbol(Symbol::Type(GroundTypeId::new(id)))),
-            ATOM_SYMBOL_TYPECLASS => Edge::Atom(Atom::Symbol(Symbol::Typeclass(
-                super::types::TypeclassId::new(id),
-            ))),
-            _ => panic!("invalid PDT edge discriminant: {}", byte1),
+        let discriminant = bytes[0];
+        match discriminant {
+            APPLICATION => (Edge::Application, 3),
+            ARROW => (Edge::Arrow, 3),
+            LITERAL_POSITIVE => (Edge::LiteralForm(true), 3),
+            LITERAL_NEGATIVE => (Edge::LiteralForm(false), 3),
+            ATOM_VARIABLE => {
+                let id = u16::from_ne_bytes([bytes[1], bytes[2]]);
+                (Edge::Atom(Atom::Variable(id)), 3)
+            }
+            ATOM_TRUE => (Edge::Atom(Atom::True), 3),
+            ATOM_FALSE => (Edge::Atom(Atom::False), 3),
+            ATOM_SYMBOL_GLOBAL => {
+                // GlobalConstant uses 5 bytes: 1 discriminant + 2 module_id + 2 local_id
+                let module_id = u16::from_ne_bytes([bytes[1], bytes[2]]);
+                let local_id = u16::from_ne_bytes([bytes[3], bytes[4]]);
+                (
+                    Edge::Atom(Atom::Symbol(Symbol::GlobalConstant(
+                        ModuleId(module_id),
+                        local_id,
+                    ))),
+                    5,
+                )
+            }
+            ATOM_SYMBOL_SCOPED => {
+                let id = u16::from_ne_bytes([bytes[1], bytes[2]]);
+                (Edge::Atom(Atom::Symbol(Symbol::ScopedConstant(id))), 3)
+            }
+            ATOM_SYMBOL_SYNTHETIC => {
+                let id = u16::from_ne_bytes([bytes[1], bytes[2]]);
+                (Edge::Atom(Atom::Symbol(Symbol::Synthetic(id))), 3)
+            }
+            ATOM_SYMBOL_EMPTY => (Edge::Atom(Atom::Symbol(Symbol::Empty)), 3),
+            ATOM_SYMBOL_BOOL => (Edge::Atom(Atom::Symbol(Symbol::Bool)), 3),
+            ATOM_SYMBOL_TYPESORT => (Edge::Atom(Atom::Symbol(Symbol::Type0)), 3),
+            ATOM_SYMBOL_TYPE => {
+                // Type uses 5 bytes: 1 discriminant + 2 module_id + 2 local_id
+                let module_id = u16::from_ne_bytes([bytes[1], bytes[2]]);
+                let local_id = u16::from_ne_bytes([bytes[3], bytes[4]]);
+                (
+                    Edge::Atom(Atom::Symbol(Symbol::Type(GroundTypeId::new(
+                        ModuleId(module_id),
+                        local_id,
+                    )))),
+                    5,
+                )
+            }
+            ATOM_SYMBOL_TYPECLASS => {
+                // Typeclass uses 5 bytes: 1 discriminant + 2 module_id + 2 local_id
+                let module_id = u16::from_ne_bytes([bytes[1], bytes[2]]);
+                let local_id = u16::from_ne_bytes([bytes[3], bytes[4]]);
+                (
+                    Edge::Atom(Atom::Symbol(Symbol::Typeclass(
+                        super::types::TypeclassId::new(ModuleId(module_id), local_id),
+                    ))),
+                    5,
+                )
+            }
+            _ => panic!("invalid PDT edge discriminant: {}", discriminant),
         }
     }
 
@@ -158,13 +215,15 @@ impl Edge {
         let mut i = 0;
         let mut parts: Vec<String> = vec![];
         while i < bytes.len() {
+            // Check if we have at least 3 bytes (minimum edge size)
             if i + 3 <= bytes.len() {
-                let edge = Edge::from_bytes(bytes[i], bytes[i + 1], bytes[i + 2]);
+                let (edge, consumed) = Edge::from_bytes(&bytes[i..]);
                 parts.push(format!("{:?}", edge));
+                i += consumed;
             } else {
                 parts.push(format!("plus extra bytes {:?}", &bytes[i..]));
+                break;
             }
-            i += 3;
         }
         parts.join(", ")
     }
@@ -1072,7 +1131,8 @@ mod tests {
 
     #[test]
     fn test_edge_roundtrip() {
-        let edges = vec![
+        // Edges with 3-byte encoding
+        let edges_3_bytes = vec![
             Edge::Application,
             Edge::Arrow,
             Edge::LiteralForm(true),
@@ -1081,18 +1141,27 @@ mod tests {
             Edge::Atom(Atom::Variable(42)),
             Edge::Atom(Atom::True),
             Edge::Atom(Atom::False),
-            Edge::Atom(Atom::Symbol(Symbol::GlobalConstant(10))),
             Edge::Atom(Atom::Symbol(Symbol::ScopedConstant(20))),
             Edge::Atom(Atom::Symbol(Symbol::Synthetic(40))),
         ];
 
-        for edge in edges {
+        for edge in edges_3_bytes {
             let mut bytes = Vec::new();
             edge.append_to(&mut bytes);
-            assert_eq!(bytes.len(), 3);
-            let parsed = Edge::from_bytes(bytes[0], bytes[1], bytes[2]);
+            assert_eq!(bytes.len(), 3, "expected 3 bytes for {:?}", edge);
+            let (parsed, consumed) = Edge::from_bytes(&bytes);
+            assert_eq!(consumed, 3);
             assert_eq!(edge, parsed, "roundtrip failed for {:?}", edge);
         }
+
+        // GlobalConstant uses 5-byte encoding
+        let global_edge = Edge::Atom(Atom::Symbol(Symbol::GlobalConstant(ModuleId(5), 10)));
+        let mut bytes = Vec::new();
+        global_edge.append_to(&mut bytes);
+        assert_eq!(bytes.len(), 5, "GlobalConstant should use 5 bytes");
+        let (parsed, consumed) = Edge::from_bytes(&bytes);
+        assert_eq!(consumed, 5);
+        assert_eq!(global_edge, parsed, "roundtrip failed for GlobalConstant");
     }
 
     #[test]

@@ -53,7 +53,25 @@ impl Atom {
         let first = chars.next()?;
         let rest = chars.as_str();
         match first {
-            'g' => Some(Atom::Symbol(Symbol::GlobalConstant(rest.parse().ok()?))),
+            'g' => {
+                // Format: g{module_id}_{local_id} or g{local_id} (with implicit module_id 0)
+                let parts: Vec<&str> = rest.split('_').collect();
+                if parts.len() == 2 {
+                    // New format: g{module_id}_{local_id}
+                    let module_id = crate::module::ModuleId(parts[0].parse().ok()?);
+                    let local_id: AtomId = parts[1].parse().ok()?;
+                    Some(Atom::Symbol(Symbol::GlobalConstant(module_id, local_id)))
+                } else if parts.len() == 1 {
+                    // Old format for tests: g{local_id} -> module 0
+                    let local_id: AtomId = rest.parse().ok()?;
+                    Some(Atom::Symbol(Symbol::GlobalConstant(
+                        crate::module::ModuleId(0),
+                        local_id,
+                    )))
+                } else {
+                    None
+                }
+            }
             'c' => Some(Atom::Symbol(Symbol::ScopedConstant(rest.parse().ok()?))),
             'x' => Some(Atom::FreeVariable(rest.parse().ok()?)),
             'b' => Some(Atom::BoundVariable(rest.parse().ok()?)),
@@ -167,18 +185,22 @@ impl Atom {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::module::ModuleId;
 
     #[test]
     fn test_atom_ordering() {
-        assert!(Atom::Symbol(Symbol::True) < Atom::Symbol(Symbol::GlobalConstant(0)));
-        assert!(Atom::Symbol(Symbol::GlobalConstant(0)) < Atom::Symbol(Symbol::GlobalConstant(1)));
+        assert!(Atom::Symbol(Symbol::True) < Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)));
+        assert!(
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0))
+                < Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 1))
+        );
     }
 
     #[test]
     fn test_atom_stable_partial_ordering() {
         assert_eq!(
-            Atom::Symbol(Symbol::GlobalConstant(0))
-                .stable_partial_order(&Atom::Symbol(Symbol::GlobalConstant(1))),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0))
+                .stable_partial_order(&Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 1))),
             Ordering::Less
         );
         // All free variables are equal for stable ordering
@@ -196,7 +218,8 @@ mod tests {
     #[test]
     fn test_atom_size() {
         // Atom should be small since it's used extensively in the prover.
-        // All variants use u16, so size is 4 bytes (discriminant + u16 + padding).
-        assert_eq!(std::mem::size_of::<Atom>(), 4);
+        // GlobalConstant now uses (ModuleId, AtomId) which is (u16, u16) = 4 bytes.
+        // With discriminant and padding, total size is 6 bytes.
+        assert_eq!(std::mem::size_of::<Atom>(), 6);
     }
 }

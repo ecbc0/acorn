@@ -577,9 +577,9 @@ impl<'a> TermRef<'a> {
                     // Bound variables contribute weight but don't use refcounts
                     weight1 += 1;
                 }
-                TermComponent::Atom(Atom::Symbol(Symbol::GlobalConstant(i))) => {
+                TermComponent::Atom(Atom::Symbol(Symbol::GlobalConstant(m, i))) => {
                     weight1 += 1;
-                    weight2 += 4 * (*i) as u32;
+                    weight2 += 4 * (m.get() as u32 * 65536 + *i as u32);
                 }
                 TermComponent::Atom(Atom::Symbol(Symbol::ScopedConstant(i))) => {
                     weight1 += 1;
@@ -592,12 +592,12 @@ impl<'a> TermRef<'a> {
                 TermComponent::Atom(Atom::Symbol(Symbol::Type(t))) => {
                     // Type atoms contribute to weight
                     weight1 += 1;
-                    weight2 += 4 * t.as_u16() as u32;
+                    weight2 += 4 * (t.module_id().get() as u32 * 65536 + t.local_id() as u32);
                 }
                 TermComponent::Atom(Atom::Symbol(Symbol::Typeclass(tc))) => {
                     // Typeclass atoms contribute to weight similarly to types
                     weight1 += 1;
-                    weight2 += 4 * tc.as_u16() as u32;
+                    weight2 += 4 * (tc.module_id().get() as u32 * 65536 + tc.local_id() as u32);
                 }
             }
         }
@@ -2245,6 +2245,7 @@ impl<'a> Iterator for TermRefArgsIterator<'a> {
 mod tests {
     use super::*;
     use crate::kernel::symbol::Symbol;
+    use crate::module::ModuleId;
 
     #[test]
     fn test_replace_head_variable_with_compound_term() {
@@ -2264,7 +2265,10 @@ mod tests {
         // Result should be g0(c0, x1)
         // This should not panic due to invalid term structure
         let head = result.get_head_atom();
-        assert!(matches!(head, Atom::Symbol(Symbol::GlobalConstant(0))));
+        assert!(matches!(
+            head,
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0))
+        ));
 
         // The result should have exactly two args: c0 and x1
         let args: Vec<_> = result.iter_args().collect();
@@ -2317,7 +2321,10 @@ mod tests {
         // The arg should be compound: g0(c1)
         let arg = &args[0];
         let arg_head = arg.get_head_atom();
-        assert!(matches!(arg_head, Atom::Symbol(Symbol::GlobalConstant(0))));
+        assert!(matches!(
+            arg_head,
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0))
+        ));
     }
 
     #[test]

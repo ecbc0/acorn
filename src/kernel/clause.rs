@@ -742,6 +742,7 @@ mod tests {
     use crate::kernel::symbol::Symbol;
     use crate::kernel::term::Term;
     use crate::kernel::types::GroundTypeId;
+    use crate::module::ModuleId;
 
     /// Test that extensionality doesn't match clauses without function applications.
     /// This prevents infinite recursion when extensionality produces the same clause.
@@ -750,11 +751,11 @@ mod tests {
         let kernel_context = KernelContext::new();
 
         // Create a clause like "g0 = x0" (global constant equals variable)
-        let g0 = Term::atom(Atom::Symbol(Symbol::GlobalConstant(0)));
+        let g0 = Term::atom(Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)));
         let x0 = Term::atom(Atom::FreeVariable(0));
         let literal = Literal::equals(g0, x0);
 
-        let some_type = Term::ground_type(GroundTypeId::new(2));
+        let some_type = Term::ground_type(GroundTypeId::test(2));
         let context = LocalContext::from_types(vec![some_type]);
         let clause = Clause::from_literals_unnormalized(vec![literal], &context);
 
@@ -773,10 +774,13 @@ mod tests {
 
         // Create a clause like "f(x0) = f(x0)" (identical terms)
         let x0 = Term::atom(Atom::FreeVariable(0));
-        let f_x0 = Term::new(Atom::Symbol(Symbol::GlobalConstant(0)), vec![x0.clone()]);
+        let f_x0 = Term::new(
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
+            vec![x0.clone()],
+        );
         let literal = Literal::equals(f_x0.clone(), f_x0);
 
-        let some_type = Term::ground_type(GroundTypeId::new(2));
+        let some_type = Term::ground_type(GroundTypeId::test(2));
         let context = LocalContext::from_types(vec![some_type]);
         let clause = Clause::from_literals_unnormalized(vec![literal], &context);
 
@@ -887,8 +891,8 @@ mod tests {
         // After sorting, the literals may be reordered. The variable renumbering
         // should correctly track which type belongs to which new variable ID.
 
-        let type_foo = Term::ground_type(GroundTypeId::new(2)); // Some non-Bool type
-        let type_bool = Term::ground_type(GroundTypeId::new(1)); // Bool
+        let type_foo = Term::ground_type(GroundTypeId::test(2)); // Some non-Bool type
+        let type_bool = Term::ground_type(GroundTypeId::test(1)); // Bool
 
         // x0 and x1 are Foo, x2 is Bool
         let x0 = Term::atom(Atom::FreeVariable(0));
@@ -897,7 +901,7 @@ mod tests {
 
         // Create f(x0, x1, x2) - a function application
         let f_args = Term::new(
-            Atom::Symbol(Symbol::GlobalConstant(0)),
+            Atom::Symbol(Symbol::GlobalConstant(ModuleId(0), 0)),
             vec![x0.clone(), x1.clone(), x2.clone()],
         );
 

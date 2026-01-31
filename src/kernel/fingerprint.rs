@@ -628,7 +628,7 @@ mod tests {
     fn test_type_category_could_match() {
         use crate::kernel::types::GroundTypeId;
 
-        let test_ground = GroundTypeId::new(0); // Use a test ground type ID
+        let test_ground = GroundTypeId::test(0); // Use a test ground type ID
 
         // Variable matches anything
         assert!(TypeCategory::Variable.could_match(&TypeCategory::Ground(test_ground)));
