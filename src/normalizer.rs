@@ -2311,7 +2311,7 @@ impl Normalizer {
         atom: &Atom,
         arbitrary_names: Option<&HashMap<Term, ConstantName>>,
         var_remapping: Option<&[Option<u16>]>,
-        #[allow(unused_variables)] type_param_names: Option<&[String]>,
+        type_param_names: Option<&[String]>,
         type_var_id_to_name: Option<&HashMap<AtomId, String>>,
     ) -> AcornValue {
         let acorn_type = if let Some(name_map) = type_var_id_to_name {
@@ -2736,12 +2736,6 @@ impl Normalizer {
             .collect();
 
         AcornValue::forall(var_types, disjunction)
-    }
-
-    pub fn denormalize_type(&self, type_term: Term) -> AcornType {
-        self.kernel_context
-            .type_store
-            .type_term_to_acorn_type(&type_term)
     }
 
     /// Convert a type Term to AcornType, looking up typeclass constraints from LocalContext.
