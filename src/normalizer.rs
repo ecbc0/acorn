@@ -10,7 +10,7 @@ use crate::elaborator::goal::Goal;
 use crate::elaborator::names::ConstantName;
 use crate::elaborator::potential_value::PotentialValue;
 use crate::elaborator::proposition::Proposition;
-use crate::elaborator::source::{Source, SourceType};
+use crate::elaborator::source::Source;
 use crate::kernel::atom::{Atom, AtomId, INVALID_SYNTHETIC_ID};
 use crate::kernel::clause::Clause;
 use crate::kernel::cnf::Cnf;
@@ -1341,18 +1341,6 @@ impl<'a> NormalizationContext<'a> {
         }
     }
 
-    /// Like try_simple_value_to_term, but returns an error if it doesn't work.
-    fn force_simple_value_to_term(
-        &self,
-        value: &AcornValue,
-        stack: &Vec<TermBinding>,
-    ) -> Result<Term, String> {
-        match self.try_simple_value_to_term(value, stack)? {
-            Some(t) => Ok(t),
-            None => Err(format!("expected simple term but got '{}'", value)),
-        }
-    }
-
     /// Converts a value to a Term plus a sign, if possible.
     /// true = positive.
     /// This doesn't mutate the normalizer, so it only handles simple values, no quantifiers.
@@ -2223,24 +2211,9 @@ impl Normalizer {
                 for clause in &clauses {
                     trace!(clause = %clause, "normalized to clause");
                 }
-                let defined = match &source.source_type {
-                    SourceType::ConstantDefinition(def_value, _) => {
-                        let view = NormalizationContext::new_ref(self, type_var_map_opt);
-                        let term = view
-                            .force_simple_value_to_term(def_value, &vec![])
-                            .map_err(|msg| {
-                                BuildError::new(
-                                    range,
-                                    format!("cannot convert definition to term: {}", msg),
-                                )
-                            })?;
-                        Some(term.get_head_atom().clone())
-                    }
-                    _ => None,
-                };
                 for clause in clauses {
                     clause.validate(&self.kernel_context);
-                    let step = ProofStep::assumption(&source, clause, defined);
+                    let step = ProofStep::assumption(&source, clause);
                     steps.push(step);
                 }
             }

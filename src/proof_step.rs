@@ -114,9 +114,6 @@ pub struct AssumptionInfo {
     /// The source of the assumption.
     pub source: Source,
 
-    /// If this assumption is the definition of a particular atom, this is the atom.
-    pub defined_atom: Option<Atom>,
-
     /// The literals of the assumption before any simplification.
     pub literals: Vec<Literal>,
 
@@ -542,14 +539,13 @@ impl fmt::Display for ProofStep {
 impl ProofStep {
     /// Construct a new assumption ProofStep that is not dependent on any other steps.
     /// Assumptions are always depth zero, but eventually we may have to revisit that.
-    pub fn assumption(source: &Source, clause: Clause, defined_atom: Option<Atom>) -> ProofStep {
+    pub fn assumption(source: &Source, clause: Clause) -> ProofStep {
         let source = source.clone();
         let truthiness = source.truthiness();
         let literals = clause.literals.clone();
         let context = clause.get_local_context().clone();
         let rule = Rule::Assumption(AssumptionInfo {
             source,
-            defined_atom,
             literals,
             context,
         });
@@ -803,7 +799,6 @@ impl ProofStep {
         let context = clause.get_local_context().clone();
         let rule = Rule::Assumption(AssumptionInfo {
             source: Source::mock(),
-            defined_atom: None,
             literals,
             context,
         });
