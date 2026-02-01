@@ -1,4 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap as StdHashMap;
+
+use im::{HashMap as ImHashMap, HashSet as ImHashSet};
 
 use crate::elaborator::acorn_type::AcornType;
 use crate::elaborator::acorn_value::{AcornValue, ConstantInstance};
@@ -52,11 +54,11 @@ pub struct SymbolTable {
 
     /// Inverse map of constants that can be referenced with a single name.
     /// The ConstantName -> Symbol lookup direction.
-    name_to_symbol: HashMap<ConstantName, Symbol>,
+    name_to_symbol: ImHashMap<ConstantName, Symbol>,
 
     /// Maps constant instances (with type parameters) to their Symbol aliases.
     /// Used for instance definitions where e.g. Arf.foo[Foo] = Foo.foo.
-    instance_to_symbol: HashMap<ConstantInstance, Symbol>,
+    instance_to_symbol: ImHashMap<ConstantInstance, Symbol>,
 
     /// For synthetic atom (module_id, local_id), synthetic_types[module_id][local_id] is the type.
     /// Uses Vec<Vec<...>> instead of HashMap for fast indexing by module_id.
@@ -64,19 +66,19 @@ pub struct SymbolTable {
 
     /// Maps polymorphic constant names to their generic type info.
     /// Used to properly denormalize constants.
-    polymorphic_info: HashMap<ConstantName, PolymorphicInfo>,
+    polymorphic_info: ImHashMap<ConstantName, PolymorphicInfo>,
 
     /// Maps a type to the first symbol registered with that type.
     /// Used to get an element of a particular type (e.g., for instantiating universal quantifiers).
-    type_to_element: HashMap<Term, Symbol>,
+    type_to_element: ImHashMap<Term, Symbol>,
 
     /// Type constructors known to be inhabited for any type arguments.
     /// For example, if we have `nil: forall[T]. List[T]`, then List is in this set.
-    inhabited_type_constructors: HashSet<GroundTypeId>,
+    inhabited_type_constructors: ImHashSet<GroundTypeId>,
 
     /// Typeclasses that are known to provide inhabitants for their instance types.
     /// For example, if we have `point: forall[P: Pointed]. P`, then Pointed is in this set.
-    inhabited_typeclasses: HashSet<TypeclassId>,
+    inhabited_typeclasses: ImHashSet<TypeclassId>,
 }
 
 impl SymbolTable {
@@ -86,13 +88,13 @@ impl SymbolTable {
             global_constant_types: Vec::new(),
             scoped_constants: vec![],
             scoped_constant_types: vec![],
-            name_to_symbol: HashMap::new(),
-            instance_to_symbol: HashMap::new(),
+            name_to_symbol: ImHashMap::new(),
+            instance_to_symbol: ImHashMap::new(),
             synthetic_types: vec![],
-            polymorphic_info: HashMap::new(),
-            type_to_element: HashMap::new(),
-            inhabited_type_constructors: HashSet::new(),
-            inhabited_typeclasses: HashSet::new(),
+            polymorphic_info: ImHashMap::new(),
+            type_to_element: ImHashMap::new(),
+            inhabited_type_constructors: ImHashSet::new(),
+            inhabited_typeclasses: ImHashSet::new(),
         }
     }
 
@@ -580,7 +582,7 @@ impl SymbolTable {
         &self,
         c: &ConstantInstance,
         type_store: &TypeStore,
-        type_var_map: Option<&HashMap<String, (AtomId, Term)>>,
+        type_var_map: Option<&StdHashMap<String, (AtomId, Term)>>,
     ) -> Result<Term, String> {
         // Check for an alias first - instance definitions create aliases
         // where Arf.foo[Foo] = Foo.foo makes them the same symbol

@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap as StdHashMap;
+use std::collections::HashSet as StdHashSet;
+
+use im::HashMap as ImHashMap;
 
 use crate::elaborator::acorn_type::{AcornType, Datatype, FunctionType, TypeParam, Typeclass};
 use crate::kernel::atom::{Atom, AtomId};
@@ -22,13 +25,13 @@ pub struct TypeStore {
     ground_id_to_arity: Vec<Vec<u8>>,
 
     /// Maps Datatype (bare data type with no params) to its GroundTypeId.
-    datatype_to_ground_id: HashMap<Datatype, GroundTypeId>,
+    datatype_to_ground_id: ImHashMap<Datatype, GroundTypeId>,
 
     /// Maps Arbitrary type parameters to their GroundTypeId.
-    arbitrary_to_ground_id: HashMap<TypeParam, GroundTypeId>,
+    arbitrary_to_ground_id: ImHashMap<TypeParam, GroundTypeId>,
 
     /// typeclass_to_id[typeclass] is the TypeclassId
-    typeclass_to_id: HashMap<Typeclass, TypeclassId>,
+    typeclass_to_id: ImHashMap<Typeclass, TypeclassId>,
 
     /// id_to_typeclass[module_id][local_id] is the Typeclass
     /// Uses Vec<Vec<...>> for fast indexing by module_id.
@@ -36,10 +39,10 @@ pub struct TypeStore {
 
     /// typeclass_extends[module_id][local_id] is the set of TypeclassIds that this typeclass extends.
     /// This is the transitive closure, so if A extends B and B extends C, then A's set contains both B and C.
-    typeclass_extends: Vec<Vec<HashSet<TypeclassId>>>,
+    typeclass_extends: Vec<Vec<StdHashSet<TypeclassId>>>,
 
     /// typeclass_instances[module_id][local_id] is the set of GroundTypeIds that are instances of this typeclass.
-    typeclass_instances: Vec<Vec<HashSet<GroundTypeId>>>,
+    typeclass_instances: Vec<Vec<StdHashSet<GroundTypeId>>>,
 }
 
 impl TypeStore {
@@ -49,9 +52,9 @@ impl TypeStore {
         TypeStore {
             ground_id_to_type: Vec::new(),
             ground_id_to_arity: Vec::new(),
-            datatype_to_ground_id: HashMap::new(),
-            arbitrary_to_ground_id: HashMap::new(),
-            typeclass_to_id: HashMap::new(),
+            datatype_to_ground_id: ImHashMap::new(),
+            arbitrary_to_ground_id: ImHashMap::new(),
+            typeclass_to_id: ImHashMap::new(),
             id_to_typeclass: Vec::new(),
             typeclass_extends: Vec::new(),
             typeclass_instances: Vec::new(),
@@ -263,7 +266,7 @@ impl TypeStore {
     pub fn to_type_term_with_vars(
         &self,
         acorn_type: &AcornType,
-        type_var_map: Option<&HashMap<String, (AtomId, Term)>>,
+        type_var_map: Option<&StdHashMap<String, (AtomId, Term)>>,
     ) -> Term {
         match acorn_type {
             // Built-in types: use dedicated Symbol variants
@@ -732,7 +735,7 @@ impl TypeStore {
     pub fn type_term_to_acorn_type_with_var_names(
         &self,
         type_term: &Term,
-        var_id_to_name: &HashMap<AtomId, String>,
+        var_id_to_name: &StdHashMap<AtomId, String>,
     ) -> AcornType {
         self.type_term_to_acorn_type_with_var_names_impl(type_term, 0, 0, var_id_to_name)
     }
@@ -743,7 +746,7 @@ impl TypeStore {
         type_term: &Term,
         outer_depth: u16,
         local_depth: u16,
-        var_id_to_name: &HashMap<AtomId, String>,
+        var_id_to_name: &StdHashMap<AtomId, String>,
     ) -> AcornType {
         // Check for built-in types first
         if type_term.as_ref().is_bool_type() {
@@ -953,8 +956,8 @@ impl TypeStore {
 
         self.ensure_typeclass_module(module_id);
         self.id_to_typeclass[mod_idx].push(typeclass.clone());
-        self.typeclass_extends[mod_idx].push(HashSet::new());
-        self.typeclass_instances[mod_idx].push(HashSet::new());
+        self.typeclass_extends[mod_idx].push(StdHashSet::new());
+        self.typeclass_instances[mod_idx].push(StdHashSet::new());
         self.typeclass_to_id.insert(typeclass.clone(), id);
         id
     }
@@ -1064,7 +1067,7 @@ impl TypeStore {
             .get(mod_idx)
             .and_then(|v| v.get(typeclass_id.local_id() as usize))
             .into_iter()
-            .flat_map(|extends: &HashSet<TypeclassId>| extends.iter().copied())
+            .flat_map(|extends: &StdHashSet<TypeclassId>| extends.iter().copied())
     }
 
     /// Creates a Term representing a typeclass.

@@ -68,9 +68,7 @@ impl Normalizer {
     /// Registers an arbitrary type with the type store.
     /// This is needed for certificate checking where type parameters defined
     /// in a let...satisfy statement need to be available for subsequent steps.
-    pub fn register_arbitrary_type(&mut self, param: &crate::elaborator::acorn_type::TypeParam) {
-        use crate::elaborator::acorn_type::AcornType;
-
+    pub fn register_arbitrary_type(&mut self, param: &TypeParam) {
         let arb_type = AcornType::Arbitrary(param.clone());
         self.kernel_context.type_store.add_type(&arb_type);
 
@@ -2682,17 +2680,9 @@ impl Normalizer {
             .normalize_value(&denormalized, NewConstantType::Local, &Source::mock(), None)
             .unwrap();
         if renormalized.len() != 1 {
-            if true {
-                // For functional equalities, we know this check doesn't work.
-                // So we skip it.
-                return;
-            }
-            println!("original clause: {}", clause);
-            println!("denormalized: {}", denormalized);
-            for (i, clause) in renormalized.iter().enumerate() {
-                println!("renormalized[{}]: {}", i, clause);
-            }
-            panic!("expected 1 clause, got {}", renormalized.len());
+            // For functional equalities, we know this check doesn't work.
+            // So we skip it.
+            return;
         }
         if clause != &renormalized[0] {
             println!("original clause: {}", clause);
