@@ -2148,29 +2148,10 @@ impl Normalizer {
     }
 }
 
-#[derive(Clone)]
-pub struct NormalizedGoal {
-    /// The name of the goal being proved.
-    pub name: String,
-
-    /// The value expresses the negation of the goal we are trying to prove.
-    /// It is normalized in the sense that hypothesis and counterfactual have been separated.
-    /// There is still more normalization that will happen when it is converted to Clause.
-    pub counterfactual: AcornValue,
-
-    /// Whether inconsistencies are okay.
-    /// If true, finding a contradiction results in Outcome::Success.
-    /// If false, finding a contradiction results in Outcome::Inconsistent.
-    pub inconsistency_okay: bool,
-}
-
 impl Normalizer {
-    /// Normalizes a goal into a NormalizedGoal and proof steps that includes
-    /// both positive versions of the hypotheses and negated versions of the conclusion.
-    pub fn normalize_goal(
-        &mut self,
-        goal: &Goal,
-    ) -> Result<(NormalizedGoal, Vec<ProofStep>), BuildError> {
+    /// Normalizes a goal into proof steps that include both positive versions
+    /// of the hypotheses and negated versions of the conclusion.
+    pub fn normalize_goal(&mut self, goal: &Goal) -> Result<Vec<ProofStep>, BuildError> {
         let prop = &goal.proposition;
 
         let (hypo, counterfactual) = prop.value.clone().negate_goal();
@@ -2183,19 +2164,14 @@ impl Normalizer {
         }
         // Preserve type parameters when creating counterfactual fact
         let counterfactual_prop = Proposition::new(
-            counterfactual.clone(),
+            counterfactual,
             prop.params.clone(),
             prop.source.as_negated_goal(),
         );
         let fact = Fact::Proposition(Arc::new(counterfactual_prop));
         steps.extend(self.normalize_fact(fact)?);
 
-        let ng = NormalizedGoal {
-            name: goal.name.clone(),
-            counterfactual,
-            inconsistency_okay: goal.inconsistency_okay,
-        };
-        Ok((ng, steps))
+        Ok(steps)
     }
 
     /// If arbitrary names are provided, any free variables of the keyed types are converted

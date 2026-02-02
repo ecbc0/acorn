@@ -86,7 +86,7 @@ impl Processor {
     /// Normalizes a goal and sets it as the prover's goal.
     pub fn set_goal(&mut self, goal: &Goal) -> Result<(), BuildError> {
         let source = &goal.proposition.source;
-        let (ng, steps) = self.normalizer.normalize_goal(goal)?;
+        let steps = self.normalizer.normalize_goal(goal)?;
         debug!(goal = %goal.proposition.value, "setting goal");
         for step in &steps {
             let denormalized = self.normalizer.denormalize(&step.clause, None, None, false);
@@ -107,7 +107,7 @@ impl Processor {
                 kernel_context,
             );
         }
-        self.prover.set_goal(ng, steps, kernel_context);
+        self.prover.set_goal(goal.clone(), steps, kernel_context);
         Ok(())
     }
 

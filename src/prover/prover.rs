@@ -7,13 +7,14 @@ use super::proof::Proof;
 use crate::certificate::Certificate;
 use crate::code_generator::{CodeGenerator, Error};
 use crate::elaborator::binding_map::BindingMap;
+use crate::elaborator::goal::Goal;
 use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::variable_map::VariableMap;
 use crate::kernel::EqualityGraphContradiction;
-use crate::normalizer::{NormalizedGoal, Normalizer};
+use crate::normalizer::Normalizer;
 use crate::proof_step::{PremiseMap, ProofStep, ProofStepId, Rule, Truthiness};
 use crate::prover::{Outcome, ProverMode};
 
@@ -51,7 +52,7 @@ pub struct Prover {
 
     /// The goal of the prover.
     /// If this is None, the goal hasn't been set yet.
-    goal: Option<NormalizedGoal>,
+    goal: Option<Goal>,
 }
 
 impl Prover {
@@ -574,14 +575,9 @@ impl Prover {
         }
     }
 
-    pub fn set_goal(
-        &mut self,
-        ng: NormalizedGoal,
-        steps: Vec<ProofStep>,
-        kernel_context: &KernelContext,
-    ) {
+    pub fn set_goal(&mut self, goal: Goal, steps: Vec<ProofStep>, kernel_context: &KernelContext) {
         assert!(self.goal.is_none());
         self.add_steps(steps, kernel_context);
-        self.goal = Some(ng);
+        self.goal = Some(goal);
     }
 }
