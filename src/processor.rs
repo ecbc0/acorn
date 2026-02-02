@@ -12,7 +12,7 @@ use crate::project::Project;
 use crate::proof_step::Rule;
 use crate::prover::{Outcome, Prover, ProverMode};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, trace};
+use tracing::debug;
 
 /// The processor represents what we do with a stream of facts.
 #[derive(Clone)]
@@ -54,10 +54,6 @@ impl Processor {
             _ => debug!("adding other fact"),
         }
         let steps = self.normalizer.normalize_fact(fact)?;
-        for step in &steps {
-            let denormalized = self.normalizer.denormalize(&step.clause, None, None, false);
-            trace!(clause = %denormalized, "proof step");
-        }
         let kernel_context = self.normalizer.kernel_context();
         for step in &steps {
             // Extract the source from the step's rule.
@@ -88,10 +84,6 @@ impl Processor {
         let source = &goal.proposition.source;
         let steps = self.normalizer.normalize_goal(goal)?;
         debug!(goal = %goal.proposition.value, "setting goal");
-        for step in &steps {
-            let denormalized = self.normalizer.denormalize(&step.clause, None, None, false);
-            trace!(clause = %denormalized, "proof step");
-        }
         let kernel_context = self.normalizer.kernel_context();
         for step in &steps {
             // Use the step's own source if it's an assumption (which includes negated goals),
