@@ -2,6 +2,7 @@ use std::collections::HashMap as StdHashMap;
 use std::collections::HashSet as StdHashSet;
 
 use im::HashMap as ImHashMap;
+use im::Vector as ImVector;
 
 use crate::elaborator::acorn_type::{AcornType, Datatype, FunctionType, TypeParam, Typeclass};
 use crate::kernel::atom::{Atom, AtomId};
@@ -16,13 +17,13 @@ use crate::module::ModuleId;
 pub struct TypeStore {
     /// ground_id_to_type[module_id][local_id] is the AcornType for that ground type.
     /// Only ground types are stored here.
-    /// Uses Vec<Vec<...>> for fast indexing by module_id.
-    ground_id_to_type: Vec<Vec<AcornType>>,
+    /// Uses im::Vector for O(1) clones.
+    ground_id_to_type: ImVector<ImVector<AcornType>>,
 
     /// ground_id_to_arity[module_id][local_id] is the number of type parameters for that type.
     /// For proper types like Bool, arity is 0.
     /// For type constructors like List, arity is 1.
-    ground_id_to_arity: Vec<Vec<u8>>,
+    ground_id_to_arity: ImVector<ImVector<u8>>,
 
     /// Maps Datatype (bare data type with no params) to its GroundTypeId.
     datatype_to_ground_id: ImHashMap<Datatype, GroundTypeId>,
@@ -34,15 +35,15 @@ pub struct TypeStore {
     typeclass_to_id: ImHashMap<Typeclass, TypeclassId>,
 
     /// id_to_typeclass[module_id][local_id] is the Typeclass
-    /// Uses Vec<Vec<...>> for fast indexing by module_id.
-    id_to_typeclass: Vec<Vec<Typeclass>>,
+    /// Uses im::Vector for O(1) clones.
+    id_to_typeclass: ImVector<ImVector<Typeclass>>,
 
     /// typeclass_extends[module_id][local_id] is the set of TypeclassIds that this typeclass extends.
     /// This is the transitive closure, so if A extends B and B extends C, then A's set contains both B and C.
-    typeclass_extends: Vec<Vec<StdHashSet<TypeclassId>>>,
+    typeclass_extends: ImVector<ImVector<StdHashSet<TypeclassId>>>,
 
     /// typeclass_instances[module_id][local_id] is the set of GroundTypeIds that are instances of this typeclass.
-    typeclass_instances: Vec<Vec<StdHashSet<GroundTypeId>>>,
+    typeclass_instances: ImVector<ImVector<StdHashSet<GroundTypeId>>>,
 }
 
 impl TypeStore {
@@ -50,39 +51,39 @@ impl TypeStore {
         // Empty, Bool, and TypeSort are now Symbol variants, not GroundTypeIds.
         // No pre-registration needed.
         TypeStore {
-            ground_id_to_type: Vec::new(),
-            ground_id_to_arity: Vec::new(),
+            ground_id_to_type: ImVector::new(),
+            ground_id_to_arity: ImVector::new(),
             datatype_to_ground_id: ImHashMap::new(),
             arbitrary_to_ground_id: ImHashMap::new(),
             typeclass_to_id: ImHashMap::new(),
-            id_to_typeclass: Vec::new(),
-            typeclass_extends: Vec::new(),
-            typeclass_instances: Vec::new(),
+            id_to_typeclass: ImVector::new(),
+            typeclass_extends: ImVector::new(),
+            typeclass_instances: ImVector::new(),
         }
     }
 
-    /// Ensures the Vec has an entry for the given module_id, extending with empty Vecs if needed.
+    /// Ensures the vector has an entry for the given module_id, extending with empty vectors if needed.
     fn ensure_ground_module(&mut self, module_id: ModuleId) {
         let idx = module_id.get() as usize;
         while self.ground_id_to_type.len() <= idx {
-            self.ground_id_to_type.push(Vec::new());
+            self.ground_id_to_type.push_back(ImVector::new());
         }
         while self.ground_id_to_arity.len() <= idx {
-            self.ground_id_to_arity.push(Vec::new());
+            self.ground_id_to_arity.push_back(ImVector::new());
         }
     }
 
-    /// Ensures the Vec has an entry for the given module_id for typeclass storage.
+    /// Ensures the vector has an entry for the given module_id for typeclass storage.
     fn ensure_typeclass_module(&mut self, module_id: ModuleId) {
         let idx = module_id.get() as usize;
         while self.id_to_typeclass.len() <= idx {
-            self.id_to_typeclass.push(Vec::new());
+            self.id_to_typeclass.push_back(ImVector::new());
         }
         while self.typeclass_extends.len() <= idx {
-            self.typeclass_extends.push(Vec::new());
+            self.typeclass_extends.push_back(ImVector::new());
         }
         while self.typeclass_instances.len() <= idx {
-            self.typeclass_instances.push(Vec::new());
+            self.typeclass_instances.push_back(ImVector::new());
         }
     }
 
@@ -110,8 +111,8 @@ impl TypeStore {
                 let ground_id = self.next_ground_id(module_id);
                 self.ensure_ground_module(module_id);
                 let idx = module_id.get() as usize;
-                self.ground_id_to_type[idx].push(acorn_type.clone());
-                self.ground_id_to_arity[idx].push(0); // Default arity 0, will be updated by set_datatype_arity
+                self.ground_id_to_type[idx].push_back(acorn_type.clone());
+                self.ground_id_to_arity[idx].push_back(0); // Default arity 0, will be updated by set_datatype_arity
                 self.datatype_to_ground_id
                     .insert(datatype.clone(), ground_id);
             }
@@ -156,8 +157,8 @@ impl TypeStore {
                 let ground_id = self.next_ground_id(module_id);
                 self.ensure_ground_module(module_id);
                 let idx = module_id.get() as usize;
-                self.ground_id_to_type[idx].push(acorn_type.clone());
-                self.ground_id_to_arity[idx].push(0); // Arbitrary types have arity 0
+                self.ground_id_to_type[idx].push_back(acorn_type.clone());
+                self.ground_id_to_arity[idx].push_back(0); // Arbitrary types have arity 0
                 self.arbitrary_to_ground_id
                     .insert(type_param.clone(), ground_id);
             }
@@ -955,9 +956,9 @@ impl TypeStore {
         let id = TypeclassId::new(module_id, local_id);
 
         self.ensure_typeclass_module(module_id);
-        self.id_to_typeclass[mod_idx].push(typeclass.clone());
-        self.typeclass_extends[mod_idx].push(StdHashSet::new());
-        self.typeclass_instances[mod_idx].push(StdHashSet::new());
+        self.id_to_typeclass[mod_idx].push_back(typeclass.clone());
+        self.typeclass_extends[mod_idx].push_back(StdHashSet::new());
+        self.typeclass_instances[mod_idx].push_back(StdHashSet::new());
         self.typeclass_to_id.insert(typeclass.clone(), id);
         id
     }

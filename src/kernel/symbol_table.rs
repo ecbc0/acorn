@@ -1,6 +1,6 @@
 use std::collections::HashMap as StdHashMap;
 
-use im::{HashMap as ImHashMap, HashSet as ImHashSet};
+use im::{HashMap as ImHashMap, HashSet as ImHashSet, Vector as ImVector};
 
 use crate::elaborator::acorn_type::AcornType;
 use crate::elaborator::acorn_value::{AcornValue, ConstantInstance};
@@ -37,20 +37,20 @@ pub struct SymbolTable {
     /// For global constant (module_id, local_id) in the prover,
     /// global_constants[module_id][local_id] is the corresponding ConstantName.
     /// Part of the Symbol -> ConstantName lookup direction.
-    /// Uses Vec<Vec<...>> instead of HashMap for fast indexing by module_id.
-    global_constants: Vec<Vec<Option<ConstantName>>>,
+    /// Uses im::Vector for O(1) clones.
+    global_constants: ImVector<ImVector<Option<ConstantName>>>,
 
     /// For global constant (module_id, local_id) in the prover,
     /// global_constant_types[module_id][local_id] is the type.
-    /// Uses Vec<Vec<...>> instead of HashMap for fast indexing by module_id.
-    global_constant_types: Vec<Vec<Term>>,
+    /// Uses im::Vector for O(1) clones.
+    global_constant_types: ImVector<ImVector<Term>>,
 
     /// For local constant i in the prover, scoped_constants[i] is the corresponding ConstantName.
     /// Part of the Symbol -> ConstantName lookup direction.
-    scoped_constants: Vec<Option<ConstantName>>,
+    scoped_constants: ImVector<Option<ConstantName>>,
 
     /// For local constant i in the prover, scoped_constant_types[i] is the type.
-    scoped_constant_types: Vec<Term>,
+    scoped_constant_types: ImVector<Term>,
 
     /// Inverse map of constants that can be referenced with a single name.
     /// The ConstantName -> Symbol lookup direction.
@@ -61,8 +61,8 @@ pub struct SymbolTable {
     instance_to_symbol: ImHashMap<ConstantInstance, Symbol>,
 
     /// For synthetic atom (module_id, local_id), synthetic_types[module_id][local_id] is the type.
-    /// Uses Vec<Vec<...>> instead of HashMap for fast indexing by module_id.
-    synthetic_types: Vec<Vec<Term>>,
+    /// Uses im::Vector for O(1) clones.
+    synthetic_types: ImVector<ImVector<Term>>,
 
     /// Maps polymorphic constant names to their generic type info.
     /// Used to properly denormalize constants.
@@ -84,13 +84,13 @@ pub struct SymbolTable {
 impl SymbolTable {
     pub fn new() -> SymbolTable {
         SymbolTable {
-            global_constants: Vec::new(),
-            global_constant_types: Vec::new(),
-            scoped_constants: vec![],
-            scoped_constant_types: vec![],
+            global_constants: ImVector::new(),
+            global_constant_types: ImVector::new(),
+            scoped_constants: ImVector::new(),
+            scoped_constant_types: ImVector::new(),
             name_to_symbol: ImHashMap::new(),
             instance_to_symbol: ImHashMap::new(),
-            synthetic_types: vec![],
+            synthetic_types: ImVector::new(),
             polymorphic_info: ImHashMap::new(),
             type_to_element: ImHashMap::new(),
             inhabited_type_constructors: ImHashSet::new(),
@@ -247,7 +247,7 @@ impl SymbolTable {
     #[cfg(test)]
     pub fn num_global_constants(&self) -> u32 {
         self.global_constant_types
-            .first()
+            .front()
             .map(|v| v.len())
             .unwrap_or(0) as u32
     }
@@ -263,20 +263,20 @@ impl SymbolTable {
     fn ensure_module_exists(&mut self, module_id: ModuleId) {
         let idx = module_id.get() as usize;
         while self.global_constants.len() <= idx {
-            self.global_constants.push(Vec::new());
+            self.global_constants.push_back(ImVector::new());
         }
         while self.global_constant_types.len() <= idx {
-            self.global_constant_types.push(Vec::new());
+            self.global_constant_types.push_back(ImVector::new());
         }
         while self.synthetic_types.len() <= idx {
-            self.synthetic_types.push(Vec::new());
+            self.synthetic_types.push_back(ImVector::new());
         }
     }
 
     /// Get the number of synthetics.
     #[cfg(test)]
     pub fn num_synthetics(&self) -> u32 {
-        self.synthetic_types.first().map(|v| v.len()).unwrap_or(0) as u32
+        self.synthetic_types.front().map(|v| v.len()).unwrap_or(0) as u32
     }
 
     /// Set the type for a synthetic at a given index in module 0 (for tests).
@@ -314,7 +314,7 @@ impl SymbolTable {
         let atom_id = self.synthetic_types[idx].len() as AtomId;
         let symbol = Symbol::Synthetic(module_id, atom_id);
         self.record_element(var_type.clone(), symbol);
-        self.synthetic_types[idx].push(var_type);
+        self.synthetic_types[idx].push_back(var_type);
         symbol
     }
 
@@ -326,8 +326,8 @@ impl SymbolTable {
         let atom_id = self.scoped_constant_types.len() as AtomId;
         let symbol = Symbol::ScopedConstant(atom_id);
         self.record_element(var_type.clone(), symbol);
-        self.scoped_constants.push(None);
-        self.scoped_constant_types.push(var_type);
+        self.scoped_constants.push_back(None);
+        self.scoped_constant_types.push_back(var_type);
         symbol
     }
 
@@ -343,8 +343,8 @@ impl SymbolTable {
         let atom_id = self.global_constant_types[idx].len() as AtomId;
         let symbol = Symbol::GlobalConstant(module_id, atom_id);
         self.record_element(var_type.clone(), symbol);
-        self.global_constants[idx].push(None);
-        self.global_constant_types[idx].push(var_type);
+        self.global_constants[idx].push_back(None);
+        self.global_constant_types[idx].push_back(var_type);
         symbol
     }
 
@@ -365,8 +365,8 @@ impl SymbolTable {
         let symbol = match ctype {
             NewConstantType::Local => {
                 let atom_id = self.scoped_constant_types.len() as AtomId;
-                self.scoped_constants.push(Some(name.clone()));
-                self.scoped_constant_types.push(var_type.clone());
+                self.scoped_constants.push_back(Some(name.clone()));
+                self.scoped_constant_types.push_back(var_type.clone());
                 Symbol::ScopedConstant(atom_id)
             }
             NewConstantType::Global => {
@@ -374,8 +374,8 @@ impl SymbolTable {
                 self.ensure_module_exists(module_id);
                 let idx = module_id.get() as usize;
                 let atom_id = self.global_constant_types[idx].len() as AtomId;
-                self.global_constants[idx].push(Some(name.clone()));
-                self.global_constant_types[idx].push(var_type.clone());
+                self.global_constants[idx].push_back(Some(name.clone()));
+                self.global_constant_types[idx].push_back(var_type.clone());
                 Symbol::GlobalConstant(module_id, atom_id)
             }
         };
