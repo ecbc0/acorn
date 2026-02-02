@@ -340,7 +340,7 @@ pub enum AcornType {
     Function(FunctionType),
 
     /// Type variables and arbitrary types are similar, but different.
-    /// Type variables are not monomorphic. Arbitrary types are monomorphic.
+    /// Type variables are generic (can be instantiated). Arbitrary types are fixed/concrete.
     /// They do share the same namespace; you shouldn't have type variables and arbitrary types
     /// inside the same type that have the same name.
     ///
@@ -357,7 +357,7 @@ pub enum AcornType {
     /// To use this theorem, we need to instantiate T to a concrete type, like Nat or Int.
     ///
     /// To the internal proof, T is an arbitrary type. It's fixed for the duration of the proof.
-    /// To prove this theorem, we *don't* need to instantiate T to a monomorphic type.
+    /// To prove this theorem, we *don't* need to instantiate T to a specific concrete type.
     ///
     /// A type variable represents an unknown type, possibly belonging to a particular typeclass.
     /// Expressions with type variables can be instantiated to particular types.

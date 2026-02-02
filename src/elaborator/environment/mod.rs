@@ -390,7 +390,7 @@ impl Environment {
             )
         };
         let source = Source::anonymous(self.module_id, claim_range, self.depth);
-        let prop = Proposition::monomorphic(external_claim, source);
+        let prop = Proposition::new(external_claim, vec![], source);
         let index = self.add_node(Node::block(project, self, block, Some(prop)));
         self.add_line_types(
             LineType::Node(index),

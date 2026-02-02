@@ -51,7 +51,7 @@ impl fmt::Display for Fact {
 
 impl Fact {
     pub fn proposition(value: AcornValue, source: Source) -> Fact {
-        Fact::Proposition(Arc::new(Proposition::monomorphic(value, source)))
+        Fact::Proposition(Arc::new(Proposition::new(value, vec![], source)))
     }
 
     pub fn source(&self) -> &Source {

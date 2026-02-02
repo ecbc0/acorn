@@ -44,12 +44,6 @@ impl Proposition {
         }
     }
 
-    /// Creates a non-generic proposition.
-    pub fn monomorphic(value: AcornValue, source: Source) -> Proposition {
-        assert!(!value.has_generic());
-        Proposition::new(value, vec![], source)
-    }
-
     /// Just changes the value while keeping the other stuff intact
     pub fn with_value(self, value: AcornValue) -> Proposition {
         Proposition::new(value, self.params, self.source)

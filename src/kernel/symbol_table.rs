@@ -384,7 +384,7 @@ impl SymbolTable {
         symbol
     }
 
-    /// Add all constant names, monomorphs, and types from a value to the symbol table.
+    /// Add all constant names and types from a value to the symbol table.
     /// Polymorphic constants get Pi-wrapped types for dependent type representation.
     pub fn add_from(
         &mut self,
@@ -568,7 +568,7 @@ impl SymbolTable {
     }
 
     /// Build a term application for a polymorphic constant.
-    /// E.g., for add[Int], builds add(Int) instead of using a monomorph symbol.
+    /// E.g., for add[Int], builds add(Int) with the type argument applied.
     /// However, if the constant has an alias (via alias_instance), use that instead.
     pub fn term_from_instance(
         &self,

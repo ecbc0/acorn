@@ -825,7 +825,7 @@ fn test_code_gen_not_losing_conclusion() {
 
 #[test]
 fn test_proving_identity_is_surjective() {
-    // To prove this, the monomorphizer needs to instantiate the definitions of:
+    // To prove this, we need to instantiate the definitions of:
     // is_surjective[V, V]
     // identity[V]
     let text = r#"

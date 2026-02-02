@@ -42,7 +42,7 @@ fn test_proving_avoids_infinitely_nested_types() {
             }
         }
 
-        // This theorem monomorphizes into indefinitely nested types if if you don't limit it.
+        // This theorem could recurse into indefinitely nested types if not limited.
         theorem foo_5[K, L](a: Set[K], b1: Set[L], b2: Set[L]) {
             a.mul(b1).mul(b2) = a.mul(b1).mul(b2)
         }

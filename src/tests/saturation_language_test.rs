@@ -953,7 +953,7 @@ fn test_proving_with_const_false() {
 
 #[test]
 fn test_proving_with_typeclass_attribute_assigned_as_generic() {
-    // This requires us to monomorphize to match equals[Color].
+    // This requires instantiating type parameters to match equals[Color].
     let text = r#"
     typeclass F: Foo {
         op: (F, F) -> Bool

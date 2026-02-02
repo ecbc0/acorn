@@ -61,8 +61,6 @@ impl Processor {
         let kernel_context = self.normalizer.kernel_context();
         for step in &steps {
             // Extract the source from the step's rule.
-            // When monomorphizing, the step contains the source of the general fact being specialized,
-            // not the source of the specific theorem invoking it.
             let step_source = match &step.rule {
                 Rule::Assumption(info) => info.source.clone(),
                 _ => {

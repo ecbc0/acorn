@@ -2255,12 +2255,12 @@ impl Environment {
         if self.bindings.is_citation(&claim, project) {
             // We already know this is true, so we don't need to prove it
             let source = Source::anonymous(self.module_id, statement.range(), self.depth);
-            let prop = Proposition::monomorphic(claim, source);
+            let prop = Proposition::new(claim, vec![], source);
             self.add_node(Node::structural(project, self, prop));
             self.add_other_lines(statement);
         } else {
             let source = Source::anonymous(self.module_id, statement.range(), self.depth);
-            let prop = Proposition::monomorphic(claim, source);
+            let prop = Proposition::new(claim, vec![], source);
             let index =
                 self.add_node(Node::claim(project, self, prop).map_err(|e| statement.error(&e))?);
             self.add_node_lines(index, &statement.range());
@@ -2303,7 +2303,7 @@ impl Environment {
 
         let (outer_claim, range) = block.externalize_last_claim(self, &fas.body.right_brace)?;
         let source = Source::anonymous(self.module_id, range, self.depth);
-        let prop = Proposition::monomorphic(outer_claim, source);
+        let prop = Proposition::new(outer_claim, vec![], source);
         let index = self.add_node(Node::block(project, self, block, Some(prop)));
         self.add_node_lines(index, &statement.range());
         Ok(())
@@ -2478,7 +2478,7 @@ impl Environment {
 
                 let disjunction = AcornValue::reduce(BinaryOp::Or, disjuncts);
                 let source = Source::anonymous(self.module_id, statement.range(), self.depth);
-                let prop = Proposition::monomorphic(disjunction, source);
+                let prop = Proposition::new(disjunction, vec![], source);
                 let index = self.add_node(Node::block(project, self, block, Some(prop)));
                 self.add_node_lines(index, &body.range());
                 return Ok(());
@@ -2588,7 +2588,7 @@ impl Environment {
         // Wrap in exists quantifier
         let general_claim = AcornValue::Exists(quant_types.clone(), Box::new(general_equality));
         let source = Source::anonymous(self.module_id, statement.range(), self.depth);
-        let general_prop = Proposition::monomorphic(general_claim, source);
+        let general_prop = Proposition::new(general_claim, vec![], source);
         let index = self
             .add_node(Node::claim(project, self, general_prop).map_err(|e| statement.error(&e))?);
         self.add_node_lines(index, &statement.range());
@@ -2623,7 +2623,7 @@ impl Environment {
         let applied = AcornValue::apply(function, arg_values);
         let equality = AcornValue::equals(applied, value);
         let source = Source::anonymous(self.module_id, statement.range(), self.depth);
-        let prop = Proposition::monomorphic(equality, source);
+        let prop = Proposition::new(equality, vec![], source);
         self.add_node(Node::structural(project, self, prop));
 
         Ok(())

@@ -2045,7 +2045,6 @@ impl Normalizer {
     }
 
     /// A single fact can turn into a bunch of proof steps.
-    /// This monomorphizes, which can indirectly turn into what seems like a lot of unrelated steps.
     pub fn normalize_fact(&mut self, fact: Fact) -> Result<Vec<ProofStep>, BuildError> {
         let mut steps = vec![];
 
@@ -2082,7 +2081,6 @@ impl Normalizer {
         {
             use crate::elaborator::acorn_type::TypeParam;
 
-            // In polymorphic mode, skip monomorphization and pass propositions through directly
             // We keep track of type params to build the type_var_map
             let propositions: Vec<(AcornValue, Vec<TypeParam>, Source)> = match fact {
                 Fact::Proposition(prop) => {

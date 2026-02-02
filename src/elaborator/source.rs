@@ -24,7 +24,6 @@ pub enum SourceType {
     TypeDefinition(String, String),
 
     /// A proposition that comes from the definition of a constant.
-    /// The value is instantiated during monomorphization.
     /// The string is the name of the constant. It can be <Type>.<name> for members.
     /// Uses Arc to avoid expensive cloning during verification.
     ConstantDefinition(Arc<AcornValue>, String),
@@ -246,7 +245,7 @@ impl Source {
 
     /// The name is an identifier for this source that is somewhat resilient to common edits.
     /// We use the line number as the name if there is no other identifier.
-    /// This can be a duplicate in some cases, like monomorphization or type definition.
+    /// This can be a duplicate in some cases, like type definitions.
     /// This is specific to the file it's in; to make it global it needs the fully qualified module name
     /// as a prefix.
     /// Premises and negated goals do not get names.

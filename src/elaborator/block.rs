@@ -139,7 +139,7 @@ impl Block {
         let goal_prop = match params {
             BlockParams::Conditional(condition, range) => {
                 let source = Source::premise(env.module_id, range, subenv.depth);
-                let prop = Proposition::monomorphic(condition.clone(), source);
+                let prop = Proposition::new(condition.clone(), vec![], source);
                 subenv.add_node(Node::structural(project, &subenv, prop));
                 None
             }
@@ -156,7 +156,7 @@ impl Block {
                     // The premise is unbound, so we need to bind the block's arg values.
                     let bound = unbound_premise.clone().bind_values(0, 0, &internal_args);
                     let source = Source::premise(env.module_id, *premise_range, subenv.depth);
-                    let prop = Proposition::monomorphic(bound, source);
+                    let prop = Proposition::new(bound, vec![], source);
                     subenv.add_node(Node::structural(project, &subenv, prop));
                 }
 
@@ -173,7 +173,7 @@ impl Block {
                     subenv.depth,
                     theorem_name.map(|s| s.to_string()),
                 );
-                Some(Proposition::monomorphic(bound_goal, source))
+                Some(Proposition::new(bound_goal, vec![], source))
             }
             BlockParams::FunctionSatisfy(ref unbound_goal, ref return_type, range) => {
                 // In the block, we need to prove this goal in bound form, so bind args to it.
@@ -184,9 +184,8 @@ impl Block {
                     .bind_values(0, 0, &internal_args)
                     .to_arbitrary();
                 let bound_goal = AcornValue::exists(vec![return_type.to_arbitrary()], partial_goal);
-                assert!(!bound_goal.has_generic());
                 let source = Source::block_goal(env.module_id, range, subenv.depth);
-                let prop = Proposition::monomorphic(bound_goal, source);
+                let prop = Proposition::new(bound_goal, vec![], source);
                 Some(prop)
             }
             BlockParams::MatchCase(ref scrutinee, ref constructor, ref pattern_args, range) => {
@@ -210,7 +209,7 @@ impl Block {
                 let applied = AcornValue::apply(constructor.clone(), arg_values);
                 let equality = AcornValue::equals(scrutinee.clone(), applied);
                 let source = Source::premise(env.module_id, range, subenv.depth);
-                let prop = Proposition::monomorphic(equality, source);
+                let prop = Proposition::new(equality, vec![], source);
                 subenv.add_node(Node::structural(project, &subenv, prop));
                 None
             }
@@ -220,7 +219,7 @@ impl Block {
                 // Multiple constraints will be handled separately below.
                 if constraints.len() == 1 {
                     let source = Source::block_goal(env.module_id, range, subenv.depth);
-                    Some(Proposition::monomorphic(constraints[0].clone(), source))
+                    Some(Proposition::new(constraints[0].clone(), vec![], source))
                 } else {
                     None
                 }
@@ -271,7 +270,7 @@ impl Block {
             if constraints.len() > 1 {
                 for constraint in constraints {
                     let source = Source::block_goal(env.module_id, range, env.depth);
-                    let prop = Proposition::monomorphic(constraint, source);
+                    let prop = Proposition::new(constraint, vec![], source);
                     let goal = Goal::interior(&subenv, Arc::new(prop))
                         .map_err(|e| error::Error::new(first_token, last_token, &e))?;
                     let goal_node = Node::Claim(goal);
