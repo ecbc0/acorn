@@ -27,7 +27,7 @@ pub enum Node {
     Structural(Fact),
 
     /// A claim is something that we need to prove, and then we can subsequently use it.
-    Claim(Arc<Proposition>),
+    Claim(Goal),
 
     /// A block has its own environment inside. We need to validate everything in the block.
     /// The block might not exist in the code, but it at least needs to exist for the prover.
@@ -54,9 +54,11 @@ impl Node {
         Node::Structural(Fact::Proposition(Arc::new(prop)))
     }
 
-    pub fn claim(project: &Project, env: &Environment, prop: Proposition) -> Node {
+    pub fn claim(project: &Project, env: &Environment, prop: Proposition) -> Result<Node, String> {
         let prop = env.bindings.expand_theorems(prop, project);
-        Node::Claim(Arc::new(prop))
+        let prop = Arc::new(prop);
+        let goal = Goal::interior(env, prop)?;
+        Ok(Node::Claim(goal))
     }
 
     /// This does not expand theorems. I can imagine this coming up, but it would be weird.
@@ -116,7 +118,7 @@ impl Node {
     pub fn first_line(&self) -> u32 {
         match self {
             Node::Structural(f) => f.source().range.start.line,
-            Node::Claim(p) => p.source.range.start.line,
+            Node::Claim(g) => g.proposition.source.range.start.line,
             Node::Block(block, _) => block.env.first_line,
         }
     }
@@ -124,7 +126,7 @@ impl Node {
     pub fn last_line(&self) -> u32 {
         match self {
             Node::Structural(f) => f.source().range.end.line,
-            Node::Claim(p) => p.source.range.end.line,
+            Node::Claim(g) => g.proposition.source.range.end.line,
             Node::Block(block, _) => block.env.last_line(),
         }
     }
@@ -140,7 +142,7 @@ impl Node {
     pub fn source(&self) -> Option<&Source> {
         match self {
             Node::Structural(f) => Some(f.source()),
-            Node::Claim(p) => Some(&p.source),
+            Node::Claim(g) => Some(&g.proposition.source),
             Node::Block(_, Some(f)) => Some(f.source()),
             Node::Block(_, None) => None,
         }
@@ -150,7 +152,7 @@ impl Node {
     pub fn proposition(&self) -> Option<&Proposition> {
         match self {
             Node::Structural(Fact::Proposition(p)) => Some(p.as_ref()),
-            Node::Claim(p) => Some(p.as_ref()),
+            Node::Claim(g) => Some(g.proposition.as_ref()),
             Node::Block(_, Some(Fact::Proposition(p))) => Some(p.as_ref()),
             _ => None,
         }
@@ -165,7 +167,7 @@ impl Node {
     pub fn get_fact(&self) -> Option<Fact> {
         match self {
             Node::Structural(f) => Some(f.clone()),
-            Node::Claim(p) => Some(Fact::Proposition(p.clone())),
+            Node::Claim(g) => Some(Fact::Proposition(g.proposition.clone())),
             Node::Block(_, Some(f)) => Some(f.clone()),
             _ => None,
         }
@@ -216,7 +218,7 @@ impl fmt::Debug for NodeCursor<'_> {
         if node.has_goal() {
             write!(f, ", has_goal: true")?;
             match node {
-                Node::Claim(prop) => write!(f, ", claim: {}", prop)?,
+                Node::Claim(goal) => write!(f, ", claim: {}", goal)?,
                 _ => {}
             }
         }
@@ -343,27 +345,13 @@ impl<'a> NodeCursor<'a> {
         facts
     }
 
-    /// Get a goal context for the current node.
-    /// Block nodes no longer have goals - their goals are child nodes.
-    /// This method works for Claim nodes.
-    pub fn goal(&self) -> Result<Goal, String> {
-        let node = self.node();
-        if let Node::Structural(_) = node {
-            return Err(format!(
-                "node {} does not need a proof, so it has no goal context",
-                self
-            ));
-        }
-
-        if let Some(_) = &node.get_block() {
-            return Err(format!(
-                "block at {} does not have a goal directly - goals are child nodes",
-                self
-            ));
-        } else {
-            // This is a Claim node
-            let prop = node.proposition().unwrap();
-            Goal::interior(self.env(), &prop)
+    /// Get the goal for the current node.
+    /// Returns None for Structural and Block nodes.
+    /// Block nodes don't have goals directly - their goals are child nodes.
+    pub fn goal(&self) -> Option<&'a Goal> {
+        match self.node() {
+            Node::Claim(goal) => Some(goal),
+            _ => None,
         }
     }
 

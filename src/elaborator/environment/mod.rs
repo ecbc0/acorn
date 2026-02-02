@@ -454,7 +454,7 @@ impl Environment {
             if context.name == name {
                 return node;
             }
-            names.push(context.name);
+            names.push(context.name.clone());
         }
 
         panic!("no context found for {} in:\n{}\n", name, names.join("\n"));

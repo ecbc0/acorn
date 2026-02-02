@@ -1321,13 +1321,13 @@ impl Project {
         let mut goal_infos = vec![];
         let mut goal_range = None;
 
-        if let Ok(goal) = cursor.goal() {
+        if let Some(goal) = cursor.goal() {
             // Single goal node
             goal_range = Some(goal.proposition.source.range);
             let goal_env = cursor
                 .goal_env()
                 .map_err(|e| format!("goal_env failed: {}", e))?;
-            let goal_info = self.create_goal_info(&goal, goal_env, &cursor);
+            let goal_info = self.create_goal_info(goal, goal_env, &cursor);
             goal_infos.push(goal_info);
         } else if let Some(block) = cursor.node().get_block() {
             // This is a Block node - collect ALL block-level goal children
@@ -1358,7 +1358,7 @@ impl Project {
 
                 let goal = goal_cursor
                     .goal()
-                    .map_err(|e| format!("failed to get goal from goal node: {}", e))?;
+                    .ok_or_else(|| "failed to get goal from goal node".to_string())?;
 
                 // Use the first goal's range for the overall goal_range
                 if goal_range.is_none() {

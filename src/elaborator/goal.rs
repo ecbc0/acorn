@@ -1,3 +1,6 @@
+use std::fmt;
+use std::sync::Arc;
+
 use crate::code_generator::CodeGenerator;
 use crate::elaborator::environment::Environment;
 use crate::elaborator::proposition::Proposition;
@@ -12,7 +15,7 @@ pub struct Goal {
     pub name: String,
 
     // The proposition to be proved.
-    pub proposition: Proposition,
+    pub proposition: Arc<Proposition>,
 
     // Whether it's okay if we discover an inconsistency in the provided facts.
     // If it's not okay, we warn the user.
@@ -23,11 +26,17 @@ pub struct Goal {
     pub last_line: u32,
 }
 
+impl fmt::Display for Goal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.proposition)
+    }
+}
+
 impl Goal {
     /// Creates a new Goal with the given parameters.
     fn new(
         env: &Environment,
-        prop: &Proposition,
+        prop: Arc<Proposition>,
         first_line: u32,
         last_line: u32,
     ) -> Result<Goal, String> {
@@ -45,7 +54,7 @@ impl Goal {
         Ok(Goal {
             module_id: env.module_id,
             name,
-            proposition: prop.clone(),
+            proposition: prop,
             inconsistency_okay: env.includes_explicit_false,
             first_line,
             last_line,
@@ -53,14 +62,14 @@ impl Goal {
     }
 
     /// Creates a Goal for a block that has a goal.
-    pub fn block(env: &Environment, prop: &Proposition) -> Result<Goal, String> {
+    pub fn block(env: &Environment, prop: Arc<Proposition>) -> Result<Goal, String> {
         let first_line = env.first_line;
         let last_line = env.last_line();
         Self::new(env, prop, first_line, last_line)
     }
 
     /// Creates a Goal for a proposition that is inside a block (or standalone).
-    pub fn interior(env: &Environment, prop: &Proposition) -> Result<Goal, String> {
+    pub fn interior(env: &Environment, prop: Arc<Proposition>) -> Result<Goal, String> {
         let first_line = prop.source.range.start.line;
         let last_line = prop.source.range.end.line;
         Self::new(env, prop, first_line, last_line)

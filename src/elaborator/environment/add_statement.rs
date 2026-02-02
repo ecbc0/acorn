@@ -634,7 +634,8 @@ impl Environment {
             AcornValue::Exists(quant_types.clone(), Box::new(general_claim_value.clone()));
         let source = Source::anonymous(self.module_id, statement.range(), self.depth);
         let general_prop = Proposition::new(general_claim, local_type_params.clone(), source);
-        let index = self.add_node(Node::claim(project, self, general_prop));
+        let index = self
+            .add_node(Node::claim(project, self, general_prop).map_err(|e| statement.error(&e))?);
         self.add_node_lines(index, &statement.range());
 
         // Define the polymorphic constants.
@@ -2260,7 +2261,8 @@ impl Environment {
         } else {
             let source = Source::anonymous(self.module_id, statement.range(), self.depth);
             let prop = Proposition::monomorphic(claim, source);
-            let index = self.add_node(Node::claim(project, self, prop));
+            let index =
+                self.add_node(Node::claim(project, self, prop).map_err(|e| statement.error(&e))?);
             self.add_node_lines(index, &statement.range());
         }
         Ok(())
@@ -2587,7 +2589,8 @@ impl Environment {
         let general_claim = AcornValue::Exists(quant_types.clone(), Box::new(general_equality));
         let source = Source::anonymous(self.module_id, statement.range(), self.depth);
         let general_prop = Proposition::monomorphic(general_claim, source);
-        let index = self.add_node(Node::claim(project, self, general_prop));
+        let index = self
+            .add_node(Node::claim(project, self, general_prop).map_err(|e| statement.error(&e))?);
         self.add_node_lines(index, &statement.range());
 
         // Now bind the arguments as constants

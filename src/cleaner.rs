@@ -109,11 +109,11 @@ impl ModuleCleaner {
 
         for node in &env.nodes {
             match node {
-                Node::Claim(prop) => {
+                Node::Claim(goal) => {
                     // Only collect claims when inside proofs, but skip block-level goals
                     if inside_proof && !node.is_block_level_goal() {
                         // This is an internal claim in a proof, it's cleanable
-                        ranges.push(prop.source.range);
+                        ranges.push(goal.proposition.source.range);
                     }
                 }
                 Node::Block(block, _) => {
