@@ -7,7 +7,7 @@ use crate::code_generator::Error;
 use crate::elaborator::binding_map::BindingMap;
 use crate::elaborator::fact::Fact;
 use crate::elaborator::goal::Goal;
-use crate::normalizer::Normalizer;
+use crate::normalizer::{NormalizedFact, NormalizedGoal, Normalizer};
 use crate::project::Project;
 use crate::proof_step::Rule;
 use crate::prover::{Outcome, Prover, ProverMode};
@@ -46,16 +46,10 @@ impl Processor {
         &self.normalizer
     }
 
-    /// Normalizes a fact and adds the resulting proof steps to the prover.
-    pub fn add_fact(&mut self, fact: Fact) -> Result<(), BuildError> {
-        match &fact {
-            Fact::Proposition(prop) => debug!(value = %prop.value, "adding proposition"),
-            Fact::Definition(c, val, _) => debug!(constant = %c, value = %val, "adding definition"),
-            _ => debug!("adding other fact"),
-        }
-        let steps = self.normalizer.normalize_fact(fact)?;
+    /// Adds a normalized fact to the prover.
+    pub fn add_normalized_fact(&mut self, normalized: NormalizedFact) -> Result<(), BuildError> {
         let kernel_context = self.normalizer.kernel_context();
-        for step in &steps {
+        for step in &normalized.steps {
             // Extract the source from the step's rule.
             let step_source = match &step.rule {
                 Rule::Assumption(info) => info.source.clone(),
@@ -75,17 +69,26 @@ impl Processor {
                 kernel_context,
             );
         }
-        self.prover.add_steps(steps, kernel_context);
+        self.prover.add_steps(normalized.steps, kernel_context);
         Ok(())
     }
 
-    /// Normalizes a goal and sets it as the prover's goal.
-    pub fn set_goal(&mut self, goal: &Goal) -> Result<(), BuildError> {
-        let source = &goal.proposition.source;
-        let steps = self.normalizer.normalize_goal(goal)?;
-        debug!(goal = %goal.proposition.value, "setting goal");
+    /// Normalizes a fact and adds the resulting proof steps to the prover.
+    pub fn add_fact(&mut self, fact: &Fact) -> Result<(), BuildError> {
+        match fact {
+            Fact::Proposition(prop) => debug!(value = %prop.value, "adding proposition"),
+            Fact::Definition(c, val, _) => debug!(constant = %c, value = %val, "adding definition"),
+            _ => debug!("adding other fact"),
+        }
+        let normalized = self.normalizer.normalize_fact(fact)?;
+        self.add_normalized_fact(normalized)
+    }
+
+    /// Sets a normalized goal as the prover's goal.
+    pub fn set_normalized_goal(&mut self, normalized: NormalizedGoal) {
+        let source = &normalized.goal.proposition.source;
         let kernel_context = self.normalizer.kernel_context();
-        for step in &steps {
+        for step in &normalized.steps {
             // Use the step's own source if it's an assumption (which includes negated goals),
             // otherwise use the goal's source
             let step_source = if let Rule::Assumption(info) = &step.rule {
@@ -99,7 +102,14 @@ impl Processor {
                 kernel_context,
             );
         }
-        self.prover.set_goal(goal.clone(), steps, kernel_context);
+        self.prover
+            .set_goal(normalized.goal, normalized.steps, kernel_context);
+    }
+
+    /// Normalizes a goal and sets it as the prover's goal.
+    pub fn set_goal(&mut self, goal: &Goal) -> Result<(), BuildError> {
+        let normalized = self.normalizer.normalize_goal(goal)?;
+        self.set_normalized_goal(normalized);
         Ok(())
     }
 
@@ -180,7 +190,7 @@ impl Processor {
         let goal_env = cursor.goal_env().unwrap();
 
         let mut processor = Processor::new();
-        for fact in facts {
+        for fact in &facts {
             processor.add_fact(fact).unwrap();
         }
         processor.set_goal(&goal).unwrap();

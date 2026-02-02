@@ -396,10 +396,10 @@ impl Checker {
         trace!("inserting goal {} (line {})", goal.name, goal.first_line);
 
         let source = &goal.proposition.source;
-        let steps = normalizer.normalize_goal(goal).map_err(|e| e.message)?;
+        let normalized = normalizer.normalize_goal(goal).map_err(|e| e.message)?;
         // Get kernel_context after normalizing, since normalize_goal may create new synthetics
         let kernel_context = normalizer.kernel_context();
-        for step in &steps {
+        for step in &normalized.steps {
             // Use the step's own source if it's an assumption (which includes negated goals),
             // otherwise use the goal's source
             let step_source = if let Rule::Assumption(info) = &step.rule {

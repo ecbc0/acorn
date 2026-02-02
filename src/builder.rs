@@ -796,7 +796,7 @@ impl<'a> Builder<'a> {
                 }
 
                 if let Some(fact) = cursor.node().get_fact() {
-                    Rc::make_mut(&mut processor).add_fact(fact)?;
+                    Rc::make_mut(&mut processor).add_fact(&fact)?;
                 }
 
                 if cursor.has_next() {
@@ -874,7 +874,7 @@ impl<'a> Builder<'a> {
 
             let mut processor = Processor::with_token(self.cancellation_token.clone());
             for fact in self.project.imported_facts(env.module_id, None) {
-                processor.add_fact(fact.clone())?;
+                processor.add_fact(&fact)?;
             }
             let mut processor = Rc::new(processor);
             let mut cursor = NodeCursor::new(env, 0);
@@ -903,7 +903,7 @@ impl<'a> Builder<'a> {
                     break;
                 }
                 if let Some(fact) = cursor.node().get_fact() {
-                    Rc::make_mut(&mut processor).add_fact(fact.clone())?;
+                    Rc::make_mut(&mut processor).add_fact(&fact)?;
                 }
                 cursor.next();
             }

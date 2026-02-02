@@ -1270,7 +1270,7 @@ impl Project {
         let mut processor = Processor::new();
         let facts = cursor.usable_facts(self);
         for fact in &facts {
-            if let Err(_) = processor.add_fact(fact.clone()) {
+            if let Err(_) = processor.add_fact(fact) {
                 return None;
             }
         }

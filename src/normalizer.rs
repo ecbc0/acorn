@@ -26,6 +26,17 @@ use crate::module::ModuleId;
 use crate::proof_step::{ProofStep, Truthiness};
 use tracing::trace;
 
+/// A fact that has been normalized into proof steps.
+pub struct NormalizedFact {
+    pub steps: Vec<ProofStep>,
+}
+
+/// A goal that has been normalized into proof steps.
+pub struct NormalizedGoal {
+    pub goal: Goal,
+    pub steps: Vec<ProofStep>,
+}
+
 #[derive(Clone)]
 pub struct Normalizer {
     /// Registry for synthetic atom definitions.
@@ -2045,11 +2056,11 @@ impl Normalizer {
     }
 
     /// A single fact can turn into a bunch of proof steps.
-    pub fn normalize_fact(&mut self, fact: Fact) -> Result<Vec<ProofStep>, BuildError> {
+    pub fn normalize_fact(&mut self, fact: &Fact) -> Result<NormalizedFact, BuildError> {
         let mut steps = vec![];
 
         // Register typeclass relationships in TypeStore
-        match &fact {
+        match fact {
             Fact::Instance(datatype, typeclass, _) => {
                 let acorn_type = AcornType::Data(datatype.clone(), vec![]);
                 let typeclass_id = self.kernel_context.type_store.add_typeclass(typeclass);
@@ -2088,11 +2099,13 @@ impl Normalizer {
                 }
                 Fact::Definition(potential, definition, source) => {
                     let (params, constant) = match potential {
-                        PotentialValue::Unresolved(u) => (u.params.clone(), u.to_generic_value()),
+                        PotentialValue::Unresolved(u) => {
+                            (u.params.clone(), u.clone().to_generic_value())
+                        }
                         PotentialValue::Resolved(c) => (vec![], c.clone()),
                     };
-                    let claim = constant.inflate_function_definition(definition);
-                    let prop = Proposition::new(claim, params, source);
+                    let claim = constant.inflate_function_definition(definition.clone());
+                    let prop = Proposition::new(claim, params, source.clone());
                     vec![(prop.value, prop.params, prop.source)]
                 }
                 Fact::Extends(..) | Fact::Instance(..) => {
@@ -2144,14 +2157,12 @@ impl Normalizer {
             }
         }
 
-        Ok(steps)
+        Ok(NormalizedFact { steps })
     }
-}
 
-impl Normalizer {
     /// Normalizes a goal into proof steps that include both positive versions
     /// of the hypotheses and negated versions of the conclusion.
-    pub fn normalize_goal(&mut self, goal: &Goal) -> Result<Vec<ProofStep>, BuildError> {
+    pub fn normalize_goal(&mut self, goal: &Goal) -> Result<NormalizedGoal, BuildError> {
         let prop = &goal.proposition;
 
         let (hypo, counterfactual) = prop.value.clone().negate_goal();
@@ -2160,7 +2171,7 @@ impl Normalizer {
             // Preserve type parameters when creating hypothesis fact
             let hypo_prop = Proposition::new(hypo, prop.params.clone(), prop.source.clone());
             let fact = Fact::Proposition(Arc::new(hypo_prop));
-            steps.extend(self.normalize_fact(fact)?);
+            steps.extend(self.normalize_fact(&fact)?.steps);
         }
         // Preserve type parameters when creating counterfactual fact
         let counterfactual_prop = Proposition::new(
@@ -2169,9 +2180,12 @@ impl Normalizer {
             prop.source.as_negated_goal(),
         );
         let fact = Fact::Proposition(Arc::new(counterfactual_prop));
-        steps.extend(self.normalize_fact(fact)?);
+        steps.extend(self.normalize_fact(&fact)?.steps);
 
-        Ok(steps)
+        Ok(NormalizedGoal {
+            goal: goal.clone(),
+            steps,
+        })
     }
 
     /// If arbitrary names are provided, any free variables of the keyed types are converted
@@ -2748,8 +2762,8 @@ impl Normalizer {
         let mut clauses = vec![];
         for node in &env.nodes {
             if let Some(fact) = node.get_fact() {
-                if let Ok(steps) = self.normalize_fact(fact) {
-                    for step in steps {
+                if let Ok(normalized) = self.normalize_fact(&fact) {
+                    for step in normalized.steps {
                         clauses.push(step.clause);
                     }
                 }

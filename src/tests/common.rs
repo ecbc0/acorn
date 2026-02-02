@@ -20,7 +20,7 @@ pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certi
     let goal = node.goal().unwrap();
     let env = node.goal_env().unwrap();
     let mut processor = Processor::new();
-    for fact in facts {
+    for fact in &facts {
         processor.add_fact(fact).unwrap();
     }
     processor.set_goal(&goal).unwrap();
@@ -60,7 +60,7 @@ pub fn prove_text(text: &str, goal_name: &str) -> Outcome {
             let facts = cursor.usable_facts(&project);
 
             let mut processor = Processor::new();
-            for fact in facts {
+            for fact in &facts {
                 if let Err(_) = processor.add_fact(fact) {
                     return Outcome::Inconsistent;
                 }
@@ -102,7 +102,7 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
         }
 
         let mut processor = Processor::new();
-        for fact in facts {
+        for fact in &facts {
             processor.add_fact(fact)?;
         }
         processor.set_goal(&goal)?;
@@ -130,14 +130,14 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
         let mut processor = Processor::new();
 
         // Add imported facts to build up normalizer state
-        for fact in project.imported_facts(module_id, None) {
+        for fact in &project.imported_facts(module_id, None) {
             processor.add_fact(fact)?;
         }
 
         // Add all facts from this module to normalize trailing ones
         for node in &env.nodes {
             if let Some(fact) = node.get_fact() {
-                processor.add_fact(fact)?;
+                processor.add_fact(&fact)?;
             }
         }
     }
@@ -185,7 +185,7 @@ pub fn verify_line(text: &str, goal_name: &str) -> Result<Outcome, String> {
             let goal_env = cursor.goal_env().unwrap();
 
             let mut processor = Processor::new();
-            for fact in facts {
+            for fact in &facts {
                 processor.add_fact(fact)?;
             }
             processor.set_goal(&goal)?;
