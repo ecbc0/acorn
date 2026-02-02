@@ -47,7 +47,7 @@ impl Processor {
     }
 
     /// Adds a normalized fact to the prover.
-    pub fn add_normalized_fact(&mut self, normalized: NormalizedFact) -> Result<(), BuildError> {
+    pub fn add_normalized_fact(&mut self, normalized: &NormalizedFact) -> Result<(), BuildError> {
         let kernel_context = self.normalizer.kernel_context();
         for step in &normalized.steps {
             // Extract the source from the step's rule.
@@ -69,7 +69,8 @@ impl Processor {
                 kernel_context,
             );
         }
-        self.prover.add_steps(normalized.steps, kernel_context);
+        self.prover
+            .add_steps(normalized.steps.clone(), kernel_context);
         Ok(())
     }
 
@@ -81,11 +82,11 @@ impl Processor {
             _ => debug!("adding other fact"),
         }
         let normalized = self.normalizer.normalize_fact(fact)?;
-        self.add_normalized_fact(normalized)
+        self.add_normalized_fact(&normalized)
     }
 
     /// Sets a normalized goal as the prover's goal.
-    pub fn set_normalized_goal(&mut self, normalized: NormalizedGoal) {
+    pub fn set_normalized_goal(&mut self, normalized: &NormalizedGoal) {
         let source = &normalized.goal.proposition.source;
         let kernel_context = self.normalizer.kernel_context();
         for step in &normalized.steps {
@@ -102,14 +103,17 @@ impl Processor {
                 kernel_context,
             );
         }
-        self.prover
-            .set_goal(normalized.goal, normalized.steps, kernel_context);
+        self.prover.set_goal(
+            normalized.goal.clone(),
+            normalized.steps.clone(),
+            kernel_context,
+        );
     }
 
     /// Normalizes a goal and sets it as the prover's goal.
     pub fn set_goal(&mut self, goal: &Goal) -> Result<(), BuildError> {
         let normalized = self.normalizer.normalize_goal(goal)?;
-        self.set_normalized_goal(normalized);
+        self.set_normalized_goal(&normalized);
         Ok(())
     }
 
