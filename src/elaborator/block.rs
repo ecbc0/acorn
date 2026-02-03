@@ -7,6 +7,7 @@ use crate::elaborator::acorn_type::{AcornType, TypeParam};
 use crate::elaborator::acorn_value::{AcornValue, BinaryOp};
 use crate::elaborator::environment::{Environment, LineType};
 use crate::elaborator::error::{self, ErrorContext};
+use crate::elaborator::fact::Fact;
 use crate::elaborator::goal::Goal;
 use crate::elaborator::names::DefinedName;
 use crate::elaborator::node::Node;
@@ -280,9 +281,11 @@ impl Block {
         // This allows the goal to use all facts from the block's internal nodes.
         if let Some(prop) = goal_prop {
             let goal_range = prop.source.range;
-            let goal = Goal::interior(&subenv, Arc::new(prop))
+            let prop = Arc::new(prop);
+            let goal = Goal::interior(&subenv, prop.clone())
                 .map_err(|e| error::Error::new(first_token, last_token, &e))?;
-            let goal_node = Node::Claim(goal);
+            let fact = Fact::Proposition(prop);
+            let goal_node = Node::Claim(goal, fact);
             let goal_index = subenv.add_node(goal_node);
             // Map the goal node to the appropriate source lines
             subenv.add_node_lines(goal_index, &goal_range);
@@ -293,10 +296,11 @@ impl Block {
             if constraints.len() > 1 {
                 for constraint in constraints {
                     let source = Source::block_goal(env.module_id, range, env.depth);
-                    let prop = Proposition::new(constraint, vec![], source);
-                    let goal = Goal::interior(&subenv, Arc::new(prop))
+                    let prop = Arc::new(Proposition::new(constraint, vec![], source));
+                    let goal = Goal::interior(&subenv, prop.clone())
                         .map_err(|e| error::Error::new(first_token, last_token, &e))?;
-                    let goal_node = Node::Claim(goal);
+                    let fact = Fact::Proposition(prop);
+                    let goal_node = Node::Claim(goal, fact);
                     let goal_index = subenv.add_node(goal_node);
                     subenv.add_node_lines(goal_index, &range);
                 }

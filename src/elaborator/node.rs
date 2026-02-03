@@ -27,7 +27,8 @@ pub enum Node {
     Structural(Fact),
 
     /// A claim is something that we need to prove, and then we can subsequently use it.
-    Claim(Goal),
+    /// The Goal represents what needs to be proven; the Fact represents what can be used once proven.
+    Claim(Goal, Fact),
 
     /// A block has its own environment inside. We need to validate everything in the block.
     /// The block might not exist in the code, but it at least needs to exist for the prover.
@@ -41,7 +42,7 @@ impl fmt::Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Node::Structural(fact) => write!(f, "structural: {}", fact),
-            Node::Claim(prop) => write!(f, "claim: {}", prop),
+            Node::Claim(goal, _) => write!(f, "claim: {}", goal),
             Node::Block(_, Some(fact)) => write!(f, "block: {}", fact),
             Node::Block(_, None) => write!(f, "block: None"),
         }
@@ -57,8 +58,9 @@ impl Node {
     pub fn claim(project: &Project, env: &Environment, prop: Proposition) -> Result<Node, String> {
         let prop = env.bindings.expand_theorems(prop, project);
         let prop = Arc::new(prop);
-        let goal = Goal::interior(env, prop)?;
-        Ok(Node::Claim(goal))
+        let goal = Goal::interior(env, prop.clone())?;
+        let fact = Fact::Proposition(prop);
+        Ok(Node::Claim(goal, fact))
     }
 
     /// This does not expand theorems. I can imagine this coming up, but it would be weird.
@@ -96,7 +98,7 @@ impl Node {
     pub fn has_goal(&self) -> bool {
         match self {
             Node::Structural(_) => false,
-            Node::Claim(_) => true,
+            Node::Claim(_, _) => true,
             Node::Block(_, _) => false,
         }
     }
@@ -118,7 +120,7 @@ impl Node {
     pub fn first_line(&self) -> u32 {
         match self {
             Node::Structural(f) => f.source().range.start.line,
-            Node::Claim(g) => g.proposition.source.range.start.line,
+            Node::Claim(g, _) => g.proposition.source.range.start.line,
             Node::Block(block, _) => block.env.first_line,
         }
     }
@@ -126,7 +128,7 @@ impl Node {
     pub fn last_line(&self) -> u32 {
         match self {
             Node::Structural(f) => f.source().range.end.line,
-            Node::Claim(g) => g.proposition.source.range.end.line,
+            Node::Claim(g, _) => g.proposition.source.range.end.line,
             Node::Block(block, _) => block.env.last_line(),
         }
     }
@@ -142,7 +144,7 @@ impl Node {
     pub fn source(&self) -> Option<&Source> {
         match self {
             Node::Structural(f) => Some(f.source()),
-            Node::Claim(g) => Some(&g.proposition.source),
+            Node::Claim(g, _) => Some(&g.proposition.source),
             Node::Block(_, Some(f)) => Some(f.source()),
             Node::Block(_, None) => None,
         }
@@ -152,7 +154,7 @@ impl Node {
     pub fn proposition(&self) -> Option<&Proposition> {
         match self {
             Node::Structural(Fact::Proposition(p)) => Some(p.as_ref()),
-            Node::Claim(g) => Some(g.proposition.as_ref()),
+            Node::Claim(g, _) => Some(g.proposition.as_ref()),
             Node::Block(_, Some(Fact::Proposition(p))) => Some(p.as_ref()),
             _ => None,
         }
@@ -167,7 +169,7 @@ impl Node {
     pub fn get_fact(&self) -> Option<Fact> {
         match self {
             Node::Structural(f) => Some(f.clone()),
-            Node::Claim(g) => Some(Fact::Proposition(g.proposition.clone())),
+            Node::Claim(_, f) => Some(f.clone()),
             Node::Block(_, Some(f)) => Some(f.clone()),
             _ => None,
         }
@@ -218,7 +220,7 @@ impl fmt::Debug for NodeCursor<'_> {
         if node.has_goal() {
             write!(f, ", has_goal: true")?;
             match node {
-                Node::Claim(goal) => write!(f, ", claim: {}", goal)?,
+                Node::Claim(goal, _) => write!(f, ", claim: {}", goal)?,
                 _ => {}
             }
         }
@@ -350,7 +352,7 @@ impl<'a> NodeCursor<'a> {
     /// Block nodes don't have goals directly - their goals are child nodes.
     pub fn goal(&self) -> Option<&'a Goal> {
         match self.node() {
-            Node::Claim(goal) => Some(goal),
+            Node::Claim(goal, _) => Some(goal),
             _ => None,
         }
     }
