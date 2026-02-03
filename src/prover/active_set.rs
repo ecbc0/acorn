@@ -641,10 +641,10 @@ impl ActiveSet {
                     // Validate the rewrite using the unifier to check typeclass constraints.
                     // The PDT finds structural matches but doesn't validate typeclass constraints.
                     let pattern_literal = &pattern_step.clause.literals[0];
-                    let s = if rewrite.forwards {
-                        &pattern_literal.left
+                    let (s, t) = if rewrite.forwards {
+                        (&pattern_literal.left, &pattern_literal.right)
                     } else {
-                        &pattern_literal.right
+                        (&pattern_literal.right, &pattern_literal.left)
                     };
                     let mut unifier = Unifier::new(3, kernel_context);
                     unifier.set_input_context(Scope::LEFT, pattern_step.clause.get_local_context());
@@ -653,6 +653,11 @@ impl ActiveSet {
                         // Typeclass constraint not satisfied - skip this rewrite
                         continue;
                     }
+
+                    // Apply the unifier to the replacement term to create mappings for all
+                    // pattern variables. This is needed for proof reconstruction - without it,
+                    // variables that only appear in the replacement side won't have mappings.
+                    let _ = unifier.apply(Scope::LEFT, t);
 
                     // Extract the pattern's variable map for reconstruction
                     let (all_maps, _) = unifier.into_maps_with_context();
