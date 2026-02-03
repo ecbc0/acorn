@@ -309,10 +309,10 @@ impl<'a> NodeCursor<'a> {
         self.annotated_path.pop();
     }
 
-    /// All facts that can be used to prove the current node.
-    /// This includes imported facts.
-    pub fn usable_facts(&self, project: &Project) -> Vec<Fact> {
-        let mut facts = project.imported_facts(self.env().module_id, None);
+    /// Facts from this module that can be used to prove the current node.
+    /// This does not include imported facts.
+    pub fn module_facts(&self) -> Vec<Fact> {
+        let mut facts = vec![];
         let (env, i) = &self.annotated_path[0];
         for node in &env.nodes[0..*i] {
             if let Some(fact) = node.get_fact() {

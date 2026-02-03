@@ -1043,15 +1043,13 @@ fn test_proving_with_mixin_instance() {
     };
 
     for cursor in env.iter_goals() {
-        let facts = cursor.usable_facts(&p);
         let goal = cursor.goal().unwrap();
 
         let goal_env = cursor.goal_env().unwrap();
 
         let mut processor = crate::processor::Processor::new();
-        for fact in &facts {
-            processor.add_fact(fact).unwrap();
-        }
+        processor.add_imports(&p, module_id).unwrap();
+        processor.add_module_facts(&cursor).unwrap();
         processor.set_goal(&goal).unwrap();
 
         let outcome = processor.search(crate::prover::ProverMode::Test);
@@ -1532,14 +1530,12 @@ fn test_synthetic_with_unimported_typeclass_constraint() {
 
     // Run the prover and generate a certificate
     let cursor = env.iter_goals().next().expect("expected a goal in main");
-    let facts = cursor.usable_facts(&p);
     let goal = cursor.goal().unwrap();
     let goal_env = cursor.goal_env().unwrap();
 
     let mut processor = crate::processor::Processor::new();
-    for fact in &facts {
-        processor.add_fact(fact).unwrap();
-    }
+    processor.add_imports(&p, module_id).unwrap();
+    processor.add_module_facts(&cursor).unwrap();
     processor.set_goal(&goal).unwrap();
 
     let outcome = processor.search(crate::prover::ProverMode::Test);

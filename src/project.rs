@@ -1272,11 +1272,11 @@ impl Project {
         let cert_store = self.build_cache.get_certificates(descriptor)?;
 
         let mut processor = Processor::new();
-        let facts = cursor.usable_facts(self);
-        for fact in &facts {
-            if let Err(_) = processor.add_fact(fact) {
-                return None;
-            }
+        if processor.add_imports(self, goal.module_id).is_err() {
+            return None;
+        }
+        if processor.add_module_facts(cursor).is_err() {
+            return None;
         }
 
         // Try each certificate with a matching goal name

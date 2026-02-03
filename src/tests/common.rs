@@ -16,13 +16,11 @@ pub fn prove(project: &mut Project, module_name: &str, goal_name: &str) -> Certi
         _ => panic!("no module"),
     };
     let node = base_env.get_node_by_goal_name(goal_name);
-    let facts = node.usable_facts(project);
     let goal = node.goal().unwrap();
     let env = node.goal_env().unwrap();
     let mut processor = Processor::new();
-    for fact in &facts {
-        processor.add_fact(fact).unwrap();
-    }
+    processor.add_imports(project, module_id).unwrap();
+    processor.add_module_facts(&node).unwrap();
     processor.set_goal(&goal).unwrap();
     let outcome = processor.search(ProverMode::Test);
 
@@ -57,15 +55,14 @@ pub fn prove_text(text: &str, goal_name: &str) -> Outcome {
     for cursor in env.iter_goals() {
         let goal = cursor.goal().unwrap();
         if goal.name == goal_name {
-            let facts = cursor.usable_facts(&project);
-
             let mut processor = Processor::new();
-            for fact in &facts {
-                if let Err(_) = processor.add_fact(fact) {
-                    return Outcome::Inconsistent;
-                }
+            if processor.add_imports(&project, module_id).is_err() {
+                return Outcome::Inconsistent;
             }
-            if let Err(_) = processor.set_goal(&goal) {
+            if processor.add_module_facts(&cursor).is_err() {
+                return Outcome::Inconsistent;
+            }
+            if processor.set_goal(&goal).is_err() {
                 return Outcome::Inconsistent;
             }
 
@@ -90,7 +87,6 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
     let mut last_goal_top_index: Option<usize> = None;
 
     for cursor in env.iter_goals() {
-        let facts = cursor.usable_facts(&project);
         let goal = cursor.goal().unwrap();
         let goal_env = cursor.goal_env().unwrap();
 
@@ -102,9 +98,8 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
         }
 
         let mut processor = Processor::new();
-        for fact in &facts {
-            processor.add_fact(fact)?;
-        }
+        processor.add_imports(&project, module_id)?;
+        processor.add_module_facts(&cursor)?;
         processor.set_goal(&goal)?;
 
         // This is a key difference between our verification tests, and our real verification.
@@ -130,9 +125,7 @@ pub fn verify(text: &str) -> Result<Outcome, String> {
         let mut processor = Processor::new();
 
         // Add imported facts to build up normalizer state
-        for fact in &project.imported_facts(module_id, None) {
-            processor.add_fact(fact)?;
-        }
+        processor.add_imports(&project, module_id)?;
 
         // Add all facts from this module to normalize trailing ones
         for node in &env.nodes {
@@ -181,13 +174,11 @@ pub fn verify_line(text: &str, goal_name: &str) -> Result<Outcome, String> {
     for cursor in env.iter_goals() {
         let goal = cursor.goal().unwrap();
         if goal.name == goal_name {
-            let facts = cursor.usable_facts(&project);
             let goal_env = cursor.goal_env().unwrap();
 
             let mut processor = Processor::new();
-            for fact in &facts {
-                processor.add_fact(fact)?;
-            }
+            processor.add_imports(&project, module_id)?;
+            processor.add_module_facts(&cursor)?;
             processor.set_goal(&goal)?;
 
             let outcome = processor.search(ProverMode::Test);

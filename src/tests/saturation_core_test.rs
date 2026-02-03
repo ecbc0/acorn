@@ -2188,14 +2188,12 @@ fn test_backward_rewrite_specialization_regression() {
     };
 
     let node = env.get_node_by_goal_name("inverse_add");
-    let facts = node.usable_facts(&project);
     let goal = node.goal().unwrap();
     let goal_env = node.goal_env().unwrap();
 
     let mut processor = Processor::new();
-    for fact in &facts {
-        processor.add_fact(fact).unwrap();
-    }
+    processor.add_imports(&project, module_id).unwrap();
+    processor.add_module_facts(&node).unwrap();
     processor.set_goal(&goal).unwrap();
     let outcome = processor.search(ProverMode::Interactive { timeout_secs: 5.0 });
     assert_eq!(outcome, Outcome::Success);
