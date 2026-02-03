@@ -67,6 +67,31 @@ impl Processor {
     pub fn normalizer(&self) -> &Normalizer {
         &self.normalizer
     }
+    pub fn checker(&self) -> &Checker {
+        &self.checker
+    }
+
+    /// Asserts that two processors have the same state, for debugging purposes.
+    /// Panics with a detailed message if they differ.
+    pub fn assert_same(&self, other: &Processor) {
+        let mut differences = Vec::new();
+
+        // Compare normalizers
+        self.normalizer
+            .collect_differences(&other.normalizer, &mut differences);
+
+        // Compare checkers
+        self.checker
+            .collect_differences(&other.checker, &mut differences);
+
+        // Compare provers
+        self.prover
+            .collect_differences(&other.prover, &mut differences);
+
+        if !differences.is_empty() {
+            panic!("Processors differ:\n{}", differences.join("\n"));
+        }
+    }
 
     /// Adds a normalized fact to the prover.
     pub fn add_normalized_fact(&mut self, normalized: &NormalizedFact) -> Result<(), BuildError> {

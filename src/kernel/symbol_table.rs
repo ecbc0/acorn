@@ -611,4 +611,54 @@ impl SymbolTable {
         let head = Term::atom(Atom::Symbol(base_symbol));
         Ok(head.apply(&type_args))
     }
+
+    /// Collects differences between this symbol table and another, for debugging.
+    pub fn collect_differences(&self, other: &SymbolTable, differences: &mut Vec<String>) {
+        // Compare global constants
+        let self_global_count: usize = self.global_constants.iter().map(|v| v.len()).sum();
+        let other_global_count: usize = other.global_constants.iter().map(|v| v.len()).sum();
+        if self_global_count != other_global_count {
+            differences.push(format!(
+                "SymbolTable global constant count: {} vs {}",
+                self_global_count, other_global_count
+            ));
+        }
+
+        // Compare scoped constants
+        if self.scoped_constants.len() != other.scoped_constants.len() {
+            differences.push(format!(
+                "SymbolTable scoped constant count: {} vs {}",
+                self.scoped_constants.len(),
+                other.scoped_constants.len()
+            ));
+        }
+
+        // Compare synthetics
+        let self_synthetic_count: usize = self.synthetic_types.iter().map(|v| v.len()).sum();
+        let other_synthetic_count: usize = other.synthetic_types.iter().map(|v| v.len()).sum();
+        if self_synthetic_count != other_synthetic_count {
+            differences.push(format!(
+                "SymbolTable synthetic count: {} vs {}",
+                self_synthetic_count, other_synthetic_count
+            ));
+        }
+
+        // Compare name_to_symbol
+        if self.name_to_symbol.len() != other.name_to_symbol.len() {
+            differences.push(format!(
+                "SymbolTable name_to_symbol count: {} vs {}",
+                self.name_to_symbol.len(),
+                other.name_to_symbol.len()
+            ));
+        }
+
+        // Compare polymorphic info
+        if self.polymorphic_info.len() != other.polymorphic_info.len() {
+            differences.push(format!(
+                "SymbolTable polymorphic_info count: {} vs {}",
+                self.polymorphic_info.len(),
+                other.polymorphic_info.len()
+            ));
+        }
+    }
 }

@@ -200,6 +200,17 @@ impl SyntheticRegistry {
         }
         output
     }
+
+    /// Collects differences between this registry and another, for debugging.
+    pub fn collect_differences(&self, other: &SyntheticRegistry, differences: &mut Vec<String>) {
+        if self.definitions.len() != other.definitions.len() {
+            differences.push(format!(
+                "SyntheticRegistry definition count: {} vs {}",
+                self.definitions.len(),
+                other.definitions.len()
+            ));
+        }
+    }
 }
 
 impl Default for SyntheticRegistry {

@@ -982,6 +982,14 @@ impl KernelContext {
         use crate::kernel::term::Term;
         LocalContext::from_types(vec![Term::bool_type(); count])
     }
+
+    /// Collects differences between this kernel context and another, for debugging.
+    pub fn collect_differences(&self, other: &KernelContext, differences: &mut Vec<String>) {
+        self.type_store
+            .collect_differences(&other.type_store, differences);
+        self.symbol_table
+            .collect_differences(&other.symbol_table, differences);
+    }
 }
 
 impl Default for KernelContext {

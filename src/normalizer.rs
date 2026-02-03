@@ -229,6 +229,14 @@ impl Normalizer {
             type_term,
         ))
     }
+
+    /// Collects differences between this normalizer and another, for debugging.
+    pub fn collect_differences(&self, other: &Normalizer, differences: &mut Vec<String>) {
+        self.kernel_context
+            .collect_differences(&other.kernel_context, differences);
+        self.synthetic_registry
+            .collect_differences(&other.synthetic_registry, differences);
+    }
 }
 
 // Represents a binding for a variable on the stack during normalization.

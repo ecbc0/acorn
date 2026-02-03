@@ -1130,6 +1130,46 @@ impl TypeStore {
         }
         None
     }
+
+    /// Collects differences between this type store and another, for debugging.
+    pub fn collect_differences(&self, other: &TypeStore, differences: &mut Vec<String>) {
+        // Compare ground types
+        let self_ground_count: usize = self.ground_id_to_type.iter().map(|v| v.len()).sum();
+        let other_ground_count: usize = other.ground_id_to_type.iter().map(|v| v.len()).sum();
+        if self_ground_count != other_ground_count {
+            differences.push(format!(
+                "TypeStore ground type count: {} vs {}",
+                self_ground_count, other_ground_count
+            ));
+        }
+
+        // Compare datatypes
+        if self.datatype_to_ground_id.len() != other.datatype_to_ground_id.len() {
+            differences.push(format!(
+                "TypeStore datatype count: {} vs {}",
+                self.datatype_to_ground_id.len(),
+                other.datatype_to_ground_id.len()
+            ));
+        }
+
+        // Compare arbitrary types
+        if self.arbitrary_to_ground_id.len() != other.arbitrary_to_ground_id.len() {
+            differences.push(format!(
+                "TypeStore arbitrary type count: {} vs {}",
+                self.arbitrary_to_ground_id.len(),
+                other.arbitrary_to_ground_id.len()
+            ));
+        }
+
+        // Compare typeclasses
+        if self.typeclass_to_id.len() != other.typeclass_to_id.len() {
+            differences.push(format!(
+                "TypeStore typeclass count: {} vs {}",
+                self.typeclass_to_id.len(),
+                other.typeclass_to_id.len()
+            ));
+        }
+    }
 }
 
 impl Default for TypeStore {
