@@ -2130,3 +2130,57 @@ fn test_rewrite_with_variable_renumbering() {
     // exercising the full certificate creation path including the Rewrite rule handling.
     verify_succeeds(&format!("{}\n{}", THING, text));
 }
+
+#[test]
+fn test_backward_rewrite_specialization_regression() {
+    use std::fs;
+    use std::path::PathBuf;
+
+    use crate::module::LoadState;
+    use crate::processor::Processor;
+    use crate::project::ProjectConfig;
+    use crate::prover::ProverMode;
+
+    let src_dir = PathBuf::from("vscode/extension/acornlib/src");
+    let build_dir = std::env::temp_dir().join(format!(
+        "acorn_add_group_build_{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&build_dir);
+    fs::create_dir_all(&build_dir).unwrap();
+
+    let mut project =
+        Project::new(src_dir.clone(), build_dir, ProjectConfig::default()).unwrap();
+    let target_path = src_dir.join("add_group.ac");
+    project.add_target_by_path(&target_path).unwrap();
+
+    let module_id = project
+        .load_module_by_name("add_group")
+        .expect("load failed");
+    let env = match project.get_module_by_id(module_id) {
+        LoadState::Ok(env) => env,
+        LoadState::Error(e) => panic!("module loading error: {}", e),
+        _ => panic!("no module"),
+    };
+
+    let node = env.get_node_by_goal_name("inverse_add");
+    let facts = node.usable_facts(&project);
+    let goal = node.goal().unwrap();
+    let goal_env = node.goal_env().unwrap();
+
+    let mut processor = Processor::new();
+    for fact in &facts {
+        processor.add_fact(fact).unwrap();
+    }
+    processor.set_goal(&goal).unwrap();
+    let outcome = processor.search(ProverMode::Interactive { timeout_secs: 5.0 });
+    assert_eq!(outcome, Outcome::Success);
+
+    let cert = processor
+        .prover()
+        .make_cert(&goal_env.bindings, processor.normalizer(), false)
+        .expect("make_cert failed");
+    processor
+        .check_cert(&cert, None, &project, &goal_env.bindings)
+        .expect("check_cert failed");
+}

@@ -197,7 +197,16 @@ impl<'a> Proof<'a> {
         let mut skip_clauses: HashSet<Clause> = HashSet::new();
         for (ps_id, step) in &self.steps {
             let concrete_id = ConcreteStepId::ProofStep(*ps_id);
-            if step.rule.is_underlying_assumption() && !step.clause.has_any_variable() {
+            let has_type_params = step
+                .clause
+                .get_local_context()
+                .get_var_types()
+                .iter()
+                .any(|t| t.as_ref().is_type_param_kind());
+            if step.rule.is_underlying_assumption()
+                && !step.clause.has_any_variable()
+                && !has_type_params
+            {
                 let Some(cs) = concrete_steps.remove(&concrete_id) else {
                     continue;
                 };
