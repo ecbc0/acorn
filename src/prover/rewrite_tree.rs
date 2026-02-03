@@ -212,6 +212,40 @@ fn build_bindings(
         }
     }
 
+    // Enforce typeclass constraints for any inferred type variable bindings.
+    // These bindings can be introduced via extract_type_bindings and may not
+    // correspond to a structural replacement.
+    for (&var_id, bound_term) in &bindings {
+        // Structural replacements were already validated above (including typeclass checks
+        // that use the replacement's type). Here we only enforce constraints for bindings
+        // inferred via extract_type_bindings.
+        if (var_id as usize) < structural_replacements.len() {
+            continue;
+        }
+        let Some(var_type) = pattern_context.get_var_type(var_id as usize) else {
+            continue;
+        };
+        let Some(tc_id) = resolve_typeclass_constraint(var_type.as_ref(), pattern_context) else {
+            continue;
+        };
+
+        match bound_term.as_ref().decompose() {
+            // Allow unbound type variables (polymorphic matching)
+            Decomposition::Atom(KernelAtom::FreeVariable(_)) => {}
+            _ => {
+                // Require a concrete type instance for typeclass constraints
+                if let Some(ground_id) = bound_term.as_ref().as_type_atom() {
+                    if !kernel_context.type_store.is_instance_of(ground_id, tc_id) {
+                        return None;
+                    }
+                } else {
+                    // Non-ground types (e.g., function types) do not satisfy typeclass constraints
+                    return None;
+                }
+            }
+        }
+    }
+
     Some(bindings)
 }
 
@@ -1049,5 +1083,48 @@ mod tests {
         let unified = unifier.unify_literals(Scope::LEFT, pattern_lit, Scope::RIGHT, &lit, flipped);
 
         assert!(unified, "Unifier should validate the Rat rewrite as valid");
+    }
+
+    #[test]
+    fn test_rewrite_tree_typeclass_inferred_binding_rejects_function_type() {
+        // Regression test for inferred type variable bindings that violate typeclass constraints.
+        //
+        // Pattern: g1(x0, x1, x1) = x1
+        //   where x0: Field (typeclass), x1: x0
+        //
+        // Backwards rewrite turns this into x1 -> g1(x0, x1, x1).
+        // If we query with a term of function type (c0: Foo -> Foo),
+        // we would infer x0 = Foo -> Foo, which should NOT satisfy Field.
+        // The rewrite should be rejected.
+
+        let mut kctx = KernelContext::new();
+        kctx.parse_typeclass("Field");
+        kctx.parse_datatype("Foo");
+
+        // g1: (F: Field) -> F -> F -> F
+        kctx.parse_polymorphic_constant("g1", "F: Field", "F -> F -> F");
+
+        // c0: Foo -> Foo (function type, not a Field instance)
+        kctx.parse_constant("c0", "Foo -> Foo");
+
+        let mut tree = RewriteTree::new();
+        let pattern_clause = kctx.parse_clause("g1(x0, x1, x1) = x1", &["Field", "x0"]);
+        tree.insert_literal(
+            0,
+            &pattern_clause.literals[0],
+            pattern_clause.get_local_context(),
+        );
+
+        let query_lctx = kctx.parse_local(&[]);
+        let query_term = kctx.parse_term("c0");
+        let rewrites = tree.get_rewrites(&query_term, 0, &query_lctx, &kctx);
+        let backward_rewrites: Vec<_> = rewrites.iter().filter(|r| !r.forwards).collect();
+
+        assert!(
+            backward_rewrites.is_empty(),
+            "Backwards rewrite should be rejected when inferred type binding violates \
+             typeclass constraint. Got {} backward rewrites.",
+            backward_rewrites.len()
+        );
     }
 }
