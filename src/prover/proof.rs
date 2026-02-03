@@ -9,7 +9,7 @@ use crate::kernel::concrete_proof::ConcreteProof;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::local_context::LocalContext;
 use crate::kernel::term::Term;
-use crate::kernel::variable_map::VariableMap;
+use crate::kernel::variable_map::{apply_to_term, VariableMap};
 use crate::normalizer::Normalizer;
 use crate::proof_step::{ProofStep, ProofStepId, Rule};
 
@@ -297,7 +297,9 @@ pub fn reconstruct_step<R: ProofResolver>(
                     if !var_map.has_mapping(var_id as AtomId) {
                         if let Some(var_type) = premise_context.get_var_type(var_id) {
                             var_map.set(var_id as AtomId, Term::new_variable(next_var as AtomId));
-                            context.set_type(next_var, var_type.clone());
+                            // Apply var_map to remap variable references from premise to output context
+                            let remapped_type = apply_to_term(var_type.as_ref(), &var_map);
+                            context.set_type(next_var, remapped_type);
                             next_var += 1;
                         }
                     }

@@ -84,6 +84,22 @@ impl BuildCache {
         self.cache.get(descriptor)
     }
 
+    /// Returns the number of modules in the cache
+    pub fn module_count(&self) -> usize {
+        self.cache.len()
+    }
+
+    /// Merge certificates from another cache into this one.
+    /// Only copies certificates for modules that don't already exist in this cache.
+    /// This is used when write_cache is false to preserve in-memory certificates.
+    pub fn merge_certificates_from(&mut self, old_cache: &BuildCache) {
+        for (descriptor, cert_store) in &old_cache.cache {
+            if !self.cache.contains_key(descriptor) {
+                self.cache.insert(descriptor.clone(), cert_store.clone());
+            }
+        }
+    }
+
     pub fn get_certificates_mut(
         &mut self,
         descriptor: &ModuleDescriptor,

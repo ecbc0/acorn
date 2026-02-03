@@ -299,6 +299,275 @@ async fn test_non_library_file_certificates() {
     }
 }
 
+/// Test that saving a file outside the library twice doesn't cause a panic,
+/// and that library modules are cached on the second save.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_non_library_file_save_twice() {
+    // Create temp directory structure manually so we can add files before server starts
+    let temp_dir = TempDir::new().unwrap();
+    temp_dir.child("acorn.toml").write_str("").unwrap();
+    let src_dir = temp_dir.child("src");
+    src_dir.create_dir_all().unwrap();
+    let build_dir = temp_dir.child("build");
+    build_dir.create_dir_all().unwrap();
+
+    // Create a library module BEFORE starting the server
+    let lib_content = "theorem lib_theorem { true }";
+    src_dir.child("mylib.ac").write_str(lib_content).unwrap();
+
+    // Now create the server - it will pick up mylib.ac as a target
+    let args = crate::server::ServerArgs {
+        workspace_root: Some(temp_dir.path().to_str().unwrap().to_string()),
+        extension_root: String::new(),
+    };
+    let client = Arc::new(MockClient::new());
+    let server = AcornLanguageServer::new(client.clone(), &args).expect("server creation");
+
+    // Create a file outside the src directory (simulating a file outside the library)
+    let outside_dir = temp_dir.child("outside");
+    outside_dir.create_dir_all().unwrap();
+    let outside_file = outside_dir.child("test.ac");
+    let outside_path = outside_file.path();
+    let outside_url = Url::from_file_path(outside_path).unwrap();
+
+    // Write initial content - a simple theorem like the user reported
+    let content1 = "theorem foo { true }";
+    outside_file.write_str(content1).unwrap();
+
+    // Open the file in the language server
+    server
+        .did_open(DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: outside_url.clone(),
+                language_id: "acorn".to_string(),
+                version: 1,
+                text: content1.to_string(),
+            },
+        })
+        .await;
+
+    // First save
+    server
+        .did_save(DidSaveTextDocumentParams {
+            text_document: TextDocumentIdentifier {
+                uri: outside_url.clone(),
+            },
+            text: Some(content1.to_string()),
+        })
+        .await;
+
+    // Wait for the first build to complete
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while tokio::time::Instant::now() < deadline {
+        let progress = server
+            .handle_progress_request(crate::interfaces::ProgressParams {})
+            .await
+            .unwrap();
+        if progress.finished {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    // Give time for cache update to complete
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Make a tiny edit
+    let content2 = "theorem foo { true }\n";
+
+    // Notify the server of the change
+    server
+        .did_change(DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: outside_url.clone(),
+                version: 2,
+            },
+            content_changes: vec![TextDocumentContentChangeEvent {
+                range: None,
+                range_length: None,
+                text: content2.to_string(),
+            }],
+        })
+        .await;
+
+    // Second save - this is where the bug would occur
+    server
+        .did_save(DidSaveTextDocumentParams {
+            text_document: TextDocumentIdentifier {
+                uri: outside_url.clone(),
+            },
+            text: Some(content2.to_string()),
+        })
+        .await;
+
+    // Wait for the second build to complete
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while tokio::time::Instant::now() < deadline {
+        let progress = server
+            .handle_progress_request(crate::interfaces::ProgressParams {})
+            .await
+            .unwrap();
+        if progress.finished {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+/// Test that library module certificates are preserved when saving an external file
+/// in bundled mode (write_cache = false).
+/// This is a regression test for a bug where the in-memory certificate cache
+/// was replaced instead of merged, losing all cached certificates.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_bundled_mode_preserves_library_certs() {
+    // Create temp directory structure for bundled mode
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create a mock "bundled" acornlib in extension_root
+    let extension_root = temp_dir.child("extension");
+    let acornlib = extension_root.child("acornlib");
+    acornlib.child("acorn.toml").write_str("").unwrap();
+    let src_dir = acornlib.child("src");
+    src_dir.create_dir_all().unwrap();
+    let build_dir = acornlib.child("build");
+    build_dir.create_dir_all().unwrap();
+
+    // Create a library module BEFORE starting the server
+    let lib_content = "theorem lib_theorem { true }";
+    src_dir.child("mylib.ac").write_str(lib_content).unwrap();
+
+    // workspace_root has no acorn.toml, so it falls back to extension_root (bundled mode)
+    let workspace = temp_dir.child("workspace");
+    workspace.create_dir_all().unwrap();
+
+    let args = crate::server::ServerArgs {
+        workspace_root: Some(workspace.path().to_str().unwrap().to_string()),
+        extension_root: extension_root.path().to_str().unwrap().to_string(),
+    };
+
+    let client = Arc::new(MockClient::new());
+    let server = AcornLanguageServer::new(client.clone(), &args).expect("server creation");
+
+    // First, trigger a build of the library module by opening and saving it
+    let lib_url = Url::from_file_path(src_dir.child("mylib.ac").path()).unwrap();
+    server
+        .did_open(DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: lib_url.clone(),
+                language_id: "acorn".to_string(),
+                version: 1,
+                text: lib_content.to_string(),
+            },
+        })
+        .await;
+    server
+        .did_save(DidSaveTextDocumentParams {
+            text_document: TextDocumentIdentifier {
+                uri: lib_url.clone(),
+            },
+            text: Some(lib_content.to_string()),
+        })
+        .await;
+
+    // Wait for the library build to complete
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while tokio::time::Instant::now() < deadline {
+        let progress = server
+            .handle_progress_request(crate::interfaces::ProgressParams {})
+            .await
+            .unwrap();
+        if progress.finished {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Now create and save an external file (outside the library)
+    let outside_dir = temp_dir.child("outside");
+    outside_dir.create_dir_all().unwrap();
+    let outside_file = outside_dir.child("external.ac");
+    let outside_url = Url::from_file_path(outside_file.path()).unwrap();
+
+    let ext_content1 = "theorem external_thm { true }";
+    outside_file.write_str(ext_content1).unwrap();
+
+    server
+        .did_open(DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: outside_url.clone(),
+                language_id: "acorn".to_string(),
+                version: 1,
+                text: ext_content1.to_string(),
+            },
+        })
+        .await;
+    server
+        .did_save(DidSaveTextDocumentParams {
+            text_document: TextDocumentIdentifier {
+                uri: outside_url.clone(),
+            },
+            text: Some(ext_content1.to_string()),
+        })
+        .await;
+
+    // Wait for this build to complete - library should be cached
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while tokio::time::Instant::now() < deadline {
+        let progress = server
+            .handle_progress_request(crate::interfaces::ProgressParams {})
+            .await
+            .unwrap();
+        if progress.finished {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Now save the external file again with a small change
+    let ext_content2 = "theorem external_thm { true }\n";
+    server
+        .did_change(DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: outside_url.clone(),
+                version: 2,
+            },
+            content_changes: vec![TextDocumentContentChangeEvent {
+                range: None,
+                range_length: None,
+                text: ext_content2.to_string(),
+            }],
+        })
+        .await;
+    server
+        .did_save(DidSaveTextDocumentParams {
+            text_document: TextDocumentIdentifier {
+                uri: outside_url.clone(),
+            },
+            text: Some(ext_content2.to_string()),
+        })
+        .await;
+
+    // Wait for the third build to complete
+    // The library module should still be cached, not rebuilt
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while tokio::time::Instant::now() < deadline {
+        let progress = server
+            .handle_progress_request(crate::interfaces::ProgressParams {})
+            .await
+            .unwrap();
+        if progress.finished {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    // With the bug, debug output shows "no existing certs" for mylib on the third build.
+    // After the fix, it should show "SUCCESS - skipping unchanged module".
+    // Run with --nocapture to see the debug output.
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_server_basic() {
     let fx = TestFixture::new();

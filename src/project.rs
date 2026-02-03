@@ -317,6 +317,10 @@ impl Project {
             // and merges old certificates back into memory
             // TODO: how should we handle errors here?
             let _ = new_cache.save_merging_old(&self.build_cache, is_partial_build);
+        } else {
+            // Even if we're not writing to disk, we need to merge the old certificates
+            // into memory so they're available for future builds
+            new_cache.merge_certificates_from(&self.build_cache);
         }
 
         self.build_cache = new_cache;
