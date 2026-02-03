@@ -980,6 +980,11 @@ impl CodeGenerator<'_> {
             }
             return Err(Error::synthetic(&ci.name.to_string()));
         }
+        if self.is_replaced_synthetic(&ci.name) {
+            if let ConstantName::Unqualified(_, word) = &ci.name {
+                return Ok(Expression::generate_identifier(word));
+            }
+        }
 
         // Handle numeric literals for datatype attributes (not typeclass attributes).
         // Typeclass attribute numerals are handled in value_to_expr where we have
