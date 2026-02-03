@@ -256,12 +256,14 @@ pub fn reconstruct_step<R: ProofResolver>(
     // Some rules we can handle without the traces.
     match &step.rule {
         Rule::PassiveContradiction(_) | Rule::MultipleRewrite(_) => {
-            // These rules always use concrete premises, so we can track them without
-            // reconstruction logic.
+            // These rules use premises that may have free variables.
+            // We use an identity mapping (empty map) but need to preserve the context
+            // so that variable types can be looked up during proof checking.
             for id in step.rule.premises() {
                 let map = VariableMap::new();
-                // Empty context is fine for empty maps
-                add_var_map(resolver, id, map, LocalContext::empty(), concrete_steps);
+                let premise_clause = resolver.get_clause(id)?;
+                let context = premise_clause.get_local_context().clone();
+                add_var_map(resolver, id, map, context, concrete_steps);
             }
             return Ok(());
         }
