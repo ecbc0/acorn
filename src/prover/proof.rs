@@ -261,11 +261,11 @@ pub fn reconstruct_step<R: ProofResolver>(
     // Some rules we can handle without the traces.
     match &step.rule {
         Rule::PassiveContradiction(_) | Rule::MultipleRewrite(_) => {
-            // These rules always use concrete premises, so we can track them without
-            // reconstruction logic.
+            // These rules use premises that may have free variables.
+            // We pass empty map + empty context; add_var_map will automatically
+            // use the clause's context when both are empty.
             for id in step.rule.premises() {
                 let map = VariableMap::new();
-                // Empty context is fine for empty maps
                 add_var_map(resolver, id, map, LocalContext::empty(), concrete_steps);
             }
             return Ok(());
@@ -385,11 +385,11 @@ mod tests {
     use crate::kernel::clause::Clause;
     use crate::kernel::kernel_context::KernelContext;
     use crate::kernel::local_context::LocalContext;
+    use crate::kernel::variable_map::VariableMap;
+    use crate::proof_step::ProofStepId;
     use crate::proof_step::{ProofStep, Rule, Truthiness};
     use crate::prover::active_set::ActiveSet;
     use crate::prover::proof::{add_var_map, ProofResolver};
-    use crate::proof_step::ProofStepId;
-    use crate::kernel::variable_map::VariableMap;
     use std::collections::HashMap;
 
     /// Test that resolution followed by simplification produces correct results.
@@ -493,16 +493,12 @@ mod tests {
         );
 
         let entry = concrete_steps
-            .get(&crate::prover::proof::ConcreteStepId::ProofStep(ProofStepId::Active(0)))
+            .get(&crate::prover::proof::ConcreteStepId::ProofStep(
+                ProofStepId::Active(0),
+            ))
             .expect("concrete step");
-        let (_, replacement_context) = entry
-            .var_maps
-            .first()
-            .expect("replacement context");
-        assert_eq!(
-            replacement_context.len(),
-            clause.get_local_context().len()
-        );
+        let (_, replacement_context) = entry.var_maps.first().expect("replacement context");
+        assert_eq!(replacement_context.len(), clause.get_local_context().len());
     }
 
     /// Test that resolution with polymorphic simplification works correctly.
