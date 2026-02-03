@@ -17,6 +17,8 @@ use crate::elaborator::node::{Node, NodeCursor};
 use crate::elaborator::proposition::Proposition;
 use crate::elaborator::source::Source;
 use crate::module::ModuleId;
+#[cfg(feature = "prenormalize")]
+use crate::normalizer::{NormalizedFact, Normalizer};
 use crate::project::Project;
 use crate::syntax::statement::{Body, Statement};
 use crate::syntax::token::{Token, TokenIter};
@@ -78,6 +80,14 @@ pub struct Environment {
 
     /// The line number of the last statement we processed (for detecting blank lines).
     pub last_statement_line: Option<u32>,
+
+    /// When prenormalize is enabled, stores the normalizer state after processing all facts.
+    #[cfg(feature = "prenormalize")]
+    pub normalizer: Option<Normalizer>,
+
+    /// When prenormalize is enabled, stores normalized facts from this environment.
+    #[cfg(feature = "prenormalize")]
+    pub normalized_facts: Vec<NormalizedFact>,
 }
 
 impl Environment {
@@ -97,6 +107,10 @@ impl Environment {
             module_doc_comments: Vec::new(),
             at_module_beginning: true,
             last_statement_line: None,
+            #[cfg(feature = "prenormalize")]
+            normalizer: None,
+            #[cfg(feature = "prenormalize")]
+            normalized_facts: Vec::new(),
         }
     }
 
@@ -117,6 +131,10 @@ impl Environment {
             module_doc_comments: Vec::new(), // Child environments don't inherit module doc comments
             at_module_beginning: false,      // Child environments are never at module beginning
             last_statement_line: None,
+            #[cfg(feature = "prenormalize")]
+            normalizer: None,
+            #[cfg(feature = "prenormalize")]
+            normalized_facts: Vec::new(),
         }
     }
 
@@ -601,6 +619,33 @@ impl Environment {
             Some(env) => env.env_for_line(line),
             None => self,
         }
+    }
+
+    /// Populates the normalizer and normalized_facts fields by processing all facts.
+    /// This should be called after elaboration is complete.
+    /// Only available when the "prenormalize" feature is enabled.
+    #[cfg(feature = "prenormalize")]
+    pub fn prenormalize(&mut self, project: &Project) -> Result<(), String> {
+        use crate::normalizer::Normalizer;
+
+        let mut normalizer = Normalizer::new();
+
+        // First, add all imported facts
+        for fact in project.imported_facts(self.module_id, None) {
+            let normalized = normalizer.normalize_fact(&fact)?;
+            self.normalized_facts.push(normalized);
+        }
+
+        // Then, add all facts from the top-level nodes in this environment
+        for node in &self.nodes {
+            if let Some(fact) = node.get_fact() {
+                let normalized = normalizer.normalize_fact(&fact)?;
+                self.normalized_facts.push(normalized);
+            }
+        }
+
+        self.normalizer = Some(normalizer);
+        Ok(())
     }
 }
 
