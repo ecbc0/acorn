@@ -372,13 +372,15 @@ impl PassiveSet {
             let depth = u32::max(step.depth, activated_step.depth);
 
             let pre_norm_context = step.clause.get_local_context().clone();
+            // simplifying_ids needs one entry per eliminated literal (same as simp_var_maps)
+            let simplifying_ids = vec![activated_id; simp_var_maps.len()];
             let premise_map = PremiseMap::new(simp_var_maps, var_ids, pre_norm_context);
             let simplified = ProofStep {
                 clause: new_clause,
                 truthiness,
                 rule: Rule::Simplification(SimplificationInfo {
                     original: Box::new(step),
-                    simplifying_ids: vec![activated_id],
+                    simplifying_ids,
                 }),
                 proof_size,
                 depth,

@@ -558,4 +558,85 @@ mod tests {
             other => panic!("Expected inner Resolution rule, got {:?}", other),
         };
     }
+
+    /// Test that simplification with multiple eliminated literals includes all instantiations.
+    ///
+    /// This reproduces a bug from nat.nat_combo:197 where:
+    /// - Long clause: g0(x0, x1) != c0 or x0 = c0 or x1 = c0
+    /// - Short clause: g0(g1(c1), g1(c2)) = c0  (concrete)
+    /// - Resolution gives: g1(c1) = c0 or g1(c2) = c0  (2 literals)
+    /// - Simplification clause: g1(x0) != c0
+    /// - Both literals should be eliminated, requiring TWO instantiations of the simp clause
+    /// - Bug: only one instantiation was included in the concrete proof
+    #[test]
+    fn test_simplification_multiple_eliminated_literals() {
+        let mut kctx = KernelContext::new();
+        kctx.parse_constant("g0", "(Bool, Bool) -> Bool")
+            .parse_constant("g1", "Bool -> Bool")
+            .parse_constant("c0", "Bool")
+            .parse_constant("c1", "Bool")
+            .parse_constant("c2", "Bool");
+
+        // Long clause: g0(x0, x1) != c0 or x0 = c0 or x1 = c0
+        // (if g0 returns c0, one of its arguments is c0)
+        let long_clause =
+            kctx.parse_clause("g0(x0, x1) != c0 or x0 = c0 or x1 = c0", &["Bool", "Bool"]);
+        let long_step = ProofStep::mock_from_clause(long_clause);
+
+        // Short clause: g0(g1(c1), g1(c2)) = c0 (negated goal)
+        let short_clause = kctx.parse_clause("g0(g1(c1), g1(c2)) = c0", &[]);
+        let mut short_step = ProofStep::mock_from_clause(short_clause);
+        short_step.truthiness = Truthiness::Counterfactual;
+
+        // Simplification clause: g1(x0) != c0 (g1 never returns c0)
+        let simp_clause = kctx.parse_clause("g1(x0) != c0", &["Bool"]);
+        let simp_step = ProofStep::mock_from_clause(simp_clause);
+
+        let mut active_set = ActiveSet::new();
+        active_set.activate(long_step.clone(), &kctx);
+        active_set.activate(simp_step.clone(), &kctx);
+
+        // Find resolution between long and short
+        let mut resolution_results = vec![];
+        active_set.find_resolutions(&short_step, &mut resolution_results, &kctx);
+        active_set.activate(short_step.clone(), &kctx);
+
+        assert!(
+            !resolution_results.is_empty(),
+            "Should find at least one resolution"
+        );
+
+        // The resolution result should have 2 literals: g1(c1) = c0 or g1(c2) = c0
+        let resolution_step = resolution_results.into_iter().next().unwrap();
+        assert_eq!(
+            resolution_step.clause.literals.len(),
+            2,
+            "Resolution should produce 2 literals, got: {}",
+            resolution_step.clause
+        );
+
+        // Simplify - this should eliminate BOTH literals
+        let simplified_step = active_set.simplify(resolution_step.clone(), &kctx);
+        let final_step = simplified_step.unwrap_or(resolution_step);
+
+        assert!(
+            final_step.clause.is_impossible(),
+            "Expected empty clause (contradiction), got: {}",
+            final_step.clause
+        );
+
+        // Verify the simplification used the simp clause twice (for both literals)
+        let simp_info = match &final_step.rule {
+            Rule::Simplification(info) => info,
+            other => panic!("Expected Simplification rule, got {:?}", other),
+        };
+
+        // The bug: simplifying_ids only has 1 entry when it should have 2
+        assert_eq!(
+            simp_info.simplifying_ids.len(),
+            2,
+            "Should have 2 simplifying clause uses (one for each eliminated literal), got {}",
+            simp_info.simplifying_ids.len()
+        );
+    }
 }
