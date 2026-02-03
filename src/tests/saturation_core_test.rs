@@ -2142,15 +2142,12 @@ fn test_backward_rewrite_specialization_regression() {
     use crate::prover::ProverMode;
 
     let src_dir = PathBuf::from("vscode/extension/acornlib/src");
-    let build_dir = std::env::temp_dir().join(format!(
-        "acorn_add_group_build_{}",
-        std::process::id()
-    ));
+    let build_dir =
+        std::env::temp_dir().join(format!("acorn_add_group_build_{}", std::process::id()));
     let _ = fs::remove_dir_all(&build_dir);
     fs::create_dir_all(&build_dir).unwrap();
 
-    let mut project =
-        Project::new(src_dir.clone(), build_dir, ProjectConfig::default()).unwrap();
+    let mut project = Project::new(src_dir.clone(), build_dir, ProjectConfig::default()).unwrap();
     let target_path = src_dir.join("add_group.ac");
     project.add_target_by_path(&target_path).unwrap();
 
