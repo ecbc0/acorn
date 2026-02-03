@@ -308,6 +308,33 @@ fn test_subsequent_explicit_false_ok() {
     );
 }
 
+// Reproduces a bug where a claim BEFORE an explicit `false` fails with Inconsistent.
+// The issue: when processing the claim, `includes_explicit_false` hasn't been set yet
+// because `false` hasn't been processed. But the prover finds a contradiction from
+// the hypothetical facts alone, which should be valid (it proves the claim vacuously).
+#[test]
+fn test_claim_before_explicit_false_with_inconsistent_assumptions() {
+    // The key structure:
+    // 1. Assume something that leads to inconsistency (a = b and a != b)
+    // 2. Make a claim that can be proven from the inconsistency
+    // 3. Have explicit `false` at the end
+    verify_succeeds(
+        r#"
+            let a: Bool = axiom
+            let b: Bool = axiom
+            axiom a_eq_b { a = b }
+            if a != b {
+                // This claim should succeed - the assumptions are inconsistent,
+                // so any claim is vacuously true. The prover will find the inconsistency
+                // when trying to prove "a = b implies a = a", but since `false` comes
+                // later, this should be allowed.
+                a = b implies a = a
+                false
+            }
+        "#,
+    );
+}
+
 #[test]
 fn test_explicit_false_mandatory() {
     let text = r#"

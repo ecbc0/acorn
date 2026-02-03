@@ -14,8 +14,9 @@ use crate::elaborator::proposition::Proposition;
 use crate::elaborator::source::Source;
 use crate::kernel::atom::AtomId;
 use crate::project::Project;
-use crate::syntax::statement::Body;
-use crate::syntax::token::Token;
+use crate::syntax::expression::Expression;
+use crate::syntax::statement::{Body, StatementInfo};
+use crate::syntax::token::{Token, TokenType};
 
 /// Proofs are structured into blocks.
 /// The environment specific to this block can have a bunch of propositions that need to be
@@ -87,6 +88,21 @@ pub enum BlockParams<'a> {
 
     /// No special params needed
     ForAll,
+}
+
+/// Checks if a statement is an explicit `false` claim.
+fn is_explicit_false_claim(statement: &crate::syntax::statement::Statement) -> bool {
+    if let StatementInfo::Claim(cs) = &statement.statement {
+        if let Expression::Singleton(token) = &cs.claim {
+            return token.token_type == TokenType::False;
+        }
+    }
+    false
+}
+
+/// Checks if a body contains an explicit `false` claim (non-recursively).
+fn body_contains_explicit_false(body: &Body) -> bool {
+    body.statements.iter().any(is_explicit_false_claim)
 }
 
 impl Block {
@@ -229,6 +245,13 @@ impl Block {
 
         match body {
             Some(body) => {
+                // Look ahead: if the block contains an explicit `false` claim,
+                // mark the environment so that finding inconsistencies in
+                // earlier claims is okay (the proof is heading towards `false`).
+                if body_contains_explicit_false(body) {
+                    subenv.will_include_explicit_false = true;
+                }
+
                 subenv.add_line_types(
                     LineType::Opening,
                     first_token.line_number,

@@ -55,7 +55,7 @@ impl Goal {
             module_id: env.module_id,
             name,
             proposition: prop,
-            inconsistency_okay: env.includes_explicit_false,
+            inconsistency_okay: env.includes_explicit_false || env.will_include_explicit_false,
             first_line,
             last_line,
         })

@@ -41,6 +41,12 @@ pub struct Environment {
     /// This indicates that the environment is supposed to have contradictory facts.
     pub includes_explicit_false: bool,
 
+    /// Whether this block WILL include an explicit "false" claim (set by look-ahead).
+    /// This is separate from `includes_explicit_false` because we need to know about
+    /// upcoming `false` claims before we process them, so that intermediate claims
+    /// can correctly have `inconsistency_okay = true`.
+    pub will_include_explicit_false: bool,
+
     /// For the base environment, first_line is zero.
     /// first_line is usually nonzero when the environment is a subenvironment.
     /// line_types[0] corresponds to first_line in the source document.
@@ -81,6 +87,7 @@ impl Environment {
             bindings: BindingMap::new(module_id),
             nodes: Vec::new(),
             includes_explicit_false: false,
+            will_include_explicit_false: false,
             first_line: 0,
             line_types: Vec::new(),
             implicit: false,
@@ -100,6 +107,7 @@ impl Environment {
             bindings: self.bindings.clone(),
             nodes: Vec::new(),
             includes_explicit_false: false,
+            will_include_explicit_false: false,
             first_line,
             line_types: Vec::new(),
             implicit,
