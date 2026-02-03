@@ -143,6 +143,11 @@ fn add_var_map<R: ProofResolver>(
     concrete_steps: &mut HashMap<ConcreteStepId, ConcreteStep>,
 ) {
     let generic = resolver.get_clause(id).unwrap();
+    let replacement_context = if var_map.len() == 0 && replacement_context.len() == 0 {
+        generic.get_local_context().clone()
+    } else {
+        replacement_context
+    };
     match concrete_steps.entry(ConcreteStepId::ProofStep(id)) {
         std::collections::hash_map::Entry::Occupied(mut entry) => {
             let concrete_step = entry.get_mut();
@@ -379,9 +384,15 @@ pub fn reconstruct_step<R: ProofResolver>(
 
 #[cfg(test)]
 mod tests {
+    use crate::kernel::clause::Clause;
     use crate::kernel::kernel_context::KernelContext;
+    use crate::kernel::local_context::LocalContext;
     use crate::proof_step::{ProofStep, Rule, Truthiness};
     use crate::prover::active_set::ActiveSet;
+    use crate::prover::proof::{add_var_map, ProofResolver};
+    use crate::proof_step::ProofStepId;
+    use crate::kernel::variable_map::VariableMap;
+    use std::collections::HashMap;
 
     /// Test that resolution followed by simplification produces correct results.
     ///
@@ -441,6 +452,59 @@ mod tests {
         };
 
         assert!(!simp_info.simplifying_ids.is_empty());
+    }
+
+    struct TestResolver {
+        clause: Clause,
+        kernel_context: KernelContext,
+    }
+
+    impl ProofResolver for TestResolver {
+        fn get_clause(&self, id: ProofStepId) -> Result<&Clause, crate::code_generator::Error> {
+            match id {
+                ProofStepId::Active(0) => Ok(&self.clause),
+                _ => Err(crate::code_generator::Error::internal(
+                    "unexpected proof step id",
+                )),
+            }
+        }
+
+        fn kernel_context(&self) -> &KernelContext {
+            &self.kernel_context
+        }
+    }
+
+    #[test]
+    fn test_add_var_map_defaults_context_for_empty_map() {
+        let mut kctx = KernelContext::new();
+        kctx.parse_constant("g0", "Bool -> Bool");
+
+        let clause = kctx.parse_clause("g0(x0)", &["Bool"]);
+        let resolver = TestResolver {
+            clause: clause.clone(),
+            kernel_context: kctx,
+        };
+
+        let mut concrete_steps = HashMap::new();
+        add_var_map(
+            &resolver,
+            ProofStepId::Active(0),
+            VariableMap::new(),
+            LocalContext::empty(),
+            &mut concrete_steps,
+        );
+
+        let entry = concrete_steps
+            .get(&crate::prover::proof::ConcreteStepId::ProofStep(ProofStepId::Active(0)))
+            .expect("concrete step");
+        let (_, replacement_context) = entry
+            .var_maps
+            .first()
+            .expect("replacement context");
+        assert_eq!(
+            replacement_context.len(),
+            clause.get_local_context().len()
+        );
     }
 
     /// Test that resolution with polymorphic simplification works correctly.
