@@ -12,6 +12,7 @@ use crate::kernel::clause::Clause;
 use crate::kernel::kernel_context::KernelContext;
 use crate::kernel::literal::Literal;
 use crate::kernel::local_context::LocalContext;
+use crate::kernel::unifier::{Scope, Unifier};
 use crate::kernel::variable_map::VariableMap;
 use crate::kernel::EqualityGraphContradiction;
 use crate::normalizer::Normalizer;
@@ -312,13 +313,26 @@ impl Prover {
             truthiness = truthiness.combine(rewrite_step.truthiness);
 
             // Check whether we need to explicitly add a specialized clause to the proof.
+            let has_type_params = rewrite_step
+                .clause
+                .get_local_context()
+                .get_var_types()
+                .iter()
+                .any(|t| t.as_ref().is_type_param_kind());
+            let needs_specialization = rewrite_step.clause.has_any_variable() || has_type_params;
+
             let inspiration_id = match step.source.inspiration_id {
                 Some(id) => id.get(),
                 None => {
-                    // No extra specialized clause needed
+                    // If the rewrite pattern is concrete, no extra specialized clause is needed.
+                    // But if the pattern has variables, we must emit a specialization so the
+                    // checker can see the concrete equality used in the rewrite chain.
                     active_ids.push(step.source.pattern_id.get());
                     max_depth = max_depth.max(rewrite_step.depth);
-                    continue;
+                    if !needs_specialization {
+                        continue;
+                    }
+                    step.source.pattern_id.get()
                 }
             };
 
@@ -334,24 +348,46 @@ impl Prover {
                 continue;
             }
             new_clauses.insert(clause.clone());
-            // Compute pattern var_map by matching pattern literal against concrete literal
+            // Compute pattern var_map by unifying the pattern literal against the concrete literal.
             let pattern_clause = &rewrite_step.clause;
-            let mut pattern_var_map = VariableMap::new();
-            let matched = pattern_var_map.match_literal(
+            let mut unifier = Unifier::new(3, kernel_context);
+            unifier.set_input_context(Scope::LEFT, pattern_clause.get_local_context());
+            unifier.set_input_context(Scope::RIGHT, LocalContext::empty_ref());
+            let mut unified = unifier.unify_literals(
+                Scope::LEFT,
                 &pattern_clause.literals[0],
+                Scope::RIGHT,
                 &clause.literals[0],
                 false,
             );
-            if !matched {
-                pattern_var_map = VariableMap::new();
-                pattern_var_map.match_literal(
+            if !unified {
+                let mut flipped_unifier = Unifier::new(3, kernel_context);
+                flipped_unifier.set_input_context(Scope::LEFT, pattern_clause.get_local_context());
+                flipped_unifier.set_input_context(Scope::RIGHT, LocalContext::empty_ref());
+                unified = flipped_unifier.unify_literals(
+                    Scope::LEFT,
                     &pattern_clause.literals[0],
+                    Scope::RIGHT,
                     &clause.literals[0],
                     true,
                 );
+                if unified {
+                    unifier = flipped_unifier;
+                }
             }
-            // Output is concrete (no variables), so var_ids and pre_norm_context are empty
-            let premise_map = PremiseMap::new(vec![pattern_var_map], vec![], LocalContext::empty());
+            if !unified {
+                panic!(
+                    "Failed to unify rewrite pattern with concrete clause.\nPattern: {}\nClause: {}",
+                    pattern_clause, clause
+                );
+            }
+            let (all_maps, output_context) = unifier.into_maps_with_context();
+            let pattern_var_map = all_maps
+                .into_iter()
+                .find(|(scope, _)| *scope == Scope::LEFT)
+                .map(|(_, map)| map)
+                .unwrap_or_else(VariableMap::new);
+            let premise_map = PremiseMap::new(vec![pattern_var_map], vec![], output_context);
             let step = ProofStep::specialization(
                 step.source.pattern_id.get(),
                 inspiration_id,

@@ -656,11 +656,40 @@ impl ActiveSet {
 
                     // Extract the pattern's variable map for reconstruction
                     let (all_maps, _) = unifier.into_maps_with_context();
-                    let pattern_var_map = all_maps
+                    let mut pattern_var_map = all_maps
                         .into_iter()
                         .find(|(scope, _)| *scope == Scope::LEFT)
                         .map(|(_, map)| map)
                         .unwrap_or_else(VariableMap::new);
+                    // For backwards rewrites, also unify the output term to capture
+                    // variables that only appear on the rewritten side.
+                    let pattern_literal = &pattern_step.clause.literals[0];
+                    let t = if rewrite.forwards {
+                        &pattern_literal.right
+                    } else {
+                        &pattern_literal.left
+                    };
+                    let mut extra_unifier = Unifier::new(3, kernel_context);
+                    extra_unifier.set_input_context(
+                        Scope::LEFT,
+                        pattern_step.clause.get_local_context(),
+                    );
+                    extra_unifier.set_input_context(Scope::RIGHT, &rewrite.context);
+                    if extra_unifier.unify(Scope::LEFT, t, Scope::RIGHT, &rewrite.term) {
+                        let (maps, _) = extra_unifier.into_maps_with_context();
+                        if let Some(extra_map) = maps
+                            .into_iter()
+                            .find(|(scope, _)| *scope == Scope::LEFT)
+                            .map(|(_, map)| map)
+                        {
+                            for (i, term) in extra_map.iter() {
+                                let var_id = i as AtomId;
+                                if !pattern_var_map.has_mapping(var_id) {
+                                    pattern_var_map.set(var_id, term.clone());
+                                }
+                            }
+                        }
+                    }
 
                     let ps = ProofStep::rewrite(
                         rewrite.pattern_id,
@@ -766,11 +795,39 @@ impl ActiveSet {
 
                 // Extract the pattern's variable map for reconstruction
                 let (all_maps, _) = unifier.into_maps_with_context();
-                let pattern_var_map = all_maps
+                let mut pattern_var_map = all_maps
                     .into_iter()
                     .find(|(scope, _)| *scope == Scope::LEFT)
                     .map(|(_, map)| map)
                     .unwrap_or_else(VariableMap::new);
+                // For backwards rewrites, also unify the output term to capture
+                // variables that only appear on the rewritten side.
+                let t = if forwards {
+                    &pattern_literal.right
+                } else {
+                    &pattern_literal.left
+                };
+                let mut extra_unifier = Unifier::new(3, kernel_context);
+                extra_unifier.set_input_context(
+                    Scope::LEFT,
+                    pattern_step.clause.get_local_context(),
+                );
+                extra_unifier.set_input_context(Scope::RIGHT, &new_subterm_context);
+                if extra_unifier.unify(Scope::LEFT, t, Scope::RIGHT, &new_subterm) {
+                    let (maps, _) = extra_unifier.into_maps_with_context();
+                    if let Some(extra_map) = maps
+                        .into_iter()
+                        .find(|(scope, _)| *scope == Scope::LEFT)
+                        .map(|(_, map)| map)
+                    {
+                        for (i, term) in extra_map.iter() {
+                            let var_id = i as AtomId;
+                            if !pattern_var_map.has_mapping(var_id) {
+                                pattern_var_map.set(var_id, term.clone());
+                            }
+                        }
+                    }
+                }
 
                 for location in &subterm_info.locations {
                     if location.target_id == pattern_id {
@@ -1228,13 +1285,36 @@ impl ActiveSet {
                         let simp_step = self.get_step(*simp_id);
                         new_rules.push((*simp_id, simp_step));
                         if simp_step.clause.literals.len() == 1 {
-                            let mut simp_var_map = VariableMap::new();
-                            simp_var_map.match_literal(
+                            let mut unifier = Unifier::new(3, kernel_context);
+                            unifier.set_input_context(
+                                Scope::LEFT,
+                                simp_step.clause.get_local_context(),
+                            );
+                            unifier.set_input_context(Scope::RIGHT, &local_context);
+                            let unified = unifier.unify_literals(
+                                Scope::LEFT,
                                 &simp_step.clause.literals[0],
+                                Scope::RIGHT,
                                 &literal,
                                 *flipped,
                             );
-                            simplifying_var_maps.push(simp_var_map);
+                            if !unified {
+                                let mut simp_var_map = VariableMap::new();
+                                simp_var_map.match_literal(
+                                    &simp_step.clause.literals[0],
+                                    &literal,
+                                    *flipped,
+                                );
+                                simplifying_var_maps.push(simp_var_map);
+                            } else {
+                                let (maps, _output_context) = unifier.into_maps_with_context();
+                                let simp_var_map = maps
+                                    .into_iter()
+                                    .find(|(scope, _)| *scope == Scope::LEFT)
+                                    .map(|(_, map)| map)
+                                    .unwrap_or_else(VariableMap::new);
+                                simplifying_var_maps.push(simp_var_map);
+                            }
                         } else {
                             // Two-long-clause case - concrete, empty map
                             simplifying_var_maps.push(VariableMap::new());
