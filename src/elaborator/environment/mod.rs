@@ -621,31 +621,81 @@ impl Environment {
         }
     }
 
+    /// Helper to collect all transitive dependencies for this environment.
+    /// Used by prenormalize since the module isn't in the project yet.
+    #[cfg(feature = "prenormalize")]
+    fn collect_dependencies(
+        &self,
+        project: &Project,
+        seen: &mut std::collections::HashSet<crate::module::ModuleId>,
+        output: &mut Vec<crate::module::ModuleId>,
+    ) {
+        for dep_id in self.bindings.direct_dependencies() {
+            if !seen.insert(dep_id) {
+                continue;
+            }
+            // Recursively collect dependencies of this dependency
+            if let Some(dep_env) = project.get_env_by_id(dep_id) {
+                dep_env.collect_dependencies(project, seen, output);
+            }
+            output.push(dep_id);
+        }
+    }
+
     /// Populates the normalizer and normalized_facts fields by processing all facts.
     /// This should be called after elaboration is complete.
     /// Only available when the "prenormalize" feature is enabled.
+    /// Returns Ok(()) if all facts normalized successfully, or Err if any failed.
+    /// Even on error, the normalizer is set to the state achieved before the error.
     #[cfg(feature = "prenormalize")]
     pub fn prenormalize(&mut self, project: &Project) -> Result<(), String> {
         use crate::normalizer::Normalizer;
+        use std::collections::HashSet;
 
         let mut normalizer = Normalizer::new();
+        let mut first_error: Option<String> = None;
 
-        // First, add all imported facts
-        for fact in project.imported_facts(self.module_id, None) {
-            let normalized = normalizer.normalize_fact(&fact)?;
-            self.normalized_facts.push(normalized);
+        // Collect all dependencies (including transitive) using the environment's bindings.
+        // We can't use project.all_dependencies() because this module isn't in the project yet.
+        let mut deps = Vec::new();
+        let mut seen = HashSet::new();
+        self.collect_dependencies(project, &mut seen, &mut deps);
+
+        // First, add all imported facts from dependencies
+        for dep_id in deps {
+            if let Some(dep_env) = project.get_env_by_id(dep_id) {
+                for fact in dep_env.importable_facts(None) {
+                    match normalizer.normalize_fact(&fact) {
+                        Ok(normalized) => self.normalized_facts.push(normalized),
+                        Err(e) => {
+                            if first_error.is_none() {
+                                first_error = Some(e.message);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Then, add all facts from the top-level nodes in this environment
         for node in &self.nodes {
             if let Some(fact) = node.get_fact() {
-                let normalized = normalizer.normalize_fact(&fact)?;
-                self.normalized_facts.push(normalized);
+                match normalizer.normalize_fact(&fact) {
+                    Ok(normalized) => self.normalized_facts.push(normalized),
+                    Err(e) => {
+                        if first_error.is_none() {
+                            first_error = Some(e.message);
+                        }
+                    }
+                }
             }
         }
 
         self.normalizer = Some(normalizer);
-        Ok(())
+        match first_error {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
 }
 

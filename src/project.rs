@@ -1182,6 +1182,12 @@ impl Project {
             return Ok(module_id);
         }
 
+        // When prenormalize is enabled, normalize all facts after elaboration.
+        // We ignore errors here since some facts may intentionally fail to normalize
+        // (e.g., exists over uninhabited types in test cases).
+        #[cfg(feature = "prenormalize")]
+        let _ = env.prenormalize(self);
+
         // Compute simple blake3 hash of just the file contents
         let content_hash = blake3::hash(text.as_bytes());
         self.modules[module_id.get() as usize].load_ok(env, content_hash);

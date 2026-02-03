@@ -237,6 +237,16 @@ impl Normalizer {
         self.synthetic_registry
             .collect_differences(&other.synthetic_registry, differences);
     }
+
+    /// Asserts that two normalizers have the same state, for debugging purposes.
+    /// Panics with a detailed message if they differ.
+    pub fn assert_same(&self, other: &Normalizer) {
+        let mut differences = Vec::new();
+        self.collect_differences(other, &mut differences);
+        if !differences.is_empty() {
+            panic!("Normalizers differ:\n{}", differences.join("\n"));
+        }
+    }
 }
 
 // Represents a binding for a variable on the stack during normalization.
