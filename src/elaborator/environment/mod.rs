@@ -81,13 +81,22 @@ pub struct Environment {
     /// The line number of the last statement we processed (for detecting blank lines).
     pub last_statement_line: Option<u32>,
 
+    /// When prenormalize is enabled, stores the normalizer state after processing imports.
+    /// This can be cloned to create a Processor without re-normalizing imports.
+    #[cfg(feature = "prenormalize")]
+    pub import_normalizer: Option<Normalizer>,
+
+    /// When prenormalize is enabled, stores normalized facts from imports.
+    #[cfg(feature = "prenormalize")]
+    pub normalized_imports: Vec<NormalizedFact>,
+
     /// When prenormalize is enabled, stores the normalizer state after processing all facts.
     #[cfg(feature = "prenormalize")]
     pub normalizer: Option<Normalizer>,
 
-    /// When prenormalize is enabled, stores normalized facts from this environment.
+    /// When prenormalize is enabled, stores normalized facts from this module's nodes.
     #[cfg(feature = "prenormalize")]
-    pub normalized_facts: Vec<NormalizedFact>,
+    pub normalized_module_facts: Vec<NormalizedFact>,
 }
 
 impl Environment {
@@ -108,9 +117,13 @@ impl Environment {
             at_module_beginning: true,
             last_statement_line: None,
             #[cfg(feature = "prenormalize")]
+            import_normalizer: None,
+            #[cfg(feature = "prenormalize")]
+            normalized_imports: Vec::new(),
+            #[cfg(feature = "prenormalize")]
             normalizer: None,
             #[cfg(feature = "prenormalize")]
-            normalized_facts: Vec::new(),
+            normalized_module_facts: Vec::new(),
         }
     }
 
@@ -132,9 +145,13 @@ impl Environment {
             at_module_beginning: false,      // Child environments are never at module beginning
             last_statement_line: None,
             #[cfg(feature = "prenormalize")]
+            import_normalizer: None,
+            #[cfg(feature = "prenormalize")]
+            normalized_imports: Vec::new(),
+            #[cfg(feature = "prenormalize")]
             normalizer: None,
             #[cfg(feature = "prenormalize")]
-            normalized_facts: Vec::new(),
+            normalized_module_facts: Vec::new(),
         }
     }
 
@@ -642,11 +659,11 @@ impl Environment {
         }
     }
 
-    /// Populates the normalizer and normalized_facts fields by processing all facts.
+    /// Populates the prenormalized fields by processing all facts.
     /// This should be called after elaboration is complete.
     /// Only available when the "prenormalize" feature is enabled.
     /// Returns Ok(()) if all facts normalized successfully, or Err if any failed.
-    /// Even on error, the normalizer is set to the state achieved before the error.
+    /// Even on error, the normalizer states are set to what was achieved before the error.
     #[cfg(feature = "prenormalize")]
     pub fn prenormalize(&mut self, project: &Project) -> Result<(), String> {
         use crate::normalizer::Normalizer;
@@ -666,7 +683,7 @@ impl Environment {
             if let Some(dep_env) = project.get_env_by_id(dep_id) {
                 for fact in dep_env.importable_facts(None) {
                     match normalizer.normalize_fact(&fact) {
-                        Ok(normalized) => self.normalized_facts.push(normalized),
+                        Ok(normalized) => self.normalized_imports.push(normalized),
                         Err(e) => {
                             if first_error.is_none() {
                                 first_error = Some(e.message);
@@ -677,11 +694,15 @@ impl Environment {
             }
         }
 
+        // Store the normalizer state after processing imports.
+        // This can be cloned by Processor::with_imports to avoid re-normalizing.
+        self.import_normalizer = Some(normalizer.clone());
+
         // Then, add all facts from the top-level nodes in this environment
         for node in &self.nodes {
             if let Some(fact) = node.get_fact() {
                 match normalizer.normalize_fact(&fact) {
-                    Ok(normalized) => self.normalized_facts.push(normalized),
+                    Ok(normalized) => self.normalized_module_facts.push(normalized),
                     Err(e) => {
                         if first_error.is_none() {
                             first_error = Some(e.message);

@@ -41,6 +41,58 @@ impl Processor {
         }
     }
 
+    /// Creates a new Processor with imports already added from prenormalized state.
+    /// When the prenormalize feature is enabled and the environment has prenormalized data,
+    /// this clones the import_normalizer and adds pre-normalized facts directly.
+    /// Otherwise, falls back to normalizing imports the traditional way.
+    #[cfg(feature = "prenormalize")]
+    pub fn with_imports(
+        cancellation_token: Option<CancellationToken>,
+        project: &Project,
+        env: &crate::elaborator::environment::Environment,
+    ) -> Result<Processor, BuildError> {
+        if let Some(ref import_normalizer) = env.import_normalizer {
+            // Use prenormalized state
+            let mut processor = Processor {
+                prover: match cancellation_token {
+                    Some(token) => Prover::new(vec![token]),
+                    None => Prover::new(vec![]),
+                },
+                normalizer: import_normalizer.clone(),
+                checker: Checker::new(),
+            };
+            // Add pre-normalized import facts
+            for normalized in &env.normalized_imports {
+                processor.add_normalized_fact(normalized)?;
+            }
+            Ok(processor)
+        } else {
+            // Fall back to traditional normalization
+            let mut processor = match cancellation_token {
+                Some(token) => Processor::with_token(token),
+                None => Processor::new(),
+            };
+            processor.add_imports(project, env.module_id)?;
+            Ok(processor)
+        }
+    }
+
+    /// Creates a new Processor with imports already added.
+    /// This is the non-prenormalize version that always normalizes imports.
+    #[cfg(not(feature = "prenormalize"))]
+    pub fn with_imports(
+        cancellation_token: Option<CancellationToken>,
+        project: &Project,
+        env: &crate::elaborator::environment::Environment,
+    ) -> Result<Processor, BuildError> {
+        let mut processor = match cancellation_token {
+            Some(token) => Processor::with_token(token),
+            None => Processor::new(),
+        };
+        processor.add_imports(project, env.module_id)?;
+        Ok(processor)
+    }
+
     /// Adds all imported facts for the given module to this processor.
     pub fn add_imports(
         &mut self,

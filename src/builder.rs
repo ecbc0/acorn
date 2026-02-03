@@ -872,8 +872,8 @@ impl<'a> Builder<'a> {
         if !env.nodes.is_empty() {
             self.module_proving_started(target.clone());
 
-            let mut processor = Processor::with_token(self.cancellation_token.clone());
-            processor.add_imports(&self.project, env.module_id)?;
+            let processor =
+                Processor::with_imports(Some(self.cancellation_token.clone()), &self.project, env)?;
             let mut processor = Rc::new(processor);
             let mut cursor = NodeCursor::new(env, 0);
 
