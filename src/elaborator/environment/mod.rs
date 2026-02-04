@@ -701,17 +701,8 @@ impl Environment {
                         self.normalized_imports.push(normalized.clone());
                     }
                 } else {
-                    // Dependency not prenormalized - fall back to normalizing
-                    for fact in dep_env.importable_facts(None) {
-                        match normalizer.normalize_fact(&fact) {
-                            Ok(normalized) => self.normalized_imports.push(normalized),
-                            Err(e) => {
-                                if first_error.is_none() {
-                                    first_error = Some(e.message);
-                                }
-                            }
-                        }
-                    }
+                    // This should never happen - dependencies are processed first
+                    panic!("Dependency {} not prenormalized", dep_id.0);
                 }
             }
         }
