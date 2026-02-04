@@ -661,4 +661,90 @@ impl SymbolTable {
             ));
         }
     }
+
+    /// Merges another SymbolTable into this one.
+    /// Entries from `other` are added to `self`.
+    #[cfg(feature = "prenormalize")]
+    pub fn merge(&mut self, other: &SymbolTable) {
+        // Merge global constants and their types
+        for (module_idx, module_constants) in other.global_constants.iter().enumerate() {
+            while self.global_constants.len() <= module_idx {
+                self.global_constants.push_back(ImVector::new());
+            }
+            while self.global_constant_types.len() <= module_idx {
+                self.global_constant_types.push_back(ImVector::new());
+            }
+            for (local_idx, constant_name) in module_constants.iter().enumerate() {
+                let self_module = &mut self.global_constants[module_idx];
+                while self_module.len() <= local_idx {
+                    self_module.push_back(None);
+                }
+                self.global_constants[module_idx].set(local_idx, constant_name.clone());
+            }
+            for (local_idx, constant_type) in
+                other.global_constant_types[module_idx].iter().enumerate()
+            {
+                let self_module = &mut self.global_constant_types[module_idx];
+                while self_module.len() <= local_idx {
+                    self_module.push_back(Term::empty_type());
+                }
+                self.global_constant_types[module_idx].set(local_idx, constant_type.clone());
+            }
+        }
+
+        // Merge scoped constants - these are local to a verification context, so
+        // we should generally not have overlapping scoped constants when merging imports.
+        // Just extend if other has more.
+        for (idx, constant_name) in other.scoped_constants.iter().enumerate() {
+            while self.scoped_constants.len() <= idx {
+                self.scoped_constants.push_back(None);
+            }
+            while self.scoped_constant_types.len() <= idx {
+                self.scoped_constant_types.push_back(Term::empty_type());
+            }
+            self.scoped_constants.set(idx, constant_name.clone());
+        }
+        for (idx, constant_type) in other.scoped_constant_types.iter().enumerate() {
+            self.scoped_constant_types.set(idx, constant_type.clone());
+        }
+
+        // Merge synthetic types
+        for (module_idx, module_synthetics) in other.synthetic_types.iter().enumerate() {
+            while self.synthetic_types.len() <= module_idx {
+                self.synthetic_types.push_back(ImVector::new());
+            }
+            for (local_idx, synthetic_type) in module_synthetics.iter().enumerate() {
+                let self_module = &mut self.synthetic_types[module_idx];
+                while self_module.len() <= local_idx {
+                    self_module.push_back(Term::empty_type());
+                }
+                self.synthetic_types[module_idx].set(local_idx, synthetic_type.clone());
+            }
+        }
+
+        // Merge hash maps
+        for (k, v) in other.name_to_symbol.iter() {
+            self.name_to_symbol.insert(k.clone(), *v);
+        }
+        for (k, v) in other.instance_to_symbol.iter() {
+            self.instance_to_symbol.insert(k.clone(), *v);
+        }
+        for (k, v) in other.polymorphic_info.iter() {
+            self.polymorphic_info.insert(k.clone(), v.clone());
+        }
+        for (k, v) in other.type_to_element.iter() {
+            // Only insert if not already present (first registered wins)
+            if !self.type_to_element.contains_key(k) {
+                self.type_to_element.insert(k.clone(), *v);
+            }
+        }
+
+        // Merge inhabited sets
+        for id in other.inhabited_type_constructors.iter() {
+            self.inhabited_type_constructors.insert(*id);
+        }
+        for id in other.inhabited_typeclasses.iter() {
+            self.inhabited_typeclasses.insert(*id);
+        }
+    }
 }

@@ -1170,6 +1170,101 @@ impl TypeStore {
             ));
         }
     }
+
+    /// Merges another TypeStore into this one.
+    /// Entries from `other` are added to `self`. If there are conflicts,
+    /// the entries should be identical (same module_id, local_id -> same value).
+    #[cfg(feature = "prenormalize")]
+    pub fn merge(&mut self, other: &TypeStore) {
+        // Merge ground types
+        for (module_idx, module_types) in other.ground_id_to_type.iter().enumerate() {
+            while self.ground_id_to_type.len() <= module_idx {
+                self.ground_id_to_type.push_back(ImVector::new());
+            }
+            while self.ground_id_to_arity.len() <= module_idx {
+                self.ground_id_to_arity.push_back(ImVector::new());
+            }
+            for (local_idx, acorn_type) in module_types.iter().enumerate() {
+                let self_module = &mut self.ground_id_to_type[module_idx];
+                while self_module.len() <= local_idx {
+                    self_module.push_back(AcornType::Empty);
+                }
+                // Always set the value from other - if it was already present
+                // and correct, this is idempotent; if we added a placeholder, we need it
+                self.ground_id_to_type[module_idx].set(local_idx, acorn_type.clone());
+            }
+            for (local_idx, arity) in other.ground_id_to_arity[module_idx].iter().enumerate() {
+                let self_module = &mut self.ground_id_to_arity[module_idx];
+                while self_module.len() <= local_idx {
+                    self_module.push_back(0);
+                }
+                self.ground_id_to_arity[module_idx].set(local_idx, *arity);
+            }
+        }
+
+        // Merge hash maps
+        for (k, v) in other.datatype_to_ground_id.iter() {
+            self.datatype_to_ground_id.insert(k.clone(), *v);
+        }
+        for (k, v) in other.arbitrary_to_ground_id.iter() {
+            self.arbitrary_to_ground_id.insert(k.clone(), *v);
+        }
+        for (k, v) in other.typeclass_to_id.iter() {
+            self.typeclass_to_id.insert(k.clone(), *v);
+        }
+
+        // Merge typeclass vectors
+        for (module_idx, module_typeclasses) in other.id_to_typeclass.iter().enumerate() {
+            while self.id_to_typeclass.len() <= module_idx {
+                self.id_to_typeclass.push_back(ImVector::new());
+            }
+            for (local_idx, typeclass) in module_typeclasses.iter().enumerate() {
+                let self_module = &mut self.id_to_typeclass[module_idx];
+                while self_module.len() <= local_idx {
+                    // Placeholder - shouldn't happen if processed in order
+                    self_module.push_back(Typeclass {
+                        module_id: ModuleId(0),
+                        name: String::new(),
+                    });
+                }
+                self.id_to_typeclass[module_idx].set(local_idx, typeclass.clone());
+            }
+        }
+
+        // Merge typeclass_extends
+        for (module_idx, module_extends) in other.typeclass_extends.iter().enumerate() {
+            while self.typeclass_extends.len() <= module_idx {
+                self.typeclass_extends.push_back(ImVector::new());
+            }
+            for (local_idx, extends_set) in module_extends.iter().enumerate() {
+                let self_module = &mut self.typeclass_extends[module_idx];
+                while self_module.len() <= local_idx {
+                    self_module.push_back(StdHashSet::new());
+                }
+                // Union the sets
+                let existing = &self.typeclass_extends[module_idx][local_idx];
+                let merged: StdHashSet<_> = existing.union(extends_set).cloned().collect();
+                self.typeclass_extends[module_idx].set(local_idx, merged);
+            }
+        }
+
+        // Merge typeclass_instances
+        for (module_idx, module_instances) in other.typeclass_instances.iter().enumerate() {
+            while self.typeclass_instances.len() <= module_idx {
+                self.typeclass_instances.push_back(ImVector::new());
+            }
+            for (local_idx, instances_set) in module_instances.iter().enumerate() {
+                let self_module = &mut self.typeclass_instances[module_idx];
+                while self_module.len() <= local_idx {
+                    self_module.push_back(StdHashSet::new());
+                }
+                // Union the sets
+                let existing = &self.typeclass_instances[module_idx][local_idx];
+                let merged: StdHashSet<_> = existing.union(instances_set).cloned().collect();
+                self.typeclass_instances[module_idx].set(local_idx, merged);
+            }
+        }
+    }
 }
 
 impl Default for TypeStore {

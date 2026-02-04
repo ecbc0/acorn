@@ -27,6 +27,7 @@ use crate::proof_step::{ProofStep, Truthiness};
 use tracing::trace;
 
 /// A fact that has been normalized into proof steps.
+#[derive(Clone)]
 pub struct NormalizedFact {
     pub steps: Vec<ProofStep>,
 }
@@ -246,6 +247,14 @@ impl Normalizer {
         if !differences.is_empty() {
             panic!("Normalizers differ:\n{}", differences.join("\n"));
         }
+    }
+
+    /// Merges another Normalizer into this one.
+    /// Used to combine prenormalized state from dependencies.
+    #[cfg(feature = "prenormalize")]
+    pub fn merge(&mut self, other: &Normalizer) {
+        self.kernel_context.merge(&other.kernel_context);
+        self.synthetic_registry.merge(&other.synthetic_registry);
     }
 }
 

@@ -211,6 +211,17 @@ impl SyntheticRegistry {
             ));
         }
     }
+
+    /// Merges another SyntheticRegistry into this one.
+    #[cfg(feature = "prenormalize")]
+    pub fn merge(&mut self, other: &SyntheticRegistry) {
+        for (k, v) in other.definitions.iter() {
+            self.definitions.insert(*k, v.clone());
+        }
+        for (k, v) in other.by_key.iter() {
+            self.by_key.insert(k.clone(), v.clone());
+        }
+    }
 }
 
 impl Default for SyntheticRegistry {

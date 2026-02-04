@@ -662,6 +662,11 @@ impl Environment {
     /// Populates the prenormalized fields by processing all facts.
     /// This should be called after elaboration is complete.
     /// Only available when the "prenormalize" feature is enabled.
+    ///
+    /// For dependencies that have already been prenormalized, we merge their
+    /// normalizer state and reuse their pre-normalized facts, avoiding redundant
+    /// normalization work.
+    ///
     /// Returns Ok(()) if all facts normalized successfully, or Err if any failed.
     /// Even on error, the normalizer states are set to what was achieved before the error.
     #[cfg(feature = "prenormalize")]
@@ -678,15 +683,32 @@ impl Environment {
         let mut seen = HashSet::new();
         self.collect_dependencies(project, &mut seen, &mut deps);
 
-        // First, add all imported facts from dependencies
+        // Add imported facts from dependencies.
+        // If a dependency has prenormalized state, merge it and reuse the pre-normalized facts.
+        // Otherwise, fall back to normalizing (shouldn't happen in practice).
+        //
+        // Important: we only copy normalized_module_facts (the dependency's own facts),
+        // not normalized_imports. The transitive imports are handled by processing
+        // dependencies in topological order - each dependency's own facts are added
+        // when we process that dependency directly.
         for dep_id in deps {
             if let Some(dep_env) = project.get_env_by_id(dep_id) {
-                for fact in dep_env.importable_facts(None) {
-                    match normalizer.normalize_fact(&fact) {
-                        Ok(normalized) => self.normalized_imports.push(normalized),
-                        Err(e) => {
-                            if first_error.is_none() {
-                                first_error = Some(e.message);
+                if let Some(ref dep_normalizer) = dep_env.normalizer {
+                    // Dependency has prenormalized state - merge and reuse
+                    normalizer.merge(dep_normalizer);
+                    // Add only the dependency's own facts (not its imports)
+                    for normalized in &dep_env.normalized_module_facts {
+                        self.normalized_imports.push(normalized.clone());
+                    }
+                } else {
+                    // Dependency not prenormalized - fall back to normalizing
+                    for fact in dep_env.importable_facts(None) {
+                        match normalizer.normalize_fact(&fact) {
+                            Ok(normalized) => self.normalized_imports.push(normalized),
+                            Err(e) => {
+                                if first_error.is_none() {
+                                    first_error = Some(e.message);
+                                }
                             }
                         }
                     }
