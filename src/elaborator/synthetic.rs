@@ -213,7 +213,6 @@ impl SyntheticRegistry {
     }
 
     /// Merges another SyntheticRegistry into this one.
-    #[cfg(feature = "prenormalize")]
     pub fn merge(&mut self, other: &SyntheticRegistry) {
         for (k, v) in other.definitions.iter() {
             self.definitions.insert(*k, v.clone());

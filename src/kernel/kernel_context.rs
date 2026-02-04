@@ -992,7 +992,6 @@ impl KernelContext {
     }
 
     /// Merges another KernelContext into this one.
-    #[cfg(feature = "prenormalize")]
     pub fn merge(&mut self, other: &KernelContext) {
         self.type_store.merge(&other.type_store);
         self.symbol_table.merge(&other.symbol_table);

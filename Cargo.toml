@@ -44,10 +44,6 @@ assert_fs = "1.1.2"
 # enabled in release builds with --features validate for debugging.
 validate = []
 
-# Enable pre-normalization of facts during elaboration.
-# When enabled, each Environment stores a Normalizer and normalized facts.
-prenormalize = []
-
 [lib]
 doctest = false
 

@@ -1174,7 +1174,6 @@ impl TypeStore {
     /// Merges another TypeStore into this one.
     /// Entries from `other` are added to `self`. If there are conflicts,
     /// the entries should be identical (same module_id, local_id -> same value).
-    #[cfg(feature = "prenormalize")]
     pub fn merge(&mut self, other: &TypeStore) {
         // Merge ground types
         for (module_idx, module_types) in other.ground_id_to_type.iter().enumerate() {

@@ -251,7 +251,6 @@ impl Normalizer {
 
     /// Merges another Normalizer into this one.
     /// Used to combine prenormalized state from dependencies.
-    #[cfg(feature = "prenormalize")]
     pub fn merge(&mut self, other: &Normalizer) {
         self.kernel_context.merge(&other.kernel_context);
         self.synthetic_registry.merge(&other.synthetic_registry);

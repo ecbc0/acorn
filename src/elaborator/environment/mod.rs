@@ -17,7 +17,6 @@ use crate::elaborator::node::{Node, NodeCursor};
 use crate::elaborator::proposition::Proposition;
 use crate::elaborator::source::Source;
 use crate::module::ModuleId;
-#[cfg(feature = "prenormalize")]
 use crate::normalizer::{NormalizedFact, Normalizer};
 use crate::project::Project;
 use crate::syntax::statement::{Body, Statement};
@@ -81,21 +80,17 @@ pub struct Environment {
     /// The line number of the last statement we processed (for detecting blank lines).
     pub last_statement_line: Option<u32>,
 
-    /// When prenormalize is enabled, stores the normalizer state after processing imports.
+    /// Stores the normalizer state after processing imports.
     /// This can be cloned to create a Processor without re-normalizing imports.
-    #[cfg(feature = "prenormalize")]
     pub import_normalizer: Option<Normalizer>,
 
-    /// When prenormalize is enabled, stores normalized facts from imports.
-    #[cfg(feature = "prenormalize")]
+    /// Stores normalized facts from imports.
     pub normalized_imports: Vec<NormalizedFact>,
 
-    /// When prenormalize is enabled, stores the normalizer state after processing all facts.
-    #[cfg(feature = "prenormalize")]
+    /// Stores the normalizer state after processing all facts.
     pub normalizer: Option<Normalizer>,
 
-    /// When prenormalize is enabled, stores normalized facts from this module's nodes.
-    #[cfg(feature = "prenormalize")]
+    /// Stores normalized facts from this module's nodes.
     pub normalized_module_facts: Vec<NormalizedFact>,
 }
 
@@ -116,13 +111,9 @@ impl Environment {
             module_doc_comments: Vec::new(),
             at_module_beginning: true,
             last_statement_line: None,
-            #[cfg(feature = "prenormalize")]
             import_normalizer: None,
-            #[cfg(feature = "prenormalize")]
             normalized_imports: Vec::new(),
-            #[cfg(feature = "prenormalize")]
             normalizer: None,
-            #[cfg(feature = "prenormalize")]
             normalized_module_facts: Vec::new(),
         }
     }
@@ -144,13 +135,9 @@ impl Environment {
             module_doc_comments: Vec::new(), // Child environments don't inherit module doc comments
             at_module_beginning: false,      // Child environments are never at module beginning
             last_statement_line: None,
-            #[cfg(feature = "prenormalize")]
             import_normalizer: None,
-            #[cfg(feature = "prenormalize")]
             normalized_imports: Vec::new(),
-            #[cfg(feature = "prenormalize")]
             normalizer: None,
-            #[cfg(feature = "prenormalize")]
             normalized_module_facts: Vec::new(),
         }
     }
@@ -640,7 +627,6 @@ impl Environment {
 
     /// Helper to collect all transitive dependencies for this environment.
     /// Used by prenormalize since the module isn't in the project yet.
-    #[cfg(feature = "prenormalize")]
     fn collect_dependencies(
         &self,
         project: &Project,
@@ -661,7 +647,6 @@ impl Environment {
 
     /// Populates the prenormalized fields by processing all facts.
     /// This should be called after elaboration is complete.
-    /// Only available when the "prenormalize" feature is enabled.
     ///
     /// For dependencies that have already been prenormalized, we merge their
     /// normalizer state and reuse their pre-normalized facts, avoiding redundant
@@ -669,9 +654,7 @@ impl Environment {
     ///
     /// Returns Ok(()) if all facts normalized successfully, or Err if any failed.
     /// Even on error, the normalizer states are set to what was achieved before the error.
-    #[cfg(feature = "prenormalize")]
     pub fn prenormalize(&mut self, project: &Project) -> Result<(), String> {
-        use crate::normalizer::Normalizer;
         use std::collections::HashSet;
 
         let mut normalizer = Normalizer::new();

@@ -872,8 +872,7 @@ impl<'a> Builder<'a> {
         if !env.nodes.is_empty() {
             self.module_proving_started(target.clone());
 
-            let processor =
-                Processor::with_imports(Some(self.cancellation_token.clone()), &self.project, env)?;
+            let processor = Processor::with_imports(Some(self.cancellation_token.clone()), env)?;
             let mut processor = Rc::new(processor);
             let mut cursor = NodeCursor::new(env, 0);
 
@@ -906,9 +905,7 @@ impl<'a> Builder<'a> {
                 cursor.next();
             }
 
-            // When prenormalize is enabled, verify that the processor's normalizer
-            // matches the prenormalized state from the environment.
-            #[cfg(feature = "prenormalize")]
+            // Verify that the processor's normalizer matches the prenormalized state.
             if let Some(ref prenorm) = env.normalizer {
                 // The verification loop doesn't add the last node's fact, but prenormalize
                 // includes all facts. Add the last fact before comparing.

@@ -664,7 +664,6 @@ impl SymbolTable {
 
     /// Merges another SymbolTable into this one.
     /// Entries from `other` are added to `self`.
-    #[cfg(feature = "prenormalize")]
     pub fn merge(&mut self, other: &SymbolTable) {
         // Merge global constants and their types
         for (module_idx, module_constants) in other.global_constants.iter().enumerate() {
