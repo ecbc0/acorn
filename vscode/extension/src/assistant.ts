@@ -16,7 +16,7 @@ import * as path from "path";
 import { LanguageClient } from "vscode-languageclient/node";
 
 const showLocationDecoration = window.createTextEditorDecorationType({
-  backgroundColor: "rgba(246, 185, 77, 0.3)",
+  backgroundColor: "rgba(55, 35, 0, 0.24)",
 });
 
 export class Assistant implements Disposable {

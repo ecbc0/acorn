@@ -8,15 +8,23 @@
       "name": "comment.line.double-slash"
     },
     {
-      "match": "\\b(if|else|forall|exists|by|function|and|or|not|implies|iff)\\b",
+      "match": "\\b(if|else|by)\\b",
       "name": "keyword.control"
     },
     {
-      "match": "-|>|<|\\+",
+      "match": "\\b(and|or|not|implies|iff|forall|exists)\\b|!",
+      "name": "keyword.logic_operator"
+    },
+    {
+      "match": "-|>|<|\\+|=",
       "name": "keyword.operator"
     },
     {
-      "match": "\\b(let|axiom|define|theorem|type|structure|constraint|satisfy|inductive|class|attributes|numerals|typeclass|instance|extends|problem)\\b",
+      "match": "∪|∩|×|∈|∉|⊆|⊇|∖",
+      "name": "keyword.set_operator"
+    },
+    {
+      "match": "\\b(let|axiom|define|theorem|type|structure|constraint|satisfy|inductive|class|attributes|numerals|typeclass|instance|extends|problem|function)\\b",
       "name": "keyword.declaration"
     },
     {
