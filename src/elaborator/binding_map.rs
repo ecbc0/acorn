@@ -1395,7 +1395,7 @@ impl BindingMap {
             let name_token = TokenType::Identifier.new_token(&name);
 
             // Use the existing import_name logic to import each name
-            let _ = self.import_name(project, prelude_bindings.module_id, &name_token)?;
+            let _ = self.import_name(project, prelude_bindings.module_id, &name_token, &None)?;
         }
 
         // Import all type names that aren't already imported via unqualified constants
@@ -1597,9 +1597,10 @@ impl BindingMap {
         project: &Project,
         module: ModuleId,
         name_token: &Token,
+        alias_token: &Option<Token>
     ) -> error::Result<NamedEntity> {
         // Check if this name is lowercase
-        let name = name_token.text();
+        let name = alias_token.as_ref().map_or(name_token.text(), |token| token.text());
         if name.chars().next().map(char::is_lowercase).unwrap_or(false) {
             let defined_name = DefinedName::unqualified(module, name);
             self.check_defined_name_available(&defined_name, name_token)?;
@@ -1614,6 +1615,8 @@ impl BindingMap {
             &Stack::new(),
             None,
         )?;
+
+        let name = alias_token.as_ref().map_or(name, |token| token.text());
 
         match &entity {
             NamedEntity::Value(value) => {

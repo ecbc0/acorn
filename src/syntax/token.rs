@@ -44,6 +44,7 @@ pub enum TokenType {
     Function,
     Structure,
     Import,
+    As,
     True,
     False,
     Else,
@@ -99,6 +100,7 @@ pub fn keyword_map() -> &'static BTreeMap<&'static str, TokenType> {
             ("function", TokenType::Function),
             ("structure", TokenType::Structure),
             ("import", TokenType::Import),
+            ("as", TokenType::As),
             ("true", TokenType::True),
             ("false", TokenType::False),
             ("else", TokenType::Else),
@@ -418,6 +420,7 @@ impl TokenType {
             TokenType::Function => "function",
             TokenType::Structure => "structure",
             TokenType::Import => "import",
+            TokenType::As => "as",
             TokenType::True => "true",
             TokenType::False => "false",
             TokenType::Else => "else",
@@ -650,6 +653,7 @@ impl Token {
             | TokenType::Function
             | TokenType::Structure
             | TokenType::Import
+            | TokenType::As
             | TokenType::True
             | TokenType::False
             | TokenType::Else

@@ -2401,8 +2401,9 @@ impl Environment {
 
         // Bring the imported names into this environment
         // Note: we do NOT bind the module name itself
-        for name in &is.names {
-            let entity = self.bindings.import_name(project, module_id, name)?;
+        for (name, alias) in is.names.iter().zip(is.aliases.iter()) {
+            let entity = self.bindings.import_name(project, module_id, name, alias)?;
+            let name = alias.as_ref().unwrap_or(name);
             self.token_map.track_token(name, &entity);
         }
 
