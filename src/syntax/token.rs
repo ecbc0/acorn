@@ -883,9 +883,10 @@ impl Token {
     /// Primarily used for testing token mapping functionality.
     #[cfg(test)]
     pub fn test_token(line_number: u32, start: u32, len: u32) -> Self {
+        let line = "a".repeat(std::cmp::max(30, (start + len) as usize));
         Token {
             token_type: TokenType::Identifier,
-            line: Arc::new("test line".to_string()),
+            line: Arc::new(line),
             line_number,
             start,
             len,
@@ -959,7 +960,7 @@ impl TokenIter {
             TokenType::SelfToken => {}
             TokenType::Identifier => match name_token.text().chars().next() {
                 Some(c) => {
-                    if !(c.is_lowercase() || c == '!') {
+                    if !Token::identifierish(c) || c.is_uppercase() {
                         return Err(name_token.error("invalid variable name"));
                     }
                 }

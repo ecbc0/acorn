@@ -195,7 +195,9 @@ impl BindingMap {
                 match constant_name {
                     ConstantName::Unqualified(_, name) => {
                         self.unqualified.contains_key(name)
-                            || self.name_to_module.contains_key(name)
+                            || self.name_to_module.contains_key(name) 
+                            || self.typename_to_type.contains_key(name)
+                            || self.name_to_typeclass.contains_key(name)
                     }
                     ConstantName::DatatypeAttribute(datatype, attr) => {
                         self.has_type_attr(datatype, attr)
@@ -1615,8 +1617,6 @@ impl BindingMap {
             &Stack::new(),
             None,
         )?;
-
-        let name = alias_token.as_ref().map_or(name, |token| token.text());
 
         match &entity {
             NamedEntity::Value(value) => {

@@ -701,7 +701,7 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter, strict: bool) -> 
     // Check that the variable name is lowercase (or a numeral)
     if first_name_token.token_type == TokenType::Identifier {
         if let Some(c) = first_name_token.text().chars().next() {
-            if !c.is_ascii_lowercase() {
+            if !Token::identifierish(c) || c.is_uppercase() {
                 return Err(first_name_token.error("invalid variable name"));
             }
         }

@@ -20,11 +20,11 @@
       "name": "keyword.operator"
     },
     {
-      "match": "∪|∩|×|∈|∉|⊆|⊇|∖",
+      "match": "∪|∩|×|∈|∉|⊆|⊇|∖|⊂|⊃",
       "name": "keyword.set_operator"
     },
     {
-      "match": "\\b(let|axiom|define|theorem|type|structure|constraint|satisfy|inductive|class|attributes|numerals|typeclass|instance|extends|problem|function)\\b",
+      "match": "\\b(let|axiom|define|theorem|type|structure|constraint|satisfy|inductive|class|attributes|numerals|typeclass|instance|extends|problem|function|match)\\b",
       "name": "keyword.declaration"
     },
     {

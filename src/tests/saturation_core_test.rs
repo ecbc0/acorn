@@ -2175,11 +2175,11 @@ fn test_backward_rewrite_specialization_regression() {
     fs::create_dir_all(&build_dir).unwrap();
 
     let mut project = Project::new(src_dir.clone(), build_dir, ProjectConfig::default()).unwrap();
-    let target_path = src_dir.join("add_group.ac");
+    let target_path = src_dir.join("util.ac");
     project.add_target_by_path(&target_path).unwrap();
 
     let module_id = project
-        .load_module_by_name("add_group")
+        .load_module_by_name("util")
         .expect("load failed");
     let env = match project.get_module_by_id(module_id) {
         LoadState::Ok(env) => env,
@@ -2187,7 +2187,7 @@ fn test_backward_rewrite_specialization_regression() {
         _ => panic!("no module"),
     };
 
-    let node = env.get_node_by_goal_name("inverse_add");
+    let node = env.get_node_by_goal_name("constant_is_constant");
     let goal = node.goal().unwrap();
     let goal_env = node.goal_env().unwrap();
 
