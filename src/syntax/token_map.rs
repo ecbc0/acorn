@@ -69,7 +69,10 @@ impl TokenMap {
     }
 
     pub fn insert(&mut self, token: &Token, value: TokenInfo) {
-        let key = TokenKey::new(token.line_number, token.start, token.len);
+        let start = token.start_pos().character;
+        let end = token.end_pos().character;
+        let len = end - start;
+        let key = TokenKey::new(token.line_number, start, len);
 
         #[cfg(test)]
         {
